@@ -246,7 +246,7 @@ export default function TestRetrievalModal({
               <div className="text-muted-foreground flex flex-row items-center justify-between text-xs">
                 <span>
                   {tr('resultSummary', {
-                    total: result.total,
+                    count: result.total,
                     retriever: result.retriever,
                   })}
                 </span>

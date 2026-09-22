@@ -387,7 +387,7 @@ function AddPrompt({
 
           <VariableMenu
             options={toolVariables}
-            label="Tool Variables"
+            label={t('modals.prompts.toolVariables')}
             textareaId="new-prompt-content"
             content={newPromptContent}
             setContent={setNewPromptContent}
@@ -537,7 +537,7 @@ function EditPrompt({
 
             <VariableMenu
               options={toolVariables}
-              label="Tool Variables"
+              label={t('modals.prompts.toolVariables')}
               textareaId="edit-prompt-content"
               content={editPromptContent}
               setContent={setEditPromptContent}

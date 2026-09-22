@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface SkeletonLoaderProps {
   count?: number;
@@ -13,6 +14,7 @@ interface SkeletonLoaderProps {
     | 'sourceCards'
     | 'toolCards'
     | 'addToolCards'
+    | 'agentCards'
     | 'connectedState'
     | 'filesSection';
 }
@@ -21,6 +23,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   count = 1,
   component = 'default',
 }) => {
+  const { t } = useTranslation();
   const [skeletonCount, setSkeletonCount] = useState(count);
 
   useEffect(() => {
@@ -264,6 +267,26 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     </>
   );
 
+  const renderAgentCards = () => (
+    <>
+      {Array.from({ length: count }).map((_, idx) => (
+        <div
+          key={`agent-skel-${idx}`}
+          className="bg-muted flex h-44 animate-pulse flex-col rounded-2xl px-4 py-5 sm:w-48 sm:px-6"
+        >
+          <div className="px-1">
+            <div className="bg-muted-foreground/20 h-7 w-7 rounded-full"></div>
+          </div>
+          <div className="mt-3 space-y-2 px-1">
+            <div className="bg-muted-foreground/20 h-4 w-2/3 rounded"></div>
+            <div className="bg-muted-foreground/20 h-3 w-full rounded"></div>
+            <div className="bg-muted-foreground/20 h-3 w-4/5 rounded"></div>
+          </div>
+        </div>
+      ))}
+    </>
+  );
+
   const renderToolCards = () => (
     <>
       {Array.from({ length: count }).map((_, idx) => (
@@ -325,13 +348,24 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     sourceCards: renderSourceCards,
     toolCards: renderToolCards,
     addToolCards: renderAddToolCards,
+    agentCards: renderAgentCards,
     connectedState: renderConnectedState,
     filesSection: renderFilesSection,
   };
 
   const render = componentMap[component] || componentMap.default;
 
-  return <>{render()}</>;
+  // The Spinner this replaces carried role="status"; without it a screen
+  // reader gets no signal at all while a section loads. Absolutely
+  // positioned by `sr-only`, so it never becomes a flex/grid item.
+  return (
+    <>
+      <span className="sr-only" role="status">
+        {t('loading')}
+      </span>
+      {render()}
+    </>
+  );
 };
 
 export default SkeletonLoader;

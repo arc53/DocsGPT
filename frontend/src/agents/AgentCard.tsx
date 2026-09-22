@@ -86,7 +86,7 @@ export default function AgentCard({
     template: [
       {
         icon: Duplicate,
-        label: 'Duplicate',
+        label: t('modals.prompts.duplicate'),
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           handleDuplicate();
@@ -99,7 +99,7 @@ export default function AgentCard({
     user: [
       {
         icon: Monitoring,
-        label: 'Logs',
+        label: t('agents.form.buttons.logs'),
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           goToLevel(agentLogsPath(agent.id));
@@ -110,7 +110,7 @@ export default function AgentCard({
       },
       {
         icon: Edit,
-        label: 'Edit',
+        label: t('agents.edit'),
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           if (agent.agent_type === 'workflow') {
@@ -155,7 +155,9 @@ export default function AgentCard({
         ? [
             {
               icon: agent.pinned ? UnPin : Pin,
-              label: agent.pinned ? 'Unpin' : 'Pin agent',
+              label: agent.pinned
+                ? t('agents.card.unpin')
+                : t('agents.card.pin'),
               onClick: (e: SyntheticEvent) => {
                 e.stopPropagation();
                 togglePin();
@@ -179,7 +181,7 @@ export default function AgentCard({
       },
       {
         icon: Trash,
-        label: 'Delete',
+        label: t('agents.form.buttons.delete'),
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           setDeleteConfirmation('ACTIVE');
@@ -196,7 +198,7 @@ export default function AgentCard({
     team: [
       {
         icon: Edit,
-        label: 'Edit',
+        label: t('agents.edit'),
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           if (agent.agent_type === 'workflow') {
@@ -213,7 +215,9 @@ export default function AgentCard({
         ? [
             {
               icon: agent.pinned ? UnPin : Pin,
-              label: agent.pinned ? 'Unpin' : 'Pin agent',
+              label: agent.pinned
+                ? t('agents.card.unpin')
+                : t('agents.card.pin'),
               onClick: (e: SyntheticEvent) => {
                 e.stopPropagation();
                 togglePin();
@@ -228,7 +232,7 @@ export default function AgentCard({
     shared: [
       {
         icon: Link,
-        label: 'Open',
+        label: t('agents.card.open'),
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           navigate(sharedAgentPath(agent.shared_token));
@@ -239,7 +243,7 @@ export default function AgentCard({
       },
       {
         icon: agent.pinned ? UnPin : Pin,
-        label: agent.pinned ? 'Unpin' : 'Pin agent',
+        label: agent.pinned ? t('agents.card.unpin') : t('agents.card.pin'),
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           togglePin();
@@ -250,7 +254,7 @@ export default function AgentCard({
       },
       {
         icon: Trash,
-        label: 'Remove',
+        label: t('agents.card.remove'),
         onClick: (e: SyntheticEvent) => {
           e.stopPropagation();
           handleHideSharedAgent();
@@ -464,7 +468,9 @@ export default function AgentCard({
             imgClassName="h-7 w-7 rounded-full object-contain"
           />
           {agent.status === 'draft' && (
-            <p className="text-foreground text-xs opacity-50">{`(Draft)`}</p>
+            <p className="text-foreground text-xs opacity-50">
+              ({t('agents.card.draft')})
+            </p>
           )}
         </div>
         <div className="mt-2">
@@ -480,15 +486,15 @@ export default function AgentCard({
         </div>
       </div>
       <ConfirmationModal
-        message="Are you sure you want to delete this agent?"
+        message={t('agents.deleteConfirmation')}
         modalState={deleteConfirmation}
         setModalState={setDeleteConfirmation}
-        submitLabel="Delete"
+        submitLabel={t('agents.form.buttons.delete')}
         handleSubmit={() => {
           handleDelete();
           setDeleteConfirmation('INACTIVE');
         }}
-        cancelLabel="Cancel"
+        cancelLabel={t('cancel')}
         variant="danger"
       />
       <Modal

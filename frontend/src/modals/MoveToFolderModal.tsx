@@ -193,7 +193,7 @@ export default function MoveToFolderModal({
           {isLoading ? (
             <div className="flex h-[200px] items-center justify-center">
               <span className="text-muted-foreground text-sm">
-                {t('loading')}...
+                {t('modals.searchConversations.loading')}
               </span>
             </div>
           ) : (

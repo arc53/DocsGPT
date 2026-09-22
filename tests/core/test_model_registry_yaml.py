@@ -67,6 +67,16 @@ EXPECTED_IDS = {
     "huggingface": {"huggingface-local"},
 }
 
+# Providers whose catalog is an open extension point. ``openai_compatible``
+# is the zero-Python way to add an OpenAI-shaped endpoint — copy
+# ``examples/mistral.yaml.example`` next to the built-ins and it loads — so
+# a fork or a deployment can legitimately have catalogs here that upstream
+# does not. For these the snapshot is a floor, not an exact set: the
+# built-in ids must all still be present, but extra ones are somebody's
+# own provider rather than a regression. A rename, which is what this
+# snapshot exists to catch, still drops an id and still fails.
+EXTENSIBLE_PROVIDERS = {"openai_compatible"}
+
 
 def _make_settings(**overrides):
     s = MagicMock()
@@ -135,7 +145,15 @@ class TestYAMLLoader:
                 )
             ]
             actual = {m.id for c in canonical for m in c.models}
-            assert actual == expected, f"{provider}: expected {expected}, got {actual}"
+            if provider in EXTENSIBLE_PROVIDERS:
+                missing = expected - actual
+                assert not missing, (
+                    f"{provider}: built-in ids missing from the catalog: {missing}"
+                )
+            else:
+                assert actual == expected, (
+                    f"{provider}: expected {expected}, got {actual}"
+                )
 
     def test_attachment_alias_image_expands_to_five_mime_types(self):
         grouped = _by_provider(load_model_yamls([BUILTIN_MODELS_DIR]))

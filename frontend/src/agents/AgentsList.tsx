@@ -12,7 +12,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
@@ -565,8 +565,8 @@ function AgentSection({
 
       <div className="flex flex-col gap-4">
         {isLoading ? (
-          <div className="flex h-40 w-full items-center justify-center">
-            <Spinner />
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+            <SkeletonLoader component="agentCards" count={4} />
           </div>
         ) : (
           <>

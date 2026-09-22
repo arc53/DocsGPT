@@ -168,7 +168,7 @@ export default function ConversationMessages({
               index,
             });
           }}
-          aria-label={t('Retry') || 'Retry'}
+          aria-label={t('conversation.retry')}
         >
           <Retry
             width={12}
