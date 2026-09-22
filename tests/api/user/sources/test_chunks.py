@@ -170,6 +170,115 @@ class TestGetChunks:
         assert response.status_code == 200
         assert response.json["total"] == 1
 
+    def test_backfills_missing_token_count(self, app, pg_conn):
+        # Chunks indexed before token_count was recorded (and any ingest path
+        # that dropped it) came back without the key, so the UI printed "-".
+        from docsgpt.api.user.sources.chunks import GetChunks
+
+        user = "u-tokens"
+        src = _seed_source(pg_conn, user=user)
+
+        fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [
+            {"doc_id": "a", "text": "hello world", "metadata": {}},
+            {"doc_id": "b", "text": "second chunk", "metadata": None},
+            {"doc_id": "c", "text": "third chunk", "metadata": {"token_count": 42}},
+        ]
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store",
+            return_value=fake_store,
+        ), app.test_request_context(f"/api/get_chunks?id={src['id']}"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetChunks().get()
+
+        assert response.status_code == 200
+        chunks = response.json["chunks"]
+        assert all(c["metadata"]["token_count"] > 0 for c in chunks)
+        # An already-recorded count is left alone, whatever tokenizer produced it.
+        assert chunks[2]["metadata"]["token_count"] == 42
+
+    @pytest.mark.parametrize(
+        "stored",
+        ["", 0, -1, "abc", None, {"n": 1}, "inf", "-inf", "nan", float("inf")],
+    )
+    def test_recomputes_unusable_token_count(self, app, pg_conn, stored):
+        from docsgpt.api.user.sources.chunks import GetChunks
+
+        user = f"u-tok-{str(stored)[:6]}"
+        src = _seed_source(pg_conn, user=user)
+
+        fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [
+            {"doc_id": "a", "text": "some text here", "metadata": {"token_count": stored}}
+        ]
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store",
+            return_value=fake_store,
+        ), app.test_request_context(f"/api/get_chunks?id={src['id']}"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetChunks().get()
+
+        assert response.status_code == 200
+        assert response.json["chunks"][0]["metadata"]["token_count"] > 0
+
+    def test_keeps_numeric_string_token_count(self, app, pg_conn):
+        # Some stores round-trip metadata values as strings; a usable count
+        # there is still a count and must not be recomputed.
+        from docsgpt.api.user.sources.chunks import GetChunks
+
+        user = "u-tok-str"
+        src = _seed_source(pg_conn, user=user)
+
+        fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [
+            {"doc_id": "a", "text": "some text here", "metadata": {"token_count": "17"}}
+        ]
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store",
+            return_value=fake_store,
+        ), app.test_request_context(f"/api/get_chunks?id={src['id']}"):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetChunks().get()
+
+        assert response.json["chunks"][0]["metadata"]["token_count"] == "17"
+
+    def test_backfills_only_the_requested_page(self, app, pg_conn):
+        # Counting is per-response work, so it must not run over chunks the
+        # caller never sees.
+        from docsgpt.api.user.sources.chunks import GetChunks
+
+        user = "u-tok-page"
+        src = _seed_source(pg_conn, user=user)
+
+        fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [
+            {"doc_id": str(i), "text": f"chunk number {i}", "metadata": {}}
+            for i in range(10)
+        ]
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store",
+            return_value=fake_store,
+        ), patch(
+            "docsgpt.api.user.sources.chunks.num_tokens_from_string",
+            return_value=7,
+        ) as counter, app.test_request_context(
+            f"/api/get_chunks?id={src['id']}&per_page=2&page=1"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetChunks().get()
+
+        assert response.status_code == 200
+        assert counter.call_count == 2
+        assert [c["metadata"]["token_count"] for c in response.json["chunks"]] == [7, 7]
+
     def test_returns_500_on_vector_store_error(self, app, pg_conn):
         from docsgpt.api.user.sources.chunks import GetChunks
 

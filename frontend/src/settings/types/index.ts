@@ -3,7 +3,17 @@ import { ConfigRequirements } from '../../modals/types';
 export type ChunkType = {
   doc_id: string;
   text: string;
-  metadata: { [key: string]: string };
+  /**
+   * Chunk metadata as the vector store recorded it. Values are strings for
+   * most backends, but numbers (`token_count`) survive the round trip on the
+   * JSON-typed ones, so consumers must handle both.
+   */
+  metadata: {
+    title?: string;
+    source?: string;
+    token_count?: number | string;
+    [key: string]: number | string | undefined;
+  };
 };
 
 export type LogEventType =

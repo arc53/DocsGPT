@@ -1,5 +1,7 @@
 """Source document management chunk management."""
 
+import math
+
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
@@ -41,6 +43,59 @@ def _resolve_source_for_write(doc_id: str, user: str):
         if not owner:
             return None
         return SourcesRepository(conn).get_any(doc_id, owner)
+
+
+def _has_usable_token_count(metadata: dict) -> bool:
+    """Whether ``metadata`` already carries a count worth showing.
+
+    Stores round-trip metadata differently -- pgvector keeps JSON types, the
+    Mongo backend can hand back strings -- so a numeric string counts as
+    recorded. Anything else (missing, empty, non-numeric, zero, negative, or
+    non-finite) does not: ``float("inf")`` is greater than zero but is not a
+    number of tokens, and it reaches ``toLocaleString`` in the UI as "∞".
+
+    Args:
+        metadata: A chunk's metadata mapping.
+
+    Returns:
+        True when ``token_count`` holds a finite positive number.
+    """
+    raw = metadata.get("token_count")
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        return False
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(value) and value > 0
+
+
+def _with_token_counts(chunks: list) -> list:
+    """Fill in ``metadata.token_count`` for chunks that were stored without one.
+
+    Ingestion records a per-chunk count in the embedding model's tokenizer,
+    but chunks indexed before that was written -- and any path that rebuilt a
+    chunk's metadata from scratch -- reach the UI without the key, which then
+    renders a bare "-". The count recomputed here is cl100k rather than the
+    embedding model's tokenizer: it is a display fallback, and loading the
+    model's tokenizer would put a Hugging Face download in the request path.
+
+    Only the page being returned is counted, so the cost is bounded by
+    ``per_page`` rather than by the size of the index.
+
+    Args:
+        chunks: The chunk dicts about to be serialised.
+
+    Returns:
+        The same list, with each chunk's metadata normalised to a dict that
+        carries a ``token_count``.
+    """
+    for chunk in chunks:
+        metadata = chunk.get("metadata") or {}
+        if not _has_usable_token_count(metadata):
+            metadata["token_count"] = num_tokens_from_string(chunk.get("text") or "")
+        chunk["metadata"] = metadata
+    return chunks
 
 
 @sources_chunks_ns.route("/get_chunks")
@@ -106,7 +161,7 @@ class GetChunks(Resource):
             total_chunks = len(chunks)
             start = (page - 1) * per_page
             end = start + per_page
-            paginated_chunks = chunks[start:end]
+            paginated_chunks = _with_token_counts(chunks[start:end])
 
             return make_response(
                 jsonify(

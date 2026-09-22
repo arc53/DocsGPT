@@ -20,6 +20,7 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { ChunkType } from '../settings/types';
+import { formatChunkTokens } from './chunkUtils';
 import Pagination from './DocumentPagination';
 import SkeletonLoader from './SkeletonLoader';
 import { Button } from './ui/button';
@@ -628,9 +629,7 @@ const Chunks: React.FC<ChunksProps> = ({
                         <div className="w-full">
                           <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
                             <div className="dark:text-muted-foreground text-sm text-[#59636E]">
-                              {chunk.metadata.token_count
-                                ? chunk.metadata.token_count.toLocaleString()
-                                : '-'}{' '}
+                              {formatChunkTokens(chunk.metadata)}{' '}
                               {t('settings.sources.tokensUnit')}
                             </div>
                           </div>
@@ -663,9 +662,7 @@ const Chunks: React.FC<ChunksProps> = ({
                 <div className="border-border dark:border-border relative flex w-full flex-col overflow-hidden rounded-md border">
                   <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
                     <div className="dark:text-muted-foreground text-sm text-[#59636E]">
-                      {editingChunk.metadata.token_count
-                        ? editingChunk.metadata.token_count.toLocaleString()
-                        : '-'}{' '}
+                      {formatChunkTokens(editingChunk.metadata)}{' '}
                       {t('settings.sources.tokensUnit')}
                     </div>
                   </div>
