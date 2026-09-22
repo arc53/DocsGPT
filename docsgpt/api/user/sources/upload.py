@@ -5,12 +5,14 @@ import os
 import tempfile
 import uuid
 import zipfile
+from typing import Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from docsgpt.api.user.team_sharing import effective_write_owner
 from docsgpt.core.settings import settings
@@ -176,6 +178,40 @@ def _source_archive_limits() -> ZipExtractionLimits:
         max_member_bytes=settings.UPLOAD_MAX_FILE_BYTES,
         max_depth=settings.UPLOAD_MAX_ARCHIVE_DEPTH,
     )
+
+
+def _audit_source_created(
+    *,
+    source_id: str,
+    user: Optional[str],
+    name: Optional[str],
+    source_type: str,
+    task_id: Optional[str],
+) -> None:
+    """Record ``source.created`` for an accepted ingestion job.
+
+    Audited at the request, not in the worker: enqueuing is the user's action.
+    The ingest may still fail, which the source's own status records.
+
+    Every path that mints a ``source_id`` and dispatches must call this --
+    ``source.deleted`` is recorded for remote sources too, and a trail showing
+    a deletion with no matching creation is worse than no trail.
+    """
+    try:
+        with db_session() as conn:
+            record_event(
+                conn,
+                "source.created",
+                actor=user,
+                source_id=source_id,
+                name=name,
+                type=source_type,
+                task_id=task_id,
+            )
+    except Exception as err:
+        current_app.logger.warning(
+            "Could not audit source.created for %s: %s", source_id, err, exc_info=True
+        )
 
 
 @sources_upload_ns.route("/upload")
@@ -396,6 +432,13 @@ class UploadFile(Resource):
             return make_response(jsonify({"success": False}), 400)
         # Predetermined id matches the dedup-claim row; loser GET sees same.
         response_task_id = predetermined_task_id or task.id
+        _audit_source_created(
+            source_id=str(source_uuid),
+            user=user,
+            name=job_name,
+            source_type="local",
+            task_id=response_task_id,
+        )
         # ``source_uuid`` was minted above and passed to the worker as
         # ``source_id``; the worker uses it verbatim for every SSE event,
         # so the frontend can correlate inbound ``source.ingest.*`` to
@@ -547,6 +590,13 @@ class UploadRemote(Resource):
                     connector_kwargs["task_id"] = predetermined_task_id
                 task = ingest_connector_task.apply_async(**connector_kwargs)
                 response_task_id = predetermined_task_id or task.id
+                _audit_source_created(
+                    source_id=str(source_uuid),
+                    user=user,
+                    name=data["name"],
+                    source_type=data["source"],
+                    task_id=response_task_id,
+                )
                 # ``source_uuid`` was minted above and passed to the
                 # worker as ``source_id``; the worker uses it verbatim
                 # for every SSE event, so the frontend can correlate
@@ -580,6 +630,13 @@ class UploadRemote(Resource):
                 _release_claim(scoped_key)
             return make_response(jsonify({"success": False}), 400)
         response_task_id = predetermined_task_id or task.id
+        _audit_source_created(
+            source_id=str(source_uuid),
+            user=user,
+            name=data["name"],
+            source_type=data["source"],
+            task_id=response_task_id,
+        )
         response_payload = {
             "success": True,
             "task_id": response_task_id,

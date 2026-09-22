@@ -5,6 +5,13 @@ import adminService from '../api/services/adminService';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -15,16 +22,33 @@ import {
 } from '../components/ui/table';
 import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
-import { formatDate } from '../utils/dateTimeUtils';
-import { Loading, LoadError, StatCard, fmtNumber } from './AdminUI';
-import UsageChart, { usageColors } from './UsageChart';
+import {
+  Loading,
+  LoadError,
+  StatCard,
+  fmtMs,
+  fmtNumber,
+  fmtUsd,
+} from './AdminUI';
+import UsageChart from './UsageChart';
+import {
+  GROUP_OPTIONS,
+  buildUsageChart,
+  cacheHitRate as computeCacheHitRate,
+  type GroupBy,
+  type Metric,
+  type UsageBucket,
+} from './usageChartData';
+import UserUsageModal from './UserUsageModal';
 
-type Bucket = {
-  bucket: string;
-  prompt_tokens: number;
-  generated_tokens: number;
+type TopUser = { user_id: string; tokens: number; cost: number };
+type Latency = {
+  samples: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  ttft_samples: number;
+  ttft_p50_ms: number | null;
 };
-type TopUser = { user_id: string; tokens: number };
 
 const RANGES = [7, 30, 90];
 
@@ -32,47 +56,40 @@ export default function Usage() {
   const token = useSelector(selectToken);
   const [isDarkTheme] = useDarkTheme();
   const [days, setDays] = useState(30);
+  const [groupBy, setGroupBy] = useState<GroupBy>('none');
+  const [metric, setMetric] = useState<Metric>('tokens');
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [drilldown, setDrilldown] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await adminService.getUsage({ days, bucket: 'day' }, token);
+      const res = await adminService.getUsage(
+        { days, bucket: 'day', group_by: groupBy },
+        token,
+      );
       setData(await res.json().catch(() => ({})));
     } finally {
       setLoading(false);
     }
-  }, [token, days]);
+  }, [token, days, groupBy]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const series: Bucket[] = data?.series ?? [];
+  const series: UsageBucket[] = data?.series ?? [];
   const topUsers: TopUser[] = data?.top_users ?? [];
-  const promptTotal = series.reduce((sum, b) => sum + b.prompt_tokens, 0);
-  const generatedTotal = series.reduce((sum, b) => sum + b.generated_tokens, 0);
+  const latency: Latency | undefined = data?.latency;
 
-  const chartData = useMemo(() => {
-    const colors = usageColors();
-    return {
-      labels: series.map((b) => formatDate(b.bucket)),
-      datasets: [
-        {
-          label: 'Prompt',
-          data: series.map((b) => b.prompt_tokens),
-          backgroundColor: colors.prompt,
-        },
-        {
-          label: 'Generated',
-          data: series.map((b) => b.generated_tokens),
-          backgroundColor: colors.generated,
-        },
-      ],
-    };
+  const chartData = useMemo(
+    () => buildUsageChart(series, groupBy, metric),
     // isDarkTheme re-resolves the canvas colors when the theme toggles.
-  }, [series, isDarkTheme]);
+    [series, groupBy, metric, isDarkTheme],
+  );
+
+  const cacheHitRate = useMemo(() => computeCacheHitRate(series), [series]);
 
   if (data === null && loading) return <Loading />;
   if (data && !data.success)
@@ -80,34 +97,89 @@ export default function Usage() {
 
   return (
     <div className="mt-6">
-      <div className="mb-4 flex items-center gap-1">
-        {RANGES.map((r) => (
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1">
+          {RANGES.map((range) => (
+            <Button
+              key={range}
+              variant={range === days ? 'default' : 'outline'}
+              size="sm"
+              className="rounded-3xl"
+              onClick={() => setDays(range)}
+            >
+              {range}d
+            </Button>
+          ))}
+        </div>
+        <Select
+          value={groupBy}
+          onValueChange={(value) => setGroupBy(value as GroupBy)}
+        >
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {GROUP_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-1">
           <Button
-            key={r}
-            variant={r === days ? 'default' : 'outline'}
+            variant={metric === 'tokens' ? 'default' : 'outline'}
             size="sm"
             className="rounded-3xl"
-            onClick={() => setDays(r)}
+            onClick={() => setMetric('tokens')}
           >
-            {r}d
+            Tokens
           </Button>
-        ))}
+          <Button
+            variant={metric === 'cost' ? 'default' : 'outline'}
+            size="sm"
+            className="rounded-3xl"
+            onClick={() => setMetric('cost')}
+          >
+            Cost
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard
-          label={`Total tokens (${days}d)`}
+          label={`Spend (${days}d)`}
+          value={fmtUsd(data?.total_cost)}
+          sub="Unpriced and BYO models record $0"
+        />
+        <StatCard
+          label={`Tokens (${days}d)`}
           value={fmtNumber(data?.total_tokens)}
         />
-        <StatCard label="Prompt tokens" value={fmtNumber(promptTotal)} />
-        <StatCard label="Generated tokens" value={fmtNumber(generatedTotal)} />
-        <StatCard label="Days with usage" value={fmtNumber(series.length)} />
+        <StatCard
+          label="Latency p50 / p95"
+          value={`${fmtMs(latency?.p50_ms)} / ${fmtMs(latency?.p95_ms)}`}
+          sub={
+            latency?.ttft_p50_ms !== null && latency?.ttft_p50_ms !== undefined
+              ? `First token ${fmtMs(latency.ttft_p50_ms)} (p50)`
+              : 'No streamed calls measured'
+          }
+        />
+        <StatCard
+          label="Prompt cache hits"
+          value={cacheHitRate === null ? '—' : `${cacheHitRate.toFixed(1)}%`}
+          sub={
+            cacheHitRate === null
+              ? 'Provider reported no cache data'
+              : 'Of prompt tokens on calls that reported'
+          }
+        />
       </div>
 
       <div className="border-border dark:border-border mt-4 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
         <div className="flex flex-row items-center justify-between gap-3">
           <p className="text-foreground dark:text-foreground font-bold">
-            Token usage
+            {metric === 'cost' ? 'Spend' : 'Token usage'}
           </p>
           <div
             id="admin-usage-legend"
@@ -122,14 +194,18 @@ export default function Usage() {
               No usage in this period.
             </p>
           ) : (
-            <UsageChart data={chartData} legendID="admin-usage-legend" />
+            <UsageChart
+              data={chartData}
+              legendID="admin-usage-legend"
+              currency={metric === 'cost'}
+            />
           )}
         </div>
       </div>
 
       <div className="border-border dark:border-border mt-4 w-full overflow-hidden rounded-2xl border px-6 py-5">
         <p className="text-foreground dark:text-foreground mb-3 font-bold">
-          Top users by tokens
+          Top users
         </p>
         {topUsers.length === 0 ? (
           <p className="text-muted-foreground text-sm">No usage.</p>
@@ -139,17 +215,33 @@ export default function Usage() {
               <TableHead>
                 <TableRow>
                   <TableHeader>User</TableHeader>
-                  <TableHeader className="text-right">Tokens</TableHeader>
+                  <TableHeader align="right">Tokens</TableHeader>
+                  <TableHeader align="right">Cost</TableHeader>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {topUsers.map((u) => (
-                  <TableRow key={u.user_id}>
+                {topUsers.map((user) => (
+                  <TableRow key={user.user_id} className="hover:bg-muted/40">
                     <TableCell className="font-mono text-[13px] break-all">
-                      {u.user_id}
+                      <button
+                        type="button"
+                        className="hover:text-foreground focus-visible:ring-ring cursor-pointer rounded text-left underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+                        onClick={() => setDrilldown(user.user_id)}
+                      >
+                        {user.user_id}
+                      </button>
                     </TableCell>
-                    <TableCell className="text-right whitespace-nowrap tabular-nums">
-                      {fmtNumber(u.tokens)}
+                    <TableCell
+                      align="right"
+                      className="whitespace-nowrap tabular-nums"
+                    >
+                      {fmtNumber(user.tokens)}
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      className="whitespace-nowrap tabular-nums"
+                    >
+                      {fmtUsd(user.cost)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -158,6 +250,8 @@ export default function Usage() {
           </TableContainer>
         )}
       </div>
+
+      <UserUsageModal userId={drilldown} onClose={() => setDrilldown(null)} />
     </div>
   );
 }

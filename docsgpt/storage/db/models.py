@@ -68,6 +68,11 @@ auth_events_table = Table(
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
+    # Who performed the action, and (when the action is about a user) whom it
+    # was performed on. ``user_id`` predates both and is kept as the per-user
+    # feed key; see migration 0034.
+    Column("actor_id", Text, nullable=False),
+    Column("target_id", Text),
     Column("event", Text, nullable=False),
     Column("ip", Text),
     Column("user_agent", Text),
@@ -245,6 +250,13 @@ token_usage_table = Table(
     # Added in ``0033_quotas``. USD cost of the call at write time; 0 for
     # unpriced and bring-your-own models.
     Column("cost", Numeric(12, 8), nullable=False, server_default="0"),
+    # Added in ``0035_token_usage_latency``. Time spent waiting on the
+    # provider (a stream excludes consumer backpressure; see ``usage.py``),
+    # and time to the first streamed chunk. ``ttft_ms`` is NULL for
+    # non-streaming calls and for streams that failed before yielding --
+    # "no first token", not 0.
+    Column("duration_ms", Integer),
+    Column("ttft_ms", Integer),
 )
 
 user_logs_table = Table(

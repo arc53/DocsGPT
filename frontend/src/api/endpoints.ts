@@ -170,10 +170,13 @@ const endpoints = {
       `/api/admin/users/${encodeURIComponent(id)}/role`,
     USER_REVOKE_SESSIONS: (id: string) =>
       `/api/admin/users/${encodeURIComponent(id)}/revoke-sessions`,
+    USER_USAGE: (id: string) =>
+      `/api/admin/users/${encodeURIComponent(id)}/usage`,
     ADMINS: '/api/admin/admins',
     USAGE: '/api/admin/usage',
-    AUDIT: '/api/admin/audit',
-    DEVICE_AUDIT: '/api/admin/devices/audit',
+    ACTIVITY: '/api/admin/activity',
+    ACTIVITY_EVENTS: '/api/admin/activity/events',
+    ACTIVITY_EXPORT: '/api/admin/activity/export',
     QUOTAS: '/api/admin/quotas',
     QUOTA_INSTANCE: '/api/admin/quotas/instance',
     QUOTA_TEAM: (id: string) =>

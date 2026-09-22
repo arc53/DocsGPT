@@ -93,7 +93,7 @@ def _count_prompt_tokens(messages, tools=None, usage_attachments=None, **kwargs)
     return prompt_tokens
 
 
-def _persist_call_usage(llm, call_usage):
+def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
     """Write one ``token_usage`` row per LLM call. Always-on; no flag.
 
     Source defaults to ``agent_stream`` and can be overridden per
@@ -101,6 +101,13 @@ def _persist_call_usage(llm, call_usage):
     title / compression / rag_condense / fallback). A ``_request_id``
     stamped on the LLM lets ``count_in_range`` deduplicate the multiple
     rows produced by a single multi-tool agent run.
+
+    Args:
+        llm: The LLM instance the call ran on.
+        call_usage: The call's token counts.
+        duration_ms: Wall-clock for the call, measured by the wrapper.
+        ttft_ms: Time to the first streamed chunk; None for a non-streaming
+            call and for a stream that failed before yielding anything.
     """
     if call_usage["prompt_tokens"] == 0 and call_usage["generated_tokens"] == 0:
         return
@@ -149,6 +156,8 @@ def _persist_call_usage(llm, call_usage):
                 ),
                 request_id=getattr(llm, "_request_id", None),
                 model_id=model_id,
+                duration_ms=duration_ms,
+                ttft_ms=ttft_ms,
             )
     except Exception:
         logger.exception("token_usage persist failed")
@@ -258,10 +267,12 @@ def gen_token_usage(func):
             error = exc
             raise
         finally:
+            duration_ms = int((time.monotonic() - started_at) * 1000)
             call_usage = _prefer_provider_usage(self, call_usage)
             self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
             self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
-            _persist_call_usage(self, call_usage)
+            # A non-streaming call has no first-token moment; ttft stays NULL.
+            _persist_call_usage(self, call_usage, duration_ms=duration_ms)
             emit = getattr(self, "_emit_gen_finished_log", None)
             if callable(emit):
                 try:
@@ -269,7 +280,7 @@ def gen_token_usage(func):
                         model,
                         prompt_tokens=call_usage["prompt_tokens"],
                         completion_tokens=call_usage["generated_tokens"],
-                        latency_ms=int((time.monotonic() - started_at) * 1000),
+                        latency_ms=duration_ms,
                         cached_tokens=call_usage.get("cached_tokens"),
                         cache_write_tokens=call_usage.get("cache_write_tokens"),
                         error=error,
@@ -293,10 +304,29 @@ def stream_token_usage(func):
         )
         batch = []
         started_at = time.monotonic()
+        first_chunk_at: float | None = None
+        # Time spent waiting on the provider, accumulated across ``next()``
+        # calls. The wall clock cannot be used here: this is a generator, so
+        # every ``yield`` suspends until the consumer comes back, and the span
+        # from start to exhaustion includes the agent loop's tool handling and
+        # the SSE client's backpressure. A slow browser would otherwise record
+        # 30s for a 900ms call, and latency_summary would mix that with true
+        # non-streaming durations under one p50.
+        provider_seconds = 0.0
         error: BaseException | None = None
         try:
             result = func(self, model, messages, stream, tools, **kwargs)
-            for r in result:
+            stream_iter = iter(result)
+            while True:
+                pull_started = time.monotonic()
+                try:
+                    r = next(stream_iter)
+                except StopIteration:
+                    provider_seconds += time.monotonic() - pull_started
+                    break
+                provider_seconds += time.monotonic() - pull_started
+                if first_chunk_at is None:
+                    first_chunk_at = pull_started + provider_seconds
                 batch.append(r)
                 yield r
         except Exception as exc:
@@ -306,12 +336,22 @@ def stream_token_usage(func):
             error = exc
             raise
         finally:
+            duration_ms = int(provider_seconds * 1000)
+            # NULL, not 0, when the stream failed before yielding: "no first
+            # token" must not read as an instant one in a p50.
+            ttft_ms = (
+                int((first_chunk_at - started_at) * 1000)
+                if first_chunk_at is not None
+                else None
+            )
             for line in batch:
                 call_usage["generated_tokens"] += _count_tokens(line)
             call_usage = _prefer_provider_usage(self, call_usage)
             self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
             self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
-            _persist_call_usage(self, call_usage)
+            _persist_call_usage(
+                self, call_usage, duration_ms=duration_ms, ttft_ms=ttft_ms
+            )
             emit = getattr(self, "_emit_stream_finished_log", None)
             if callable(emit):
                 try:
@@ -319,6 +359,9 @@ def stream_token_usage(func):
                         model,
                         prompt_tokens=call_usage["prompt_tokens"],
                         completion_tokens=call_usage["generated_tokens"],
+                        # The log line has always meant end-to-end wall clock
+                        # for the streamed response; only the persisted column
+                        # isolates provider time.
                         latency_ms=int((time.monotonic() - started_at) * 1000),
                         cached_tokens=call_usage.get("cached_tokens"),
                         cache_write_tokens=call_usage.get("cache_write_tokens"),

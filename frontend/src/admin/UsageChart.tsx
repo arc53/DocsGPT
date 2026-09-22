@@ -39,6 +39,25 @@ export function usageColors(): { prompt: string; generated: string } {
   };
 }
 
+// Follow-on colors for a grouped chart (by model / agent / source), matching
+// the palette settings/Analytics already uses for its stacked series.
+const SERIES_COLORS = [
+  '#FF6384',
+  '#36A2EB',
+  '#FFCE56',
+  '#4BC0C0',
+  '#9966FF',
+  '#FF9F40',
+  '#2BC596',
+];
+
+/** Color for dataset ``index``; the first uses the resolved brand color. */
+export function seriesColor(index: number): string {
+  return index === 0
+    ? readCssVar('--primary', '#7D54D1')
+    : SERIES_COLORS[(index - 1) % SERIES_COLORS.length];
+}
+
 function compactTick(value: number | string): string {
   const n = typeof value === 'number' ? value : Number(value);
   if (Number.isNaN(n)) return String(value);
@@ -48,16 +67,28 @@ function compactTick(value: number | string): string {
   }).format(n);
 }
 
+function currencyTick(value: number | string): string {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(n)) return String(value);
+  return `$${new Intl.NumberFormat(undefined, {
+    notation: 'compact',
+    maximumFractionDigits: 2,
+  }).format(n)}`;
+}
+
 type UsageChartProps = {
   data: ChartData<'bar'>;
   legendID: string;
   maxTicksLimitInX?: number;
+  /** Format the y axis as USD rather than a token count. */
+  currency?: boolean;
 };
 
 export default function UsageChart({
   data,
   legendID,
   maxTicksLimitInX = 8,
+  currency = false,
 }: UsageChartProps) {
   const options = {
     responsive: true,
@@ -76,7 +107,7 @@ export default function UsageChart({
       y: {
         grid: { lineWidth: 0.2, color: '#C4C4C4' },
         border: { width: 0.2, color: '#C4C4C4' },
-        ticks: { callback: compactTick },
+        ticks: { callback: currency ? currencyTick : compactTick },
         stacked: true,
       },
     },

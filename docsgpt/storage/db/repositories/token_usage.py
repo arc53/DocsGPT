@@ -38,6 +38,8 @@ class TokenUsageRepository:
         cached_tokens: Optional[int] = None,
         cache_write_tokens: Optional[int] = None,
         cost: float = 0.0,
+        duration_ms: Optional[int] = None,
+        ttft_ms: Optional[int] = None,
     ) -> None:
         # Attribution guard: the ``token_usage_attribution_chk`` CHECK
         # constraint requires at least one of ``user_id`` / ``api_key``
@@ -64,6 +66,7 @@ class TokenUsageRepository:
                     user_id, api_key, agent_id,
                     prompt_tokens, generated_tokens,
                     cached_tokens, cache_write_tokens, cost,
+                    duration_ms, ttft_ms,
                     source, request_id, model_id, timestamp
                 )
                 VALUES (
@@ -71,6 +74,7 @@ class TokenUsageRepository:
                     CAST(:agent_id AS uuid),
                     :prompt_tokens, :generated_tokens,
                     :cached_tokens, :cache_write_tokens, :cost,
+                    :duration_ms, :ttft_ms,
                     :source, :request_id, :model_id, COALESCE(:timestamp, now())
                 )
                 """
@@ -84,6 +88,8 @@ class TokenUsageRepository:
                 "cached_tokens": cached_tokens,
                 "cache_write_tokens": cache_write_tokens,
                 "cost": cost,
+                "duration_ms": duration_ms,
+                "ttft_ms": ttft_ms,
                 "source": source,
                 "request_id": request_id,
                 "model_id": model_id,
@@ -296,7 +302,22 @@ class TokenUsageRepository:
                 f"""
                 SELECT to_char(tu.timestamp AT TIME ZONE 'UTC', :fmt) AS bucket,
                        COALESCE(SUM(tu.prompt_tokens), 0) AS prompt_tokens,
-                       COALESCE(SUM(tu.generated_tokens), 0) AS generated_tokens
+                       COALESCE(SUM(tu.generated_tokens), 0) AS generated_tokens,
+                       COALESCE(SUM(tu.cost), 0) AS cost,
+                       -- NULL cache bins mean "provider did not report", so
+                       -- they stay out of the sum rather than reading as 0.
+                       SUM(tu.cached_tokens) AS cached_tokens,
+                       -- The matching denominator: prompt tokens from the
+                       -- rows that reported. Dividing ``cached_tokens`` by
+                       -- ``prompt_tokens`` instead would understate the hit
+                       -- rate by however much traffic ran on a provider that
+                       -- reports nothing, since those rows are in one sum but
+                       -- not the other.
+                       COALESCE(
+                           SUM(tu.prompt_tokens)
+                               FILTER (WHERE tu.cached_tokens IS NOT NULL),
+                           0
+                       ) AS cache_eligible_prompt_tokens
                        {group_select}
                 FROM token_usage tu
                 {join}
@@ -312,6 +333,15 @@ class TokenUsageRepository:
                 "bucket": row._mapping["bucket"],
                 "prompt_tokens": int(row._mapping["prompt_tokens"]),
                 "generated_tokens": int(row._mapping["generated_tokens"]),
+                "cost": float(row._mapping["cost"]),
+                "cached_tokens": (
+                    int(row._mapping["cached_tokens"])
+                    if row._mapping["cached_tokens"] is not None
+                    else None
+                ),
+                "cache_eligible_prompt_tokens": int(
+                    row._mapping["cache_eligible_prompt_tokens"]
+                ),
                 **(
                     {"group_key": row._mapping["group_key"]}
                     if group_by is not None

@@ -307,6 +307,8 @@ class AdminToken(Resource):
                     ip=request.remote_addr,
                     user_agent=request.headers.get("User-Agent"),
                     metadata={"token_id": token_id, "by": actor, "via": "admin_api"},
+                    actor_id=actor,
+                    target_id=row["user_id"],
                 )
         if not revoked:
             return _error("Token not found", 404)

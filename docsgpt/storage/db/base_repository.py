@@ -65,3 +65,21 @@ def row_to_dict(row: Any) -> dict:
         out["_id"] = out["id"]
 
     return out
+
+
+def like_escape(term: str) -> str:
+    """Escape LIKE/ILIKE metacharacters so ``term`` matches literally.
+
+    A search box takes a substring, not a pattern. Interpolated raw, ``%``
+    matches everything and ``_`` matches any single character, so searching
+    for ``100%`` or ``q1_report`` silently returns the wrong rows.
+
+    Callers must pair this with ``ESCAPE '\\'`` on the comparison.
+
+    Args:
+        term: The user-supplied substring.
+
+    Returns:
+        ``term`` with ``\\``, ``%`` and ``_`` backslash-escaped.
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

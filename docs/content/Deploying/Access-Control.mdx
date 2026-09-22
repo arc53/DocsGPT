@@ -72,7 +72,7 @@ If your IdP only exposes groups via the userinfo endpoint, DocsGPT backfills the
 
 ## Admin dashboard
 
-Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoint requires the admin role). All mutating actions are written to the `auth_events` audit log with the acting admin recorded in the metadata.
+Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoint requires the admin role). All mutating actions are written to the `auth_events` audit log with the acting admin recorded as the event's `actor_id`.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -84,8 +84,12 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `DELETE` | `/api/admin/users/<id>/role` | Revoke the admin role. |
 | `POST` | `/api/admin/users/<id>/revoke-sessions` | Force-logout a user. |
 | `GET` | `/api/admin/admins` | List current admins. |
-| `GET` | `/api/admin/usage` | Token-usage series and top users. |
-| `GET` | `/api/admin/audit` | Authentication/admin audit feed. |
+| `GET` | `/api/admin/usage` | Usage series with tokens and spend, per-model split, latency percentiles, top users. Takes `days`, `bucket` and `group_by=model\|agent\|source`. |
+| `GET` | `/api/admin/users/<id>/usage` | One user's spend: daily series plus a split by model and by flow. |
+| `GET` | `/api/admin/activity` | [Merged activity feed](#activity-feed) across all three audit journals. |
+| `GET` | `/api/admin/activity/events` | The `(event, category)` pairs this instance has recorded, for the filter UI. |
+| `GET` | `/api/admin/activity/export` | The filtered feed as `format=csv` or `format=ndjson`. |
+| `GET` | `/api/admin/audit` | Authentication/admin audit feed (`auth_events` only). |
 | `GET` | `/api/admin/devices/audit` | Remote-device audit feed. |
 | `GET` | `/api/admin/teams` | Instance-wide oversight of all teams. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/...` | [Usage quotas](/Deploying/Usage-Quotas) for the instance, teams and users. |
@@ -142,7 +146,36 @@ Sharing rules:
 
 ## Audit log
 
-Access-control actions are appended to the `auth_events` table alongside the [authentication events](/Deploying/OIDC-SSO#login-auditing). This includes admin actions — `admin_user_activated` / `admin_user_deactivated`, `admin_sessions_revoked`, `role_granted` / `role_revoked` (with `metadata.source` = `manual` or `oidc_group`), `quota_policy_set` / `quota_policy_deleted` — and team events (`team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete`). The acting admin is recorded in the event metadata.
+Access-control actions are appended to the `auth_events` table alongside the [authentication events](/Deploying/OIDC-SSO#login-auditing). This includes admin actions — `admin_user_activated` / `admin_user_deactivated`, `admin_sessions_revoked`, `role_granted` / `role_revoked` (with `metadata.source` = `manual` or `oidc_group`), `quota_policy_set` / `quota_policy_deleted` — and team events (`team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete`).
+
+Data-plane actions are recorded too: `source.created` / `source.deleted` / `source.reingested`, `agent.created` / `agent.updated` / `agent.deleted` / `agent.key_regenerated`, and `conversation.deleted` / `conversation.deleted_all`.
+
+Every row carries `actor_id` (who did it) and `target_id` (the user it was done to, or `NULL` when the event is not about a user), so "everything this admin did" is a single query:
+
+```sql
+SELECT created_at, event, target_id, metadata
+FROM auth_events
+WHERE actor_id = 'the-admin'
+ORDER BY created_at DESC;
+```
+
+### Activity feed
+
+The **Admin → Activity** tab merges three append-only journals into one timeline:
+
+| Journal | Category | What it records |
+| --- | --- | --- |
+| `auth_events` | `identity`, `access`, `config`, `data` | Sign-ins, provisioning, role and account changes, quota changes, resource mutations. |
+| `device_audit_log` | `device` | Every remote-device command dispatch and its verdict. |
+| `guardrail_events` | `safety` | Every guardrail decision on a request. |
+
+Filter by category, event name, actor, affected user, a time window, or a free-text search that reaches into each row's detail payload, then export the filtered feed as CSV or NDJSON. Exports stream and are capped at 100,000 rows — take a database dump for a full history.
+
+An unknown filter value is refused with a 400 rather than dropped. Dropping it would leave that facet unfiltered, and no filter means every row, so a typo or a stale bookmark would silently widen an audit view instead of narrowing it.
+
+The per-user panel in **Admin → Users** deliberately lists identity and access events only. Data-plane events are filed under the user who performed them, so on an active account routine activity would push a denied login or a role grant out of the window; use the Activity tab filtered by that user to see everything.
+
+Two guardrail columns are deliberately never projected into the feed or the export: `api_key` (a raw agent key) and `matched_value` (unredacted source text). Admin-gating is not a reason to widen what a list response carries.
 
 ## Related
 
