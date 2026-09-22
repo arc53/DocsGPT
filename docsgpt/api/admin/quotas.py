@@ -119,6 +119,10 @@ def _audit(conn, event: str, scope: str, subject_id: Optional[str], detail: dict
         ip=request.remote_addr,
         user_agent=request.headers.get("User-Agent"),
         metadata={"by": actor, "via": "admin_api", "scope": scope, "subject_id": subject_id, **detail},
+        actor_id=actor or "unknown",
+        # Only a user-scoped policy targets a user; instance and team policies
+        # change configuration, not an account.
+        target_id=subject_id if scope == "user" else None,
     )
 
 

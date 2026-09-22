@@ -20,7 +20,10 @@ from sqlalchemy import Connection
 
 from docsgpt.api.oidc.denylist import deny_user
 from docsgpt.core.settings import settings
-from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
+from docsgpt.storage.db.repositories.auth_events import (
+    SYSTEM_ACTOR_SCIM,
+    AuthEventsRepository,
+)
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -201,7 +204,13 @@ def _audit(conn: Connection, user_id: str, event: str) -> None:
     """Best-effort audit insert in a savepoint; failure never fails the request."""
     try:
         with conn.begin_nested():
-            AuthEventsRepository(conn).insert(user_id, event, metadata={"via": "scim"})
+            AuthEventsRepository(conn).insert(
+                user_id,
+                event,
+                metadata={"via": "scim"},
+                actor_id=SYSTEM_ACTOR_SCIM,
+                target_id=user_id,
+            )
     except Exception:
         logger.error("SCIM audit insert failed for user %s event %s", user_id, event, exc_info=True)
 

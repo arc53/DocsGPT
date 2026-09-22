@@ -68,6 +68,11 @@ auth_events_table = Table(
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
+    # Who performed the action, and (when the action is about a user) whom it
+    # was performed on. ``user_id`` predates both and is kept as the per-user
+    # feed key; see migration 0034.
+    Column("actor_id", Text, nullable=False),
+    Column("target_id", Text),
     Column("event", Text, nullable=False),
     Column("ip", Text),
     Column("user_agent", Text),

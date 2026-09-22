@@ -171,6 +171,8 @@ class AdminUserResource(Resource):
                 ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent"),
                 metadata={"by": actor, "via": "admin_api"},
+                actor_id=actor,
+                target_id=user_id,
             )
         if not active:
             # Best-effort live-session revocation (mirrors SCIM deactivation).
@@ -203,6 +205,8 @@ class AdminUserRoleResource(Resource):
                         "granted_by": actor,
                         "via": "admin_api",
                     },
+                    actor_id=actor,
+                    target_id=user_id,
                 )
         return make_response(
             jsonify({"success": True, "granted": inserted, "role": ROLE_ADMIN}), 200
@@ -238,6 +242,8 @@ class AdminUserRoleResource(Resource):
                         "revoked_by": actor,
                         "via": "admin_api",
                     },
+                    actor_id=actor,
+                    target_id=user_id,
                 )
         return make_response(jsonify({"success": True, "revoked": removed}), 200)
 
@@ -261,6 +267,8 @@ class AdminUserSessionsResource(Resource):
                     ip=request.remote_addr,
                     user_agent=request.headers.get("User-Agent"),
                     metadata={"token_id": token_id, "by": _actor(), "via": "admin_sessions_revoked"},
+                    actor_id=_actor(),
+                    target_id=user_id,
                 )
             AuthEventsRepository(conn).insert(
                 user_id,
@@ -273,6 +281,8 @@ class AdminUserSessionsResource(Resource):
                     "persisted": ok,
                     "personal_access_tokens_revoked": len(revoked_token_ids),
                 },
+                actor_id=_actor(),
+                target_id=user_id,
             )
         return make_response(jsonify({"success": True, "revoked": ok}), 200)
 

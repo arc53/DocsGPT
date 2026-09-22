@@ -62,13 +62,26 @@ def _current_user() -> str | None:
     return token.get("sub") if isinstance(token, dict) else None
 
 
+# Metadata keys naming the user a team event acted on, most specific first.
+# Lets ``_audit`` fill ``target_id`` without every call site repeating it.
+_TARGET_METADATA_KEYS = ("target_user", "target_user_id", "new_owner")
+
+
 def _audit(conn, actor: str | None, event: str, **metadata) -> None:
     """Append a team management event to the audit trail (best-effort).
 
     Runs inside the action's transaction so the audit row commits atomically
     with the change. Never raises into the request path — an audit failure must
     not fail the operation.
+
+    Team events are filed under the acting user. When the action names another
+    member (add, role change, removal, ownership transfer) that member becomes
+    the row's ``target_id``; otherwise the event has no user target.
     """
+    detail = {k: v for k, v in metadata.items() if v is not None}
+    target = next(
+        (detail[key] for key in _TARGET_METADATA_KEYS if detail.get(key)), None
+    )
     try:
         # SAVEPOINT: a failed audit insert poisons the surrounding txn, so
         # nest it — on failure only the audit rolls back, not the action.
@@ -78,7 +91,9 @@ def _audit(conn, actor: str | None, event: str, **metadata) -> None:
                 event=event,
                 ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent"),
-                metadata={k: v for k, v in metadata.items() if v is not None},
+                metadata=detail,
+                actor_id=actor or "unknown",
+                target_id=target,
             )
     except Exception:
         logger.warning("team audit insert failed for event=%s", event, exc_info=True)
