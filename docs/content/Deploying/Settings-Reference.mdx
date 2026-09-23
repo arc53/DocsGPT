@@ -1451,6 +1451,47 @@ Type `int`, default `30`, must be `>= 1`.
 Days guardrail events are kept before the cleanup task removes them.
 
 
+## Execution traces
+
+Recording of agent, LLM, tool and retrieval steps per request.
+
+### `TRACES_ENABLED`
+
+Type `bool`, default `true`.
+
+Record an execution trace (agent runs, LLM calls, tool calls, retrieval, embeddings) for every request, store it in request_traces and show it in the Logs UI. False records nothing.
+
+### `TRACES_CAPTURE_CONTENT`
+
+Type `bool`, default `true`.
+
+Store short, secret-redacted previews (tool arguments and results, retrieved chunk titles, rephrased queries, answer excerpts) with each stored trace. Full prompts are never stored. OTel export follows OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT instead.
+
+### `TRACES_PREVIEW_CHARS`
+
+Type `int`, default `2000`, must be `>= 100`.
+
+Maximum characters kept per stored trace preview.
+
+### `TRACES_MAX_SPANS`
+
+Type `int`, default `500`, must be `>= 10`.
+
+Maximum spans recorded per trace; further spans are counted as dropped, not stored.
+
+### `TRACES_RETENTION_DAYS`
+
+Type `int`, default `30`, must be `>= 1`.
+
+Days stored traces are kept before the cleanup task removes them.
+
+### `TRACES_OTEL_EXPORT`
+
+Type `bool`, default `true`.
+
+Also emit each finished trace as OpenTelemetry GenAI spans (gen_ai.*) and metrics. Has no effect unless an OTel SDK is configured, e.g. by launching under opentelemetry-instrument.
+
+
 ## Quotas
 
 Quota window and the treatment of unpriced models.
