@@ -299,7 +299,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 14
+        assert sender.add_periodic_task.call_count == 15
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -326,20 +326,23 @@ class TestSetupPeriodicTasks:
         # guardrail_events retention sweep (24h)
         assert calls[8][0][0] == timedelta(hours=24)
         assert calls[8][1].get("name") == "cleanup-guardrail-events"
-        # orphan memories sweep (24h)
+        # request_traces retention sweep (24h)
         assert calls[9][0][0] == timedelta(hours=24)
-        assert calls[9][1].get("name") == "cleanup-orphan-memories"
+        assert calls[9][1].get("name") == "cleanup-traces"
+        # orphan memories sweep (24h)
+        assert calls[10][0][0] == timedelta(hours=24)
+        assert calls[10][1].get("name") == "cleanup-orphan-memories"
         # scheduler dispatcher
-        assert calls[10][1].get("name") == "dispatch-scheduled-runs"
+        assert calls[11][1].get("name") == "dispatch-scheduled-runs"
         # schedule runs cleanup (24h)
-        assert calls[11][0][0] == timedelta(hours=24)
-        assert calls[11][1].get("name") == "cleanup-schedule-runs"
+        assert calls[12][0][0] == timedelta(hours=24)
+        assert calls[12][1].get("name") == "cleanup-schedule-runs"
         # sandbox session reaper (60s)
-        assert calls[12][0][0] == timedelta(seconds=60)
-        assert calls[12][1].get("name") == "reap-sandbox-sessions"
+        assert calls[13][0][0] == timedelta(seconds=60)
+        assert calls[13][1].get("name") == "reap-sandbox-sessions"
         # stale workflow-run reaper (5m)
-        assert calls[13][0][0] == timedelta(seconds=300)
-        assert calls[13][1].get("name") == "reap-stale-workflow-runs"
+        assert calls[14][0][0] == timedelta(seconds=300)
+        assert calls[14][1].get("name") == "reap-stale-workflow-runs"
 
 
 class TestMcpOauthTask:
@@ -677,6 +680,67 @@ class TestCleanupMessageEventsTask:
         # Only the fresh row survives.
         rows = repo.read_after(str(msg_id))
         assert [r["sequence_no"] for r in rows] == [1]
+
+
+class TestCleanupTracesTask:
+    """Retention janitor for ``request_traces``."""
+
+    @pytest.mark.unit
+    def test_skips_when_postgres_uri_missing(self, monkeypatch):
+        from docsgpt.api.user.tasks import cleanup_traces
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
+
+        assert cleanup_traces.run() == {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    @pytest.mark.unit
+    def test_deletes_traces_past_retention_window(self, pg_conn, monkeypatch):
+        import time
+        import uuid
+
+        from sqlalchemy import text as _text
+
+        from docsgpt.api.user.tasks import cleanup_traces
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.request_traces import (
+            RequestTracesRepository,
+        )
+
+        repo = RequestTracesRepository(pg_conn)
+        for request_id in ("stale", "fresh"):
+            repo.insert(
+                {
+                    "id": str(uuid.uuid4()),
+                    "request_id": request_id,
+                    "user_id": "u1",
+                    "source": "stream",
+                    "status": "ok",
+                    "started_at_ns": time.time_ns(),
+                }
+            )
+        pg_conn.execute(
+            _text(
+                "UPDATE request_traces SET created_at = now() - interval '45 days' "
+                "WHERE request_id = 'stale'"
+            )
+        )
+        monkeypatch.setattr(settings, "POSTGRES_URI", "postgresql://stub", raising=False)
+        monkeypatch.setattr(settings, "TRACES_RETENTION_DAYS", 30)
+
+        @contextmanager
+        def _fake_begin():
+            yield pg_conn
+
+        fake_engine = MagicMock()
+        fake_engine.begin = _fake_begin
+
+        with patch("docsgpt.storage.db.engine.get_engine", return_value=fake_engine):
+            result = cleanup_traces.run()
+
+        assert result == {"deleted": 1, "ttl_days": 30}
+        remaining = pg_conn.execute(_text("SELECT request_id FROM request_traces")).scalars().all()
+        assert remaining == ["fresh"]
 
 
 class TestCleanupOrphanMemoriesTask:
