@@ -1021,3 +1021,41 @@ class TestPersonalizedPageRankWithoutScipy:
         docs = rag._get_data()
 
         assert [doc["text"] for doc in docs] == ["near", "far"]
+
+
+class TestTraceSpans:
+    """GraphRAG searches and query embeddings are recorded in the execution trace."""
+
+    @pytest.fixture(autouse=True)
+    def _trace(self, monkeypatch):
+        from docsgpt import tracing
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "TRACES_ENABLED", True)
+        monkeypatch.setattr(settings, "TRACES_CAPTURE_CONTENT", True)
+        self.trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with tracing.activate(self.trace):
+            yield
+
+    def test_search_is_a_retrieval_span(self, _patch_llm_creator):
+        rag = _make_retriever()
+        docs = [{"text": "alpha", "title": "Doc A", "source": "a.md"}]
+        with patch.object(rag, "_get_data", return_value=docs):
+            assert rag.search("new question") == docs
+        (span,) = [s for s in self.trace.spans if s.kind == "retrieval"]
+        assert span.name == "retrieval GraphRAGRetriever"
+        assert span.attributes["docsgpt.retriever"] == "GraphRAGRetriever"
+        assert span.attributes["gen_ai.data_source.id"] == "src1"
+        assert span.attributes["docsgpt.chunk_count"] == 1
+        assert span.previews["chunks"][0]["title"] == "Doc A"
+
+    def test_embed_query_is_an_embedding_span(self):
+        embedder = Mock()
+        embedder.embed_query.return_value = [0.5]
+        with patch(
+            "docsgpt.retriever.graph_rag.get_embeddings", return_value=embedder
+        ):
+            assert GraphRAGRetriever._embed_query(object(), "q") == [0.5]
+        (span,) = self.trace.spans
+        assert span.kind == "embedding"
+        assert span.attributes["gen_ai.operation.name"] == "embeddings"

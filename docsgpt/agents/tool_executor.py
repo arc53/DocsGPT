@@ -81,11 +81,15 @@ def finish_tool_span(span: Any, data: Dict[str, Any]) -> None:
     if data.get("result") is not None:
         span.preview("result", data.get("result"))
     span_status = _TOOL_SPAN_STATUS.get(status, tracing.STATUS_OK)
+    # ``error`` and ``result`` are tool output or user text (a denial
+    # comment), so they travel only as previews, which honour the content
+    # capture settings; ``span.error`` is exported and stored unconditionally.
+    if data.get("error"):
+        span.preview("error", data["error"])
     if span_status == tracing.STATUS_ERROR:
-        span.error = str(data.get("error") or data.get("result") or "tool error")[:500]
-        span.set(**{"error.type": str(data.get("error_type") or "ToolError")})
-    elif data.get("error"):
-        span.error = str(data["error"])[:500]
+        error_type = str(data.get("error_type") or "ToolError")
+        span.error = f"Tool call failed ({error_type})"
+        span.set(**{"error.type": error_type})
     span.end(span_status)
 
 
@@ -1021,7 +1025,11 @@ class ToolExecutor:
         try:
             outcome = yield from self._execute(tools_dict, call, llm_class_name)
         except Exception as exc:
-            span.end(error=exc)
+            # A tool's exception text can quote its response; like tool
+            # output it goes only into the capture-gated preview.
+            span.preview("error", str(exc))
+            span.error = f"Tool call failed ({type(exc).__name__})"
+            span.end(tracing.STATUS_ERROR, attributes={"error.type": type(exc).__name__})
             raise
         except GeneratorExit:
             span.end(tracing.STATUS_CANCELLED)

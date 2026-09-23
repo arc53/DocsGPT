@@ -431,6 +431,14 @@ class Trace:
 
     def to_record(self) -> Dict[str, Any]:
         """The ``request_traces`` row for this (finished) trace."""
+        summary = self.summary()
+        # Traces without a log row of their own (searches) are listed by
+        # their query; keep it in the small summary so listing never reads
+        # ``spans``. Dropped with the other previews when content is blocked.
+        if not self.content_blocked and self.spans:
+            query = self.spans[0].previews.get("query")
+            if isinstance(query, str):
+                summary["query"] = query
         spans = []
         for s in self.spans:
             entry: Dict[str, Any] = {
@@ -464,7 +472,7 @@ class Trace:
             "duration_ms": int(round(self.duration_ms or 0)),
             "span_count": len(spans),
             "dropped_spans": self.dropped_spans,
-            "summary": self.summary(),
+            "summary": summary,
             "spans": spans,
             "otel_trace_id": self.otel_trace_id,
         }

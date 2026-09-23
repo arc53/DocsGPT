@@ -353,3 +353,22 @@ class TestOutcome:
         trace.outcome = "paused"
         trace.finish(status="error")
         assert trace.status == "error"
+
+
+class TestRecordQuery:
+    def test_first_span_query_is_copied_into_summary(self):
+        trace = tracing.start_trace(source="search")
+        with tracing.activate(trace):
+            with tracing.span(tracing.KIND_RETRIEVAL, "retrieval") as s:
+                s.preview("query", "how do I deploy")
+        trace.finish()
+        assert trace.to_record()["summary"]["query"] == "how do I deploy"
+
+    def test_query_is_dropped_when_content_is_blocked(self):
+        trace = tracing.start_trace(source="search")
+        with tracing.activate(trace):
+            with tracing.span(tracing.KIND_RETRIEVAL, "retrieval") as s:
+                s.preview("query", "leaky")
+            tracing.mark_content_blocked()
+        trace.finish()
+        assert "query" not in trace.to_record()["summary"]

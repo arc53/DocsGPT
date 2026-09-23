@@ -860,6 +860,13 @@ class BaseAnswerResource:
             # error silently — the exact shape of the bug being fixed here.
             if stream_error:
                 query_metadata.setdefault("error", stream_error)
+                # A yielded error (e.g. a failed workflow node) ends the
+                # generator normally, so no span raised; the user still saw
+                # the turn fail, and its trace should say so. A pause below
+                # overrides this, as it does for the message row.
+                trace = tracing.current_trace()
+                if trace is not None:
+                    trace.outcome = tracing.STATUS_ERROR
 
             # ---- Paused: save continuation state and end stream early ----
             if paused:

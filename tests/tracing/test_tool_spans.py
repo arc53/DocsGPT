@@ -82,7 +82,9 @@ class TestExecute:
         _drain(executor.execute({}, ToolCall(id="c", name="x", arguments="{}"), "L"))
         span = trace.spans[0]
         assert span.status == "error"
-        assert span.error == "no such tool"
+        # Tool output stays in the capture-gated preview, never in ``error``.
+        assert span.error == "Tool call failed (ToolError)"
+        assert span.previews["result"] == "no such tool"
 
     def test_raised_error(self, trace):
         def inner(executor, call):
@@ -94,6 +96,8 @@ class TestExecute:
             _drain(executor.execute({}, ToolCall(id="c", name="x", arguments="{}"), "L"))
         assert trace.spans[0].status == "error"
         assert trace.spans[0].attributes["error.type"] == "RuntimeError"
+        assert trace.spans[0].error == "Tool call failed (RuntimeError)"
+        assert trace.spans[0].previews["error"] == "api down"
 
     def test_nested_retrieval_parents_to_tool(self, trace):
         def inner(executor, call):
@@ -107,6 +111,22 @@ class TestExecute:
         _drain(executor.execute({}, ToolCall(id="c", name="internal_search", arguments="{}"), "L"))
         tool, retrieval = trace.spans
         assert retrieval.parent_id == tool.id
+
+
+def test_tool_content_is_not_kept_when_capture_is_off(trace, monkeypatch):
+    monkeypatch.setattr(settings, "TRACES_CAPTURE_CONTENT", False)
+
+    def inner(executor, call):
+        executor.tool_calls.append(
+            {"tool_name": "t", "result": "secret tool output", "status": "error"}
+        )
+        return "", call.id
+        yield  # pragma: no cover
+
+    _drain(_executor_with(inner).execute({}, ToolCall(id="c", name="x", arguments="{}"), "L"))
+    trace.finish()
+    record = trace.to_record()
+    assert "secret tool output" not in str(record)
 
 
 class _Handler(LLMHandler):
@@ -169,7 +189,8 @@ class TestPausedCalls:
             _drain(_Handler().handle_tool_calls(agent, [call], {"0": {"name": "telegram"}}, []))
         (span,) = trace.spans
         assert span.status == "denied"
-        assert span.error == "not allowed"
+        assert span.error is None
+        assert span.previews["error"] == "not allowed"
 
 
 class TestContinuation:
@@ -227,7 +248,8 @@ class TestContinuation:
         assert agent_span.status == "ok"
         assert tool_span.parent_id == agent_span.id
         assert tool_span.status == "denied"
-        assert tool_span.error == "too risky"
+        assert tool_span.error is None
+        assert tool_span.previews["error"] == "too risky"
 
     def test_client_result_is_recorded(self, trace):
         agent = self._agent()

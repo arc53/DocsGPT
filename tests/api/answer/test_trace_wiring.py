@@ -132,6 +132,17 @@ class TestTraceLifecycle:
         assert any('"type": "error"' in s for s in stream)
         assert flushed[0].status == "error"
 
+    def test_yielded_error_marks_trace_error(self, flask_app, mock_mongo_db):
+        """A failed workflow node yields an error event instead of raising."""
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context(), _captured_flushes() as flushed:
+            _run(
+                BaseAnswerResource(),
+                _agent([{"type": "error", "error": "node failed"}]),
+            )
+        assert flushed[0].status == "error"
+
     def test_abandoned_stream_still_flushes(self, flask_app, mock_mongo_db):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 

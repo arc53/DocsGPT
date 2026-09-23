@@ -99,9 +99,10 @@ def _trace_branch(name: str, sources_sql: str, scope: str) -> dict:
     return {
         "name": name,
         "level": "CASE WHEN t.status = 'error' THEN 'error' ELSE 'info' END",
-        # A search's query sits in its retrieval span's preview; graph builds
-        # are named after their source.
-        "summary": "COALESCE(t.spans->0->'preview'->>'query', t.name, t.source)",
+        # A search is listed by its query (copied into the small ``summary``
+        # at flush so this never detoasts ``spans``); graph builds are named
+        # after their source.
+        "summary": "COALESCE(t.summary->>'query', t.name, t.source)",
         "where": [f"t.source IN {sources_sql}", scope],
         "sql": f"""
         SELECT '{name}' AS event_type,

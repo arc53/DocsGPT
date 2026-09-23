@@ -167,7 +167,14 @@ class TestLogsTraceSummaries:
         assert row["trace"]["ref"] == {"field": "activity_id", "value": "act-1"}
 
     def test_search_traces_are_listed(self, app, pg_conn):
-        record = _trace(pg_conn, request_id=None, source="mcp", name="mcp", status="error")
+        record = _trace(
+            pg_conn,
+            request_id=None,
+            source="mcp",
+            name="mcp",
+            status="error",
+            summary={"llm_calls": 0, "query": "how do I deploy"},
+        )
         _trace(pg_conn, request_id=None, source="graph_extraction", name="graph_extraction Docs")
         search_rows = _logs(app, pg_conn, "owner", {"event_type": "search"}).json["logs"]
         assert len(search_rows) == 1
