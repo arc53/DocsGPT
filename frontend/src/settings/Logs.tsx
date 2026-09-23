@@ -7,6 +7,7 @@ import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
 import CopyButton from '../components/CopyButton';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
   Select,
@@ -439,7 +440,7 @@ function Log({
             onToggle(log.id);
           }
         }}
-        className={`text-foreground flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 ${
+        className={`text-foreground focus-visible:ring-ring/50 flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 outline-none focus-visible:ring-3 focus-visible:ring-inset ${
           isOpen ? 'dark:bg-background rounded-t-xl bg-[#F1F1F1]' : ''
         }`}
       >
@@ -478,18 +479,18 @@ function Log({
                 durationMs={log.trace.duration_ms}
                 counts={log.trace.summary}
               />
-              <button
-                type="button"
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => log.trace && onViewTrace(log.trace.ref)}
-                className="border-border hover:bg-muted text-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs dark:hover:bg-white/10"
               >
-                <Activity className="size-3.5" />
+                <Activity />
                 {log.trace.count > 1
                   ? t('settings.logs.trace.viewRounds', {
                       count: log.trace.count,
                     })
                   : t('settings.logs.trace.view')}
-              </button>
+              </Button>
             </div>
           )}
           {detailRows.length > 0 && (

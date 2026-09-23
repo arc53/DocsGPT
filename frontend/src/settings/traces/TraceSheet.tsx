@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import { Pill } from '../../admin/AdminUI';
 import userService from '../../api/services/userService';
 import Spinner from '../../components/Spinner';
 import {
@@ -24,13 +23,13 @@ type TraceSheetProps = {
   onClose: () => void;
 };
 
-const STATUS_TONE: Record<string, 'success' | 'danger' | 'warning' | 'muted'> =
-  {
-    ok: 'success',
-    error: 'danger',
-    paused: 'warning',
-    cancelled: 'muted',
-  };
+/** Status pill tones. The theme has no success or warning token yet. */
+const STATUS_TONE: Record<string, string> = {
+  ok: 'bg-muted text-foreground',
+  error: 'bg-destructive/10 text-destructive',
+  paused: 'bg-primary/10 text-primary',
+  cancelled: 'bg-muted text-muted-foreground',
+};
 
 /**
  * Side panel showing the execution trace(s) behind one Logs row. A chat turn
@@ -79,22 +78,22 @@ export default function TraceSheet({
     <Sheet open={traceRef !== null} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="bg-card w-full overflow-y-auto sm:max-w-3xl"
+        className="w-full overflow-y-auto sm:max-w-3xl"
       >
-        <SheetHeader className="pb-0">
+        <SheetHeader>
           <SheetTitle>{t('settings.logs.trace.title')}</SheetTitle>
           <SheetDescription>
             {t('settings.logs.trace.subtitle')}
           </SheetDescription>
         </SheetHeader>
-        <div className="flex flex-col gap-6 px-4 pb-6">
+        <div className="flex flex-col gap-8 px-4 pb-6">
           {loading && (
             <div className="flex justify-center py-10">
               <Spinner />
             </div>
           )}
           {!loading && failed && (
-            <p className="text-sm text-red-500">
+            <p className="text-destructive text-sm">
               {t('settings.logs.trace.failed')}
             </p>
           )}
@@ -120,19 +119,23 @@ export default function TraceSheet({
                 <span className="text-muted-foreground text-xs">
                   {formatDateTime(trace.started_at)}
                 </span>
-                <Pill tone={STATUS_TONE[trace.status] ?? 'muted'}>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    STATUS_TONE[trace.status] ?? STATUS_TONE.cancelled
+                  }`}
+                >
                   {t(
                     `settings.logs.trace.status.${trace.status}`,
                     trace.status,
                   )}
-                </Pill>
+                </span>
               </div>
               <TraceChips
                 durationMs={trace.duration_ms}
                 counts={trace.summary ?? {}}
               />
               {trace.dropped_spans > 0 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
+                <p className="text-muted-foreground text-xs">
                   {t('settings.logs.trace.droppedSpans', {
                     count: trace.dropped_spans,
                   })}

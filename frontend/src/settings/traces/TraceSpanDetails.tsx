@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Alert, AlertDescription } from '../../components/ui/alert';
 import { ToolCallPanel } from '../../conversation/AnswerFlow';
 import { TraceSpan } from '../types';
 import { formatDurationMs, formatTokens } from './traceUtils';
@@ -121,9 +122,11 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
         ))}
       </div>
       {span.error && (
-        <div className="rounded-lg bg-red-50 px-3 py-2 font-mono whitespace-pre-wrap text-red-700 dark:bg-red-900/30 dark:text-red-300">
-          {span.error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription className="font-mono whitespace-pre-wrap">
+            {span.error}
+          </AlertDescription>
+        </Alert>
       )}
       {preview.query !== undefined && (
         <ToolCallPanel title={f('query')} copyText={jsonText(preview.query)}>

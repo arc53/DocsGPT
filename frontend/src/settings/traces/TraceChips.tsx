@@ -80,8 +80,8 @@ export default function TraceChips({ durationMs, counts }: TraceChipsProps) {
           key={chip.key}
           className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs tabular-nums ${
             chip.tone === 'danger'
-              ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-              : 'bg-muted text-foreground dark:bg-white/10'
+              ? 'bg-destructive/10 text-destructive'
+              : 'bg-muted text-foreground'
           }`}
         >
           {chip.icon}

@@ -13,6 +13,7 @@ import {
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Button } from '../../components/ui/button';
 import { Trace, TraceSpan } from '../types';
 import TraceSpanDetails from './TraceSpanDetails';
 import {
@@ -23,29 +24,48 @@ import {
   traceTotalMs,
 } from './traceUtils';
 
+/**
+ * Icon per span kind, and one of the five chart series per group of kinds:
+ * the agent and its steps, model calls, tool calls, retrieval (with its
+ * embedding, per-source search and rerank), and guardrails.
+ */
 const KIND_STYLE: Record<string, { icon: React.ElementType; bar: string }> = {
-  agent: { icon: Bot, bar: 'bg-violet-500' },
-  llm: { icon: Brain, bar: 'bg-sky-500' },
-  tool: { icon: Wrench, bar: 'bg-amber-500' },
-  retrieval: { icon: Search, bar: 'bg-emerald-500' },
-  search: { icon: Database, bar: 'bg-emerald-400' },
-  embedding: { icon: Binary, bar: 'bg-teal-500' },
-  rerank: { icon: ListFilter, bar: 'bg-lime-500' },
-  guardrail: { icon: ShieldCheck, bar: 'bg-rose-400' },
-  step: { icon: ListTree, bar: 'bg-indigo-400' },
+  agent: { icon: Bot, bar: 'bg-chart-1' },
+  step: { icon: ListTree, bar: 'bg-chart-1' },
+  llm: { icon: Brain, bar: 'bg-chart-2' },
+  tool: { icon: Wrench, bar: 'bg-chart-3' },
+  retrieval: { icon: Search, bar: 'bg-chart-4' },
+  search: { icon: Database, bar: 'bg-chart-4' },
+  embedding: { icon: Binary, bar: 'bg-chart-4' },
+  rerank: { icon: ListFilter, bar: 'bg-chart-4' },
+  guardrail: { icon: ShieldCheck, bar: 'bg-chart-5' },
 };
 
-function barClass(span: TraceSpan): string {
-  if (span.status === 'error') return 'bg-red-500';
-  if (['cancelled', 'pending', 'denied', 'skipped'].includes(span.status))
-    return 'bg-gray-400 dark:bg-gray-500';
-  return (KIND_STYLE[span.kind] ?? KIND_STYLE.step).bar;
+const INACTIVE_STATUSES = ['cancelled', 'pending', 'denied', 'skipped'];
+
+function kindStyle(span: TraceSpan) {
+  return KIND_STYLE[span.kind] ?? KIND_STYLE.step;
 }
 
-const SCALE_STEPS = [0, 0.25, 0.5, 0.75, 1];
-const INDENT_PX = 14;
+function barClass(span: TraceSpan): string {
+  if (span.status === 'error') return 'bg-destructive';
+  if (INACTIVE_STATUSES.includes(span.status)) return 'bg-muted-foreground/40';
+  return kindStyle(span).bar;
+}
 
-/** A waterfall of one trace's spans; click a row for its details. */
+/** Scale ticks: 0, a quarter, half, three quarters and the full duration. */
+const SCALE_TICKS = [
+  { at: 0, className: 'left-0' },
+  { at: 0.25, className: 'left-1/4 -translate-x-1/2' },
+  { at: 0.5, className: 'left-1/2 -translate-x-1/2' },
+  { at: 0.75, className: 'left-3/4 -translate-x-1/2' },
+  { at: 1, className: 'right-0' },
+];
+
+/** Indent per nesting level, in rem. */
+const INDENT_REM = 0.875;
+
+/** A waterfall of one trace's spans; select a row for its details. */
 export default function TraceWaterfall({ trace }: { trace: Trace }) {
   const { t } = useTranslation();
   const rows = useMemo(() => buildSpanRows(trace.spans), [trace.spans]);
@@ -72,6 +92,9 @@ export default function TraceWaterfall({ trace }: { trace: Trace }) {
       return next;
     });
 
+  const toggleSelected = (id: string) =>
+    setSelectedId((current) => (current === id ? null : id));
+
   if (!rows.length) {
     return (
       <p className="text-muted-foreground py-4 text-center text-xs">
@@ -81,101 +104,99 @@ export default function TraceWaterfall({ trace }: { trace: Trace }) {
   }
 
   return (
-    <div className="flex flex-col text-xs" role="tree">
-      <div className="grid grid-cols-[minmax(0,5fr)_minmax(0,4fr)] gap-3 pb-1">
-        <span className="text-muted-foreground">
-          {t('settings.logs.trace.step')}
-        </span>
-        <div className="text-muted-foreground relative h-4">
-          {SCALE_STEPS.map((step) => (
+    <div className="flex flex-col gap-0.5" role="tree">
+      <div className="text-muted-foreground grid grid-cols-9 gap-3 pb-1 text-xs">
+        <span className="col-span-5">{t('settings.logs.trace.step')}</span>
+        <div className="relative col-span-4 h-4">
+          {SCALE_TICKS.map((tick) => (
             <span
-              key={step}
-              className="absolute top-0 -translate-x-1/2 whitespace-nowrap tabular-nums first:translate-x-0 last:-translate-x-full"
-              style={{ left: `${step * 100}%` }}
+              key={tick.at}
+              className={`absolute top-0 whitespace-nowrap tabular-nums ${tick.className}`}
             >
-              {step === 0 ? '0' : formatDurationMs(totalMs * step)}
+              {tick.at === 0 ? '0' : formatDurationMs(totalMs * tick.at)}
             </span>
           ))}
         </div>
       </div>
       {visibleRows.map(({ span, depth, hasChildren }) => {
-        const Icon = (KIND_STYLE[span.kind] ?? KIND_STYLE.step).icon;
+        const Icon = kindStyle(span).icon;
         const { left, width } = barGeometry(span, totalMs);
         const selected = selectedId === span.id;
         const headline = spanHeadline(span, t);
+        const isCollapsed = collapsed.has(span.id);
+        const geometry = {
+          '--trace-indent': `${depth * INDENT_REM}rem`,
+          '--trace-bar-left': `${left}%`,
+          '--trace-bar-width': `${width}%`,
+        } as React.CSSProperties;
         return (
-          <div key={span.id} role="treeitem" aria-selected={selected}>
+          <div
+            key={span.id}
+            role="treeitem"
+            aria-level={depth + 1}
+            aria-selected={selected}
+            aria-expanded={hasChildren ? !isCollapsed : undefined}
+            style={geometry}
+          >
             <div
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelectedId(selected ? null : span.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setSelectedId(selected ? null : span.id);
-                }
-              }}
-              className={`grid w-full cursor-pointer grid-cols-[minmax(0,5fr)_minmax(0,4fr)] items-center gap-3 rounded-md py-1 text-left ${
-                selected
-                  ? 'bg-muted dark:bg-white/10'
-                  : 'hover:bg-muted/60 dark:hover:bg-white/5'
-              }`}
+              className={`grid grid-cols-9 items-center gap-3 rounded-md ${selected ? 'bg-accent' : ''}`}
             >
-              <span
-                className="flex min-w-0 items-center gap-1.5"
-                style={{ paddingLeft: depth * INDENT_PX }}
-              >
+              <div className="col-span-5 flex min-w-0 items-center pl-(--trace-indent)">
                 {hasChildren ? (
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     aria-label={t('settings.logs.trace.toggleChildren')}
-                    aria-expanded={!collapsed.has(span.id)}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleCollapsed(span.id);
-                    }}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    className="text-muted-foreground hover:text-foreground shrink-0"
+                    aria-expanded={!isCollapsed}
+                    onClick={() => toggleCollapsed(span.id)}
                   >
                     <ChevronRight
-                      className={`size-3 transition-transform ${collapsed.has(span.id) ? '' : 'rotate-90'}`}
+                      className={`text-muted-foreground transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
                     />
-                  </button>
+                  </Button>
                 ) : (
-                  <span className="w-3 shrink-0" />
+                  <span className="size-8 shrink-0" />
                 )}
-                <Icon
-                  className={`size-3.5 shrink-0 ${span.status === 'error' ? 'text-red-500' : 'text-muted-foreground'}`}
-                  aria-label={t(
-                    `settings.logs.trace.kinds.${span.kind}`,
-                    span.kind,
-                  )}
-                />
-                <span className="text-foreground truncate" title={span.name}>
-                  {span.name}
-                </span>
-                {headline && (
-                  <span className="text-muted-foreground shrink-0 truncate">
-                    {headline}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="min-w-0 flex-1 justify-start"
+                  aria-pressed={selected}
+                  onClick={() => toggleSelected(span.id)}
+                >
+                  <Icon
+                    className={`size-3.5 ${span.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}
+                    aria-label={t(
+                      `settings.logs.trace.kinds.${span.kind}`,
+                      span.kind,
+                    )}
+                  />
+                  <span className="truncate font-normal" title={span.name}>
+                    {span.name}
                   </span>
-                )}
-                <span className="text-muted-foreground ml-auto shrink-0 pl-2 tabular-nums">
-                  {formatDurationMs(span.duration_ms)}
-                </span>
-              </span>
-              <span className="bg-muted/60 relative h-3 rounded-sm dark:bg-white/5">
+                  {headline && (
+                    <span className="text-muted-foreground truncate text-xs font-normal">
+                      {headline}
+                    </span>
+                  )}
+                  <span className="text-muted-foreground ml-auto shrink-0 pl-2 text-xs font-normal tabular-nums">
+                    {formatDurationMs(span.duration_ms)}
+                  </span>
+                </Button>
+              </div>
+              {/* Mouse shortcut to the row's button; keyboard users use the button. */}
+              <div
+                aria-hidden="true"
+                onClick={() => toggleSelected(span.id)}
+                className="bg-muted relative col-span-4 h-3 cursor-pointer rounded-sm"
+              >
                 <span
-                  className={`absolute inset-y-0 rounded-sm ${barClass(span)}`}
-                  style={{ left: `${left}%`, width: `${width}%` }}
-                  title={`${span.name} · ${formatDurationMs(span.duration_ms)}`}
+                  className={`absolute inset-y-0 left-(--trace-bar-left) w-(--trace-bar-width) rounded-sm ${barClass(span)}`}
                 />
-              </span>
+              </div>
             </div>
             {selected && (
-              <div
-                className="border-border my-1 rounded-lg border px-3 py-2"
-                style={{ marginLeft: depth * INDENT_PX }}
-              >
+              <div className="border-border mt-1 mb-2 ml-(--trace-indent) rounded-lg border p-3">
                 <TraceSpanDetails span={span} />
               </div>
             )}
