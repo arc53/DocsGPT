@@ -110,7 +110,9 @@ def _traced_stream(
             try:
                 yield from method(*bound.args, **bound.kwargs)
             finally:
-                tracing.flush(trace)
+                # Written on a writer thread so the stream's connection closes
+                # without waiting on the OTel replay and the INSERT.
+                tracing.flush(trace, background=True)
 
     return wrapper
 

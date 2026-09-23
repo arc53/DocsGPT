@@ -188,7 +188,7 @@ class TestExtractGraphTrace:
         monkeypatch.setattr("docsgpt.graphrag.extraction.extract_graph_for_source", extract)
         flushed = []
 
-        def _flush(trace, status=None):
+        def _flush(trace, status=None, **_kwargs):
             trace.flushed = True
             trace.finish(status)
             flushed.append(trace)

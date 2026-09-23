@@ -3,29 +3,36 @@
 from __future__ import annotations
 
 import logging
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Optional
 
 from docsgpt.tracing.core import Trace
 
 logger = logging.getLogger(__name__)
 
+# Writes handed off by ``flush(background=True)``. Two workers keep up with
+# chat traffic (each write is one INSERT); the pool's threads are joined at
+# interpreter exit, so queued traces are still written on a clean shutdown.
+_writer: Optional[ThreadPoolExecutor] = None
+_writer_lock = threading.Lock()
 
-def flush(trace: Optional[Trace], status: Optional[str] = None) -> None:
-    """Finish ``trace`` and persist it once; later calls are no-ops.
+
+def _executor() -> ThreadPoolExecutor:
+    global _writer
+    with _writer_lock:
+        if _writer is None:
+            _writer = ThreadPoolExecutor(max_workers=2, thread_name_prefix="trace-writer")
+        return _writer
+
+
+def _write(trace: Trace) -> None:
+    """Export ``trace`` to OTel, then store it; each sink swallows its own failure.
 
     OTel replay runs first so the exported trace id can be stored with the
-    row. Both sinks swallow their own failures: a trace is diagnostic data
-    and must never fail the request that produced it.
-
-    Args:
-        trace: The trace to write; ``None`` is accepted and ignored.
-        status: Final status; defaults to ``error`` when a top-level span
-            failed, else ``ok``.
+    row. A trace is diagnostic data and must never fail the request that
+    produced it.
     """
-    if trace is None or trace.flushed:
-        return
-    trace.flushed = True
-    trace.finish(status)
     try:
         from docsgpt.tracing.otel import export_trace
 
@@ -43,6 +50,39 @@ def flush(trace: Optional[Trace], status: Optional[str] = None) -> None:
             RequestTracesRepository(conn).insert(trace.to_record())
     except Exception:  # noqa: BLE001
         logger.warning("Failed to store trace %s", trace.id, exc_info=True)
+
+
+def flush(
+    trace: Optional[Trace], status: Optional[str] = None, *, background: bool = False
+) -> Optional[Future]:
+    """Finish ``trace`` and persist it once; later calls are no-ops.
+
+    The trace is frozen immediately, so nothing recorded afterwards is
+    included, whichever way it is written.
+
+    Args:
+        trace: The trace to write; ``None`` is accepted and ignored.
+        status: Final status; defaults to ``error`` when a top-level span
+            failed, else ``ok``.
+        background: Write on a writer thread instead of the caller's. A chat
+            stream flushes this way so its connection closes without waiting
+            on the OTel replay and the INSERT.
+
+    Returns:
+        The pending write when ``background`` is set, else ``None``.
+    """
+    if trace is None or trace.flushed:
+        return None
+    trace.flushed = True
+    trace.finish(status)
+    if background:
+        try:
+            return _executor().submit(_write, trace)
+        except RuntimeError:
+            # The pool is shut down (interpreter exit): write inline instead.
+            pass
+    _write(trace)
+    return None
 
 
 def discard(trace: Optional[Trace]) -> None:

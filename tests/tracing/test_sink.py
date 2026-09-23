@@ -98,3 +98,31 @@ class TestDiscard:
             tracing.discard(trace)
             tracing.flush(trace)
         repo.insert.assert_not_called()
+
+
+class TestBackgroundFlush:
+    def test_background_flush_writes_off_the_calling_thread(self):
+        import threading
+
+        trace = _trace_with_span()
+        seen = {}
+
+        def _insert(record):
+            seen["thread"] = threading.current_thread().name
+            return True
+
+        with _patched_store() as repo:
+            repo.insert.side_effect = _insert
+            future = tracing.flush(trace, background=True)
+            assert trace.finished  # frozen at once, written later
+            future.result(timeout=5)
+        assert seen["thread"].startswith("trace-writer")
+        assert repo.insert.call_count == 1
+
+    def test_background_flush_is_still_once(self):
+        trace = _trace_with_span()
+        with _patched_store() as repo:
+            future = tracing.flush(trace, background=True)
+            assert tracing.flush(trace, background=True) is None
+            future.result(timeout=5)
+        assert repo.insert.call_count == 1

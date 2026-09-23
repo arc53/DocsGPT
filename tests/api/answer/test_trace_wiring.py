@@ -22,7 +22,7 @@ def _captured_flushes():
     """Record every flushed trace instead of writing it."""
     flushed = []
 
-    def _fake_flush(trace, status=None):
+    def _fake_flush(trace, status=None, **_kwargs):
         if trace is None or trace.flushed:
             return
         trace.flushed = True

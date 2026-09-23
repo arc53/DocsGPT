@@ -75,9 +75,10 @@ test.describe('tier-a · execution traces', () => {
       expect(res.ok()).toBeTruthy();
       expect(await res.text()).toContain('"type": "end"');
 
-      // Stored trace: one row for the turn, linked to its message.
+      // Stored trace: one row for the turn, linked to its message. It is
+      // written just after the stream closes, so wait for it.
+      await expect.poll(async () => (await tracesFor(sub)).length).toBe(1);
       const traces = await tracesFor(sub);
-      expect(traces).toHaveLength(1);
       const [trace] = traces;
       expect(trace.source).toBe('stream');
       expect(trace.request_id).toBeTruthy();
@@ -154,6 +155,7 @@ test.describe('tier-a · execution traces', () => {
       });
       expect(await res.text()).toContain('"type": "end"');
 
+      await expect.poll(async () => (await tracesFor(sub)).length).toBe(1);
       const [trace] = await tracesFor(sub);
       const byKind = (kind: string) => trace.spans.filter((s) => s.kind === kind);
       const retrieval = byKind('retrieval');
