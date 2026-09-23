@@ -109,6 +109,17 @@ const userService = {
     apiClient.post(endpoints.USER.SCHEDULE_ANALYTICS, data, token),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
+  getTraces: (
+    params: Record<string, string>,
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<any> =>
+    apiClient.get(
+      endpoints.USER.TRACES(new URLSearchParams(params).toString()),
+      token,
+      {},
+      signal,
+    ),
   manageSync: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MANAGE_SYNC, data, token),
   syncSource: (data: any, token: string | null): Promise<any> =>

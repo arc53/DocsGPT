@@ -33,6 +33,11 @@ from docsgpt.retriever.base import BaseRetriever
 from docsgpt.retriever.classic_rag import ClassicRAG
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.storage.db.source_config import GraphRetrievalConfig
+from docsgpt.tracing.retrieval import (
+    describe_documents,
+    start_embedding_span,
+    start_retrieval_span,
+)
 from docsgpt.utils import num_tokens_from_string
 from docsgpt.vectorstore.base import get_embeddings
 
@@ -231,7 +236,11 @@ class GraphRAGRetriever(BaseRetriever):
 
     def _embed_query(self, question: str) -> List[float]:
         embedding = get_embeddings()
-        return embedding.embed_query(question)
+        with start_embedding_span(
+            settings.EMBEDDINGS_NAME,
+            **{"docsgpt.embeddings_backend": type(embedding).__name__},
+        ):
+            return embedding.embed_query(question)
 
     def _ppr_scores(self, subgraph, seeds) -> Dict[str, float]:
         """Run Personalized PageRank, then down-weight hub nodes by IDF.
@@ -730,10 +739,19 @@ class GraphRAGRetriever(BaseRetriever):
                 logging.debug("Error closing GraphRAG store: %s", e)
 
     def search(self, query: str = "") -> List[Dict[str, Any]]:
-        if query:
-            self.original_question = query
-            self._classic.original_question = query
-            self._classic._rephrased_question = None
-            self._classic.question = self._classic._rephrase_query()
-            self._classic._rephrased_question = self._classic.question
-        return self._get_data()
+        with start_retrieval_span(
+            f"retrieval {type(self).__name__}",
+            sources=self.vectorstores,
+            **{"docsgpt.retriever": type(self).__name__, "docsgpt.top_k": self.chunks},
+        ) as span:
+            if query:
+                self.original_question = query
+                self._classic.original_question = query
+                self._classic._rephrased_question = None
+                self._classic.question = self._classic._rephrase_query()
+                self._classic._rephrased_question = self._classic.question
+            docs = self._get_data()
+            describe_documents(
+                span, docs, query=self._classic._rephrased_question or self.original_question
+            )
+            return docs

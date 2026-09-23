@@ -10,10 +10,12 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from docsgpt import tracing
 from docsgpt.core.settings import settings
 from docsgpt.retriever.fanout import fetch_per_source
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.tracing.retrieval import describe_documents, start_retrieval_span
 from docsgpt.vectorstore.vector_creator import VectorCreator
 
 logger = logging.getLogger(__name__)
@@ -219,14 +221,21 @@ def _search_sources(
     return results[:chunks]
 
 
-def search(api_key: str, query: str, chunks: int = 5) -> List[Dict[str, Any]]:
+def search(
+    api_key: str, query: str, chunks: int = 5, *, source: str = "search"
+) -> List[Dict[str, Any]]:
     """Resolve an agent by API key and search its sources.
+
+    Every search that reaches the sources is recorded as an execution trace
+    owned by the agent's owner, under ``source``.
 
     Args:
         api_key: Agent API key (the opaque string stored on
             ``agents.key`` in Postgres).
         query: Free-text search query.
         chunks: Max number of hits to return.
+        source: Trace source name: ``search`` for ``/api/search``, ``mcp``
+            for the MCP ``search_docs`` tool.
 
     Returns:
         List of hit dicts with ``text``, ``title``, ``source`` keys.
@@ -256,4 +265,20 @@ def search(api_key: str, query: str, chunks: int = 5) -> List[Dict[str, Any]]:
     if not source_ids:
         return []
 
-    return _search_sources(query, source_ids, chunks)
+    trace = tracing.start_trace(
+        source=source,
+        user_id=agent.get("user_id"),
+        agent_id=str(agent.get("id")) if agent.get("id") else None,
+    )
+    with tracing.activate(trace):
+        try:
+            with start_retrieval_span(
+                f"retrieval {source}",
+                sources=source_ids,
+                **{"docsgpt.top_k": chunks},
+            ) as span:
+                results = _search_sources(query, source_ids, chunks)
+                describe_documents(span, results, query=query)
+            return results
+        finally:
+            tracing.flush(trace)

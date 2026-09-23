@@ -23,6 +23,7 @@ from docsgpt.retriever.stages.prescreen import (
     max_candidate_k,
 )
 from docsgpt.storage.db.source_config import RetrievalConfig
+from docsgpt.tracing.retrieval import describe_documents, start_retrieval_span
 from docsgpt.utils import num_tokens_from_string
 
 logger = logging.getLogger(__name__)
@@ -294,6 +295,17 @@ class Dispatcher(BaseRetriever):
 
     def search(self, query: str = "") -> List[Dict[str, Any]]:
         """Run every group under the shared budget and merge the results."""
+        sources = [s for group in self._groups for s in group.get("doc_ids", [])]
+        with start_retrieval_span(
+            "retrieval",
+            sources=sources,
+            **{"docsgpt.retriever": "Dispatcher", "docsgpt.group_count": len(self._groups)},
+        ) as span:
+            docs = self._search_groups(query)
+            describe_documents(span, docs)
+            return docs
+
+    def _search_groups(self, query: str) -> List[Dict[str, Any]]:
         groups = self._groups
         n_groups = len(groups)
 

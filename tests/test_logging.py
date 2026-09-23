@@ -398,3 +398,96 @@ class TestAccumulateResponseSummary:
         assert ctx.tool_call_count == 2
 
 
+class TestLogActivityTraceSpan:
+    """``@log_activity`` opens the ``invoke_agent`` span for every agent run."""
+
+    @pytest.fixture(autouse=True)
+    def _tracing_on(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "TRACES_ENABLED", True)
+
+    class _Agent:
+        endpoint = "stream"
+        user = "user1"
+        user_api_key = ""
+        agent_id = "agent-1"
+        model_id = "gpt-4o"
+
+    def test_agent_span_wraps_the_run_and_binds_activity_id(self):
+        from docsgpt import tracing
+        from docsgpt.logging import log_activity
+
+        @log_activity()
+        def gen(agent, log_context=None):
+            with tracing.span(tracing.KIND_LLM, "chat m"):
+                pass
+            yield {"answer": "hi"}
+            yield {"sources": [{"title": "a"}]}
+
+        trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with patch("docsgpt.logging._log_activity_to_db"), tracing.activate(trace):
+            list(gen(self._Agent()))
+        agent_span, llm_span = trace.spans
+        assert agent_span.kind == tracing.KIND_AGENT
+        assert agent_span.name == "invoke_agent _Agent"
+        assert agent_span.status == "ok"
+        assert agent_span.attributes["gen_ai.operation.name"] == "invoke_agent"
+        assert agent_span.attributes["gen_ai.agent.id"] == "agent-1"
+        assert agent_span.attributes["docsgpt.answer_chars"] == 2
+        # BaseAgent keeps its model in ``model_id``; the span reads it too.
+        assert agent_span.attributes["gen_ai.request.model"] == "gpt-4o"
+        assert agent_span.attributes["docsgpt.source_count"] == 1
+        assert llm_span.parent_id == agent_span.id
+        assert trace.activity_id is not None
+
+    def test_nested_agent_keeps_outer_activity_id(self):
+        from docsgpt import tracing
+        from docsgpt.logging import log_activity
+
+        @log_activity()
+        def inner(agent, log_context=None):
+            yield "x"
+
+        @log_activity()
+        def outer(agent, log_context=None):
+            yield log_context.activity_id
+            yield from inner(agent)
+
+        trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with patch("docsgpt.logging._log_activity_to_db"), tracing.activate(trace):
+            outer_activity = list(outer(self._Agent()))[0]
+        assert trace.activity_id == outer_activity
+        outer_span, inner_span = trace.spans
+        assert inner_span.parent_id == outer_span.id
+
+    def test_yielded_error_marks_span_error(self):
+        from docsgpt import tracing
+        from docsgpt.logging import log_activity
+
+        @log_activity()
+        def gen(agent, log_context=None):
+            yield {"type": "error", "error": "node failed"}
+
+        trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with patch("docsgpt.logging._log_activity_to_db"), tracing.activate(trace):
+            list(gen(self._Agent()))
+        assert trace.spans[0].status == "error"
+        assert trace.spans[0].error == "StreamError"
+        assert trace.spans[0].previews["error"] == "node failed"
+
+    def test_raised_error_marks_span_error(self):
+        from docsgpt import tracing
+        from docsgpt.logging import log_activity
+
+        @log_activity()
+        def gen(agent, log_context=None):
+            yield "a"
+            raise RuntimeError("boom")
+
+        trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with patch("docsgpt.logging._log_activity_to_db"), tracing.activate(trace), \
+                pytest.raises(RuntimeError):
+            list(gen(self._Agent()))
+        assert trace.spans[0].status == "error"
+        assert trace.spans[0].attributes["error.type"] == "RuntimeError"

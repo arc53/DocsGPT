@@ -53,7 +53,7 @@ async def search_docs(query: str, chunks: int = 5) -> list[dict]:
     if not api_key:
         raise PermissionError("Missing Bearer token")
     try:
-        return await asyncio.to_thread(search, api_key, query, chunks)
+        return await asyncio.to_thread(search, api_key, query, chunks, source="mcp")
     except InvalidAPIKey as exc:
         raise PermissionError("Invalid API key") from exc
     except SearchFailed:

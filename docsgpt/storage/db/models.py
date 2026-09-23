@@ -825,6 +825,47 @@ Index(
 Index("ix_guardrail_events_message", guardrail_events_table.c.message_id)
 Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
 
+# One execution trace per request (chat turn, continuation, scheduled or
+# webhook run, search, graph extraction): the span tree as a JSONB array,
+# rendered as a waterfall in the Logs UI. ``message_id`` cascades; deleting a
+# conversation also deletes its traces by ``conversation_id``. Migration 0037.
+request_traces_table = Table(
+    "request_traces",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True),
+    Column("request_id", Text),
+    Column(
+        "message_id",
+        UUID(as_uuid=True),
+        ForeignKey("conversation_messages.id", ondelete="CASCADE"),
+    ),
+    Column("conversation_id", UUID(as_uuid=True)),
+    Column("activity_id", Text),
+    Column("workflow_run_id", UUID(as_uuid=True)),
+    Column("user_id", Text),
+    Column("agent_id", UUID(as_uuid=True)),
+    Column("source", Text, nullable=False),
+    Column("name", Text),
+    # ok | error | paused | cancelled
+    Column("status", Text, nullable=False),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    Column("duration_ms", Integer, nullable=False, server_default="0"),
+    Column("span_count", Integer, nullable=False, server_default="0"),
+    Column("dropped_spans", Integer, nullable=False, server_default="0"),
+    Column("summary", JSONB, nullable=False, server_default="{}"),
+    Column("spans", JSONB, nullable=False, server_default="[]"),
+    Column("otel_trace_id", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+Index(
+    "request_traces_user_source_started_idx",
+    request_traces_table.c.user_id,
+    request_traces_table.c.source,
+    request_traces_table.c.started_at,
+)
+Index("request_traces_created_idx", request_traces_table.c.created_at)
+
 tool_call_attempts_table = Table(
     "tool_call_attempts",
     metadata,

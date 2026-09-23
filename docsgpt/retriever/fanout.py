@@ -12,7 +12,9 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar
 
+from docsgpt import tracing
 from docsgpt.core.settings import settings
+from docsgpt.tracing.retrieval import start_embedding_span
 
 logger = logging.getLogger(__name__)
 
@@ -85,16 +87,22 @@ def embed_questions(docsearch, questions: Iterable[str]) -> Dict[str, List[float
     embedder = store_embeddings(docsearch)
     if embedder is None:
         return {}
+    distinct = list(dict.fromkeys(questions))
+    span = start_embedding_span(
+        settings.EMBEDDINGS_NAME,
+        inputs=len(distinct),
+        **{"docsgpt.embeddings_backend": type(embedder).__name__},
+    )
     try:
-        return {
-            question: embedder.embed_query(question)
-            for question in dict.fromkeys(questions)
-        }
+        vectors = {question: embedder.embed_query(question) for question in distinct}
     except Exception as e:
+        span.end(error=e)
         logger.warning(
             "Query embedding failed (%s); each store will embed its own.", e
         )
         return {}
+    span.end()
+    return vectors
 
 
 def run_source_jobs(
@@ -121,10 +129,13 @@ def run_source_jobs(
         workers = max_parallel_sources(len(jobs))
     if workers == 1:
         return [fn(job) for job in jobs]
+    # Pool threads don't inherit context: carry the trace and its current
+    # retrieval span in so per-source spans nest under it.
+    traced_fn = tracing.wrap(fn)
     with ThreadPoolExecutor(
         max_workers=workers, thread_name_prefix="rag-source"
     ) as pool:
-        return list(pool.map(fn, jobs))
+        return list(pool.map(traced_fn, jobs))
 
 
 def fetch_per_source(

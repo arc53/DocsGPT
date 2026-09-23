@@ -21,7 +21,11 @@ from docsgpt.api.answer.services.continuation_service import (
     RESUME_IN_PROGRESS_MESSAGE,
     ResumeInProgressError,
 )
-from docsgpt.api.answer.services.stream_processor import StreamProcessor
+from docsgpt import tracing
+from docsgpt.api.answer.services.stream_processor import (
+    StreamProcessor,
+    flush_trace_after_request,
+)
 from docsgpt.api.v1 import idempotency as v1_idempotency
 from docsgpt.api.v1.session_store import (
     V1Session,
@@ -257,7 +261,8 @@ def chat_completions():
         internal_data["persist"] = True
 
     try:
-        processor = StreamProcessor(internal_data, decoded_token)
+        processor = StreamProcessor(internal_data, decoded_token, trace_source="v1")
+        flush_trace_after_request(processor)
         # Set when this request took the resume claim, so a refusal can release it.
         claimed_conversation_id = None
 
@@ -371,6 +376,8 @@ def chat_completions():
             # safe way to re-emit a recorded SSE stream (and the regression /
             # b2b client is non-streaming), so a streaming request never
             # claims a key. This is a known, accepted limitation.
+            # The stream writes the trace once it runs, after this returns.
+            processor.handoff_trace()
             return Response(
                 with_sse_keepalive(
                     _stream_response(
@@ -404,6 +411,9 @@ def chat_completions():
             if not claimed:
                 # ``completed`` cache hit, or a 409 for an in-flight same-key
                 # request — either way return without re-running the agent.
+                # The original request already has its trace; this retry's
+                # setup (pre-fetch retrieval) is not a failed run to record.
+                tracing.discard(processor.trace)
                 return replay
 
         # An exception from the agent run propagates to the ``except`` handlers
@@ -495,6 +505,8 @@ def _stream_response(
         visibility=visibility,
         _continuation=continuation,
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
+        request_id=processor.request_id,
+        trace=getattr(processor, "trace", None),
     )
 
     translation_state = StreamTranslationState()
@@ -572,6 +584,8 @@ def _non_stream_response(
         visibility=visibility,
         _continuation=continuation,
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
+        request_id=processor.request_id,
+        trace=getattr(processor, "trace", None),
     )
 
     result = helper.process_response_stream(stream)
