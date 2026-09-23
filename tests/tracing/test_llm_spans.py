@@ -226,3 +226,54 @@ class TestCacheHits:
         first, second = trace.spans
         assert first.attributes.get("docsgpt.cache_hit") is None
         assert second.attributes["docsgpt.cache_hit"] is True
+
+
+class TestProviderResolution:
+    """The span names the provider actually called, not the client class used."""
+
+    @staticmethod
+    def _llm(provider="openai", base_url=None, plugin=None):
+        llm = _LLM()
+        llm.provider_name = provider
+        if base_url is not None:
+            llm._effective_base_url = base_url
+        if plugin is not None:
+            llm._provider_plugin = plugin
+        return llm
+
+    @pytest.mark.parametrize(
+        "base_url, plugin, expected",
+        [
+            ("https://api.deepseek.com/v1", "openai_compatible", "deepseek"),
+            ("https://my-res.openai.azure.com/openai", "openai", "azure.ai.openai"),
+            ("https://api.mistral.ai/v1", "openai_compatible", "mistral_ai"),
+            ("https://api.x.ai/v1", "openai_compatible", "x_ai"),
+            ("https://api.openai.com/v1", "openai", "openai"),
+            ("http://10.0.0.5:8000/v1", "openai_compatible", "openai_compatible"),
+            ("http://127.0.0.1:7899/v1", "openai", "openai_compatible"),
+            (None, "openai", "openai"),
+        ],
+    )
+    def test_provider_from_endpoint(self, base_url, plugin, expected):
+        from docsgpt.tracing.llm import llm_provider
+
+        assert llm_provider(self._llm(base_url=base_url, plugin=plugin)) == expected
+
+    def test_native_providers_are_unchanged(self):
+        from docsgpt.tracing.llm import llm_provider
+
+        assert llm_provider(self._llm(provider="anthropic")) == "anthropic"
+        assert llm_provider(self._llm(provider="google")) == "gcp.gen_ai"
+
+    def test_span_and_metrics_use_it_and_record_server_address(self, trace, metrics):
+        llm = self._llm(base_url="https://api.deepseek.com/v1", plugin="openai_compatible")
+
+        @gen_token_usage
+        def _gen(self, model, messages, stream, tools, **kwargs):
+            return "x"
+
+        _gen(llm, "deepseek-chat", [], False, None)
+        attrs = trace.spans[0].attributes
+        assert attrs["gen_ai.provider.name"] == "deepseek"
+        assert attrs["server.address"] == "api.deepseek.com"
+        assert metrics.call_args.kwargs["provider"] == "deepseek"

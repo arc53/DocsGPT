@@ -8,6 +8,7 @@ fallback each get their own span with the provider that actually ran.
 from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Optional, Union
+from urllib.parse import urlparse
 
 from docsgpt.core.settings import settings
 from docsgpt.tracing import core
@@ -15,6 +16,66 @@ from docsgpt.tracing.otel import provider_name, record_llm_metrics
 
 #: LLM attribute a cache wrapper sets when it served the call from Redis.
 CACHE_HIT_ATTR = "_trace_cache_hit"
+
+#: API hosts whose provider differs from the client class that calls them
+#: (every OpenAI-compatible API runs through ``OpenAILLM``), mapped to their
+#: ``gen_ai.provider.name``. Matched on the host or any subdomain of it.
+_PROVIDER_HOSTS = (
+    ("api.openai.com", "openai"),
+    ("openai.azure.com", "azure.ai.openai"),
+    ("deepseek.com", "deepseek"),
+    ("mistral.ai", "mistral_ai"),
+    ("x.ai", "x_ai"),
+    ("perplexity.ai", "perplexity"),
+    ("groq.com", "groq"),
+    ("openrouter.ai", "openrouter"),
+    ("novita.ai", "novita"),
+    ("cohere.com", "cohere"),
+    ("cohere.ai", "cohere"),
+    ("together.xyz", "together_ai"),
+    ("together.ai", "together_ai"),
+    ("fireworks.ai", "fireworks"),
+    ("anthropic.com", "anthropic"),
+    ("generativelanguage.googleapis.com", "gcp.gemini"),
+)
+
+
+def _endpoint_host(llm: Any) -> Optional[str]:
+    url = getattr(llm, "_effective_base_url", None) or getattr(llm, "base_url", None)
+    if not isinstance(url, str) or not url:
+        return None
+    try:
+        return urlparse(url).hostname
+    except ValueError:
+        return None
+
+
+def llm_provider(llm: Any) -> str:
+    """The ``gen_ai.provider.name`` of the API ``llm`` actually calls.
+
+    The client class alone is not enough: DeepSeek, a self-hosted vLLM or any
+    other OpenAI-compatible endpoint runs through ``OpenAILLM``, whose
+    ``provider_name`` is ``openai``. A known API host wins; an OpenAI client
+    pointed at any other host is reported as ``openai_compatible``.
+
+    Args:
+        llm: The LLM instance making the call.
+
+    Returns:
+        The provider name for spans and metrics.
+    """
+    base = provider_name(getattr(llm, "provider_name", None))
+    host = _endpoint_host(llm)
+    if host:
+        for suffix, name in _PROVIDER_HOSTS:
+            if host == suffix or host.endswith("." + suffix):
+                return name
+    if getattr(llm, "_provider_plugin", None) == "openai_compatible":
+        return "openai_compatible"
+    if base == "openai" and host:
+        # An OpenAI client aimed somewhere other than OpenAI's API.
+        return "openai_compatible"
+    return base
 
 
 def start_llm_span(
@@ -25,7 +86,8 @@ def start_llm_span(
         return core.NOOP_SPAN
     attributes = {
         "gen_ai.operation.name": "chat",
-        "gen_ai.provider.name": provider_name(getattr(llm, "provider_name", None)),
+        "gen_ai.provider.name": llm_provider(llm),
+        "server.address": _endpoint_host(llm),
         "gen_ai.request.model": str(model) if model else None,
         "docsgpt.token_source": getattr(llm, "_token_usage_source", None) or "agent_stream",
         "docsgpt.stream": bool(stream),
@@ -83,7 +145,7 @@ def finish_llm_call(
     if not settings.TRACES_ENABLED:
         return
     record_llm_metrics(
-        provider=getattr(llm, "provider_name", None),
+        provider=llm_provider(llm),
         model=str(model) if model else None,
         input_tokens=call_usage.get("prompt_tokens", 0),
         output_tokens=call_usage.get("generated_tokens", 0),
