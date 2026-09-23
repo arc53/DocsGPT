@@ -475,10 +475,6 @@ function Log({
         <div className="dark:bg-background rounded-b-xl bg-[#F1F1F1] px-4 py-3">
           {log.trace && (
             <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
-              <TraceChips
-                durationMs={log.trace.duration_ms}
-                counts={log.trace.summary}
-              />
               <Button
                 variant="outline"
                 size="sm"
@@ -491,6 +487,10 @@ function Log({
                     })
                   : t('settings.logs.trace.view')}
               </Button>
+              <TraceChips
+                durationMs={log.trace.duration_ms}
+                counts={log.trace.summary}
+              />
             </div>
           )}
           {detailRows.length > 0 && (
