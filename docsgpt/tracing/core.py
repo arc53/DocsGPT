@@ -40,7 +40,7 @@ KIND_GUARDRAIL = "guardrail"
 KIND_STEP = "step"
 
 #: Kinds that become the implicit parent of spans started while they are open.
-CONTAINER_KINDS = frozenset({KIND_AGENT, KIND_TOOL, KIND_RETRIEVAL, KIND_STEP})
+CONTAINER_KINDS = frozenset({KIND_AGENT, KIND_TOOL, KIND_RETRIEVAL, KIND_RERANK, KIND_STEP})
 
 STATUS_OK = "ok"
 STATUS_ERROR = "error"
