@@ -6,8 +6,11 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional
 
+from docsgpt import tracing
 from docsgpt.agents.tool_executor import (
     ToolExecutor,
+    finish_tool_span,
+    record_tool_span_start,
     result_status,
     truncate_tool_result,
 )
@@ -492,12 +495,51 @@ class BaseAgent(ABC):
         or client-side results), appends the resulting messages, then
         hands back to the LLM to continue the conversation.
 
+        Unlike :meth:`gen` this is not wrapped by ``@log_activity``, so the
+        continuation's ``invoke_agent`` trace span is opened here.
+
         Args:
             messages: The saved messages array from the pause point.
             tools_dict: The saved tools dictionary.
             pending_tool_calls: The pending tool call descriptors from the pause.
             tool_actions: Client-provided actions resolving the pending calls.
         """
+        label = type(self).__name__
+        span = tracing.start_span(
+            tracing.KIND_AGENT,
+            f"invoke_agent {label}",
+            attributes={
+                k: v
+                for k, v in {
+                    "gen_ai.operation.name": "invoke_agent",
+                    "gen_ai.agent.id": str(self.agent_id) if getattr(self, "agent_id", None) else None,
+                    "gen_ai.request.model": getattr(self, "model_id", None),
+                    "docsgpt.agent_type": label,
+                    "docsgpt.continuation": True,
+                }.items()
+                if v is not None
+            },
+        )
+        completed = False
+        try:
+            yield from self._gen_continuation_inner(
+                messages, tools_dict, pending_tool_calls, tool_actions, reasoning_content
+            )
+            completed = True
+        except Exception as exc:
+            span.end(error=exc)
+            raise
+        finally:
+            span.end(None if completed else tracing.STATUS_CANCELLED)
+
+    def _gen_continuation_inner(
+        self,
+        messages: List[Dict],
+        tools_dict: Dict,
+        pending_tool_calls: List[Dict],
+        tool_actions: List[Dict],
+        reasoning_content: str = "",
+    ) -> Generator[Dict, None, None]:
         self._prepare_tools(tools_dict)
 
         actions_by_id = {a["call_id"]: a for a in tool_actions}
@@ -583,16 +625,15 @@ class BaseAgent(ABC):
                 messages.append(
                     self.llm_handler.create_tool_message(tc, denial)
                 )
-                yield {
-                    "type": "tool_call",
-                    "data": {
-                        "tool_name": pending.get("tool_name", "unknown"),
-                        "call_id": call_id,
-                        "action_name": pending.get("llm_name", pending["name"]),
-                        "arguments": args,
-                        "status": "denied",
-                    },
+                denied_data = {
+                    "tool_name": pending.get("tool_name", "unknown"),
+                    "call_id": call_id,
+                    "action_name": pending.get("llm_name", pending["name"]),
+                    "arguments": args,
+                    "status": "denied",
                 }
+                finish_tool_span(record_tool_span_start(tc), {**denied_data, "error": comment or None})
+                yield {"type": "tool_call", "data": denied_data}
 
             elif "result" in action:
                 result = action["result"]
@@ -616,17 +657,19 @@ class BaseAgent(ABC):
                         tc, _bound_tool_response_for_llm(result_str)
                     )
                 )
-                yield {
-                    "type": "tool_call",
-                    "data": {
-                        "tool_name": pending.get("tool_name", "unknown"),
-                        "call_id": call_id,
-                        "action_name": pending.get("llm_name", pending["name"]),
-                        "arguments": args,
-                        "result": truncate_tool_result(result_str),
-                        "status": result_status(result),
-                    },
+                client_data = {
+                    "tool_name": pending.get("tool_name", "unknown"),
+                    "call_id": call_id,
+                    "action_name": pending.get("llm_name", pending["name"]),
+                    "arguments": args,
+                    "result": truncate_tool_result(result_str),
+                    "status": result_status(result),
                 }
+                finish_tool_span(
+                    record_tool_span_start(tc, **{"docsgpt.client_executed": True}),
+                    client_data,
+                )
+                yield {"type": "tool_call", "data": client_data}
 
         # Resume the LLM loop with the updated messages
         llm_response = self._llm_gen(messages, preserve_responses_state=True)

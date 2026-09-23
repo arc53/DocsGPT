@@ -7,6 +7,7 @@ import logging
 import uuid
 from typing import Any, Callable, Dict, Generator, List, Optional
 
+from docsgpt import tracing
 from docsgpt.core import log_context
 from docsgpt.storage.db.repositories.stack_logs import StackLogsRepository
 from docsgpt.storage.db.session import db_session
@@ -136,10 +137,17 @@ def log_activity() -> Callable:
                 },
             )
 
+            # The outermost agent run names the trace's activity, which is how
+            # a webhook/system Logs row (keyed by activity_id) finds its trace.
+            tracing.bind_if_unset(activity_id=activity_id)
+            span = _start_agent_span(args[0], agent_id=agent_id, model=model, endpoint=endpoint)
+
             error: BaseException | None = None
+            completed = False
             try:
                 generator = func(*args, **kwargs)
                 yield from _consume_and_log(generator, context)
+                completed = True
             except Exception as exc:
                 # Only ``Exception`` counts as an activity error; ``GeneratorExit``
                 # (consumer disconnected mid-stream) and ``KeyboardInterrupt``
@@ -154,11 +162,51 @@ def log_activity() -> Callable:
                     started_at=started_at,
                     error=error,
                 )
+                _end_agent_span(span, context, error=error, completed=completed)
                 log_context.reset(ctx_token)
 
         return wrapper
 
     return decorator
+
+
+def _start_agent_span(agent: Any, *, agent_id: Any, model: Any, endpoint: str):
+    """Open the ``invoke_agent`` span for one agent run (no-op without a trace)."""
+    label = type(agent).__name__
+    return tracing.start_span(
+        tracing.KIND_AGENT,
+        f"invoke_agent {label}",
+        attributes={
+            k: v
+            for k, v in {
+                "gen_ai.operation.name": "invoke_agent",
+                "gen_ai.agent.id": str(agent_id) if agent_id else None,
+                "gen_ai.request.model": str(model) if model else None,
+                "docsgpt.agent_type": label,
+                "docsgpt.endpoint": endpoint or None,
+            }.items()
+            if v is not None
+        },
+    )
+
+
+def _end_agent_span(span: Any, context: "LogContext", *, error: BaseException | None, completed: bool) -> None:
+    """Close the agent span with the run's response aggregates and outcome."""
+    if not span:
+        return
+    attributes = {
+        "docsgpt.answer_chars": context.answer_length,
+        "docsgpt.source_count": context.source_count,
+        "docsgpt.tool_call_count": context.tool_call_count,
+    }
+    if error is not None:
+        span.end(error=error, attributes=attributes)
+    elif context.stream_error:
+        span.set(**attributes, **{"error.type": "StreamError"})
+        span.error = context.stream_error
+        span.end(tracing.STATUS_ERROR)
+    else:
+        span.end(None if completed else tracing.STATUS_CANCELLED, attributes=attributes)
 
 
 def _emit_activity_finished(
