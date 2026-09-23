@@ -71,6 +71,7 @@ def run_agent_headless(
     chat_history: Optional[List[Dict[str, Any]]] = None,
     conversation_id: Optional[str] = None,
     request_id: Optional[str] = None,
+    trace_user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
 
@@ -78,6 +79,9 @@ def run_agent_headless(
     source. ``request_id`` links that trace to the caller's own record (the
     scheduler passes its run id, the webhook worker its task id); it is kept
     off the LLM's token-usage rows, whose request ids drive request counts.
+    ``trace_user_id`` owns the trace when the run belongs to someone other
+    than the agent's owner (a schedule a user set on a shared agent), so the
+    trace is visible wherever that user sees the run; it defaults to the owner.
 
     Raises:
         QuotaExceededError: If the agent owner's usage quota is exhausted.
@@ -85,7 +89,7 @@ def run_agent_headless(
     trace = tracing.start_trace(
         source=endpoint,
         request_id=request_id,
-        user_id=_resolve_owner(agent_config),
+        user_id=trace_user_id or _resolve_owner(agent_config),
         agent_id=_resolve_agent_id(agent_config),
         conversation_id=conversation_id,
     )

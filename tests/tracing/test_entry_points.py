@@ -84,6 +84,17 @@ class TestHeadless:
         assert trace.status == "ok"
         assert [s.kind for s in trace.spans] == ["retrieval", "agent"]
 
+    def test_trace_can_belong_to_the_scheduling_user(self, monkeypatch, flushed):
+        """A schedule on a shared agent is the scheduler's run, not the owner's."""
+        _headless(
+            [{"answer": "done"}],
+            monkeypatch,
+            endpoint="schedule",
+            request_id="run-2",
+            trace_user_id="scheduler-user",
+        )
+        assert flushed[0].user_id == "scheduler-user"
+
     def test_stream_error_marks_trace_error(self, monkeypatch, flushed):
         outcome = _headless([{"type": "error", "error": "boom"}], monkeypatch, endpoint="webhook")
         assert outcome["error_type"] == "stream_error"

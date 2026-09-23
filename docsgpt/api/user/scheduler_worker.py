@@ -277,8 +277,10 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             endpoint="schedule",
             conversation_id=schedule.get("origin_conversation_id"),
             chat_history=chat_history,
-            # Links the run's execution trace to its Logs row.
+            # Links the run's execution trace to its Logs row, which belongs
+            # to the user who scheduled it (not always the agent's owner).
             request_id=str(run_id),
+            trace_user_id=run.get("user_id") or schedule.get("user_id"),
         )
     except SoftTimeLimitExceeded:
         timed_out = True
