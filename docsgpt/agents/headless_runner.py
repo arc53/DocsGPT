@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Iterable, List, Optional
 
+from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
 from docsgpt.agents.tool_executor import ToolExecutor
 from docsgpt.api.answer.services.prompt_renderer import (
@@ -69,12 +70,57 @@ def run_agent_headless(
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
     conversation_id: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
+
+    The run is recorded as one execution trace under ``endpoint`` as its
+    source. ``request_id`` links that trace to the caller's own record (the
+    scheduler passes its run id, the webhook worker its task id); it is kept
+    off the LLM's token-usage rows, whose request ids drive request counts.
 
     Raises:
         QuotaExceededError: If the agent owner's usage quota is exhausted.
     """
+    trace = tracing.start_trace(
+        source=endpoint,
+        request_id=request_id,
+        user_id=_resolve_owner(agent_config),
+        agent_id=_resolve_agent_id(agent_config),
+        conversation_id=conversation_id,
+    )
+    status = None
+    with tracing.activate(trace):
+        try:
+            outcome = _run_agent_headless(
+                agent_config,
+                query,
+                tool_allowlist=tool_allowlist,
+                model_id_override=model_id_override,
+                endpoint=endpoint,
+                chat_history=chat_history,
+                conversation_id=conversation_id,
+            )
+            if outcome.get("error"):
+                status = tracing.STATUS_ERROR
+            return outcome
+        except BaseException:
+            status = tracing.STATUS_ERROR
+            raise
+        finally:
+            tracing.flush(trace, status)
+
+
+def _run_agent_headless(
+    agent_config: Dict[str, Any],
+    query: str,
+    *,
+    tool_allowlist: Optional[Iterable[str]] = None,
+    model_id_override: Optional[str] = None,
+    endpoint: str = "headless",
+    chat_history: Optional[List[Dict[str, Any]]] = None,
+    conversation_id: Optional[str] = None,
+) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
         get_default_model_id,

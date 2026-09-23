@@ -277,6 +277,8 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             endpoint="schedule",
             conversation_id=schedule.get("origin_conversation_id"),
             chat_history=chat_history,
+            # Links the run's execution trace to its Logs row.
+            request_id=str(run_id),
         )
     except SoftTimeLimitExceeded:
         timed_out = True

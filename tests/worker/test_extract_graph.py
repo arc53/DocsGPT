@@ -170,3 +170,53 @@ class TestExtractGraphWorker:
             worker.extract_graph_worker(task_self, source_id, "alice")
 
         assert "graph.extract.failed" in [e[0] for e in events]
+
+
+@pytest.mark.unit
+class TestExtractGraphTrace:
+    """A graph build is one execution trace holding every extraction call."""
+
+    def _run(self, pg_conn, monkeypatch, task_self, extract):
+        from docsgpt import tracing, worker
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "TRACES_ENABLED", True)
+        monkeypatch.setattr(settings, "TRACES_OTEL_EXPORT", False)
+        source_id = _seed_source(pg_conn)
+        _patch_store(monkeypatch, [{"doc_id": "c1", "text": "alpha"}])
+        monkeypatch.setattr("docsgpt.graphrag.graphrag_available", lambda: True)
+        monkeypatch.setattr("docsgpt.graphrag.extraction.extract_graph_for_source", extract)
+        flushed = []
+
+        def _flush(trace, status=None):
+            trace.flushed = True
+            trace.finish(status)
+            flushed.append(trace)
+
+        monkeypatch.setattr(tracing, "flush", _flush)
+        return worker, source_id, flushed
+
+    def test_successful_build_is_traced(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+        from docsgpt import tracing
+
+        def _extract(*_a, **_kw):
+            with tracing.span(tracing.KIND_LLM, "chat m"):
+                pass
+            return {"nodes": 3, "edges": 2, "chunks_processed": 1}
+
+        worker, source_id, flushed = self._run(pg_conn, monkeypatch, task_self, _extract)
+        worker.extract_graph_worker(task_self, source_id, "alice")
+        (trace,) = flushed
+        assert trace.source == "graph_extraction"
+        assert trace.user_id == "alice"
+        step, llm = trace.spans
+        assert step.attributes["docsgpt.graph.nodes"] == 3
+        assert llm.parent_id == step.id
+
+    def test_failed_build_is_an_error_trace(self, pg_conn, patch_worker_db, task_self, monkeypatch):
+        worker, source_id, flushed = self._run(
+            pg_conn, monkeypatch, task_self, MagicMock(side_effect=RuntimeError("llm down"))
+        )
+        with pytest.raises(RuntimeError):
+            worker.extract_graph_worker(task_self, source_id, "alice")
+        assert flushed[0].status == "error"

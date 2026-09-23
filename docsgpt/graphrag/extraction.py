@@ -23,6 +23,7 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional
 
+from docsgpt import tracing
 from docsgpt.core.model_utils import (
     get_api_key_for_provider,
     get_provider_from_model_id,
@@ -353,7 +354,9 @@ def extract_graph_for_source(
         if pool is not None:
             # ``map`` yields in submission order, so chunks are still applied in
             # the order they were given and a run stays reproducible.
-            prepared = pool.map(_prepare, items)
+            # Pool threads don't inherit context; carry the trace in so each
+            # chunk's extraction LLM call is recorded.
+            prepared = pool.map(tracing.wrap(_prepare), items)
         else:
             prepared = (_prepare(item) for item in items)
         missed = []
