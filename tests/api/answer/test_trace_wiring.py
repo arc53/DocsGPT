@@ -238,14 +238,46 @@ class TestProcessorTraceSetup:
         assert [s.kind for s in trace.spans] == ["retrieval"]
         assert tracing.current_trace() is None
 
-    def test_client_supplied_request_id_is_kept(self):
+    def test_client_supplied_request_id_is_ignored(self):
+        """Quotas count distinct request ids; a client must not choose its own."""
         from docsgpt.api.answer.services.stream_processor import StreamProcessor
 
         processor = StreamProcessor({"request_id": "client-rid"}, {"sub": "u1"})
         with patch.object(processor, "initialize", side_effect=RuntimeError("stop")):
             with pytest.raises(RuntimeError):
                 processor.build_agent("q")
-        assert processor.request_id == "client-rid"
+        assert processor.request_id and processor.request_id != "client-rid"
+
+    def test_refused_request_still_writes_its_trace(self):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        processor = StreamProcessor({}, {"sub": "u1"})
+
+        def _initialize():
+            with tracing.span(tracing.KIND_RETRIEVAL, "retrieval"):
+                pass
+
+        with patch.object(processor, "initialize", side_effect=_initialize), patch.object(
+            processor, "pre_fetch_docs", return_value=(None, None)
+        ), patch.object(processor, "pre_fetch_tools", return_value=None), patch.object(
+            processor, "create_agent", return_value=MagicMock()
+        ), patch.object(processor, "_exposure_partition", return_value=([], [])):
+            processor.build_agent("q")
+        with _captured_flushes() as flushed:
+            processor.flush_unclaimed_trace()
+        (trace,) = flushed
+        assert trace.status == "error"
+        assert [s.kind for s in trace.spans] == ["retrieval"]
+
+    def test_handed_off_trace_is_left_to_the_stream(self):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        processor = StreamProcessor({}, {"sub": "u1"})
+        processor.trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        assert processor.handoff_trace() is processor.trace
+        with _captured_flushes() as flushed:
+            processor.flush_unclaimed_trace()
+        assert flushed == []
 
     def test_tracing_disabled_leaves_no_trace(self, monkeypatch):
         from docsgpt.api.answer.services.stream_processor import StreamProcessor
@@ -257,3 +289,34 @@ class TestProcessorTraceSetup:
                 processor.build_agent("q")
         assert processor.trace is None
         assert processor.request_id
+
+
+@pytest.mark.unit
+class TestRouteFlushesRefusedRequests:
+    def test_unauthorized_answer_request_writes_its_trace(self, mock_mongo_db, flask_app):
+        """The route registers the flush, and the hook never replaces the response."""
+        import json
+
+        from flask_restx import Api
+
+        from docsgpt.api.answer.routes.answer import answer_ns
+
+        api = Api(flask_app)
+        api.add_namespace(answer_ns)
+        client = flask_app.test_client()
+        processor = MagicMock()
+        processor.decoded_token = None
+        processor.flush_unclaimed_trace.return_value = "not a response"
+        with patch(
+            "docsgpt.api.answer.routes.answer.StreamProcessor", return_value=processor
+        ), patch(
+            "docsgpt.api.answer.routes.answer.AnswerResource.validate_request",
+            return_value=None,
+        ):
+            resp = client.post(
+                "/api/answer",
+                data=json.dumps({"question": "q"}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 401
+        processor.flush_unclaimed_trace.assert_called_once_with()

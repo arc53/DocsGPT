@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 import uuid
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 from flask import jsonify, make_response, Response
 from flask_restx import Namespace
@@ -69,7 +69,9 @@ class StreamSuperseded(Exception):
 answer_ns = Namespace("answer", description="Answer related operations", path="/")
 
 
-def _traced_stream(method):
+def _traced_stream(
+    method: Callable[..., Generator[str, None, None]],
+) -> Callable[..., Generator[str, None, None]]:
     """Record ``complete_stream`` as the request's execution trace.
 
     The stream runs in the SSE pump thread, not the request thread, so the
@@ -81,7 +83,7 @@ def _traced_stream(method):
     signature = inspect.signature(method)
 
     @functools.wraps(method)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Generator[str, None, None]:
         bound = signature.bind(*args, **kwargs)
         arguments = bound.arguments
         continuation = arguments.get("_continuation")

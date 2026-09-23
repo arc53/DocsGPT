@@ -13,7 +13,10 @@ from docsgpt.api.answer.services.continuation_service import (
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
-from docsgpt.api.answer.services.stream_processor import StreamProcessor
+from docsgpt.api.answer.services.stream_processor import (
+    StreamProcessor,
+    flush_trace_after_request,
+)
 from docsgpt.streaming.sse_keepalive import with_sse_keepalive
 
 logger = logging.getLogger(__name__)
@@ -95,6 +98,7 @@ class StreamResource(Resource, BaseAnswerResource):
             return error
         decoded_token = getattr(request, "decoded_token", None)
         processor = StreamProcessor(data, decoded_token, trace_source="stream")
+        flush_trace_after_request(processor)
 
         try:
             # ---- Continuation mode ----
@@ -130,7 +134,7 @@ class StreamResource(Resource, BaseAnswerResource):
                             agent_id=processor.agent_id,
                             model_id=processor.model_id,
                             model_user_id=processor.model_user_id,
-                            trace=processor.trace,
+                            trace=processor.handoff_trace(),
                             _continuation={
                                 "messages": messages,
                                 "tools_dict": tools_dict,
@@ -183,7 +187,7 @@ class StreamResource(Resource, BaseAnswerResource):
                         model_id=processor.model_id,
                         model_user_id=processor.model_user_id,
                         request_id=processor.request_id,
-                        trace=processor.trace,
+                        trace=processor.handoff_trace(),
                     ),
                 ),
                 mimetype="text/event-stream",
