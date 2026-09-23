@@ -104,7 +104,7 @@ cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
 charset-normalizer==3.5.1
     # via requests
-click==8.1.8
+click==8.5.0
     # via
     #   celery
     #   click-didyoumean
