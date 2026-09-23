@@ -437,6 +437,8 @@ class TestLogActivityTraceSpan:
         assert agent_span.attributes["gen_ai.operation.name"] == "invoke_agent"
         assert agent_span.attributes["gen_ai.agent.id"] == "agent-1"
         assert agent_span.attributes["docsgpt.answer_chars"] == 2
+        # BaseAgent keeps its model in ``model_id``; the span reads it too.
+        assert agent_span.attributes["gen_ai.request.model"] == "gpt-4o"
         assert agent_span.attributes["docsgpt.source_count"] == 1
         assert llm_span.parent_id == agent_span.id
         assert trace.activity_id is not None

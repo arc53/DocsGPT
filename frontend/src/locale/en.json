@@ -506,6 +506,7 @@
         "fields": {
           "status": "Status",
           "duration": "Duration",
+          "modelTime": "Model time",
           "provider": "Provider",
           "model": "Model",
           "inputTokens": "Input tokens",

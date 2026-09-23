@@ -500,6 +500,7 @@
         "fields": {
           "status": "ステータス",
           "duration": "所要時間",
+          "modelTime": "モデル処理時間",
           "provider": "プロバイダー",
           "model": "モデル",
           "inputTokens": "入力トークン",

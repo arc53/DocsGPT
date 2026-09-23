@@ -110,6 +110,18 @@ class TestNonStreaming:
         metrics.assert_called_once()
 
 
+class TestDisabled:
+    def test_no_metrics_when_tracing_is_off(self, metrics, monkeypatch):
+        monkeypatch.setattr(settings, "TRACES_ENABLED", False)
+
+        @gen_token_usage
+        def _gen(self, model, messages, stream, tools, **kwargs):
+            return "x"
+
+        _gen(_LLM(), "m", [], False, None)
+        metrics.assert_not_called()
+
+
 class TestStreaming:
     def test_span_starts_on_first_next_not_on_call(self, trace, metrics):
         @stream_token_usage

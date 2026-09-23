@@ -53,6 +53,10 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
       if (typeof output === 'number')
         push(f('outputTokens'), formatTokens(output));
       push(f('cachedTokens'), a['gen_ai.usage.cache_read.input_tokens']);
+      // A stream's span covers the whole time it was open, including the
+      // app's own work between chunks; model time is the provider's share.
+      if (a['docsgpt.stream'] && typeof a['docsgpt.provider_ms'] === 'number')
+        push(f('modelTime'), formatDurationMs(a['docsgpt.provider_ms']));
       if (typeof a['docsgpt.ttft_ms'] === 'number')
         push(f('timeToFirstToken'), formatDurationMs(a['docsgpt.ttft_ms']));
       if (

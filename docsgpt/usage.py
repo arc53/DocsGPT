@@ -3,7 +3,7 @@ import time
 from typing import Any, Dict
 
 from docsgpt.pricing import compute_cost_usd
-from docsgpt.tracing.llm import finish_llm_call, output_text, start_llm_span
+from docsgpt.tracing.llm import finish_llm_call, start_llm_span
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_session
 from docsgpt.utils import num_tokens_from_object_or_list, num_tokens_from_string
@@ -388,7 +388,7 @@ def stream_token_usage(func):
                 ttft_ms=ttft_ms,
                 cost_usd=cost,
                 estimated=call_usage is estimated_usage,
-                output=output_text(batch),
+                output=batch,
             )
             emit = getattr(self, "_emit_stream_finished_log", None)
             if callable(emit):

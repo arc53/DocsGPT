@@ -7,8 +7,9 @@ fallback each get their own span with the provider that actually ran.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Union
 
+from docsgpt.core.settings import settings
 from docsgpt.tracing import core
 from docsgpt.tracing.otel import provider_name, record_llm_metrics
 
@@ -16,7 +17,9 @@ from docsgpt.tracing.otel import provider_name, record_llm_metrics
 CACHE_HIT_ATTR = "_trace_cache_hit"
 
 
-def start_llm_span(llm: Any, model: Optional[str], *, stream: bool, tools: Any = None):
+def start_llm_span(
+    llm: Any, model: Optional[str], *, stream: bool, tools: Any = None
+) -> Union[core.Span, Any]:
     """Open a ``chat {model}`` span for a call on ``llm`` (no-op without a trace)."""
     if core.current_trace() is None:
         return core.NOOP_SPAN
@@ -54,7 +57,7 @@ def finish_llm_call(
     ttft_ms: Optional[int] = None,
     cost_usd: Optional[float] = None,
     estimated: bool = True,
-    output: Optional[str] = None,
+    output: Union[str, Iterable[Any], None] = None,
 ) -> None:
     """Close the call's span and record the GenAI client metrics.
 
@@ -69,13 +72,16 @@ def finish_llm_call(
         ttft_ms: Time to first streamed chunk.
         cost_usd: Cost priced for the call, when known.
         estimated: True when token counts are local estimates.
-        output: Response text for the preview.
+        output: The response text, or the streamed chunks to join into it;
+            joined only when the span keeps a preview.
     """
     cache_hit = bool(getattr(llm, CACHE_HIT_ATTR, False))
     try:
         setattr(llm, CACHE_HIT_ATTR, False)
     except AttributeError:
         pass
+    if not settings.TRACES_ENABLED:
+        return
     record_llm_metrics(
         provider=getattr(llm, "provider_name", None),
         model=str(model) if model else None,
@@ -86,8 +92,8 @@ def finish_llm_call(
     )
     if not span:
         return
-    if output:
-        span.preview("output", output)
+    if output and settings.TRACES_CAPTURE_CONTENT:
+        span.preview("output", output_text(output))
     span.end(
         None if completed or error is not None else core.STATUS_CANCELLED,
         error=error,

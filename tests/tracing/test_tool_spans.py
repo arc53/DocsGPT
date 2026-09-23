@@ -245,6 +245,8 @@ class TestContinuation:
         tool_span = trace.spans[1]
         assert agent_span.kind == tracing.KIND_AGENT
         assert agent_span.attributes["docsgpt.continuation"] is True
+        assert agent_span.attributes["gen_ai.request.model"] == "gpt-4"
+        assert agent_span.name == "invoke_agent ClassicAgent"
         assert agent_span.status == "ok"
         assert tool_span.parent_id == agent_span.id
         assert tool_span.status == "denied"

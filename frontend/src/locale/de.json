@@ -501,6 +501,7 @@
         "fields": {
           "status": "Status",
           "duration": "Dauer",
+          "modelTime": "Modellzeit",
           "provider": "Anbieter",
           "model": "Modell",
           "inputTokens": "Eingabe-Tokens",

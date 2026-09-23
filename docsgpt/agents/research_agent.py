@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import time
-from typing import Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from docsgpt import tracing
 from docsgpt.agents.base import BaseAgent
@@ -53,7 +53,7 @@ SYNTHESIS_PROMPT = _load_prompt("synthesis.txt")
 
 
 
-def _phase_span(phase: str, **attributes):
+def _phase_span(phase: str, **attributes: Any) -> Any:
     """Open a trace span for one research phase (clarify, plan, a step, synthesis)."""
     return tracing.start_span(
         tracing.KIND_STEP,

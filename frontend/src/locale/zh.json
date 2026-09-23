@@ -500,6 +500,7 @@
         "fields": {
           "status": "状态",
           "duration": "耗时",
+          "modelTime": "模型耗时",
           "provider": "提供商",
           "model": "模型",
           "inputTokens": "输入词元",

@@ -30,7 +30,7 @@ from docsgpt.storage.db.session import db_readonly, db_session
 logger = logging.getLogger(__name__)
 
 
-def record_tool_span_start(call: Any, **attributes: Any):
+def record_tool_span_start(call: Any, **attributes: Any) -> Any:
     """Open an ``execute_tool`` span for ``call`` (no-op without an active trace)."""
     llm_name = getattr(call, "name", None) or "unknown"
     base = {

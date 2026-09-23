@@ -140,7 +140,7 @@ def log_activity() -> Callable:
             # The outermost agent run names the trace's activity, which is how
             # a webhook/system Logs row (keyed by activity_id) finds its trace.
             tracing.bind_if_unset(activity_id=activity_id)
-            span = _start_agent_span(args[0], agent_id=agent_id, model=model, endpoint=endpoint)
+            span = start_agent_span(args[0], agent_id=agent_id, model=model, endpoint=endpoint)
 
             error: BaseException | None = None
             completed = False
@@ -170,9 +170,39 @@ def log_activity() -> Callable:
     return decorator
 
 
-def _start_agent_span(agent: Any, *, agent_id: Any, model: Any, endpoint: str):
-    """Open the ``invoke_agent`` span for one agent run (no-op without a trace)."""
+def start_agent_span(
+    agent: Any,
+    *,
+    agent_id: Any = None,
+    model: Any = None,
+    endpoint: Optional[str] = None,
+    continuation: bool = False,
+) -> Any:
+    """Open the ``invoke_agent`` span for one agent run (no-op without a trace).
+
+    The one builder for agent spans: ``@log_activity`` uses it for every run
+    and ``gen_continuation`` for a resumed one. Values not passed are read off
+    the agent.
+
+    Args:
+        agent: The agent instance.
+        agent_id: Overrides ``agent.agent_id``.
+        model: Overrides the agent's model (``gpt_model``, ``model`` or ``model_id``).
+        endpoint: Overrides ``agent.endpoint``.
+        continuation: True for a run resumed after tool approval.
+
+    Returns:
+        The span, or a no-op span without an active trace.
+    """
     label = type(agent).__name__
+    agent_id = agent_id or getattr(agent, "agent_id", None)
+    model = (
+        model
+        or getattr(agent, "gpt_model", None)
+        or getattr(agent, "model", None)
+        or getattr(agent, "model_id", None)
+    )
+    endpoint = endpoint or getattr(agent, "endpoint", None)
     return tracing.start_span(
         tracing.KIND_AGENT,
         f"invoke_agent {label}",
@@ -183,7 +213,8 @@ def _start_agent_span(agent: Any, *, agent_id: Any, model: Any, endpoint: str):
                 "gen_ai.agent.id": str(agent_id) if agent_id else None,
                 "gen_ai.request.model": str(model) if model else None,
                 "docsgpt.agent_type": label,
-                "docsgpt.endpoint": endpoint or None,
+                "docsgpt.endpoint": str(endpoint) if endpoint else None,
+                "docsgpt.continuation": True if continuation else None,
             }.items()
             if v is not None
         },

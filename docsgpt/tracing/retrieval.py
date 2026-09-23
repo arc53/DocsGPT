@@ -12,7 +12,9 @@ _SNIPPET_CHARS = 240
 _MAX_PREVIEW_CHUNKS = 20
 
 
-def start_retrieval_span(name: str, *, sources: Optional[Iterable[Any]] = None, **attributes: Any):
+def start_retrieval_span(
+    name: str, *, sources: Optional[Iterable[Any]] = None, **attributes: Any
+) -> Any:
     """Open a ``retrieval`` span (a container: embeddings and searches nest under it)."""
     source_ids = [str(s) for s in (sources or []) if s]
     base = {
@@ -64,7 +66,7 @@ def describe_documents(span: Any, docs: Optional[List[Dict[str, Any]]], *, query
         )
 
 
-def start_embedding_span(model: Optional[str], *, inputs: int = 1, **attributes: Any):
+def start_embedding_span(model: Optional[str], *, inputs: int = 1, **attributes: Any) -> Any:
     """Open an ``embeddings`` span for a query embedding (leaf)."""
     base = {
         "gen_ai.operation.name": "embeddings",
@@ -79,7 +81,9 @@ def start_embedding_span(model: Optional[str], *, inputs: int = 1, **attributes:
     )
 
 
-def start_source_search_span(source_id: Any, *, top_k: Optional[int] = None, **attributes: Any):
+def start_source_search_span(
+    source_id: Any, *, top_k: Optional[int] = None, **attributes: Any
+) -> Any:
     """Open a per-source vector ``search`` span (leaf)."""
     base = {
         "gen_ai.operation.name": "search",

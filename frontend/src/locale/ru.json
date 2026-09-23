@@ -527,6 +527,7 @@
         "fields": {
           "status": "Статус",
           "duration": "Длительность",
+          "modelTime": "Время модели",
           "provider": "Провайдер",
           "model": "Модель",
           "inputTokens": "Входные токены",

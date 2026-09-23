@@ -32,7 +32,7 @@ from docsgpt.guardrails.stream import StreamingOutputGuard
 from docsgpt.guardrails.types import Action, Stage, resolve_tool_result
 from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
 from docsgpt.llm.llm_creator import LLMCreator
-from docsgpt.logging import build_stack_data, log_activity, LogContext
+from docsgpt.logging import build_stack_data, log_activity, LogContext, start_agent_span
 
 logger = logging.getLogger(__name__)
 
@@ -504,22 +504,7 @@ class BaseAgent(ABC):
             pending_tool_calls: The pending tool call descriptors from the pause.
             tool_actions: Client-provided actions resolving the pending calls.
         """
-        label = type(self).__name__
-        span = tracing.start_span(
-            tracing.KIND_AGENT,
-            f"invoke_agent {label}",
-            attributes={
-                k: v
-                for k, v in {
-                    "gen_ai.operation.name": "invoke_agent",
-                    "gen_ai.agent.id": str(self.agent_id) if getattr(self, "agent_id", None) else None,
-                    "gen_ai.request.model": getattr(self, "model_id", None),
-                    "docsgpt.agent_type": label,
-                    "docsgpt.continuation": True,
-                }.items()
-                if v is not None
-            },
-        )
+        span = start_agent_span(self, continuation=True)
         completed = False
         try:
             yield from self._gen_continuation_inner(
