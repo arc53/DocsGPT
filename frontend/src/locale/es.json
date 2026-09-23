@@ -441,7 +441,6 @@
         "viewRounds_one": "Ver traza ({{count}} ronda)",
         "viewRounds_other": "Ver traza ({{count}} rondas)",
         "title": "Traza de ejecución",
-        "subtitle": "Cada paso detrás de esta entrada (recuperación, llamadas al modelo y llamadas a herramientas) con su duración.",
         "empty": "No se registró ninguna traza para esta entrada.",
         "failed": "No se pudo cargar la traza.",
         "noSpans": "No se registró nada en esta ejecución.",

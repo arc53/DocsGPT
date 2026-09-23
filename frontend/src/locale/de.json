@@ -441,7 +441,6 @@
         "viewRounds_one": "Trace anzeigen ({{count}} Runde)",
         "viewRounds_other": "Trace anzeigen ({{count}} Runden)",
         "title": "Ausführungs-Trace",
-        "subtitle": "Jeder Schritt hinter diesem Eintrag – Abruf, Modellaufrufe und Tool-Aufrufe – mit seiner Dauer.",
         "empty": "Für diesen Eintrag wurde kein Trace aufgezeichnet.",
         "failed": "Der Trace konnte nicht geladen werden.",
         "noSpans": "Für diese Ausführung wurde nichts aufgezeichnet.",

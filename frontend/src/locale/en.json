@@ -446,7 +446,6 @@
         "viewRounds_one": "View trace ({{count}} round)",
         "viewRounds_other": "View trace ({{count}} rounds)",
         "title": "Execution trace",
-        "subtitle": "Every step behind this entry — retrieval, model calls and tool calls — with its timing.",
         "empty": "No trace was recorded for this entry.",
         "failed": "Could not load the trace.",
         "noSpans": "Nothing was recorded for this run.",

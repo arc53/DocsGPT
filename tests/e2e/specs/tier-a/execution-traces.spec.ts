@@ -106,8 +106,8 @@ test.describe('tier-a · execution traces', () => {
       await page.goto('/settings/logs');
       await page.getByText('what do you remember about me?').first().click();
       await page.getByRole('button', { name: 'View trace' }).click();
-      const sheet = page.getByRole('dialog');
-      await expect(sheet.getByText('Execution trace')).toBeVisible();
+      const sheet = page.getByRole('dialog', { name: 'Execution trace' });
+      await expect(sheet).toBeVisible();
       await expect(sheet.getByText('execute_tool memory_view').first()).toBeVisible();
       await sheet.getByText('execute_tool memory_view').first().click();
       await expect(sheet.getByText('Arguments')).toBeVisible();
@@ -165,8 +165,8 @@ test.describe('tier-a · execution traces', () => {
       await page.goto('/settings/logs');
       await page.getByText('how do I get started?').first().click();
       await page.getByRole('button', { name: 'View trace' }).click();
-      const sheet = page.getByRole('dialog');
-      await expect(sheet.getByText('Execution trace')).toBeVisible();
+      const sheet = page.getByRole('dialog', { name: 'Execution trace' });
+      await expect(sheet).toBeVisible();
       await sheet.getByText(/^retrieval/).first().click();
       await expect(sheet.getByText('Retrieved chunks')).toBeVisible();
       if (process.env.TRACE_SCREENSHOT_RAG) {

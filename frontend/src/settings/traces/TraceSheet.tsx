@@ -4,13 +4,7 @@ import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
 import Spinner from '../../components/Spinner';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '../../components/ui/sheet';
+import { Sheet, SheetContent } from '../../components/ui/sheet';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatDateTime } from '../../utils/dateTimeUtils';
 import { Trace, TraceRef } from '../types';
@@ -76,17 +70,15 @@ export default function TraceSheet({
 
   return (
     <Sheet open={traceRef !== null} onOpenChange={(open) => !open && onClose()}>
+      {/* The waterfall speaks for itself: the title is for screen readers
+          only, and there is no description to announce. */}
       <SheetContent
         side="right"
+        title={t('settings.logs.trace.title')}
+        aria-describedby={undefined}
         className="w-full overflow-y-auto sm:max-w-3xl"
       >
-        <SheetHeader>
-          <SheetTitle>{t('settings.logs.trace.title')}</SheetTitle>
-          <SheetDescription>
-            {t('settings.logs.trace.subtitle')}
-          </SheetDescription>
-        </SheetHeader>
-        <div className="flex flex-col gap-8 px-4 pb-6">
+        <div className="flex flex-col gap-8 px-4 pt-4 pb-6">
           {loading && (
             <div className="flex justify-center py-10">
               <Spinner />
@@ -104,7 +96,8 @@ export default function TraceSheet({
           )}
           {traces.map((trace, index) => (
             <section key={trace.id} className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Right padding keeps the first row clear of the close button. */}
+              <div className="flex flex-wrap items-center gap-2 pr-8">
                 {traces.length > 1 && (
                   <span className="text-foreground text-sm font-medium">
                     {t('settings.logs.trace.round', { n: index + 1 })}

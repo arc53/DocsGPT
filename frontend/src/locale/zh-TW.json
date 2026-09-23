@@ -440,7 +440,6 @@
         "viewRounds_one": "檢視追蹤（{{count}} 輪）",
         "viewRounds_other": "檢視追蹤（{{count}} 輪）",
         "title": "執行追蹤",
-        "subtitle": "此項目背後的每個步驟（檢索、模型呼叫和工具呼叫）及其耗時。",
         "empty": "此項目沒有記錄追蹤。",
         "failed": "無法載入追蹤。",
         "noSpans": "此次執行沒有記錄任何內容。",

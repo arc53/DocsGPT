@@ -440,7 +440,6 @@
         "viewRounds_one": "查看追踪（{{count}} 轮）",
         "viewRounds_other": "查看追踪（{{count}} 轮）",
         "title": "执行追踪",
-        "subtitle": "此条目背后的每一步（检索、模型调用和工具调用）及其耗时。",
         "empty": "此条目没有记录追踪。",
         "failed": "无法加载追踪。",
         "noSpans": "此次运行没有记录任何内容。",
