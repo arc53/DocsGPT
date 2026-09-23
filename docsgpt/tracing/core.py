@@ -146,10 +146,21 @@ class Span:
         return self
 
     def fail(self, exc: BaseException) -> "Span":
-        """Record ``exc`` on the span without ending it."""
+        """Record ``exc`` on the span without ending it.
+
+        ``error`` and ``error.type`` hold only the exception type: they are
+        stored and exported whatever the content settings, and exception text
+        can quote the prompt (a provider's content-filter error) or a tool
+        result. The message itself becomes the capture-gated ``error``
+        preview, dropped with every other preview when capture is off or a
+        guardrail fired.
+        """
         self.status = STATUS_ERROR
-        self.error = str(exc)[:500] or type(exc).__name__
+        self.error = type(exc).__name__
         self.attributes["error.type"] = type(exc).__name__
+        message = str(exc)
+        if message:
+            self.preview("error", message)
         return self
 
     def end(

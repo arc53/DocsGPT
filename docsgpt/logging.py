@@ -234,7 +234,9 @@ def _end_agent_span(span: Any, context: "LogContext", *, error: BaseException | 
         span.end(error=error, attributes=attributes)
     elif context.stream_error:
         span.set(**attributes, **{"error.type": "StreamError"})
-        span.error = context.stream_error
+        # The error event's text is gated like any other content.
+        span.preview("error", context.stream_error)
+        span.error = "StreamError"
         span.end(tracing.STATUS_ERROR)
     else:
         span.end(None if completed else tracing.STATUS_CANCELLED, attributes=attributes)

@@ -398,8 +398,6 @@ class TestAccumulateResponseSummary:
         assert ctx.tool_call_count == 2
 
 
-
-
 class TestLogActivityTraceSpan:
     """``@log_activity`` opens the ``invoke_agent`` span for every agent run."""
 
@@ -475,7 +473,8 @@ class TestLogActivityTraceSpan:
         with patch("docsgpt.logging._log_activity_to_db"), tracing.activate(trace):
             list(gen(self._Agent()))
         assert trace.spans[0].status == "error"
-        assert trace.spans[0].error == "node failed"
+        assert trace.spans[0].error == "StreamError"
+        assert trace.spans[0].previews["error"] == "node failed"
 
     def test_raised_error_marks_span_error(self):
         from docsgpt import tracing

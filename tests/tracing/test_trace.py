@@ -133,7 +133,20 @@ class TestNesting:
         span = trace.spans[0]
         assert span.status == "error"
         assert span.attributes["error.type"] == "ValueError"
-        assert span.error == "boom"
+        # Exception text can quote a prompt: it is a capture-gated preview,
+        # never the always-stored/exported ``error``.
+        assert span.error == "ValueError"
+        assert span.previews["error"] == "boom"
+
+    def test_exception_text_is_dropped_when_capture_is_off(self, monkeypatch):
+        monkeypatch.setattr(settings, "TRACES_CAPTURE_CONTENT", False)
+        trace = tracing.start_trace(source="stream")
+        with tracing.activate(trace):
+            with pytest.raises(ValueError):
+                with tracing.span(tracing.KIND_LLM, "chat"):
+                    raise ValueError("content filter: <the user's prompt>")
+        trace.finish()
+        assert "the user's prompt" not in str(trace.to_record())
 
     def test_generator_exit_marks_span_cancelled(self):
         trace = tracing.start_trace(source="stream")
