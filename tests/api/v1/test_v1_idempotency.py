@@ -437,3 +437,46 @@ class TestV1IdempotencyRoute:
                 {"n": TASK_NAME},
             ).scalar()
         assert completed == 1
+
+
+@pytest.mark.integration
+class TestV1ReplayTrace:
+    """A replayed request must not leave a failed trace behind."""
+
+    QUESTION = TestV1IdempotencyRoute.QUESTION
+
+    def test_replay_discards_its_setup_trace(self, pg_engine, monkeypatch):
+        from docsgpt import tracing
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "TRACES_ENABLED", True)
+        monkeypatch.setattr(settings, "TRACES_OTEL_EXPORT", False)
+        user_id = f"user-{uuid.uuid4().hex[:8]}"
+        api_key = f"key-{uuid.uuid4().hex[:8]}"
+        with pg_engine.begin() as conn:
+            _seed_user(conn, user_id)
+            _seed_agent(conn, user_id, api_key)
+
+        def _build_agent(processor, question):  # noqa: ARG001
+            # What the real setup does: a trace holding the pre-fetch retrieval.
+            processor.trace = tracing.start_trace(source="v1", capture_otel_context=False)
+            with tracing.activate(processor.trace):
+                with tracing.span(tracing.KIND_RETRIEVAL, "retrieval"):
+                    pass
+            return _CountingAnswerAgent()
+
+        written = []
+        app = _build_app()
+        idem_key = f"idem-{uuid.uuid4().hex}"
+        with _wire_v1_route_db(pg_engine, monkeypatch), patch(
+            "docsgpt.api.answer.services.stream_processor.StreamProcessor.build_agent",
+            _build_agent,
+        ), patch("docsgpt.tracing.sink._write", side_effect=written.append):
+            _wire_idem_db(pg_engine, monkeypatch)
+            with app.test_client() as c:
+                resp1 = _post_chat(c, self.QUESTION, api_key, idem_key=idem_key)
+                resp2 = _post_chat(c, self.QUESTION, api_key, idem_key=idem_key)
+
+        assert resp1.status_code == resp2.status_code == 200
+        # Only the first request's trace is written, and it is not a failure.
+        assert [t.status for t in written] == ["ok"]

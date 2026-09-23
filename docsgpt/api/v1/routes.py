@@ -21,6 +21,7 @@ from docsgpt.api.answer.services.continuation_service import (
     RESUME_IN_PROGRESS_MESSAGE,
     ResumeInProgressError,
 )
+from docsgpt import tracing
 from docsgpt.api.answer.services.stream_processor import (
     StreamProcessor,
     flush_trace_after_request,
@@ -410,6 +411,9 @@ def chat_completions():
             if not claimed:
                 # ``completed`` cache hit, or a 409 for an in-flight same-key
                 # request — either way return without re-running the agent.
+                # The original request already has its trace; this retry's
+                # setup (pre-fetch retrieval) is not a failed run to record.
+                tracing.discard(processor.trace)
                 return replay
 
         # An exception from the agent run propagates to the ``except`` handlers
