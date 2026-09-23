@@ -63,3 +63,16 @@ class TestMigration0037RoundTrip:
                         "VALUES (gen_random_uuid(), 'stream', 'weird', now())"
                     )
                 )
+
+    def test_listing_and_deletion_indexes_exist(self, pg_engine):
+        with pg_engine.connect() as conn:
+            names = set(
+                conn.execute(
+                    text("SELECT indexname FROM pg_indexes WHERE tablename = 'request_traces'")
+                ).scalars()
+            )
+        assert {
+            "request_traces_conversation_idx",
+            "request_traces_user_source_started_idx",
+            "request_traces_agent_source_started_idx",
+        } <= names

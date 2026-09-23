@@ -141,6 +141,27 @@ class TestMessageLink:
         assert count == 0
 
 
+class TestConversationDeletion:
+    """Every trace of a conversation goes with it, not only message-linked ones."""
+
+    def test_trace_without_message_is_deleted_with_its_conversation(self, pg_conn):
+        conv_id, _msg_id = _message(pg_conn)
+        repo = RequestTracesRepository(pg_conn)
+        # e.g. a scheduled run in this conversation, or a stateless /v1 round.
+        repo.insert(_record(conversation_id=conv_id, source="schedule"))
+        repo.insert(_record(request_id="other"))  # another conversation's trace
+        ConversationsRepository(pg_conn).delete(conv_id, "u1")
+        remaining = pg_conn.execute(text("SELECT request_id FROM request_traces")).scalars().all()
+        assert remaining == ["other"]
+
+    def test_delete_all_for_user_removes_their_conversation_traces(self, pg_conn):
+        conv_id, _msg_id = _message(pg_conn)
+        repo = RequestTracesRepository(pg_conn)
+        repo.insert(_record(conversation_id=conv_id))
+        ConversationsRepository(pg_conn).delete_all_for_user("u1")
+        assert pg_conn.execute(text("SELECT count(*) FROM request_traces")).scalar() == 0
+
+
 class TestSummaries:
     def test_summaries_grouped_by_field_and_id(self, pg_conn):
         repo = RequestTracesRepository(pg_conn)

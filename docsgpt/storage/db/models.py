@@ -827,8 +827,8 @@ Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
 
 # One execution trace per request (chat turn, continuation, scheduled or
 # webhook run, search, graph extraction): the span tree as a JSONB array,
-# rendered as a waterfall in the Logs UI. ``message_id`` cascades so deleting
-# or truncating a conversation removes its traces. Migration 0037.
+# rendered as a waterfall in the Logs UI. ``message_id`` cascades; deleting a
+# conversation also deletes its traces by ``conversation_id``. Migration 0037.
 request_traces_table = Table(
     "request_traces",
     metadata,
@@ -858,7 +858,12 @@ request_traces_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
-Index("request_traces_user_started_idx", request_traces_table.c.user_id, request_traces_table.c.started_at)
+Index(
+    "request_traces_user_source_started_idx",
+    request_traces_table.c.user_id,
+    request_traces_table.c.source,
+    request_traces_table.c.started_at,
+)
 Index("request_traces_created_idx", request_traces_table.c.created_at)
 
 tool_call_attempts_table = Table(

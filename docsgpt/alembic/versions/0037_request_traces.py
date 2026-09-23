@@ -7,10 +7,15 @@ timings, stored as a ``spans`` JSONB array. The Logs UI loads a trace whole,
 so one row per trace keeps the write to a single INSERT and lets retention
 and conversation deletion remove a trace in one step.
 
-``message_id`` cascades: deleting a conversation, or truncating it when a
-turn is superseded, removes that turn's traces with it. The link ids
-(``request_id``, ``activity_id``, ``workflow_run_id``) carry partial indexes
-because only the Logs rows that have them look traces up by them.
+``message_id`` cascades: truncating a conversation when a turn is
+superseded removes that turn's traces with it. Deleting a conversation also
+deletes, by ``conversation_id``, the traces that have no message (scheduled
+runs, stateless ``/v1`` rounds, turns whose message was never reserved); the
+conversation index serves that. The link ids (``request_id``,
+``activity_id``, ``workflow_run_id``) carry partial indexes because only the
+Logs rows that have them look traces up by them. Traces with no log row of
+their own (searches, graph builds) are listed per user or agent and source,
+hence the source-leading indexes.
 
 ``status`` is the only CHECK; span kinds and sources are validated in code so
 new ones need no migration.
@@ -70,10 +75,12 @@ def upgrade() -> None:
             ON request_traces (activity_id) WHERE activity_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS request_traces_workflow_run_idx
             ON request_traces (workflow_run_id) WHERE workflow_run_id IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS request_traces_user_started_idx
-            ON request_traces (user_id, started_at DESC);
-        CREATE INDEX IF NOT EXISTS request_traces_agent_started_idx
-            ON request_traces (agent_id, started_at DESC) WHERE agent_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS request_traces_conversation_idx
+            ON request_traces (conversation_id) WHERE conversation_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS request_traces_user_source_started_idx
+            ON request_traces (user_id, source, started_at DESC);
+        CREATE INDEX IF NOT EXISTS request_traces_agent_source_started_idx
+            ON request_traces (agent_id, source, started_at DESC) WHERE agent_id IS NOT NULL;
         CREATE INDEX IF NOT EXISTS request_traces_created_idx
             ON request_traces (created_at);
         """
