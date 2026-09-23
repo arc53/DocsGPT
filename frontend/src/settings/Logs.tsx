@@ -429,7 +429,16 @@ function Log({
   return (
     <div className="group dark:hover:bg-accent hover:bg-muted w-full rounded-xl bg-transparent">
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isOpen}
         onClick={() => onToggle(log.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle(log.id);
+          }
+        }}
         className={`text-foreground flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 ${
           isOpen ? 'dark:bg-background rounded-t-xl bg-[#F1F1F1]' : ''
         }`}

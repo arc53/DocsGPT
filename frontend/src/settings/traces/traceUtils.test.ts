@@ -94,6 +94,7 @@ describe('formatDurationMs', () => {
     [1234, '1.23 s'],
     [15432, '15.4 s'],
     [65000, '1m 05s'],
+    [119_600, '2m 00s'],
   ])('%s -> %s', (ms, expected) => {
     expect(formatDurationMs(ms)).toBe(expected);
   });
