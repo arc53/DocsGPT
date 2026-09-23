@@ -3,6 +3,7 @@ import time
 from typing import Any, Dict
 
 from docsgpt.pricing import compute_cost_usd
+from docsgpt.tracing.llm import finish_llm_call, output_text, start_llm_span
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_session
 from docsgpt.utils import num_tokens_from_object_or_list, num_tokens_from_string
@@ -108,9 +109,12 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
         duration_ms: Wall-clock for the call, measured by the wrapper.
         ttft_ms: Time to the first streamed chunk; None for a non-streaming
             call and for a stream that failed before yielding anything.
+
+    Returns:
+        The call's priced cost in USD, or None when no row was written.
     """
     if call_usage["prompt_tokens"] == 0 and call_usage["generated_tokens"] == 0:
-        return
+        return None
     decoded_token = getattr(llm, "decoded_token", None)
     user_id = (
         decoded_token.get("sub") if isinstance(decoded_token, dict) else None
@@ -126,7 +130,7 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
                 "source": getattr(llm, "_token_usage_source", "agent_stream"),
             },
         )
-        return
+        return None
     model_id = getattr(llm, "_canonical_model_id", None)
     # Bring-your-own models run on the user's own provider key: recorded, never priced.
     if getattr(llm, "_is_byom", False):
@@ -161,6 +165,7 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
             )
     except Exception:
         logger.exception("token_usage persist failed")
+    return cost
 
 
 def _call_cost_usd(model_id, call_usage) -> float:
@@ -257,8 +262,10 @@ def gen_token_usage(func):
             usage_attachments=usage_attachments,
             **kwargs,
         )
+        span = start_llm_span(self, model, stream=False, tools=tools)
         started_at = time.monotonic()
         error: BaseException | None = None
+        result = None
         try:
             result = func(self, model, messages, stream, tools, **kwargs)
             call_usage["generated_tokens"] += _count_tokens(result)
@@ -268,11 +275,23 @@ def gen_token_usage(func):
             raise
         finally:
             duration_ms = int((time.monotonic() - started_at) * 1000)
+            estimated_usage = call_usage
             call_usage = _prefer_provider_usage(self, call_usage)
             self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
             self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
             # A non-streaming call has no first-token moment; ttft stays NULL.
-            _persist_call_usage(self, call_usage, duration_ms=duration_ms)
+            cost = _persist_call_usage(self, call_usage, duration_ms=duration_ms)
+            finish_llm_call(
+                span,
+                self,
+                model,
+                call_usage,
+                duration_ms=duration_ms,
+                error=error,
+                cost_usd=cost,
+                estimated=call_usage is estimated_usage,
+                output=result if isinstance(result, str) else None,
+            )
             emit = getattr(self, "_emit_gen_finished_log", None)
             if callable(emit):
                 try:
@@ -314,6 +333,10 @@ def stream_token_usage(func):
         # non-streaming durations under one p50.
         provider_seconds = 0.0
         error: BaseException | None = None
+        completed = False
+        # This body runs on the first ``next()``, not at ``gen_stream()``
+        # time, so the span starts when the provider call really does.
+        span = start_llm_span(self, model, stream=True, tools=tools)
         try:
             result = func(self, model, messages, stream, tools, **kwargs)
             stream_iter = iter(result)
@@ -323,6 +346,7 @@ def stream_token_usage(func):
                     r = next(stream_iter)
                 except StopIteration:
                     provider_seconds += time.monotonic() - pull_started
+                    completed = True
                     break
                 provider_seconds += time.monotonic() - pull_started
                 if first_chunk_at is None:
@@ -346,11 +370,25 @@ def stream_token_usage(func):
             )
             for line in batch:
                 call_usage["generated_tokens"] += _count_tokens(line)
+            estimated_usage = call_usage
             call_usage = _prefer_provider_usage(self, call_usage)
             self.token_usage["prompt_tokens"] += call_usage["prompt_tokens"]
             self.token_usage["generated_tokens"] += call_usage["generated_tokens"]
-            _persist_call_usage(
+            cost = _persist_call_usage(
                 self, call_usage, duration_ms=duration_ms, ttft_ms=ttft_ms
+            )
+            finish_llm_call(
+                span,
+                self,
+                model,
+                call_usage,
+                duration_ms=duration_ms,
+                error=error,
+                completed=completed,
+                ttft_ms=ttft_ms,
+                cost_usd=cost,
+                estimated=call_usage is estimated_usage,
+                output=output_text(batch),
             )
             emit = getattr(self, "_emit_stream_finished_log", None)
             if callable(emit):
