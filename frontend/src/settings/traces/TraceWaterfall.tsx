@@ -90,10 +90,10 @@ export default function TraceWaterfall({ trace }: { trace: Trace }) {
           {SCALE_STEPS.map((step) => (
             <span
               key={step}
-              className="absolute top-0 -translate-x-1/2 tabular-nums first:translate-x-0 last:-translate-x-full"
+              className="absolute top-0 -translate-x-1/2 whitespace-nowrap tabular-nums first:translate-x-0 last:-translate-x-full"
               style={{ left: `${step * 100}%` }}
             >
-              {formatDurationMs(totalMs * step)}
+              {step === 0 ? '0' : formatDurationMs(totalMs * step)}
             </span>
           ))}
         </div>
