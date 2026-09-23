@@ -6,11 +6,9 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional
 
-from docsgpt import tracing
 from docsgpt.agents.tool_executor import (
     ToolExecutor,
-    finish_tool_span,
-    record_tool_span_start,
+    trace_unexecuted_tool_call,
     result_status,
     truncate_tool_result,
 )
@@ -504,18 +502,10 @@ class BaseAgent(ABC):
             pending_tool_calls: The pending tool call descriptors from the pause.
             tool_actions: Client-provided actions resolving the pending calls.
         """
-        span = start_agent_span(self, continuation=True)
-        completed = False
-        try:
+        with start_agent_span(self, continuation=True):
             yield from self._gen_continuation_inner(
                 messages, tools_dict, pending_tool_calls, tool_actions, reasoning_content
             )
-            completed = True
-        except Exception as exc:
-            span.end(error=exc)
-            raise
-        finally:
-            span.end(None if completed else tracing.STATUS_CANCELLED)
 
     def _gen_continuation_inner(
         self,
@@ -617,7 +607,7 @@ class BaseAgent(ABC):
                     "arguments": args,
                     "status": "denied",
                 }
-                finish_tool_span(record_tool_span_start(tc), {**denied_data, "error": comment or None})
+                trace_unexecuted_tool_call(tc, {**denied_data, "error": comment or None})
                 yield {"type": "tool_call", "data": denied_data}
 
             elif "result" in action:
@@ -650,10 +640,7 @@ class BaseAgent(ABC):
                     "result": truncate_tool_result(result_str),
                     "status": result_status(result),
                 }
-                finish_tool_span(
-                    record_tool_span_start(tc, **{"docsgpt.client_executed": True}),
-                    client_data,
-                )
+                trace_unexecuted_tool_call(tc, client_data, **{"docsgpt.client_executed": True})
                 yield {"type": "tool_call", "data": client_data}
 
         # Resume the LLM loop with the updated messages

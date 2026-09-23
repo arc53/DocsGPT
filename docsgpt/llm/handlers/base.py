@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Union
 
+from docsgpt.agents.tool_executor import trace_unexecuted_tool_call
 from docsgpt.logging import build_stack_data
 
 logger = logging.getLogger(__name__)
@@ -95,17 +96,6 @@ class LLMResponse:
     def requires_tool_call(self) -> bool:
         """Check if the response requires tool calls."""
         return bool(self.tool_calls) and self.finish_reason == "tool_calls"
-
-
-def _trace_unexecuted_tool(call: Any, data: Dict[str, Any]) -> None:
-    """Record a tool call that was paused, denied or skipped instead of run.
-
-    Those calls never reach ``ToolExecutor.execute`` (which traces executed
-    calls), so without this the trace would not show them at all.
-    """
-    from docsgpt.agents.tool_executor import finish_tool_span, record_tool_span_start
-
-    finish_tool_span(record_tool_span_start(call), data)
 
 
 def _is_restated_payload(existing: str, incoming: str) -> bool:
@@ -1138,7 +1128,7 @@ class LLMHandler(ABC):
 
                     # Mark remaining tools as skipped
                     for remaining_call in tool_calls[i:]:
-                        _trace_unexecuted_tool(
+                        trace_unexecuted_tool_call(
                             remaining_call,
                             {"tool_name": "system", "action_name": remaining_call.name, "status": "skipped"},
                         )
@@ -1235,7 +1225,7 @@ class LLMHandler(ABC):
                             "error_type", "tool_not_allowed"
                         ),
                     }
-                    _trace_unexecuted_tool(call, denied_data)
+                    trace_unexecuted_tool_call(call, denied_data)
                     yield {"type": "tool_call", "data": denied_data}
                     continue
                 # Yield pause event so the client knows this tool is waiting
@@ -1250,7 +1240,7 @@ class LLMHandler(ABC):
                 # can wire the sticky "don't ask again" button.
                 if pause_info.get("device_id"):
                     pause_data["device_id"] = pause_info["device_id"]
-                _trace_unexecuted_tool(call, pause_data)
+                trace_unexecuted_tool_call(call, pause_data)
                 yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)
                 # Do NOT add messages for pending tools here.

@@ -33,10 +33,12 @@ _SUMMARY_COLUMNS = (
 
 
 def _dump_jsonb(value: Any) -> str:
+    """Serialize ``value`` for a JSONB parameter, without NUL bytes Postgres rejects."""
     return json.dumps(strip_null_bytes(value), cls=PGNativeJSONEncoder)
 
 
 def _uuid_or_none(value: Optional[str]) -> Optional[str]:
+    """``value`` as a string when it is a UUID, else ``None`` (the column is typed)."""
     return str(value) if value and looks_like_uuid(str(value)) else None
 
 

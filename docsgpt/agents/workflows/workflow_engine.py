@@ -164,12 +164,8 @@ class WorkflowEngine:
             }
 
             try:
-                try:
+                with step_span:
                     yield from self._execute_node(node)
-                except GeneratorExit:
-                    step_span.end(tracing.STATUS_CANCELLED)
-                    raise
-                step_span.end()
                 log_entry["status"] = ExecutionStatus.COMPLETED.value
                 self._finalize_log_entry(log_entry, pre_state)
 
@@ -186,7 +182,6 @@ class WorkflowEngine:
                     "output": node_output,
                 }
             except Exception as e:
-                step_span.end(error=e)
                 logger.error(f"Error executing node {node.id}: {e}", exc_info=True)
                 log_entry["status"] = ExecutionStatus.FAILED.value
                 log_entry["error"] = str(e)

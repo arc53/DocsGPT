@@ -47,12 +47,6 @@ STEP_PROMPT = _load_prompt("step.txt")
 SYNTHESIS_PROMPT = _load_prompt("synthesis.txt")
 
 
-# ---------------------------------------------------------------------------
-# CitationManager
-# ---------------------------------------------------------------------------
-
-
-
 def _phase_span(phase: str, **attributes: Any) -> Any:
     """Open a trace span for one research phase (clarify, plan, a step, synthesis)."""
     return tracing.start_span(
@@ -60,6 +54,12 @@ def _phase_span(phase: str, **attributes: Any) -> Any:
         f"research {phase}",
         attributes={"docsgpt.research.phase": phase.split(" ")[0], **attributes},
     )
+
+
+# ---------------------------------------------------------------------------
+# CitationManager
+# ---------------------------------------------------------------------------
+
 
 class CitationManager:
     """Tracks and deduplicates citations across research steps."""
@@ -266,18 +266,10 @@ class ResearchAgent(BaseAgent):
                 "tokens_used": self._tokens_used,
             },
         }
-        synthesis_span = _phase_span("synthesis")
-        try:
+        with _phase_span("synthesis"):
             yield from self._synthesis_phase(
                 query, plan, intermediate_reports, tools_dict, log_context
             )
-        except GeneratorExit:
-            synthesis_span.end(tracing.STATUS_CANCELLED)
-            raise
-        except Exception as exc:
-            synthesis_span.end(error=exc)
-            raise
-        synthesis_span.end()
 
         # Sources and tool calls
         self.retrieved_docs = self.citations.get_all_docs()

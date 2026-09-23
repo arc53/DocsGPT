@@ -57,6 +57,22 @@ _TOOL_SPAN_STATUS = {
 }
 
 
+def trace_unexecuted_tool_call(call: Any, data: Dict[str, Any], **attributes: Any) -> None:
+    """Record a tool call that this process did not execute.
+
+    The single entry point for calls that never reach :meth:`ToolExecutor.execute`
+    (which traces executed calls itself): calls paused for approval or for the
+    client, denied ones, ones skipped at the context limit, and results a client
+    sends back on resume. A new pause or refusal path records its call here.
+
+    Args:
+        call: The tool call (anything with ``name`` and ``id``).
+        data: The tool-call record emitted for it (``status``, ``arguments``, ...).
+        **attributes: Extra span attributes.
+    """
+    finish_tool_span(record_tool_span_start(call, **attributes), data)
+
+
 def finish_tool_span(span: Any, data: Dict[str, Any]) -> None:
     """Close a tool span from the ``tool_calls`` entry the call produced.
 

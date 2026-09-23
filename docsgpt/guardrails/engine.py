@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from threading import Thread
 from time import monotonic
-from typing import List, Optional
+from typing import Any, List, Optional, Sequence
 
 from docsgpt import tracing
 from docsgpt.guardrails.base import ScanContext
@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 _MAX_WORKERS = 8
 
 
-def _start_guardrail_span(stage: Stage, controls) -> "tracing.Span":
+def _start_guardrail_span(stage: Stage, controls: Sequence[Any]) -> "tracing.Span":
+    """Open a ``guardrail`` span for evaluating ``controls`` at ``stage``."""
     return tracing.start_span(
         tracing.KIND_GUARDRAIL,
         f"guardrail {stage.value}",
@@ -39,6 +40,7 @@ def _start_guardrail_span(stage: Stage, controls) -> "tracing.Span":
 
 
 def _content_fired(decision: StageDecision) -> bool:
+    """True when a check matched, or the text was blocked or redacted."""
     return bool(decision.triggered or decision.blocked or decision.redacted)
 
 
