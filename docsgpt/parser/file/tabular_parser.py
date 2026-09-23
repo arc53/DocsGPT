@@ -23,31 +23,40 @@ _SAMPLE_CHARS = 64 * 1024
 _SAMPLE_ROWS = 20
 
 
-def _consistent_column_count(sample: str, separator: str) -> int:
+def _consistent_column_count(sample: str, separator: str, truncated: bool) -> int:
     """Columns per row under ``separator``, or 0 when the rows disagree.
 
     A separator the file was not written with either does not occur at all (one
     column) or occurs by accident, and then the rows do not line up. Requiring
     the same count on every row is what keeps a comma inside a sentence, or a
     semicolon inside a quoted field, from being read as a separator.
+
+    When ``truncated`` is set, the sample is a prefix of a longer file, so the
+    row it ends in stops wherever the read did, between two fields or inside a
+    quoted one. That row is left out rather than counted as having fewer columns.
     """
-    count = 0
+    rows: List[List[str]] = []
     reader = csv.reader(io.StringIO(sample, newline=""), delimiter=separator)
     try:
         for index, row in enumerate(reader):
             if index >= _SAMPLE_ROWS:
                 break
-            if not row:  # a blank line says nothing about the separator
-                continue
-            if count and len(row) != count:
-                return 0
-            count = len(row)
+            if any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
+                rows.append(row)
+        else:
+            if truncated and len(rows) > 1:
+                rows.pop()
     except csv.Error:
         return 0
+    count = 0
+    for row in rows:
+        if count and len(row) != count:
+            return 0
+        count = len(row)
     return count if count > 1 else 0
 
 
-def detect_separator(sample: str) -> str:
+def detect_separator(sample: str, truncated: bool = False) -> str:
     """The separator ``sample`` was written with, defaulting to a comma.
 
     ``pandas.read_csv`` defaults to a comma, and its own sniffing
@@ -57,13 +66,15 @@ def detect_separator(sample: str) -> str:
 
     Args:
         sample: The first rows of the file, as text.
+        truncated: Whether the file goes on past ``sample``, so that its last
+            row may be cut short.
 
     Returns:
         str: One of :data:`CANDIDATE_SEPARATORS`; ``","`` when none of them fits.
     """
     best_separator, best_columns = ",", 0
     for separator in CANDIDATE_SEPARATORS:
-        columns = _consistent_column_count(sample, separator)
+        columns = _consistent_column_count(sample, separator, truncated)
         if columns > best_columns:
             best_separator, best_columns = separator, columns
     return best_separator
@@ -77,10 +88,10 @@ def detect_file_separator(file: Path, encoding: str | None = None) -> str:
     """
     try:
         with open(file, "r", encoding=encoding or "utf-8", errors="replace", newline="") as handle:
-            sample = handle.read(_SAMPLE_CHARS)
+            sample = handle.read(_SAMPLE_CHARS + 1)
     except OSError:
         return ","
-    return detect_separator(sample)
+    return detect_separator(sample[:_SAMPLE_CHARS], truncated=len(sample) > _SAMPLE_CHARS)
 
 
 def cell_to_text(value: Any) -> str:

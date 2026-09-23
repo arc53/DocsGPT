@@ -94,3 +94,27 @@ def test_detect_separator_never_raises_on_an_unreadable_file(tmp_path: Path) -> 
     from docsgpt.parser.file.tabular_parser import detect_file_separator
 
     assert detect_file_separator(tmp_path / "missing.csv") == ","
+
+
+def test_a_whitespace_only_line_is_not_a_row() -> None:
+    assert detect_separator("Name;Region\nWidget;EU\n   \nGadget;US\n") == ";"
+
+
+def test_the_row_the_sample_cuts_is_left_out(tmp_path: Path) -> None:
+    """Fewer than the sampled rows fit in the sample, so it ends inside a row."""
+    from docsgpt.parser.file.tabular_parser import detect_file_separator
+
+    cell = "x" * 4000
+    text = "a;b;c\n" + "".join(f"{i};{cell};{cell}\n" for i in range(60))
+
+    assert detect_file_separator(_write(tmp_path, text)) == ";"
+
+
+def test_the_sample_can_end_inside_a_quoted_line_break(tmp_path: Path) -> None:
+    from docsgpt.parser.file.tabular_parser import detect_file_separator
+
+    cell = '"' + ("y" * 70 + "\n") * 60 + '"'
+    text = "a;b;c\n" + "".join(f"{i};{cell};end\n" for i in range(40))
+
+    assert detect_file_separator(_write(tmp_path, text)) == ";"
+
