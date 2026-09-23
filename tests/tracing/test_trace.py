@@ -339,3 +339,17 @@ class TestRecord:
         }
         assert span["attributes"]["gen_ai.request.model"] == "m"
         assert span["offset_ms"] >= 0
+
+
+class TestOutcome:
+    def test_outcome_is_used_when_no_status_given(self):
+        trace = tracing.start_trace(source="stream")
+        trace.outcome = "paused"
+        trace.finish()
+        assert trace.status == "paused"
+
+    def test_explicit_status_beats_outcome(self):
+        trace = tracing.start_trace(source="stream")
+        trace.outcome = "paused"
+        trace.finish(status="error")
+        assert trace.status == "error"

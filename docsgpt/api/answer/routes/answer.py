@@ -87,7 +87,7 @@ class AnswerResource(Resource, BaseAnswerResource):
         if error := self.validate_request(data):
             return error
         decoded_token = getattr(request, "decoded_token", None)
-        processor = StreamProcessor(data, decoded_token)
+        processor = StreamProcessor(data, decoded_token, trace_source="answer")
         try:
             # ---- Continuation mode ----
             if data.get("tool_actions"):
@@ -115,6 +115,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     decoded_token=processor.decoded_token,
                     agent_id=processor.agent_id,
                     model_id=processor.model_id,
+                    trace=processor.trace,
                     _continuation={
                         "messages": messages,
                         "tools_dict": tools_dict,
@@ -156,6 +157,8 @@ class AnswerResource(Resource, BaseAnswerResource):
                     is_shared_usage=processor.is_shared_usage,
                     shared_token=processor.shared_token,
                     model_id=processor.model_id,
+                    request_id=processor.request_id,
+                    trace=processor.trace,
                 )
 
             stream_result = self.process_response_stream(stream)

@@ -94,7 +94,7 @@ class StreamResource(Resource, BaseAnswerResource):
         if error := self.validate_request(data, "index" in data):
             return error
         decoded_token = getattr(request, "decoded_token", None)
-        processor = StreamProcessor(data, decoded_token)
+        processor = StreamProcessor(data, decoded_token, trace_source="stream")
 
         try:
             # ---- Continuation mode ----
@@ -130,6 +130,7 @@ class StreamResource(Resource, BaseAnswerResource):
                             agent_id=processor.agent_id,
                             model_id=processor.model_id,
                             model_user_id=processor.model_user_id,
+                            trace=processor.trace,
                             _continuation={
                                 "messages": messages,
                                 "tools_dict": tools_dict,
@@ -181,6 +182,8 @@ class StreamResource(Resource, BaseAnswerResource):
                         shared_token=processor.shared_token,
                         model_id=processor.model_id,
                         model_user_id=processor.model_user_id,
+                        request_id=processor.request_id,
+                        trace=processor.trace,
                     ),
                 ),
                 mimetype="text/event-stream",

@@ -263,6 +263,9 @@ class Trace:
         self.start_perf_ns = time.perf_counter_ns()
         self.end_perf_ns: Optional[int] = None
         self.status: Optional[str] = None
+        # Status the owner determined mid-run (e.g. ``paused`` at a tool
+        # approval); used by :meth:`finish` when no explicit status is given.
+        self.outcome: Optional[str] = None
         self.spans: List[Span] = []
         self.dropped_spans = 0
         self.content_blocked = False
@@ -370,6 +373,8 @@ class Trace:
             span.status = STATUS_CANCELLED
             span.end_perf_ns = now
         self.end_perf_ns = now
+        if status is None:
+            status = self.outcome
         if status is not None:
             self.status = status
         else:

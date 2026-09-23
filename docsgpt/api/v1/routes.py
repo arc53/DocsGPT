@@ -257,7 +257,7 @@ def chat_completions():
         internal_data["persist"] = True
 
     try:
-        processor = StreamProcessor(internal_data, decoded_token)
+        processor = StreamProcessor(internal_data, decoded_token, trace_source="v1")
         # Set when this request took the resume claim, so a refusal can release it.
         claimed_conversation_id = None
 
@@ -495,6 +495,8 @@ def _stream_response(
         visibility=visibility,
         _continuation=continuation,
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
+        request_id=processor.request_id,
+        trace=getattr(processor, "trace", None),
     )
 
     translation_state = StreamTranslationState()
@@ -572,6 +574,8 @@ def _non_stream_response(
         visibility=visibility,
         _continuation=continuation,
         finalize_tool_pause_as_complete=finalize_stateless_tool_pause,
+        request_id=processor.request_id,
+        trace=getattr(processor, "trace", None),
     )
 
     result = helper.process_response_stream(stream)
