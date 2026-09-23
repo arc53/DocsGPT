@@ -1,3 +1,4 @@
+import { Activity } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -16,7 +17,10 @@ import {
 } from '../components/ui/select';
 import { useLoaderState } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
-import { LogData } from './types';
+import TraceChips from './traces/TraceChips';
+import TraceSheet from './traces/TraceSheet';
+import { formatDurationMs } from './traces/traceUtils';
+import { LogData, TraceRef } from './types';
 
 type LogsProps = {
   agentId?: string;
@@ -35,6 +39,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [openTrace, setOpenTrace] = useState<TraceRef | null>(null);
 
   const logs = Object.values(logsByPage).flat();
 
@@ -127,6 +132,8 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     { label: t('settings.logs.types.webhook'), value: 'webhook' },
     { label: t('settings.logs.types.workflow'), value: 'workflow' },
     { label: t('settings.logs.types.system'), value: 'system' },
+    { label: t('settings.logs.types.search'), value: 'search' },
+    { label: t('settings.logs.types.graph'), value: 'graph' },
   ];
 
   return (
@@ -178,8 +185,14 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           setPage={setPage}
           loading={loadingLogs}
           tableHeader={tableHeader}
+          onViewTrace={setOpenTrace}
         />
       </div>
+      <TraceSheet
+        traceRef={openTrace}
+        agentId={agentId}
+        onClose={() => setOpenTrace(null)}
+      />
     </div>
   );
 }
@@ -189,8 +202,15 @@ type LogsTableProps = {
   setPage: React.Dispatch<React.SetStateAction<number>>;
   loading: boolean;
   tableHeader?: string;
+  onViewTrace: (ref: TraceRef) => void;
 };
-function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
+function LogsTable({
+  logs,
+  setPage,
+  loading,
+  tableHeader,
+  onViewTrace,
+}: LogsTableProps) {
   const { t } = useTranslation();
   const observerRef = useRef<IntersectionObserver | null>(null);
   const [openLogId, setOpenLogId] = useState<string | null>(null);
@@ -248,6 +268,7 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
                   log={log}
                   isOpen={openLogId === log.id}
                   onToggle={handleLogToggle}
+                  onViewTrace={onViewTrace}
                 />
               </div>
             );
@@ -258,6 +279,7 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
                 log={log}
                 isOpen={openLogId === log.id}
                 onToggle={handleLogToggle}
+                onViewTrace={onViewTrace}
               />
             );
         })}
@@ -271,17 +293,19 @@ function formatDuration(start?: string, end?: string): string | null {
   if (!start || !end) return null;
   const ms = new Date(end).getTime() - new Date(start).getTime();
   if (isNaN(ms) || ms < 0) return null;
-  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+  return formatDurationMs(ms);
 }
 
 function Log({
   log,
   isOpen,
   onToggle,
+  onViewTrace,
 }: {
   log: LogData;
   isOpen: boolean;
   onToggle: (id: string) => void;
+  onViewTrace: (ref: TraceRef) => void;
 }) {
   const { t } = useTranslation();
   const logLevelColor = {
@@ -336,6 +360,17 @@ function Log({
   } else if (log.event_type === 'system' || log.event_type === 'webhook') {
     if (log.endpoint)
       detailRows.push([t('settings.logs.detail.endpoint'), log.endpoint]);
+  } else if (log.event_type === 'search' || log.event_type === 'graph') {
+    if (log.source)
+      detailRows.push([
+        t('settings.logs.detail.source'),
+        t(`settings.logs.trace.sources.${log.source}`, log.source),
+      ]);
+    if (log.status)
+      detailRows.push([
+        t('settings.logs.detail.status'),
+        t(`settings.logs.trace.status.${log.status}`, log.status),
+      ]);
   }
 
   const textBlocks: { label: string; text: string; isError?: boolean }[] = [];
@@ -412,6 +447,11 @@ function Log({
             </h2>
           )}
           <h2 className="text-xs text-[#913400] dark:text-orange-500">{`[${log.action}]`}</h2>
+          {log.trace && (
+            <h2 className="text-muted-foreground text-xs tabular-nums">
+              {formatDurationMs(log.trace.duration_ms)}
+            </h2>
+          )}
           <h2
             className={`max-w-72 text-xs ${logLevelColor[log.level]} wrap-break-word`}
           >
@@ -423,6 +463,26 @@ function Log({
       </div>
       {isOpen && (
         <div className="dark:bg-background rounded-b-xl bg-[#F1F1F1] px-4 py-3">
+          {log.trace && (
+            <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
+              <TraceChips
+                durationMs={log.trace.duration_ms}
+                counts={log.trace.summary}
+              />
+              <button
+                type="button"
+                onClick={() => log.trace && onViewTrace(log.trace.ref)}
+                className="border-border hover:bg-muted text-foreground inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs dark:hover:bg-white/10"
+              >
+                <Activity className="size-3.5" />
+                {log.trace.count > 1
+                  ? t('settings.logs.trace.viewRounds', {
+                      count: log.trace.count,
+                    })
+                  : t('settings.logs.trace.view')}
+              </button>
+            </div>
+          )}
           {detailRows.length > 0 && (
             <div className="flex flex-col gap-1 px-2 pb-2">
               {detailRows.map(([label, value]) => (

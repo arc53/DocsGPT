@@ -333,7 +333,7 @@ function InlineToolCallChip({
   );
 }
 
-function ToolCallPanel({
+export function ToolCallPanel({
   title,
   copyText,
   children,
