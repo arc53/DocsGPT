@@ -212,3 +212,39 @@ class TestSummaryFailure:
         assert response.status_code == 200
         (row,) = response.json["logs"]
         assert "trace" not in row
+
+
+class TestFailedChatTurns:
+    def _failed_turn(self, pg_conn, *, with_trace):
+        from docsgpt.storage.db.repositories.stack_logs import StackLogsRepository
+        from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
+
+        StackLogsRepository(pg_conn).insert(
+            activity_id="act-chat", endpoint="stream", level="error", user_id="owner", query="q"
+        )
+        UserLogsRepository(pg_conn).insert(
+            user_id="owner",
+            endpoint="stream_answer",
+            data={
+                "question": "q",
+                "level": "error",
+                "error": "RuntimeError: upstream down",
+                "request_id": "req-f",
+            },
+        )
+        if with_trace:
+            _trace(pg_conn, request_id="req-f", activity_id="act-chat", status="error")
+
+    def test_failed_turn_is_one_chat_row_not_also_a_system_row(self, app, pg_conn):
+        self._failed_turn(pg_conn, with_trace=True)
+        rows = _logs(app, pg_conn, "owner", {}).json["logs"]
+        assert [r["event_type"] for r in rows] == ["chat"]
+        assert rows[0]["level"] == "error"
+        assert rows[0]["error"] == "RuntimeError: upstream down"
+        assert rows[0]["trace"]["status"] == "error"
+
+    def test_untraced_failures_keep_their_system_row(self, app, pg_conn):
+        """Rows from before traces (or with tracing off) have nothing to dedupe against."""
+        self._failed_turn(pg_conn, with_trace=False)
+        rows = _logs(app, pg_conn, "owner", {}).json["logs"]
+        assert sorted(r["event_type"] for r in rows) == ["chat", "system"]

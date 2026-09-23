@@ -185,6 +185,52 @@ class TestTraceWithPersistence:
         assert row[0]["request_id"] == "req-p"
         assert row[0]["message_id"] == trace.message_id
 
+    def test_failed_turn_is_logged_as_a_chat_row(self, pg_conn, flask_app):
+        """A raised failure still writes the turn's chat row, at level error."""
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from tests.api.answer.test_base_routes import _patch_db_session
+
+        agent = MagicMock()
+        agent.gen.side_effect = RuntimeError("upstream down")
+        agent.tool_calls = []
+        with flask_app.app_context(), _patch_db_session(pg_conn), _captured_flushes():
+            _run(
+                BaseAnswerResource(),
+                agent,
+                should_persist=True,
+                model_id="gpt-4",
+                request_id="req-failed",
+            )
+        from sqlalchemy import text as sql_text
+
+        rows = pg_conn.execute(
+            sql_text("SELECT data FROM user_logs WHERE user_id = 'u-trace'")
+        ).fetchall()
+        assert len(rows) == 1
+        data = rows[0][0]
+        assert data["level"] == "error"
+        assert data["request_id"] == "req-failed"
+        assert data["error"] == "RuntimeError: upstream down"
+
+    def test_yielded_error_logs_the_chat_row_at_error_level(self, pg_conn, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from tests.api.answer.test_base_routes import _patch_db_session
+
+        with flask_app.app_context(), _patch_db_session(pg_conn), _captured_flushes():
+            _run(
+                BaseAnswerResource(),
+                _agent([{"type": "error", "error": "node failed"}]),
+                should_persist=True,
+                model_id="gpt-4",
+            )
+        from sqlalchemy import text as sql_text
+
+        data = pg_conn.execute(
+            sql_text("SELECT data FROM user_logs WHERE user_id = 'u-trace'")
+        ).fetchone()[0]
+        assert data["level"] == "error"
+        assert data["error"] == "node failed"
+
     def test_paused_turn_is_flushed_paused(self, pg_conn, flask_app):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
         from tests.api.answer.test_base_routes import _patch_db_session

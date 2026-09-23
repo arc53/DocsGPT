@@ -144,6 +144,79 @@ class BaseAnswerResource:
             return missing_fields
         return None
 
+    def _persist_turn_log(
+        self,
+        *,
+        decoded_token: Dict[str, Any],
+        user_api_key: Optional[str],
+        agent_id: Optional[str],
+        question: str,
+        response: str,
+        sources: List[Dict[str, Any]],
+        tool_calls: Any,
+        attachment_ids: Optional[List[str]],
+        request_id: Optional[str],
+        message_id: Optional[str],
+        error: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Write the turn's ``user_logs`` row: its Logs entry, linked to its trace.
+
+        Written for every finished turn, failed ones included (``level`` is
+        ``error`` then), so a failed chat shows up as a chat entry. A failure
+        to write is logged, never raised.
+
+        Args:
+            decoded_token: The caller's token.
+            user_api_key: The agent API key the request used, if any.
+            agent_id: The agent that answered.
+            question: The question as stored (after input redaction).
+            response: The answer, or what streamed before a failure.
+            sources: Retrieved sources.
+            tool_calls: The turn's tool calls, before log truncation.
+            attachment_ids: Attached file ids.
+            request_id: The turn's request id (links its trace).
+            message_id: The reserved message id.
+            error: What failed the turn, if it failed.
+            extra: More fields for the row (structured-output details).
+        """
+        log_data: Dict[str, Any] = {
+            "action": "stream_answer",
+            "level": "error" if error else "info",
+            "user": decoded_token.get("sub"),
+            "api_key": user_api_key,
+            "agent_id": agent_id,
+            "question": question,
+            "response": response,
+            "sources": sources,
+            "tool_calls": self._prepare_tool_calls_for_logging(tool_calls),
+            "attachments": attachment_ids,
+            "timestamp": datetime.datetime.now(datetime.timezone.utc),
+            # Links the Logs row to this turn's execution trace.
+            "request_id": request_id,
+            "message_id": message_id,
+        }
+        if error:
+            log_data["error"] = error
+        if extra:
+            log_data.update(extra)
+        # Clean up text fields to be no longer than 10000 characters.
+        for key, value in log_data.items():
+            if isinstance(value, str) and len(value) > 10000:
+                log_data[key] = value[:10000]
+        try:
+            with db_session() as conn:
+                UserLogsRepository(conn).insert(
+                    user_id=log_data.get("user"),
+                    endpoint="stream_answer",
+                    data=log_data,
+                )
+        except Exception as log_err:
+            logger.error(
+                f"Failed to persist stream_answer user log: {log_err}",
+                exc_info=True,
+            )
+
     @staticmethod
     def _prepare_tool_calls_for_logging(
         tool_calls: Optional[List[Dict[str, Any]]], max_chars: int = 10000
@@ -1299,47 +1372,27 @@ class BaseAnswerResource:
                     )
             yield _emit({"type": "id", "id": str(conversation_id)})
 
-            tool_calls_for_logging = self._prepare_tool_calls_for_logging(
-                getattr(agent, "tool_calls", tool_calls) or tool_calls
-            )
-
-            log_data = {
-                "action": "stream_answer",
-                "level": "info",
-                "user": decoded_token.get("sub"),
-                "api_key": user_api_key,
-                "agent_id": agent_id,
-                "question": question,
-                "response": response_full,
-                "sources": source_log_docs,
-                "tool_calls": tool_calls_for_logging,
-                "attachments": attachment_ids,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc),
-                # Links the Logs row to this turn's execution trace.
-                "request_id": request_id,
-                "message_id": reserved_message_id,
-            }
+            extra: Dict[str, Any] = {}
             if is_structured:
-                log_data["structured_output"] = True
+                extra["structured_output"] = True
                 if schema_info:
-                    log_data["schema"] = schema_info
-            # Clean up text fields to be no longer than 10000 characters
-
-            for key, value in log_data.items():
-                if isinstance(value, str) and len(value) > 10000:
-                    log_data[key] = value[:10000]
-            try:
-                with db_session() as conn:
-                    UserLogsRepository(conn).insert(
-                        user_id=log_data.get("user"),
-                        endpoint="stream_answer",
-                        data=log_data,
-                    )
-            except Exception as log_err:
-                logger.error(
-                    f"Failed to persist stream_answer user log: {log_err}",
-                    exc_info=True,
-                )
+                    extra["schema"] = schema_info
+            self._persist_turn_log(
+                decoded_token=decoded_token,
+                user_api_key=user_api_key,
+                agent_id=agent_id,
+                question=question,
+                response=response_full,
+                sources=source_log_docs,
+                tool_calls=getattr(agent, "tool_calls", tool_calls) or tool_calls,
+                attachment_ids=attachment_ids,
+                request_id=request_id,
+                message_id=reserved_message_id,
+                # A yielded error (a failed workflow node) ends the turn
+                # normally but still failed it.
+                error=stream_error,
+                extra=extra,
+            )
 
             yield _emit({"type": "end"})
             # Drain the journal buffer so the terminal ``end`` event is
@@ -1617,6 +1670,22 @@ class BaseAnswerResource:
                         f"Failed to finalize errored message: {fin_err}",
                         exc_info=True,
                     )
+            # A failed turn is still a chat turn: log it as one (level
+            # ``error``), with its trace link, instead of leaving only the
+            # agent's system error row.
+            self._persist_turn_log(
+                decoded_token=decoded_token,
+                user_api_key=user_api_key,
+                agent_id=agent_id,
+                question=question,
+                response=response_full,
+                sources=source_log_docs,
+                tool_calls=getattr(agent, "tool_calls", tool_calls) or tool_calls,
+                attachment_ids=attachment_ids,
+                request_id=request_id,
+                message_id=reserved_message_id,
+                error=f"{type(e).__name__}: {e}",
+            )
             yield _emit(
                 {
                     "type": "error",

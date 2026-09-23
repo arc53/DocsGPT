@@ -943,6 +943,16 @@ class GetUserLogs(Resource):
                     "WHERE e.activity_id = s.activity_id "
                     "AND e.level = 'error'))"
                 )
+                # A failed chat turn now writes its own chat row (level
+                # ``error``) linked to its trace; the agent's error row for
+                # the same activity would list the failure twice. Rows from
+                # before execution traces, or with tracing off, have no such
+                # trace and still show here.
+                chat_failure_dedupe = (
+                    "NOT EXISTS (SELECT 1 FROM request_traces t "
+                    "WHERE t.activity_id = s.activity_id "
+                    "AND t.source IN ('stream', 'answer', 'v1'))"
+                )
                 if api_key_id:
                     # The owner-scoped lookup gates access, so the
                     # chat/webhook/system branches match on the agent
@@ -978,6 +988,7 @@ class GetUserLogs(Resource):
                         "s.level = 'error'",
                         "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
                         stack_agent_match,
+                        chat_failure_dedupe,
                     ]
                     # Owner-gated agent match: drop the user clause so a
                     # shared agent's runs (stamped with the caller's
@@ -1003,6 +1014,7 @@ class GetUserLogs(Resource):
                         "s.user_id = :user_id",
                         "s.level = 'error'",
                         "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
+                        chat_failure_dedupe,
                     ]
                     # Terminal statuses only (worker writes ``success`` /
                     # ``failed`` / ``timeout`` / ``skipped``; ``completed``
@@ -1233,6 +1245,7 @@ class GetUserLogs(Resource):
                             "attachments": payload.get("attachments"),
                             "request_id": payload.get("request_id"),
                             "message_id": payload.get("message_id"),
+                            "error": payload.get("error"),
                         }
                     )
                 elif m["event_type"] in ("system", "webhook"):
