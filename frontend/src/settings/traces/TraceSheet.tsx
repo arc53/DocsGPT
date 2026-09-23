@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
@@ -39,6 +39,9 @@ export default function TraceSheet({
   const [traces, setTraces] = useState<Trace[]>([]);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  // The sheet is opened from a Logs row, not a SheetTrigger, so Radix has no
+  // trigger to return focus to on close; remember what had focus instead.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!traceRef) return;
@@ -76,6 +79,20 @@ export default function TraceSheet({
         side="right"
         title={t('settings.logs.trace.title')}
         aria-describedby={undefined}
+        onOpenAutoFocus={() => {
+          returnFocusRef.current =
+            document.activeElement instanceof HTMLElement
+              ? document.activeElement
+              : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          const target = returnFocusRef.current;
+          returnFocusRef.current = null;
+          if (target?.isConnected) {
+            event.preventDefault();
+            target.focus();
+          }
+        }}
         className="w-full overflow-y-auto sm:max-w-3xl"
       >
         <div className="flex flex-col gap-8 px-4 pt-4 pb-6">

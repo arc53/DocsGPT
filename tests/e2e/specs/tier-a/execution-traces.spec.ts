@@ -114,6 +114,11 @@ test.describe('tier-a · execution traces', () => {
       if (process.env.TRACE_SCREENSHOT) {
         await page.screenshot({ path: process.env.TRACE_SCREENSHOT, fullPage: false });
       }
+
+      // Closing returns focus to the button that opened the drawer.
+      await page.keyboard.press('Escape');
+      await expect(sheet).toBeHidden();
+      await expect(page.getByRole('button', { name: 'View trace' })).toBeFocused();
     } finally {
       await api.dispose();
       await context.close();
