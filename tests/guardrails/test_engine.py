@@ -388,6 +388,16 @@ class TestTraceSpans:
         assert span.attributes["docsgpt.guardrail.triggered"] == ["_test_always"]
         assert self.trace.content_blocked is True
 
+    def test_a_repeating_firing_is_recorded_once(self):
+        """The output guard re-scans every segment; one firing must not fill the span cap."""
+        engine = GuardrailEngine(
+            _config(controls=[{"check": "_test_always", "stage": "output", "action": "flag"}])
+        )
+        for _ in range(50):
+            engine.evaluate("segment", Stage.OUTPUT)
+        assert len(self.trace.spans) == 1
+        assert self.trace.content_blocked is True
+
     def test_remote_scan_is_traced_with_judge_nested(self):
         engine = GuardrailEngine(
             _config(controls=[{"check": "_test_quick_remote", "stage": "input", "action": "block"}])

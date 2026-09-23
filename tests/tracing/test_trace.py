@@ -372,3 +372,26 @@ class TestRecordQuery:
             tracing.mark_content_blocked()
         trace.finish()
         assert "query" not in trace.to_record()["summary"]
+
+
+class TestToolCount:
+    def test_only_tool_calls_that_ran_are_counted(self):
+        trace = tracing.start_trace(source="stream")
+        with tracing.activate(trace):
+            tracing.start_span(tracing.KIND_TOOL, "paused").end(tracing.STATUS_PENDING)
+            tracing.start_span(tracing.KIND_TOOL, "denied").end(tracing.STATUS_DENIED)
+            tracing.start_span(tracing.KIND_TOOL, "skipped").end(tracing.STATUS_SKIPPED)
+            tracing.start_span(tracing.KIND_TOOL, "ran").end()
+            tracing.start_span(tracing.KIND_TOOL, "failed").end(tracing.STATUS_ERROR)
+        trace.finish()
+        assert trace.summary()["tool_calls"] == 2
+
+
+class TestFirstOccurrence:
+    def test_key_is_new_once_per_trace(self):
+        trace = tracing.start_trace(source="stream")
+        with tracing.activate(trace):
+            assert tracing.first_occurrence(("a", 1)) is True
+            assert tracing.first_occurrence(("a", 1)) is False
+            assert tracing.first_occurrence(("a", 2)) is True
+        assert tracing.first_occurrence(("a", 3)) is False  # no active trace

@@ -193,3 +193,22 @@ class TestLogsTraceSummaries:
 
     def test_unknown_event_type_is_rejected(self, app, pg_conn):
         assert _logs(app, pg_conn, "owner", {"event_type": "bogus"}).status_code == 400
+
+
+class TestSummaryFailure:
+    def test_page_survives_a_failed_trace_lookup(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.user_logs import UserLogsRepository
+
+        UserLogsRepository(pg_conn).insert(
+            user_id="owner",
+            endpoint="stream_answer",
+            data={"question": "q", "request_id": "req-1"},
+        )
+        with patch(
+            "docsgpt.api.user.analytics.routes.RequestTracesRepository.summaries_for_refs",
+            side_effect=RuntimeError("statement timeout"),
+        ):
+            response = _logs(app, pg_conn, "owner", {})
+        assert response.status_code == 200
+        (row,) = response.json["logs"]
+        assert "trace" not in row

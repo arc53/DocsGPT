@@ -38,7 +38,23 @@ def _start_guardrail_span(stage: Stage, controls) -> "tracing.Span":
     )
 
 
-def _describe_decision(span, decision: StageDecision) -> None:
+def _content_fired(decision: StageDecision) -> bool:
+    return bool(decision.triggered or decision.blocked or decision.redacted)
+
+
+def _decision_key(decision: StageDecision) -> tuple:
+    """Identity of a guardrail outcome, for recording each distinct one once."""
+    return (
+        "guardrail",
+        decision.stage.value,
+        tuple(sorted(v.check for v in decision.triggered)),
+        tuple(sorted(v.check for v in decision.unevaluated)),
+        decision.blocked,
+        decision.redacted,
+    )
+
+
+def _describe_decision(span: "tracing.Span", decision: StageDecision) -> None:
     """Record a stage decision on its span; a firing guardrail drops trace previews."""
     triggered = [v.check for v in decision.triggered]
     span.set(
@@ -50,7 +66,7 @@ def _describe_decision(span, decision: StageDecision) -> None:
             "docsgpt.guardrail.unevaluated": [v.check for v in decision.unevaluated] or None,
         }
     )
-    if triggered or decision.blocked or decision.redacted:
+    if _content_fired(decision):
         # The scanned text (or text near it) sits in other spans' previews:
         # the retrieval query, tool results, the answer. Keep none of it.
         tracing.mark_content_blocked()
@@ -136,10 +152,15 @@ class GuardrailEngine:
             decision.verdicts = [self._run_control(c, text, stage) for c in controls]
             self._reduce(decision)
             # The output guard evaluates every streamed segment; tracing each
-            # clean local scan would bury the trace, so only a firing is kept.
+            # clean local scan would bury the trace, so only a firing is kept,
+            # and a firing that repeats unchanged segment after segment is
+            # recorded once so it cannot use up the trace's span cap.
             if not decision.clean or decision.unevaluated:
-                with _start_guardrail_span(stage, controls) as span:
-                    _describe_decision(span, decision)
+                if tracing.first_occurrence(_decision_key(decision)):
+                    with _start_guardrail_span(stage, controls) as span:
+                        _describe_decision(span, decision)
+                elif _content_fired(decision):
+                    tracing.mark_content_blocked()
 
         self._record(decision)
         return decision

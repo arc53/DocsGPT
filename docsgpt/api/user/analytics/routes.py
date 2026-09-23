@@ -1,10 +1,11 @@
 """Analytics and reporting routes."""
 
 import datetime
+from typing import Optional, Tuple
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
-from sqlalchemy import text as _sql_text
+from sqlalchemy import Connection, text as _sql_text
 
 from docsgpt.api import api
 from docsgpt.api.user.base import (
@@ -123,7 +124,7 @@ def _trace_branch(name: str, sources_sql: str, scope: str) -> dict:
     }
 
 
-def _trace_ref(item: dict):
+def _trace_ref(item: dict) -> Optional[Tuple[str, str]]:
     """The ``(field, value)`` that finds a Logs row's trace, if it has one."""
     event_type = item["event_type"]
     row_id = item["id"].split("-", 1)[1]
@@ -159,7 +160,9 @@ def _merge_trace_summaries(traces: list) -> dict:
     }
 
 
-def _attach_trace_summaries(conn, items: list, *, user_id, agent_id) -> None:
+def _attach_trace_summaries(
+    conn: Connection, items: list, *, user_id: Optional[str], agent_id: Optional[str]
+) -> None:
     """Add a ``trace`` summary to each Logs row that has a stored trace.
 
     One batched lookup per link field for the whole page, rather than a join
@@ -1282,12 +1285,20 @@ class GetUserLogs(Resource):
                     )
                 results.append(item)
             if results:
-                with db_readonly() as conn:
-                    _attach_trace_summaries(
-                        conn,
-                        results,
-                        user_id=user,
-                        agent_id=agent_pg_id if api_key_id else None,
+                # Trace chips are an extra: a failed lookup must leave the
+                # page intact, just without them.
+                try:
+                    with db_readonly() as conn:
+                        _attach_trace_summaries(
+                            conn,
+                            results,
+                            user_id=user,
+                            agent_id=agent_pg_id if api_key_id else None,
+                        )
+                except Exception:
+                    current_app.logger.warning(
+                        "Could not attach trace summaries to the logs page",
+                        exc_info=True,
                     )
         except Exception as err:
             current_app.logger.error(

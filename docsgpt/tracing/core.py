@@ -272,6 +272,7 @@ class Trace:
         self.attributes: Dict[str, Any] = {}
         self.finished = False
         self.flushed = False
+        self._seen_keys: set = set()
         self._lock = threading.Lock()
         self._stacks: Dict[int, List[Any]] = {}
 
@@ -288,7 +289,7 @@ class Trace:
         *,
         parent: Any = None,
         attributes: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> Any:
         """Record a new span; returns :data:`NOOP_SPAN` once finished or over the cap."""
         with self._lock:
             if self.finished:
@@ -344,9 +345,17 @@ class Trace:
 
         return _undo
 
-    def current_parent(self) -> Optional["_Seed | Span"]:
+    def current_parent(self) -> Optional[Any]:
         stack = self._stacks.get(threading.get_ident())
         return stack[-1] if stack else None
+
+    def first_occurrence(self, key: Any) -> bool:
+        """True the first time ``key`` is seen in this trace, then False."""
+        with self._lock:
+            if key in self._seen_keys:
+                return False
+            self._seen_keys.add(key)
+            return True
 
     # -- ids --------------------------------------------------------------
 
@@ -409,7 +418,12 @@ class Trace:
             if s.kind == KIND_RETRIEVAL
             and not (s.parent_id in by_id and by_id[s.parent_id].kind == KIND_RETRIEVAL)
         ]
-        tools = [s for s in self.spans if s.kind == KIND_TOOL]
+        # Only calls that ran count: a call paused for approval is recorded
+        # again when it runs in the next round, and denied or skipped calls
+        # never ran at all.
+        tools = [
+            s for s in self.spans if s.kind == KIND_TOOL and s.status in (STATUS_OK, STATUS_ERROR)
+        ]
 
         def _tokens(key: str) -> int:
             total = 0
@@ -534,7 +548,9 @@ def activate(trace: Optional[Trace]) -> Iterator[Optional[Trace]]:
             _current.set(None)
 
 
-def start_span(kind: str, name: str, *, parent: Any = None, attributes: Optional[Dict[str, Any]] = None):
+def start_span(
+    kind: str, name: str, *, parent: Any = None, attributes: Optional[Dict[str, Any]] = None
+) -> Any:
     """Start a span in the current trace; returns :data:`NOOP_SPAN` without one."""
     trace = _current.get()
     if trace is None:
@@ -546,7 +562,9 @@ def start_span(kind: str, name: str, *, parent: Any = None, attributes: Optional
         return NOOP_SPAN
 
 
-def span(kind: str, name: str, *, parent: Any = None, attributes: Optional[Dict[str, Any]] = None):
+def span(
+    kind: str, name: str, *, parent: Any = None, attributes: Optional[Dict[str, Any]] = None
+) -> Any:
     """Context-manager form of :func:`start_span` (errors mark the span and re-raise)."""
     return start_span(kind, name, parent=parent, attributes=attributes)
 
@@ -563,6 +581,17 @@ def bind_if_unset(**ids: Any) -> None:
     trace = _current.get()
     if trace is not None:
         trace.bind(only_if_unset=True, **ids)
+
+
+def first_occurrence(key: Any) -> bool:
+    """True the first time ``key`` is seen in the current trace.
+
+    For steps that repeat identically many times in one request (a guardrail
+    re-firing on every streamed segment): record the first, skip the rest, so
+    they cannot use up the span cap. False without an active trace.
+    """
+    trace = _current.get()
+    return trace.first_occurrence(key) if trace is not None else False
 
 
 def mark_content_blocked() -> None:
