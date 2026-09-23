@@ -19,6 +19,7 @@ These tests pin both layers against an ephemeral Postgres (``pg_engine``):
 
 from __future__ import annotations
 
+import time
 import uuid
 from contextlib import contextmanager
 from typing import Any, Dict, List
@@ -478,5 +479,12 @@ class TestV1ReplayTrace:
                 resp2 = _post_chat(c, self.QUESTION, api_key, idem_key=idem_key)
 
         assert resp1.status_code == resp2.status_code == 200
+        # The first request's trace is written on the background writer, so
+        # wait for it. A replay's trace is dropped synchronously, and an
+        # unclaimed-trace flush would be synchronous too, so any stray write
+        # is already in ``written`` by the time the responses return.
+        deadline = time.monotonic() + 5
+        while not written and time.monotonic() < deadline:
+            time.sleep(0.02)
         # Only the first request's trace is written, and it is not a failure.
         assert [t.status for t in written] == ["ok"]
