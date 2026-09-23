@@ -458,7 +458,7 @@ more-itertools==11.1.0
     #   jaraco-functools
 mpire==2.10.2
     # via semchunk
-mpmath==1.3.0
+mpmath==1.4.1
     # via sympy
 msal==1.38.0
     # via docsgpt
