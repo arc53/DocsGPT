@@ -5,7 +5,7 @@ scheduled run, a search). Spans are recorded while the request runs and the
 whole trace is written once, when its owner calls :func:`flush`.
 
 Nesting is tracked with one span stack per thread. Only *container* spans
-(agent, tool, retrieval, step) are pushed, so a leaf such as an LLM call can
+(agent, tool, retrieval, rerank, guardrail, step) are pushed, so a leaf such as an LLM call can
 never become the parent of a sibling that starts while it is still open --
 which matters because DocsGPT's agent loop is a chain of suspended
 generators. Ending a span pops anything left above it (marked
@@ -40,7 +40,9 @@ KIND_GUARDRAIL = "guardrail"
 KIND_STEP = "step"
 
 #: Kinds that become the implicit parent of spans started while they are open.
-CONTAINER_KINDS = frozenset({KIND_AGENT, KIND_TOOL, KIND_RETRIEVAL, KIND_RERANK, KIND_STEP})
+CONTAINER_KINDS = frozenset(
+    {KIND_AGENT, KIND_TOOL, KIND_RETRIEVAL, KIND_RERANK, KIND_GUARDRAIL, KIND_STEP}
+)
 
 STATUS_OK = "ok"
 STATUS_ERROR = "error"

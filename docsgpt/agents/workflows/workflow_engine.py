@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional, TYPE_CHECKING
 
+from docsgpt import tracing
 from docsgpt.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from docsgpt.agents.workflows.schemas import (
@@ -114,6 +115,9 @@ class WorkflowEngine:
         self, initial_inputs: WorkflowState, query: str
     ) -> Generator[Dict[str, str], None, None]:
         self._initialize_state(initial_inputs, query)
+        # A workflow run's Logs row finds its trace by this id; a nested
+        # engine (a workflow inside a workflow) keeps the outermost run's.
+        tracing.bind_if_unset(workflow_run_id=self.workflow_run_id)
 
         # Surface the run id up front so the client can list this run's
         # artifacts (GET /api/artifacts?workflow_run_id=) once it has been
@@ -140,6 +144,16 @@ class WorkflowEngine:
                 break
             log_entry = self._create_log_entry(node)
             self._last_node_tool_calls = []
+            step_span = tracing.start_span(
+                tracing.KIND_STEP,
+                f"workflow_step {node.title or node.type.value}",
+                attributes={
+                    "docsgpt.workflow.node_id": node.id,
+                    "docsgpt.workflow.node_type": node.type.value,
+                    "docsgpt.workflow.node_title": node.title or None,
+                    "docsgpt.workflow_run_id": self.workflow_run_id,
+                },
+            )
 
             yield {
                 "type": "workflow_step",
@@ -150,7 +164,12 @@ class WorkflowEngine:
             }
 
             try:
-                yield from self._execute_node(node)
+                try:
+                    yield from self._execute_node(node)
+                except GeneratorExit:
+                    step_span.end(tracing.STATUS_CANCELLED)
+                    raise
+                step_span.end()
                 log_entry["status"] = ExecutionStatus.COMPLETED.value
                 self._finalize_log_entry(log_entry, pre_state)
 
@@ -167,6 +186,7 @@ class WorkflowEngine:
                     "output": node_output,
                 }
             except Exception as e:
+                step_span.end(error=e)
                 logger.error(f"Error executing node {node.id}: {e}", exc_info=True)
                 log_entry["status"] = ExecutionStatus.FAILED.value
                 log_entry["error"] = str(e)
