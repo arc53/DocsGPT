@@ -24,7 +24,10 @@ import {
   normalizeExtensions,
   useAttachments,
 } from '../hooks/useAttachments';
+import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useDictation } from '../hooks/useDictation';
+import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
+import { isTouchPrimary } from '../utils/helper';
 import {
   AttachButton,
   AttachmentChips,
@@ -304,7 +307,8 @@ const WidgetContainer = styled.div<{ $modal?: boolean }>`
 
   @media only screen and (max-width: 768px) {
     right: 0;
-    bottom: 0;
+    /* Keyboard inset; see useVisualViewportBounds. */
+    bottom: var(--dgpt-vv-bottom, 0px);
     &.modal {
       transform: none;
     }
@@ -325,6 +329,9 @@ const StyledContainer = styled.div<{ $isOpen: boolean }>`
   background-color: ${(props) => props.theme.primary.bg};
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* all: initial re-enables Safari's text auto-inflation. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   display: flex;
   padding: 0;
   overflow: hidden;
@@ -368,10 +375,13 @@ const StyledContainer = styled.div<{ $isOpen: boolean }>`
 
   @media only screen and (max-width: 768px) {
     width: 100vw;
-    height: 100dvh;
+    /* 100dvh unless a keyboard is covering part of it. */
+    height: var(--dgpt-vv-height, 100dvh);
     max-width: 100vw;
-    max-height: 100dvh;
+    max-height: var(--dgpt-vv-height, 100dvh);
     border-radius: 0;
+    /* Expanding is desktop-only; easing after the keyboard reads as lag. */
+    transition: none;
   }
 `;
 
@@ -847,7 +857,7 @@ const StatusLine = styled.div`
   min-width: 0;
   max-width: 100%;
   font-size: 12px;
-  font-family: sans-serif;
+  font-family: inherit;
   color: ${(props) => props.theme.secondary.text};
 `;
 const StatusDot = styled.span`
@@ -892,7 +902,7 @@ const Thought = styled.div`
   padding-left: 10px;
   border-left: 2px solid ${(props) => props.theme.hairline};
   font-size: 12px;
-  font-family: sans-serif;
+  font-family: inherit;
   font-style: italic;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -1033,6 +1043,11 @@ const StyledTextarea = styled.textarea<{ $hidden?: boolean }>`
   &::placeholder {
     text-align: left;
     color: ${(props) => props.theme.secondary.text};
+  }
+
+  /* iOS Safari zooms the page in on any field under 16px. */
+  @media (pointer: coarse) {
+    font-size: 16px;
   }
 `;
 const StyledButton = styled.button`
@@ -1323,12 +1338,27 @@ export const WidgetCore = ({
   const [isDraggingFiles, setIsDraggingFiles] = React.useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const conversationRef = useRef<HTMLDivElement | null>(null);
   const endMessageRef = React.useRef<HTMLDivElement | null>(null);
   const promptRef = React.useRef<HTMLTextAreaElement | null>(null);
   const attachmentInputRef = React.useRef<HTMLInputElement | null>(null);
   // dragenter/dragleave fire per child crossed, hence a depth count.
   const dragDepthRef = React.useRef(0);
+
+  // On a phone the composer waits to be tapped: autofocus costs half the
+  // display to a keyboard nobody asked for.
+  const [touchPrimary] = React.useState(isTouchPrimary);
+
+  // Typed as a click handler, but no close path reads the event.
+  const closePanel = () => {
+    (handleClose as ((event?: React.MouseEvent) => void) | undefined)?.();
+  };
+
+  // The node exists only once mounted.
+  useVisualViewportBounds(isOpen && mounted, containerRef);
+  // Touch only: nothing fills the screen on desktop.
+  useBackDismiss(isOpen && touchPrimary, closePanel);
 
   // An empty list disables attachments.
   const acceptedExtensions = React.useMemo(
@@ -1439,6 +1469,20 @@ export const WidgetCore = ({
     if (status === 'loading') el.scrollTop = el.scrollHeight;
     else scrollToLatest();
   }, [queries.length, queries[queries.length - 1]?.response, status]);
+
+  // Shortening the panel leaves scrollTop where it was, dropping the tail of
+  // the latest answer below the fold. A frame later, once the height lands.
+  React.useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!isOpen || !viewport) return;
+    const repin = () =>
+      window.requestAnimationFrame(() => {
+        const el = conversationRef.current;
+        if (el && isPinnedToLatest) el.scrollTop = el.scrollHeight;
+      });
+    viewport.addEventListener('resize', repin);
+    return () => viewport.removeEventListener('resize', repin);
+  }, [isOpen, isPinnedToLatest]);
 
   const setFeedbackAt = (index: number, value?: FEEDBACK) =>
     setQueries((prev: Query[]) =>
@@ -1847,6 +1891,7 @@ export const WidgetCore = ({
       {isOpen && size === 'large' && <Overlay onClick={handleClose} />}
       {
         <WidgetContainer
+          ref={containerRef}
           className={`${size !== 'large' ? (isOpen ? 'open' : 'close') : 'modal'}`}
           $modal={size === 'large'}
         >
@@ -2114,7 +2159,7 @@ export const WidgetCore = ({
                     $hidden={isDictating}
                     id="chatInput"
                     ref={promptRef}
-                    autoFocus
+                    autoFocus={!touchPrimary}
                     onInput={handleUserInput}
                     value={prompt}
                     onChange={handlePromptChange}
