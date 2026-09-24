@@ -3,12 +3,96 @@
 Contains parsers for tabular data files.
 
 """
+import csv
 import datetime
+import io
 import math
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
 from docsgpt.parser.file.base_parser import BaseParser
+
+# The separators a spreadsheet actually writes into a file named ".csv". Excel
+# writes the list separator of the machine's locale, which is a semicolon across
+# most of Europe, and a tab separated export is routinely saved as .csv.
+CANDIDATE_SEPARATORS = (",", ";", "\t", "|")
+
+# How much of the file the detection looks at. A separator that holds for the
+# first rows holds for the file.
+_SAMPLE_CHARS = 64 * 1024
+_SAMPLE_ROWS = 20
+
+
+def _consistent_column_count(sample: str, separator: str, truncated: bool) -> int:
+    """Columns per row under ``separator``, or 0 when the rows disagree.
+
+    A separator the file was not written with either does not occur at all (one
+    column) or occurs by accident, and then the rows do not line up. Requiring
+    the same count on every row is what keeps a comma inside a sentence, or a
+    semicolon inside a quoted field, from being read as a separator.
+
+    When ``truncated`` is set, the sample is a prefix of a longer file, so the
+    row it ends in stops wherever the read did, between two fields or inside a
+    quoted one. That row is left out rather than counted as having fewer columns.
+    """
+    rows: List[List[str]] = []
+    reader = csv.reader(io.StringIO(sample, newline=""), delimiter=separator)
+    try:
+        for row in reader:
+            if not any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
+                continue
+            if len(rows) == _SAMPLE_ROWS:
+                break
+            rows.append(row)
+        else:
+            if truncated and len(rows) > 1:
+                rows.pop()
+    except csv.Error:
+        return 0
+    count = 0
+    for row in rows:
+        if count and len(row) != count:
+            return 0
+        count = len(row)
+    return count if count > 1 else 0
+
+
+def detect_separator(sample: str, truncated: bool = False) -> str:
+    """The separator ``sample`` was written with, defaulting to a comma.
+
+    ``pandas.read_csv`` defaults to a comma, and its own sniffing
+    (``sep=None, engine="python"``) is not a safe substitute: on a single column
+    file it happily splits ``Note`` into ``No`` and ``e``. Choosing among a fixed
+    set of separators, and only when the column counts line up, cannot do that.
+
+    Args:
+        sample: The first rows of the file, as text.
+        truncated: Whether the file goes on past ``sample``, so that its last
+            row may be cut short.
+
+    Returns:
+        str: One of :data:`CANDIDATE_SEPARATORS`; ``","`` when none of them fits.
+    """
+    best_separator, best_columns = ",", 0
+    for separator in CANDIDATE_SEPARATORS:
+        columns = _consistent_column_count(sample, separator, truncated)
+        if columns > best_columns:
+            best_separator, best_columns = separator, columns
+    return best_separator
+
+
+def detect_file_separator(file: Path, encoding: str | None = None) -> str:
+    """The separator ``file`` was written with, defaulting to a comma.
+
+    A file that cannot be read here is left to the caller's own reader, which
+    reports the error properly; detection never raises.
+    """
+    try:
+        with open(file, "r", encoding=encoding or "utf-8", errors="replace", newline="") as handle:
+            sample = handle.read(_SAMPLE_CHARS + 1)
+    except OSError:
+        return ","
+    return detect_separator(sample[:_SAMPLE_CHARS], truncated=len(sample) > _SAMPLE_CHARS)
 
 
 def cell_to_text(value: Any) -> str:
@@ -99,8 +183,9 @@ class CSVParser(BaseParser):
         except ImportError:
             raise ValueError("csv module is required to read CSV files.")
         text_list = []
+        separator = detect_file_separator(file)
         with open(file, "r") as fp:
-            csv_reader = csv.reader(fp)
+            csv_reader = csv.reader(fp, delimiter=separator)
             for row in csv_reader:
                 text_list.append(", ".join(row))
         if self._concat_rows:
@@ -112,8 +197,10 @@ class CSVParser(BaseParser):
 class PandasCSVParser(BaseParser):
     r"""Pandas-based CSV parser.
 
-    Parses CSVs using the separator detection from Pandas `read_csv`function.
-    If special parameters are required, use the `pandas_config` dict.
+    The separator is detected from the file itself (see `detect_separator`),
+    because `pandas.read_csv` defaults to a comma and a `.csv` file is often
+    written with a semicolon or a tab. If special parameters are required, use
+    the `pandas_config` dict; a `sep` or `delimiter` given there is used as is.
 
     Args:
         concat_rows (bool): whether to concatenate all rows into one document.
@@ -130,8 +217,8 @@ class PandasCSVParser(BaseParser):
         pandas_config (dict): Options for the `pandas.read_csv` function call.
             Refer to https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html
             for more information.
-            Set to empty dict by default, this means pandas will try to figure
-            out the separators, table head, etc. on its own.
+            Set to empty dict by default: the separator is then detected from
+            the file and pandas infers the table head and dtypes on its own.
             
         header_period (int): Controls how headers are included in output:
             - 0: Headers only at the beginning
@@ -172,7 +259,11 @@ class PandasCSVParser(BaseParser):
         except ImportError:
             raise ValueError("pandas module is required to read CSV files.")
 
-        df = pd.read_csv(file, **self._pandas_config)
+        pandas_config = dict(self._pandas_config)
+        if "sep" not in pandas_config and "delimiter" not in pandas_config:
+            pandas_config["sep"] = detect_file_separator(file, pandas_config.get("encoding"))
+
+        df = pd.read_csv(file, **pandas_config)
         headers = [cell_to_text(h) for h in df.columns.tolist()]
         header_row = f"{self._header_prefix}{self._col_joiner.join(headers)}"
 
