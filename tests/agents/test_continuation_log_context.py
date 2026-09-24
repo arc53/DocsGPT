@@ -74,6 +74,7 @@ def test_model_calls_in_a_continuation_carry_the_turns_identity():
     assert seen[0]["user_id"] == "user-cont"
     assert seen[0]["agent_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
     assert seen[0]["endpoint"] == "stream"
+    assert seen[0]["model"] == "gpt-4"
     assert "activity_id" not in seen[0], "a continuation is not an activity of its own"
 
 

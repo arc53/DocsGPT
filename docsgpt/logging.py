@@ -97,7 +97,11 @@ def _agent_log_keys(agent: Any, data: Optional[Dict] = None) -> Dict[str, Any]:
         "agent_id": getattr(agent, "agent_id", None),
         "conversation_id": getattr(agent, "conversation_id", None),
         "endpoint": data.get("endpoint", ""),
-        "model": getattr(agent, "gpt_model", None) or getattr(agent, "model", None),
+        "model": (
+            getattr(agent, "gpt_model", None)
+            or getattr(agent, "model", None)
+            or getattr(agent, "model_id", None)
+        ),
     }
 
 
