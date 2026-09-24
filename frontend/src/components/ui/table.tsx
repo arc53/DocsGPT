@@ -56,11 +56,17 @@ const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
           className={cn(
             'w-full overflow-x-auto rounded-md bg-transparent',
             bordered && 'border-border border',
+            height === 'auto'
+              ? 'overflow-y-hidden'
+              : 'max-h-(--table-max-height) overflow-y-auto',
           )}
-          style={{
-            maxHeight: height === 'auto' ? undefined : height,
-            overflowY: height === 'auto' ? 'hidden' : 'auto',
-          }}
+          // The height is a runtime prop; exposed as a custom property so
+          // max-height itself stays a class.
+          style={
+            height === 'auto'
+              ? undefined
+              : ({ '--table-max-height': height } as React.CSSProperties)
+          }
         >
           {children}
         </div>
@@ -153,9 +159,12 @@ const TableHeader: React.FC<TableCellProps> = ({
         'border-border text-muted-foreground relative box-border border-b px-2 py-3 text-sm font-medium lg:px-3',
         alignmentClass,
         minWidth,
+        width && 'w-(--cell-width) max-w-(--cell-width) min-w-(--cell-width)',
         className,
       )}
-      style={width ? { width, minWidth: width, maxWidth: width } : {}}
+      style={
+        width ? ({ '--cell-width': width } as React.CSSProperties) : undefined
+      }
     >
       {children}
     </th>
@@ -185,9 +194,12 @@ const TableCell: React.FC<TableCellProps> = ({
         'box-border px-2 py-2 text-sm lg:px-3',
         alignmentClass,
         minWidth,
+        width && 'w-(--cell-width) max-w-(--cell-width) min-w-(--cell-width)',
         className,
       )}
-      style={width ? { width, minWidth: width, maxWidth: width } : {}}
+      style={
+        width ? ({ '--cell-width': width } as React.CSSProperties) : undefined
+      }
     >
       {children}
     </td>

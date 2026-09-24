@@ -155,7 +155,9 @@ export default function SharedAgent() {
         <Avatar
           src={sharedAgent.image}
           alt="agent-logo"
-          imgClassName="h-6 w-6 rounded-full object-contain"
+          shape="circle"
+          className="overflow-hidden"
+          imgClassName="h-6 w-6 object-contain"
         />
         <h2 className="text-foreground text-lg font-semibold">
           {sharedAgent.name}

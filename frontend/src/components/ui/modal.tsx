@@ -114,7 +114,12 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
           className={cn(
             'bg-card text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out shadow-modal fixed z-50 duration-200 outline-none',
             isMobileSheet
-              ? 'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 flex max-h-[90vh] w-full flex-col gap-3 rounded-t-2xl px-4 pt-2 pb-[max(env(safe-area-inset-bottom),1rem)]'
+              ? /* eslint-disable-next-line shadcn/no-arbitrary-values -- the
+                   sheet's bottom padding must clear the iPhone home indicator
+                   (env(safe-area-inset-bottom), about 34px) and fall back to
+                   1rem elsewhere; no scale step can express env() (DESIGN.md
+                   Approved exceptions). */
+                'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 flex max-h-[90vh] w-full flex-col gap-3 rounded-t-2xl px-4 pt-2 pb-[max(env(safe-area-inset-bottom),1rem)]'
               : cn(
                   'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 top-[50%] left-[50%] grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-2xl p-8',
                   SIZE_CLASSES[size],
@@ -124,7 +129,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
         >
           {isMobileSheet && (
             <div
-              className="mx-auto h-1.5 w-12 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
+              className="bg-border mx-auto h-1.5 w-12 shrink-0 rounded-full"
               aria-hidden="true"
             />
           )}

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { CircleAlert } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
   oneLight,
@@ -11,7 +12,14 @@ import { selectStatus } from '../conversation/conversationSlice';
 import { useDarkTheme } from '../hooks';
 import CopyButton from './CopyButton';
 import { renderMermaidDiagram } from './mermaidSecurity';
+import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import { MermaidRendererProps } from './types';
 
 const MermaidRenderer: React.FC<MermaidRendererProps> = ({
@@ -27,8 +35,6 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const status = useSelector(selectStatus);
   const [error, setError] = useState<string | null>(null);
   const [showCode, setShowCode] = useState<boolean>(false);
-  const [showDownloadMenu, setShowDownloadMenu] = useState<boolean>(false);
-  const downloadMenuRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const diagramRef = useRef<HTMLPreElement>(null);
   const [hoverPosition, setHoverPosition] = useState<{
@@ -125,22 +131,6 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       cancelled = true;
     };
   }, [code, isDarkTheme, isCurrentlyLoading]);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        downloadMenuRef.current &&
-        !downloadMenuRef.current.contains(event.target as Node)
-      ) {
-        setShowDownloadMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showDownloadMenu]);
 
   const downloadSvg = (): void => {
     const element = document.getElementById(diagramId.current);
@@ -274,61 +264,43 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   const errorRender = !isCurrentlyLoading && error;
 
   return (
-    <div className="w-inherit group border-border bg-card relative overflow-hidden rounded-xl border">
+    <div className="group border-border bg-card relative overflow-hidden rounded-xl border">
       <div className="bg-muted flex items-center justify-between px-2 py-1">
-        <span className="text-foreground dark:text-foreground text-xs font-medium">
-          mermaid
-        </span>
+        <span className="text-foreground text-xs font-medium">mermaid</span>
         <div className="flex items-center gap-2">
           <CopyButton textToCopy={String(code).replace(/\n$/, '')} />
 
           {showDiagramOptions && (
-            <div className="relative" ref={downloadMenuRef}>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowDownloadMenu(!showDownloadMenu)}
-                className="h-auto gap-1 rounded-sm bg-gray-100 px-2 py-1 text-xs dark:bg-gray-700"
-                title={t('mermaid.downloadOptions')}
-              >
-                Download <span className="ml-1">▼</span>
-              </Button>
-              {showDownloadMenu && (
-                <div className="border-border bg-card absolute right-0 z-10 mt-1 w-40 rounded-sm border shadow-lg">
-                  <ul>
-                    {downloadOptions.map((option, index) => (
-                      <li key={index}>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => {
-                            option.action();
-                            setShowDownloadMenu(false);
-                          }}
-                          className="h-auto w-full justify-start rounded-none px-4 py-2 text-left text-xs font-normal"
-                        >
-                          {option.label}
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost-muted"
+                  size="xs"
+                  title={t('mermaid.downloadOptions')}
+                >
+                  Download <span className="ml-1">▼</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                {downloadOptions.map((option) => (
+                  <DropdownMenuItem
+                    key={option.label}
+                    onSelect={() => option.action()}
+                  >
+                    {option.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           {showDiagramOptions && (
             <Button
               type="button"
-              variant="secondary"
-              size="sm"
+              variant={showCode ? 'secondary' : 'ghost-muted'}
+              size="xs"
               onClick={() => setShowCode(!showCode)}
-              className={`h-auto rounded px-2 py-1 text-xs ${
-                showCode
-                  ? 'bg-blue-200 hover:bg-blue-200/90 dark:bg-blue-800 dark:hover:bg-blue-800/90'
-                  : 'bg-gray-100 hover:bg-gray-100/90 dark:bg-gray-700 dark:hover:bg-gray-700/90'
-              }`}
               title={t('mermaid.viewCode')}
             >
               Code
@@ -339,16 +311,17 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
 
       {isCurrentlyLoading ? (
         <div className="bg-card flex items-center justify-center p-4">
-          <div className="text-sm text-gray-500 dark:text-gray-400">
+          <div className="text-muted-foreground text-sm">
             Loading diagram...
           </div>
         </div>
       ) : errorRender ? (
-        <div className="m-2 rounded-sm border-2 border-red-400 dark:border-red-700">
-          <div className="overflow-auto bg-red-100 px-4 py-2 text-sm wrap-break-word whitespace-normal text-red-800 dark:bg-red-900/30 dark:text-red-300">
+        <Alert variant="destructive" className="m-2 w-auto">
+          <CircleAlert />
+          <AlertDescription className="overflow-auto wrap-break-word whitespace-normal">
             {error}
-          </div>
-        </div>
+          </AlertDescription>
+        </Alert>
       ) : (
         <>
           <div
@@ -373,11 +346,14 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                   <Button
                     type="button"
                     variant="ghost"
+                    size="icon-xs"
                     onClick={() =>
                       setZoomFactor((prev) => Math.max(1, prev - 0.5))
                     }
-                    className="h-auto px-1 py-0 text-white hover:bg-gray-600 hover:text-white"
                     title={t('mermaid.decreaseZoom')}
+                    /* eslint-disable-next-line shadcn/no-restyle --
+                       zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
+                    className="hover:bg-white/20 hover:text-white dark:hover:bg-white/20"
                   >
                     -
                   </Button>
@@ -393,11 +369,14 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                   <Button
                     type="button"
                     variant="ghost"
+                    size="icon-xs"
                     onClick={() =>
                       setZoomFactor((prev) => Math.min(6, prev + 0.5))
                     }
-                    className="h-auto px-1 py-0 text-white hover:bg-gray-600 hover:text-white"
                     title={t('mermaid.increaseZoom')}
+                    /* eslint-disable-next-line shadcn/no-restyle --
+                       zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
+                    className="hover:bg-white/20 hover:text-white dark:hover:bg-white/20"
                   >
                     +
                   </Button>
@@ -406,7 +385,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             )}
             <pre
               ref={diagramRef}
-              className="mermaid w-full select-none"
+              className="w-full select-none"
               id={diagramId.current}
               key={`mermaid-${diagramId.current}`}
               style={{
@@ -424,7 +403,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           {showCode && (
             <div className="border-border border-t">
               <div className="bg-muted p-2">
-                <span className="text-foreground dark:text-foreground text-xs font-medium">
+                <span className="text-foreground text-xs font-medium">
                   Mermaid Code
                 </span>
               </div>

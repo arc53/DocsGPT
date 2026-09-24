@@ -123,8 +123,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
     try {
       const clientId: string = envVar('VITE_GOOGLE_CLIENT_ID');
-      const developerKey: string =
-        envVar('VITE_GOOGLE_PICKER_API_KEY') ?? '';
+      const developerKey: string = envVar('VITE_GOOGLE_PICKER_API_KEY') ?? '';
 
       // Derive appId from clientId (extract numeric part before first dash)
       const appId = clientId ? clientId.split('-')[0] : null;
@@ -265,7 +264,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
           />
 
           {isConnected && (
-            <div className="border-border dark:border-border rounded-lg border">
+            <div className="border-border rounded-lg border">
               <div className="p-4">
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-sm font-medium">
@@ -275,7 +274,6 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                     type="button"
                     size="sm"
                     onClick={() => handleOpenPicker()}
-                    className="bg-[#A076F6] hover:bg-[#8A5FD4]"
                     disabled={isLoading}
                   >
                     {isLoading
@@ -287,7 +285,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                 </div>
 
                 {selectedFiles.length === 0 && selectedFolders.length === 0 ? (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <p className="text-muted-foreground text-sm">
                     {t(
                       'modals.uploadDoc.connectors.googleDrive.noFilesSelected',
                     )}
@@ -296,13 +294,13 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                   <div className="max-h-60 overflow-y-auto">
                     {selectedFolders.length > 0 && (
                       <div className="mb-2">
-                        <h4 className="mb-1 text-xs font-medium text-gray-500">
+                        <h4 className="text-muted-foreground mb-1 text-xs font-medium">
                           {t('modals.uploadDoc.connectors.googleDrive.folders')}
                         </h4>
                         {selectedFolders.map((folder) => (
                           <div
                             key={folder.id}
-                            className="flex items-center border-b border-gray-200 p-2 dark:border-gray-700"
+                            className="border-border flex items-center border-b p-2"
                           >
                             <img
                               src={folder.iconUrl}
@@ -316,8 +314,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                             </span>
                             <Button
                               type="button"
-                              variant="link"
-                              size="sm"
+                              variant="ghost-destructive"
+                              size="xs"
                               onClick={() => {
                                 const newSelectedFolders =
                                   selectedFolders.filter(
@@ -329,7 +327,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                                   newSelectedFolders.map((f) => f.id),
                                 );
                               }}
-                              className="ml-2 h-auto p-0 text-sm text-red-500 hover:text-red-700 hover:no-underline"
+                              className="ml-2"
                             >
                               {t(
                                 'modals.uploadDoc.connectors.googleDrive.remove',
@@ -342,13 +340,13 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
                     {selectedFiles.length > 0 && (
                       <div>
-                        <h4 className="mb-1 text-xs font-medium text-gray-500">
+                        <h4 className="text-muted-foreground mb-1 text-xs font-medium">
                           {t('modals.uploadDoc.connectors.googleDrive.files')}
                         </h4>
                         {selectedFiles.map((file) => (
                           <div
                             key={file.id}
-                            className="flex items-center border-b border-gray-200 p-2 dark:border-gray-700"
+                            className="border-border flex items-center border-b p-2"
                           >
                             <img
                               src={file.iconUrl}
@@ -362,8 +360,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                             </span>
                             <Button
                               type="button"
-                              variant="link"
-                              size="sm"
+                              variant="ghost-destructive"
+                              size="xs"
                               onClick={() => {
                                 const newSelectedFiles = selectedFiles.filter(
                                   (f) => f.id !== file.id,
@@ -374,7 +372,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                                   selectedFolders.map((f) => f.id),
                                 );
                               }}
-                              className="ml-2 h-auto p-0 text-sm text-red-500 hover:text-red-700 hover:no-underline"
+                              className="ml-2"
                             >
                               {t(
                                 'modals.uploadDoc.connectors.googleDrive.remove',

@@ -53,6 +53,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
@@ -1557,8 +1559,8 @@ function WorkflowBuilderInner() {
               <Button
                 type="button"
                 variant="outline"
+                shape="pill"
                 onClick={navigateBackToAgents}
-                className="text-muted-foreground rounded-full px-4 py-2 text-sm font-normal shadow-none"
               >
                 {t('agents.backToAll')}
               </Button>
@@ -1566,7 +1568,7 @@ function WorkflowBuilderInner() {
             {!canManageAgent && (
               <div className="min-w-0">
                 <div
-                  className="max-w-xs truncate text-xl font-bold text-gray-900 dark:text-white"
+                  className="text-foreground max-w-xs truncate text-xl font-bold"
                   title={workflowName || 'New Workflow'}
                 >
                   {workflowName || 'New Workflow'}
@@ -1584,10 +1586,9 @@ function WorkflowBuilderInner() {
             <div className="relative flex items-center">
               <Button
                 type="button"
-                variant="ghost"
-                size="icon-sm"
+                variant="ghost-muted"
+                size="icon-xs"
                 onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
-                className="text-muted-foreground hover:bg-accent hover:text-foreground size-auto p-1"
                 aria-label="Edit workflow details"
                 title={
                   workflowDescription
@@ -1603,31 +1604,29 @@ function WorkflowBuilderInner() {
                   className="border-border bg-card absolute top-full left-0 z-50 mt-2 w-80 rounded-xl border p-4 shadow-lg"
                 >
                   <div className="mb-3">
-                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label className="text-foreground mb-1 block text-sm font-medium">
                       Workflow Name
                     </label>
                     <Input
                       type="text"
                       value={workflowName}
                       onChange={(e) => setWorkflowName(e.target.value)}
-                      className="bg-card h-auto rounded-lg px-3 py-2 text-sm shadow-none"
                       placeholder="Enter workflow name"
                     />
                   </div>
                   <div className="mb-3">
-                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label className="text-foreground mb-1 block text-sm font-medium">
                       Description
                     </label>
-                    <textarea
+                    <Textarea
                       value={workflowDescription}
                       onChange={(e) => setWorkflowDescription(e.target.value)}
-                      className="focus-visible:ring-ring/50 focus-visible:border-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2 dark:text-white"
                       rows={3}
                       placeholder="Describe what this workflow does"
                     />
                   </div>
                   <div className="mb-3">
-                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <label className="text-foreground mb-1 block text-sm font-medium">
                       Agent Image
                     </label>
                     {currentAgentImage && !imageFile && (
@@ -1637,7 +1636,7 @@ function WorkflowBuilderInner() {
                           alt="Agent image"
                           className="h-10 w-10 rounded-full object-cover"
                         />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                        <span className="text-muted-foreground text-xs">
                           Current image
                         </span>
                       </div>
@@ -1646,19 +1645,18 @@ function WorkflowBuilderInner() {
                       showPreview
                       maxFiles={1}
                       previewSize={56}
+                      size="compact"
                       onUpload={handleUpload}
                       onRemove={() => setImageFile(null)}
                       uploadText={[
                         {
                           text: 'Click to upload',
-                          colorClass: 'text-primary',
+                          highlight: true,
                         },
                         {
                           text: ' or drag and drop',
-                          colorClass: 'text-muted-foreground',
                         },
                       ]}
-                      className="border-border rounded-lg border-2 border-dashed p-3 text-center transition-colors"
                     />
                     <p className="text-muted-foreground mt-1 text-xs">
                       Image updates are included the next time you save.
@@ -1667,44 +1665,38 @@ function WorkflowBuilderInner() {
                   <div className="mb-3">
                     <div className="flex items-center justify-between">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <label
+                          htmlFor="workflow-system-prompt-override"
+                          className="text-foreground block text-sm font-medium"
+                        >
                           {t('agents.form.advanced.systemPromptOverride')}
                         </label>
-                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                        <p className="text-muted-foreground mt-0.5 text-xs">
                           {t(
                             'agents.form.advanced.systemPromptOverrideDescription',
                           )}
                         </p>
                       </div>
-                      <button
-                        onClick={() =>
+                      <Switch
+                        id="workflow-system-prompt-override"
+                        checked={Boolean(
+                          currentAgent.allow_system_prompt_override,
+                        )}
+                        onCheckedChange={() =>
                           setCurrentAgent((prev) => ({
                             ...prev,
                             allow_system_prompt_override:
                               !prev.allow_system_prompt_override,
                           }))
                         }
-                        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                          currentAgent.allow_system_prompt_override
-                            ? 'bg-primary'
-                            : 'bg-gray-300 dark:bg-gray-600'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                            currentAgent.allow_system_prompt_override
-                              ? ''
-                              : '-translate-x-5'
-                          }`}
-                        />
-                      </button>
+                      />
                     </div>
                   </div>
                   <Button
                     type="button"
                     onClick={handleWorkflowSettingsDone}
                     disabled={isPublishing}
-                    className="w-full rounded-lg text-white"
+                    className="w-full"
                   >
                     Done
                   </Button>
@@ -1717,8 +1709,8 @@ function WorkflowBuilderInner() {
               <Button
                 type="button"
                 variant="outline"
+                shape="pill"
                 onClick={() => setAgentDetails('ACTIVE')}
-                className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
               >
                 <Link size={16} />
                 Access Details
@@ -1728,9 +1720,9 @@ function WorkflowBuilderInner() {
               <Button
                 type="button"
                 variant="destructive-outline"
+                shape="pill"
                 onClick={() => setDeleteConfirmation('ACTIVE')}
                 disabled={isDeletingAgent}
-                className="bg-card rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
               >
                 <Trash2 size={16} />
                 {isDeletingAgent ? 'Deleting...' : 'Delete'}
@@ -1739,6 +1731,7 @@ function WorkflowBuilderInner() {
             <Button
               type="button"
               variant="outline"
+              shape="pill"
               onClick={() => {
                 const validationErrors = validateWorkflow();
                 if (validationErrors.length > 0) {
@@ -1748,7 +1741,6 @@ function WorkflowBuilderInner() {
                 }
                 setShowPreview(true);
               }}
-              className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
             >
               <Play size={16} />
               Preview
@@ -1757,11 +1749,9 @@ function WorkflowBuilderInner() {
               type="button"
               onClick={handlePrimaryAction}
               disabled={isPrimaryActionDisabled}
-              className={`relative rounded-full px-6 py-2 text-sm font-medium shadow-sm ${
-                canManageAgent && !hasSavableChanges
-                  ? 'dark:bg-accent bg-gray-200 text-gray-500 hover:bg-gray-200 dark:text-gray-400'
-                  : 'text-white'
-              }`}
+              size="lg"
+              shape="pill"
+              className="relative"
             >
               <span
                 className={
@@ -1779,42 +1769,43 @@ function WorkflowBuilderInner() {
 
         {publishErrors.length > 0 && (
           <div className="pointer-events-none absolute top-20 right-0 left-0 z-50 flex justify-center px-4">
-            <Alert
-              variant="destructive"
-              className="pointer-events-auto w-full max-w-md bg-red-50 shadow-lg dark:bg-red-950/20"
-            >
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>
-                {errorContext === 'preview'
-                  ? 'Unable to preview workflow'
-                  : canManageAgent
-                    ? 'Unable to save workflow'
-                    : 'Unable to publish workflow'}
-              </AlertTitle>
-              <AlertDescription>
-                <ul className="mt-2 list-inside list-disc space-y-1 wrap-break-word">
-                  {publishErrors.map((error, index) => (
-                    <li key={index}>{error}</li>
-                  ))}
-                </ul>
-              </AlertDescription>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setPublishErrors([])}
-                className="absolute top-4 right-4 size-auto p-0 text-red-700 hover:bg-transparent hover:text-red-900 dark:text-red-300 dark:hover:bg-transparent dark:hover:text-red-100"
-              >
-                <X size={16} />
-              </Button>
-            </Alert>
+            <div className="bg-card pointer-events-auto w-full max-w-md rounded-lg shadow-lg">
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>
+                  {errorContext === 'preview'
+                    ? 'Unable to preview workflow'
+                    : canManageAgent
+                      ? 'Unable to save workflow'
+                      : 'Unable to publish workflow'}
+                </AlertTitle>
+                <AlertDescription>
+                  <ul className="mt-2 list-inside list-disc space-y-1 wrap-break-word">
+                    {publishErrors.map((error, index) => (
+                      <li key={index}>{error}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+                <div className="absolute top-2.5 right-2.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => setPublishErrors([])}
+                    aria-label={t('agents.close')}
+                  >
+                    <X size={16} aria-hidden />
+                  </Button>
+                </div>
+              </Alert>
+            </div>
           </div>
         )}
 
         <div className="flex flex-1 overflow-hidden">
           <div className="border-border bg-muted dark:bg-background flex w-64 flex-col gap-6 border-r p-4">
             <div>
-              <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+              <h3 className="text-muted-foreground mb-3 text-xs font-semibold tracking-wider uppercase">
                 Core Nodes
               </h3>
               <div className="flex flex-col gap-2">
@@ -1823,10 +1814,10 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'agent')}
                 >
-                  <div className="text-primary group-hover:bg-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white dark:bg-purple-900/40">
+                  <div className="bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors">
                     <Bot size={18} />
                   </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  <span className="text-foreground text-sm font-medium">
                     AI Agent
                   </span>
                 </div>
@@ -1835,10 +1826,10 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'end')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white dark:bg-green-900/40 dark:text-green-300">
+                  <div className="bg-success/10 text-success group-hover:bg-success group-hover:text-success-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors">
                     <Flag size={18} />
                   </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  <span className="text-foreground text-sm font-medium">
                     End
                   </span>
                 </div>
@@ -1847,10 +1838,10 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'note')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white dark:bg-yellow-900/40 dark:text-yellow-300">
+                  <div className="bg-warning/10 text-warning group-hover:bg-warning group-hover:text-warning-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors">
                     <StickyNote size={18} />
                   </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  <span className="text-foreground text-sm font-medium">
                     Note
                   </span>
                 </div>
@@ -1858,7 +1849,7 @@ function WorkflowBuilderInner() {
             </div>
 
             <div>
-              <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+              <h3 className="text-muted-foreground mb-3 text-xs font-semibold tracking-wider uppercase">
                 Logic & Data
               </h3>
               <div className="flex flex-col gap-2">
@@ -1867,7 +1858,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'state')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white dark:bg-blue-900/40 dark:text-blue-300">
+                  <div className="bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors">
                     <Database size={18} />
                   </div>
                   <div className="flex flex-col">
@@ -1884,7 +1875,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'condition')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white dark:bg-orange-900/40 dark:text-orange-300">
+                  <div className="bg-warning/10 text-warning group-hover:bg-warning group-hover:text-warning-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors">
                     <GitBranch size={18} />
                   </div>
                   <div className="flex flex-col">
@@ -1901,7 +1892,7 @@ function WorkflowBuilderInner() {
                   draggable
                   onDragStart={(e) => handleNodeDragStart(e, 'code')}
                 >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 transition-colors group-hover:bg-indigo-600 group-hover:text-white dark:bg-indigo-900/40 dark:text-indigo-300">
+                  <div className="bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors">
                     <Code2 size={18} />
                   </div>
                   <div className="flex flex-col">
@@ -1950,7 +1941,6 @@ function WorkflowBuilderInner() {
                   disabled={!canUndo}
                   title="Undo (Ctrl+Z)"
                   aria-label="Undo"
-                  className="bg-card"
                 >
                   <Undo2 size={16} />
                 </Button>
@@ -1962,7 +1952,6 @@ function WorkflowBuilderInner() {
                   disabled={!canRedo}
                   title="Redo (Ctrl+Shift+Z)"
                   aria-label="Redo"
-                  className="bg-card"
                 >
                   <Redo2 size={16} />
                 </Button>
@@ -1973,7 +1962,7 @@ function WorkflowBuilderInner() {
               <>
                 <div className="border-border bg-card shadow-modal absolute top-4 right-4 z-20 w-96 rounded-2xl border">
                   <div className="border-border flex items-center justify-between border-b p-4">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">
+                    <h3 className="text-foreground font-semibold">
                       {selectedNode.type === 'start' && 'Start Node'}
                       {selectedNode.type === 'end' && 'End Node'}
                       {selectedNode.type === 'agent' && 'AI Agent'}
@@ -1984,22 +1973,21 @@ function WorkflowBuilderInner() {
                     </h3>
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="icon-sm"
+                      variant="ghost-muted"
+                      size="icon-xs"
                       onClick={() => setShowNodeConfig(false)}
-                      className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-gray-600 dark:hover:bg-transparent dark:hover:text-gray-200 [&_svg:not([class*='size-'])]:size-5"
                     >
-                      <X size={20} />
+                      <X size={20} className="size-5" />
                     </Button>
                   </div>
 
                   <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4">
                     <div className="mb-4 flex flex-col gap-2">
                       <div className="bg-muted rounded-lg p-3">
-                        <div className="mb-1 text-xs text-gray-500 dark:text-gray-400">
+                        <div className="text-muted-foreground mb-1 text-xs">
                           Node ID
                         </div>
-                        <div className="truncate font-mono text-xs text-gray-700 dark:text-gray-300">
+                        <div className="text-foreground truncate font-mono text-xs">
                           {selectedNode.id}
                         </div>
                       </div>
@@ -2008,7 +1996,7 @@ function WorkflowBuilderInner() {
                         selectedNode.type !== 'end' && (
                           <>
                             <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                              <label className="text-foreground mb-2 block text-sm font-medium">
                                 Title
                               </label>
                               <Input
@@ -2024,7 +2012,6 @@ function WorkflowBuilderInner() {
                                     label: e.target.value,
                                   })
                                 }
-                                className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                 placeholder="Enter node title"
                               />
                             </div>
@@ -2032,7 +2019,7 @@ function WorkflowBuilderInner() {
                             {selectedNode.type === 'agent' && (
                               <>
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Agent Type
                                   </label>
                                   <Select
@@ -2049,7 +2036,7 @@ function WorkflowBuilderInner() {
                                       })
                                     }
                                   >
-                                    <SelectTrigger className="w-full">
+                                    <SelectTrigger size="lg" className="w-full">
                                       <SelectValue placeholder="Select agent type" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -2063,7 +2050,7 @@ function WorkflowBuilderInner() {
                                   </Select>
                                 </div>
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Model
                                   </label>
                                   <Select
@@ -2085,7 +2072,7 @@ function WorkflowBuilderInner() {
                                       });
                                     }}
                                   >
-                                    <SelectTrigger className="w-full">
+                                    <SelectTrigger size="lg" className="w-full">
                                       <SelectValue placeholder="Select a model" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -2141,10 +2128,10 @@ function WorkflowBuilderInner() {
                                   </Select>
                                 </div>
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     System Prompt
                                   </label>
-                                  <textarea
+                                  <Textarea
                                     value={
                                       selectedNode.data.config?.system_prompt ??
                                       ''
@@ -2157,7 +2144,6 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                     rows={3}
                                     placeholder="System prompt for the agent"
                                   />
@@ -2182,7 +2168,7 @@ function WorkflowBuilderInner() {
                                   placeholder="Use {{ agent.variable }} for dynamic content"
                                 />
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Output Variable
                                   </label>
                                   <Input
@@ -2200,7 +2186,6 @@ function WorkflowBuilderInner() {
                                         },
                                       });
                                     }}
-                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                     placeholder="Variable name for output"
                                   />
                                 </div>
@@ -2224,13 +2209,13 @@ function WorkflowBuilderInner() {
                                   />
                                   <label
                                     htmlFor="stream_to_user"
-                                    className="text-sm text-gray-700 dark:text-gray-300"
+                                    className="text-foreground text-sm"
                                   >
                                     Stream output to user
                                   </label>
                                 </div>{' '}
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Tools
                                   </label>
                                   <MultiSelect
@@ -2255,7 +2240,7 @@ function WorkflowBuilderInner() {
                                   />
                                 </div>
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Sources
                                   </label>
                                   <MultiSelect
@@ -2295,7 +2280,7 @@ function WorkflowBuilderInner() {
                                   helpText="Documents passed to this agent from uploads or upstream nodes."
                                 />
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     File passing
                                   </label>
                                   <Select
@@ -2311,7 +2296,7 @@ function WorkflowBuilderInner() {
                                       })
                                     }
                                   >
-                                    <SelectTrigger className="w-full">
+                                    <SelectTrigger size="lg" className="w-full">
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -2331,23 +2316,23 @@ function WorkflowBuilderInner() {
                                   </p>
                                 </div>
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Structured Output (JSON Schema)
                                   </label>
                                   {!selectedAgentModelSupportsStructuredOutput && (
-                                    <p className="mb-2 text-xs text-red-600 dark:text-red-400">
+                                    <p className="text-destructive mb-2 text-xs">
                                       Selected model does not support structured
                                       output.
                                     </p>
                                   )}
-                                  <textarea
+                                  <Textarea
                                     value={selectedAgentJsonSchemaText}
                                     onChange={(e) =>
                                       handleAgentJsonSchemaChange(
                                         e.target.value,
                                       )
                                     }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    className="font-mono"
                                     rows={8}
                                     placeholder={`{
   "type": "object",
@@ -2362,8 +2347,8 @@ function WorkflowBuilderInner() {
                                     <p
                                       className={`mt-2 text-xs ${
                                         selectedAgentJsonSchemaError
-                                          ? 'text-red-600 dark:text-red-400'
-                                          : 'text-green-600 dark:text-green-400'
+                                          ? 'text-destructive'
+                                          : 'text-success'
                                       }`}
                                     >
                                       {selectedAgentJsonSchemaError
@@ -2377,17 +2362,16 @@ function WorkflowBuilderInner() {
 
                             {selectedNode.type === 'note' && (
                               <div>
-                                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                <label className="text-foreground mb-2 block text-sm font-medium">
                                   Note Content
                                 </label>
-                                <textarea
+                                <Textarea
                                   value={selectedNode.data.content || ''}
                                   onChange={(e) =>
                                     handleUpdateNodeData({
                                       content: e.target.value,
                                     })
                                   }
-                                  className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                   rows={4}
                                   placeholder="Enter note content"
                                 />
@@ -2396,7 +2380,7 @@ function WorkflowBuilderInner() {
 
                             {selectedNode.type === 'state' && (
                               <>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                <p className="text-muted-foreground text-xs">
                                   Assign values to workflow&apos;s state
                                   variables
                                 </p>
@@ -2415,7 +2399,7 @@ function WorkflowBuilderInner() {
                                       className="border-border rounded-xl border p-3"
                                     >
                                       <div className="mb-2 flex items-center justify-between">
-                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        <span className="text-foreground text-sm font-medium">
                                           Assign value
                                         </span>
                                         {(
@@ -2424,8 +2408,8 @@ function WorkflowBuilderInner() {
                                         ).length > 1 && (
                                           <Button
                                             type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
+                                            variant="ghost-destructive"
+                                            size="icon-xs"
                                             onClick={() => {
                                               const ops = [
                                                 ...(selectedNode.data.config
@@ -2440,13 +2424,12 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
                                           >
                                             <Trash2 size={14} />
                                           </Button>
                                         )}
                                       </div>
-                                      <textarea
+                                      <Textarea
                                         value={op.expression}
                                         onChange={(e) => {
                                           const ops = [
@@ -2465,7 +2448,7 @@ function WorkflowBuilderInner() {
                                             },
                                           });
                                         }}
-                                        className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                        className="mb-1"
                                         rows={2}
                                         placeholder="query"
                                       />
@@ -2484,7 +2467,7 @@ function WorkflowBuilderInner() {
                                         </a>
                                       </p>
                                       <div>
-                                        <span className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        <span className="text-foreground mb-1 block text-sm font-medium">
                                           To variable
                                         </span>
                                         <Input
@@ -2507,7 +2490,6 @@ function WorkflowBuilderInner() {
                                               },
                                             });
                                           }}
-                                          className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                           placeholder="variable_name"
                                         />
                                       </div>
@@ -2516,7 +2498,7 @@ function WorkflowBuilderInner() {
                                 )}
                                 <Button
                                   type="button"
-                                  variant="ghost"
+                                  variant="ghost-muted"
                                   size="sm"
                                   onClick={() => {
                                     const ops = [
@@ -2531,7 +2513,7 @@ function WorkflowBuilderInner() {
                                       },
                                     });
                                   }}
-                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
+                                  className="self-start"
                                 >
                                   <Plus size={14} />
                                   Add
@@ -2541,13 +2523,19 @@ function WorkflowBuilderInner() {
 
                             {selectedNode.type === 'condition' && (
                               <>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                <p className="text-muted-foreground text-xs">
                                   Create conditions to branch your workflow
                                 </p>
-                                <div className="border-border flex overflow-hidden rounded-lg border">
+                                <div className="border-border bg-card flex gap-1 rounded-xl border p-1">
                                   <Button
                                     type="button"
-                                    variant="ghost"
+                                    variant={
+                                      (selectedNode.data.config?.mode ||
+                                        'simple') === 'simple'
+                                        ? 'outline'
+                                        : 'ghost-muted'
+                                    }
+                                    size="xs"
                                     onClick={() =>
                                       handleUpdateNodeData({
                                         config: {
@@ -2556,18 +2544,19 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
-                                      (selectedNode.data.config?.mode ||
-                                        'simple') === 'simple'
-                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
-                                        : 'text-gray-600 dark:text-gray-400'
-                                    }`}
+                                    className="flex-1"
                                   >
                                     Simple
                                   </Button>
                                   <Button
                                     type="button"
-                                    variant="ghost"
+                                    variant={
+                                      selectedNode.data.config?.mode ===
+                                      'advanced'
+                                        ? 'outline'
+                                        : 'ghost-muted'
+                                    }
+                                    size="xs"
                                     onClick={() =>
                                       handleUpdateNodeData({
                                         config: {
@@ -2576,12 +2565,7 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
-                                      selectedNode.data.config?.mode ===
-                                      'advanced'
-                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
-                                        : 'text-gray-600 dark:text-gray-400'
-                                    }`}
+                                    className="flex-1"
                                   >
                                     Advanced
                                   </Button>
@@ -2594,15 +2578,15 @@ function WorkflowBuilderInner() {
                                       className="border-border rounded-xl border p-3"
                                     >
                                       <div className="mb-2 flex items-center justify-between">
-                                        <span className="text-sm font-semibold text-orange-600 dark:text-orange-400">
+                                        <span className="text-warning text-sm font-semibold">
                                           {idx === 0 ? 'If' : 'Else if'}
                                         </span>
                                         {(selectedNode.data.config?.cases || [])
                                           .length > 1 && (
                                           <Button
                                             type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
+                                            variant="ghost-destructive"
+                                            size="icon-xs"
                                             onClick={() => {
                                               const cases =
                                                 normalizeConditionCases([
@@ -2633,7 +2617,6 @@ function WorkflowBuilderInner() {
                                                 );
                                               }
                                             }}
-                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
                                           >
                                             <Trash2 size={14} />
                                           </Button>
@@ -2659,7 +2642,7 @@ function WorkflowBuilderInner() {
                                             },
                                           });
                                         }}
-                                        className="bg-card dark:bg-accent mb-2 h-auto rounded-xl px-3 py-2 text-sm shadow-none"
+                                        className="mb-2"
                                         placeholder="Case name (optional)"
                                       />
                                       {(selectedNode.data.config?.mode ||
@@ -2695,7 +2678,6 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                             placeholder="Variable"
                                           />
                                           <Select
@@ -2728,7 +2710,10 @@ function WorkflowBuilderInner() {
                                               });
                                             }}
                                           >
-                                            <SelectTrigger className="w-24 shrink-0">
+                                            <SelectTrigger
+                                              size="lg"
+                                              className="w-24 shrink-0"
+                                            >
                                               <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -2787,13 +2772,12 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                             placeholder="Value"
                                           />
                                         </div>
                                       ) : (
                                         <>
-                                          <textarea
+                                          <Textarea
                                             value={c.expression}
                                             onChange={(e) => {
                                               const cases = [
@@ -2812,7 +2796,6 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                             rows={2}
                                             placeholder='Enter condition, e.g. query.contains("refund")'
                                           />
@@ -2839,7 +2822,7 @@ function WorkflowBuilderInner() {
 
                                 <Button
                                   type="button"
-                                  variant="ghost"
+                                  variant="ghost-muted"
                                   size="sm"
                                   onClick={() => {
                                     const cases = normalizeConditionCases([
@@ -2860,7 +2843,7 @@ function WorkflowBuilderInner() {
                                       },
                                     });
                                   }}
-                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
+                                  className="self-start"
                                 >
                                   <Plus size={14} />
                                   Add
@@ -2870,15 +2853,15 @@ function WorkflowBuilderInner() {
 
                             {selectedNode.type === 'code' && (
                               <>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                <p className="text-muted-foreground text-xs">
                                   Run code in the workflow sandbox. Produced
                                   files are saved as artifacts.
                                 </p>
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Code
                                   </label>
-                                  <textarea
+                                  <Textarea
                                     value={selectedNode.data.config?.code ?? ''}
                                     onChange={(e) =>
                                       handleUpdateNodeData({
@@ -2888,7 +2871,7 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    className="font-mono"
                                     rows={10}
                                     spellCheck={false}
                                     placeholder={'print("hello world")'}
@@ -2910,7 +2893,7 @@ function WorkflowBuilderInner() {
                                   helpText="Artifacts/upstream refs staged as files in the sandbox (one becomes inputs/<name>)."
                                 />
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Output Variable
                                   </label>
                                   <Input
@@ -2927,12 +2910,11 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                     placeholder="Variable name for output"
                                   />
                                 </div>
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Timeout (seconds)
                                   </label>
                                   <Input
@@ -2958,20 +2940,19 @@ function WorkflowBuilderInner() {
                                         },
                                       });
                                     }}
-                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
                                     placeholder="Optional"
                                   />
                                 </div>
                                 <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                  <label className="text-foreground mb-2 block text-sm font-medium">
                                     Structured Output (JSON Schema)
                                   </label>
-                                  <textarea
+                                  <Textarea
                                     value={selectedCodeJsonSchemaText}
                                     onChange={(e) =>
                                       handleCodeJsonSchemaChange(e.target.value)
                                     }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    className="font-mono"
                                     rows={6}
                                     placeholder={`{
   "type": "object",
@@ -2985,8 +2966,8 @@ function WorkflowBuilderInner() {
                                     <p
                                       className={`mt-2 text-xs ${
                                         selectedCodeJsonSchemaError
-                                          ? 'text-red-600 dark:text-red-400'
-                                          : 'text-green-600 dark:text-green-400'
+                                          ? 'text-destructive'
+                                          : 'text-success'
                                       }`}
                                     >
                                       {selectedCodeJsonSchemaError
@@ -3006,7 +2987,8 @@ function WorkflowBuilderInner() {
                       variant="destructive-outline"
                       onClick={handleDeleteNode}
                       disabled={selectedNode?.type === 'start'}
-                      className="w-full rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
+                      shape="pill"
+                      className="w-full"
                     >
                       <Trash2 size={16} />
                       {selectedNode?.type === 'start'
@@ -3024,7 +3006,7 @@ function WorkflowBuilderInner() {
           <SheetContent
             side="right"
             title="Workflow preview"
-            className="bg-card w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
+            className="w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
           >
             <WorkflowPreview
               workflowId={workflowId}

@@ -1,10 +1,41 @@
 import * as React from 'react';
 import { useEffect, useState } from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
 
 import Robot from '../../assets/robot.svg';
 import { cn } from '@/lib/utils';
 
-type AvatarProps = {
+const avatarVariants = cva('shrink-0', {
+  variants: {
+    // `none` keeps the historical behaviour where the image sets the size.
+    size: {
+      none: '',
+      sm: 'flex size-7 items-center justify-center overflow-hidden text-xs',
+      default:
+        'flex size-8 items-center justify-center overflow-hidden text-sm',
+      lg: 'flex size-9 items-center justify-center overflow-hidden text-sm',
+      xl: 'flex size-10 items-center justify-center overflow-hidden text-base',
+    },
+    shape: {
+      none: '',
+      circle: 'rounded-full',
+      square: 'rounded-md',
+    },
+    // Background for initials or icon fallbacks rendered via `children`.
+    variant: {
+      default: '',
+      primary: 'bg-primary/10 text-primary font-medium dark:bg-primary/20',
+      muted: 'bg-muted-foreground/15 text-foreground font-medium',
+    },
+  },
+  defaultVariants: {
+    size: 'none',
+    shape: 'none',
+    variant: 'default',
+  },
+});
+
+type AvatarProps = VariantProps<typeof avatarVariants> & {
   src?: string | null;
   alt?: string;
   fallbackSrc?: string;
@@ -20,6 +51,9 @@ function Avatar({
   className,
   imgClassName,
   children,
+  size = 'none',
+  shape = 'none',
+  variant = 'default',
 }: AvatarProps) {
   const resolvedSrc = src && src.trim() !== '' ? src : fallbackSrc;
   const [currentSrc, setCurrentSrc] = useState(resolvedSrc);
@@ -32,7 +66,13 @@ function Avatar({
   }, [src, fallbackSrc]);
 
   return (
-    <div data-slot="avatar" className={cn('shrink-0', className)}>
+    <div
+      data-slot="avatar"
+      data-size={size}
+      data-shape={shape}
+      data-variant={variant}
+      className={cn(avatarVariants({ size, shape, variant }), className)}
+    >
       {children ?? (
         <img
           src={currentSrc}
@@ -49,4 +89,4 @@ function Avatar({
   );
 }
 
-export { Avatar };
+export { Avatar, avatarVariants };

@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import userService from '../api/services/userService';
 import Upload from '../assets/upload.svg';
 import Spinner from '../components/Spinner';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
@@ -252,7 +253,7 @@ export default function ImportAgentModal({
             handleClose();
             if (path) navigate(path);
           }}
-          className="rounded-3xl px-5"
+          shape="pill"
         >
           {t('modals.importAgent.continueToAgent')}
         </Button>
@@ -264,7 +265,7 @@ export default function ImportAgentModal({
           type="button"
           variant="ghost"
           onClick={handleClose}
-          className="rounded-3xl px-5"
+          shape="pill"
         >
           {t('modals.importAgent.cancel')}
         </Button>
@@ -273,7 +274,8 @@ export default function ImportAgentModal({
             type="button"
             onClick={handleAnalyze}
             disabled={!yamlText || loading}
-            className="w-24 rounded-3xl px-5 disabled:cursor-not-allowed"
+            shape="pill"
+            className="w-24"
           >
             {loading ? (
               <Spinner size="small" />
@@ -286,7 +288,7 @@ export default function ImportAgentModal({
             type="button"
             onClick={handleImport}
             disabled={importing}
-            className="rounded-3xl px-5 disabled:cursor-not-allowed"
+            shape="pill"
           >
             {importing ? (
               <Spinner size="small" />
@@ -310,18 +312,21 @@ export default function ImportAgentModal({
     >
       <div className="flex flex-col gap-4">
         {warnings ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-foreground text-sm">
+          <Alert variant="warning" role="status">
+            <AlertTriangle aria-hidden="true" />
+            <AlertTitle>
               {importedStatus === 'published'
                 ? t('modals.importAgent.warningsTitlePublished')
                 : t('modals.importAgent.warningsTitle')}
-            </p>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-yellow-700 dark:text-yellow-400">
-              {warnings.map((w, i) => (
-                <li key={i}>{w}</li>
-              ))}
-            </ul>
-          </div>
+            </AlertTitle>
+            <AlertDescription>
+              <ul className="list-disc space-y-1 pl-5">
+                {warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
         ) : !plan ? (
           <div className="flex flex-col gap-4">
             <p className="text-muted-foreground text-sm">
@@ -372,7 +377,7 @@ export default function ImportAgentModal({
                 </p>
               ) : (
                 <p className="flex items-center gap-2 text-sm">
-                  <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  <CheckCircle2 className="text-success h-4 w-4" />
                   {plan.workflow.action === 'update'
                     ? t('modals.importAgent.workflowUpdate', {
                         nodes: plan.workflow.nodes,
@@ -388,13 +393,13 @@ export default function ImportAgentModal({
                 {plan.sources.map((s) =>
                   s.status === 'matched' ? (
                     <p key={s.name} className="flex items-center gap-2 text-sm">
-                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      <CheckCircle2 className="text-success h-4 w-4" />
                       {t('modals.importAgent.sourceMatched', { name: s.name })}
                     </p>
                   ) : (
                     <div key={s.name} className="flex flex-col gap-1">
                       <p className="flex items-center gap-2 text-sm">
-                        <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                        <AlertTriangle className="text-warning h-4 w-4" />
                         {t('modals.importAgent.sourceMissing', {
                           name: s.name,
                         })}
@@ -437,7 +442,7 @@ export default function ImportAgentModal({
                   <div key={tool.key} className="flex flex-col gap-1">
                     {tool.status === 'builtin' && (
                       <p className="flex items-center gap-2 text-sm">
-                        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <CheckCircle2 className="text-success h-4 w-4" />
                         {t('modals.importAgent.toolBuiltin', {
                           type: tool.type,
                         })}
@@ -445,7 +450,7 @@ export default function ImportAgentModal({
                     )}
                     {tool.status === 'reuse' && (
                       <p className="flex items-center gap-2 text-sm">
-                        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <CheckCircle2 className="text-success h-4 w-4" />
                         {t('modals.importAgent.toolReuse', {
                           name: tool.name || tool.type,
                         })}
@@ -478,7 +483,6 @@ export default function ImportAgentModal({
                             onChange={(e) =>
                               setToolSecret(tool.key, field, e.target.value)
                             }
-                            className="bg-card h-auto rounded-lg px-3 py-2 text-sm md:text-sm"
                           />
                         ))}
                       </div>
@@ -509,7 +513,6 @@ export default function ImportAgentModal({
                             [m.display_name || '']: e.target.value,
                           }))
                         }
-                        className="bg-card h-auto rounded-lg px-3 py-2 text-sm md:text-sm"
                       />
                     </div>
                   ))}

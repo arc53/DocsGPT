@@ -52,7 +52,7 @@ export default function ConfirmationModal({
             type="button"
             variant="ghost"
             onClick={handleCancelClick}
-            className="rounded-3xl px-5"
+            shape="pill"
           >
             {cancelLabel ? cancelLabel : t('cancel')}
           </Button>
@@ -60,7 +60,7 @@ export default function ConfirmationModal({
             type="button"
             variant={variant === 'danger' ? 'destructive' : 'default'}
             onClick={handleSubmitClick}
-            className="rounded-3xl px-5"
+            shape="pill"
           >
             {submitLabel}
           </Button>

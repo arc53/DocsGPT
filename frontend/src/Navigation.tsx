@@ -400,11 +400,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         >
           <Button
             type="button"
-            variant="ghost"
+            variant="ghost-muted"
             size="icon"
             onClick={() => setNavOpen(true)}
             aria-label="Open navigation menu"
-            className="text-muted-foreground hover:text-foreground"
           >
             <PanelLeftOpen className="size-5" strokeWidth={1.75} />
           </Button>
@@ -421,37 +420,34 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               {queries?.length > 0 && (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="ghost-muted"
                   size="icon"
                   onClick={() => newChat()}
                   aria-label="Start new chat"
-                  className="text-muted-foreground hover:text-foreground"
                 >
                   <Plus className="size-5" strokeWidth={1.75} />
                 </Button>
               )}
               <Button
                 type="button"
-                variant="ghost"
+                variant="ghost-muted"
                 size="icon"
                 onClick={() => {
                   dispatch(setSelectedAgent(null));
                   goToLevel(AGENTS_MANAGE_ROOT);
                 }}
                 aria-label={t('manageAgents')}
-                className="text-muted-foreground hover:text-foreground"
               >
                 <LayoutGrid className="size-5" strokeWidth={1.75} />
               </Button>
               {conversations?.data && conversations.data.length > 0 && (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="ghost-muted"
                   size="icon"
                   onClick={() => setSearchOpen(true)}
                   aria-label={t('modals.searchConversations.searchPlaceholder')}
                   title={t('modals.searchConversations.searchPlaceholder')}
-                  className="text-muted-foreground hover:text-foreground"
                 >
                   <SearchIcon className="size-5" strokeWidth={1.75} />
                 </Button>
@@ -459,11 +455,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               <div className="mt-auto flex flex-col items-center gap-2">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="ghost-muted"
                   size="icon"
                   onClick={() => goToLevel('/settings')}
                   aria-label={t('settings.label')}
-                  className="text-muted-foreground hover:text-foreground"
                 >
                   <SettingsIcon className="size-5" strokeWidth={1.75} />
                 </Button>
@@ -473,9 +468,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
       )}
       <div
-        className={`${
-          !navOpen && '-ml-96 md:-ml-72'
-        } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
+        className={cn(
+          'bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white',
+          !navOpen && '-ml-96 md:-ml-72',
+        )}
       >
         <div
           className={
@@ -493,9 +489,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
           <Button
             type="button"
-            variant="ghost"
+            variant="ghost-muted"
             size="icon"
-            className="text-muted-foreground hover:text-foreground shrink-0"
+            className="shrink-0"
             onClick={() => {
               setNavOpen(!navOpen);
             }}
@@ -562,27 +558,29 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       {t('navigation.agents')}
                     </p>
                   </div>
-                  <div className="agents-container">
+                  <div>
                     <div>
                       {recentAgents.map((agent, idx) => (
                         <div
                           key={idx}
-                          className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${
+                          className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-3 ${
                             agent.id === selectedAgent?.id && !conversationId
                               ? 'bg-sidebar-accent'
                               : ''
                           }`}
                           onClick={() => handleAgentClick(agent)}
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2.5">
                             <div className="flex w-6 justify-center">
                               <Avatar
                                 src={agent.image}
                                 alt="agent-logo"
-                                imgClassName="h-6 w-6 rounded-full object-contain"
+                                shape="circle"
+                                className="overflow-hidden"
+                                imgClassName="h-6 w-6 object-contain"
                               />
                             </div>
-                            <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+                            <p className="text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
                               {agent.name}
                             </p>
                           </div>
@@ -593,6 +591,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                               type="button"
                               variant="ghost"
                               size="icon-sm"
+                              /* eslint-disable-next-line shadcn/no-restyle -- the pin is a bare 16px image on a sidebar row that already fills on hover; an accent fill would be invisible on it, so hover dims the icon instead */
                               className="h-auto w-auto rounded-full p-0 hover:bg-transparent hover:opacity-75"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -611,63 +610,65 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                         </div>
                       ))}
                     </div>
-                    <NavLink
-                      to={AGENTS_MANAGE_ROOT}
-                      end
-                      onClick={(event) => {
-                        if (event.metaKey || event.ctrlKey || event.shiftKey)
-                          return;
-                        event.preventDefault();
-                        dispatch(setSelectedAgent(null));
-                        closeNavOnMobile();
-                        goToLevel(AGENTS_MANAGE_ROOT);
-                      }}
-                      className={({ isActive }) =>
-                        `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 ${
-                          isActive ? 'bg-sidebar-accent' : ''
-                        }`
-                      }
+                    <Button
+                      variant="sidebar-item"
+                      asChild
+                      className="mx-4 my-auto mt-2 flex"
                     >
-                      <div className="flex w-6 justify-center">
-                        <LayoutGrid
-                          className="text-muted-foreground size-5"
-                          strokeWidth={1.75}
-                          aria-label="manage-agents"
-                        />
-                      </div>
-                      <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
-                        {t('manageAgents')}
-                      </p>
-                    </NavLink>
+                      <NavLink
+                        to={AGENTS_MANAGE_ROOT}
+                        end
+                        onClick={(event) => {
+                          if (event.metaKey || event.ctrlKey || event.shiftKey)
+                            return;
+                          event.preventDefault();
+                          dispatch(setSelectedAgent(null));
+                          closeNavOnMobile();
+                          goToLevel(AGENTS_MANAGE_ROOT);
+                        }}
+                      >
+                        <div className="flex w-6 justify-center">
+                          <LayoutGrid
+                            className="text-muted-foreground size-5"
+                            strokeWidth={1.75}
+                            aria-label="manage-agents"
+                          />
+                        </div>
+                        <p className="text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+                          {t('manageAgents')}
+                        </p>
+                      </NavLink>
+                    </Button>
                   </div>
                 </div>
               ) : (
-                <NavLink
-                  to={AGENTS_MANAGE_ROOT}
-                  end
-                  onClick={(event) => {
-                    if (event.metaKey || event.ctrlKey || event.shiftKey)
-                      return;
-                    event.preventDefault();
-                    closeNavOnMobile();
-                    dispatch(setSelectedAgent(null));
-                    goToLevel(AGENTS_MANAGE_ROOT);
-                  }}
-                  className={({ isActive }) =>
-                    `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${
-                      isActive ? 'bg-sidebar-accent' : ''
-                    }`
-                  }
+                <Button
+                  variant="sidebar-item"
+                  asChild
+                  className="mx-4 my-auto mt-2 flex"
                 >
-                  <LayoutGrid
-                    className="text-muted-foreground size-5 shrink-0"
-                    strokeWidth={1.75}
-                    aria-label="manage-agents"
-                  />
-                  <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
-                    {t('manageAgents')}
-                  </p>
-                </NavLink>
+                  <NavLink
+                    to={AGENTS_MANAGE_ROOT}
+                    end
+                    onClick={(event) => {
+                      if (event.metaKey || event.ctrlKey || event.shiftKey)
+                        return;
+                      event.preventDefault();
+                      closeNavOnMobile();
+                      dispatch(setSelectedAgent(null));
+                      goToLevel(AGENTS_MANAGE_ROOT);
+                    }}
+                  >
+                    <LayoutGrid
+                      className="text-muted-foreground size-5 shrink-0"
+                      strokeWidth={1.75}
+                      aria-label="manage-agents"
+                    />
+                    <p className="text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+                      {t('manageAgents')}
+                    </p>
+                  </NavLink>
+                </Button>
               )}
               {conversations?.data && conversations.data.length > 0 ? (
                 <div className="mt-7">
@@ -677,10 +678,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     </p>
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="ghost-muted"
                       size="icon"
+                      shape="pill"
                       onClick={() => setSearchOpen(true)}
-                      className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent mr-1 rounded-full"
+                      className="mr-1"
                       aria-label={t(
                         'modals.searchConversations.searchPlaceholder',
                       )}
@@ -693,7 +695,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       />
                     </Button>
                   </div>
-                  <div className="conversations-container">
+                  <div>
                     {(conversations.data ?? []).map((conversation) => (
                       <ConversationTile
                         key={conversation.id}
@@ -763,25 +765,30 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               inSection && 'hidden',
             )}
           >
-            <Link
-              to="/settings"
-              onClick={(event) => {
-                if (event.metaKey || event.ctrlKey || event.shiftKey) return;
-                event.preventDefault();
-                closeNavOnMobile();
-                goToLevel('/settings');
-              }}
-              className="hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3"
+            <Button
+              variant="sidebar-item"
+              asChild
+              className="mx-4 my-auto flex"
             >
-              <SettingsIcon
-                className="text-muted-foreground size-5 shrink-0"
-                strokeWidth={1.75}
-                aria-label="Settings"
-              />
-              <p className="text-foreground text-sm dark:text-white">
-                {t('settings.label')}
-              </p>
-            </Link>
+              <Link
+                to="/settings"
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                  event.preventDefault();
+                  closeNavOnMobile();
+                  goToLevel('/settings');
+                }}
+              >
+                <SettingsIcon
+                  className="text-muted-foreground size-5 shrink-0"
+                  strokeWidth={1.75}
+                  aria-label="Settings"
+                />
+                <p className="text-foreground text-sm dark:text-white">
+                  {t('settings.label')}
+                </p>
+              </Link>
+            </Button>
           </div>
           <div className="text-foreground flex flex-col justify-end dark:text-white">
             <div className="flex items-center justify-between py-1">
@@ -836,9 +843,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         <div className="relative flex h-full items-center">
           <Button
             type="button"
-            variant="ghost"
+            variant="ghost-muted"
             size="icon"
-            className="text-muted-foreground hover:text-foreground ml-4 size-9 lg:hidden"
+            className="ml-4 size-9 lg:hidden"
             onClick={() => setNavOpen(true)}
             aria-label="Toggle mobile menu"
           >

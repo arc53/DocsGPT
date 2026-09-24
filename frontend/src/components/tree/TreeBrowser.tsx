@@ -443,8 +443,9 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         <Button
           type="button"
           variant="ghost"
+          size="icon"
           onClick={(e) => e.stopPropagation()}
-          className="dark:hover:bg-muted h-[35px] w-6 shrink-0 p-0 hover:bg-[#EBEBEB]"
+          className="h-[35px] w-6 shrink-0"
           aria-label={t('settings.sources.menuAlt')}
         >
           <img
@@ -629,11 +630,12 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           }
         }}
         placeholder={t('settings.sources.searchFiles')}
-        className={`h-[38px] px-4 py-2 ${searchQuery ? 'rounded-t-3xl' : 'rounded-3xl'}`}
+        shape="pill"
+        className="h-[38px]"
       />
 
       {searchQuery && (
-        <div className="border-border bg-card dark:border-border dark:bg-card absolute top-full right-0 left-0 z-20 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-xl border border-t-0 shadow-lg transition-all duration-200">
+        <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 left-0 z-20 mt-1 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-xl border shadow-md transition-all duration-200">
           <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto overscroll-contain">
             {searchResults.length === 0 ? (
               <div className="text-muted-foreground py-2 text-center text-sm">
@@ -676,8 +678,9 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         <Button
           type="button"
           variant="outline"
-          size="icon-sm"
-          className="text-muted-foreground mr-3 h-[29px] w-[29px] rounded-full p-2 dark:border-0"
+          size="icon-xs"
+          shape="pill"
+          className="mr-3"
           onClick={handleBackNavigation}
         >
           <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
@@ -692,9 +695,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
               <span className="text-muted-foreground mx-1 shrink-0">/</span>
               {currentPath.map((dir, index) => (
                 <React.Fragment key={index}>
-                  <span className="dark:text-foreground wrap-break-word text-gray-700">
-                    {dir}
-                  </span>
+                  <span className="text-foreground wrap-break-word">{dir}</span>
                   {index < currentPath.length - 1 && (
                     <span className="text-muted-foreground mx-1 shrink-0">
                       /
@@ -707,7 +708,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           {selectedFile && (
             <>
               <span className="text-muted-foreground mx-1 shrink-0">/</span>
-              <span className="dark:text-foreground wrap-break-word text-gray-700">
+              <span className="text-foreground wrap-break-word">
                 {selectedFile.name}
               </span>
             </>

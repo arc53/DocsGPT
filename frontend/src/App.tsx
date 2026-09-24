@@ -1,13 +1,17 @@
 import { envVar } from '@/env';
 import './locale/i18n';
 
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
+
+import { cn } from '@/lib/utils';
 
 import Admin from './admin';
 import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
+import { selectWorkflowPreviewOpen } from './agents/workflow/workflowPreviewSlice';
 import DocsGPTMark from './assets/logo-b.svg';
 import DocsGPTMarkWhite from './assets/logo-w.svg';
 import ActionButtons from './components/ActionButtons';
@@ -15,6 +19,7 @@ import AdminRoute from './components/AdminRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import Spinner from './components/Spinner';
 import { Button } from './components/ui/button';
+import { ToastViewport } from './components/ui/toast';
 import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
@@ -26,11 +31,18 @@ import Navigation from './Navigation';
 import { getSectionForPath } from './navigation/sections';
 import { SidebarLevelProvider } from './navigation/SidebarLevelProvider';
 import PageNotFound from './PageNotFound';
+
+// Dev-only style guide (see frontend/DESIGN.md). The DEV guard around the
+// import lets the bundler drop the chunk from production builds entirely.
+const DesignSystem = import.meta.env.DEV
+  ? lazy(() => import('./design/DesignSystem'))
+  : null;
 import Setting from './settings';
 import Teams from './settings/Teams';
 import Notification from './components/Notification';
 import ToolApprovalToast from './notifications/ToolApprovalToast';
 import TeamNotificationToast from './notifications/TeamNotificationToast';
+import ActionToast from './notifications/ActionToast';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -64,7 +76,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
         <Button
           type="button"
           onClick={retryOidcLogin}
-          className="rounded-3xl px-5"
+          shape="pill"
           data-testid="oidc-signin"
         >
           {t('auth.signInWith', { provider: oidcProviderName || 'SSO' })}
@@ -90,6 +102,10 @@ function MainLayout() {
   // the conversation now survives the trip, so "share" would target a chat
   // that isn't on screen.
   const inSection = Boolean(getSectionForPath(location.pathname));
+  // The workflow Preview drawer occupies the right edge; move the toast
+  // stack to the bottom-left while it's open so it stays visible without
+  // covering the drawer's attach/send controls.
+  const previewOpen = useSelector(selectWorkflowPreviewOpen);
 
   return (
     <SidebarLevelProvider>
@@ -109,9 +125,18 @@ function MainLayout() {
             <Outlet />
           </ErrorBoundary>
         </div>
-        <UploadToast />
-        <ToolApprovalToast />
-        <TeamNotificationToast />
+        {/* The one toast stack (and live region) for the app. Each toast
+          renders only its cards, top to bottom: team notifications, tool
+          approvals, uploads, action results. */}
+        <ToastViewport
+          className={cn(previewOpen && 'right-auto left-4')}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <TeamNotificationToast />
+          <ToolApprovalToast />
+          <UploadToast />
+          <ActionToast />
+        </ToastViewport>
       </div>
     </SidebarLevelProvider>
   );
@@ -178,6 +203,16 @@ export default function App() {
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/shared/agent/:agentId" element={<SharedAgentGate />} />
+        {DesignSystem && (
+          <Route
+            path="/design"
+            element={
+              <Suspense fallback={null}>
+                <DesignSystem />
+              </Suspense>
+            }
+          />
+        )}
         <Route path="/*" element={<PageNotFound />} />
       </Routes>
     </div>

@@ -57,7 +57,7 @@ const markdownComponents = {
     </a>
   ),
   code: ({ children }: { children?: React.ReactNode }) => (
-    <code className="dark:bg-accent rounded-md bg-gray-200 px-1.5 py-0.5 text-xs">
+    <code className="bg-accent rounded-md px-1.5 py-0.5 text-xs">
       {children}
     </code>
   ),
@@ -213,8 +213,9 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         <Button
           type="button"
           variant="outline"
-          size="icon-sm"
-          className="text-muted-foreground mr-3 h-[29px] w-[29px] rounded-full p-2 dark:border-0"
+          size="icon-xs"
+          shape="pill"
+          className="mr-3"
           onClick={onBackToDocuments}
           aria-label={t('settings.sources.backToAll')}
         >

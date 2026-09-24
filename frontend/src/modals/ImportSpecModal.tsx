@@ -6,13 +6,14 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import Upload from '../assets/upload.svg';
 import Spinner from '../components/Spinner';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType } from '../settings/types';
-import { getMethodColorClass } from '../utils/httpMethodColors';
+import { getMethodBadgeVariant } from '../utils/httpMethodColors';
 
 interface ImportSpecModalProps {
   modalState: ActiveState;
@@ -181,7 +182,7 @@ export default function ImportSpecModal({
             type="button"
             variant="ghost"
             onClick={handleClose}
-            className="rounded-3xl px-5"
+            shape="pill"
           >
             {t('modals.importSpec.cancel')}
           </Button>
@@ -190,7 +191,8 @@ export default function ImportSpecModal({
               type="button"
               onClick={handleParse}
               disabled={!file || loading}
-              className="w-20 rounded-3xl px-5 disabled:cursor-not-allowed"
+              shape="pill"
+              className="w-20"
             >
               {loading && <Spinner size="small" />}
               {!loading && t('modals.importSpec.parse')}
@@ -200,7 +202,7 @@ export default function ImportSpecModal({
               type="button"
               onClick={handleImport}
               disabled={selectedActions.size === 0}
-              className="rounded-3xl px-5 disabled:cursor-not-allowed"
+              shape="pill"
             >
               {t('modals.importSpec.import', { count: selectedActions.size })}
             </Button>
@@ -211,7 +213,7 @@ export default function ImportSpecModal({
       <div className="flex flex-col gap-4">
         {!parsedResult ? (
           <div className="flex flex-col gap-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-muted-foreground text-sm">
               {t('modals.importSpec.description')}
             </p>
 
@@ -234,15 +236,13 @@ export default function ImportSpecModal({
               <p className="text-foreground dark:text-foreground text-sm font-medium">
                 {file ? file.name : t('modals.importSpec.dropzoneText')}
               </p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <p className="text-muted-foreground mt-1 text-xs">
                 {t('modals.importSpec.supportedFormats')}
               </p>
               <input {...getInputProps()} />
             </div>
 
-            {error && (
-              <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
-            )}
+            {error && <p className="text-destructive text-sm">{error}</p>}
           </div>
         ) : (
           <div className="flex flex-col gap-4">
@@ -251,7 +251,7 @@ export default function ImportSpecModal({
                 {parsedResult.metadata.title}
               </h3>
               {parsedResult.metadata.description && (
-                <p className="mt-1 line-clamp-2 text-sm text-gray-600 dark:text-gray-400">
+                <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
                   {parsedResult.metadata.description}
                 </p>
               )}
@@ -260,14 +260,14 @@ export default function ImportSpecModal({
                 {parsedResult.metadata.version}
               </p>
               <div className="mt-3">
-                <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
+                <label className="text-foreground mb-1 block text-xs font-medium">
                   {t('modals.importSpec.baseUrl')}
                 </label>
                 <Input
                   type="text"
+                  variant="filled"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  className="bg-card h-auto rounded-lg px-3 py-2 text-sm md:text-sm"
                   placeholder={
                     parsedResult.metadata.base_url || 'https://api.example.com'
                   }
@@ -286,7 +286,7 @@ export default function ImportSpecModal({
                 variant="link"
                 size="sm"
                 onClick={toggleAll}
-                className="h-auto p-0"
+                className="-my-1.5 -mr-3"
               >
                 {selectedActions.size === parsedResult.actions.length
                   ? t('modals.importSpec.deselectAll')
@@ -304,24 +304,22 @@ export default function ImportSpecModal({
                     type="checkbox"
                     checked={selectedActions.has(index)}
                     onChange={() => toggleAction(index)}
-                    className="text-primary focus:ring-ring mt-1 h-4 w-4 rounded border-gray-300"
+                    className="text-primary focus:ring-ring border-border mt-1 h-4 w-4 rounded"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${getMethodColorClass(action.method)}`}
-                      >
+                      <Badge variant={getMethodBadgeVariant(action.method)}>
                         {action.method.toUpperCase()}
-                      </span>
+                      </Badge>
                       <span className="text-foreground dark:text-foreground truncate font-medium">
                         {action.name}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
+                    <p className="text-muted-foreground mt-1 truncate text-sm">
                       {action.url}
                     </p>
                     {action.description && (
-                      <p className="mt-1 line-clamp-1 text-xs text-gray-400 dark:text-gray-500">
+                      <p className="text-muted-foreground/70 mt-1 line-clamp-1 text-xs">
                         {action.description}
                       </p>
                     )}

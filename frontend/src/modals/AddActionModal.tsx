@@ -55,16 +55,12 @@ export default function AddActionModal({
           <Button
             type="button"
             variant="ghost"
+            shape="pill"
             onClick={handleCancel}
-            className="rounded-3xl px-5"
           >
             {t('modals.configTool.closeButton')}
           </Button>
-          <Button
-            type="button"
-            onClick={handleAddAction}
-            className="rounded-3xl px-5"
-          >
+          <Button type="button" shape="pill" onClick={handleAddAction}>
             {t('modals.addAction.addButton')}
           </Button>
         </>
@@ -79,13 +75,12 @@ export default function AddActionModal({
             setActionName(value);
             setFunctionNameError(!isValidFunctionName(value));
           }}
-          labelBgClassName="bg-card"
           label={t('modals.addAction.actionNamePlaceholder')}
           required={true}
         />
         <p
           className={`mt-2 ml-1 text-xs italic ${
-            functionNameError ? 'text-red-500' : 'text-muted-foreground'
+            functionNameError ? 'text-destructive' : 'text-muted-foreground'
           }`}
         >
           {functionNameError

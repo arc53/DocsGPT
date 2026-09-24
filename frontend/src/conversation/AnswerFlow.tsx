@@ -180,11 +180,10 @@ function InlineThoughtChip({
         variant="ghost"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
-        // ml-4 plus the button's own px-2 puts the icon on the answer's ml-6
-        // text column. has-[>svg]:px-2 restates that padding under the same
-        // variant the button's own has-[>svg]:px-3 uses; a plain px-2 does not
-        // override it, and the chevron makes it match.
-        className="hover:bg-muted/60 ml-4 flex h-auto w-fit max-w-full items-center justify-start gap-2 rounded-lg bg-transparent px-2 py-1.5 text-sm font-normal has-[>svg]:px-2"
+        size="sm"
+        // ml-3.5 plus size sm's own has-[>svg]:px-2.5 (the chevron is a direct
+        // svg child) puts the icon on the answer's ml-6 text column.
+        className="ml-3.5 w-fit max-w-full justify-start"
       >
         <img src={Cloud} alt="" aria-hidden className="h-4 w-4 shrink-0" />
         <span
@@ -204,7 +203,7 @@ function InlineThoughtChip({
       {showLiveWindow && (
         <div
           ref={liveRef}
-          className="text-muted-foreground mt-1 ml-6 h-24 overflow-hidden scroll-smooth mask-[linear-gradient(to_bottom,transparent,black_40%)] text-sm leading-normal motion-reduce:scroll-auto"
+          className="text-muted-foreground mt-1 ml-6 h-24 overflow-hidden scroll-smooth mask-t-from-60% text-sm leading-normal motion-reduce:scroll-auto"
         >
           <div className="flex min-h-full flex-col justify-end wrap-break-word whitespace-pre-wrap">
             {pacedThought}
@@ -246,11 +245,10 @@ function InlineToolCallChip({
         variant="ghost"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
-        // ml-4 plus the button's own px-2 puts the icon on the answer's ml-6
-        // text column. has-[>svg]:px-2 restates that padding under the same
-        // variant the button's own has-[>svg]:px-3 uses; a plain px-2 does not
-        // override it, and the chevron makes it match.
-        className="hover:bg-muted/60 ml-4 flex h-auto w-fit max-w-full items-center justify-start gap-2 rounded-lg bg-transparent px-2 py-1.5 text-sm font-normal has-[>svg]:px-2"
+        size="sm"
+        // ml-3.5 plus size sm's own has-[>svg]:px-2.5 (the chevron is a direct
+        // svg child) puts the icon on the answer's ml-6 text column.
+        className="ml-3.5 w-fit max-w-full justify-start"
       >
         {/* ToolIcon renders nothing for a tool with no bundled icon, so the
             dot below stands in via ``only:block`` to keep the row aligned. */}

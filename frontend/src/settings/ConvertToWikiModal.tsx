@@ -1,9 +1,11 @@
+import { CircleAlert, CircleCheck } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
@@ -159,14 +161,18 @@ export default function ConvertToWikiModal({
                 type="button"
                 variant="ghost"
                 onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('cancel')}
               </Button>
               <Button
                 type="button"
                 onClick={handleConvert}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('settings.sources.wiki.convert.confirm')}
               </Button>
@@ -185,16 +191,19 @@ export default function ConvertToWikiModal({
 
         {phase === 'summary' && summary && (
           <>
-            <div className="rounded-xl bg-green-50 p-4 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-200">
-              {[
-                t('settings.sources.wiki.convert.summaryPages', {
-                  count: summary.pagesCreated,
-                }),
-                t('settings.sources.wiki.convert.summarySkipped', {
-                  count: summary.skipped.length,
-                }),
-              ].join(' · ')}
-            </div>
+            <Alert variant="success">
+              <CircleCheck className="size-4" aria-hidden="true" />
+              <AlertDescription>
+                {[
+                  t('settings.sources.wiki.convert.summaryPages', {
+                    count: summary.pagesCreated,
+                  }),
+                  t('settings.sources.wiki.convert.summarySkipped', {
+                    count: summary.skipped.length,
+                  }),
+                ].join(' · ')}
+              </AlertDescription>
+            </Alert>
             {summary.skipped.length > 0 && (
               <div className="flex flex-col gap-1.5">
                 <p className="text-foreground text-sm font-medium">
@@ -214,7 +223,9 @@ export default function ConvertToWikiModal({
               <Button
                 type="button"
                 onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('settings.sources.wiki.convert.done')}
               </Button>
@@ -224,15 +235,18 @@ export default function ConvertToWikiModal({
 
         {phase === 'error' && (
           <>
-            <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-              {error}
-            </div>
+            <Alert variant="destructive">
+              <CircleAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
             <div className="flex justify-end">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('cancel')}
               </Button>

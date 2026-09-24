@@ -1,4 +1,7 @@
+import type { VariantProps } from 'class-variance-authority';
+
 import Spinner from '../components/Spinner';
+import type { badgeVariants } from '../components/ui/badge';
 import { formatDateOnly, formatDateTime } from '../utils/dateTimeUtils';
 
 export function Loading() {
@@ -37,36 +40,8 @@ export function StatCard({
   );
 }
 
-type Tone = 'default' | 'success' | 'danger' | 'muted' | 'brand' | 'warning';
-
-const TONES: Record<Tone, string> = {
-  default: 'bg-muted text-foreground',
-  success:
-    'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-  danger: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  muted: 'bg-muted text-muted-foreground',
-  // brand violet — matches the chart's --primary; used for the Admin role.
-  brand:
-    'bg-[#7D54D1]/15 text-[#7D54D1] dark:bg-violet-900/40 dark:text-violet-300',
-  warning:
-    'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-};
-
-export function Pill({
-  tone = 'default',
-  children,
-}: {
-  tone?: Tone;
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${TONES[tone]}`}
-    >
-      {children}
-    </span>
-  );
-}
+// Audit-feed pills render as Badge; these helpers pick its variant.
+type Tone = NonNullable<VariantProps<typeof badgeVariants>['variant']>;
 
 export function fmtDate(value?: string | null): string {
   return value ? formatDateTime(value) : '—';
@@ -202,25 +177,25 @@ const WARNING_EVENTS = new Set([
 ]);
 
 export function eventTone(event: string): Tone {
-  if (DANGER_EVENTS.has(event)) return 'danger';
-  if (event === 'role_granted') return 'brand';
+  if (DANGER_EVENTS.has(event)) return 'destructive';
+  if (event === 'role_granted') return 'default';
   if (WARNING_EVENTS.has(event)) return 'warning';
-  return 'muted';
+  return 'neutral';
 }
 
 // Category facet colors. Mirrors docsgpt/audit_events.py.
 const CATEGORY_TONES: Record<string, Tone> = {
-  identity: 'default',
-  access: 'brand',
+  identity: 'outline',
+  access: 'default',
   config: 'warning',
   data: 'success',
   device: 'warning',
-  safety: 'danger',
-  other: 'muted',
+  safety: 'destructive',
+  other: 'neutral',
 };
 
 export function categoryTone(category: string): Tone {
-  return CATEGORY_TONES[category] ?? 'muted';
+  return CATEGORY_TONES[category] ?? 'neutral';
 }
 
 // Outcome values the two side journals actually write.
@@ -232,13 +207,13 @@ export function categoryTone(category: string): Tone {
 // produced, so every outcome rendered neutral grey -- including a guardrail
 // that fired, which is the one signal the merged feed exists to surface.
 const OUTCOME_TONES: Record<string, Tone> = {
-  triggered: 'danger',
-  not_evaluated: 'muted',
+  triggered: 'destructive',
+  not_evaluated: 'neutral',
   dispatched: 'success',
 };
 
 export function outcomeTone(outcome: string): Tone {
-  return OUTCOME_TONES[outcome] ?? 'muted';
+  return OUTCOME_TONES[outcome] ?? 'neutral';
 }
 
 const OUTCOME_LABELS: Record<string, string> = {

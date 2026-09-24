@@ -8,10 +8,11 @@ import {
   UserX,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import adminService from '../api/services/adminService';
 import ThreeDots from '../assets/three-dots.svg';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
@@ -32,10 +33,10 @@ import {
 } from '../components/ui/table';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
   Loading,
-  Pill,
   eventLabel,
   fmtDateShort,
   fmtNumber,
@@ -62,6 +63,7 @@ type Action = {
 const PAGE_SIZE = 25;
 
 export default function Users() {
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [adminIds, setAdminIds] = useState<Set<string>>(new Set());
@@ -75,10 +77,6 @@ export default function Users() {
   const [detail, setDetail] = useState<any | null>(null);
   const [usageFor, setUsageFor] = useState<string | null>(null);
   const [quotaUserId, setQuotaUserId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{
-    ok: boolean;
-    message: string;
-  } | null>(null);
   const [confirm, setConfirm] = useState<{
     message: string;
     submitLabel: string;
@@ -112,12 +110,15 @@ export default function Users() {
     load();
   }, [load]);
 
-  // Auto-dismiss the inline feedback banner.
-  useEffect(() => {
-    if (!feedback) return;
-    const id = setTimeout(() => setFeedback(null), 4500);
-    return () => clearTimeout(id);
-  }, [feedback]);
+  // The result shows as a toast in the app's shared ToastViewport
+  // (ActionToast), which auto-dismisses it.
+  const setFeedback = (feedback: { ok: boolean; message: string }) =>
+    dispatch(
+      showActionToast({
+        variant: feedback.ok ? 'success' : 'destructive',
+        message: feedback.message,
+      }),
+    );
 
   const run =
     (fn: () => Promise<Response>, userId: string, successMsg: string) =>
@@ -249,18 +250,6 @@ export default function Users() {
 
   return (
     <div className="mt-6">
-      {feedback ? (
-        <div
-          className={`mb-4 rounded-xl border px-4 py-2 text-sm ${
-            feedback.ok
-              ? 'border-green-300 bg-green-50 text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-300'
-              : 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300'
-          }`}
-        >
-          {feedback.message}
-        </div>
-      ) : null}
-
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input
           placeholder="Filter by user id"
@@ -313,12 +302,11 @@ export default function Users() {
                   return (
                     <TableRow
                       key={u.user_id}
-                      className="hover:bg-muted/40 cursor-pointer"
                       onClick={() => openDetail(u.user_id)}
                     >
                       <TableCell className="max-w-[280px]">
                         <span
-                          className="block truncate font-mono text-[13px]"
+                          className="block truncate font-mono text-xs"
                           title={u.user_id}
                         >
                           {u.user_id}
@@ -326,9 +314,11 @@ export default function Users() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {isAdmin ? <Pill tone="brand">Admin</Pill> : null}
+                          {isAdmin ? (
+                            <Badge variant="default">Admin</Badge>
+                          ) : null}
                           {!u.active ? (
-                            <Pill tone="danger">Inactive</Pill>
+                            <Badge variant="destructive">Inactive</Badge>
                           ) : null}
                         </div>
                       </TableCell>
@@ -356,10 +346,10 @@ export default function Users() {
                             <DropdownMenuTrigger asChild>
                               <Button
                                 type="button"
-                                variant="ghost"
+                                variant="ghost-muted"
                                 size="icon"
                                 disabled={disabled}
-                                className="text-muted-foreground hover:text-foreground h-[35px] w-7"
+                                className="h-[35px] w-7"
                                 aria-label="User actions"
                               >
                                 <img
@@ -473,7 +463,7 @@ export default function Users() {
                   size="sm"
                   onClick={() => {
                     // Close the detail dialog before any confirm dialog opens
-                    // (avoids stacked modals); the list + banner reflect the result.
+                    // (avoids stacked modals); the list + toast reflect the result.
                     setDetail(null);
                     act.perform();
                   }}
@@ -494,14 +484,17 @@ export default function Users() {
               </p>
               <div className="flex flex-wrap gap-2">
                 {(detail.roles ?? []).map((r: string) => (
-                  <Pill key={r} tone={r === 'admin' ? 'brand' : 'muted'}>
+                  <Badge
+                    key={r}
+                    variant={r === 'admin' ? 'default' : 'neutral'}
+                  >
                     {r}
-                  </Pill>
+                  </Badge>
                 ))}
                 {detail.user?.active ? (
-                  <Pill tone="success">Active</Pill>
+                  <Badge variant="success">Active</Badge>
                 ) : (
-                  <Pill tone="danger">Inactive</Pill>
+                  <Badge variant="destructive">Inactive</Badge>
                 )}
               </div>
             </div>

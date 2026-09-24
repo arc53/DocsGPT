@@ -17,7 +17,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { TimePicker } from '@/components/ui/time-picker';
-import { cn } from '@/lib/utils';
 
 import { Modal } from '../../components/ui/modal';
 import { formatDateOnly } from '../../utils/dateTimeUtils';
@@ -195,7 +194,7 @@ export default function ScheduleFormModal({
       }
       size="md"
       mobileVariant="sheet"
-      className="w-[min(560px,92vw)] sm:p-6"
+      className="w-[min(560px,92vw)]"
       contentClassName="max-h-[80vh]"
     >
       <div className="flex flex-col gap-5">
@@ -273,7 +272,7 @@ export default function ScheduleFormModal({
             type="button"
             disabled={submitting}
             onClick={submit}
-            className="rounded-3xl px-5"
+            shape="pill"
           >
             {submitting
               ? '…'
@@ -302,15 +301,11 @@ function FrequencyTabs({ frequency, onChange, labels }: FrequencyTabsProps) {
           <Button
             key={f}
             type="button"
-            variant="ghost"
-            size="sm"
+            variant={active ? 'outline' : 'ghost-muted'}
+            size="xs"
+            shape="pill"
             onClick={() => onChange(f)}
-            className={cn(
-              'h-auto flex-1 rounded-full px-3 py-1.5 text-xs font-medium',
-              active
-                ? 'bg-card text-foreground hover:bg-card shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-transparent',
-            )}
+            className="flex-1"
             aria-pressed={active}
           >
             {labels[f]}
@@ -380,7 +375,7 @@ function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
                   size="sm"
                   variant={active ? 'default' : 'outline'}
                   onClick={() => set({ dayOfWeek: d.value })}
-                  className="rounded-full"
+                  shape="pill"
                   aria-pressed={active}
                 >
                   {tDay(d.key)}
@@ -464,13 +459,11 @@ function DatePicker({ value, onChange, placeholder }: DatePickerProps) {
       <PopoverTrigger asChild>
         <Button
           type="button"
-          variant="outline"
+          variant="combobox"
           size="sm"
           aria-label={placeholder}
-          className={cn(
-            'h-9 justify-start gap-2 px-3 font-normal',
-            !value && 'text-muted-foreground',
-          )}
+          data-placeholder={value ? undefined : ''}
+          className="h-9 justify-start"
         >
           <CalendarIcon className="size-4 opacity-70" />
           {value ? formatDateLabel(value) : placeholder}

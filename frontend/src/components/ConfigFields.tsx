@@ -1,7 +1,5 @@
 import { useMemo } from 'react';
 
-import { cn } from '@/lib/utils';
-
 import { ConfigRequirements } from '../modals/types';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -68,7 +66,7 @@ export default function ConfigFields({
             <div key={key} className="flex flex-col gap-1.5">
               <Label htmlFor={key}>
                 {spec.label || key}
-                {spec.required && <span className="text-red-500">*</span>}
+                {spec.required && <span className="text-destructive">*</span>}
               </Label>
               <Select
                 value={value || spec.default || ''}
@@ -78,11 +76,8 @@ export default function ConfigFields({
                   id={key}
                   variant="ghost"
                   size="lg"
-                  className={cn(
-                    'w-full rounded-xl',
-                    hasError &&
-                      'border-destructive aria-invalid:ring-destructive/20',
-                  )}
+                  aria-invalid={hasError || undefined}
+                  className="w-full"
                 >
                   <SelectValue placeholder={spec.label || key} />
                 </SelectTrigger>
@@ -106,7 +101,7 @@ export default function ConfigFields({
           <div key={key} className="flex flex-col gap-1.5">
             <Label htmlFor={key}>
               {spec.label || key}
-              {spec.required && <span className="text-red-500">*</span>}
+              {spec.required && <span className="text-destructive">*</span>}
             </Label>
             <Input
               id={key}
@@ -136,7 +131,6 @@ export default function ConfigFields({
                 spec.type === 'number' && key === 'timeout' ? 300 : undefined
               }
               aria-invalid={hasError || undefined}
-              className={cn('rounded-xl', hasError && 'border-destructive')}
             />
             {hasError && (
               <p className="text-destructive text-xs">{errors[key]}</p>

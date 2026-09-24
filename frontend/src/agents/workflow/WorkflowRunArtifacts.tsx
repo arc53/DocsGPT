@@ -131,7 +131,7 @@ export default function WorkflowRunArtifacts({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+      <div className="text-muted-foreground flex items-center gap-2 px-3 py-4 text-sm">
         <Spinner size="small" /> Loading artifacts...
       </div>
     );
@@ -139,7 +139,7 @@ export default function WorkflowRunArtifacts({
 
   if (error) {
     return (
-      <div className="flex items-center justify-between gap-2 px-3 py-3 text-sm text-red-500">
+      <div className="text-destructive flex items-center justify-between gap-2 px-3 py-3 text-sm">
         <span>{error}</span>
         <Button type="button" variant="outline" size="sm" onClick={loadList}>
           Retry
@@ -150,7 +150,7 @@ export default function WorkflowRunArtifacts({
 
   if (!artifacts || artifacts.length === 0) {
     return (
-      <div className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+      <div className="text-muted-foreground px-3 py-3 text-sm">
         {inProgress
           ? 'Run in progress — artifacts appear here as nodes produce them.'
           : 'No artifacts produced by this run.'}
@@ -166,7 +166,6 @@ export default function WorkflowRunArtifacts({
             type="button"
             variant="ghost"
             size="sm"
-            className="gap-1 px-2"
             onClick={() => setSelectedId(null)}
           >
             <ChevronLeft className="h-4 w-4" />
@@ -180,7 +179,7 @@ export default function WorkflowRunArtifacts({
             </div>
           ) : detailError ? (
             <div className="flex h-full items-center justify-center">
-              <p className="text-sm text-red-500">{detailError}</p>
+              <p className="text-destructive text-sm">{detailError}</p>
             </div>
           ) : detail ? (
             <DocumentArtifactView
@@ -201,14 +200,14 @@ export default function WorkflowRunArtifacts({
             type="button"
             variant="outline"
             onClick={() => setSelectedId(artifact.id)}
-            className="h-auto w-full justify-start gap-3 px-3 py-2 text-left"
+            className="h-auto w-full justify-start text-left"
           >
-            <FileBox className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
+            <FileBox className="text-muted-foreground h-4 w-4 shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-gray-900 dark:text-white">
+              <div className="text-foreground truncate text-sm font-medium">
                 {artifact.title || `Artifact ${artifact.id.slice(0, 8)}`}
               </div>
-              <div className="truncate text-xs text-gray-500 dark:text-gray-400">
+              <div className="text-muted-foreground truncate text-xs">
                 {artifact.kind || 'file'}
                 {artifact.current_version != null
                   ? ` · v${artifact.current_version}`

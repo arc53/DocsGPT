@@ -1,9 +1,11 @@
+import { CircleAlert, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
@@ -170,9 +172,12 @@ export default function SourceConfigModal({
         <div className="flex-1 px-2">
           {reingestPrompt ? (
             <div className="flex flex-col gap-4 px-0.5 py-4">
-              <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-                {t('settings.sources.configModal.reingestRequired')}
-              </div>
+              <Alert variant="warning">
+                <TriangleAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>
+                  {t('settings.sources.configModal.reingestRequired')}
+                </AlertDescription>
+              </Alert>
             </div>
           ) : (
             <div className="flex flex-col gap-4 px-0.5 py-4">
@@ -191,19 +196,26 @@ export default function SourceConfigModal({
                 availableModels={availableModels}
               />
               {willRequireReingest && !isReadOnly && (
-                <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-                  {t('settings.sources.configModal.chunkingChangeHint')}
-                </div>
+                <Alert variant="warning">
+                  <TriangleAlert className="size-4" aria-hidden="true" />
+                  <AlertDescription>
+                    {t('settings.sources.configModal.chunkingChangeHint')}
+                  </AlertDescription>
+                </Alert>
               )}
               {!prescreenValid && !isReadOnly && (
-                <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-                  {t('settings.sources.configModal.prescreenInvalidHint')}
-                </div>
+                <Alert variant="warning">
+                  <TriangleAlert className="size-4" aria-hidden="true" />
+                  <AlertDescription>
+                    {t('settings.sources.configModal.prescreenInvalidHint')}
+                  </AlertDescription>
+                </Alert>
               )}
               {error && (
-                <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                  {error}
-                </div>
+                <Alert variant="destructive">
+                  <CircleAlert className="size-4" aria-hidden="true" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
               )}
             </div>
           )}
@@ -216,14 +228,18 @@ export default function SourceConfigModal({
                 type="button"
                 variant="ghost"
                 onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('settings.sources.configModal.reingestLater')}
               </Button>
               <Button
                 type="button"
                 onClick={handleConfirmReingest}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('settings.sources.reingest')}
               </Button>
@@ -235,7 +251,9 @@ export default function SourceConfigModal({
                 variant="ghost"
                 onClick={closeModal}
                 disabled={saving}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('cancel')}
               </Button>
@@ -245,7 +263,9 @@ export default function SourceConfigModal({
                 disabled={
                   saving || isReadOnly || !hasChanges || !prescreenValid
                 }
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {saving ? (
                   <div className="flex items-center justify-center">

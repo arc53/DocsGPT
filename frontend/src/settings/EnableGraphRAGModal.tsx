@@ -1,11 +1,14 @@
+import { CircleAlert, CircleCheck } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
+import { Progress } from '../components/ui/progress';
 import { ActiveState, Doc } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../store';
@@ -236,14 +239,18 @@ export default function EnableGraphRAGModal({
                 type="button"
                 variant="ghost"
                 onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('cancel')}
               </Button>
               <Button
                 type="button"
                 onClick={handleEnable}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('settings.sources.graphrag.enable.confirm')}
               </Button>
@@ -262,36 +269,36 @@ export default function EnableGraphRAGModal({
                 : t('settings.sources.graphrag.enable.inProgress')}
             </p>
             {progressPct !== null && (
-              <div className="bg-muted h-1.5 w-48 overflow-hidden rounded-full">
-                <div
-                  className="bg-foreground/70 h-full rounded-full transition-all"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
+              <Progress size="sm" value={progressPct} className="w-48" />
             )}
           </div>
         )}
 
         {phase === 'summary' && summary && (
           <>
-            <div className="rounded-xl bg-green-50 p-4 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-200">
-              {[
-                t('settings.sources.graphrag.enable.summaryNodes', {
-                  count: summary.nodes,
-                }),
-                t('settings.sources.graphrag.enable.summaryEdges', {
-                  count: summary.edges,
-                }),
-                t('settings.sources.graphrag.enable.summaryChunks', {
-                  count: summary.chunksProcessed,
-                }),
-              ].join(' · ')}
-            </div>
+            <Alert variant="success">
+              <CircleCheck className="size-4" aria-hidden="true" />
+              <AlertDescription>
+                {[
+                  t('settings.sources.graphrag.enable.summaryNodes', {
+                    count: summary.nodes,
+                  }),
+                  t('settings.sources.graphrag.enable.summaryEdges', {
+                    count: summary.edges,
+                  }),
+                  t('settings.sources.graphrag.enable.summaryChunks', {
+                    count: summary.chunksProcessed,
+                  }),
+                ].join(' · ')}
+              </AlertDescription>
+            </Alert>
             <div className="flex justify-end">
               <Button
                 type="button"
                 onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('settings.sources.graphrag.enable.done')}
               </Button>
@@ -301,15 +308,18 @@ export default function EnableGraphRAGModal({
 
         {phase === 'error' && (
           <>
-            <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-              {error}
-            </div>
+            <Alert variant="destructive">
+              <CircleAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
             <div className="flex justify-end">
               <Button
                 type="button"
                 variant="ghost"
                 onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('cancel')}
               </Button>

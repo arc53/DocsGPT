@@ -1,5 +1,12 @@
 import { Braces, Plus, Search } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Edge, Node } from 'reactflow';
 
 import { Button } from '@/components/ui/button';
@@ -221,7 +228,7 @@ function HighlightedOverlay({ text }: { text: string }) {
             {part}
           </span>
         ) : (
-          <span key={i} className="text-gray-900 dark:text-white">
+          <span key={i} className="text-foreground">
             {part}
           </span>
         ),
@@ -260,7 +267,7 @@ function VariableListWithSearch({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search variables..."
-          className="h-auto rounded-none border-0 px-0 py-0 text-sm text-gray-800 shadow-none focus-visible:ring-0 md:text-sm dark:border-0 dark:text-gray-200"
+          variant="bare"
         />
       </div>
 
@@ -280,15 +287,16 @@ function VariableListWithSearch({
                   key={`${section}-${v.templatePath}`}
                   type="button"
                   variant="ghost"
+                  size="sm"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     onSelect(v.templatePath);
                   }}
-                  className="h-auto w-full justify-start gap-2 rounded-none px-3 py-1.5 text-left text-sm font-normal"
+                  className="w-full justify-start"
                 >
                   <Braces className="text-primary h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate font-medium text-gray-800 dark:text-gray-200">
+                  <span className="text-foreground truncate font-medium">
                     {v.label}
                   </span>
                 </Button>
@@ -439,7 +447,7 @@ export default function PromptTextArea({
   return (
     <div>
       {label && (
-        <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label className="text-foreground mb-2 block text-sm font-medium">
           {label}
         </label>
       )}
@@ -455,9 +463,7 @@ export default function PromptTextArea({
           {value ? (
             <HighlightedOverlay text={value} />
           ) : (
-            <span className="text-gray-400 dark:text-gray-500">
-              {placeholder}
-            </span>
+            <span className="text-muted-foreground">{placeholder}</span>
           )}
         </div>
 
@@ -481,11 +487,7 @@ export default function PromptTextArea({
               overlayRef.current.scrollTop = textareaRef.current.scrollTop;
             }
           }}
-          className="focus-visible:ring-ring/50 focus-visible:border-ring relative w-full rounded-xl bg-transparent px-3 pt-2 pb-8 text-sm caret-black outline-none focus-visible:ring-[3px] dark:caret-white"
-          style={{
-            color: 'transparent',
-            WebkitTextFillColor: 'transparent',
-          }}
+          className="focus-visible:ring-ring/50 focus-visible:border-ring relative w-full rounded-xl bg-transparent px-3 pt-2 pb-8 text-sm text-transparent caret-black outline-none focus-visible:ring-3 dark:caret-white"
           rows={rows}
           placeholder={placeholder}
           spellCheck={false}
@@ -494,11 +496,7 @@ export default function PromptTextArea({
         <div className="absolute right-4 bottom-1.5 z-10">
           <Popover open={contextOpen} onOpenChange={setContextOpen}>
             <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-primary hover:bg-primary/10 h-auto gap-1 px-2 py-1 text-xs font-medium"
-              >
+              <Button type="button" variant="link" size="xs">
                 <Plus className="h-3 w-3" />
                 Add context
               </Button>
@@ -506,7 +504,7 @@ export default function PromptTextArea({
             <PopoverContent
               align="end"
               side="top"
-              className="border-border bg-card w-60 rounded-xl border p-0 shadow-lg"
+              className="w-60 p-0"
               onOpenAutoFocus={(e) => e.preventDefault()}
             >
               <VariableListWithSearch
@@ -520,8 +518,13 @@ export default function PromptTextArea({
         {showDropdown && filtered.length > 0 && (
           <div
             ref={dropdownRef}
-            className="border-border bg-card absolute z-50 w-64 rounded-xl border shadow-lg"
-            style={{ top: dropdownPos.top, left: dropdownPos.left }}
+            className="border-border bg-card absolute top-(--dropdown-top) left-(--dropdown-left) z-50 w-64 rounded-xl border shadow-lg"
+            style={
+              {
+                '--dropdown-top': `${dropdownPos.top}px`,
+                '--dropdown-left': `${dropdownPos.left}px`,
+              } as CSSProperties
+            }
           >
             <VariableListWithSearch
               variables={filtered}

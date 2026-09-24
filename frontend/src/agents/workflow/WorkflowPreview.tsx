@@ -2,6 +2,7 @@ import {
   Bot,
   CheckCircle2,
   Circle,
+  CircleAlert,
   Code2,
   Database,
   FileBox,
@@ -17,6 +18,7 @@ import {
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
   MessageScroller,
@@ -77,13 +79,13 @@ const NODE_ICONS: Record<string, React.ReactNode> = {
 };
 
 const NODE_COLORS: Record<string, string> = {
-  start: 'text-green-600 dark:text-green-400',
-  agent: 'text-purple-600 dark:text-purple-400',
-  end: 'text-gray-600 dark:text-gray-400',
-  note: 'text-yellow-600 dark:text-yellow-400',
-  state: 'text-blue-600 dark:text-blue-400',
-  condition: 'text-orange-600 dark:text-orange-400',
-  code: 'text-indigo-600 dark:text-indigo-400',
+  start: 'text-success',
+  agent: 'text-primary',
+  end: 'text-destructive',
+  note: 'text-warning',
+  state: 'text-info',
+  condition: 'text-warning',
+  code: 'text-info',
 };
 
 function ExecutionDetails({
@@ -116,17 +118,18 @@ function ExecutionDetails({
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       <div className="my-2 flex flex-row items-center justify-center gap-3">
         <div className="flex h-[26px] w-[30px] items-center justify-center">
-          <Workflow className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+          <Workflow className="text-muted-foreground h-5 w-5" />
         </div>
         <Button
           type="button"
           variant="ghost"
+          size="sm"
           onClick={onToggle}
-          className="h-auto gap-2 px-0 py-0 hover:bg-transparent"
+          className="-ml-2.5"
         >
           <p className="text-base font-semibold">
             Execution Details
-            <span className="ml-1.5 text-sm font-normal text-gray-500 dark:text-gray-400">
+            <span className="text-muted-foreground ml-1.5 text-sm font-normal">
               ({completedSteps.length}{' '}
               {completedSteps.length === 1 ? 'step' : 'steps'})
             </span>
@@ -178,7 +181,7 @@ function ExecutionDetails({
                   className="bg-muted dark:bg-accent rounded-xl p-3"
                 >
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center text-xs font-medium text-gray-500 dark:text-gray-400">
+                    <span className="text-muted-foreground flex h-5 w-5 shrink-0 items-center justify-center text-xs font-medium">
                       {stepIndex + 1}.
                     </span>
                     <div
@@ -191,15 +194,15 @@ function ExecutionDetails({
                         <Circle className="h-3 w-3" />
                       )}
                     </div>
-                    <span className="min-w-0 truncate font-medium text-gray-900 dark:text-white">
+                    <span className="text-foreground min-w-0 truncate font-medium">
                       {displayName}
                     </span>
                     <div className="ml-auto shrink-0">
                       {step.status === 'completed' && (
-                        <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <CheckCircle2 className="text-success h-4 w-4" />
                       )}
                       {step.status === 'failed' && (
-                        <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                        <XCircle className="text-destructive h-4 w-4" />
                       )}
                     </div>
                   </div>
@@ -207,23 +210,24 @@ function ExecutionDetails({
                     <div className="mt-3 space-y-2 text-sm">
                       {hasOutput && (
                         <div className="bg-muted rounded-lg p-2">
-                          <span className="font-medium text-gray-600 dark:text-gray-400">
+                          <span className="text-muted-foreground font-medium">
                             Output:{' '}
                           </span>
-                          <span className="wrap-break-word whitespace-pre-wrap text-gray-900 dark:text-gray-100">
+                          <span className="text-foreground wrap-break-word whitespace-pre-wrap">
                             {truncateText(formattedOutput, 300)}
                           </span>
                         </div>
                       )}
                       {step.error && (
-                        <div className="rounded-lg bg-red-50 p-2 dark:bg-red-900/30">
-                          <span className="font-medium text-red-700 dark:text-red-300">
-                            Error:{' '}
-                          </span>
-                          <span className="wrap-break-word whitespace-pre-wrap text-red-800 dark:text-red-200">
-                            {step.error}
-                          </span>
-                        </div>
+                        <Alert variant="destructive" role="status">
+                          <CircleAlert />
+                          <AlertDescription>
+                            <span className="font-medium">Error: </span>
+                            <span className="wrap-break-word whitespace-pre-wrap">
+                              {step.error}
+                            </span>
+                          </AlertDescription>
+                        </Alert>
                       )}
                       {stateVars.length > 0 && (
                         <div className="flex flex-wrap gap-2">
@@ -232,11 +236,11 @@ function ExecutionDetails({
                               key={key}
                               className="bg-muted inline-flex items-center rounded-lg px-2 py-1 text-xs"
                             >
-                              <span className="max-w-[100px] truncate font-medium text-gray-600 dark:text-gray-400">
+                              <span className="text-muted-foreground max-w-[100px] truncate font-medium">
                                 {key}:
                               </span>
                               <span
-                                className="ml-1 max-w-[200px] truncate text-gray-900 dark:text-gray-100"
+                                className="text-foreground ml-1 max-w-[200px] truncate"
                                 title={formatValue(value)}
                               >
                                 {truncateText(formatValue(value), 50)}
@@ -272,13 +276,14 @@ function RunArtifactsSection({
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       <div className="my-2 flex flex-row items-center justify-center gap-3">
         <div className="flex h-[26px] w-[30px] items-center justify-center">
-          <FileBox className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+          <FileBox className="text-muted-foreground h-5 w-5" />
         </div>
         <Button
           type="button"
           variant="ghost"
+          size="sm"
           onClick={onToggle}
-          className="h-auto gap-2 px-0 py-0 hover:bg-transparent"
+          className="-ml-2.5"
         >
           <p className="text-base font-semibold">Artifacts</p>
           <img
@@ -312,7 +317,7 @@ function RunArtifactsSection({
   );
 }
 
-function WorkflowMiniMap({
+export function WorkflowMiniMap({
   nodes,
   activeNodeId,
   executionSteps,
@@ -339,26 +344,6 @@ function WorkflowMiniMap({
   const getNodeStatus = (nodeId: string) => {
     const step = executionSteps.find((s) => s.nodeId === nodeId);
     return step?.status || 'pending';
-  };
-
-  const getStatusColor = (nodeId: string) => {
-    const status = getNodeStatus(nodeId);
-    const isActive = nodeId === activeNodeId;
-
-    if (isActive) {
-      return 'ring-2 ring-purple-500 bg-purple-100 dark:bg-purple-900/50';
-    }
-
-    switch (status) {
-      case 'completed':
-        return 'bg-green-100 dark:bg-green-900/30 border-green-300 dark:border-green-700';
-      case 'running':
-        return 'bg-purple-100 dark:bg-purple-900/30 border-purple-300 dark:border-purple-700 animate-pulse';
-      case 'failed':
-        return 'bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700';
-      default:
-        return 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700';
-    }
   };
 
   const executedOrder = new Map(executionSteps.map((s, i) => [s.nodeId, i]));
@@ -392,55 +377,73 @@ function WorkflowMiniMap({
 
   return (
     <div className="space-y-1">
-      {sortedNodes.map((node, index) => (
-        <div key={node.id} className="relative">
-          {index < sortedNodes.length - 1 && (
-            <div className="absolute top-12 left-4 h-3 w-0.5 bg-gray-200 dark:bg-gray-700" />
-          )}
-
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => hasStepData(node.id) && onNodeClick?.(node.id)}
-            disabled={!hasStepData(node.id)}
-            className={cn(
-              'h-12 w-full justify-start gap-2 px-3 text-xs disabled:opacity-100',
-              getStatusColor(node.id),
-              hasStepData(node.id) && 'hover:opacity-80',
+      {sortedNodes.map((node, index) => {
+        const status = getNodeStatus(node.id);
+        const isActive = node.id === activeNodeId;
+        return (
+          <div key={node.id} className="relative">
+            {index < sortedNodes.length - 1 && (
+              <div className="bg-border absolute top-12 left-4 h-3 w-0.5" />
             )}
-          >
-            <div
+
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => hasStepData(node.id) && onNodeClick?.(node.id)}
+              disabled={!hasStepData(node.id)}
+              /* eslint-disable shadcn/no-restyle --
+                 Preview minimap status row: the fill, border and ring follow the step status (success, primary running + pulse,
+                 destructive, muted pending), pending and running rows stay unfaded while disabled, and clickable rows dim on hover.
+                 No Button variant is status-tinted. See DESIGN.md, Approved exceptions. */
               className={cn(
-                'flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
-                NODE_COLORS[node.type] || NODE_COLORS.state,
+                'h-12 w-full justify-start disabled:opacity-100',
+                isActive
+                  ? 'bg-primary/10 ring-primary hover:bg-primary/10 dark:bg-primary/10 dark:hover:bg-primary/10 ring-2'
+                  : status === 'completed'
+                    ? 'border-success/50 bg-success/10 hover:bg-success/10 dark:border-success/50 dark:bg-success/10 dark:hover:bg-success/10'
+                    : status === 'running'
+                      ? 'border-primary/50 bg-primary/10 hover:bg-primary/10 dark:border-primary/50 dark:bg-primary/10 dark:hover:bg-primary/10 animate-pulse'
+                      : status === 'failed'
+                        ? 'border-destructive/50 bg-destructive/10 hover:bg-destructive/10 dark:border-destructive/50 dark:bg-destructive/10 dark:hover:bg-destructive/10'
+                        : 'border-border bg-muted hover:bg-muted dark:border-border dark:bg-muted dark:hover:bg-muted',
+                hasStepData(node.id) && 'hover:opacity-80',
               )}
+              /* eslint-enable shadcn/no-restyle */
             >
-              {NODE_ICONS[node.type] || <Circle className="h-3 w-3" />}
-            </div>
-            <div className="min-w-0 flex-1 text-left">
-              <div className="truncate font-medium text-gray-700 dark:text-gray-200">
-                {getNodeDisplayName(node)}
+              <div
+                className={cn(
+                  'flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
+                  NODE_COLORS[node.type] || NODE_COLORS.state,
+                )}
+              >
+                {NODE_ICONS[node.type] || <Circle className="h-3 w-3" />}
               </div>
-              {getNodeSubtitle(node) && (
-                <div className="truncate text-xs text-gray-500 dark:text-gray-400">
-                  {getNodeSubtitle(node)}
+              <div className="min-w-0 flex-1 text-left">
+                <div className="text-foreground truncate font-medium">
+                  {getNodeDisplayName(node)}
                 </div>
-              )}
-            </div>
-            <div className="shrink-0">
-              {getNodeStatus(node.id) === 'running' && (
-                <Loader2 className="h-3 w-3 animate-spin text-purple-500" />
-              )}
-              {getNodeStatus(node.id) === 'completed' && (
-                <CheckCircle2 className="h-3 w-3 text-green-500" />
-              )}
-              {getNodeStatus(node.id) === 'failed' && (
-                <XCircle className="h-3 w-3 text-red-500" />
-              )}
-            </div>
-          </Button>
-        </div>
-      ))}
+                {getNodeSubtitle(node) && (
+                  <div className="text-muted-foreground truncate text-xs">
+                    {getNodeSubtitle(node)}
+                  </div>
+                )}
+              </div>
+              <div className="shrink-0">
+                {status === 'running' && (
+                  <Loader2 className="text-primary h-3 w-3 animate-spin" />
+                )}
+                {status === 'completed' && (
+                  <CheckCircle2 className="text-success h-3 w-3" />
+                )}
+                {status === 'failed' && (
+                  <XCircle className="text-destructive h-3 w-3" />
+                )}
+              </div>
+            </Button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -605,21 +608,19 @@ export default function WorkflowPreview({
     <div className="bg-card flex h-full flex-col">
       <div className="border-border flex h-[77px] items-center justify-between border-b px-6">
         <div className="flex items-center gap-3">
-          <div className="bg-muted flex items-center justify-center rounded-full p-3 text-gray-600 dark:text-gray-300">
+          <div className="bg-muted text-muted-foreground flex items-center justify-center rounded-full p-3">
             <Play className="h-4 w-4" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              Preview
-            </h2>
-            <p className="max-w-md truncate text-xs text-gray-500 dark:text-gray-400">
+            <h2 className="text-foreground text-xl font-bold">Preview</h2>
+            <p className="text-muted-foreground max-w-md truncate text-xs">
               {workflowData.name}
               {workflowData.description && ` - ${workflowData.description}`}
             </p>
           </div>
         </div>
         {status === 'loading' && (
-          <span className="text-primary dark:text-primary flex items-center gap-1 text-xs">
+          <span className="text-primary flex items-center gap-1 text-xs">
             <Loader2 className="h-3 w-3 animate-spin" />
             Running
           </span>
@@ -629,7 +630,7 @@ export default function WorkflowPreview({
       <div className="flex min-h-0 flex-1">
         <div className="border-border flex w-64 shrink-0 flex-col border-r">
           <div className="flex items-center justify-between px-4 py-3">
-            <h3 className="text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
+            <h3 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
               Workflow
             </h3>
           </div>
@@ -650,16 +651,19 @@ export default function WorkflowPreview({
             {queries.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center px-4">
                 <div className="bg-muted mb-2 flex size-14 shrink-0 items-center justify-center rounded-xl">
-                  <MessageSquare className="size-6 text-gray-600 dark:text-gray-300" />
+                  <MessageSquare className="text-muted-foreground size-6" />
                 </div>
-                <p className="text-xl font-semibold text-gray-700 dark:text-gray-200">
+                <p className="text-foreground text-xl font-semibold">
                   Test the workflow
                 </p>
               </div>
             ) : (
               <MessageScrollerProvider autoScroll>
                 <MessageScroller>
-                  <MessageScrollerViewport className="scrollbar-thin px-4 pt-4">
+                  <MessageScrollerViewport
+                    /* eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions. */
+                    className="scrollbar-thin px-4 pt-4"
+                  >
                     <MessageScrollerContent className="w-full">
                       {queries.map((query, index) => {
                         const querySteps = query.executionSteps || [];
@@ -776,7 +780,7 @@ export default function WorkflowPreview({
           </div>
           <div className="bg-card flex w-full flex-col gap-2 px-4 pt-2 pb-4">
             {sendBlockedMessage && (
-              <p className="text-xs text-red-500" role="alert">
+              <p className="text-destructive text-xs" role="alert">
                 {sendBlockedMessage}
               </p>
             )}

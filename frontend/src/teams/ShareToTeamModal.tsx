@@ -417,7 +417,7 @@ export default function ShareToTeamModal({
             variant="ghost"
             size="sm"
             disabled={rowBusy}
-            className="shrink-0 gap-1 px-2 font-normal"
+            className="shrink-0"
             aria-label={t('settings.teams.share.access')}
           >
             {t(`settings.teams.share.accessLevel.${share.access_level}`)}
@@ -465,10 +465,9 @@ export default function ShareToTeamModal({
       <li key={shareKey(share)} className="flex items-center gap-3 py-2">
         <Avatar
           alt=""
-          className={cn(
-            'bg-primary/10 text-primary dark:bg-primary/20 flex size-9 items-center justify-center text-sm font-medium',
-            isTeam ? 'rounded-md' : 'rounded-full',
-          )}
+          variant="primary"
+          size="lg"
+          shape={isTeam ? 'square' : 'circle'}
         >
           {initialOf(primary)}
         </Avatar>
@@ -529,11 +528,12 @@ export default function ShareToTeamModal({
               <PopoverTrigger asChild>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="combobox"
                   role="combobox"
                   aria-expanded={pickerOpen}
                   disabled={committing}
-                  className="text-muted-foreground h-9 min-w-0 flex-1 justify-start gap-2 px-3 font-normal"
+                  data-placeholder=""
+                  className="min-w-0 flex-1 justify-start"
                 >
                   <span className="truncate">
                     {t('settings.teams.share.addPlaceholder')}
@@ -566,11 +566,12 @@ export default function ShareToTeamModal({
                             key={suggestion.key}
                             value={suggestion.key}
                             onSelect={() => commitSuggestion(suggestion)}
-                            className="gap-3"
                           >
                             <Avatar
                               alt=""
-                              className="bg-primary/10 text-primary dark:bg-primary/20 flex size-7 items-center justify-center rounded-md text-xs font-medium"
+                              variant="primary"
+                              size="sm"
+                              shape="square"
                             >
                               {initialOf(suggestion.teamName)}
                             </Avatar>
@@ -591,11 +592,12 @@ export default function ShareToTeamModal({
                               key={suggestion.key}
                               value={`${suggestion.key} ${suggestion.label} ${suggestion.teamName}`}
                               onSelect={() => commitSuggestion(suggestion)}
-                              className="gap-3"
                             >
                               <Avatar
                                 alt=""
-                                className="bg-primary/10 text-primary dark:bg-primary/20 flex size-7 items-center justify-center rounded-full text-xs font-medium"
+                                variant="primary"
+                                size="sm"
+                                shape="circle"
                               >
                                 {initialOf(suggestion.label)}
                               </Avatar>
@@ -646,10 +648,7 @@ export default function ShareToTeamModal({
             <ul className="mt-1 max-h-72 overflow-auto">
               {/* Owner — pinned, non-interactive. */}
               <li className="flex items-center gap-3 py-2">
-                <Avatar
-                  alt=""
-                  className="bg-primary/10 text-primary dark:bg-primary/20 flex size-9 items-center justify-center rounded-full text-sm font-medium"
-                >
+                <Avatar alt="" variant="primary" size="lg" shape="circle">
                   {initialOf(t('settings.teams.share.you'))}
                 </Avatar>
                 <div className="min-w-0 flex-1">

@@ -3,6 +3,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import { cn } from '@/lib/utils';
+
 import userService from '../api/services/userService';
 import ArrowLeft from '../assets/arrow-left.svg';
 import FileIcon from '../assets/file.svg';
@@ -51,7 +53,7 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
     onChange(e.target.value);
   };
 
-  const lineHeight = 19.93;
+  const lineHeight = 20;
   const contentLines = value.split('\n').length;
 
   const heightOffset = isMobile ? 200 : 300;
@@ -62,24 +64,30 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
   const totalLines = Math.max(contentLines, minLinesForDisplay);
 
   return (
-    <div className={`relative w-full ${className}`}>
-      <div
-        className="pointer-events-none absolute top-0 left-0 w-8 pr-2 text-right font-mono text-xs leading-[19.93px] text-gray-500 select-none lg:w-12 lg:pr-3 lg:text-sm dark:text-gray-400"
-        style={{
-          height: `${totalLines * lineHeight}px`,
-        }}
-      >
+    <div
+      className={cn('relative w-full', className)}
+      style={
+        {
+          '--numbered-height': `${totalLines * lineHeight}px`,
+        } as React.CSSProperties
+      }
+    >
+      <div className="text-muted-foreground pointer-events-none absolute top-0 left-0 h-(--numbered-height) w-8 pr-2 text-right font-mono text-xs leading-5 select-none lg:w-12 lg:pr-3 lg:text-sm">
         {Array.from({ length: totalLines }, (_, i) => (
           <div
             key={i + 1}
-            className="flex h-[19.93px] items-center justify-end leading-[19.93px]"
+            className="flex h-5 items-center justify-end leading-5"
           >
             {i + 1}
           </div>
         ))}
       </div>
       <textarea
-        className={`text-foreground focus-visible:ring-ring/50 focus-visible:border-ring w-full resize-none overflow-hidden border-none bg-transparent pl-8 font-['Inter'] text-[13.68px] leading-[19.93px] outline-none focus-visible:ring-[3px] lg:pl-12 dark:text-white ${isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]'} ${!editable ? 'select-none' : ''}`}
+        className={cn(
+          'text-foreground focus-visible:ring-ring/50 focus-visible:border-ring h-(--numbered-height) w-full resize-none overflow-hidden border-none bg-transparent pl-8 text-sm leading-5 outline-none focus-visible:ring-3 lg:pl-12',
+          isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]',
+          !editable && 'select-none',
+        )}
         value={value}
         onChange={editable ? handleChange : undefined}
         onDoubleClick={onDoubleClick}
@@ -87,9 +95,6 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
         aria-label={ariaLabel}
         rows={totalLines}
         readOnly={!editable}
-        style={{
-          height: `${totalLines * lineHeight}px`,
-        }}
       />
     </div>
   );
@@ -309,8 +314,10 @@ const Chunks: React.FC<ChunksProps> = ({
           <Button
             type="button"
             variant="outline"
-            size="icon-sm"
-            className="mr-3 h-[29px] w-[29px] rounded-full p-2 text-gray-400 dark:border-0 dark:text-gray-500"
+            size="icon-xs"
+            shape="pill"
+            className="mr-3"
+            aria-label={t('settings.sources.back')}
             onClick={
               editingChunk
                 ? () => setEditingChunk(null)
@@ -330,20 +337,22 @@ const Chunks: React.FC<ChunksProps> = ({
 
             {pathParts.length > 0 && (
               <>
-                <span className="mx-1 shrink-0 text-gray-500">/</span>
+                <span className="text-muted-foreground mx-1 shrink-0">/</span>
                 {pathParts.map((part, index) => (
                   <React.Fragment key={index}>
                     <span
                       className={`wrap-break-word ${
                         index < pathParts.length - 1
                           ? 'text-primary font-medium'
-                          : 'text-gray-700 dark:text-gray-300'
+                          : 'text-foreground'
                       }`}
                     >
                       {part}
                     </span>
                     {index < pathParts.length - 1 && (
-                      <span className="mx-1 shrink-0 text-gray-500">/</span>
+                      <span className="text-muted-foreground mx-1 shrink-0">
+                        /
+                      </span>
                     )}
                   </React.Fragment>
                 ))}
@@ -359,7 +368,8 @@ const Chunks: React.FC<ChunksProps> = ({
               <>
                 <Button
                   type="button"
-                  className="h-[38px] min-w-[108px] rounded-full px-4 text-sm font-medium whitespace-nowrap"
+                  shape="pill"
+                  className="min-w-[108px]"
                   onClick={() => setIsEditing(true)}
                 >
                   {t('modals.chunk.edit')}
@@ -367,7 +377,8 @@ const Chunks: React.FC<ChunksProps> = ({
                 <Button
                   type="button"
                   variant="destructive-outline"
-                  className="h-[38px] min-w-[108px] rounded-full px-4 py-1 text-sm font-medium text-nowrap"
+                  shape="pill"
+                  className="min-w-[108px]"
                   onClick={() => {
                     confirmDeleteChunk(editingChunk);
                   }}
@@ -383,7 +394,8 @@ const Chunks: React.FC<ChunksProps> = ({
                   onClick={() => {
                     setIsEditing(false);
                   }}
-                  className="dark:text-foreground h-[38px] min-w-[108px] cursor-pointer rounded-full px-4 py-1 text-sm font-medium text-nowrap"
+                  shape="pill"
+                  className="min-w-[108px]"
                 >
                   {t('modals.chunk.cancel')}
                 </Button>
@@ -412,13 +424,8 @@ const Chunks: React.FC<ChunksProps> = ({
                     (editingTitle === (editingChunk?.metadata?.title || '') &&
                       editingText === (editingChunk?.text || ''))
                   }
-                  className={`h-[38px] min-w-[108px] rounded-full px-4 py-1 text-sm font-medium text-nowrap transition-all ${
-                    editingText.trim() &&
-                    (editingTitle !== (editingChunk?.metadata?.title || '') ||
-                      editingText !== (editingChunk?.text || ''))
-                      ? 'cursor-pointer'
-                      : 'cursor-not-allowed bg-gray-400 text-white hover:bg-gray-400'
-                  }`}
+                  shape="pill"
+                  className="min-w-[108px]"
                 >
                   {t('modals.chunk.save')}
                 </Button>
@@ -430,7 +437,8 @@ const Chunks: React.FC<ChunksProps> = ({
                 type="button"
                 variant="ghost"
                 onClick={() => setIsAddingChunk(false)}
-                className="dark:text-foreground h-[38px] min-w-[108px] cursor-pointer rounded-full px-4 py-1 text-sm font-medium text-nowrap"
+                shape="pill"
+                className="min-w-[108px]"
               >
                 {t('modals.chunk.cancel')}
               </Button>
@@ -443,11 +451,8 @@ const Chunks: React.FC<ChunksProps> = ({
                   }
                 }}
                 disabled={!editingText.trim()}
-                className={`h-[38px] min-w-[108px] rounded-full px-4 py-1 text-sm font-medium text-nowrap transition-all ${
-                  editingText.trim()
-                    ? 'cursor-pointer'
-                    : 'cursor-not-allowed bg-gray-400 text-white hover:bg-gray-400'
-                }`}
+                shape="pill"
+                className="min-w-[108px]"
               >
                 {t('modals.chunk.add')}
               </Button>
@@ -496,30 +501,26 @@ const Chunks: React.FC<ChunksProps> = ({
   const renderFileSearch = () => {
     return (
       <div className="relative" ref={searchDropdownRef}>
-        <div className="relative flex items-center">
-          <div className="pointer-events-none absolute left-3">
+        <Input
+          type="text"
+          value={fileSearchQuery}
+          onChange={(e) => handleFileSearchChange(e.target.value)}
+          placeholder={t('settings.sources.searchFiles')}
+          className="h-[38px]"
+          leftIcon={
             <SearchIcon
               className="text-muted-foreground size-4"
               strokeWidth={1.75}
               aria-label="Search"
             />
-          </div>
-          <Input
-            type="text"
-            value={fileSearchQuery}
-            onChange={(e) => handleFileSearchChange(e.target.value)}
-            placeholder={t('settings.sources.searchFiles')}
-            className={`h-[38px] py-2 pr-4 pl-10 ${
-              fileSearchQuery ? 'rounded-t-md' : 'rounded-md'
-            } transition-all duration-200`}
-          />
-        </div>
+          }
+        />
 
         {fileSearchQuery && (
-          <div className="border-border bg-card dark:border-border dark:bg-card absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-md border border-t-0 shadow-lg">
+          <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 left-0 z-20 mt-1 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-xl border shadow-md">
             <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto">
               {fileSearchResults.length === 0 ? (
-                <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
+                <div className="text-muted-foreground py-2 text-center text-sm">
                   {t('settings.sources.noResults')}
                 </div>
               ) : (
@@ -568,7 +569,7 @@ const Chunks: React.FC<ChunksProps> = ({
             <>
               <div className="mb-3 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
                 <div className="border-border dark:border-border flex h-[38px] w-full flex-1 items-center overflow-hidden rounded-md border">
-                  <div className="dark:text-foreground flex h-full items-center px-4 font-medium whitespace-nowrap text-gray-700">
+                  <div className="text-foreground flex h-full items-center px-4 font-medium whitespace-nowrap">
                     {totalChunks > 999999
                       ? `${(totalChunks / 1000000).toFixed(2)}M`
                       : totalChunks > 999
@@ -577,19 +578,21 @@ const Chunks: React.FC<ChunksProps> = ({
                     {t('settings.sources.chunks')}
                   </div>
                   <div className="bg-border dark:bg-border h-full w-px"></div>
-                  <div className="h-full flex-1">
+                  <div className="h-full flex-1 px-3 py-2">
                     <Input
                       type="text"
+                      variant="bare"
                       placeholder={t('settings.sources.searchPlaceholder')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="h-full rounded-none border-0 px-3 py-2 text-[13.56px] leading-[100%] font-normal shadow-none focus-visible:ring-0 md:text-[13.56px] dark:border-0"
+                      className="h-full"
                     />
                   </div>
                 </div>
                 <Button
                   type="button"
-                  className="h-[38px] w-full min-w-[108px] shrink-0 rounded-full px-4 text-sm font-medium whitespace-normal sm:w-auto"
+                  shape="pill"
+                  className="w-full min-w-[108px] shrink-0 whitespace-normal sm:w-auto"
                   title={t('settings.sources.addChunk')}
                   onClick={() => {
                     setIsAddingChunk(true);
@@ -607,7 +610,7 @@ const Chunks: React.FC<ChunksProps> = ({
               ) : (
                 <div className="grid w-full grid-cols-1 justify-items-start gap-4 sm:grid-cols-[repeat(auto-fit,minmax(400px,1fr))]">
                   {filteredChunks.length === 0 ? (
-                    <div className="col-span-full flex min-h-[50vh] w-full flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400">
+                    <div className="text-muted-foreground col-span-full flex min-h-[50vh] w-full flex-col items-center justify-center text-center">
                       <img
                         src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
                         alt={t('settings.sources.noChunksAlt')}
@@ -628,13 +631,13 @@ const Chunks: React.FC<ChunksProps> = ({
                       >
                         <div className="w-full">
                           <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
-                            <div className="dark:text-muted-foreground text-sm text-[#59636E]">
+                            <div className="text-muted-foreground text-sm">
                               {formatChunkTokens(chunk.metadata)}{' '}
                               {t('settings.sources.tokensUnit')}
                             </div>
                           </div>
                           <div className="px-4 pt-3 pb-6">
-                            <p className="text-foreground line-clamp-6 font-['Inter'] text-[13.68px] leading-[19.93px] font-normal">
+                            <p className="text-foreground line-clamp-6 text-sm leading-5 font-normal">
                               {chunk.text}
                             </p>
                           </div>
@@ -661,7 +664,7 @@ const Chunks: React.FC<ChunksProps> = ({
               <div className="w-full">
                 <div className="border-border dark:border-border relative flex w-full flex-col overflow-hidden rounded-md border">
                   <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
-                    <div className="dark:text-muted-foreground text-sm text-[#59636E]">
+                    <div className="text-muted-foreground text-sm">
                       {formatChunkTokens(editingChunk.metadata)}{' '}
                       {t('settings.sources.tokensUnit')}
                     </div>

@@ -111,8 +111,8 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         disabled={isSyncing}
         className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors ${
           isSyncing
-            ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-600'
-            : 'bg-primary hover:bg-primary/90 text-white'
+            ? 'bg-muted text-muted-foreground cursor-not-allowed'
+            : 'bg-primary hover:bg-primary/90 text-primary-foreground'
         }`}
         title={
           isSyncing

@@ -125,16 +125,12 @@ export default function TimezoneCombobox({
       <PopoverTrigger asChild>
         <Button
           type="button"
-          variant="outline"
+          variant="combobox"
           role="combobox"
-          size="sm"
           aria-expanded={open}
           aria-label={ariaLabel}
-          className={cn(
-            'h-9 w-full justify-between gap-2 px-3 font-normal',
-            !value && 'text-muted-foreground',
-            className,
-          )}
+          data-placeholder={value ? undefined : ''}
+          className={cn('w-full justify-between', className)}
         >
           {value ? (
             <span className="flex min-w-0 flex-1 items-center justify-between gap-3">

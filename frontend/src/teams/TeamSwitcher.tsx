@@ -169,22 +169,24 @@ export default function TeamSwitcher({
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-62">
-        <DropdownMenuLabel className="flex items-center gap-2">
-          <span className="bg-muted dark:bg-accent flex size-7 shrink-0 items-center justify-center rounded-md">
-            {currentTeam ? (
-              <Users className="size-4" strokeWidth={1.75} />
-            ) : (
-              <User className="size-4" strokeWidth={1.75} />
-            )}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="text-foreground block truncate text-sm font-semibold">
-              {currentName}
+        <DropdownMenuLabel>
+          <div className="flex items-center gap-2">
+            <span className="bg-muted dark:bg-accent flex size-7 shrink-0 items-center justify-center rounded-md">
+              {currentTeam ? (
+                <Users className="size-4" strokeWidth={1.75} />
+              ) : (
+                <User className="size-4" strokeWidth={1.75} />
+              )}
             </span>
-            <span className="text-muted-foreground block truncate text-xs font-normal">
-              {currentRoleLabel}
+            <span className="min-w-0 flex-1">
+              <span className="text-foreground block truncate text-sm font-semibold">
+                {currentName}
+              </span>
+              <span className="text-muted-foreground block truncate text-xs font-normal">
+                {currentRoleLabel}
+              </span>
             </span>
-          </span>
+          </div>
         </DropdownMenuLabel>
 
         {currentTeam && (

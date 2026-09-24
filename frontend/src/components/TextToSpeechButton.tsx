@@ -174,11 +174,10 @@ export default function SpeakButton({ text }: { text: string }) {
   return (
     <Button
       type="button"
-      variant="ghost"
+      variant={isSpeaking || isLoading ? 'secondary' : 'ghost'}
       size="icon"
-      className={`cursor-pointer rounded-full ${
-        isSpeaking || isLoading ? 'bg-accent' : ''
-      }`}
+      shape="pill"
+      className="cursor-pointer"
       onClick={handleSpeakClick}
       aria-label={
         isLoading
@@ -192,9 +191,9 @@ export default function SpeakButton({ text }: { text: string }) {
       {isLoading ? (
         <Spinner size="small" />
       ) : isSpeaking ? (
-        <Stopspeech className="fill-none" />
+        <Stopspeech />
       ) : (
-        <Speaker className="fill-none" />
+        <Speaker />
       )}
     </Button>
   );

@@ -53,11 +53,12 @@ export default function ActionButtons({
         {showNewChat && (
           <Button
             type="button"
-            variant="ghost"
+            variant="ghost-muted"
             size="icon"
+            shape="pill"
             title={t('actionButtons.openNewChat')}
             onClick={newChat}
-            className="text-muted-foreground hover:text-foreground rounded-full lg:hidden"
+            className="lg:hidden"
           >
             <Plus className="size-5" strokeWidth={1.75} aria-label="NewChat" />
           </Button>
@@ -67,11 +68,11 @@ export default function ActionButtons({
           <>
             <Button
               type="button"
-              variant="ghost"
+              variant="ghost-muted"
               size="icon"
+              shape="pill"
               title={t('actionButtons.share')}
               onClick={() => setShareModalState(true)}
-              className="text-muted-foreground hover:text-foreground rounded-full"
             >
               <Share className="size-5" strokeWidth={1.75} aria-label="share" />
             </Button>

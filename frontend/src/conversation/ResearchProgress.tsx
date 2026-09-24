@@ -3,10 +3,11 @@ import ResearchIcon from '../assets/research.svg';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { ResearchState } from './conversationModels';
+import { cn } from '@/lib/utils';
 
 const SmallCheck = () => (
   <svg
-    className="h-3 w-3 text-green-500"
+    className="text-success h-3 w-3"
     fill="none"
     viewBox="0 0 24 24"
     stroke="currentColor"
@@ -18,7 +19,7 @@ const SmallCheck = () => (
 
 const SmallSpinner = () => (
   <svg
-    className="h-3 w-3 animate-spin text-purple-500"
+    className="text-primary h-3 w-3 animate-spin"
     fill="none"
     viewBox="0 0 24 24"
   >
@@ -39,7 +40,7 @@ const SmallSpinner = () => (
 );
 
 const SmallPending = () => (
-  <div className="h-2.5 w-2.5 rounded-full border-[1.5px] border-gray-400 dark:border-gray-500" />
+  <div className="border-muted-foreground h-2.5 w-2.5 rounded-full border" />
 );
 
 function StatusText({ status, elapsed }: { status: string; elapsed?: number }) {
@@ -51,12 +52,10 @@ function StatusText({ status, elapsed }: { status: string; elapsed?: number }) {
   };
   const elapsed_str = elapsed ? ` \u00B7 ${Math.round(elapsed)}s` : '';
   return (
-    <span className="text-xs text-gray-500 dark:text-gray-400">
+    <span className="text-muted-foreground text-xs">
       {status === 'complete' ? (
         <>
-          <span className="text-green-600 dark:text-green-400">
-            {labels.complete}
-          </span>
+          <span className="text-success">{labels.complete}</span>
           {elapsed_str}
         </>
       ) : (
@@ -103,21 +102,24 @@ export default function ResearchProgress({
         <Avatar
           src={ResearchIcon}
           alt="Research"
-          className="h-[26px] w-[30px] text-xl"
+          className="h-[26px] w-[30px]"
           imgClassName="h-full w-full object-fill"
         />
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-auto bg-transparent px-0 py-0 font-normal hover:bg-transparent dark:hover:bg-transparent"
+          className="-ml-2.5"
           onClick={() => setIsExpanded(!isExpanded)}
         >
           <p className="text-sm font-semibold">
             {isExpanded ? 'Research' : summaryText}
           </p>
           <svg
-            className={`h-4 w-4 text-gray-500 transition-transform duration-200 dark:text-gray-400 ${isExpanded ? 'rotate-180' : ''}`}
+            className={cn(
+              'text-muted-foreground h-4 w-4 transition-transform duration-200',
+              isExpanded && 'rotate-180',
+            )}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -152,20 +154,19 @@ export default function ResearchProgress({
                         <SmallPending />
                       )}
                     </div>
-                    {!isLast && (
-                      <div className="mt-1 w-px flex-1 bg-gray-300 dark:bg-gray-600" />
-                    )}
+                    {!isLast && <div className="bg-border mt-1 w-px flex-1" />}
                   </div>
                   {/* Step content */}
                   <div className={`pb-3 ${isLast ? '' : ''}`}>
                     <p
-                      className={`text-sm ${
+                      className={cn(
+                        'text-sm',
                         step.status === 'complete'
-                          ? 'text-gray-700 dark:text-gray-300'
+                          ? 'text-foreground'
                           : step.status === 'researching'
-                            ? 'font-medium text-purple-700 dark:text-purple-300'
-                            : 'text-gray-500 dark:text-gray-500'
-                      }`}
+                            ? 'text-primary font-medium'
+                            : 'text-muted-foreground',
+                      )}
                     >
                       {step.query}
                     </p>

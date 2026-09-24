@@ -23,6 +23,7 @@ import CalendarIcon from '../assets/calendar.svg';
 import DiscIcon from '../assets/disc.svg';
 import Pagination from '../components/DocumentPagination';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
@@ -32,6 +33,7 @@ import {
 } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
+import { cn } from '../lib/utils';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import type { Model } from '../models/types';
@@ -553,7 +555,8 @@ export default function Sources({
     <Button
       type="button"
       variant="outline"
-      className="h-[38px] rounded-full px-4 text-sm font-medium whitespace-nowrap"
+      shape="pill"
+      className="h-[38px]"
       onClick={() => {
         setDocumentToTest(documentToView);
         setTestRetrievalState('ACTIVE');
@@ -636,8 +639,8 @@ export default function Sources({
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              labelBgClassName="bg-background"
-              className="rounded-full"
+              labelSurface="background"
+              shape="pill"
               leftIcon={
                 <SearchIcon
                   className="text-muted-foreground size-4"
@@ -648,7 +651,8 @@ export default function Sources({
           </div>
           <Button
             type="button"
-            className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
+            shape="pill"
+            className="h-11 min-w-[108px] whitespace-normal"
             title={t('settings.sources.addSource')}
             onClick={() => {
               setIsOnboarding(false);
@@ -670,7 +674,7 @@ export default function Sources({
                 alt={t('settings.sources.noData')}
                 className="mx-auto mb-6 h-32 w-32"
               />
-              <p className="text-center text-lg text-gray-500 dark:text-gray-400">
+              <p className="text-muted-foreground text-center text-lg">
                 {t('settings.sources.noData')}
               </p>
             </div>
@@ -692,17 +696,18 @@ export default function Sources({
                           setDocumentToView(document);
                         }
                       }}
-                      className={`bg-muted dark:bg-accent focus-visible:ring-ring/50 flex min-h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-[3px] ${
+                      className={cn(
+                        'bg-muted dark:bg-accent focus-visible:ring-ring/50 flex min-h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-3',
                         actionMenuDocId === docId ||
-                        syncMenuState.docId === docId
+                          syncMenuState.docId === docId
                           ? 'scale-[1.05]'
-                          : 'hover:scale-[1.05]'
-                      }`}
+                          : 'hover:scale-[1.05]',
+                      )}
                     >
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
                           <h3
-                            className="dark:text-foreground text-foreground line-clamp-2 min-w-0 flex-1 text-sm leading-[18px] font-semibold wrap-anywhere"
+                            className="text-foreground line-clamp-2 min-w-0 flex-1 text-sm leading-4.5 font-semibold wrap-anywhere"
                             title={document.name}
                           >
                             {document.name}
@@ -811,7 +816,7 @@ export default function Sources({
 
                       <div className="flex flex-col items-start justify-start gap-1">
                         {document.ownership === 'team' && (
-                          <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
+                          <Badge variant="neutral">
                             <Users
                               size={11}
                               strokeWidth={2}
@@ -820,17 +825,17 @@ export default function Sources({
                             {document.team_access === 'editor'
                               ? t('teamAccess.editor')
                               : t('teamAccess.viewer')}
-                          </span>
+                          </Badge>
                         )}
                         {document.ingestStatus === 'failed' && (
-                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs leading-[16px] font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                          <Badge variant="destructive">
                             {t('settings.sources.ingestFailed')}
-                          </span>
+                          </Badge>
                         )}
                         {document.ingestStatus === 'processing' && (
-                          <span className="bg-muted-foreground/10 text-muted-foreground rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
+                          <Badge variant="neutral">
                             {t('settings.sources.ingestProcessing')}
-                          </span>
+                          </Badge>
                         )}
                         {document.config?.kind === 'graphrag' &&
                           (() => {
@@ -848,7 +853,7 @@ export default function Sources({
                                   )
                                 : null;
                             return (
-                              <span className="bg-muted-foreground/10 text-muted-foreground flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-[16px] font-medium">
+                              <Badge variant="neutral">
                                 <Network
                                   size={11}
                                   strokeWidth={2}
@@ -862,7 +867,7 @@ export default function Sources({
                                       )
                                     : t('settings.sources.graphrag.building')
                                   : t('settings.sources.graphrag.badge')}
-                              </span>
+                              </Badge>
                             );
                           })()}
                         <div className="flex items-center gap-2">
@@ -871,13 +876,13 @@ export default function Sources({
                             alt=""
                             className="h-3.5 w-3.5"
                           />
-                          <span className="text-muted-foreground text-xs leading-[18px] font-medium">
+                          <span className="text-muted-foreground text-xs leading-4.5 font-medium">
                             {document.date ? formatDate(document.date) : ''}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
                           <img src={DiscIcon} alt="" className="h-3.5 w-3.5" />
-                          <span className="text-muted-foreground text-xs leading-[18px] font-medium">
+                          <span className="text-muted-foreground text-xs leading-4.5 font-medium">
                             {document.tokens
                               ? formatTokens(+document.tokens)
                               : ''}

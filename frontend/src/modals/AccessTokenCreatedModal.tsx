@@ -41,18 +41,14 @@ export default function AccessTokenCreatedModal({
       // dismiss it; closing takes the explicit button (or Esc).
       isPerformingTask
       footer={
-        <Button
-          type="button"
-          onClick={onClose}
-          className="rounded-3xl px-6 text-white"
-        >
+        <Button type="button" onClick={onClose} shape="pill" size="lg">
           {t('settings.accessTokens.created.done')}
         </Button>
       }
     >
       <div className="flex flex-col gap-5 px-1">
         <div>
-          <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
+          <h2 className="text-foreground text-xl font-semibold">
             {t(`${copy}.title`)}
           </h2>
           <p className="text-muted-foreground mt-2 text-sm break-words">
@@ -65,23 +61,23 @@ export default function AccessTokenCreatedModal({
 
         <div
           role="alert"
-          className="flex items-start gap-3 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+          className="bg-warning/10 text-foreground flex items-start gap-3 rounded-lg px-4 py-3 text-sm"
         >
           <TriangleAlert
-            className="mt-0.5 size-4 shrink-0"
+            className="text-warning mt-0.5 size-4 shrink-0"
             aria-hidden="true"
           />
           <p>{t('settings.accessTokens.created.warning')}</p>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <p className="text-foreground dark:text-foreground text-sm font-semibold">
+          <p className="text-foreground text-sm font-semibold">
             {t('settings.accessTokens.created.tokenLabel')}
           </p>
           <div className="bg-muted flex items-center gap-2 rounded-xl py-2 pr-2 pl-4">
             <code
               data-testid="pat-plaintext"
-              className="text-foreground dark:text-foreground min-w-0 flex-1 font-mono text-xs break-all select-all sm:text-sm"
+              className="text-foreground min-w-0 flex-1 font-mono text-xs break-all select-all sm:text-sm"
             >
               {token}
             </code>
@@ -90,7 +86,7 @@ export default function AccessTokenCreatedModal({
         </div>
 
         <div className="flex flex-col gap-2">
-          <p className="text-foreground dark:text-foreground text-sm font-semibold">
+          <p className="text-foreground text-sm font-semibold">
             {t('settings.accessTokens.created.usageTitle')}
           </p>
           <p className="text-muted-foreground text-xs">
@@ -101,7 +97,7 @@ export default function AccessTokenCreatedModal({
               key={index}
               className="bg-muted flex items-start gap-2 rounded-xl py-2 pr-2 pl-4"
             >
-              <pre className="text-foreground dark:text-foreground min-w-0 flex-1 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
+              <pre className="text-foreground min-w-0 flex-1 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
                 {snippet}
               </pre>
               <CopyButton textToCopy={snippet} />

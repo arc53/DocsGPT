@@ -124,16 +124,16 @@ export default function ConfigToolModal({
           <Button
             type="button"
             variant="ghost"
+            shape="pill"
             onClick={handleClose}
-            className="rounded-3xl px-5"
           >
             {t('modals.configTool.closeButton')}
           </Button>
           <Button
             type="button"
             onClick={handleAddTool}
+            shape="pill"
             disabled={saving}
-            className="rounded-3xl px-5"
           >
             {saving
               ? t('modals.configTool.addButton') + '…'
@@ -143,9 +143,9 @@ export default function ConfigToolModal({
       }
     >
       <div>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-muted-foreground mt-2 text-sm">
           {t('modals.configTool.type')}:{' '}
-          <span className="font-medium text-gray-700 dark:text-gray-200">
+          <span className="text-foreground font-medium">
             {tool.displayName}
           </span>
         </p>
@@ -161,7 +161,6 @@ export default function ConfigToolModal({
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
               placeholder={tool.displayName}
-              className="rounded-xl"
             />
           </div>
 

@@ -146,7 +146,7 @@ export const SharedConversation = () => {
           </h1>
           <h2 className="text-foreground dark:text-foreground text-base font-semibold">
             {t('sharedConv.subtitle')}{' '}
-            <a href="/" className="text-[#007DFF]">
+            <a href="/" className="text-info">
               DocsGPT
             </a>
           </h2>
@@ -176,7 +176,9 @@ export const SharedConversation = () => {
             <Button
               type="button"
               onClick={() => navigate('/')}
-              className="mb-14 h-auto w-fit rounded-full px-5 py-3 text-white shadow-xl sm:mb-0"
+              size="lg"
+              shape="pill"
+              className="mb-14 w-fit sm:mb-0"
             >
               {t('sharedConv.button')}
             </Button>

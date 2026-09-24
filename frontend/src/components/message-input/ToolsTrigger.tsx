@@ -57,14 +57,15 @@ export default function ToolsTrigger({
           type="button"
           variant="outline"
           size="sm"
-          className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex h-auto max-w-[130px] items-center justify-start rounded-full border bg-transparent px-2 py-1 shadow-none transition-colors"
+          shape="pill"
+          className="max-w-[130px] justify-start"
         >
           <img
             src={ToolIcon}
             alt="Tools"
-            className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4 dark:invert"
+            className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4 dark:invert"
           />
-          <span className="xs:text-xs dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs font-medium sm:text-sm">
+          <span className="dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs sm:text-sm">
             {t('settings.tools.label')}
           </span>
         </Button>

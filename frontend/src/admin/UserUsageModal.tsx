@@ -74,7 +74,7 @@ function SplitTable({
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.key}>
-                  <TableCell className="text-[13px] break-all">
+                  <TableCell className="text-xs break-all">
                     {labels?.[row.key] ?? row.key}
                   </TableCell>
                   <TableCell align="right" className="tabular-nums">
@@ -170,7 +170,7 @@ export default function UserUsageModal({
             key={range}
             variant={range === days ? 'default' : 'outline'}
             size="sm"
-            className="rounded-3xl"
+            shape="pill"
             onClick={() => setDays(range)}
           >
             {range}d

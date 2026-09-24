@@ -67,7 +67,7 @@ export default function FolderNameModal({
             type="button"
             variant="ghost"
             onClick={handleCancel}
-            className="rounded-3xl px-5"
+            shape="pill"
           >
             {t('cancel')}
           </Button>
@@ -75,7 +75,7 @@ export default function FolderNameModal({
             type="button"
             onClick={handleSubmit}
             disabled={!name.trim()}
-            className="rounded-3xl px-5"
+            shape="pill"
           >
             {mode === 'create'
               ? t('agents.folders.createFolder')

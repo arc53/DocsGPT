@@ -12,6 +12,7 @@ import NoFilesIcon from '../assets/no-files.svg';
 import ThreeDotsIcon from '../assets/three-dots.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
 import {
@@ -157,7 +158,7 @@ export default function Tools() {
         variant: 'default',
         iconWidth: 16,
         iconHeight: 16,
-        iconClassName: 'text-[#747474]',
+        iconClassName: 'text-muted-foreground',
       });
     }
     return options;
@@ -294,8 +295,8 @@ export default function Tools() {
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  labelBgClassName="bg-background"
-                  className="rounded-full"
+                  labelSurface="background"
+                  shape="pill"
                   leftIcon={
                     <SearchIcon
                       className="text-muted-foreground size-4"
@@ -306,7 +307,8 @@ export default function Tools() {
               </div>
               <Button
                 type="button"
-                className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
+                shape="pill"
+                className="h-11 min-w-[108px] whitespace-normal"
                 onClick={() => {
                   setAddToolModalState('ACTIVE');
                 }}
@@ -328,7 +330,7 @@ export default function Tools() {
                       alt={t('settings.tools.noToolsFound')}
                       className="mx-auto mb-6 h-32 w-32"
                     />
-                    <p className="text-center text-lg text-gray-500 dark:text-gray-400">
+                    <p className="text-muted-foreground text-center text-lg">
                       {t('settings.tools.noToolsFound')}
                     </p>
                   </div>
@@ -346,7 +348,7 @@ export default function Tools() {
                           alt={t('settings.tools.noToolsFound')}
                           className="mx-auto mb-6 h-32 w-32"
                         />
-                        <p className="text-center text-lg text-gray-500 dark:text-gray-400">
+                        <p className="text-muted-foreground text-center text-lg">
                           {t('settings.tools.noToolsFound')}
                         </p>
                       </div>
@@ -425,20 +427,20 @@ export default function Tools() {
                                 className="h-6 w-6"
                               />
                               {tool.default && (
-                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs leading-none font-medium text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
+                                <Badge variant="neutral">
                                   {t('settings.tools.builtIn')}
-                                </span>
+                                </Badge>
                               )}
                               {tool.name === 'mcp_tool' &&
                                 mcpStatuses[tool.id] && (
-                                  <span
-                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs leading-none font-medium ${
+                                  <Badge
+                                    variant={
                                       mcpStatuses[tool.id] === 'connected'
-                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                        ? 'success'
                                         : mcpStatuses[tool.id] === 'needs_auth'
-                                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                                          : 'bg-gray-100 text-gray-600 dark:bg-gray-700/40 dark:text-gray-300'
-                                    }`}
+                                          ? 'warning'
+                                          : 'neutral'
+                                    }
                                   >
                                     {mcpStatuses[tool.id] === 'connected'
                                       ? t('settings.tools.authStatus.connected')
@@ -449,10 +451,10 @@ export default function Tools() {
                                         : t(
                                             'settings.tools.authStatus.configured',
                                           )}
-                                  </span>
+                                  </Badge>
                                 )}
                               {tool.ownership === 'team' && (
-                                <span className="bg-muted-foreground/10 text-muted-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-none font-medium">
+                                <Badge variant="neutral">
                                   <Users
                                     size={11}
                                     strokeWidth={2}
@@ -461,7 +463,7 @@ export default function Tools() {
                                   {tool.team_access === 'editor'
                                     ? t('teamAccess.editor')
                                     : t('teamAccess.viewer')}
-                                </span>
+                                </Badge>
                               )}
                             </div>
                             <div className="mt-[9px]">

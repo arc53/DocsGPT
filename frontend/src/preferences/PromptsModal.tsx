@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react';
 import { ActiveState } from '../models/misc';
 import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
 import { Link } from 'react-router-dom';
 
 import React from 'react';
@@ -18,6 +19,7 @@ import BookIcon from '../assets/book.svg';
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
 import { UserToolType } from '../settings/types';
+import { cn } from '@/lib/utils';
 
 const variablePattern = /(\{\{\s*[^{}]+\s*\}\}|\{(?!\{)[^{}]+\})/g;
 
@@ -107,8 +109,8 @@ type VariableMenuProps = {
   textareaId: string;
   content: string;
   setContent: (content: string) => void;
-  triggerClassName?: string;
-  contentClassName?: string;
+  /** Which variables the menu inserts; sets the trigger's width. */
+  kind: 'system' | 'tool';
 };
 
 function VariableMenu({
@@ -117,8 +119,7 @@ function VariableMenu({
   textareaId,
   content,
   setContent,
-  triggerClassName,
-  contentClassName,
+  kind,
 }: VariableMenuProps) {
   const handleSelect = (value: string) => {
     const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
@@ -150,17 +151,20 @@ function VariableMenu({
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="outline"
-          className={`border-border bg-card text-foreground hover:bg-accent h-auto justify-between rounded-3xl px-5 py-3 text-xs sm:text-sm ${triggerClassName ?? ''}`}
+          variant="combobox"
+          shape="pill"
+          className={cn(
+            'justify-between',
+            kind === 'system'
+              ? 'w-[140px] sm:w-[185px]'
+              : 'w-[140px] sm:w-[171px]',
+          )}
         >
           <span className="truncate">{label}</span>
           <ChevronDown className="text-muted-foreground ml-2 h-4 w-4 shrink-0" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        className={`max-h-72 overflow-y-auto ${contentClassName ?? ''}`}
-      >
+      <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
         {options.map((opt) => (
           <DropdownMenuItem
             key={opt.value}
@@ -206,21 +210,26 @@ function PromptTextarea({
   return (
     <>
       <div
-        className="bg-card pointer-events-none absolute inset-0 z-0 overflow-hidden rounded px-3 py-2"
+        className="bg-card pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-2xl border border-transparent px-4 py-3"
         aria-hidden="true"
       >
         <div
-          className="min-h-full text-base leading-normal wrap-break-word whitespace-pre-wrap text-transparent"
-          style={{
-            transform: `translate(${-scrollOffsets.left}px, ${-scrollOffsets.top}px)`,
-          }}
+          className="min-h-full translate-x-(--scroll-x) translate-y-(--scroll-y) text-base wrap-break-word whitespace-pre-wrap text-transparent md:text-sm"
+          style={
+            {
+              '--scroll-x': `${-scrollOffsets.left}px`,
+              '--scroll-y': `${-scrollOffsets.top}px`,
+            } as React.CSSProperties
+          }
         >
           {highlightedValue}
         </div>
       </div>
-      <textarea
+      <Textarea
         id={id}
-        className="peer border-border dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring relative z-10 h-48 w-full resize-none rounded border-2 bg-transparent px-3 py-2 text-base text-gray-800 outline-none focus-visible:ring-[3px] md:h-64 lg:h-80 dark:text-white"
+        size="lg"
+        resize="none"
+        className="peer relative z-10 h-48 md:h-64 lg:h-80"
         value={value}
         onChange={onChange}
         onScroll={handleScroll}
@@ -325,12 +334,12 @@ function AddPrompt({
 
   return (
     <div>
-      <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
+      <p className="text-foreground mb-1 text-xl font-semibold">
         {duplicateSourceName
           ? t('modals.prompts.duplicatePrompt')
           : t('modals.prompts.addPrompt')}
       </p>
-      <p className="dark:text-muted-foreground mb-6 text-sm text-[#6B6B6B]">
+      <p className="text-muted-foreground mb-6 text-sm">
         {duplicateSourceName
           ? t('modals.prompts.duplicateDescription', {
               name: duplicateSourceName,
@@ -344,7 +353,6 @@ function AddPrompt({
           className="mb-5"
           value={newPromptName}
           onChange={(e) => setNewPromptName(e.target.value)}
-          labelBgClassName="bg-card"
         />
 
         <div className="relative w-full">
@@ -356,9 +364,10 @@ function AddPrompt({
           />
           <label
             htmlFor="new-prompt-content"
-            className={`absolute z-20 select-none ${
-              newPromptContent ? '-top-2.5 left-3 text-xs' : ''
-            } text-muted-foreground bg-card pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs`}
+            className={cn(
+              'text-muted-foreground bg-card pointer-events-none absolute z-20 max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-ellipsis whitespace-nowrap transition-all select-none peer-placeholder-shown:top-3 peer-placeholder-shown:left-2 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs',
+              newPromptContent && '-top-2.5 left-3 text-xs',
+            )}
           >
             {t('modals.prompts.promptText')}
           </label>
@@ -366,7 +375,7 @@ function AddPrompt({
       </div>
 
       <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
-        <p className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
+        <p className="text-foreground flex flex-col text-sm font-medium">
           <span className="font-bold">
             {t('modals.prompts.variablesLabel')}
           </span>
@@ -382,7 +391,7 @@ function AddPrompt({
             textareaId="new-prompt-content"
             content={newPromptContent}
             setContent={setNewPromptContent}
-            triggerClassName="w-[140px] sm:w-[185px]"
+            kind="system"
           />
 
           <VariableMenu
@@ -391,7 +400,7 @@ function AddPrompt({
             textareaId="new-prompt-content"
             content={newPromptContent}
             setContent={setNewPromptContent}
-            triggerClassName="w-[140px] sm:w-[171px]"
+            kind="tool"
           />
         </div>
       </div>
@@ -420,7 +429,7 @@ function AddPrompt({
             type="button"
             variant="destructive-outline"
             onClick={() => setModalState('INACTIVE')}
-            className="h-auto rounded-3xl px-5 py-2 text-sm font-medium"
+            shape="pill"
           >
             {t('modals.prompts.cancel')}
           </Button>
@@ -428,7 +437,8 @@ function AddPrompt({
           <Button
             type="button"
             onClick={handleAddPrompt}
-            className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
+            size="lg"
+            shape="pill"
             disabled={disableSave}
           >
             {t('modals.prompts.save')}
@@ -470,14 +480,14 @@ function EditPrompt({
 
   return (
     <div>
-      <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
+      <p className="text-foreground mb-1 text-xl font-semibold">
         {t(
           isReadOnly
             ? 'modals.prompts.viewPrompt'
             : 'modals.prompts.editPrompt',
         )}
       </p>
-      <p className="dark:text-muted-foreground mb-6 text-sm text-[#6B6B6B]">
+      <p className="text-muted-foreground mb-6 text-sm">
         {t(
           isReadOnly
             ? 'modals.prompts.viewDescription'
@@ -491,7 +501,6 @@ function EditPrompt({
           className="mb-5"
           value={editPromptName}
           onChange={(e) => setEditPromptName(e.target.value)}
-          labelBgClassName="bg-card"
           disabled={isReadOnly}
         />
 
@@ -505,9 +514,10 @@ function EditPrompt({
           />
           <label
             htmlFor="edit-prompt-content"
-            className={`absolute z-20 select-none ${
-              editPromptContent ? '-top-2.5 left-3 text-xs' : ''
-            } text-muted-foreground bg-card pointer-events-none max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-ellipsis whitespace-nowrap transition-all peer-placeholder-shown:top-2.5 peer-placeholder-shown:left-3 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs`}
+            className={cn(
+              'text-muted-foreground bg-card pointer-events-none absolute z-20 max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-ellipsis whitespace-nowrap transition-all select-none peer-placeholder-shown:top-3 peer-placeholder-shown:left-2 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs',
+              editPromptContent && '-top-2.5 left-3 text-xs',
+            )}
           >
             {t('modals.prompts.promptText')}
           </label>
@@ -516,7 +526,7 @@ function EditPrompt({
 
       {!isReadOnly && (
         <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
-          <p className="flex flex-col text-sm font-medium text-gray-700 dark:text-gray-300">
+          <p className="text-foreground flex flex-col text-sm font-medium">
             <span className="font-bold">
               {t('modals.prompts.variablesLabel')}
             </span>
@@ -532,7 +542,7 @@ function EditPrompt({
               textareaId="edit-prompt-content"
               content={editPromptContent}
               setContent={setEditPromptContent}
-              triggerClassName="w-[140px] sm:w-[185px]"
+              kind="system"
             />
 
             <VariableMenu
@@ -541,7 +551,7 @@ function EditPrompt({
               textareaId="edit-prompt-content"
               content={editPromptContent}
               setContent={setEditPromptContent}
-              triggerClassName="w-[140px] sm:w-[171px]"
+              kind="tool"
             />
           </div>
         </div>
@@ -571,7 +581,7 @@ function EditPrompt({
             type="button"
             variant="destructive-outline"
             onClick={() => setModalState('INACTIVE')}
-            className="h-auto rounded-3xl px-5 py-2 text-sm font-medium"
+            shape="pill"
           >
             {t('modals.prompts.cancel')}
           </Button>
@@ -581,7 +591,8 @@ function EditPrompt({
               <Button
                 type="button"
                 onClick={onDuplicate}
-                className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
+                size="lg"
+                shape="pill"
               >
                 {t('modals.prompts.duplicate')}
               </Button>
@@ -596,7 +607,8 @@ function EditPrompt({
                     currentPromptEdit.type,
                   );
               }}
-              className="h-auto rounded-3xl px-6 py-2 text-sm font-medium text-white"
+              size="lg"
+              shape="pill"
               disabled={disableSave || !editPromptName}
               title={
                 disableSave && editPromptName
@@ -734,7 +746,7 @@ export default function PromptsModal({
       }
       size="lg"
       mobileVariant="sheet"
-      className="bg-card dark:bg-card w-[95vw] max-w-[650px] rounded-2xl px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px]"
+      className="w-[95vw] max-w-[650px] md:max-w-[860px] lg:max-w-[980px]"
       contentClassName="!overflow-visible"
     >
       {view}

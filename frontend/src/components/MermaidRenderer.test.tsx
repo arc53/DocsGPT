@@ -48,7 +48,42 @@ describe('MermaidRenderer', () => {
       );
     });
 
-    expect(container.querySelector('pre.mermaid')).not.toBeNull();
+    // The diagram host is the only <pre> while the code view is closed.
+    expect(container.querySelectorAll('pre')).toHaveLength(1);
+    expect(container.querySelector('pre')?.id).toMatch(/^mermaid-/);
     expect(container.querySelector('svg[data-rendered="true"]')).not.toBeNull();
+  });
+
+  it('opens the Download menu with a menu item per format', async () => {
+    renderMermaidDiagramMock.mockResolvedValue({ svg: '<svg></svg>' });
+
+    await act(async () => {
+      root.render(
+        <MermaidRenderer code={'flowchart LR\nA --> B'} isLoading={false} />,
+      );
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[title="mermaid.downloadOptions"]',
+    );
+    expect(trigger).not.toBeNull();
+    expect(trigger?.getAttribute('aria-haspopup')).toBe('menu');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+
+    await act(async () => {
+      trigger?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+    const items = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((item) => item.textContent);
+    expect(items).toEqual([
+      'Download as SVG',
+      'Download as PNG',
+      'Download as MMD',
+    ]);
   });
 });

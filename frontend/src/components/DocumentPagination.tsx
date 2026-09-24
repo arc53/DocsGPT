@@ -1,10 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import SingleArrowLeft from '../assets/single-left-arrow.svg';
 import SingleArrowRight from '../assets/single-right-arrow.svg';
 import DoubleArrowLeft from '../assets/double-arrow-left.svg';
 import DoubleArrowRight from '../assets/double-arrow-right.svg';
 import { Button } from './ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 
 interface PaginationProps {
   currentPage: number;
@@ -22,10 +29,7 @@ const Pagination: React.FC<PaginationProps> = ({
   onRowsPerPageChange,
 }) => {
   const { t } = useTranslation();
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const rowsPerPageOptions = [5, 10, 20, 50];
-
-  const toggleDropdown = () => setIsDropdownOpen((prev) => !prev);
 
   const handlePreviousPage = () => {
     if (currentPage > 1) {
@@ -48,63 +52,42 @@ const Pagination: React.FC<PaginationProps> = ({
   };
 
   const handleSelectRowsPerPage = (rows: number) => {
-    setIsDropdownOpen(false);
     onRowsPerPageChange(rows);
   };
 
   return (
-    <div className="mt-2 flex items-center justify-end gap-4 border-gray-200 p-2 text-xs">
+    <div className="mt-2 flex items-center justify-end gap-4 p-2 text-xs">
       {/* Rows per page dropdown */}
       <div className="relative flex items-center gap-2">
-        <span className="text-gray-900 dark:text-gray-50">
-          {t('pagination.rowsPerPage')}:
-        </span>
-        <div className="relative">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={toggleDropdown}
-            className="dark:bg-card h-auto rounded px-3 py-1 shadow-none"
-          >
-            {rowsPerPage}
-          </Button>
-          <div
-            className={`ring-opacity-5 dark:bg-card bg-card absolute right-0 z-50 mt-1 w-28 transform shadow-lg ring-1 ring-black transition-all duration-200 ease-in-out ${
-              isDropdownOpen
-                ? 'block scale-100 opacity-100'
-                : 'hidden scale-95 opacity-0'
-            }`}
-          >
+        <span className="text-foreground">{t('pagination.rowsPerPage')}:</span>
+        <Select
+          value={String(rowsPerPage)}
+          onValueChange={(value) => handleSelectRowsPerPage(Number(value))}
+        >
+          <SelectTrigger size="sm" aria-label={t('pagination.rowsPerPage')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
             {rowsPerPageOptions.map((option) => (
-              <div
-                key={option}
-                onClick={() => handleSelectRowsPerPage(option)}
-                className={`hover:bg-accent dark:hover:bg-accent cursor-pointer px-4 py-2 text-xs ${
-                  rowsPerPage === option
-                    ? 'dark:text-foreground bg-gray-100 dark:bg-neutral-700'
-                    : 'bg-card dark:text-foreground'
-                }`}
-              >
+              <SelectItem key={option} value={String(option)}>
                 {option}
-              </div>
+              </SelectItem>
             ))}
-          </div>
-        </div>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Pagination controls */}
-      <div className="text-gray-900 dark:text-gray-50">
+      <div className="text-foreground">
         {t('pagination.pageOf', { currentPage, totalPages })}
       </div>
-      <div className="flex items-center gap-2 text-gray-900 dark:text-gray-50">
+      <div className="text-foreground flex items-center gap-2">
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="icon-xs"
           onClick={handleFirstPage}
           disabled={currentPage === 1}
-          className="h-auto rounded px-2 py-1 shadow-none"
         >
           <img
             src={DoubleArrowLeft}
@@ -115,10 +98,9 @@ const Pagination: React.FC<PaginationProps> = ({
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="icon-xs"
           onClick={handlePreviousPage}
           disabled={currentPage === 1}
-          className="h-auto rounded px-2 py-1 shadow-none"
         >
           <img
             src={SingleArrowLeft}
@@ -129,10 +111,9 @@ const Pagination: React.FC<PaginationProps> = ({
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="icon-xs"
           onClick={handleNextPage}
           disabled={currentPage === totalPages}
-          className="h-auto rounded px-2 py-1 shadow-none"
         >
           <img
             src={SingleArrowRight}
@@ -143,10 +124,9 @@ const Pagination: React.FC<PaginationProps> = ({
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="icon-xs"
           onClick={handleLastPage}
           disabled={currentPage === totalPages}
-          className="h-auto rounded px-2 py-1 shadow-none"
         >
           <img
             src={DoubleArrowRight}

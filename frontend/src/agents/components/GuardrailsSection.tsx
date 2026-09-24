@@ -1,6 +1,9 @@
 import React from 'react';
+import { ChevronRight, Info, Lock, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -11,6 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 import userService from '../../api/services/userService';
 import {
@@ -202,59 +207,49 @@ export default function GuardrailsSection({
 
   return (
     <div
-      className="bg-card rounded-2xl px-6 py-3"
+      className="bg-card has-[[data-variant=section-toggle]:focus-visible]:ring-ring/50 rounded-2xl px-6 py-3 has-[[data-variant=section-toggle]:focus-visible]:ring-3 has-[[data-variant=section-toggle]:focus-visible]:ring-inset"
       data-testid="guardrails-section"
     >
-      <Button
-        type="button"
-        variant="ghost"
-        onClick={() => setExpanded(!expanded)}
-        className="h-auto w-full justify-between px-0 py-0 text-left hover:bg-transparent"
-        data-testid="guardrails-toggle"
-      >
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-semibold">
-            {t('agents.form.sections.guardrails')}
-          </h2>
-          {config.enabled && (
-            <span
-              className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-              data-testid="guardrails-active-badge"
-            >
-              {t('agents.form.guardrails.activeCount', {
-                count: config.controls.length + floorControls.size,
-              })}
-            </span>
-          )}
-          {incompleteCount > 0 && (
-            <span
-              className="bg-destructive/10 text-destructive rounded-full px-2 py-0.5 text-xs font-medium"
-              data-testid="guardrails-incomplete-badge"
-            >
-              {t('agents.form.guardrails.needsSetup', {
-                count: incompleteCount,
-              })}
-            </span>
-          )}
-        </div>
-        <div className="ml-4 flex items-center">
-          <svg
-            className={`size-5 transform transition-transform duration-200 ${
-              expanded ? 'rotate-180' : ''
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+      <div className="flex flex-wrap items-center gap-2">
+        {/* The heading wraps the toggle: a button's children are
+            presentational, so a heading inside it is lost to screen readers. */}
+        <h2>
+          <Button
+            type="button"
+            variant="section-toggle"
+            size="sm"
+            onClick={() => setExpanded(!expanded)}
+            aria-expanded={expanded}
+            className="-ml-3 w-fit justify-start"
+            data-testid="guardrails-toggle"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
+            <ChevronRight
+              aria-hidden="true"
+              className={cn('transition-transform', expanded && 'rotate-90')}
             />
-          </svg>
-        </div>
-      </Button>
+            <span className="text-lg font-semibold">
+              {t('agents.form.sections.guardrails')}
+            </span>
+          </Button>
+        </h2>
+        {config.enabled && (
+          <Badge variant="success" data-testid="guardrails-active-badge">
+            {t('agents.form.guardrails.activeCount', {
+              count: config.controls.length + floorControls.size,
+            })}
+          </Badge>
+        )}
+        {incompleteCount > 0 && (
+          <Badge
+            variant="destructive"
+            data-testid="guardrails-incomplete-badge"
+          >
+            {t('agents.form.guardrails.needsSetup', {
+              count: incompleteCount,
+            })}
+          </Badge>
+        )}
+      </div>
 
       {expanded && (
         <div className="mt-3 pb-3">
@@ -263,29 +258,38 @@ export default function GuardrailsSection({
           )}
 
           {disabled && disabledNotice && (
-            <p
-              className="mt-3 rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+            <Alert
+              role="status"
+              className="mt-3"
               data-testid="guardrails-read-only"
             >
-              {disabledNotice}
-            </p>
+              <Lock aria-hidden="true" className="size-4" />
+              <AlertDescription>{disabledNotice}</AlertDescription>
+            </Alert>
           )}
 
           {instanceDisabled && (
-            <p
-              className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+            <Alert
+              variant="warning"
+              className="mt-3"
               data-testid="guardrails-instance-disabled"
             >
-              {t('agents.form.guardrails.instanceDisabled')}
-            </p>
+              <TriangleAlert aria-hidden="true" className="size-4" />
+              <AlertDescription>
+                {t('agents.form.guardrails.instanceDisabled')}
+              </AlertDescription>
+            </Alert>
           )}
 
           {floorControls.size > 0 && (
-            <p className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-              {t('agents.form.guardrails.floorNotice', {
-                count: floorControls.size,
-              })}
-            </p>
+            <Alert variant="info" role="status" className="mt-3">
+              <Info aria-hidden="true" className="size-4" />
+              <AlertDescription>
+                {t('agents.form.guardrails.floorNotice', {
+                  count: floorControls.size,
+                })}
+              </AlertDescription>
+            </Alert>
           )}
 
           <div className="mt-4 flex items-center justify-between gap-4">
@@ -293,7 +297,7 @@ export default function GuardrailsSection({
               <h3 className="text-sm font-medium">
                 {t('agents.form.guardrails.enable')}
               </h3>
-              <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+              <p className="text-muted-foreground mt-1 text-xs">
                 {t('agents.form.guardrails.enableDescription')}
               </p>
             </div>
@@ -320,8 +324,9 @@ export default function GuardrailsSection({
                   disabled={disabled}
                 >
                   <SelectTrigger
-                    className="w-full rounded-3xl px-5 py-3 text-sm"
+                    className="w-full"
                     size="lg"
+                    shape="pill"
                     data-testid="guardrails-mode"
                   >
                     <SelectValue />
@@ -335,7 +340,7 @@ export default function GuardrailsSection({
                   </SelectContent>
                 </Select>
                 {config.mode === 'monitor_only' && (
-                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                  <p className="text-warning mt-2 text-xs">
                     {t('agents.form.guardrails.monitorHint')}
                   </p>
                 )}
@@ -375,10 +380,9 @@ export default function GuardrailsSection({
                       </p>
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="sm"
+                        variant="ghost-destructive"
+                        size="xs"
                         disabled={disabled}
-                        className="text-destructive h-auto px-2 py-1 text-xs"
                         onClick={() =>
                           removeControl(control.check, control.stage)
                         }
@@ -401,9 +405,9 @@ export default function GuardrailsSection({
                   disabled={disabled}
                   data-testid="guardrails-block-message"
                   onChange={(e) => patch({ block_message: e.target.value })}
-                  className="bg-card h-auto rounded-3xl px-5 py-3 text-sm md:text-sm"
+                  shape="pill"
                 />
-                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                <p className="text-muted-foreground mt-1 text-xs">
                   {t('agents.form.guardrails.blockMessageDescription')}
                 </p>
               </div>
@@ -413,7 +417,7 @@ export default function GuardrailsSection({
                   <h3 className="text-sm font-medium">
                     {t('agents.form.guardrails.failOpen')}
                   </h3>
-                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                  <p className="text-muted-foreground mt-1 text-xs">
                     {t('agents.form.guardrails.failOpenDescription')}
                   </p>
                 </div>
@@ -494,7 +498,8 @@ function NumberField({
         setDraft(String(next));
         onCommit(next);
       }}
-      className="bg-card h-auto rounded-3xl px-5 py-3 text-sm md:text-sm"
+      variant="filled"
+      shape="pill"
     />
   );
 }
@@ -566,28 +571,26 @@ function CheckCard({
 
   return (
     <div
-      className="rounded-xl border border-gray-200 px-4 py-3 dark:border-gray-700"
+      className="border-border rounded-xl border px-4 py-3"
       data-testid={`guardrail-check-${info.name}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <h4 className="text-sm font-medium">{info.label}</h4>
-          <span
-            className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+          <Badge
+            variant="neutral"
             title={t('agents.form.guardrails.latencyHint')}
             data-testid={`guardrail-latency-${info.name}`}
           >
             {latencyLabel(info.latency_hint_ms)}
-          </span>
+          </Badge>
           {unavailable && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+            <Badge variant="warning">
               {t('agents.form.guardrails.notConfigured')}
-            </span>
+            </Badge>
           )}
         </div>
-        <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-          {info.description}
-        </p>
+        <p className="text-muted-foreground mt-1 text-xs">{info.description}</p>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -602,25 +605,36 @@ function CheckCard({
           // out a credential strands a control that can never be cleared.
           const canToggle =
             !disabled && !locked && (Boolean(control) || !unavailable);
-          return (
-            <button
+          const chip = (
+            <Button
               key={stage}
               type="button"
+              variant={on ? 'secondary' : 'ghost-muted'}
+              size="xs"
+              shape="pill"
               disabled={!canToggle}
               data-testid={`guardrail-stage-${info.name}-${stage}`}
               onClick={() => toggleControl(info, stage, !control)}
-              className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                on
-                  ? 'border-violets-are-blue bg-violets-are-blue/10 text-violets-are-blue'
-                  : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-400'
-              } ${!canToggle ? 'cursor-not-allowed opacity-60' : ''}`}
               title={
                 locked ? t('agents.form.guardrails.lockedByFloor') : undefined
               }
             >
               {t(STAGE_KEYS[stage] ?? stage)}
               {locked ? ' 🔒' : ''}
-            </button>
+            </Button>
+          );
+          // A disabled Button takes no pointer events, so the locked chip's
+          // hint lives on a wrapper that can still be hovered.
+          return locked ? (
+            <span
+              key={stage}
+              className="inline-flex"
+              title={t('agents.form.guardrails.lockedByFloor')}
+            >
+              {chip}
+            </span>
+          ) : (
+            chip
           );
         })}
       </div>
@@ -628,7 +642,7 @@ function CheckCard({
       {floorForCheck.map(([k, action]) => (
         <div
           key={`floor-${k}`}
-          className="mt-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+          className="bg-info/10 text-info mt-3 rounded-lg px-3 py-2 text-xs"
           data-testid={`guardrail-floor-${k}`}
         >
           {t('agents.form.guardrails.floorControl', {
@@ -644,11 +658,12 @@ function CheckCard({
         return (
           <div
             key={panelKey}
-            className={`mt-3 rounded-lg px-3 py-2 ${
+            className={cn(
+              'mt-3 rounded-lg px-3 py-2',
               needsSetup
                 ? 'border-destructive/50 bg-destructive/5 border'
-                : 'bg-gray-50 dark:bg-gray-900/40'
-            }`}
+                : 'bg-muted',
+            )}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-medium">
@@ -665,7 +680,8 @@ function CheckCard({
                   }
                 >
                   <SelectTrigger
-                    className="h-auto rounded-full px-3 py-1 text-xs"
+                    size="sm"
+                    shape="pill"
                     data-testid={`guardrail-action-${control.check}-${control.stage}`}
                   >
                     <SelectValue />
@@ -687,8 +703,7 @@ function CheckCard({
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    className="h-auto px-2 py-1 text-xs"
+                    size="xs"
                     data-testid={`guardrail-configure-${control.check}-${control.stage}`}
                     onClick={() =>
                       setOpenSettings(
@@ -701,10 +716,9 @@ function CheckCard({
                 )}
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
+                  variant="ghost-destructive"
+                  size="xs"
                   disabled={disabled}
-                  className="text-destructive h-auto px-2 py-1 text-xs"
                   data-testid={`guardrail-remove-${control.check}-${control.stage}`}
                   onClick={() => removeControl(control.check, control.stage)}
                 >
@@ -759,8 +773,9 @@ function CheckSettings({
   const listField = (fieldKey: string, label: string, placeholder: string) => (
     <div className="mt-2">
       <label className="mb-1 block text-xs font-medium">{label}</label>
-      <textarea
+      <Textarea
         rows={2}
+        size="sm"
         disabled={disabled}
         data-testid={`guardrail-setting-${control.check}-${fieldKey}`}
         value={(s[fieldKey] ?? []).join('\n')}
@@ -773,21 +788,24 @@ function CheckSettings({
               .filter(Boolean),
           })
         }
-        className="bg-card w-full rounded-xl border border-gray-200 px-3 py-2 text-xs dark:border-gray-700"
+        variant="filled"
       />
     </div>
   );
 
   return (
-    <div className="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+    <div className="border-border mt-3 border-t pt-3">
       {control.check === 'pii' && (
         <div className="flex flex-wrap gap-2">
           {(catalog?.pii_entities ?? []).map((entity) => {
             const on = (s.entities ?? []).includes(entity);
             return (
-              <button
+              <Button
                 key={entity}
                 type="button"
+                variant={on ? 'secondary' : 'ghost-muted'}
+                size="xs"
+                shape="pill"
                 disabled={disabled}
                 data-testid={`guardrail-pii-${entity}`}
                 onClick={() =>
@@ -797,14 +815,9 @@ function CheckSettings({
                       : [...(s.entities ?? []), entity],
                   })
                 }
-                className={`rounded-full border px-2 py-0.5 text-[11px] ${
-                  on
-                    ? 'border-violets-are-blue bg-violets-are-blue/10 text-violets-are-blue'
-                    : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-400'
-                }`}
               >
                 {entity}
-              </button>
+              </Button>
             );
           })}
           {(s.entities ?? []).length === 0 && (
@@ -842,13 +855,14 @@ function CheckSettings({
           <label className="mb-1 block text-xs font-medium">
             {t('agents.form.guardrails.policyText')}
           </label>
-          <textarea
+          <Textarea
             rows={4}
+            size="sm"
             value={s.policy ?? ''}
             disabled={disabled}
             data-testid="guardrail-policy-text"
             onChange={(e) => set({ policy: e.target.value })}
-            className="bg-card w-full rounded-xl border border-gray-200 px-3 py-2 text-xs dark:border-gray-700"
+            variant="filled"
           />
         </div>
       )}
@@ -900,7 +914,7 @@ function CheckSettings({
             disabled={disabled}
             onCommit={(confidence_threshold) => set({ confidence_threshold })}
           />
-          <p className="mt-1 text-[11px] text-gray-500">
+          <p className="text-muted-foreground mt-1 text-xs">
             {t('agents.form.guardrails.confidenceHint')}
           </p>
         </div>

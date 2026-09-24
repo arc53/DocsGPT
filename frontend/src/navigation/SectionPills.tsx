@@ -46,8 +46,8 @@ export default function SectionPills({ className }: { className?: string }) {
             className={cn(
               'rounded-full px-4 py-2 text-sm whitespace-nowrap transition-colors',
               isActive
-                ? 'bg-border text-foreground dark:bg-accent dark:text-white'
-                : 'text-muted-foreground hover:bg-accent/50 dark:text-gray',
+                ? 'bg-border text-foreground dark:bg-accent'
+                : 'text-muted-foreground hover:bg-accent/50',
             )}
           >
             {t(entry.labelKey)}

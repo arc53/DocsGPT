@@ -11,15 +11,25 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
-function Command({
-  className,
-  ...props
-}: React.ComponentProps<typeof CommandPrimitive>) {
+// The search-palette spacing: a 48px input row and roomier rows. Shared by
+// CommandDialog and any palette rendered elsewhere (e.g. in a bottom sheet),
+// so both look the same.
+const PALETTE_CLASSES =
+  '**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]]:px-2 **:[[cmdk-input]]:h-12 **:[[cmdk-item]]:px-2 **:[[cmdk-item]]:py-3';
+
+type CommandProps = React.ComponentProps<typeof CommandPrimitive> & {
+  /** `palette` is the search-palette spacing CommandDialog uses. */
+  variant?: 'default' | 'palette';
+};
+
+function Command({ className, variant = 'default', ...props }: CommandProps) {
   return (
     <CommandPrimitive
       data-slot="command"
+      data-variant={variant}
       className={cn(
         'bg-popover text-popover-foreground flex h-full w-full flex-col overflow-hidden rounded-xl',
+        variant === 'palette' && PALETTE_CLASSES,
         className,
       )}
       {...props}
@@ -33,12 +43,18 @@ function CommandDialog({
   children,
   className,
   showCloseButton = true,
+  commandProps,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string;
   description?: string;
   className?: string;
   showCloseButton?: boolean;
+  /**
+   * Props for the palette's Command, e.g. `shouldFilter={false}` when the
+   * results come from a server search, or a controlled `value`.
+   */
+  commandProps?: Omit<CommandProps, 'variant' | 'children' | 'className'>;
 }) {
   return (
     <Dialog {...props}>
@@ -50,7 +66,7 @@ function CommandDialog({
         className={cn('overflow-hidden p-0', className)}
         showCloseButton={showCloseButton}
       >
-        <Command className="**:[[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group]]:px-2 **:[[cmdk-input]]:h-12 **:[[cmdk-item]]:px-2 **:[[cmdk-item]]:py-3">
+        <Command variant="palette" {...commandProps}>
           {children}
         </Command>
       </DialogContent>
@@ -137,15 +153,26 @@ function CommandSeparator({
   );
 }
 
+/**
+ * A row in a Command list. `checked` marks the item that is currently chosen
+ * (the active prompt in a picker) with a brand tint, apart from the
+ * `data-selected` highlight cmdk moves with the pointer and arrow keys. A
+ * checked row that is also highlighted keeps its tint and gains a 1px
+ * primary ring (the stacked data attributes out-rank the plain accent).
+ */
 function CommandItem({
   className,
+  checked,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Item>) {
+}: React.ComponentProps<typeof CommandPrimitive.Item> & {
+  checked?: boolean;
+}) {
   return (
     <CommandPrimitive.Item
       data-slot="command-item"
+      data-checked={checked ? 'true' : undefined}
       className={cn(
-        "data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "data-[checked=true]:bg-secondary data-[checked=true]:text-secondary-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[checked=true]:data-[selected=true]:bg-secondary data-[checked=true]:data-[selected=true]:text-secondary-foreground data-[checked=true]:data-[selected=true]:ring-primary [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[checked=true]:data-[selected=true]:ring-1 data-[checked=true]:data-[selected=true]:ring-inset [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}

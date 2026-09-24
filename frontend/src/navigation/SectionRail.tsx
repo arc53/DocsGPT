@@ -42,12 +42,11 @@ export default function SectionRail({
     >
       <Button
         type="button"
-        variant="ghost"
+        variant="ghost-muted"
         size="icon"
         onClick={onBack}
         aria-label={backLabel}
         title={backLabel}
-        className="text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-5" strokeWidth={1.75} />
       </Button>

@@ -419,7 +419,7 @@ export default function Conversation() {
         {/* One notch narrower than the message column above it, which keeps its
             own width. */}
         <div
-          className={`bg-opacity-0 z-3 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1 ${
+          className={`z-3 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1 ${
             isSplitArtifactOpen
               ? 'max-w-290'
               : 'max-w-290 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12'

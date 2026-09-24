@@ -86,7 +86,7 @@ function FramePreview({
 
   if (renderError) {
     return (
-      <pre className="overflow-auto p-4 text-xs text-gray-600 dark:text-gray-400">
+      <pre className="text-muted-foreground overflow-auto p-4 text-xs">
         {source}
       </pre>
     );
@@ -107,7 +107,7 @@ function FramePreview({
       // No allow-same-origin: content is fully isolated from the app origin.
       sandbox=""
       title="Artifact preview"
-      className="h-full w-full rounded-md border border-gray-200 bg-white dark:border-gray-700"
+      className="border-border h-full w-full rounded-md border bg-white"
       srcDoc={buildPreviewDocument(previewKind, rendered)}
     />
   );
@@ -126,16 +126,14 @@ function DownloadCard({
 }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4">
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 p-8 text-center dark:border-gray-700">
-        <FileText className="h-12 w-12 text-gray-400" />
+      <div className="border-border flex flex-col items-center gap-3 rounded-xl border p-8 text-center">
+        <FileText className="text-muted-foreground h-12 w-12" />
         <div>
-          <p className="text-sm font-medium break-all text-gray-800 dark:text-gray-200">
+          <p className="text-foreground text-sm font-medium break-all">
             {filename}
           </p>
           {size != null && (
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {formatBytes(size)}
-            </p>
+            <p className="text-muted-foreground text-xs">{formatBytes(size)}</p>
           )}
         </div>
         <Button
@@ -207,7 +205,7 @@ function BytesPreview({
         // No allow-same-origin / no scripts: bytes are isolated from the app origin.
         sandbox=""
         title="Artifact preview"
-        className="h-full w-full rounded-md border border-gray-200 bg-white dark:border-gray-700"
+        className="border-border h-full w-full rounded-md border bg-white"
         srcDoc={buildPreviewDocument(
           mode === 'iframe-svg' ? 'svg' : 'html',
           state.text,
@@ -219,7 +217,7 @@ function BytesPreview({
     return <MarkdownPreview content={state.text} />;
   }
   return (
-    <pre className="h-full overflow-auto p-4 text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+    <pre className="text-foreground h-full overflow-auto p-4 text-xs whitespace-pre-wrap">
       {state.text}
     </pre>
   );
@@ -340,7 +338,7 @@ export default function DocumentArtifactView({
         : (selectedRow?.preview_text ?? '');
       if (text) {
         return (
-          <pre className="h-full overflow-auto p-4 text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+          <pre className="text-foreground h-full overflow-auto p-4 text-xs whitespace-pre-wrap">
             {text}
           </pre>
         );
@@ -379,7 +377,7 @@ export default function DocumentArtifactView({
           value={String(selectedVersion)}
           onValueChange={(v) => setSelectedVersion(Number(v))}
         >
-          <SelectTrigger className="h-8 w-auto gap-2 rounded-md px-3 text-xs">
+          <SelectTrigger size="sm" className="w-auto">
             <History className="h-3.5 w-3.5" />
             <SelectValue />
           </SelectTrigger>
@@ -426,7 +424,7 @@ export default function DocumentArtifactView({
         )}
       </div>
 
-      {actionError && <p className="text-xs text-red-500">{actionError}</p>}
+      {actionError && <p className="text-destructive text-xs">{actionError}</p>}
 
       <div className="min-h-0 flex-1 overflow-hidden">{renderPreview()}</div>
     </div>

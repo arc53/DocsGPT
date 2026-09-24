@@ -1,3 +1,4 @@
+import { ShieldAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -18,6 +19,7 @@ import {
   AccordionTrigger,
 } from '../components/ui/accordion';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
@@ -204,7 +206,8 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
         />
         <Button
           type="button"
-          className="rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
+          size="sm"
+          shape="pill"
           onClick={handleSaveChanges}
           disabled={!hasUnsavedChanges || saving || loading}
         >
@@ -224,28 +227,20 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           title={`${tool.displayName} icon`}
           className="h-7 w-7"
         />
-        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
+        <h2 className="text-foreground text-xl font-semibold">
           {device?.name || tool.customName || tool.displayName || 'device'}
         </h2>
-        <span
-          className={`rounded-full px-3 py-0.5 text-xs font-medium ${
-            online
-              ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300'
-              : 'bg-gray-200 text-gray-700 dark:bg-gray-700/40 dark:text-gray-300'
-          }`}
-        >
-          {pillText}
-        </span>
+        <Badge variant={online ? 'success' : 'neutral'}>{pillText}</Badge>
         {approvalMode === 'full' && (
-          <span className="rounded-full bg-red-200 px-3 py-0.5 text-xs font-medium text-red-900 dark:bg-red-900/40 dark:text-red-300">
+          <Badge variant="destructive">
             {t('settings.devices.approvalFull')}
-          </span>
+          </Badge>
         )}
       </div>
 
       {/* Identity */}
       <section className="flex flex-col gap-4">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
+        <h3 className="text-foreground text-sm font-semibold">
           {t('settings.devices.identity')}
         </h3>
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
@@ -258,7 +253,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t('settings.devices.nameLabel')}
-              className="rounded-xl"
             />
           </div>
         </div>
@@ -272,7 +266,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder={t('settings.devices.descriptionPlaceholder')}
-              className="rounded-xl"
             />
           </div>
         </div>
@@ -280,7 +273,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
       {/* Access */}
       <section className="flex flex-col gap-4">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
+        <h3 className="text-foreground text-sm font-semibold">
           {t('settings.devices.access')}
         </h3>
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
@@ -292,7 +285,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
               value={approvalMode}
               onValueChange={(value) => setApprovalMode(value as ApprovalMode)}
             >
-              <SelectTrigger className="w-full rounded-xl px-4 py-2" size="lg">
+              <SelectTrigger className="w-full" size="lg">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -310,9 +303,12 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
                 : t('settings.devices.approvalAskDescription')}
             </p>
             {approvalMode === 'full' && (
-              <div className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-                {t('settings.devices.fullAccessWarning')}
-              </div>
+              <Alert variant="destructive">
+                <ShieldAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>
+                  {t('settings.devices.fullAccessWarning')}
+                </AlertDescription>
+              </Alert>
             )}
           </div>
         </div>
@@ -320,7 +316,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
       {/* Connection */}
       <section className="flex flex-col gap-4">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
+        <h3 className="text-foreground text-sm font-semibold">
           {t('settings.devices.connection')}
         </h3>
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
@@ -341,7 +337,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
             {t('settings.devices.deviceIdLabel')}
           </span>
           <div className="flex w-full max-w-md flex-wrap items-center gap-2">
-            <code className="text-foreground dark:text-foreground bg-muted max-w-full truncate rounded px-2 py-0.5 font-mono text-xs">
+            <code className="text-foreground bg-muted max-w-full truncate rounded px-2 py-0.5 font-mono text-xs">
               {deviceId || '-'}
             </code>
             {deviceId && <CopyButton textToCopy={deviceId} />}
@@ -364,61 +360,62 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
       {/* Recent activity */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
+        <h3 className="text-foreground text-sm font-semibold">
           {t('settings.devices.auditTitle')}
         </h3>
-        <Accordion
-          type="single"
-          collapsible
-          onValueChange={handleAuditToggle}
-          className="border-border dark:border-border w-full rounded-xl border"
-        >
-          <AccordionItem value="audit" className="border-b-0">
-            <AccordionTrigger className="px-4 py-3 text-sm font-semibold">
-              {t('settings.devices.auditTitle')}
-              {audit !== null ? ` (${audit.length})` : ''}
-            </AccordionTrigger>
-            <AccordionContent className="px-4 pb-4">
-              {auditLoading ? (
-                <p className="text-muted-foreground py-2 text-sm">
-                  {t('settings.devices.auditLoading')}
-                </p>
-              ) : !audit || audit.length === 0 ? (
-                <p className="text-muted-foreground py-2 text-sm">
-                  {t('settings.devices.auditEmpty')}
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {audit.map((entry) => (
-                    <li
-                      key={entry.id}
-                      className="bg-muted/40 flex flex-col gap-1 rounded-md px-3 py-2 text-xs"
-                    >
-                      <code className="text-foreground dark:text-foreground block font-mono break-all whitespace-pre-wrap">
-                        {entry.command}
-                      </code>
-                      <div className="text-muted-foreground flex flex-wrap gap-3">
-                        <span>
-                          {t('settings.devices.auditDecision')}:{' '}
-                          {entry.decision}
-                        </span>
-                        <span>
-                          {t('settings.devices.auditExit')}:{' '}
-                          {entry.exit_code ?? '-'}
-                        </span>
-                        <span>
-                          {t('settings.devices.auditDuration')}:{' '}
-                          {entry.duration_ms ?? '-'} ms
-                        </span>
-                        <span>{formatTimestamp(entry.created_at)}</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+        <div className="border-border w-full rounded-xl border">
+          <Accordion
+            type="single"
+            collapsible
+            onValueChange={handleAuditToggle}
+          >
+            <AccordionItem value="audit">
+              <AccordionTrigger>
+                {t('settings.devices.auditTitle')}
+                {audit !== null ? ` (${audit.length})` : ''}
+              </AccordionTrigger>
+              <AccordionContent>
+                {auditLoading ? (
+                  <p className="text-muted-foreground py-2 text-sm">
+                    {t('settings.devices.auditLoading')}
+                  </p>
+                ) : !audit || audit.length === 0 ? (
+                  <p className="text-muted-foreground py-2 text-sm">
+                    {t('settings.devices.auditEmpty')}
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {audit.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="bg-muted/40 flex flex-col gap-1 rounded-md px-3 py-2 text-xs"
+                      >
+                        <code className="text-foreground block font-mono break-all whitespace-pre-wrap">
+                          {entry.command}
+                        </code>
+                        <div className="text-muted-foreground flex flex-wrap gap-3">
+                          <span>
+                            {t('settings.devices.auditDecision')}:{' '}
+                            {entry.decision}
+                          </span>
+                          <span>
+                            {t('settings.devices.auditExit')}:{' '}
+                            {entry.exit_code ?? '-'}
+                          </span>
+                          <span>
+                            {t('settings.devices.auditDuration')}:{' '}
+                            {entry.duration_ms ?? '-'} ms
+                          </span>
+                          <span>{formatTimestamp(entry.created_at)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </div>
       </section>
 
       {/* Danger zone */}
@@ -433,7 +430,8 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           <Button
             type="button"
             variant="destructive"
-            className="shrink-0 rounded-full px-5 text-white"
+            shape="pill"
+            className="shrink-0"
             onClick={() => setRevokeState('ACTIVE')}
           >
             {t('settings.devices.revoke')}

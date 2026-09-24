@@ -43,13 +43,7 @@ export default function RunDetailDrawer({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Run details</h2>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onClose}
-            className="text-muted-foreground"
-          >
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
             Close
           </Button>
         </div>

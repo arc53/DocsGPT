@@ -1,4 +1,5 @@
 import { envVar } from '@/env';
+import { cn } from '@/lib/utils';
 import {
   useCallback,
   useEffect,
@@ -1712,7 +1713,7 @@ export default function MessageInput({
         )}
         {sendArmed && sendReadiness.state === 'blocked' && (
           <div
-            className="px-2 pb-1 text-xs text-[#B42318] sm:px-3"
+            className="text-destructive px-2 pb-1 text-xs sm:px-3"
             role="alert"
           >
             {t('conversation.attachments.sendBlockedByFailed', {
@@ -1721,7 +1722,7 @@ export default function MessageInput({
           </div>
         )}
         {voiceError && (
-          <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">
+          <div className="text-destructive px-2 pb-1 text-xs sm:px-3">
             {voiceError}
           </div>
         )}
@@ -1742,7 +1743,7 @@ export default function MessageInput({
             }
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full scrollbar-thin overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
+            className="inputbox-style dark:text-foreground placeholder:text-muted-foreground w-full scrollbar-thin overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 focus:outline-hidden sm:px-3"
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             aria-label={t('inputPlaceholder')}
@@ -1791,9 +1792,10 @@ export default function MessageInput({
               type="button"
               variant="default"
               size="icon"
+              shape="pill"
               onClick={handleCancel}
               aria-label={t('cancel')}
-              className="bg-primary ml-auto h-7 w-7 shrink-0 rounded-full text-white sm:h-9 sm:w-9"
+              className="ml-auto h-7 w-7 shrink-0 sm:h-9 sm:w-9"
               disabled={!loading}
             >
               <div className="flex h-3 w-3 items-center justify-center rounded-sm bg-white sm:h-3.5 sm:w-3.5" />
@@ -1803,13 +1805,18 @@ export default function MessageInput({
               type="button"
               variant="default"
               size="icon"
+              shape="pill"
               onClick={handleSubmit}
               aria-label={t('send')}
-              className={`ml-auto h-7 w-7 shrink-0 rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
-                canSubmit
-                  ? 'bg-primary text-white'
-                  : 'bg-muted text-muted-foreground dark:bg-accent dark:text-muted-foreground'
-              }`}
+              className={cn(
+                'ml-auto h-7 w-7 shrink-0 sm:h-9 sm:w-9',
+                !canSubmit &&
+                  /* eslint-disable-next-line shadcn/no-restyle --
+                     The empty composer's send button is a grey circle, not a
+                     faded brand one: no variant is neutral while disabled, and
+                     secondary is the brand-tinted pressed state. */
+                  'bg-muted text-muted-foreground dark:bg-accent',
+              )}
               disabled={!canSubmit}
             >
               <SendArrow
@@ -1839,7 +1846,7 @@ export default function MessageInput({
             <span className="text-muted-foreground dark:text-muted-foreground px-2 text-2xl font-bold">
               {t('modals.uploadDoc.drag.title')}
             </span>
-            <span className="text-s text-muted-foreground dark:text-muted-foreground w-48 p-2 text-center">
+            <span className="text-muted-foreground dark:text-muted-foreground w-48 p-2 text-center text-sm">
               {t('modals.uploadDoc.drag.description')}
             </span>
           </div>,

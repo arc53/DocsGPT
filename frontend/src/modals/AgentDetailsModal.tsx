@@ -104,185 +104,198 @@ export default function AgentDetailsModal({
 
   return (
     <>
-    <Modal
-      open={modalState === 'ACTIVE'}
-      onOpenChange={(o) => !o && setModalState('INACTIVE')}
-      title={t('modals.agentDetails.title')}
-      size="md"
-    >
-      <div>
-        <div className="mt-8 flex flex-col gap-6">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <h2 className="text-foreground dark:text-foreground text-base font-semibold">
-                {t('modals.agentDetails.publicLink')}
-              </h2>
-            </div>
-            {sharedToken ? (
-              <div className="flex flex-col gap-2">
-                <p className="dark:text-foreground inline text-sm leading-normal font-medium break-all text-gray-700">
-                  <a
-                    href={`${baseURL}/shared/agent/${sharedToken}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {`${baseURL}/shared/agent/${sharedToken}`}
-                  </a>
-                  <CopyButton
-                    textToCopy={`${baseURL}/shared/agent/${sharedToken}`}
-                    padding="p-1"
-                    className="absolute -mt-0.5 ml-1 inline-flex"
-                  />
-                </p>
-                <a
-                  href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
-                  className="text-primary flex w-fit items-center gap-1 hover:underline"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <span className="text-sm">
-                    {t('modals.agentDetails.learnMore')}
-                  </span>
-                  <img
-                    src={ExternalLinkIcon}
-                    alt="External link"
-                    className="h-3 w-3"
-                  />
-                </a>
+      <Modal
+        open={modalState === 'ACTIVE'}
+        onOpenChange={(o) => !o && setModalState('INACTIVE')}
+        title={t('modals.agentDetails.title')}
+        size="md"
+      >
+        <div>
+          <div className="mt-8 flex flex-col gap-6">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-foreground dark:text-foreground text-base font-semibold">
+                  {t('modals.agentDetails.publicLink')}
+                </h2>
               </div>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleGeneratePublicLink}
-                className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
-              >
-                {loadingStates.publicLink ? (
-                  <Spinner size="small" />
-                ) : (
-                  t('modals.agentDetails.generate')
-                )}
-              </Button>
-            )}
-          </div>
-          <div className="flex flex-col gap-3">
-            <h2 className="text-foreground dark:text-foreground text-base font-semibold">
-              {t('modals.agentDetails.apiKey')}
-            </h2>
-            {apiKey ? (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="dark:text-foreground text-sm leading-normal font-medium break-all text-gray-700">
-                    {apiKey}
+              {sharedToken ? (
+                <div className="flex flex-col gap-2">
+                  <p className="text-foreground inline text-sm leading-normal font-medium break-all">
+                    <a
+                      href={`${baseURL}/shared/agent/${sharedToken}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {`${baseURL}/shared/agent/${sharedToken}`}
+                    </a>
+                    <CopyButton
+                      textToCopy={`${baseURL}/shared/agent/${sharedToken}`}
+                      size="xs"
+                      className="absolute -mt-0.5 ml-1 inline-flex"
+                    />
+                  </p>
+                  <a
+                    href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
+                    className="text-primary flex w-fit items-center gap-1 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span className="text-sm">
+                      {t('modals.agentDetails.learnMore')}
+                    </span>
+                    <img
+                      src={ExternalLinkIcon}
+                      alt="External link"
+                      className="h-3 w-3"
+                    />
+                  </a>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  onClick={handleGeneratePublicLink}
+                  className="w-28"
+                >
+                  {loadingStates.publicLink ? (
+                    <Spinner size="small" />
+                  ) : (
+                    t('modals.agentDetails.generate')
+                  )}
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-col gap-3">
+              <h2 className="text-foreground dark:text-foreground text-base font-semibold">
+                {t('modals.agentDetails.apiKey')}
+              </h2>
+              {apiKey ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="text-foreground text-sm leading-normal font-medium break-all">
+                      {apiKey}
+                      {!apiKey.includes('...') && (
+                        <CopyButton
+                          textToCopy={apiKey}
+                          size="xs"
+                          className="absolute -mt-0.5 ml-1 inline-flex"
+                        />
+                      )}
+                    </div>
                     {!apiKey.includes('...') && (
-                      <CopyButton
-                        textToCopy={apiKey}
-                        padding="p-1"
-                        className="absolute -mt-0.5 ml-1 inline-flex"
-                      />
+                      <Button
+                        asChild
+                        variant="outline-primary"
+                        size="sm"
+                        shape="pill"
+                        className="group ml-8 w-[101px]"
+                      >
+                        <a
+                          href={`https://widget.docsgpt.cloud/?api-key=${apiKey}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {t('modals.agentDetails.test')}
+                          <img
+                            src={ExternalLinkIcon}
+                            alt="External link"
+                            className="h-3 w-3 group-hover:brightness-0 group-hover:invert"
+                          />
+                        </a>
+                      </Button>
+                    )}
+                    {apiKey.includes('...') && (
+                      <Button
+                        type="button"
+                        onClick={() => setResetKeyConfirmState('ACTIVE')}
+                        disabled={loadingStates.apiKey}
+                        variant="outline-primary"
+                        size="sm"
+                        shape="pill"
+                        className="ml-8"
+                      >
+                        {loadingStates.apiKey ? (
+                          <Spinner size="small" />
+                        ) : (
+                          t('modals.agentDetails.resetKey')
+                        )}
+                      </Button>
                     )}
                   </div>
-                  {!apiKey.includes('...') && (
-                    <a
-                      href={`https://widget.docsgpt.cloud/?api-key=${apiKey}`}
-                      className="group border-primary text-primary hover:bg-primary/90 ml-8 flex w-[101px] items-center justify-center gap-1 rounded-full border py-1.5 text-sm font-medium transition-colors hover:text-white"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {t('modals.agentDetails.test')}
-                      <img
-                        src={ExternalLinkIcon}
-                        alt="External link"
-                        className="h-3 w-3 group-hover:brightness-0 group-hover:invert"
-                      />
-                    </a>
-                  )}
-                  {apiKey.includes('...') && (
-                    <button
-                      type="button"
-                      onClick={() => setResetKeyConfirmState('ACTIVE')}
-                      disabled={loadingStates.apiKey}
-                      className="border-primary text-primary hover:bg-primary/90 ml-8 flex items-center justify-center gap-1 rounded-full border px-5 py-1.5 text-sm font-medium transition-colors hover:text-white disabled:opacity-60"
-                    >
-                      {loadingStates.apiKey ? (
-                        <Spinner size="small" />
-                      ) : (
-                        t('modals.agentDetails.resetKey')
-                      )}
-                    </button>
-                  )}
                 </div>
-              </div>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
-              >
-                {t('modals.agentDetails.generate')}
-              </Button>
-            )}
-          </div>
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <h2 className="text-foreground dark:text-foreground text-base font-semibold">
-                {t('modals.agentDetails.webhookUrl')}
-              </h2>
-            </div>
-            {webhookUrl ? (
-              <div className="flex flex-col gap-2">
-                <p className="dark:text-foreground text-sm leading-normal font-medium break-all text-gray-700">
-                  <a href={webhookUrl} target="_blank" rel="noreferrer">
-                    {webhookUrl}
-                  </a>
-                  <CopyButton
-                    textToCopy={webhookUrl}
-                    padding="p-1"
-                    className="absolute -mt-0.5 ml-1 inline-flex"
-                  />
-                </p>
-                <a
-                  href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
-                  className="text-primary flex w-fit items-center gap-1 hover:underline"
-                  target="_blank"
-                  rel="noopener noreferrer"
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  className="w-28"
                 >
-                  <span className="text-sm">
-                    {t('modals.agentDetails.learnMore')}
-                  </span>
-                  <img
-                    src={ExternalLinkIcon}
-                    alt="External link"
-                    className="h-3 w-3"
-                  />
-                </a>
+                  {t('modals.agentDetails.generate')}
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <h2 className="text-foreground dark:text-foreground text-base font-semibold">
+                  {t('modals.agentDetails.webhookUrl')}
+                </h2>
               </div>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleGenerateWebhook}
-                className="border-primary text-primary hover:bg-primary/90 w-28 rounded-3xl border-solid px-5 hover:text-white"
-              >
-                {loadingStates.webhook ? (
-                  <Spinner size="small" />
-                ) : (
-                  t('modals.agentDetails.generate')
-                )}
-              </Button>
-            )}
+              {webhookUrl ? (
+                <div className="flex flex-col gap-2">
+                  <p className="text-foreground text-sm leading-normal font-medium break-all">
+                    <a href={webhookUrl} target="_blank" rel="noreferrer">
+                      {webhookUrl}
+                    </a>
+                    <CopyButton
+                      textToCopy={webhookUrl}
+                      size="xs"
+                      className="absolute -mt-0.5 ml-1 inline-flex"
+                    />
+                  </p>
+                  <a
+                    href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
+                    className="text-primary flex w-fit items-center gap-1 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span className="text-sm">
+                      {t('modals.agentDetails.learnMore')}
+                    </span>
+                    <img
+                      src={ExternalLinkIcon}
+                      alt="External link"
+                      className="h-3 w-3"
+                    />
+                  </a>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  onClick={handleGenerateWebhook}
+                  className="w-28"
+                >
+                  {loadingStates.webhook ? (
+                    <Spinner size="small" />
+                  ) : (
+                    t('modals.agentDetails.generate')
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </Modal>
-    <ConfirmationModal
-      message={t('modals.agentDetails.resetKeyConfirm')}
-      modalState={resetKeyConfirmState}
-      setModalState={setResetKeyConfirmState}
-      submitLabel={t('modals.agentDetails.resetKey')}
-      handleSubmit={handleRegenerateKey}
-      variant="danger"
-    />
+      </Modal>
+      <ConfirmationModal
+        message={t('modals.agentDetails.resetKeyConfirm')}
+        modalState={resetKeyConfirmState}
+        setModalState={setResetKeyConfirmState}
+        submitLabel={t('modals.agentDetails.resetKey')}
+        handleSubmit={handleRegenerateKey}
+        variant="danger"
+      />
     </>
   );
 }

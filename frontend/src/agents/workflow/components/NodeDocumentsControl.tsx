@@ -60,7 +60,7 @@ export default function NodeDocumentsControl({
 
   return (
     <div>
-      <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+      <label className="text-foreground mb-2 block text-sm font-medium">
         {label}
       </label>
       <div className="border-border bg-card flex gap-1 rounded-xl border p-1">
@@ -68,14 +68,10 @@ export default function NodeDocumentsControl({
           <Button
             key={optionMode}
             type="button"
-            variant="ghost"
-            size="sm"
+            variant={mode === optionMode ? 'outline' : 'ghost-muted'}
+            size="xs"
             onClick={() => selectMode(optionMode)}
-            className={`h-auto flex-1 rounded-lg px-2 py-1.5 text-xs font-medium ${
-              mode === optionMode
-                ? 'bg-primary text-white'
-                : 'text-gray-600 dark:text-gray-300'
-            }`}
+            className="flex-1"
           >
             {modeLabel}
           </Button>
@@ -104,15 +100,13 @@ export default function NodeDocumentsControl({
                   addRef();
                 }
               }}
-              className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
               placeholder="Add ref (e.g. A1)"
             />
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
+              variant="ghost-muted"
               onClick={addRef}
-              className="h-auto shrink-0 gap-1 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 dark:text-gray-300"
+              className="shrink-0"
             >
               <Plus size={14} />
               Add

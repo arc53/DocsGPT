@@ -1,10 +1,11 @@
-import { Check } from 'lucide-react';
+import { Check, CircleAlert, CircleCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import customModelsService from '../api/services/customModelsService';
 import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -331,7 +332,7 @@ export default function CustomModelModal({
     >
       <div className="flex h-full flex-col">
         <div className="px-2 py-2">
-          <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
+          <h2 className="text-foreground text-xl font-semibold">
             {isEditMode
               ? t('settings.customModels.editTitle')
               : t('settings.customModels.addTitle')}
@@ -347,7 +348,7 @@ export default function CustomModelModal({
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="cm-display-name">
                   {t('settings.customModels.fields.displayName')}
-                  <span className="text-red-500">*</span>
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="cm-display-name"
@@ -358,7 +359,6 @@ export default function CustomModelModal({
                     'settings.customModels.placeholders.displayName',
                   )}
                   aria-invalid={!!errors.display_name || undefined}
-                  className="rounded-xl"
                 />
                 {errors.display_name && (
                   <p className="text-destructive text-xs">
@@ -370,7 +370,7 @@ export default function CustomModelModal({
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="cm-model-id">
                   {t('settings.customModels.fields.modelId')}
-                  <span className="text-red-500">*</span>
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="cm-model-id"
@@ -381,7 +381,6 @@ export default function CustomModelModal({
                   }
                   placeholder={t('settings.customModels.placeholders.modelId')}
                   aria-invalid={!!errors.upstream_model_id || undefined}
-                  className="rounded-xl"
                 />
                 {errors.upstream_model_id && (
                   <p className="text-destructive text-xs">
@@ -396,7 +395,7 @@ export default function CustomModelModal({
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="cm-base-url">
                   {t('settings.customModels.fields.baseUrl')}
-                  <span className="text-red-500">*</span>
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="cm-base-url"
@@ -411,7 +410,6 @@ export default function CustomModelModal({
                   aria-invalid={
                     !!errors.base_url || !!errors.base_url_remote || undefined
                   }
-                  className="rounded-xl"
                 />
                 {errors.base_url && (
                   <p className="text-destructive text-xs">{errors.base_url}</p>
@@ -426,7 +424,7 @@ export default function CustomModelModal({
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="cm-api-key">
                   {t('settings.customModels.fields.apiKey')}
-                  {!isEditMode && <span className="text-red-500">*</span>}
+                  {!isEditMode && <span className="text-destructive">*</span>}
                 </Label>
                 <Input
                   id="cm-api-key"
@@ -443,7 +441,6 @@ export default function CustomModelModal({
                       : t('settings.customModels.placeholders.apiKey')
                   }
                   aria-invalid={!!errors.api_key || undefined}
-                  className="rounded-xl"
                 />
                 {isEditMode && (
                   <p className="text-muted-foreground text-xs">
@@ -469,7 +466,6 @@ export default function CustomModelModal({
                 placeholder={t(
                   'settings.customModels.placeholders.description',
                 )}
-                className="rounded-xl"
               />
             </div>
 
@@ -604,7 +600,7 @@ export default function CustomModelModal({
                     }
                   }}
                   aria-invalid={!!errors.context_window || undefined}
-                  className="w-full rounded-xl sm:w-40"
+                  className="w-full sm:w-40"
                 />
                 {errors.context_window && (
                   <p className="text-destructive text-xs">
@@ -615,21 +611,21 @@ export default function CustomModelModal({
             </div>
 
             {testResult && (
-              <div
-                className={`rounded-xl p-3 text-sm ${
-                  testResult.ok
-                    ? 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                    : 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                }`}
-              >
-                {testResult.message}
-              </div>
+              <Alert variant={testResult.ok ? 'success' : 'destructive'}>
+                {testResult.ok ? (
+                  <CircleCheck className="size-4" aria-hidden="true" />
+                ) : (
+                  <CircleAlert className="size-4" aria-hidden="true" />
+                )}
+                <AlertDescription>{testResult.message}</AlertDescription>
+              </Alert>
             )}
 
             {errors.general && (
-              <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                {errors.general}
-              </div>
+              <Alert variant="destructive">
+                <CircleAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>{errors.general}</AlertDescription>
+              </Alert>
             )}
           </div>
         </div>
@@ -642,7 +638,9 @@ export default function CustomModelModal({
               onClick={handleTest}
               disabled={!canTest || testing || saving}
               title={testDisabledHint}
-              className="w-full rounded-3xl px-6 disabled:cursor-not-allowed sm:w-auto"
+              size="lg"
+              shape="pill"
+              className="w-full sm:w-auto"
             >
               {testing ? (
                 <div className="flex items-center justify-center">
@@ -661,7 +659,9 @@ export default function CustomModelModal({
                 variant="ghost"
                 onClick={closeModal}
                 disabled={saving}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('cancel')}
               </Button>
@@ -669,7 +669,9 @@ export default function CustomModelModal({
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {saving ? (
                   <div className="flex items-center justify-center">
@@ -696,19 +698,20 @@ interface CapabilityChipProps {
   onClick: () => void;
 }
 
-function CapabilityChip({ label, active, onClick }: CapabilityChipProps) {
+export function CapabilityChip({
+  label,
+  active,
+  onClick,
+}: CapabilityChipProps) {
   return (
     <Button
       type="button"
-      variant="outline"
+      variant={active ? 'secondary' : 'ghost-muted'}
+      size="sm"
+      shape="pill"
       role="switch"
       aria-checked={active}
       onClick={onClick}
-      className={`h-auto rounded-full border px-3 py-1.5 shadow-none ${
-        active
-          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/10 hover:text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-300 dark:hover:bg-emerald-400/10 dark:hover:text-emerald-300'
-          : 'text-muted-foreground'
-      }`}
     >
       {active && <Check size={14} strokeWidth={2.5} />}
       {label}

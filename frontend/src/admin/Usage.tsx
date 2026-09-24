@@ -104,7 +104,7 @@ export default function Usage() {
               key={range}
               variant={range === days ? 'default' : 'outline'}
               size="sm"
-              className="rounded-3xl"
+              shape="pill"
               onClick={() => setDays(range)}
             >
               {range}d
@@ -130,7 +130,7 @@ export default function Usage() {
           <Button
             variant={metric === 'tokens' ? 'default' : 'outline'}
             size="sm"
-            className="rounded-3xl"
+            shape="pill"
             onClick={() => setMetric('tokens')}
           >
             Tokens
@@ -138,7 +138,7 @@ export default function Usage() {
           <Button
             variant={metric === 'cost' ? 'default' : 'outline'}
             size="sm"
-            className="rounded-3xl"
+            shape="pill"
             onClick={() => setMetric('cost')}
           >
             Cost
@@ -221,8 +221,8 @@ export default function Usage() {
               </TableHead>
               <TableBody>
                 {topUsers.map((user) => (
-                  <TableRow key={user.user_id} className="hover:bg-muted/40">
-                    <TableCell className="font-mono text-[13px] break-all">
+                  <TableRow key={user.user_id}>
+                    <TableCell className="font-mono text-xs break-all">
                       <button
                         type="button"
                         className="hover:text-foreground focus-visible:ring-ring cursor-pointer rounded text-left underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:outline-none"

@@ -84,7 +84,7 @@ export default function General() {
             value !== selectedTheme && toggleTheme();
           }}
         >
-          <SelectTrigger className="w-56 rounded-3xl px-5 py-3" size="lg">
+          <SelectTrigger className="w-56" size="lg" shape="pill">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -107,7 +107,7 @@ export default function General() {
             if (opt) setSelectedLanguage(opt);
           }}
         >
-          <SelectTrigger className="w-56 rounded-3xl px-5 py-3" size="lg">
+          <SelectTrigger className="w-56" size="lg" shape="pill">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -125,7 +125,8 @@ export default function General() {
           type="button"
           variant="destructive-outline"
           title={t('settings.general.deleteAllLabel')}
-          className="w-fit rounded-3xl px-5 py-3 tracking-[0.015em] hover:font-bold hover:tracking-normal"
+          shape="pill"
+          className="w-fit"
           onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
         >
           {t('settings.general.deleteAllBtn')}

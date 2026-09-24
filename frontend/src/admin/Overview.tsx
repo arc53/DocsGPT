@@ -88,16 +88,14 @@ export default function Overview() {
           <div
             className={`rounded-2xl border px-6 py-5 ${
               failed > 0
-                ? 'border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30'
+                ? 'border-destructive/50 bg-destructive/10'
                 : 'border-border'
             }`}
           >
             <p className="text-muted-foreground text-sm">Failed logins (7d)</p>
             <p
               className={`mt-1 text-2xl font-bold tabular-nums ${
-                failed > 0
-                  ? 'text-red-600 dark:text-red-400'
-                  : 'text-foreground'
+                failed > 0 ? 'text-destructive' : 'text-foreground'
               }`}
             >
               {fmtNumber(failed)}
@@ -105,7 +103,7 @@ export default function Overview() {
             {failed > 0 ? (
               <Link
                 to="/admin/audit?event=oidc_login_denied"
-                className="mt-2 inline-block text-xs text-red-600 hover:underline dark:text-red-400"
+                className="text-destructive mt-2 inline-block text-xs hover:underline"
               >
                 View in Audit →
               </Link>

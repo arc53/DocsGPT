@@ -189,8 +189,8 @@ export default function AgentsList() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               label={t('agents.searchPlaceholder')}
-              labelBgClassName="bg-background"
-              className="rounded-full"
+              labelSurface="background"
+              shape="pill"
               leftIcon={
                 <Search
                   className="text-muted-foreground size-4"
@@ -432,7 +432,7 @@ function AgentSection({
         {config.showNewAgentButton && (
           <Button
             type="button"
-            className="rounded-full text-white"
+            shape="pill"
             onClick={() => {
               setModalFolderId(null);
               setShowAgentTypeModal(true);
@@ -453,6 +453,9 @@ function AgentSection({
             // Drilling into a folder is a trail, not a back button — the
             // sidebar's back is the only thing that means "leave".
             <Breadcrumb>
+              {/* eslint-disable-next-line shadcn/no-restyle -- the folder
+                  trail stands in for the section <h2>, so it keeps heading
+                  typography (DESIGN.md Approved exceptions). */}
               <BreadcrumbList className="text-foreground gap-2 text-lg font-semibold sm:gap-2">
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
@@ -469,7 +472,9 @@ function AgentSection({
                     <BreadcrumbSeparator />
                     <BreadcrumbItem>
                       {index === breadcrumbItems.length - 1 ? (
-                        <BreadcrumbPage>{item.name}</BreadcrumbPage>
+                        <BreadcrumbPage className="max-w-[32ch]">
+                          {item.name}
+                        </BreadcrumbPage>
                       ) : (
                         <BreadcrumbLink asChild>
                           <button
@@ -525,7 +530,8 @@ function AgentSection({
               <Button
                 type="button"
                 variant="outline"
-                className="bg-card shrink-0 rounded-full whitespace-nowrap"
+                shape="pill"
+                className="shrink-0 whitespace-nowrap"
                 onClick={() => {
                   setIsCreatingFolder(true);
                   setTimeout(() => newFolderInputRef.current?.focus(), 0);
@@ -538,7 +544,8 @@ function AgentSection({
             <Button
               type="button"
               variant="outline"
-              className="bg-card shrink-0 rounded-full whitespace-nowrap"
+              shape="pill"
+              className="shrink-0 whitespace-nowrap"
               onClick={() => setShowImportModal(true)}
             >
               {t('agents.importAgent')}
@@ -547,7 +554,8 @@ function AgentSection({
           {config.showNewAgentButton && (
             <Button
               type="button"
-              className="shrink-0 rounded-full whitespace-nowrap text-white"
+              shape="pill"
+              className="shrink-0 whitespace-nowrap"
               onClick={() => {
                 setModalFolderId(currentFolderId);
                 setShowAgentTypeModal(true);
@@ -610,7 +618,8 @@ function AgentSection({
                 {config.showNewAgentButton && !currentFolderId && (
                   <Button
                     type="button"
-                    className="ml-2 rounded-full text-white"
+                    shape="pill"
+                    className="ml-2"
                     onClick={() => {
                       setModalFolderId(currentFolderId);
                       setShowAgentTypeModal(true);

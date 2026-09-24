@@ -27,7 +27,10 @@
     "sharedTitle": "Shared with you",
     "sharedBody": "{{type}} shared with your team: {{name}} ({{access}})",
     "sharedBodyNoName": "{{type}} shared with your team ({{access}})",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "toolApprovalTitle": "Tool approval needed",
+    "toolApprovalReview": "Review",
+    "toolApprovalFallbackName": "Conversation"
   },
   "demo": [
     {
@@ -225,6 +228,7 @@
       "deleteWarning": "Are you sure you want to delete \"{{name}}\"?",
       "confirmDelete": "Are you sure you want to delete this file? This action cannot be undone.",
       "backToAll": "Back to all sources",
+      "back": "Back",
       "chunks": "Chunks",
       "noChunks": "No chunks found",
       "noChunksAlt": "No chunks found",
@@ -375,6 +379,7 @@
       "failed": "Failed",
       "skipped": "Skipped",
       "successful": "Successful",
+      "otherSeries": "Other",
       "stats": {
         "messages": "Messages",
         "tokens": "Tokens",
@@ -1605,6 +1610,7 @@
       "backToRoot": "Back",
       "currentFolder": "This folder",
       "noSubfolders": "No subfolders",
+      "openFolder": "Open folder",
       "noFolders": "No folders yet"
     },
     "guardrailEvents": {

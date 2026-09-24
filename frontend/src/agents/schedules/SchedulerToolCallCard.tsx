@@ -161,10 +161,10 @@ export default function SchedulerToolCallCard({
       {taskId && !cancelled && (
         <Button
           type="button"
-          variant="outline"
-          size="sm"
+          variant="destructive-outline"
+          size="xs"
           onClick={cancel}
-          className="text-destructive mt-2 text-xs"
+          className="mt-2"
         >
           Cancel
         </Button>

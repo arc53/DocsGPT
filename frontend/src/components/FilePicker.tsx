@@ -1,5 +1,11 @@
-import { Search as SearchIcon } from 'lucide-react';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Search as SearchIcon, TriangleAlert } from 'lucide-react';
+import React, {
+  Fragment,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import userService from '../api/services/userService';
 import { formatBytes } from '../utils/stringUtils';
@@ -13,6 +19,15 @@ import ConnectorAuth from '../components/ConnectorAuth';
 import FileIcon from '../assets/file.svg';
 import FolderIcon from '../assets/folder.svg';
 import CheckIcon from '../assets/checkmark.svg';
+import { Alert, AlertDescription } from './ui/alert';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from './ui/breadcrumb';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import {
@@ -379,7 +394,10 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   return (
     <div className="">
       {authError && (
-        <div className="mb-4 text-center text-sm text-red-500">{authError}</div>
+        <Alert variant="destructive" className="mb-4">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{authError}</AlertDescription>
+        </Alert>
       )}
 
       <ConnectorAuth
@@ -429,59 +447,61 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       />
 
       {isConnected && (
-        <div className="border-border dark:border-border mt-3 overflow-hidden rounded-lg border">
-          <div className="border-border dark:border-border rounded-t-lg">
+        <div className="border-border mt-3 overflow-hidden rounded-lg border">
+          <div className="border-border rounded-t-lg">
             {provider === 'share_point' && allowsSharedContent && (
-              <div className="border-border dark:border-border flex border-b">
+              <div className="border-border flex border-b">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="tab"
+                  data-active={activeTab === 'my_files'}
                   onClick={() => handleTabChange('my_files')}
-                  className={`h-auto rounded-none px-4 py-2 text-sm font-medium ${
-                    activeTab === 'my_files'
-                      ? 'border-b-2 border-[#A076F6] text-[#A076F6] hover:bg-transparent hover:text-[#A076F6]'
-                      : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
-                  }`}
                 >
                   {t('filePicker.myFiles')}
                 </Button>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="tab"
+                  data-active={activeTab === 'shared'}
                   onClick={() => handleTabChange('shared')}
-                  className={`h-auto rounded-none px-4 py-2 text-sm font-medium ${
-                    activeTab === 'shared'
-                      ? 'border-b-2 border-[#A076F6] text-[#A076F6] hover:bg-transparent hover:text-[#A076F6]'
-                      : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
-                  }`}
                 >
                   {t('filePicker.sharedWithMe')}
                 </Button>
               </div>
             )}
-            <div className="dark:bg-muted rounded-t-lg bg-[#EEE6FF78] px-4 pt-4">
-              <div className="mb-2 flex items-center gap-1">
-                {folderPath.map((path, index) => (
-                  <div
-                    key={path.id || 'root'}
-                    className="flex items-center gap-1"
-                  >
-                    {index > 0 && <span className="text-gray-400">/</span>}
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="sm"
-                      onClick={() => navigateBack(index)}
-                      className="h-auto p-0 text-sm text-[#A076F6] underline-offset-2 hover:text-[#8A5FD4]"
-                      disabled={index === folderPath.length - 1}
-                    >
-                      {path.name}
-                    </Button>
-                  </div>
-                ))}
-              </div>
+            <div className="bg-muted rounded-t-lg px-4 pt-4">
+              <Breadcrumb className="mb-2 min-w-0">
+                <BreadcrumbList className="flex-nowrap">
+                  {folderPath.map((path, index) => (
+                    <Fragment key={path.id || 'root'}>
+                      {index > 0 && <BreadcrumbSeparator />}
+                      {index === folderPath.length - 1 ? (
+                        <BreadcrumbItem className="min-w-0">
+                          <BreadcrumbPage
+                            title={path.name}
+                            className="max-w-[32ch]"
+                          >
+                            {path.name}
+                          </BreadcrumbPage>
+                        </BreadcrumbItem>
+                      ) : (
+                        <BreadcrumbItem>
+                          <BreadcrumbLink asChild>
+                            <button
+                              type="button"
+                              onClick={() => navigateBack(index)}
+                            >
+                              {path.name}
+                            </button>
+                          </BreadcrumbLink>
+                        </BreadcrumbItem>
+                      )}
+                    </Fragment>
+                  ))}
+                </BreadcrumbList>
+              </Breadcrumb>
 
-              <div className="mb-3 text-sm text-gray-600 dark:text-gray-400">
+              <div className="text-muted-foreground mb-3 text-sm">
                 Select Files from {getProviderConfig(provider).displayName}
               </div>
 
@@ -491,7 +511,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                   label={t('filePicker.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
-                  labelBgClassName="bg-[#EEE6FF78] dark:bg-muted"
+                  labelSurface="muted"
                   leftIcon={
                     <SearchIcon
                       className="text-muted-foreground size-4"
@@ -502,18 +522,18 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
               </div>
 
               {/* Selected Files Message */}
-              <div className="pb-3 text-sm text-gray-600 dark:text-gray-400">
+              <div className="text-muted-foreground pb-3 text-sm">
                 {t('filePicker.itemsSelected', {
                   count: selectedFiles.length + selectedFolders.length,
                 })}
               </div>
             </div>
 
-            <div className="border-border dark:border-border h-72 border-t">
+            <div className="border-border scrollbar-overlay h-72 border-t">
               <TableContainer
                 ref={scrollContainerRef}
                 height="288px"
-                className="scrollbar-overlay md:w-4xl lg:w-5xl"
+                className="md:w-4xl lg:w-5xl"
                 bordered={false}
               >
                 {
@@ -538,16 +558,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                           ? Array.from({ length: 5 }).map((_, i) => (
                               <TableRow key={`skeleton-${i}`}>
                                 <TableCell width="40px" align="center">
-                                  <div className="mx-auto h-5 w-5 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                  <div className="bg-muted mx-auto h-5 w-5 animate-pulse rounded" />
                                 </TableCell>
                                 <TableCell>
-                                  <div className="h-4 w-48 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                  <div className="bg-muted h-4 w-48 animate-pulse rounded" />
                                 </TableCell>
                                 <TableCell>
-                                  <div className="h-4 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                  <div className="bg-muted h-4 w-24 animate-pulse rounded" />
                                 </TableCell>
                                 <TableCell>
-                                  <div className="h-4 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                  <div className="bg-muted h-4 w-16 animate-pulse rounded" />
                                 </TableCell>
                               </TableRow>
                             ))
@@ -564,7 +584,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                               >
                                 <TableCell width="40px" align="center">
                                   <div
-                                    className="border-border dark:border-border mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border p-[0.5px] text-sm"
+                                    className="border-border mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border text-sm"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleFileSelect(file.id, isFolder(file));
@@ -611,16 +631,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                           Array.from({ length: 3 }).map((_, i) => (
                             <TableRow key={`load-more-skeleton-${i}`}>
                               <TableCell width="40px" align="center">
-                                <div className="mx-auto h-5 w-5 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                <div className="bg-muted mx-auto h-5 w-5 animate-pulse rounded" />
                               </TableCell>
                               <TableCell>
-                                <div className="h-4 w-48 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                <div className="bg-muted h-4 w-48 animate-pulse rounded" />
                               </TableCell>
                               <TableCell>
-                                <div className="h-4 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                <div className="bg-muted h-4 w-24 animate-pulse rounded" />
                               </TableCell>
                               <TableCell>
-                                <div className="h-4 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                                <div className="bg-muted h-4 w-16 animate-pulse rounded" />
                               </TableCell>
                             </TableRow>
                           ))}

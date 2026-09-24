@@ -130,6 +130,34 @@
   }
 }
 
+/* Ring spinner used by ui/spinner. Colour comes from currentColor. */
+@utility spinner-ring {
+  --spinner-thickness: 4px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(farthest-side, currentColor 94%, transparent) top /
+      var(--spinner-thickness) var(--spinner-thickness) no-repeat,
+    conic-gradient(transparent 30%, currentColor);
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--spinner-thickness)),
+    #000 0
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - var(--spinner-thickness)),
+    #000 0
+  );
+  animation: spinner-rotate 1s infinite linear;
+  &[data-size='sm'] {
+    --spinner-thickness: 3px;
+  }
+  &[data-size='lg'] {
+    --spinner-thickness: 5px;
+  }
+}
+
 @utility table-default {
   @apply border-border text-foreground block w-full table-auto justify-center overflow-auto rounded-xl border text-center;
 
@@ -176,6 +204,41 @@
     .dark & td {
       scrollbar-color: #949494 transparent;
     }
+  }
+}
+
+/* The promo banner in components/Notification.tsx. Its purples are a one-off
+   decorative gradient rather than UI chrome, so they stay literal here
+   instead of becoming theme tokens. */
+@utility notification-banner {
+  background:
+    linear-gradient(90deg, #390086 0%, #6222b7 100%),
+    linear-gradient(
+      90deg,
+      rgba(57, 0, 134, 0) 0%,
+      #6222b7 53.02%,
+      rgba(57, 0, 134, 0) 100%
+    );
+}
+
+/* One twinkling star on the promo banner. Every value is randomised per star
+   at render, so the component passes them in as custom properties. */
+@utility notification-star {
+  width: var(--star-size);
+  height: var(--star-size);
+  left: var(--star-left);
+  top: var(--star-top);
+  opacity: var(--star-opacity);
+  filter: drop-shadow(0 0 var(--star-glow) rgba(255, 255, 255, 0.5));
+  animation: twinkle var(--star-duration) ease-in-out infinite;
+  animation-delay: var(--star-delay);
+
+  /* Nested rather than grouped with the other resets in @layer base: the
+     utility is emitted after that layer, so an outside reset of equal
+     specificity would lose and the stars would twinkle anyway. They rest at
+     the opacity the component randomised for them. */
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 }
 
@@ -784,6 +847,18 @@ Avoid over-scrolling in mobile browsers
       transform: rotate(1turn);
     }
   }
+
+  @keyframes twinkle {
+    0%,
+    100% {
+      opacity: 0.3;
+      transform: scale(1) translateY(0);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.2) translateY(-2px);
+    }
+  }
 }
 
 /*
@@ -813,6 +888,13 @@ Avoid over-scrolling in mobile browsers
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -846,21 +928,34 @@ Avoid over-scrolling in mobile browsers
   --popover-foreground: #171717;
   --primary: #7d54d1;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f4;
-  --secondary-foreground: #7d54d1;
+  /* Pressed/active toggle fill: a brand tint, so it shows on any surface
+     (card, background, muted) and never reads as the neutral ghost hover. */
+  --secondary: #7d54d11a; /* primary at 10%; static, so no color-mix fallback */
+  --secondary-foreground: var(--primary);
   --muted: #f6f6f6;
   --muted-foreground: #737373;
   --accent: #ececec;
   --accent-foreground: #171717;
   --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  /* Status colours. Pair `text-<token>` with `bg-<token>/10` for soft badges
+     and alerts; use `bg-<token> text-<token>-foreground` for solid fills. */
+  --success: #079455;
+  --success-foreground: #ffffff;
+  --warning: #ca8a04;
+  --warning-foreground: #ffffff;
+  --info: #2563eb;
+  --info-foreground: #ffffff;
   --border: #d9d9d9;
   --input: #d9d9d9;
   --ring: #7d54d1;
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  /* Data series reuse brand and status colours: chart-1 is the brand, and a
+     series with a meaning takes the matching token (failed = chart-5). */
+  --chart-1: var(--primary);
+  --chart-2: var(--info);
+  --chart-3: var(--success);
+  --chart-4: var(--warning);
+  --chart-5: var(--destructive);
   --sidebar: #fbfbfb;
   --sidebar-foreground: #171717;
   --sidebar-primary: #7d54d1;
@@ -885,21 +980,30 @@ Avoid over-scrolling in mobile browsers
   --popover-foreground: #fafafa;
   --primary: #976af3;
   --primary-foreground: #ffffff;
-  --secondary: #2b2c31;
-  --secondary-foreground: #e0e0e0;
+  --secondary: #976af326; /* primary at 15% */
+  /* A lighter primary: #976af3 on the tint is about 3:1, this is 4.4-5.6:1. */
+  --secondary-foreground: #b89cf8;
   --muted: #35363b;
   --muted-foreground: #a1a1a1;
   --accent: #3e3f45;
   --accent-foreground: #fafafa;
   --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #4ade80;
+  --success-foreground: #052e16;
+  --warning: #fbbf24;
+  --warning-foreground: #451a03;
+  --info: #60a5fa;
+  --info-foreground: #172554;
   --border: #44454c;
   --input: #44454c;
   --ring: #976af3;
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+  /* Same aliases as :root, re-declared so they resolve to the dark values. */
+  --chart-1: var(--primary);
+  --chart-2: var(--info);
+  --chart-3: var(--success);
+  --chart-4: var(--warning);
+  --chart-5: var(--destructive);
   --sidebar: #161616;
   --sidebar-foreground: #fafafa;
   --sidebar-primary: #976af3;

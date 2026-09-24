@@ -30,19 +30,17 @@ const CodeNode = ({ data, selected }: NodeProps<CodeNodeData>) => {
       <div className="flex flex-col gap-1">
         {codeHint ? (
           <div
-            className="truncate font-mono text-xs text-gray-500 dark:text-gray-400"
+            className="text-muted-foreground truncate font-mono text-xs"
             title={code}
           >
             {codeHint}
           </div>
         ) : (
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            No code yet
-          </div>
+          <div className="text-muted-foreground text-xs">No code yet</div>
         )}
         {config.output_variable && (
           <div
-            className="truncate text-xs text-gray-500 dark:text-gray-400"
+            className="text-muted-foreground truncate text-xs"
             title={`Output: ${config.output_variable}`}
           >
             Output: {config.output_variable}

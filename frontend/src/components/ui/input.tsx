@@ -1,44 +1,123 @@
 import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
 
 import { cn } from '@/lib/utils';
 
-type InputProps = React.ComponentProps<'input'> & {
-  label?: React.ReactNode;
-  leftIcon?: React.ReactNode;
-  labelBgClassName?: string;
+const inputVariants = cva(
+  'text-foreground file:text-foreground placeholder:text-muted-foreground border-border w-full min-w-0 border bg-transparent shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 selection:bg-primary selection:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
+  {
+    variants: {
+      size: {
+        default: 'h-10.5 px-3 py-2 text-base md:text-sm',
+        sm: 'h-8 px-2 py-1 text-sm',
+        lg: 'h-12 px-5 py-3 text-base md:text-sm',
+      },
+      shape: {
+        default: 'rounded-md',
+        pill: 'rounded-full',
+      },
+      // Declared after size and shape so cn() lets it win over them.
+      variant: {
+        default: '',
+        // A field inside a host that already draws the frame (a renaming
+        // sidebar row, a search strip in a bordered panel): no border,
+        // padding, radius, shadow or ring of its own.
+        bare: 'h-auto rounded-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0',
+        // A field on a muted panel: keeps the card fill so it still reads
+        // as a field against the panel.
+        filled: 'bg-card',
+      },
+    },
+    compoundVariants: [
+      // A default-size pill would start its text 12px from a 21px round end;
+      // pad it like the lg pill and SelectTrigger's pills (text 21px in).
+      // Not on `bare`, which has no padding of its own.
+      {
+        shape: 'pill',
+        size: 'default',
+        variant: ['default', 'filled'],
+        class: 'px-5',
+      },
+    ],
+    defaultVariants: {
+      size: 'default',
+      shape: 'default',
+      variant: 'default',
+    },
+  },
+);
+
+// Where the floating label sits while the field is empty, per input height.
+const LABEL_RESTING_CLASSES: Record<
+  NonNullable<VariantProps<typeof inputVariants>['size']>,
+  string
+> = {
+  default: 'peer-placeholder-shown:top-2.5 peer-placeholder-shown:text-base',
+  sm: 'peer-placeholder-shown:top-1.5 peer-placeholder-shown:text-sm',
+  lg: 'peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-base',
 };
 
-const baseInputClasses =
-  'text-foreground file:text-foreground placeholder:text-muted-foreground border-border h-[42px] w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm';
+// The floating label sits on the field's border, so its background has to
+// match whatever surface the field is placed on to hide the line behind it.
+const LABEL_SURFACE_CLASSES = {
+  card: 'bg-card',
+  background: 'bg-background',
+  muted: 'bg-muted',
+} as const;
 
-const themeInputClasses =
-  'dark:border-border dark:text-white dark:placeholder:text-gray-400 selection:bg-primary selection:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive';
+type InputProps = Omit<React.ComponentProps<'input'>, 'size'> &
+  VariantProps<typeof inputVariants> & {
+    label?: React.ReactNode;
+    leftIcon?: React.ReactNode;
+    /** Surface behind the field, so the floating label's notch blends in. */
+    labelSurface?: keyof typeof LABEL_SURFACE_CLASSES;
+  };
 
 function Input({
   className,
   type,
   label,
   leftIcon,
-  labelBgClassName = 'bg-card',
+  labelSurface = 'card',
   id,
   placeholder,
   required,
+  size = 'default',
+  shape = 'default',
+  variant = 'default',
   ...props
 }: InputProps) {
   const generatedId = React.useId();
   const inputId = id ?? (label ? generatedId : undefined);
 
   if (!label) {
-    return (
+    const field = (
       <input
         type={type}
         id={id}
         placeholder={placeholder}
         required={required}
         data-slot="input"
-        className={cn(baseInputClasses, themeInputClasses, className)}
+        data-size={size}
+        data-shape={shape}
+        data-variant={variant}
+        className={cn(
+          inputVariants({ size, shape, variant }),
+          leftIcon && 'pl-10',
+          className,
+        )}
         {...props}
       />
+    );
+    if (!leftIcon) return field;
+    // An inset icon with no floating label (a search field).
+    return (
+      <div className="relative">
+        {field}
+        <div className="pointer-events-none absolute top-1/2 left-3 flex -translate-y-1/2 items-center justify-center">
+          {leftIcon}
+        </div>
+      </div>
     );
   }
 
@@ -48,14 +127,16 @@ function Input({
         type={type}
         id={inputId}
         data-slot="input"
+        data-size={size}
+        data-shape={shape}
+        data-variant={variant}
         // Use a single-space placeholder so :placeholder-shown drives the
         // floating-label peer-trick even when the caller didn't pass one.
         placeholder={placeholder ?? ' '}
         required={required}
         className={cn(
-          baseInputClasses,
-          themeInputClasses,
-          'peer placeholder:text-transparent dark:placeholder:text-transparent',
+          inputVariants({ size, shape, variant }),
+          'peer placeholder:text-transparent',
           leftIcon && 'pl-10',
           className,
         )}
@@ -70,12 +151,12 @@ function Input({
         htmlFor={inputId}
         className={cn(
           'text-muted-foreground pointer-events-none absolute -top-2.5 left-3 max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-xs text-ellipsis whitespace-nowrap transition-all select-none',
-          'peer-placeholder-shown:top-2.5 peer-placeholder-shown:text-base',
+          LABEL_RESTING_CLASSES[size ?? 'default'],
           leftIcon
             ? 'peer-placeholder-shown:left-7'
             : 'peer-placeholder-shown:left-3',
           'peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs',
-          labelBgClassName,
+          LABEL_SURFACE_CLASSES[labelSurface],
         )}
       >
         {label}
@@ -85,5 +166,5 @@ function Input({
   );
 }
 
-export { Input };
+export { Input, inputVariants };
 export type { InputProps };

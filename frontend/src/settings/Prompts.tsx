@@ -26,7 +26,6 @@ import { cn } from '@/lib/utils';
 
 type PromptsDropdownProps = {
   className?: string;
-  contentClassName?: string;
 };
 
 type ExtendedPromptProps = PromptProps & {
@@ -262,7 +261,7 @@ export default function Prompts({
   };
 
   const pillClassName = cn(
-    'border-border bg-card text-foreground hover:bg-accent flex w-56 items-stretch rounded-3xl border text-sm transition-colors',
+    'border-border bg-card text-foreground hover:bg-accent flex h-10.5 w-56 items-stretch rounded-3xl border text-sm transition-colors',
     dropdownProps.className,
   );
 
@@ -281,12 +280,12 @@ export default function Prompts({
                   aria-label="Toggle prompt list"
                   className={cn(
                     pillClassName,
-                    'focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]',
+                    'focus-visible:ring-ring/50 outline-none focus-visible:ring-3',
                   )}
                 >
                   <span
                     className={cn(
-                      'flex min-w-0 flex-1 items-center py-3 pl-5 text-left',
+                      'flex min-w-0 flex-1 items-center pl-5 text-left',
                       !selectedPrompt?.name && 'text-muted-foreground',
                     )}
                   >
@@ -310,7 +309,7 @@ export default function Prompts({
                             openEditModal(selectedPrompt);
                           }
                         }}
-                        className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 mx-1 my-auto shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
+                        className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 mx-1 my-auto shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-3"
                         aria-label="Edit prompt"
                       >
                         <Pencil className="h-4 w-4" />
@@ -333,10 +332,7 @@ export default function Prompts({
               </PopoverTrigger>
               <PopoverContent
                 align="start"
-                className={cn(
-                  'w-(--radix-popover-trigger-width) p-0',
-                  dropdownProps.contentClassName,
-                )}
+                className="w-(--radix-popover-trigger-width) p-0"
               >
                 <Command>
                   <CommandInput
@@ -359,51 +355,53 @@ export default function Prompts({
                         <CommandItem
                           key={prompt.id}
                           value={prompt.name}
+                          checked={isActive}
                           onSelect={() => handleSelectPrompt(prompt)}
-                          className={cn(
-                            'flex items-center justify-between gap-2',
-                            isActive && 'bg-accent font-medium',
-                          )}
+                          className="flex items-center justify-between"
                         >
                           <span className="truncate">{prompt.name}</span>
                           <div className="flex shrink-0 items-center gap-1">
                             <Button
                               type="button"
-                              variant="ghost"
-                              size="icon-sm"
+                              variant="ghost-muted"
+                              size="icon-xs"
+                              /* eslint-disable-next-line shadcn/no-restyle -- the row is already bg-accent while cmdk highlights it, so ghost's accent hover would be invisible; a foreground (or destructive) tint shows on it */
+                              className="hover:bg-foreground/15 dark:hover:bg-foreground/20"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openEditModal(prompt);
                               }}
-                              className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
                               aria-label={
                                 canModify ? 'Edit prompt' : 'View prompt'
                               }
                             >
                               {canModify ? (
-                                <Pencil className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
+                                <Pencil className="h-3.5 w-3.5 text-current" />
                               ) : (
-                                <Eye className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
+                                <Eye className="h-3.5 w-3.5 text-current" />
                               )}
                             </Button>
                             <Button
                               type="button"
-                              variant="ghost"
-                              size="icon-sm"
+                              variant="ghost-muted"
+                              size="icon-xs"
+                              /* eslint-disable-next-line shadcn/no-restyle -- the row is already bg-accent while cmdk highlights it, so ghost's accent hover would be invisible; a foreground (or destructive) tint shows on it */
+                              className="hover:bg-foreground/15 dark:hover:bg-foreground/20"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleDuplicatePrompt(prompt);
                               }}
-                              className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
                               aria-label="Duplicate prompt"
                             >
-                              <Copy className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
+                              <Copy className="h-3.5 w-3.5 text-current" />
                             </Button>
                             {canShare && (
                               <Button
                                 type="button"
-                                variant="ghost"
-                                size="icon-sm"
+                                variant="ghost-muted"
+                                size="icon-xs"
+                                /* eslint-disable-next-line shadcn/no-restyle -- the row is already bg-accent while cmdk highlights it, so ghost's accent hover would be invisible; a foreground (or destructive) tint shows on it */
+                                className="hover:bg-foreground/15 dark:hover:bg-foreground/20"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setOpen(false);
@@ -412,26 +410,26 @@ export default function Prompts({
                                     name: prompt.name,
                                   });
                                 }}
-                                className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
                                 aria-label={t('agents.shareWithTeam')}
                                 title={t('agents.shareWithTeam')}
                               >
-                                <Users className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
+                                <Users className="h-3.5 w-3.5 text-current" />
                               </Button>
                             )}
                             {canModify && (
                               <Button
                                 type="button"
-                                variant="ghost"
-                                size="icon-sm"
+                                variant="ghost-destructive"
+                                size="icon-xs"
+                                /* eslint-disable-next-line shadcn/no-restyle -- the row is already bg-accent while cmdk highlights it, so ghost's accent hover would be invisible; a foreground (or destructive) tint shows on it */
+                                className="hover:bg-destructive/15 dark:hover:bg-destructive/25"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDeletePrompt(prompt.id);
                                 }}
-                                className="group/btn hover:bg-destructive/15 dark:hover:bg-destructive/25 h-auto w-auto rounded p-1"
                                 aria-label="Delete prompt"
                               >
-                                <Trash2 className="text-muted-foreground group-hover/btn:text-destructive h-3.5 w-3.5" />
+                                <Trash2 className="h-3.5 w-3.5 text-current" />
                               </Button>
                             )}
                           </div>
@@ -445,7 +443,9 @@ export default function Prompts({
             {showAddButton && (
               <Button
                 type="button"
-                className="h-auto w-20 rounded-3xl border border-transparent py-3"
+                size="field"
+                shape="pill"
+                className="w-20"
                 onClick={() => {
                   setModalType('ADD');
                   setDuplicateSource(null);

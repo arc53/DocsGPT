@@ -30,7 +30,6 @@ export default function JWTModal({
           <Input
             name="JWT Token"
             type="text"
-            className="rounded-md"
             value={jwtToken}
             onChange={(e) => setJwtToken(e.target.value)}
             data-testid="jwt-token-input"
@@ -40,7 +39,8 @@ export default function JWTModal({
           type="button"
           disabled={jwtToken.length === 0}
           onClick={handleTokenSubmit.bind(null, jwtToken)}
-          className="float-right mt-4 rounded-3xl px-5"
+          shape="pill"
+          className="float-right mt-4"
           data-testid="jwt-token-submit"
         >
           Save Token

@@ -10,7 +10,12 @@ const alertVariants = cva(
       variant: {
         default: 'bg-background text-foreground',
         destructive:
-          'border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive',
+          'border-destructive/50 bg-destructive/10 text-destructive [&>svg]:text-destructive',
+        success:
+          'border-success/50 bg-success/10 text-success [&>svg]:text-success',
+        warning:
+          'border-warning/50 bg-warning/10 text-warning [&>svg]:text-warning',
+        info: 'border-info/50 bg-info/10 text-info [&>svg]:text-info',
       },
     },
     defaultVariants: {
@@ -25,7 +30,8 @@ const Alert = React.forwardRef<
 >(({ className, variant, ...props }, ref) => (
   <div
     ref={ref}
-    role="alert"
+    // A success notice confirms rather than interrupts, so it is polite.
+    role={variant === 'success' ? 'status' : 'alert'}
     className={cn(alertVariants({ variant }), className)}
     {...props}
   />

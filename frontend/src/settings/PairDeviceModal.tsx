@@ -1,3 +1,4 @@
+import { ShieldAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -145,7 +146,6 @@ export default function PairDeviceModal({
         onChange={(e) => setName(e.target.value)}
         label={t('settings.devices.pairing.nameLabel')}
         placeholder={t('settings.devices.pairing.namePlaceholder')}
-        labelBgClassName="bg-card"
       />
       <Input
         type="text"
@@ -153,7 +153,6 @@ export default function PairDeviceModal({
         onChange={(e) => setDescription(e.target.value)}
         label={t('settings.devices.pairing.descriptionLabel')}
         placeholder={t('settings.devices.pairing.descriptionPlaceholder')}
-        labelBgClassName="bg-card"
       />
       <div className="flex flex-col gap-2">
         <span className="text-muted-foreground text-xs">
@@ -176,9 +175,12 @@ export default function PairDeviceModal({
           </SelectContent>
         </Select>
         {approvalMode === 'full' && (
-          <p className="text-xs text-red-600 dark:text-red-400">
-            {t('settings.devices.pairing.fullAccessWarning')}
-          </p>
+          <Alert variant="destructive">
+            <ShieldAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>
+              {t('settings.devices.pairing.fullAccessWarning')}
+            </AlertDescription>
+          </Alert>
         )}
       </div>
       {error && (
@@ -234,14 +236,14 @@ export default function PairDeviceModal({
     if (stage === 'form') {
       return (
         <>
-          <Button variant="ghost" onClick={close} className="rounded-3xl px-5">
+          <Button variant="ghost" shape="pill" onClick={close}>
             {t('settings.devices.pairing.cancel')}
           </Button>
           <Button
             type="button"
             onClick={handleStart}
             disabled={submitting}
-            className="rounded-3xl px-5 text-white"
+            shape="pill"
           >
             {submitting
               ? t('settings.devices.pairing.starting')
@@ -251,7 +253,7 @@ export default function PairDeviceModal({
       );
     }
     return (
-      <Button variant="ghost" onClick={close} className="rounded-3xl px-5">
+      <Button variant="ghost" shape="pill" onClick={close}>
         {t('settings.devices.pairing.cancel')}
       </Button>
     );
@@ -265,7 +267,6 @@ export default function PairDeviceModal({
       }}
       title={t('settings.devices.pairing.title')}
       footer={footer}
-      contentClassName="px-1"
     >
       {stage === 'form' && renderForm()}
       {stage === 'waiting' && renderWaiting()}

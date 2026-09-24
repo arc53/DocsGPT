@@ -1,3 +1,4 @@
+import { CircleAlert, CircleCheck, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -5,6 +6,7 @@ import { useSelector } from 'react-redux';
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
 import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -456,7 +458,7 @@ export default function MCPServerModal({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="api_key">
                 {t('settings.tools.mcp.authTypes.apiKey')}
-                <span className="text-red-500">*</span>
+                <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="api_key"
@@ -465,7 +467,6 @@ export default function MCPServerModal({
                 onChange={(e) => handleInputChange('api_key', e.target.value)}
                 placeholder={t('settings.tools.mcp.placeholders.apiKey')}
                 aria-invalid={!!errors.api_key || undefined}
-                className="rounded-xl"
               />
               {errors.api_key && (
                 <p className="text-destructive text-xs">{errors.api_key}</p>
@@ -483,7 +484,6 @@ export default function MCPServerModal({
                   handleInputChange('header_name', e.target.value)
                 }
                 placeholder="X-API-Key"
-                className="rounded-xl"
               />
             </div>
           </div>
@@ -493,7 +493,7 @@ export default function MCPServerModal({
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="bearer_token">
               {t('settings.tools.mcp.authTypes.bearer')}
-              <span className="text-red-500">*</span>
+              <span className="text-destructive">*</span>
             </Label>
             <Input
               id="bearer_token"
@@ -504,7 +504,6 @@ export default function MCPServerModal({
               }
               placeholder={t('settings.tools.mcp.placeholders.bearerToken')}
               aria-invalid={!!errors.bearer_token || undefined}
-              className="rounded-xl"
             />
             {errors.bearer_token && (
               <p className="text-destructive text-xs">{errors.bearer_token}</p>
@@ -517,7 +516,7 @@ export default function MCPServerModal({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="username">
                 {t('settings.tools.mcp.username')}
-                <span className="text-red-500">*</span>
+                <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="username"
@@ -526,7 +525,6 @@ export default function MCPServerModal({
                 onChange={(e) => handleInputChange('username', e.target.value)}
                 placeholder={t('settings.tools.mcp.placeholders.username')}
                 aria-invalid={!!errors.username || undefined}
-                className="rounded-xl"
               />
               {errors.username && (
                 <p className="text-destructive text-xs">{errors.username}</p>
@@ -535,7 +533,7 @@ export default function MCPServerModal({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">
                 {t('settings.tools.mcp.password')}
-                <span className="text-red-500">*</span>
+                <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="password"
@@ -544,7 +542,6 @@ export default function MCPServerModal({
                 onChange={(e) => handleInputChange('password', e.target.value)}
                 placeholder={t('settings.tools.mcp.placeholders.password')}
                 aria-invalid={!!errors.password || undefined}
-                className="rounded-xl"
               />
               {errors.password && (
                 <p className="text-destructive text-xs">{errors.password}</p>
@@ -566,7 +563,6 @@ export default function MCPServerModal({
                 handleInputChange('oauth_scopes', e.target.value)
               }
               placeholder="read, write"
-              className="rounded-xl"
             />
           </div>
         );
@@ -600,17 +596,20 @@ export default function MCPServerModal({
           <div className="flex flex-col gap-4 px-0.5 py-4">
             {server?.has_encrypted_credentials &&
               formData.auth_type !== 'oauth' && (
-                <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                  {t('settings.tools.mcp.reenterCredentials', {
-                    defaultValue:
-                      'Re-enter your credentials to test and update the connection.',
-                  })}
-                </div>
+                <Alert variant="warning">
+                  <TriangleAlert className="size-4" aria-hidden="true" />
+                  <AlertDescription>
+                    {t('settings.tools.mcp.reenterCredentials', {
+                      defaultValue:
+                        'Re-enter your credentials to test and update the connection.',
+                    })}
+                  </AlertDescription>
+                </Alert>
               )}
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="mcp-name">
                 {t('settings.tools.mcp.serverName')}
-                <span className="text-red-500">*</span>
+                <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="mcp-name"
@@ -619,7 +618,6 @@ export default function MCPServerModal({
                 onChange={(e) => handleInputChange('name', e.target.value)}
                 placeholder={t('settings.tools.mcp.serverName')}
                 aria-invalid={!!errors.name || undefined}
-                className="rounded-xl"
               />
               {errors.name && (
                 <p className="text-destructive text-xs">{errors.name}</p>
@@ -629,7 +627,7 @@ export default function MCPServerModal({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="mcp-url">
                 {t('settings.tools.mcp.serverUrl')}
-                <span className="text-red-500">*</span>
+                <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="mcp-url"
@@ -640,7 +638,6 @@ export default function MCPServerModal({
                 }
                 placeholder="https://example.com/mcp"
                 aria-invalid={!!errors.server_url || undefined}
-                className="rounded-xl"
               />
               {errors.server_url && (
                 <p className="text-destructive text-xs">{errors.server_url}</p>
@@ -653,11 +650,7 @@ export default function MCPServerModal({
                 value={formData.auth_type}
                 onValueChange={(v) => handleInputChange('auth_type', v)}
               >
-                <SelectTrigger
-                  variant="ghost"
-                  size="lg"
-                  className="w-full rounded-xl"
-                >
+                <SelectTrigger variant="ghost" size="lg" className="w-full">
                   <SelectValue placeholder={t('settings.tools.mcp.authType')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -695,7 +688,6 @@ export default function MCPServerModal({
                 min={1}
                 max={300}
                 aria-invalid={!!errors.timeout || undefined}
-                className="rounded-xl"
               />
               {errors.timeout && (
                 <p className="text-destructive text-xs">{errors.timeout}</p>
@@ -703,41 +695,42 @@ export default function MCPServerModal({
             </div>
 
             {testResult && (
-              <div
-                className={`rounded-xl p-4 text-sm ${
-                  testResult.success
-                    ? 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                    : 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                }`}
-              >
-                <p>{testResult.message}</p>
-                {testResult.authorization_url && (
-                  <a
-                    href={testResult.authorization_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      const popup = window.open(
-                        testResult.authorization_url,
-                        'oauthPopup',
-                        'width=600,height=700',
-                      );
-                      if (popup) oauthPopupRef.current = popup;
-                    }}
-                    className="mt-1.5 inline-block font-medium underline"
-                  >
-                    {t('settings.tools.mcp.openAuthPage', {
-                      defaultValue: 'Open authorization page',
-                    })}
-                  </a>
+              <Alert variant={testResult.success ? 'success' : 'destructive'}>
+                {testResult.success ? (
+                  <CircleCheck className="size-4" aria-hidden="true" />
+                ) : (
+                  <CircleAlert className="size-4" aria-hidden="true" />
                 )}
-              </div>
+                <AlertDescription>
+                  <p>{testResult.message}</p>
+                  {testResult.authorization_url && (
+                    <a
+                      href={testResult.authorization_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const popup = window.open(
+                          testResult.authorization_url,
+                          'oauthPopup',
+                          'width=600,height=700',
+                        );
+                        if (popup) oauthPopupRef.current = popup;
+                      }}
+                      className="mt-1.5 inline-block font-medium underline"
+                    >
+                      {t('settings.tools.mcp.openAuthPage', {
+                        defaultValue: 'Open authorization page',
+                      })}
+                    </a>
+                  )}
+                </AlertDescription>
+              </Alert>
             )}
 
             {discoveredTools.length > 0 && testResult?.success && (
-              <div className="border-border dark:border-border rounded-xl border p-4">
-                <h4 className="mb-2 text-sm font-medium text-gray-900 dark:text-white">
+              <div className="border-border rounded-xl border p-4">
+                <h4 className="text-foreground mb-2 text-sm font-medium">
                   {t('settings.tools.mcp.discoveredTools', {
                     count: discoveredTools.length,
                     defaultValue: `Discovered Actions (${discoveredTools.length})`,
@@ -747,15 +740,15 @@ export default function MCPServerModal({
                   {discoveredTools.map((tool) => (
                     <li
                       key={tool.name}
-                      className="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-white/5"
+                      className="bg-muted flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
                     >
                       <span className="text-primary mt-0.5">&#9679;</span>
                       <div className="min-w-0">
-                        <span className="font-medium text-gray-900 dark:text-white">
+                        <span className="text-foreground font-medium">
                           {tool.name}
                         </span>
                         {tool.description && (
-                          <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                          <p className="text-muted-foreground truncate text-xs">
                             {tool.description}
                           </p>
                         )}
@@ -766,9 +759,10 @@ export default function MCPServerModal({
               </div>
             )}
             {errors.general && (
-              <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                {errors.general}
-              </div>
+              <Alert variant="destructive">
+                <CircleAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>{errors.general}</AlertDescription>
+              </Alert>
             )}
           </div>
         </div>
@@ -780,7 +774,9 @@ export default function MCPServerModal({
               variant="outline"
               onClick={testConnection}
               disabled={testing}
-              className="w-full rounded-3xl px-6 sm:w-auto"
+              size="lg"
+              shape="pill"
+              className="w-full sm:w-auto"
             >
               {testing ? (
                 <div className="flex items-center justify-center">
@@ -802,7 +798,9 @@ export default function MCPServerModal({
                   setModalState('INACTIVE');
                   resetForm();
                 }}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {t('settings.tools.mcp.cancel')}
               </Button>
@@ -810,7 +808,9 @@ export default function MCPServerModal({
                 type="button"
                 onClick={handleSave}
                 disabled={loading || !saveActive}
-                className="w-full rounded-3xl px-6 sm:w-auto"
+                size="lg"
+                shape="pill"
+                className="w-full sm:w-auto"
               >
                 {loading ? (
                   <div className="flex items-center justify-center">

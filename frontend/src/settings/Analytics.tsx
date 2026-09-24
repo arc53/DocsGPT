@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { foldSeries, OTHER_SERIES_KEY } from './foldSeries';
 
 import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
@@ -43,6 +44,22 @@ function readCssVar(name: string, fallback: string): string {
   return value || fallback;
 }
 
+/**
+ * Build the hover fill for a bar: the same colour at 80% opacity.
+ *
+ * `color-mix()` accepts any CSS colour string (hex, `oklch()`, ...), which the
+ * theme tokens are. Canvas `fillStyle` parses it in current engines; where the
+ * browser doesn't support `color-mix()` at all, keep the base colour so the
+ * canvas never receives a string it would silently ignore.
+ */
+function hoverColor(color: string): string {
+  const mixed = `color-mix(in oklch, ${color} 80%, transparent)`;
+  if (typeof CSS === 'undefined' || !CSS.supports?.('color', mixed)) {
+    return color;
+  }
+  return mixed;
+}
+
 import type { ChartData } from 'chart.js';
 ChartJS.register(
   CategoryScale,
@@ -53,17 +70,33 @@ ChartJS.register(
   Legend,
 );
 
-// Extra series colors for grouped/stacked charts. The first dataset always
-// uses the resolved `--primary` color; these follow for datasets 2..n.
-const SERIES_COLORS = [
-  '#FF6384',
-  '#36A2EB',
-  '#FFCE56',
-  '#4BC0C0',
-  '#9966FF',
-  '#FF9F40',
-  '#2BC596',
+// Data-series tokens (DESIGN.md: `chart-1`..`chart-5`, data series only).
+// Fallbacks are the light-theme values from src/index.css.
+const SERIES_TOKENS: [string, string][] = [
+  ['--chart-1', '#7d54d1'],
+  ['--chart-2', '#2563eb'],
+  ['--chart-3', '#079455'],
+  ['--chart-4', '#ca8a04'],
+  ['--chart-5', '#ef4444'],
 ];
+
+/**
+ * Resolve every colour the charts use from the current theme tokens.
+ *
+ * Returns concrete colour strings for the canvas: brand, the five series
+ * colours, the status colours, and the axis chrome.
+ */
+function readChartPalette() {
+  return {
+    primary: readCssVar('--primary', '#7d54d1'),
+    series: SERIES_TOKENS.map(([name, fallback]) => readCssVar(name, fallback)),
+    success: readCssVar('--success', '#079455'),
+    warning: readCssVar('--warning', '#ca8a04'),
+    destructive: readCssVar('--destructive', '#ef4444'),
+    border: readCssVar('--border', '#d9d9d9'),
+    mutedForeground: readCssVar('--muted-foreground', '#737373'),
+  };
+}
 
 type TokenGroupBy = 'none' | 'model' | 'agent' | 'source';
 
@@ -152,16 +185,29 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   const [loadingTools, setLoadingTools] = useLoaderState(true);
   const [loadingSchedules, setLoadingSchedules] = useLoaderState(true);
   const [isDarkTheme] = useDarkTheme();
-  const primaryColor = useMemo(
-    () => readCssVar('--primary', '#7d54d1'),
-    // isDarkTheme drives the `.dark` class on document.body and changes the
-    // resolved value of `--primary`; re-read whenever it flips.
-    [isDarkTheme],
+  // Each useDarkTheme() call keeps its own state and applies the `.dark`
+  // class in an effect, so a flip of `isDarkTheme` alone can be read before
+  // the class lands, and a toggle made elsewhere never reaches this
+  // component. Watch the body class too so the charts recolour either way.
+  const [themeVersion, setThemeVersion] = useState(0);
+  useEffect(() => {
+    const observer = new MutationObserver(() =>
+      setThemeVersion((version) => version + 1),
+    );
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+    return () => observer.disconnect();
+  }, []);
+  const palette = useMemo(
+    () => readChartPalette(),
+    // Not used inside the factory: they only signal a theme change.
+    [isDarkTheme, themeVersion],
   );
+  const primaryColor = palette.primary;
   const seriesColor = (index: number) =>
-    index === 0
-      ? primaryColor
-      : SERIES_COLORS[(index - 1) % SERIES_COLORS.length];
+    palette.series[index % palette.series.length];
 
   // Monotonic request ids, one per chart: a response only lands if no
   // newer request for that chart was issued meanwhile, so an
@@ -361,7 +407,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
     },
   ];
 
-  const tokenSeriesEntries = Object.entries(tokenSeries || {});
+  // Grouped series have no meaning of their own, so past five they fold into
+  // "Other" instead of repeating a colour (DESIGN.md, chart colours).
+  const tokenSeriesEntries = foldSeries(Object.entries(tokenSeries || {}));
   const tokenLabels = Object.keys(
     tokenSeriesEntries[0]?.[1] || tokenUsageData || {},
   ).map((item) => formatDate(item));
@@ -371,7 +419,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
         ? key === 'prompt'
           ? t('settings.analytics.promptTokens')
           : t('settings.analytics.generatedTokens')
-        : key,
+        : key === OTHER_SERIES_KEY
+          ? t('settings.analytics.otherSeries')
+          : key,
     data: Object.values(series),
     backgroundColor: seriesColor(index),
   }));
@@ -390,10 +440,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
             if (opt) setTimeFilter(opt);
           }}
         >
-          <SelectTrigger
-            className="w-[125px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
-          >
+          <SelectTrigger className="w-[125px]" size="lg" shape="pill">
             <SelectValue
               placeholder={t('settings.analytics.filterPlaceholder')}
             />
@@ -414,7 +461,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
           <div
             key={card.label}
             title={card.hint}
-            className={`border-border dark:border-border rounded-2xl border px-6 py-5${card.hint ? ' cursor-help' : ''}`}
+            className={`border-border dark:border-border rounded-2xl border px-6 py-5 ${card.hint ? 'cursor-help' : ''}`}
           >
             <p className="text-muted-foreground text-sm">{card.label}</p>
             <p className="text-foreground dark:text-foreground mt-1 text-2xl font-bold">
@@ -455,6 +502,8 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                 }}
                 legendID="legend-container-1"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={false}
               />
             )}
@@ -471,10 +520,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
               value={tokenGroupBy}
               onValueChange={(value) => setTokenGroupBy(value as TokenGroupBy)}
             >
-              <SelectTrigger
-                className="w-[110px] rounded-3xl px-5 py-3 text-sm"
-                size="lg"
-              >
+              <SelectTrigger className="w-[110px]" size="lg" shape="pill">
                 <SelectValue placeholder={t('settings.analytics.groupBy')} />
               </SelectTrigger>
               <SelectContent>
@@ -510,6 +556,8 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                 }}
                 legendID="legend-container-2"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={true}
               />
             )}
@@ -544,26 +592,28 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                       data: Object.values(scheduleData || {}).map(
                         (item) => item.completed,
                       ),
-                      backgroundColor: primaryColor,
+                      backgroundColor: palette.success,
                     },
                     {
                       label: t('settings.analytics.failed'),
                       data: Object.values(scheduleData || {}).map(
                         (item) => item.failed,
                       ),
-                      backgroundColor: '#FF6384',
+                      backgroundColor: palette.destructive,
                     },
                     {
                       label: t('settings.analytics.skipped'),
                       data: Object.values(scheduleData || {}).map(
                         (item) => item.skipped,
                       ),
-                      backgroundColor: '#FFCE56',
+                      backgroundColor: palette.warning,
                     },
                   ],
                 }}
                 legendID="legend-container-4"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={true}
               />
             )}
@@ -593,17 +643,19 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                       data: (toolsData || []).map(
                         (tool) => tool.calls - tool.failures,
                       ),
-                      backgroundColor: primaryColor,
+                      backgroundColor: palette.success,
                     },
                     {
                       label: t('settings.analytics.failed'),
                       data: (toolsData || []).map((tool) => tool.failures),
-                      backgroundColor: '#FF6384',
+                      backgroundColor: palette.destructive,
                     },
                   ],
                 }}
                 legendID="legend-container-5"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={true}
               />
             )}
@@ -638,19 +690,21 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                       data: Object.values(feedbackData || {}).map(
                         (item) => item.positive,
                       ),
-                      backgroundColor: primaryColor,
+                      backgroundColor: palette.success,
                     },
                     {
                       label: t('settings.analytics.negativeFeedback'),
                       data: Object.values(feedbackData || {}).map(
                         (item) => item.negative,
                       ),
-                      backgroundColor: '#FF6384',
+                      backgroundColor: palette.destructive,
                     },
                   ],
                 }}
                 legendID="legend-container-3"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={false}
               />
             )}
@@ -666,6 +720,10 @@ type AnalyticsChartProps = {
   legendID: string;
   maxTicksLimitInX: number;
   isStacked: boolean;
+  /** Grid lines and axis borders (`--border`). */
+  gridColor: string;
+  /** Axis tick labels (`--muted-foreground`). */
+  tickColor: string;
 };
 
 function AnalyticsChart({
@@ -673,6 +731,8 @@ function AnalyticsChart({
   legendID,
   maxTicksLimitInX,
   isStacked,
+  gridColor,
+  tickColor,
 }: AnalyticsChartProps) {
   const options = {
     responsive: true,
@@ -689,25 +749,29 @@ function AnalyticsChart({
       x: {
         grid: {
           lineWidth: 0.2,
-          color: '#C4C4C4',
+          color: gridColor,
         },
         border: {
           width: 0.2,
-          color: '#C4C4C4',
+          color: gridColor,
         },
         ticks: {
           maxTicksLimit: maxTicksLimitInX,
+          color: tickColor,
         },
         stacked: isStacked,
       },
       y: {
         grid: {
           lineWidth: 0.2,
-          color: '#C4C4C4',
+          color: gridColor,
         },
         border: {
           width: 0.2,
-          color: '#C4C4C4',
+          color: gridColor,
+        },
+        ticks: {
+          color: tickColor,
         },
         stacked: isStacked,
       },
@@ -721,7 +785,10 @@ function AnalyticsChart({
         ...data,
         datasets: data.datasets.map((dataset) => ({
           ...dataset,
-          hoverBackgroundColor: `${dataset.backgroundColor}CC`, // 80% opacity
+          hoverBackgroundColor:
+            typeof dataset.backgroundColor === 'string'
+              ? hoverColor(dataset.backgroundColor)
+              : dataset.backgroundColor,
         })),
       }}
     />

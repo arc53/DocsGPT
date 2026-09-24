@@ -14,6 +14,7 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
   Table,
@@ -53,7 +54,7 @@ function ScopeChips({ scopes }: { scopes: string[] }) {
       {visible.map((scope) => (
         <span
           key={scope}
-          className="bg-muted text-foreground dark:text-foreground rounded-full px-2 py-0.5 font-mono text-[11px] leading-4 whitespace-nowrap"
+          className="bg-muted text-foreground dark:text-foreground rounded-full px-2 py-0.5 font-mono text-xs leading-4 whitespace-nowrap"
         >
           {scope}
         </span>
@@ -64,7 +65,7 @@ function ScopeChips({ scopes }: { scopes: string[] }) {
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
           title={expanded ? undefined : scopes.slice(VISIBLE_SCOPES).join(', ')}
-          className="text-primary hover:bg-primary/10 cursor-pointer rounded-full px-2 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap"
+          className="text-primary hover:bg-primary/10 cursor-pointer rounded-full px-2 py-0.5 text-xs leading-4 font-medium whitespace-nowrap"
         >
           {expanded
             ? t('settings.accessTokens.showLess')
@@ -213,19 +214,12 @@ export default function PersonalAccessTokens() {
     if (status === 'ok') return date;
     const expired = status === 'expired';
     return (
-      <span
-        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${
-          expired
-            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-        }`}
-        title={date}
-      >
+      <Badge variant={expired ? 'destructive' : 'warning'} title={date}>
         <TriangleAlert className="size-3 shrink-0" aria-hidden="true" />
         {expired
           ? t('settings.accessTokens.expired', { date, ...NO_ESCAPE })
           : t('settings.accessTokens.expiresSoon', { date, ...NO_ESCAPE })}
-      </span>
+      </Badge>
     );
   };
 
@@ -235,7 +229,7 @@ export default function PersonalAccessTokens() {
         type="button"
         variant="outline"
         size="sm"
-        className="rounded-full px-4"
+        shape="pill"
         onClick={() => setTokenToRegenerate(item)}
         aria-label={t('settings.accessTokens.regenerate.aria', {
           name: item.name,
@@ -249,9 +243,9 @@ export default function PersonalAccessTokens() {
   const renderRevokeButton = (item: PersonalAccessToken) => (
     <Button
       type="button"
-      variant="outline"
+      variant="destructive-outline"
       size="sm"
-      className="text-destructive hover:text-destructive border-destructive/40 hover:bg-destructive/10 rounded-full px-4"
+      shape="pill"
       onClick={() => requestRevoke(item)}
       aria-label={t('settings.accessTokens.revokeAria', {
         name: item.name,
@@ -275,7 +269,7 @@ export default function PersonalAccessTokens() {
         alt=""
         className="mx-auto mb-6 h-32 w-32"
       />
-      <p className="text-center text-lg text-gray-500 dark:text-gray-400">
+      <p className="text-muted-foreground text-center text-lg">
         {t('settings.accessTokens.empty')}
       </p>
       {policy?.enabled && (
@@ -305,7 +299,8 @@ export default function PersonalAccessTokens() {
           {policy?.enabled && (
             <Button
               type="button"
-              className="h-11 min-w-[108px] shrink-0 rounded-full whitespace-normal text-white"
+              shape="pill"
+              className="h-11 min-w-[108px] shrink-0 whitespace-normal"
               onClick={() => setCreateOpen(true)}
               disabled={limitReached}
               title={

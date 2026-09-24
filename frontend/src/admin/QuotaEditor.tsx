@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 import adminService, { type QuotaScope } from '../api/services/adminService';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Progress } from '../components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -45,11 +46,7 @@ export function UsageBar({
   const fmt = (n: number) => (kind === 'cost' ? fmtUsd(n) : fmtNumber(n));
   const percent = usagePercent(budget.used, budget.limit);
   const tone =
-    percent >= 100
-      ? 'bg-red-500'
-      : percent >= 80
-        ? 'bg-amber-500'
-        : 'bg-[#7D54D1]';
+    percent >= 100 ? 'destructive' : percent >= 80 ? 'warning' : 'default';
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3 text-sm">
@@ -60,19 +57,16 @@ export function UsageBar({
         </span>
       </div>
       {budget.limit !== null ? (
-        <div
-          className="bg-muted mt-1 h-1.5 w-full overflow-hidden rounded-full"
-          role="progressbar"
+        <Progress
+          className="mt-1"
+          size="sm"
+          variant={tone}
+          value={percent}
           aria-label={label}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(percent)}
-        >
-          <div
-            className={`h-full rounded-full ${tone}`}
-            style={{ width: `${percent}%` }}
-          />
-        </div>
+        />
       ) : null}
       {caption ? (
         <p className="text-muted-foreground mt-1 text-xs">{caption}</p>
@@ -197,7 +191,7 @@ export default function QuotaEditor({
     <div className="space-y-4">
       <p className="text-muted-foreground text-xs">{inheritHint}</p>
       {policy && !policy.enabled ? (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
+        <p className="text-warning text-xs">
           This policy is disabled and is not enforced. Saving keeps it disabled.
         </p>
       ) : null}
@@ -231,7 +225,7 @@ export default function QuotaEditor({
         />
       </div>
       {error ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="text-destructive text-sm">
           {error}
         </p>
       ) : null}

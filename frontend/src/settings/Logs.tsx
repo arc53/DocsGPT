@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { useLoaderState } from '../hooks';
+import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import { LogData } from './types';
 
@@ -136,10 +137,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
       </p>
       <div className="mb-3 flex flex-row flex-wrap items-center gap-3">
         <Select value={levelFilter} onValueChange={setLevelFilter}>
-          <SelectTrigger
-            className="w-[125px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
-          >
+          <SelectTrigger className="w-[125px]" size="lg" shape="pill">
             <SelectValue placeholder={t('settings.logs.levels.all')} />
           </SelectTrigger>
           <SelectContent>
@@ -151,10 +149,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           </SelectContent>
         </Select>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger
-            className="w-[140px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
-          >
+          <SelectTrigger className="w-[140px]" size="lg" shape="pill">
             <SelectValue placeholder={t('settings.logs.types.all')} />
           </SelectTrigger>
           <SelectContent>
@@ -169,7 +164,8 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder={t('settings.logs.searchPlaceholder')}
-          className="w-56 rounded-3xl"
+          shape="pill"
+          className="w-56"
         />
       </div>
       <div>
@@ -285,9 +281,9 @@ function Log({
 }) {
   const { t } = useTranslation();
   const logLevelColor = {
-    info: 'text-green-500',
-    error: 'text-red-500',
-    warning: 'text-yellow-500',
+    info: 'text-success',
+    error: 'text-destructive',
+    warning: 'text-warning',
   };
   const { id, action, timestamp, event_type, ...filteredLog } = log;
 
@@ -395,9 +391,10 @@ function Log({
     <div className="group dark:hover:bg-accent hover:bg-muted w-full rounded-xl bg-transparent">
       <div
         onClick={() => onToggle(log.id)}
-        className={`text-foreground flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 ${
-          isOpen ? 'dark:bg-background rounded-t-xl bg-[#F1F1F1]' : ''
-        }`}
+        className={cn(
+          'text-foreground flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3',
+          isOpen && 'bg-muted rounded-t-xl',
+        )}
       >
         <img
           src={ChevronRight}
@@ -405,15 +402,18 @@ function Log({
           className={`mt-[3px] h-3 w-3 transition duration-300 dark:invert ${isOpen ? 'rotate-90' : ''}`}
         />
         <span className="flex flex-row flex-wrap gap-2">
-          <h2 className="dark:text-foreground text-xs text-black/60">{`${log.timestamp}`}</h2>
+          <h2 className="text-muted-foreground text-xs">{`${log.timestamp}`}</h2>
           {log.event_type && (
             <h2 className="text-muted-foreground text-xs">
               {t(`settings.logs.types.${log.event_type}`)}
             </h2>
           )}
-          <h2 className="text-xs text-[#913400] dark:text-orange-500">{`[${log.action}]`}</h2>
+          <h2 className="text-warning text-xs">{`[${log.action}]`}</h2>
           <h2
-            className={`max-w-72 text-xs ${logLevelColor[log.level]} wrap-break-word`}
+            className={cn(
+              'max-w-72 text-xs wrap-break-word',
+              logLevelColor[log.level],
+            )}
           >
             {`${log.question}`.length > 250
               ? `${log.question.substring(0, 250)}...`
@@ -422,7 +422,7 @@ function Log({
         </span>
       </div>
       {isOpen && (
-        <div className="dark:bg-background rounded-b-xl bg-[#F1F1F1] px-4 py-3">
+        <div className="bg-muted rounded-b-xl px-4 py-3">
           {detailRows.length > 0 && (
             <div className="flex flex-col gap-1 px-2 pb-2">
               {detailRows.map(([label, value]) => (
@@ -441,11 +441,10 @@ function Log({
             <div key={block.label} className="px-2 pb-2">
               <p className="text-muted-foreground text-xs">{block.label}</p>
               <pre
-                className={`font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap ${
-                  block.isError
-                    ? 'text-red-500'
-                    : 'text-gray-700 dark:text-gray-400'
-                }`}
+                className={cn(
+                  'font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap',
+                  block.isError ? 'text-destructive' : 'text-foreground',
+                )}
               >
                 {block.text}
               </pre>
@@ -455,7 +454,7 @@ function Log({
             <div key={block.label} className="px-2 pb-2">
               <p className="text-muted-foreground text-xs">{block.label}</p>
               <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-                <pre className="font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap text-gray-700 dark:text-gray-400">
+                <pre className="text-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
                   {JSON.stringify(block.value, null, 2)}
                 </pre>
               </div>

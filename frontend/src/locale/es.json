@@ -23,7 +23,10 @@
     "sharedTitle": "Compartido contigo",
     "sharedBody": "Se compartió con tu equipo: {{type}} «{{name}}» ({{access}})",
     "sharedBodyNoName": "Se compartió con tu equipo: {{type}} ({{access}})",
-    "dismiss": "Descartar"
+    "dismiss": "Descartar",
+    "toolApprovalTitle": "Se requiere aprobar una herramienta",
+    "toolApprovalReview": "Revisar",
+    "toolApprovalFallbackName": "Conversación"
   },
   "demo": [
     {
@@ -221,6 +224,7 @@
       "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?",
       "confirmDelete": "¿Estás seguro de que deseas eliminar este archivo? Esta acción no se puede deshacer.",
       "backToAll": "Volver a todas las fuentes",
+      "back": "Volver",
       "chunks": "Fragmentos",
       "noChunks": "No se encontraron fragmentos",
       "noChunksAlt": "No se encontraron fragmentos",
@@ -371,6 +375,7 @@
       "failed": "Fallidas",
       "skipped": "Omitidas",
       "successful": "Exitosas",
+      "otherSeries": "Otros",
       "stats": {
         "messages": "Mensajes",
         "tokens": "Tokens",
@@ -1594,6 +1599,7 @@
       "backToRoot": "Volver",
       "currentFolder": "Esta carpeta",
       "noSubfolders": "Sin subcarpetas",
+      "openFolder": "Abrir carpeta",
       "noFolders": "No hay carpetas todavía"
     },
     "guardrailEvents": {

@@ -9,6 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 
 import userService from '../../api/services/userService';
 import SkeletonLoader from '../../components/SkeletonLoader';
@@ -32,15 +35,18 @@ const ACTION_KEYS: Record<string, string> = {
   block: 'agents.form.guardrails.actions.block',
 };
 
-/** Colour by consequence, so "we refused" reads differently from "we noticed". */
-function actionTone(action: string, outcome: string): string {
-  if (outcome === 'not_evaluated')
-    return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
-  if (action === 'block')
-    return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
-  if (action === 'redact')
-    return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
-  return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300';
+/**
+ * Colour by meaning, matching the status tokens used across the app: a block
+ * is a refusal, a flag needs review, a redaction is informational.
+ */
+function actionTone(
+  action: string,
+  outcome: string,
+): 'neutral' | 'destructive' | 'warning' | 'info' {
+  if (outcome === 'not_evaluated') return 'neutral';
+  if (action === 'block') return 'destructive';
+  if (action === 'redact') return 'info';
+  return 'warning';
 }
 
 type Props = { agentId?: string };
@@ -122,8 +128,9 @@ export default function GuardrailEvents({ agentId }: Props) {
           onValueChange={(value) => setDays(Number(value))}
         >
           <SelectTrigger
-            className="w-[150px] rounded-3xl px-5 py-3 text-sm"
+            className="w-[150px]"
             size="lg"
+            shape="pill"
             data-testid="guardrail-events-window"
           >
             <SelectValue />
@@ -148,21 +155,21 @@ export default function GuardrailEvents({ agentId }: Props) {
           value={totals?.blocked}
           loading={loading}
           testId="guardrail-stat-blocked"
-          tone="text-red-700 dark:text-red-400"
+          tone="text-destructive"
         />
         <StatTile
           label={t('agents.guardrailEvents.redacted')}
           value={totals?.redacted}
           loading={loading}
           testId="guardrail-stat-redacted"
-          tone="text-amber-700 dark:text-amber-400"
+          tone="text-info"
         />
         <StatTile
           label={t('agents.guardrailEvents.flagged')}
           value={totals?.flagged}
           loading={loading}
           testId="guardrail-stat-flagged"
-          tone="text-emerald-700 dark:text-emerald-400"
+          tone="text-warning"
         />
         <StatTile
           label={t('agents.guardrailEvents.notEvaluated')}
@@ -179,8 +186,9 @@ export default function GuardrailEvents({ agentId }: Props) {
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <Select value={checkFilter} onValueChange={setCheckFilter}>
           <SelectTrigger
-            className="w-[170px] rounded-3xl px-5 py-3 text-sm"
+            className="w-[170px]"
             size="lg"
+            shape="pill"
             data-testid="guardrail-events-check-filter"
           >
             <SelectValue />
@@ -198,8 +206,9 @@ export default function GuardrailEvents({ agentId }: Props) {
         </Select>
         <Select value={outcomeFilter} onValueChange={setOutcomeFilter}>
           <SelectTrigger
-            className="w-[170px] rounded-3xl px-5 py-3 text-sm"
+            className="w-[170px]"
             size="lg"
+            shape="pill"
             data-testid="guardrail-events-outcome-filter"
           >
             <SelectValue />
@@ -288,16 +297,11 @@ export default function GuardrailEvents({ agentId }: Props) {
                       {t(STAGE_KEYS[event.stage] ?? event.stage)}
                     </td>
                     <td className="px-3 py-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${actionTone(
-                          event.action,
-                          event.outcome,
-                        )}`}
-                      >
+                      <Badge variant={actionTone(event.action, event.outcome)}>
                         {event.outcome === 'not_evaluated'
                           ? t('agents.guardrailEvents.notEvaluated')
                           : t(ACTION_KEYS[event.action] ?? event.action)}
-                      </span>
+                      </Badge>
                     </td>
                     <td className="text-muted-foreground max-w-[28rem] px-3 py-2">
                       {event.detail || '—'}
@@ -345,7 +349,7 @@ function StatTile({
           <SkeletonLoader count={1} />
         </div>
       ) : (
-        <p className={`mt-1 text-xl font-semibold ${tone}`}>{value ?? 0}</p>
+        <p className={cn('mt-1 text-xl font-semibold', tone)}>{value ?? 0}</p>
       )}
     </div>
   );
@@ -381,12 +385,10 @@ function ByCheck({ summary }: { summary: GuardrailSummary }) {
         {rows.map(([check, total]) => (
           <div key={check} className="flex items-center gap-3">
             <span className="w-32 shrink-0 truncate text-xs">{check}</span>
-            <div className="bg-border/60 h-2 flex-1 overflow-hidden rounded-full">
-              <div
-                className="bg-violets-are-blue h-full rounded-full"
-                style={{ width: `${max ? (total / max) * 100 : 0}%` }}
-              />
-            </div>
+            <Progress
+              className="flex-1"
+              value={max ? (total / max) * 100 : 0}
+            />
             <span className="text-muted-foreground w-10 shrink-0 text-right text-xs">
               {total}
             </span>

@@ -214,15 +214,18 @@ export default function SchedulesView() {
                           <div className="flex gap-2">
                             <Button
                               type="button"
+                              variant="outline-primary"
                               size="sm"
+                              shape="pill"
                               onClick={() => openEdit(schedule)}
-                              className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid bg-transparent px-5 hover:text-white"
                             >
                               {t('agents.schedules.edit')}
                             </Button>
                             <Button
                               type="button"
+                              variant="outline-primary"
                               size="sm"
+                              shape="pill"
                               onClick={() =>
                                 dispatch(
                                   setSchedulePaused({
@@ -235,7 +238,6 @@ export default function SchedulesView() {
                                   }),
                                 )
                               }
-                              className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid bg-transparent px-5 hover:text-white"
                             >
                               {schedule.status === 'active'
                                 ? t('agents.schedules.pause')
@@ -243,13 +245,14 @@ export default function SchedulesView() {
                             </Button>
                             <Button
                               type="button"
+                              variant="outline-primary"
                               size="sm"
+                              shape="pill"
                               onClick={() =>
                                 dispatch(
                                   runScheduleNow({ id: schedule.id, token }),
                                 )
                               }
-                              className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid bg-transparent px-5 hover:text-white"
                             >
                               {t('agents.schedules.runNow')}
                             </Button>
@@ -257,8 +260,8 @@ export default function SchedulesView() {
                               type="button"
                               variant="destructive-outline"
                               size="sm"
+                              shape="pill"
                               onClick={() => requestDelete(schedule)}
-                              className="rounded-full px-5"
                             >
                               {t('agents.schedules.delete')}
                             </Button>
@@ -267,13 +270,13 @@ export default function SchedulesView() {
                         <Button
                           type="button"
                           variant="link"
-                          size="sm"
+                          size="xs"
                           onClick={() =>
                             setExpanded(
                               expanded === schedule.id ? null : schedule.id,
                             )
                           }
-                          className="mt-2 h-auto p-0 text-xs underline"
+                          className="mt-0.5 -ml-2"
                         >
                           {expanded === schedule.id
                             ? t('agents.schedules.hideRuns')
@@ -324,9 +327,10 @@ export default function SchedulesView() {
                             {schedule.status === 'active' && (
                               <Button
                                 type="button"
+                                variant="outline-primary"
                                 size="sm"
+                                shape="pill"
                                 onClick={() => openEdit(schedule)}
-                                className="border-primary text-primary hover:bg-primary/90 rounded-full border border-solid bg-transparent px-5 hover:text-white"
                               >
                                 {t('agents.schedules.edit')}
                               </Button>
@@ -336,8 +340,8 @@ export default function SchedulesView() {
                                 type="button"
                                 variant="destructive-outline"
                                 size="sm"
+                                shape="pill"
                                 onClick={() => requestDelete(schedule)}
-                                className="rounded-full px-5"
                               >
                                 {t('agents.schedules.cancel')}
                               </Button>

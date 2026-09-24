@@ -27,7 +27,9 @@ import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import { SectionBackLink } from '../navigation/SectionPageHeader';
 import { SETTINGS_SECTION } from '../navigation/sections';
 import { Avatar } from '../components/ui/avatar';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { Textarea } from '../components/ui/textarea';
 import { useDarkTheme } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
@@ -483,17 +486,11 @@ export default function Teams() {
   const isAdmin = selected?.member_role === 'team_admin';
 
   const roleBadge = (role: TeamRole) => (
-    <span
-      className={`rounded-full px-2 py-0.5 text-xs ${
-        role === 'team_admin'
-          ? 'bg-muted-foreground/15 text-foreground'
-          : 'bg-muted-foreground/10 text-muted-foreground'
-      }`}
-    >
+    <Badge variant={role === 'team_admin' ? 'outline' : 'neutral'}>
       {role === 'team_admin'
         ? t('settings.teams.roleAdmin')
         : t('settings.teams.roleMember')}
-    </span>
+    </Badge>
   );
 
   const emptyState = (message: string, extra?: ReactNode) => (
@@ -554,58 +551,58 @@ export default function Teams() {
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {teams.map((team) => (
-                <button
+                <Card
                   key={team.id}
-                  className="border-border bg-muted dark:bg-accent hover:border-primary/40 group flex h-full flex-col gap-3 rounded-2xl border p-4 text-left transition-colors"
-                  onClick={() => openTeam(team)}
+                  asChild
+                  interactive
+                  className="group h-full"
                 >
-                  <div className="flex items-center gap-3">
-                    <span aria-hidden="true" className="contents">
-                      <Avatar
-                        alt=""
-                        className="bg-muted-foreground/15 text-foreground flex size-9 shrink-0 items-center justify-center rounded-md text-sm font-medium"
-                      >
-                        {initialOf(team.name)}
-                      </Avatar>
-                    </span>
-                    <span className="text-foreground min-w-0 flex-1 truncate text-sm font-semibold">
-                      {team.name}
-                    </span>
-                    {roleBadge(team.member_role ?? 'team_member')}
-                    <ChevronRight
-                      className="text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5"
-                      size={18}
-                      strokeWidth={1.75}
-                      aria-hidden
-                    />
-                  </div>
-                  {team.description ? (
-                    <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
-                      {team.description}
-                    </p>
-                  ) : (
-                    <p className="text-muted-foreground/50 text-xs italic">
-                      {t('settings.teams.noDescription')}
-                    </p>
-                  )}
-                  <div className="text-muted-foreground mt-auto flex items-center gap-1.5 text-xs">
-                    <Users size={13} strokeWidth={1.75} aria-hidden />
-                    <span>
-                      {t(
-                        (team.member_count ?? 0) === 1
-                          ? 'settings.teams.memberCountOne'
-                          : 'settings.teams.memberCountOther',
-                        { count: team.member_count ?? 0 },
-                      )}
-                    </span>
-                    <span aria-hidden>·</span>
-                    <span>
-                      {t('settings.teams.sharedCount', {
-                        count: team.shared_count ?? 0,
-                      })}
-                    </span>
-                  </div>
-                </button>
+                  <button onClick={() => openTeam(team)}>
+                    <div className="flex items-center gap-3">
+                      <span aria-hidden="true" className="contents">
+                        <Avatar alt="" size="lg" shape="square" variant="muted">
+                          {initialOf(team.name)}
+                        </Avatar>
+                      </span>
+                      <span className="text-foreground min-w-0 flex-1 truncate text-sm font-semibold">
+                        {team.name}
+                      </span>
+                      {roleBadge(team.member_role ?? 'team_member')}
+                      <ChevronRight
+                        className="text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5"
+                        size={18}
+                        strokeWidth={1.75}
+                        aria-hidden
+                      />
+                    </div>
+                    {team.description ? (
+                      <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
+                        {team.description}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground/50 text-xs italic">
+                        {t('settings.teams.noDescription')}
+                      </p>
+                    )}
+                    <div className="text-muted-foreground mt-auto flex items-center gap-1.5 text-xs">
+                      <Users size={13} strokeWidth={1.75} aria-hidden />
+                      <span>
+                        {t(
+                          (team.member_count ?? 0) === 1
+                            ? 'settings.teams.memberCountOne'
+                            : 'settings.teams.memberCountOther',
+                          { count: team.member_count ?? 0 },
+                        )}
+                      </span>
+                      <span aria-hidden>·</span>
+                      <span>
+                        {t('settings.teams.sharedCount', {
+                          count: team.shared_count ?? 0,
+                        })}
+                      </span>
+                    </div>
+                  </button>
+                </Card>
               ))}
             </div>
           )}
@@ -626,10 +623,7 @@ export default function Teams() {
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <span aria-hidden="true" className="contents">
-                <Avatar
-                  alt=""
-                  className="bg-muted-foreground/15 text-foreground flex size-10 shrink-0 items-center justify-center rounded-md text-base font-medium"
-                >
+                <Avatar alt="" size="xl" shape="square" variant="muted">
                   {initialOf(selected.name)}
                 </Avatar>
               </span>
@@ -648,9 +642,9 @@ export default function Teams() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
-                    variant="ghost"
+                    variant="ghost-muted"
                     size="icon-sm"
-                    className="text-muted-foreground shrink-0"
+                    className="shrink-0"
                     aria-label={t('settings.teams.teamActions')}
                   >
                     <MoreVertical size={18} strokeWidth={1.75} aria-hidden />
@@ -708,7 +702,9 @@ export default function Teams() {
                     <span aria-hidden="true" className="contents">
                       <Avatar
                         alt=""
-                        className="bg-muted-foreground/15 text-foreground flex size-8 items-center justify-center rounded-full text-sm font-medium"
+                        size="default"
+                        shape="circle"
+                        variant="muted"
                       >
                         {initialOf(memberLabel(m))}
                       </Avatar>
@@ -752,9 +748,9 @@ export default function Teams() {
                     )}
                     {isAdmin && (
                       <Button
-                        variant="ghost"
+                        variant="ghost-destructive"
                         size="icon-sm"
-                        className="text-muted-foreground hover:text-destructive shrink-0"
+                        className="shrink-0"
                         aria-label={t('settings.teams.remove')}
                         title={t('settings.teams.remove')}
                         onClick={() => requestRemoveMember(m.user_id)}
@@ -794,14 +790,14 @@ export default function Teams() {
                     >
                       {resolveResourceName(g)}
                     </span>
-                    <span className="bg-muted-foreground/10 text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-xs">
+                    <Badge variant="neutral">
                       {accessLevelLabel(g.access_level)}
-                    </span>
+                    </Badge>
                     {isAdmin && (
                       <Button
-                        variant="ghost"
+                        variant="ghost-destructive"
                         size="icon-sm"
-                        className="text-muted-foreground hover:text-destructive shrink-0"
+                        className="shrink-0"
                         aria-label={t('settings.teams.unshare')}
                         title={t('settings.teams.unshare')}
                         onClick={() => handleUnshare(g)}
@@ -886,10 +882,10 @@ export default function Teams() {
             >
               {t('settings.teams.descriptionLabel')}
             </label>
-            <textarea
+            <Textarea
               id="team-edit-description"
               rows={3}
-              className="border-border bg-background text-foreground focus-visible:ring-ring/50 focus-visible:border-ring placeholder:text-muted-foreground w-full resize-none rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-[3px]"
+              resize="none"
               placeholder={t('settings.teams.descriptionPlaceholder')}
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}

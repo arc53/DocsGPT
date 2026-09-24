@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 
 import { usagePercent } from '../../admin/quotaUtils';
 import userService from '../../api/services/userService';
+import { Progress } from '../../components/ui/progress';
 import { selectToken } from '../../preferences/preferenceSlice';
 
 type Budget = { limit: number | null; used: number };
@@ -27,11 +28,7 @@ function Meter({
   if (budget.limit === null) return null;
   const percent = usagePercent(budget.used, budget.limit);
   const tone =
-    percent >= 100
-      ? 'bg-red-500'
-      : percent >= 80
-        ? 'bg-amber-500'
-        : 'bg-[#7D54D1]';
+    percent >= 100 ? 'destructive' : percent >= 80 ? 'warning' : 'default';
   return (
     <div className="min-w-48 flex-1">
       <div className="flex items-baseline justify-between gap-3 text-sm">
@@ -43,19 +40,16 @@ function Meter({
           })}
         </span>
       </div>
-      <div
-        className="bg-muted mt-1 h-1.5 w-full overflow-hidden rounded-full"
-        role="progressbar"
+      <Progress
+        size="sm"
+        variant={tone}
+        value={percent}
+        className="mt-1"
         aria-label={label}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(percent)}
-      >
-        <div
-          className={`h-full rounded-full ${tone}`}
-          style={{ width: `${percent}%` }}
-        />
-      </div>
+      />
     </div>
   );
 }

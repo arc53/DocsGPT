@@ -1,3 +1,4 @@
+import { TriangleAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -9,6 +10,7 @@ import patService, {
   PersonalAccessToken,
 } from '../api/services/patService';
 import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Label } from '../components/ui/label';
 import { Modal } from '../components/ui/modal';
@@ -101,7 +103,8 @@ export default function RegenerateAccessTokenModal({
             variant="ghost"
             onClick={handleClose}
             disabled={submitting}
-            className="rounded-3xl px-6"
+            size="lg"
+            shape="pill"
           >
             {t('settings.accessTokens.create.cancel')}
           </Button>
@@ -109,7 +112,8 @@ export default function RegenerateAccessTokenModal({
             type="button"
             onClick={handleSubmit}
             disabled={submitting}
-            className="rounded-3xl px-6 text-white"
+            size="lg"
+            shape="pill"
           >
             {submitting ? (
               <span className="flex items-center gap-2">
@@ -125,7 +129,7 @@ export default function RegenerateAccessTokenModal({
     >
       <div className="flex flex-col gap-5 px-1">
         <div>
-          <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
+          <h2 className="text-foreground text-xl font-semibold">
             {t('settings.accessTokens.regenerate.title')}
           </h2>
           <p className="text-muted-foreground mt-2 text-sm break-words">
@@ -146,7 +150,7 @@ export default function RegenerateAccessTokenModal({
           >
             <SelectTrigger
               id="pat-regenerate-expiry"
-              className="w-full rounded-xl px-4 py-2"
+              className="w-full"
               size="lg"
             >
               <SelectValue />
@@ -159,28 +163,29 @@ export default function RegenerateAccessTokenModal({
               ))}
             </SelectContent>
           </Select>
-          <p
-            className={`text-xs ${
-              expiry === NO_EXPIRY
-                ? 'text-amber-700 dark:text-amber-400'
-                : 'text-muted-foreground'
-            }`}
-          >
-            {expiry === NO_EXPIRY
-              ? t('settings.accessTokens.create.noExpirationHint')
-              : t('settings.accessTokens.create.expiresOn', {
-                  date: formatDateOnly(
-                    new Date(Date.now() + expiry * DAY_MS).toISOString(),
-                  ),
-                  ...NO_ESCAPE,
-                })}
-          </p>
+          {expiry === NO_EXPIRY ? (
+            <Alert variant="warning">
+              <TriangleAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>
+                {t('settings.accessTokens.create.noExpirationHint')}
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              {t('settings.accessTokens.create.expiresOn', {
+                date: formatDateOnly(
+                  new Date(Date.now() + expiry * DAY_MS).toISOString(),
+                ),
+                ...NO_ESCAPE,
+              })}
+            </p>
+          )}
         </div>
 
         {error && (
           <p
             role="alert"
-            className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400"
+            className="bg-destructive/10 text-destructive rounded-lg px-4 py-2 text-sm"
           >
             {error}
           </p>

@@ -177,7 +177,7 @@ export default function CustomModels() {
         alt={t('settings.customModels.empty')}
         className="mx-auto mb-6 h-32 w-32"
       />
-      <p className="text-center text-lg text-gray-500 dark:text-gray-400">
+      <p className="text-muted-foreground text-center text-lg">
         {t('settings.customModels.empty')}
       </p>
     </div>
@@ -199,8 +199,8 @@ export default function CustomModels() {
               id="custom-models-search-input"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              labelBgClassName="bg-background"
-              className="rounded-full"
+              labelSurface="background"
+              shape="pill"
               leftIcon={
                 <SearchIcon
                   className="text-muted-foreground size-4"
@@ -211,7 +211,8 @@ export default function CustomModels() {
           </div>
           <Button
             type="button"
-            className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
+            shape="pill"
+            className="h-11 min-w-[108px] whitespace-normal"
             onClick={openAddModal}
           >
             {t('settings.customModels.addModel')}

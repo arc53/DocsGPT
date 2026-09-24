@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import adminService, {
   type ActivityFilters,
 } from '../api/services/adminService';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { MultiSelect } from '../components/ui/multi-select';
@@ -21,7 +22,6 @@ import {
 import { selectToken } from '../preferences/preferenceSlice';
 import {
   Loading,
-  Pill,
   categoryTone,
   eventLabel,
   eventTone,
@@ -75,7 +75,7 @@ function DetailRow({ label, value }: { label: string; value: unknown }) {
       ? JSON.stringify(value)
       : String(value);
   return (
-    <div className="flex gap-2 text-[13px] break-all">
+    <div className="flex gap-2 text-xs break-all">
       <span className="text-muted-foreground min-w-32 shrink-0">{label}</span>
       <span className="font-mono">{text}</span>
     </div>
@@ -275,7 +275,7 @@ export default function Activity() {
               key={range.label}
               variant={range.days === rangeDays ? 'default' : 'outline'}
               size="sm"
-              className="rounded-3xl"
+              shape="pill"
               onClick={() => withPageReset(setRangeDays)(range.days)}
             >
               {range.label}
@@ -347,7 +347,7 @@ export default function Activity() {
                   const repeat =
                     idx > 0 && rows[idx - 1].actor_id === row.actor_id;
                   return [
-                    <TableRow key={key} className="hover:bg-muted/40">
+                    <TableRow key={key}>
                       <TableCell>
                         <button
                           type="button"
@@ -369,29 +369,29 @@ export default function Activity() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Pill tone={eventTone(row.event)}>
+                          <Badge variant={eventTone(row.event)}>
                             {eventLabel(row.event)}
-                          </Pill>
+                          </Badge>
                           {row.outcome ? (
-                            <Pill tone={outcomeTone(row.outcome)}>
+                            <Badge variant={outcomeTone(row.outcome)}>
                               {outcomeLabel(row.outcome)}
-                            </Pill>
+                            </Badge>
                           ) : null}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Pill tone={categoryTone(row.category)}>
+                        <Badge variant={categoryTone(row.category)}>
                           {row.category}
-                        </Pill>
+                        </Badge>
                       </TableCell>
                       <TableCell
-                        className={`font-mono text-[13px] ${
+                        className={`font-mono text-xs ${
                           repeat ? 'text-muted-foreground/50' : ''
                         }`}
                       >
                         {repeat ? '〃' : (row.actor_id ?? '—')}
                       </TableCell>
-                      <TableCell className="font-mono text-[13px]">
+                      <TableCell className="font-mono text-xs">
                         {row.target_id && row.target_id !== row.actor_id
                           ? row.target_id
                           : '—'}
@@ -406,9 +406,7 @@ export default function Activity() {
                             local
                           </span>
                         ) : (
-                          <span className="font-mono text-[13px]">
-                            {row.ip}
-                          </span>
+                          <span className="font-mono text-xs">{row.ip}</span>
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground whitespace-nowrap">
@@ -419,7 +417,7 @@ export default function Activity() {
                     </TableRow>,
                     isOpen ? (
                       <TableRow key={`${key}:detail`}>
-                        <TableCell colSpan={7} className="py-2">
+                        <TableCell colSpan={7}>
                           <RowDetail row={row} />
                         </TableCell>
                       </TableRow>

@@ -29,8 +29,9 @@ export default function SharedAgentCard({
           <Avatar
             src={agent.image}
             alt={agent.name}
-            className="h-full w-full"
-            imgClassName="h-full w-full rounded-full object-contain"
+            shape="circle"
+            className="size-full overflow-hidden"
+            imgClassName="size-full object-contain"
           />
         </div>
         <div className="flex max-h-[92px] flex-1 flex-col gap-px">
@@ -46,8 +47,9 @@ export default function SharedAgentCard({
             type="button"
             variant="outline"
             size="sm"
+            shape="pill"
             onClick={onEdit}
-            className="shrink-0 gap-1.5 rounded-full"
+            className="shrink-0"
             aria-label={t('agents.edit')}
           >
             <img src={EditIcon} alt="" className="h-3.5 w-3.5" />

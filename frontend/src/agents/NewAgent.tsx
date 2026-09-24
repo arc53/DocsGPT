@@ -1,5 +1,10 @@
 import isEqual from 'lodash/isEqual';
-import { MoreHorizontal } from 'lucide-react';
+import {
+  ChevronRight,
+  CircleCheck,
+  CircleX,
+  MoreHorizontal,
+} from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -11,6 +16,8 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -28,10 +35,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 import devicesService from '../api/services/devicesService';
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
+import ScienceSparkDarkIcon from '../assets/science-spark-dark.svg';
+import ScienceSparkIcon from '../assets/science-spark.svg';
 import SourceIcon from '../assets/source.svg';
 import { FileUpload } from '../components/FileUpload';
 import {
@@ -589,17 +600,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             const meta = devicesById.get(deviceId);
             const online = meta?.online ?? false;
             base.descriptionNode = (
-              <span
-                className={`mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                  online
-                    ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300'
-                    : 'bg-gray-200 text-gray-700 dark:bg-gray-700/40 dark:text-gray-300'
-                }`}
+              <Badge
+                variant={online ? 'success' : 'neutral'}
+                className="mt-0.5"
               >
                 {online
                   ? t('settings.devices.online')
                   : t('settings.devices.offline')}
-              </span>
+              </Badge>
             );
           }
           return base;
@@ -808,33 +816,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       <div className="flex w-full flex-wrap items-center justify-between gap-2">
         {showAgentNav ? <CurrentSectionHeader /> : <span aria-hidden />}
         <div className="flex flex-wrap items-center gap-2">
-          {submitError && (
-            <div
-              role="alert"
-              className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400"
-            >
-              <span className="h-4 w-4 shrink-0 bg-[url('/src/assets/circle-x.svg')] bg-contain bg-center bg-no-repeat" />
-              {submitError}
-            </div>
-          )}
           {hasChanges && (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleCancel}
-              className="text-primary dark:text-foreground rounded-3xl px-2 hover:bg-transparent"
-            >
+            <Button type="button" variant="link" onClick={handleCancel}>
               {t('agents.form.buttons.cancel')}
             </Button>
           )}
           {modeConfig[effectiveMode].showSaveDraft && (
             <Button
               type="button"
+              variant="outline-primary"
+              shape="pill"
               disabled={isDraftBlocked()}
               onClick={handleSaveDraft}
-              className={`border-primary text-primary hover:bg-primary/90 min-w-28 rounded-3xl border border-solid bg-transparent px-5 whitespace-nowrap hover:text-white ${
-                isDraftBlocked() ? 'disabled:opacity-30' : ''
-              }`}
+              className="min-w-28"
             >
               <span className="flex items-center justify-center transition-all duration-200">
                 {draftLoading ? (
@@ -849,7 +843,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             type="button"
             disabled={!isPublishable() || !hasChanges}
             onClick={handlePublish}
-            className={`${!isPublishable() || !hasChanges ? 'disabled:opacity-30' : ''} min-w-28 rounded-3xl px-5 whitespace-nowrap text-white`}
+            shape="pill"
+            className="min-w-28"
           >
             <span className="flex items-center justify-center transition-all duration-200">
               {publishLoading ? (
@@ -889,6 +884,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         </div>
       </div>
       {showAgentNav && <SectionPills className="mt-4" />}
+      {submitError && (
+        <Alert variant="destructive" className="mt-3">
+          <CircleX aria-hidden="true" className="size-4" />
+          <AlertDescription>{submitError}</AlertDescription>
+        </Alert>
+      )}
       <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
         <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
           <div className="bg-card rounded-2xl px-6 py-3">
@@ -896,14 +897,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               {t('agents.form.sections.meta')}
             </h2>
             <Input
-              className="bg-card mt-3 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm"
+              shape="pill"
+              className="mt-3"
               type="text"
               value={agent.name}
               placeholder={t('agents.form.placeholders.agentName')}
               onChange={(e) => setAgent({ ...agent, name: e.target.value })}
             />
-            <textarea
-              className="border-border text-foreground dark:text-foreground dark:placeholder:text-muted-foreground bg-card dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring mt-3 h-32 w-full rounded-xl border px-5 py-4 text-sm outline-hidden placeholder:text-gray-400 focus-visible:ring-[3px]"
+            <Textarea
+              size="lg"
+              className="mt-3 h-32"
               placeholder={t('agents.form.placeholders.describeAgent')}
               value={agent.description}
               onChange={(e) =>
@@ -913,17 +916,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             <div className="mt-3">
               <FileUpload
                 showPreview
-                className="bg-card"
+                size="compact"
+                previewSize={56}
                 onUpload={handleUpload}
                 onRemove={() => setImageFile(null)}
                 uploadText={[
                   {
                     text: t('agents.form.upload.clickToUpload'),
-                    colorClass: 'text-primary',
+                    highlight: true,
                   },
                   {
                     text: t('agents.form.upload.dragAndDrop'),
-                    colorClass: 'text-[#525252]',
                   },
                 ]}
               />
@@ -960,16 +963,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   trigger={
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="combobox"
+                      size="field"
+                      shape="pill"
                       ref={sourceAnchorButtonRef}
                       title={selectedSourceNames.join(', ')}
-                      className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
-                        selectedSourceIds.size > 0
-                          ? 'text-foreground dark:text-foreground'
-                          : 'dark:text-muted-foreground text-gray-400'
-                      }`}
+                      data-placeholder={
+                        selectedSourceIds.size > 0 ? undefined : ''
+                      }
+                      className="w-full justify-start text-left"
                     >
-                      {sourceTriggerLabel}
+                      <span className="truncate">{sourceTriggerLabel}</span>
                     </Button>
                   }
                 />
@@ -1016,8 +1020,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </div>
               <Button
                 type="button"
+                variant="outline-primary"
+                size="field"
+                shape="pill"
                 onClick={() => setAddPromptModal('ACTIVE')}
-                className="border-primary text-primary hover:bg-primary/90 h-auto min-w-20 shrink-0 basis-full rounded-3xl border border-solid bg-transparent px-5 py-3 whitespace-nowrap hover:text-white sm:basis-auto"
+                className="min-w-20 shrink-0 basis-full sm:basis-auto"
               >
                 {t('agents.form.buttons.add')}
               </Button>
@@ -1059,20 +1066,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 trigger={
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="combobox"
+                    size="field"
+                    shape="pill"
                     ref={toolAnchorButtonRef}
-                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
-                      selectedTools.length > 0
-                        ? 'text-foreground dark:text-foreground'
-                        : 'dark:text-muted-foreground text-gray-400'
-                    }`}
+                    data-placeholder={selectedTools.length > 0 ? undefined : ''}
+                    className="w-full justify-start text-left"
                   >
-                    {selectedTools.length > 0
-                      ? selectedTools
-                          .map((tool) => getToolDisplayName(tool))
-                          .filter(Boolean)
-                          .join(', ')
-                      : t('agents.form.placeholders.selectTools')}
+                    <span className="truncate">
+                      {selectedTools.length > 0
+                        ? selectedTools
+                            .map((tool) => getToolDisplayName(tool))
+                            .filter(Boolean)
+                            .join(', ')
+                        : t('agents.form.placeholders.selectTools')}
+                    </span>
                   </Button>
                 }
               />
@@ -1089,10 +1097,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   setAgent({ ...agent, agent_type: value })
                 }
               >
-                <SelectTrigger
-                  className="w-full rounded-3xl px-5 py-3 text-sm"
-                  size="lg"
-                >
+                <SelectTrigger className="w-full" shape="pill" size="lg">
                   <SelectValue
                     placeholder={t('agents.form.placeholders.selectType')}
                   />
@@ -1148,20 +1153,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 trigger={
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="combobox"
+                    size="field"
+                    shape="pill"
                     ref={modelAnchorButtonRef}
-                    className={`bg-card h-auto w-full justify-start truncate rounded-3xl px-5 py-3 text-left text-sm font-normal ${
-                      selectedModelIds.size > 0
-                        ? 'text-foreground dark:text-foreground'
-                        : 'dark:text-muted-foreground text-gray-400'
-                    }`}
+                    data-placeholder={
+                      selectedModelIds.size > 0 ? undefined : ''
+                    }
+                    className="w-full justify-start text-left"
                   >
-                    {selectedModelIds.size > 0
-                      ? availableModels
-                          .filter((m) => selectedModelIds.has(m.id))
-                          .map((m) => m.display_name)
-                          .join(', ')
-                      : t('agents.form.placeholders.selectModels')}
+                    <span className="truncate">
+                      {selectedModelIds.size > 0
+                        ? availableModels
+                            .filter((m) => selectedModelIds.has(m.id))
+                            .map((m) => m.display_name)
+                            .join(', ')
+                        : t('agents.form.placeholders.selectModels')}
+                    </span>
                   </Button>
                 }
               />
@@ -1176,10 +1184,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       setAgent({ ...agent, default_model_id: value })
                     }
                   >
-                    <SelectTrigger
-                      className="w-full rounded-3xl px-5 py-3 text-sm"
-                      size="lg"
-                    >
+                    <SelectTrigger className="w-full" shape="pill" size="lg">
                       <SelectValue
                         placeholder={t(
                           'agents.form.placeholders.selectDefaultModel',
@@ -1200,49 +1205,44 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               )}
             </div>
           </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() =>
-                setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
-              }
-              className="h-auto w-full justify-between px-0 py-0 text-left hover:bg-transparent"
-            >
-              <div>
-                <h2 className="text-lg font-semibold">
+          <div className="bg-card has-[[data-variant=section-toggle]:focus-visible]:ring-ring/50 rounded-2xl px-6 py-3 has-[[data-variant=section-toggle]:focus-visible]:ring-3 has-[[data-variant=section-toggle]:focus-visible]:ring-inset">
+            {/* The heading wraps the toggle: a button's children are
+                presentational, so a heading inside it is lost to screen readers. */}
+            <h2>
+              <Button
+                type="button"
+                variant="section-toggle"
+                onClick={() =>
+                  setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
+                }
+                size="sm"
+                aria-expanded={isAdvancedSectionExpanded}
+                className="-ml-3 w-fit justify-start"
+              >
+                <ChevronRight
+                  aria-hidden="true"
+                  className={cn(
+                    'transition-transform',
+                    isAdvancedSectionExpanded && 'rotate-90',
+                  )}
+                />
+                <span className="text-lg font-semibold">
                   {t('agents.form.sections.advanced')}
-                </h2>
-              </div>
-              <div className="ml-4 flex items-center">
-                <svg
-                  className={`size-5 transform transition-transform duration-200 ${
-                    isAdvancedSectionExpanded ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </div>
-            </Button>
+                </span>
+              </Button>
+            </h2>
             {isAdvancedSectionExpanded && (
               <div className="mt-3">
                 <div>
                   <h2 className="text-sm font-medium">
                     {t('agents.form.advanced.jsonSchema')}
                   </h2>
-                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                  <p className="text-muted-foreground mt-1 text-xs">
                     {t('agents.form.advanced.jsonSchemaDescription')}
                   </p>
                 </div>
-                <textarea
+                <Textarea
+                  size="lg"
                   value={jsonSchemaText}
                   onChange={(e) => validateAndSetJsonSchema(e.target.value)}
                   placeholder={`{
@@ -1255,23 +1255,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   "additionalProperties": false
 }`}
                   rows={9}
-                  className={`border-border text-foreground dark:text-foreground bg-card dark:border-border focus-visible:ring-ring/50 focus-visible:border-ring mt-2 w-full rounded-2xl border px-4 py-3 font-mono text-sm outline-hidden focus-visible:ring-[3px]`}
+                  className="mt-2 font-mono"
                 />
                 {jsonSchemaText.trim() !== '' && (
                   <div
                     className={`mt-2 flex items-center gap-2 text-sm ${
-                      jsonSchemaValid
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-red-600 dark:text-red-400'
+                      jsonSchemaValid ? 'text-success' : 'text-destructive'
                     }`}
                   >
-                    <span
-                      className={`h-4 w-4 bg-contain bg-center bg-no-repeat ${
-                        jsonSchemaValid
-                          ? "bg-[url('/src/assets/circle-check.svg')]"
-                          : "bg-[url('/src/assets/circle-x.svg')]"
-                      }`}
-                    />
+                    {jsonSchemaValid ? (
+                      <CircleCheck className="size-4" aria-hidden="true" />
+                    ) : (
+                      <CircleX className="size-4" aria-hidden="true" />
+                    )}
                     {jsonSchemaValid
                       ? t('agents.form.advanced.validJson')
                       : t('agents.form.advanced.invalidJson')}
@@ -1284,7 +1280,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       <h2 className="text-sm font-medium">
                         {t('agents.form.advanced.tokenLimiting')}
                       </h2>
-                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                      <p className="text-muted-foreground mt-1 text-xs">
                         {t('agents.form.advanced.tokenLimitingDescription')}
                       </p>
                     </div>
@@ -1315,11 +1311,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     }
                     disabled={!agent.limited_token_mode}
                     placeholder={t('agents.form.placeholders.enterTokenLimit')}
-                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
-                      !agent.limited_token_mode
-                        ? 'cursor-not-allowed opacity-50'
-                        : ''
-                    }`}
+                    shape="pill"
+                    className="mt-2"
                   />
                 </div>
 
@@ -1329,7 +1322,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       <h2 className="text-sm font-medium">
                         {t('agents.form.advanced.requestLimiting')}
                       </h2>
-                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                      <p className="text-muted-foreground mt-1 text-xs">
                         {t('agents.form.advanced.requestLimitingDescription')}
                       </p>
                     </div>
@@ -1362,11 +1355,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     placeholder={t(
                       'agents.form.placeholders.enterRequestLimit',
                     )}
-                    className={`bg-card mt-2 h-auto rounded-3xl px-5 py-3 text-sm placeholder:text-gray-400 md:text-sm ${
-                      !agent.limited_request_mode
-                        ? 'cursor-not-allowed opacity-50'
-                        : ''
-                    }`}
+                    shape="pill"
+                    className="mt-2"
                   />
                 </div>
 
@@ -1376,7 +1366,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       <h2 className="text-sm font-medium">
                         {t('agents.form.advanced.systemPromptOverride')}
                       </h2>
-                      <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                      <p className="text-muted-foreground mt-1 text-xs">
                         {t(
                           'agents.form.advanced.systemPromptOverrideDescription',
                         )}
@@ -1508,7 +1498,18 @@ function AgentPreviewArea() {
         </div>
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2">
-          <span className="block h-12 w-12 bg-[url('/src/assets/science-spark.svg')] bg-contain bg-center bg-no-repeat transition-all dark:bg-[url('/src/assets/science-spark-dark.svg')]" />{' '}
+          <img
+            src={ScienceSparkIcon}
+            alt=""
+            aria-hidden="true"
+            className="block size-12 dark:hidden"
+          />
+          <img
+            src={ScienceSparkDarkIcon}
+            alt=""
+            aria-hidden="true"
+            className="hidden size-12 dark:block"
+          />{' '}
           <p className="text-muted-foreground text-xs">
             {t('agents.form.preview.publishedPreview')}
           </p>

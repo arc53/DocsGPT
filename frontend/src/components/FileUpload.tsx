@@ -1,10 +1,16 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDropzone } from 'react-dropzone';
-import { twMerge } from 'tailwind-merge';
+import type { FileRejection } from 'react-dropzone';
+import { ImageUp } from 'lucide-react';
 
+import { Dropzone } from '@/components/ui/dropzone';
 import Cross from '../assets/cross.svg';
-import ImagesIcon from '../assets/images.svg';
+
+type UploadTextSegment = {
+  text: string;
+  /** Renders the segment in the brand colour; others are muted. */
+  highlight?: boolean;
+};
 
 interface FileUploadProps {
   onUpload: (files: File[]) => void;
@@ -15,14 +21,14 @@ interface FileUploadProps {
   accept?: Record<string, string[]>; // e.g. { 'image/*': ['.png', '.jpg'] }
   showPreview?: boolean;
   previewSize?: number;
+  /** `compact` is a one-row target for forms and panels. */
+  size?: 'default' | 'compact';
 
   children?: React.ReactNode;
+  /** Layout classes only; the Dropzone owns colours, border and radius. */
   className?: string;
-  activeClassName?: string;
-  acceptClassName?: string;
-  rejectClassName?: string;
 
-  uploadText?: string | { text: string; colorClass?: string }[];
+  uploadText?: string | UploadTextSegment[];
   dragActiveText?: string;
   fileTypeText?: string;
   sizeLimitText?: string;
@@ -31,6 +37,13 @@ interface FileUploadProps {
   validator?: (file: File) => { isValid: boolean; error?: string };
 }
 
+/**
+ * Image/file picker built on `ui/dropzone`. Adds size and custom validation,
+ * an optional image preview with a remove button, and translated prompts.
+ *
+ * @param props - See `FileUploadProps`.
+ * @returns The dropzone with its preview and validation errors.
+ */
 export const FileUpload = ({
   onUpload,
   onRemove,
@@ -40,11 +53,9 @@ export const FileUpload = ({
   accept = { 'image/*': ['.jpeg', '.png', '.jpg'] },
   showPreview = false,
   previewSize = 80,
+  size = 'default',
   children,
-  className = 'border-2 border-dashed rounded-3xl p-6 text-center cursor-pointer transition-colors border-border dark:border-border',
-  activeClassName = 'border-blue-500 bg-blue-50',
-  acceptClassName = 'border-green-500 dark:border-green-500 bg-green-50 dark:bg-green-50/10',
-  rejectClassName = 'border-red-500 bg-red-50 dark:bg-red-500/10 dark:border-red-500',
+  className,
   uploadText,
   dragActiveText,
   fileTypeText,
@@ -83,12 +94,12 @@ export const FileUpload = ({
   };
 
   const onDrop = useCallback(
-    (acceptedFiles: File[], fileRejections: any[]) => {
+    (acceptedFiles: File[], fileRejections: FileRejection[]) => {
       setErrors([]);
 
       if (fileRejections.length > 0) {
         const newErrors = fileRejections
-          .map(({ errors }) => errors.map((e: any) => e.message))
+          .map(({ errors }) => errors.map((e) => e.message))
           .flat();
         setErrors(newErrors);
         return;
@@ -117,40 +128,22 @@ export const FileUpload = ({
     [onUpload, multiple, maxSize, validator],
   );
 
-  const {
-    getRootProps,
-    getInputProps,
-    isDragActive,
-    isDragAccept,
-    isDragReject,
-  } = useDropzone({
-    onDrop,
-    multiple,
-    maxFiles,
-    maxSize,
-    accept,
-    disabled,
-  });
-
-  const currentClassName = twMerge(
-    'border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-colors border-border dark:border-border',
-    className,
-    isDragActive && activeClassName,
-    isDragAccept && acceptClassName,
-    isDragReject && rejectClassName,
-    disabled && 'opacity-50 cursor-not-allowed',
-  );
-
   const handleRemove = () => {
     setPreview(null);
     setCurrentFile(null);
     if (onRemove && currentFile) onRemove(currentFile);
   };
 
+  // Callers size the preview box at runtime; a custom property keeps the
+  // dimension out of the style's width/height and in the classes.
+  const previewSizeStyle = {
+    '--preview-size': `${previewSize}px`,
+  } as React.CSSProperties;
+
   const renderPreview = () => (
     <div
-      className="relative"
-      style={{ width: previewSize, height: previewSize }}
+      className="relative size-(--preview-size) shrink-0"
+      style={previewSizeStyle}
     >
       <img
         src={preview ?? undefined}
@@ -170,71 +163,75 @@ export const FileUpload = ({
     </div>
   );
 
-  const renderUploadText = () => {
-    if (Array.isArray(uploadText)) {
-      return (
-        <p className="text-sm font-semibold">
-          {uploadText.map((segment, i) => (
-            <span key={i} className={segment.colorClass || ''}>
-              {segment.text}
-            </span>
-          ))}
-        </p>
-      );
-    }
-    return (
-      <p className="text-sm font-semibold">
-        {uploadText || t('components.fileUpload.clickToUpload')}
-      </p>
-    );
-  };
-
-  const defaultContent = (
-    <div className="flex flex-col items-center gap-2">
-      {showPreview && preview ? (
-        renderPreview()
-      ) : (
-        <div
-          style={{ width: previewSize, height: previewSize }}
-          className="flex items-center justify-center"
+  const uploadPrompt = Array.isArray(uploadText)
+    ? uploadText.map((segment, i) => (
+        <span
+          key={i}
+          className={
+            segment.highlight ? 'text-primary' : 'text-muted-foreground'
+          }
         >
-          <img src={ImagesIcon} className="h-10 w-10" />
-        </div>
-      )}
-      <div className="text-center">
-        <div className="text-sm font-medium">
-          {isDragActive ? (
-            <p className="text-sm font-semibold">
-              {dragActiveText || t('components.fileUpload.dropFiles')}
-            </p>
-          ) : (
-            renderUploadText()
-          )}
-        </div>
-        <p className="mt-1 text-xs text-[#A3A3A3]">
-          {fileTypeText || t('components.fileUpload.fileTypes')}{' '}
-          {maxSize / 1024 / 1024}
-          {sizeLimitText || t('components.fileUpload.sizeLimitUnit')}
-        </p>
-      </div>
-    </div>
+          {segment.text}
+        </span>
+      ))
+    : uploadText || t('components.fileUpload.clickToUpload');
+
+  // The Dropzone owns the drag state; its data attribute swaps the prompt.
+  const title = (
+    <>
+      <span className="in-data-[drag-active]:hidden">{uploadPrompt}</span>
+      <span className="hidden in-data-[drag-active]:inline">
+        {dragActiveText || t('components.fileUpload.dropFiles')}
+      </span>
+    </>
   );
 
+  const description = (
+    <>
+      {fileTypeText || t('components.fileUpload.fileTypes')}{' '}
+      {maxSize / 1024 / 1024}
+      {sizeLimitText || t('components.fileUpload.sizeLimitUnit')}
+    </>
+  );
+
+  // With a preview, the image takes the icon's place; the text block mirrors
+  // the Dropzone's own title/description layout.
+  const previewContent =
+    showPreview && preview ? (
+      <>
+        {renderPreview()}
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-sm font-medium">{title}</span>
+          <span className="text-muted-foreground text-xs">{description}</span>
+        </span>
+      </>
+    ) : undefined;
+
+  const error =
+    errors.length > 0
+      ? errors.map((message, i) => (
+          <span key={i} className="block truncate">
+            {message}
+          </span>
+        ))
+      : undefined;
+
   return (
-    <div className="relative">
-      <div {...getRootProps({ className: currentClassName })}>
-        <input {...getInputProps()} />
-        {children || defaultContent}
-        {errors.length > 0 && (
-          <div className="absolute right-0 left-0 mt-[2px] px-4 text-xs text-red-600">
-            {errors.map((error, i) => (
-              <p key={i} className="truncate">
-                {error}
-              </p>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+    <Dropzone
+      onDrop={onDrop}
+      accept={accept}
+      multiple={multiple}
+      maxFiles={maxFiles}
+      maxSize={maxSize}
+      disabled={disabled}
+      size={size}
+      title={title}
+      description={description}
+      icon={<ImageUp />}
+      error={error}
+      className={className}
+    >
+      {children ?? previewContent}
+    </Dropzone>
   );
 };

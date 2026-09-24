@@ -81,7 +81,7 @@ export function MultiSelect({
           aria-expanded={open}
           className={cn(
             'border-border bg-card hover:bg-accent h-auto min-h-10 w-full justify-between py-1.5',
-            !selected.length && 'text-gray-500 dark:text-gray-400',
+            !selected.length && 'text-muted-foreground',
             className,
           )}
         >
@@ -99,13 +99,13 @@ export function MultiSelect({
                   return (
                     <span
                       key={option?.value || label}
-                      className="bg-primary/20 dark:bg-primary/30 inline-flex max-w-[calc(100%-1rem)] min-w-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-300"
+                      className="bg-primary/20 dark:bg-primary/30 text-primary inline-flex max-w-[calc(100%-1rem)] min-w-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium"
                     >
                       <span className="truncate">{label}</span>
                       <span
                         role="button"
                         tabIndex={0}
-                        className="flex h-3 w-3 cursor-pointer items-center justify-center hover:text-purple-900 dark:hover:text-purple-200"
+                        className="hover:text-primary/70 flex h-3 w-3 cursor-pointer items-center justify-center"
                         onMouseDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -127,7 +127,7 @@ export function MultiSelect({
                   );
                 })}
                 {selected.length > 2 && (
-                  <span className="text-xs text-gray-600 dark:text-gray-400">
+                  <span className="text-muted-foreground text-xs">
                     +{selected.length - 2} more
                   </span>
                 )}
@@ -161,8 +161,8 @@ export function MultiSelect({
                       className={cn(
                         'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border-2',
                         isSelected
-                          ? 'border-primary bg-primary text-white'
-                          : 'border-gray-400 dark:border-gray-500',
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-input',
                       )}
                     >
                       {isSelected && <Check className="h-3 w-3 stroke-white" />}

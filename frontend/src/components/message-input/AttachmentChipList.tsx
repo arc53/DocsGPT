@@ -58,7 +58,7 @@ export default function AttachmentChipList({
                 attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
               } ${
                 draggingId === attachment.id
-                  ? 'ring-dashed opacity-60 ring-2 ring-purple-200'
+                  ? 'ring-primary/30 opacity-60 ring-2'
                   : ''
               }`}
               title={
@@ -98,7 +98,7 @@ export default function AttachmentChipList({
                         fill="none"
                       />
                       <circle
-                        className="text-[#ECECF1]"
+                        className="text-primary-foreground"
                         cx="12"
                         cy="12"
                         r="10"
@@ -123,8 +123,9 @@ export default function AttachmentChipList({
               <Button
                 type="button"
                 variant="ghost"
-                size="icon-sm"
-                className="ml-1.5 h-auto w-auto rounded-full p-1"
+                size="icon-xs"
+                shape="pill"
+                className="ml-1.5"
                 onClick={() => {
                   onRemove(attachment.id);
                 }}
@@ -142,7 +143,7 @@ export default function AttachmentChipList({
 
       {failures.length > 0 && (
         <div
-          className="flex flex-col gap-0.5 px-2 pb-1 text-xs text-[#B42318] sm:px-3"
+          className="text-destructive flex flex-col gap-0.5 px-2 pb-1 text-xs sm:px-3"
           role="alert"
         >
           {failures.map((attachment) => (
@@ -155,7 +156,7 @@ export default function AttachmentChipList({
 
       {unreadable.length > 0 && (
         <div
-          className="flex flex-col gap-0.5 px-2 pb-1 text-xs text-[#B54708] sm:px-3 dark:text-[#FDB022]"
+          className="text-warning flex flex-col gap-0.5 px-2 pb-1 text-xs sm:px-3"
           role="status"
         >
           {unreadable.map((attachment) => (

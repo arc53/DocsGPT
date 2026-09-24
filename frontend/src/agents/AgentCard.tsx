@@ -17,6 +17,7 @@ import Trash from '../assets/red-trash.svg';
 import ThreeDots from '../assets/three-dots.svg';
 import UnPin from '../assets/unpin.svg';
 import { Avatar } from '../components/ui/avatar';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
@@ -388,7 +389,7 @@ export default function AgentCard({
       role={agent.status === 'published' ? 'button' : undefined}
       tabIndex={agent.status === 'published' ? 0 : undefined}
       aria-label={agent.status === 'published' ? agent.name : undefined}
-      className={`bg-muted hover:bg-accent focus-visible:ring-ring/50 focus-visible:border-ring relative flex h-44 flex-col justify-between rounded-2xl px-4 py-5 outline-none focus-visible:ring-[3px] sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
+      className={`bg-muted hover:bg-accent focus-visible:ring-ring/50 focus-visible:border-ring relative flex h-44 flex-col justify-between rounded-2xl px-4 py-5 outline-none focus-visible:ring-3 sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
       onClick={(e) => {
         e.stopPropagation();
         handleClick();
@@ -453,19 +454,21 @@ export default function AgentCard({
       {/* Team access badge — pinned to the top row, left of the ⋯ menu
           (right-11 clears the 19px trigger at right-4) so the two align. */}
       {agent.ownership === 'team' && (
-        <span className="bg-muted dark:bg-accent text-muted-foreground absolute top-4 right-11 z-10 flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium">
+        <Badge variant="neutral" className="absolute top-4 right-11 z-10">
           <Users size={11} strokeWidth={2} aria-hidden="true" />
           {agent.team_access === 'editor'
             ? t('agents.teamBadge.editor')
             : t('agents.teamBadge.viewer')}
-        </span>
+        </Badge>
       )}
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
           <Avatar
             src={agent.image}
             alt={`${agent.name}`}
-            imgClassName="h-7 w-7 rounded-full object-contain"
+            size="sm"
+            shape="circle"
+            imgClassName="h-7 w-7 object-contain"
           />
           {agent.status === 'draft' && (
             <p className="text-foreground text-xs opacity-50">
@@ -508,7 +511,7 @@ export default function AgentCard({
           <Button
             type="button"
             onClick={() => setExportError(null)}
-            className="rounded-3xl px-5"
+            shape="pill"
           >
             {t('agents.close')}
           </Button>

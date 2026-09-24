@@ -132,7 +132,7 @@ export const ShareConversationModal = ({
                 if (opt) setSourcePath(opt);
               }}
             >
-              <SelectTrigger className="w-full rounded-xl px-5 py-3" size="lg">
+              <SelectTrigger className="w-full" size="lg">
                 <SelectValue placeholder={t('modals.createAPIKey.sourceDoc')} />
               </SelectTrigger>
               <SelectContent>
@@ -153,7 +153,8 @@ export const ShareConversationModal = ({
             <Button
               type="button"
               size="lg"
-              className="my-1 w-28 rounded-3xl"
+              shape="pill"
+              className="my-1 w-28"
               onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
             >
               {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
@@ -162,7 +163,8 @@ export const ShareConversationModal = ({
             <Button
               type="button"
               size="lg"
-              className="my-1 w-28 justify-evenly rounded-3xl text-center"
+              shape="pill"
+              className="my-1 w-28 justify-evenly text-center"
               onClick={() => {
                 shareCoversationPublicly(allowPrompt);
               }}

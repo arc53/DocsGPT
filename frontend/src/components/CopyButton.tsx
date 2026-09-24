@@ -1,71 +1,38 @@
-import clsx from 'clsx';
 import copy from 'copy-to-clipboard';
+import { Check, Copy } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import CheckMark from '../assets/checkmark.svg?react';
-import CopyIcon from '../assets/copy.svg?react';
 import { Button } from './ui/button';
 
 type CopyButtonProps = {
   textToCopy: string;
-  iconSize?: string;
-  padding?: string;
+  /** Icon-only button size: `xs` is `icon-xs` (28px), `sm` is `icon-sm` (32px). */
+  size?: 'xs' | 'sm';
+  /** Show a "Copy"/"Copied" label next to the icon (renders at Button `xs`). */
   showText?: boolean;
   copiedDuration?: number;
   className?: string;
-  iconWrapperClassName?: string;
-  textClassName?: string;
 };
 
-const DEFAULT_ICON_SIZE = 'w-4 h-4';
-const DEFAULT_PADDING = 'p-2';
 const DEFAULT_COPIED_DURATION = 2000;
 
 export default function CopyButton({
   textToCopy,
-  iconSize = DEFAULT_ICON_SIZE,
-  padding = DEFAULT_PADDING,
+  size = 'sm',
   showText = false,
   copiedDuration = DEFAULT_COPIED_DURATION,
   className,
-  iconWrapperClassName,
-  textClassName,
 }: CopyButtonProps) {
   const { t } = useTranslation();
   const [isCopied, setIsCopied] = useState(false);
   const timeoutIdRef = useRef<number | null>(null);
-  // `copy` is async, so `isCopied` and the disabled prop only catch up after it
-  // resolves. Guard that window so rapid clicks cannot start a second write.
+  // `copy` is async, so `isCopied` only catches up after it resolves. Guard
+  // that window so rapid clicks cannot start a second write. The button is
+  // never disabled, so the copied confirmation does not fade.
   const copyInFlightRef = useRef(false);
 
-  const iconWrapperClasses = clsx(
-    'flex items-center justify-center rounded-full transition-colors duration-150 ease-in-out',
-    padding,
-    {
-      [`bg-transparent hover:bg-muted`]: !isCopied,
-      'bg-green-100 dark:bg-green-900 hover:bg-green-100 dark:hover:bg-green-900':
-        isCopied,
-    },
-    iconWrapperClassName,
-  );
-
-  const rootButtonClasses = clsx(
-    'group h-auto rounded-full bg-transparent p-0 hover:bg-transparent disabled:opacity-100',
-    className,
-  );
-
-  const textSpanClasses = clsx(
-    'text-xs text-gray-600 dark:text-gray-400 transition-opacity duration-150 ease-in-out',
-    { 'opacity-75': isCopied },
-    textClassName,
-  );
-
-  const IconComponent = isCopied ? CheckMark : CopyIcon;
-  const iconClasses = clsx(iconSize, {
-    'stroke-green-600 dark:stroke-green-400': isCopied,
-    'fill-none text-gray-700 dark:text-gray-300': !isCopied,
-  });
+  const IconComponent = isCopied ? Check : Copy;
 
   const buttonTitle = isCopied
     ? t('conversation.copied')
@@ -111,17 +78,16 @@ export default function CopyButton({
   return (
     <Button
       type="button"
-      variant="ghost"
+      variant={isCopied ? 'secondary' : 'ghost-muted'}
+      size={showText ? 'xs' : size === 'xs' ? 'icon-xs' : 'icon-sm'}
+      shape="pill"
       onClick={handleCopy}
-      className={rootButtonClasses}
+      className={className}
       title={buttonTitle}
       aria-label={buttonTitle}
-      disabled={isCopied}
     >
-      <div className={iconWrapperClasses}>
-        <IconComponent className={iconClasses} aria-hidden="true" />
-      </div>
-      {showText && <span className={textSpanClasses}>{displayedText}</span>}
+      <IconComponent aria-hidden="true" />
+      {showText && <span>{displayedText}</span>}
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {isCopied ? t('conversation.copied', 'Copied to clipboard') : ''}
       </span>

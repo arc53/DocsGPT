@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import adminService from '../api/services/adminService';
+import { Badge } from '../components/ui/badge';
 import {
   Table,
   TableBody,
@@ -12,7 +13,7 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { selectToken } from '../preferences/preferenceSlice';
-import { Loading, Pill, fmtDate } from './AdminUI';
+import { Loading, fmtDate } from './AdminUI';
 
 type Admin = { user_id: string; granted_at?: string; sources?: string[] };
 
@@ -69,9 +70,9 @@ export default function Admins() {
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {(a.sources ?? []).map((s) => (
-                        <Pill key={s} tone="muted">
+                        <Badge key={s} variant="neutral">
                           {s}
-                        </Pill>
+                        </Badge>
                       ))}
                     </div>
                   </TableCell>

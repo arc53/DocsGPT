@@ -1,3 +1,4 @@
+import { CircleAlert, TriangleAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -9,6 +10,7 @@ import patService, {
 } from '../api/services/patService';
 import userService from '../api/services/userService';
 import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -213,7 +215,8 @@ export default function CreateAccessTokenModal({
             variant="ghost"
             onClick={handleClose}
             disabled={submitting}
-            className="rounded-3xl px-6"
+            size="lg"
+            shape="pill"
           >
             {t('settings.accessTokens.create.cancel')}
           </Button>
@@ -221,7 +224,8 @@ export default function CreateAccessTokenModal({
             type="button"
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="rounded-3xl px-6 text-white"
+            size="lg"
+            shape="pill"
           >
             {submitting ? (
               <span className="flex items-center gap-2">
@@ -255,7 +259,7 @@ export default function CreateAccessTokenModal({
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="pat-name">
               {t('settings.accessTokens.create.name')}
-              <span className="text-red-500">*</span>
+              <span className="text-destructive">*</span>
             </Label>
             <Input
               id="pat-name"
@@ -267,7 +271,6 @@ export default function CreateAccessTokenModal({
                 setError(null);
               }}
               placeholder={t('settings.accessTokens.create.namePlaceholder')}
-              className="rounded-xl"
               autoComplete="off"
             />
           </div>
@@ -279,11 +282,7 @@ export default function CreateAccessTokenModal({
               value={String(expiry)}
               onValueChange={(value) => setExpiry(Number(value))}
             >
-              <SelectTrigger
-                id="pat-expiry"
-                className="w-full rounded-xl px-4 py-2"
-                size="lg"
-              >
+              <SelectTrigger id="pat-expiry" className="w-full" size="lg">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -294,29 +293,30 @@ export default function CreateAccessTokenModal({
                 ))}
               </SelectContent>
             </Select>
-            <p
-              className={`text-xs ${
-                expiry === NO_EXPIRY
-                  ? 'text-amber-700 dark:text-amber-400'
-                  : 'text-muted-foreground'
-              }`}
-            >
-              {expiry === NO_EXPIRY
-                ? t('settings.accessTokens.create.noExpirationHint')
-                : t('settings.accessTokens.create.expiresOn', {
-                    date: formatDateOnly(
-                      new Date(Date.now() + expiry * DAY_MS).toISOString(),
-                    ),
-                    ...NO_ESCAPE,
-                  })}
-            </p>
+            {expiry === NO_EXPIRY ? (
+              <Alert variant="warning">
+                <TriangleAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>
+                  {t('settings.accessTokens.create.noExpirationHint')}
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <p className="text-muted-foreground text-xs">
+                {t('settings.accessTokens.create.expiresOn', {
+                  date: formatDateOnly(
+                    new Date(Date.now() + expiry * DAY_MS).toISOString(),
+                  ),
+                  ...NO_ESCAPE,
+                })}
+              </p>
+            )}
           </div>
         </div>
 
         <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
           <legend className="text-foreground dark:text-foreground text-sm font-semibold">
             {t('settings.accessTokens.create.scopes')}
-            <span className="text-red-500">*</span>
+            <span className="text-destructive">*</span>
           </legend>
           <p className="text-muted-foreground text-xs">
             {t('settings.accessTokens.create.scopesHint')}
@@ -357,7 +357,7 @@ export default function CreateAccessTokenModal({
                           checked={checked}
                           disabled={implied}
                           onChange={() => toggleScope(scope.name)}
-                          className="accent-primary mt-0.5 size-4 shrink-0 rounded-sm border-gray-300 bg-transparent dark:[color-scheme:dark]"
+                          className="accent-primary border-input mt-0.5 size-4 shrink-0 rounded-sm bg-transparent dark:[color-scheme:dark]"
                         />
                         <span className="flex min-w-0 flex-col gap-0.5">
                           <code className="text-foreground dark:text-foreground font-mono text-xs font-medium">
@@ -416,7 +416,7 @@ export default function CreateAccessTokenModal({
                         <Button
                           type="button"
                           variant="link"
-                          className="h-auto p-0 text-xs"
+                          size="xs"
                           onClick={() => loadResources(family)}
                         >
                           {t('settings.accessTokens.create.retry')}
@@ -441,7 +441,6 @@ export default function CreateAccessTokenModal({
                         searchPlaceholder={t(
                           'settings.accessTokens.create.searchResources',
                         )}
-                        className="rounded-xl"
                         modal
                       />
                     )}
@@ -452,12 +451,10 @@ export default function CreateAccessTokenModal({
         )}
 
         {error && (
-          <div
-            role="alert"
-            className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400"
-          >
-            {error}
-          </div>
+          <Alert variant="destructive">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
       </form>
     </Modal>

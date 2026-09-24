@@ -1,6 +1,8 @@
 import { Bot, Flag, Play, StickyNote } from 'lucide-react';
 import { memo } from 'react';
 
+import { cn } from '@/lib/utils';
+
 import { BaseNode } from './BaseNode';
 import CodeNode from './CodeNode';
 import ConditionNode from './ConditionNode';
@@ -19,7 +21,9 @@ export const StartNode = memo(function StartNode({
       handles={{ target: false, source: true }}
       icon={<Play size={16} />}
     >
-      <div className="text-xs text-gray-500">Entry point of the workflow</div>
+      <div className="text-muted-foreground text-xs">
+        Entry point of the workflow
+      </div>
     </BaseNode>
   );
 });
@@ -37,7 +41,7 @@ export const EndNode = memo(function EndNode({
       handles={{ target: true, source: false }}
       icon={<Flag size={16} />}
     >
-      <div className="text-xs text-gray-500">Workflow completion</div>
+      <div className="text-muted-foreground text-xs">Workflow completion</div>
     </BaseNode>
   );
 });
@@ -70,7 +74,7 @@ export const AgentNode = memo(function AgentNode({
       <div className="flex flex-col gap-1">
         {config.agent_type && (
           <div
-            className="truncate text-xs text-gray-500 uppercase"
+            className="text-muted-foreground truncate text-xs uppercase"
             title={config.agent_type}
           >
             {config.agent_type}
@@ -86,7 +90,7 @@ export const AgentNode = memo(function AgentNode({
         )}
         {config.output_variable && (
           <div
-            className="truncate text-xs text-gray-500 dark:text-gray-400"
+            className="text-muted-foreground truncate text-xs"
             title={`Output: ${config.output_variable}`}
           >
             Output: {config.output_variable}
@@ -113,26 +117,29 @@ export const NoteNode = memo(function NoteNode({
 
   return (
     <div
-      className={`max-w-[250px] rounded-3xl border border-yellow-200 bg-yellow-50 px-5 py-3 shadow-md transition-all dark:border-yellow-800 dark:bg-yellow-900/20 ${
+      className={cn(
+        // Opaque tint: the card colour underneath, the warning wash painted
+        // over it as a flat gradient, so the canvas grid doesn't show through.
+        'bg-card from-warning/10 to-warning/10 max-w-[250px] rounded-3xl border bg-linear-to-b px-5 py-3 shadow-md transition-all',
         selected
-          ? 'scale-105 ring-2 ring-yellow-300 dark:ring-yellow-700'
-          : 'hover:shadow-lg'
-      }`}
+          ? 'border-warning ring-warning scale-105 ring-2'
+          : 'border-warning/50 hover:shadow-lg',
+      )}
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-800/30 dark:text-yellow-500">
+        <div className="bg-warning/15 text-warning flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
           <StickyNote size={18} />
         </div>
         <div className="min-w-0 flex-1">
           <div
-            className="truncate text-sm font-semibold text-yellow-800 dark:text-yellow-300"
+            className="text-foreground truncate text-sm font-semibold"
             title={title}
           >
             {title}
           </div>
           {displayContent && (
             <div
-              className="mt-1 text-xs wrap-break-word text-yellow-700 italic dark:text-yellow-400"
+              className="text-muted-foreground mt-1 text-xs wrap-break-word italic"
               title={data.content}
             >
               {displayContent}

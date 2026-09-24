@@ -23,7 +23,10 @@
     "sharedTitle": "与您共享",
     "sharedBody": "{{type}}已共享给您的团队：{{name}}（{{access}}）",
     "sharedBodyNoName": "已与您的团队共享一个{{type}}（{{access}}）",
-    "dismiss": "忽略"
+    "dismiss": "忽略",
+    "toolApprovalTitle": "需要批准工具",
+    "toolApprovalReview": "查看",
+    "toolApprovalFallbackName": "对话"
   },
   "demo": [
     {
@@ -220,6 +223,7 @@
       "deleteWarning": "您确定要删除 \"{{name}}\" 吗？",
       "confirmDelete": "您确定要删除此文件吗？此操作无法撤销。",
       "backToAll": "返回所有来源",
+      "back": "返回",
       "chunks": "文本块",
       "noChunks": "未找到文本块",
       "noChunksAlt": "未找到文本块",
@@ -370,6 +374,7 @@
       "failed": "失败",
       "skipped": "已跳过",
       "successful": "成功",
+      "otherSeries": "其他",
       "stats": {
         "messages": "消息",
         "tokens": "令牌",
@@ -1590,6 +1595,7 @@
       "backToRoot": "返回",
       "currentFolder": "此文件夹",
       "noSubfolders": "没有子文件夹",
+      "openFolder": "打开文件夹",
       "noFolders": "暂无文件夹"
     },
     "guardrailEvents": {

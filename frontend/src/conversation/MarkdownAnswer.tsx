@@ -163,15 +163,15 @@ export default function MarkdownAnswer({
       <Button
         type="button"
         variant="link"
+        size="inline"
         onClick={() =>
           onOpenArtifact({
             id: artifact.id,
             toolName: artifact.toolName ?? '',
           })
         }
-        /* Sits mid-sentence: no pill background, no fixed height, and it must
-           wrap with the surrounding text. */
-        className="text-primary h-auto w-auto bg-transparent p-0 whitespace-normal underline underline-offset-2"
+        /* Sits mid-sentence, so it must wrap with the surrounding text. */
+        className="whitespace-normal"
         title={artifact.label}
       >
         {content}
@@ -215,6 +215,9 @@ export default function MarkdownAnswer({
                       return (
                         <Button
                           type="button"
+                          variant="secondary"
+                          size="xs"
+                          shape="pill"
                           onClick={() => {
                             const el = document.getElementById(
                               `source-${sourceIdx}`,
@@ -224,18 +227,15 @@ export default function MarkdownAnswer({
                                 behavior: 'smooth',
                                 block: 'center',
                               });
-                              el.classList.add('ring-2', 'ring-purple-500');
+                              el.classList.add('ring-3', 'ring-primary');
                               setTimeout(
                                 () =>
-                                  el.classList.remove(
-                                    'ring-2',
-                                    'ring-purple-500',
-                                  ),
+                                  el.classList.remove('ring-3', 'ring-primary'),
                                 2000,
                               );
                             }
                           }}
-                          className="mx-0.5 h-5 min-w-5 rounded-full bg-purple-100 px-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60"
+                          className="mx-0.5 h-5 min-w-5"
                           title={`Jump to source ${num}`}
                         >
                           {num}
@@ -293,6 +293,7 @@ export default function MarkdownAnswer({
                           {...rest}
                           PreTag="div"
                           language={language}
+                          /* eslint-disable-next-line shadcn/no-inline-styles -- SyntaxHighlighter's style prop is its Prism theme object (oneLight / vscDarkPlus), picked by theme at runtime; it is not CSS. See DESIGN.md, Approved exceptions. */
                           style={isDarkTheme ? vscDarkPlus : oneLight}
                           className="mt-0!"
                           customStyle={{ margin: 0, borderRadius: 0 }}
@@ -301,7 +302,7 @@ export default function MarkdownAnswer({
                         </SyntaxHighlighter>
                       </div>
                     ) : (
-                      <code className="dark:bg-accent dark:text-foreground rounded-md bg-gray-200 px-2 py-1 text-xs font-normal whitespace-pre-line">
+                      <code className="bg-accent dark:text-foreground rounded-md px-2 py-1 text-xs font-normal whitespace-pre-line">
                         {children}
                       </code>
                     );
@@ -327,7 +328,7 @@ export default function MarkdownAnswer({
                   table({ children }) {
                     return (
                       <div className="border-border relative overflow-x-auto rounded-lg border">
-                        <table className="dark:text-foreground w-full text-left text-gray-700">
+                        <table className="text-foreground w-full text-left">
                           {children}
                         </table>
                       </div>
@@ -359,7 +360,7 @@ export default function MarkdownAnswer({
               </ReactMarkdown>
             </div>
           ) : (
-            <div className="my-4 w-full" style={{ minWidth: '100%' }}>
+            <div className="my-4 w-full min-w-full">
               <MermaidRenderer code={segment.content} isLoading={isStreaming} />
             </div>
           )}

@@ -71,9 +71,9 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
                 <Button
                   type="button"
                   variant="link"
-                  size="sm"
+                  size="xs"
                   onClick={() => onSelect(run)}
-                  className="h-auto p-0 text-xs underline"
+                  className="-mx-2 -my-1"
                 >
                   Details
                 </Button>

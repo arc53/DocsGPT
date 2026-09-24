@@ -22,6 +22,7 @@ import {
 } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { Modal } from '../components/ui/modal';
+import { OptionCard } from '../components/ui/option-card';
 import { ActiveState, Doc } from '../models/misc';
 
 import { getDocs } from '../preferences/preferenceApi';
@@ -151,7 +152,7 @@ function Upload({
             }`}
           >
             <div className="flex flex-col gap-4 overflow-hidden">
-              <hr className="my-4 border border-[#C4C4C4]/40" />
+              <hr className="border-border my-4 border" />
               <div className="flex flex-col gap-4">
                 {advancedFields.map((field: FormField) => renderField(field))}
               </div>
@@ -182,7 +183,6 @@ function Upload({
               )
             }
             required={isRequired}
-            labelBgClassName="bg-card"
           />
         );
       case 'number':
@@ -202,7 +202,6 @@ function Upload({
               )
             }
             required={isRequired}
-            labelBgClassName="bg-card"
           />
         );
       case 'enum': {
@@ -220,10 +219,7 @@ function Upload({
               );
             }}
           >
-            <SelectTrigger
-              className="w-full rounded-3xl px-5 py-3 text-sm"
-              size="lg"
-            >
+            <SelectTrigger className="w-full" size="lg" shape="pill">
               <SelectValue placeholder={field.label} />
             </SelectTrigger>
             <SelectContent>
@@ -291,7 +287,7 @@ function Upload({
         return (
           <div key={field.name}>
             <div className="mb-3" {...getRootProps()}>
-              <span className="text-primary dark:text-muted-foreground inline-block rounded-3xl border border-[#7F7F82] bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
+              <span className="text-primary dark:text-muted-foreground border-border inline-block rounded-3xl border bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
                 <input type="button" {...getInputProps()} />
                 {t('modals.uploadDoc.choose')}
               </span>
@@ -1026,30 +1022,20 @@ function Upload({
     return (
       <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
         {ingestorOptions.map((option) => (
-          <div
+          <OptionCard
             key={option.value}
-            className={`relative mx-auto flex h-[91.2px] w-full cursor-pointer flex-col justify-between gap-2 rounded-2xl border border-solid pt-[21.1px] pr-[21px] pb-[15px] pl-[21px] transition-colors duration-300 ease-out ${
-              ingestor.type === option.value
-                ? 'border-primary bg-primary text-white'
-                : 'border-border hover:bg-accent/30 dark:border-border/30 bg-transparent transition-shadow duration-300 hover:shadow-[0_0_15px_0_#00000026]'
-            }`}
+            icon={
+              <img
+                src={option.icon}
+                alt={option.label}
+                className="size-6 dark:invert"
+              />
+            }
+            title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
             onClick={() =>
               handleIngestorTypeChange(option.value as IngestorType)
             }
-          >
-            <div className="flex h-full flex-col justify-between">
-              <div className="h-6 w-6">
-                <img
-                  src={option.icon}
-                  alt={option.label}
-                  className={`${ingestor.type === option.value ? 'invert filter' : ''} dark:invert dark:filter`}
-                />
-              </div>
-              <p className="self-start text-sm leading-[18px] font-semibold">
-                {t(`modals.uploadDoc.ingestors.${option.value}.label`)}
-              </p>
-            </div>
-          </div>
+          />
         ))}
       </div>
     );
@@ -1067,7 +1053,7 @@ function Upload({
     >
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
-          <p className="text-foreground dark:text-foreground text-left text-xl leading-7 font-semibold tracking-[0.15px]">
+          <p className="text-foreground dark:text-foreground text-left text-xl leading-7 font-semibold">
             {t('modals.uploadDoc.selectSource')}
           </p>
         )}
@@ -1079,9 +1065,10 @@ function Upload({
               <div className="flex flex-col gap-4">
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="ghost-muted"
+                  size="sm"
                   onClick={() => handleIngestorTypeChange(null)}
-                  className="h-auto w-fit gap-2 px-0 py-0 text-[#777777] hover:bg-transparent hover:text-[#555555]"
+                  className="-ml-3 w-fit justify-start"
                 >
                   <img
                     src={ChevronRight}
@@ -1091,7 +1078,7 @@ function Upload({
                   <span>{t('modals.uploadDoc.back')}</span>
                 </Button>
 
-                <h2 className="text-foreground text-2xl leading-7 font-semibold tracking-[0.15px]">
+                <h2 className="text-foreground text-2xl leading-7 font-semibold">
                   {ingestor.type &&
                     t(`modals.uploadDoc.ingestors.${ingestor.type}.heading`)}
                 </h2>
@@ -1108,7 +1095,6 @@ function Upload({
                   }}
                   label={t('modals.uploadDoc.name')}
                   required={true}
-                  labelBgClassName="bg-card"
                   className="w-full"
                 />
                 {renderFormFields()}
@@ -1131,8 +1117,9 @@ function Upload({
                 <Button
                   type="button"
                   variant="link"
+                  size="sm"
                   onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                  className="h-auto w-fit justify-start px-0 py-2 text-sm font-normal hover:no-underline"
+                  className="-ml-3 w-fit justify-start"
                 >
                   {showAdvancedOptions
                     ? t('modals.uploadDoc.hideAdvanced')
@@ -1147,11 +1134,7 @@ function Upload({
               type="button"
               onClick={handleUpload}
               disabled={isUploadDisabled()}
-              className={`h-auto rounded-3xl px-4 py-2 text-sm font-medium ${
-                isUploadDisabled()
-                  ? 'dark:bg-muted dark:text-muted-foreground bg-gray-300 text-gray-500'
-                  : ''
-              }`}
+              shape="pill"
             >
               {ingestor.type === 'wiki'
                 ? t('modals.uploadDoc.create')

@@ -1,7 +1,8 @@
 import { envVar } from '@/env';
+import { cn } from '@/lib/utils';
 import 'katex/dist/katex.min.css';
 
-import { Pencil } from 'lucide-react';
+import { ChevronDown as ChevronDownIcon, Pencil } from 'lucide-react';
 import { forwardRef, Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -152,7 +153,7 @@ const ConversationBubble = forwardRef<
                   title={file.fileName}
                   className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-sm"
                 >
-                  <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
+                  <div className="bg-primary mr-2 items-center justify-center rounded-lg p-1.5">
                     <img
                       src={DocumentationDark}
                       alt="Attachment"
@@ -175,7 +176,7 @@ const ConversationBubble = forwardRef<
                 {/* ``mr-3`` plus the pill's own ``mr-2`` puts the question's
                     right edge on the answer's ``mr-5`` gutter. */}
                 <div className="relative mr-3 flex w-full min-w-0 flex-col">
-                  <div className="mr-2 ml-2 flex max-w-full min-w-0 items-start gap-2 rounded-3xl bg-linear-to-b from-violet-500 to-violet-600 px-5 py-4 text-sm leading-normal wrap-anywhere whitespace-pre-wrap text-white sm:text-base">
+                  <div className="bg-secondary text-foreground mr-2 ml-2 flex max-w-full min-w-0 items-start gap-2 rounded-3xl px-5 py-4 text-sm leading-normal wrap-anywhere whitespace-pre-wrap sm:text-base">
                     <div
                       ref={messageRef}
                       className={`${isQuestionCollapsed ? 'line-clamp-4' : ''} w-full min-w-0`}
@@ -186,19 +187,21 @@ const ConversationBubble = forwardRef<
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon-lg"
+                        shape="pill"
                         onClick={(e) => {
                           e.stopPropagation();
                           setIsQuestionCollapsed(!isQuestionCollapsed);
                         }}
-                        className="ml-1 h-auto w-auto rounded-full bg-transparent p-2 hover:bg-[#D9D9D933]"
+                        aria-label="Toggle"
+                        className="ml-1"
                       >
-                        <img
-                          src={ChevronDown}
-                          alt="Toggle"
-                          width={24}
-                          height={24}
-                          className={`transform invert transition-transform duration-200 ${isQuestionCollapsed ? '' : 'rotate-180'}`}
+                        <ChevronDownIcon
+                          aria-hidden
+                          className={cn(
+                            'size-6 transition-transform duration-200',
+                            !isQuestionCollapsed && 'rotate-180',
+                          )}
                         />
                       </Button>
                     )}
@@ -207,12 +210,13 @@ const ConversationBubble = forwardRef<
                 <Button
                   type="button"
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon-xs"
+                  shape="pill"
                   onClick={() => {
                     setIsEditClicked(true);
                     setEditInputBox(message ?? '');
                   }}
-                  className="invisible mt-3 h-fit w-auto shrink-0 cursor-pointer rounded-full p-2 pt-1.5 pl-1.5 group-hover:visible"
+                  className="invisible mt-3 shrink-0 cursor-pointer group-hover:visible"
                 >
                   <img src={Edit} alt="Edit" className="cursor-pointer" />
                 </Button>
@@ -237,20 +241,20 @@ const ConversationBubble = forwardRef<
                 }}
                 rows={5}
                 value={editInputBox}
-                className="border-border text-foreground dark:border-border dark:text-foreground focus-visible:ring-ring/50 focus-visible:border-ring w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden focus-visible:ring-[3px]"
+                className="border-border text-foreground dark:border-border dark:text-foreground focus-visible:ring-ring/50 focus-visible:border-ring w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden focus-visible:ring-3"
               />
               <div className="flex items-center justify-end gap-2">
                 <Button
                   type="button"
                   variant="ghost"
-                  className="text-primary hover:bg-muted hover:text-foreground dark:hover:bg-accent dark:hover:text-foreground h-auto rounded-full px-4 py-2 text-sm font-semibold"
+                  shape="pill"
                   onClick={() => setIsEditClicked(false)}
                 >
                   {t('conversation.edit.cancel')}
                 </Button>
                 <Button
                   type="button"
-                  className="bg-primary not-disabled:hover:bg-primary/90 not-disabled:dark:hover:bg-primary/90 disabled:bg-primary/30 h-auto rounded-full px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-100"
+                  shape="pill"
                   onClick={handleEditClick}
                   disabled={
                     !editInputBox.trim() ||
@@ -284,7 +288,7 @@ const ConversationBubble = forwardRef<
                   <Avatar
                     src={Sources}
                     alt={t('conversation.sources.title')}
-                    className="h-6.5 w-7.5 text-xl"
+                    className="h-6.5 w-7.5"
                     imgClassName="h-full w-full object-fill"
                   />
                   <p className="text-base font-semibold">
@@ -312,7 +316,7 @@ const ConversationBubble = forwardRef<
                           <div
                             className={`mt-3.5 flex flex-row items-center gap-1.5 underline-offset-2 ${
                               source.link && source.link !== 'local'
-                                ? 'hover:text-[#007DFF] hover:underline dark:hover:text-blue-400'
+                                ? 'hover:text-primary hover:underline'
                                 : ''
                             }`}
                             onClick={() =>
@@ -346,7 +350,7 @@ const ConversationBubble = forwardRef<
                         </div>
                         {activeTooltip === index && (
                           <div
-                            className={`dark:bg-card dark:text-foreground absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-0.75 rounded-xl bg-[#FBFBFB] p-4 text-black shadow-xl sm:w-56`}
+                            className="bg-popover text-popover-foreground absolute left-1/2 z-50 max-h-48 w-40 translate-x-[-50%] translate-y-0.75 rounded-xl p-4 shadow-md sm:w-56"
                             onMouseOver={() => setActiveTooltip(index)}
                             onMouseOut={() => setActiveTooltip(null)}
                           >
@@ -386,7 +390,8 @@ const ConversationBubble = forwardRef<
                     toolName: artifact.toolName,
                   })
                 }
-                className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                variant="secondary"
+                shape="pill"
               >
                 <svg
                   className="h-4 w-4"
@@ -425,7 +430,7 @@ const ConversationBubble = forwardRef<
         {type === 'ERROR' ? (
           message && (
             <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-              <div className="fade-in-bubble text-destructive/80 dark:border-destructive dark:bg-destructive/15 relative mr-5 flex max-w-full flex-row items-center rounded-full border border-transparent bg-[#FFE7E7] p-2 px-6 py-5 text-sm font-normal dark:text-white">
+              <div className="fade-in-bubble text-destructive/80 dark:border-destructive bg-destructive/10 relative mr-5 flex max-w-full flex-row items-center rounded-full border border-transparent p-2 px-6 py-5 text-sm font-normal dark:text-white">
                 <MarkdownAnswer content={message} isStreaming={isStreaming} />
               </div>
             </div>
@@ -484,7 +489,8 @@ const ConversationBubble = forwardRef<
                             toolName: artifact.toolName,
                           })
                         }
-                        className="h-auto rounded-full bg-purple-100 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50"
+                        variant="secondary"
+                        shape="pill"
                         aria-label="View artifact"
                       >
                         <svg
@@ -524,8 +530,9 @@ const ConversationBubble = forwardRef<
                       <div className="relative block items-center justify-center">
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="ghost-muted"
                           size="icon-sm"
+                          shape="pill"
                           onClick={() => {
                             const blob = new Blob([message], {
                               type: 'text/markdown',
@@ -537,7 +544,7 @@ const ConversationBubble = forwardRef<
                             link.click();
                             URL.revokeObjectURL(url);
                           }}
-                          className="bg-card hover:bg-muted dark:hover:bg-accent h-auto w-auto cursor-pointer rounded-full p-2 dark:bg-transparent"
+                          className="cursor-pointer"
                           aria-label="Export as Markdown"
                           title="Export as Markdown"
                         >
@@ -566,9 +573,10 @@ const ConversationBubble = forwardRef<
                         <div className="relative flex items-center justify-center">
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="ghost-muted"
                             size="icon-sm"
-                            className="h-auto w-auto cursor-pointer rounded-full bg-transparent p-2"
+                            shape="pill"
+                            className="cursor-pointer"
                             onClick={() => {
                               if (feedback === 'LIKE') {
                                 handleFeedback?.(null);
@@ -581,7 +589,7 @@ const ConversationBubble = forwardRef<
                             }
                           >
                             <Like
-                              className={`${feedback === 'LIKE' ? 'stroke-primary fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
+                              className={`${feedback === 'LIKE' ? 'stroke-primary fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-transparent'}`}
                             ></Like>
                           </Button>
                         </div>
@@ -589,9 +597,10 @@ const ConversationBubble = forwardRef<
                         <div className="relative flex items-center justify-center">
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="ghost-muted"
                             size="icon-sm"
-                            className="h-auto w-auto cursor-pointer rounded-full bg-transparent p-2"
+                            shape="pill"
+                            className="cursor-pointer"
                             onClick={() => {
                               if (feedback === 'DISLIKE') {
                                 handleFeedback?.(null);
@@ -606,7 +615,7 @@ const ConversationBubble = forwardRef<
                             }
                           >
                             <Dislike
-                              className={`${feedback === 'DISLIKE' ? 'stroke-destructive fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-none'}`}
+                              className={`${feedback === 'DISLIKE' ? 'stroke-destructive fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-transparent'}`}
                             ></Dislike>
                           </Button>
                         </div>
@@ -623,7 +632,7 @@ const ConversationBubble = forwardRef<
             <SheetContent
               side="right"
               title="Sources"
-              className="bg-card w-64 border-l border-[#9ca3af]/10 sm:w-80 sm:max-w-none"
+              className="w-64 sm:w-80 sm:max-w-none"
             >
               <div className="flex h-full flex-col items-center gap-2 px-6 py-4 text-center">
                 <AllSources sources={sources} />
@@ -654,7 +663,7 @@ function AllSources(sources: AllSourcesProps) {
     <div className="h-full w-full">
       <div className="w-full">
         <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
-        <div className="mx-1 mt-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40 lg:w-[95%]"></div>
+        <div className="bg-border mx-1 mt-2 h-[0.8px] w-full rounded-full lg:w-[95%]"></div>
       </div>
       <div className="mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
         {sources.sources.map((source, index) => {
@@ -688,7 +697,7 @@ function AllSources(sources: AllSourcesProps) {
                   />
                 )}
               </p>
-              <p className="dark:text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word text-black">
+              <p className="text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word">
                 {source.text}
               </p>
             </div>
@@ -762,11 +771,9 @@ function ToolCallApprovalBar({
         <div className="flex items-center gap-2">
           <Button
             type="button"
-            className={`h-auto rounded-full px-4 py-1 text-xs font-medium ${
-              comment
-                ? 'bg-muted text-muted-foreground hover:bg-muted cursor-default opacity-50'
-                : 'bg-primary hover:bg-primary/90 text-white'
-            }`}
+            size="xs"
+            shape="pill"
+            disabled={Boolean(comment)}
             onClick={() => {
               if (!comment) onToolAction?.(toolCall.call_id, 'approved');
             }}
@@ -777,7 +784,8 @@ function ToolCallApprovalBar({
             <Button
               type="button"
               variant="outline"
-              className="h-auto rounded-full border bg-transparent px-4 py-1 text-xs font-medium shadow-none"
+              size="xs"
+              shape="pill"
               onClick={() => {
                 void handleApproveSticky();
               }}
@@ -788,12 +796,9 @@ function ToolCallApprovalBar({
           )}
           <Button
             type="button"
-            variant="outline"
-            className={`h-auto rounded-full border bg-transparent px-4 py-1 text-xs font-medium shadow-none ${
-              comment
-                ? 'border-destructive bg-destructive/10 text-destructive hover:bg-destructive/10 font-semibold'
-                : 'hover:bg-accent text-muted-foreground dark:bg-transparent'
-            }`}
+            variant={comment ? 'destructive-outline' : 'outline'}
+            size="xs"
+            shape="pill"
             onClick={() => {
               if (expanded && comment) {
                 onToolAction?.(toolCall.call_id, 'denied', comment);
@@ -808,9 +813,9 @@ function ToolCallApprovalBar({
           </Button>
           <Button
             type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground hover:text-foreground h-6 w-6 rounded-full"
+            variant="ghost-muted"
+            size="icon-xs"
+            shape="pill"
             onClick={() => setExpanded(!expanded)}
             title="Details"
           >
@@ -833,7 +838,8 @@ function ToolCallApprovalBar({
           <Input
             type="text"
             placeholder="Optional reason for denying..."
-            className="bg-background h-8 rounded-lg px-3 py-1.5 text-sm md:text-sm"
+            size="sm"
+            variant="filled"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             onKeyDown={(e) => {

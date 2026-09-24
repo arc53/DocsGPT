@@ -93,17 +93,27 @@ function HeroModelSelect() {
       disabled={!hasModels}
     >
       <SelectTrigger
+        /* eslint-disable-next-line shadcn/no-restyle --
+           The landing page's one focal control keeps its own look: a
+           borderless muted pill at 16px whose menu joins it (DESIGN.md,
+           Approved exceptions). */
         className="bg-muted dark:bg-card text-foreground hover:bg-muted dark:hover:bg-card w-full justify-between rounded-4xl border-0 px-6 py-4 text-base shadow-none data-[state=open]:rounded-b-none"
         size="lg"
       >
         <SelectValue placeholder="Select Model" />
       </SelectTrigger>
-      <SelectContent className="bg-muted dark:bg-card rounded-t-none rounded-b-4xl border-0 shadow-md data-[side=bottom]:translate-y-0">
+      <SelectContent
+        /* eslint-disable-next-line shadcn/no-restyle --
+           The hero picker's menu hangs from its trigger as one muted
+           shape (DESIGN.md, Approved exceptions). */
+        className="bg-muted dark:bg-card rounded-t-none rounded-b-4xl border-0 shadow-md data-[side=bottom]:translate-y-0"
+      >
         {hasModels ? (
           availableModels?.map((model: Model) => (
             <SelectItem
               key={model.id}
               value={model.id}
+              /* eslint-disable-next-line shadcn/no-restyle -- hero menu rows match its 16px trigger */
               className="px-5 py-3 text-base [&_[data-slot=select-item-indicator]]:right-5"
             >
               {model.display_name}
@@ -169,7 +179,7 @@ export default function Hero({
                   <p className="text-foreground mb-2 font-semibold">
                     {demo.header}
                   </p>
-                  <span className="line-clamp-2 text-gray-700 opacity-60 dark:text-gray-300">
+                  <span className="text-muted-foreground line-clamp-2">
                     {demo.query}
                   </span>
                 </button>

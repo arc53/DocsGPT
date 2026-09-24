@@ -1,33 +1,15 @@
-import React from 'react';
+import { Spinner as UiSpinner } from './ui/spinner';
 
 type SpinnerProps = {
   size?: 'small' | 'medium' | 'large';
 };
 
-const SIZE_MAP: Record<NonNullable<SpinnerProps['size']>, string> = {
-  small: '20px',
-  medium: '30px',
-  large: '40px',
-};
+const SIZE_MAP = { small: 'sm', medium: 'default', large: 'lg' } as const;
 
+/**
+ * Compatibility wrapper over `ui/spinner`. New code should import
+ * `Spinner` from `@/components/ui/spinner` and use `sm | default | lg`.
+ */
 export default function Spinner({ size = 'medium' }: SpinnerProps) {
-  const spinnerSize = SIZE_MAP[size];
-
-  const spinnerStyle: React.CSSProperties = {
-    width: spinnerSize,
-    height: spinnerSize,
-    aspectRatio: '1',
-    borderRadius: '50%',
-    background: `
-      radial-gradient(farthest-side, currentColor 94%, transparent) top/8px 8px no-repeat,
-      conic-gradient(transparent 30%, currentColor)
-    `,
-    WebkitMask:
-      'radial-gradient(farthest-side, transparent calc(100% - 8px), #000 0)',
-    mask: 'radial-gradient(farthest-side, transparent calc(100% - 8px), #000 0)',
-    animation: 'spinner-rotate 1s infinite linear',
-    color: 'currentColor',
-  };
-
-  return <div className="loader" role="status" style={spinnerStyle} />;
+  return <UiSpinner size={SIZE_MAP[size]} />;
 }

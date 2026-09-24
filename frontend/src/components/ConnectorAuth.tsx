@@ -1,11 +1,12 @@
+import { CircleCheck, TriangleAlert } from 'lucide-react';
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import { isTrustedConnectorMessage } from '../utils/connectorAuthUtils';
+import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 
 interface ConnectorAuthProps {
@@ -31,7 +32,6 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
 }) => {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const [isDarkTheme] = useDarkTheme();
   const completedRef = useRef(false);
   const intervalRef = useRef<number | null>(null);
   const authWindowRef = useRef<Window | null>(null);
@@ -208,67 +208,36 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   return (
     <>
       {errorMessage && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-[#E60000] bg-transparent p-2 dark:border-[#D42626] dark:bg-[#D426261A]">
-          <svg
-            width="30"
-            height="30"
-            viewBox="0 0 30 30"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M7.09974 24.5422H22.9C24.5156 24.5422 25.5228 22.7901 24.715 21.3947L16.8149 7.74526C16.007 6.34989 13.9927 6.34989 13.1848 7.74526L5.28471 21.3947C4.47686 22.7901 5.48405 24.5422 7.09974 24.5422ZM14.9998 17.1981C14.4228 17.1981 13.9507 16.726 13.9507 16.149V14.0507C13.9507 13.4736 14.4228 13.0015 14.9998 13.0015C15.5769 13.0015 16.049 13.4736 16.049 14.0507V16.149C16.049 16.726 15.5769 17.1981 14.9998 17.1981ZM16.049 21.3947H13.9507V19.2964H16.049V21.3947Z"
-              fill={isDarkTheme ? '#EECF56' : '#E60000'}
-            />
-          </svg>
-
-          <span
-            className="text-sm text-[#E60000] dark:text-red-400"
-            style={{
-              fontFamily: 'Inter',
-              lineHeight: '100%',
-            }}
-          >
-            {errorMessage}
-          </span>
-        </div>
+        <Alert variant="destructive" className="mb-4">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
       )}
 
       {isConnected ? (
-        <div className="mb-4">
-          <div className="flex w-full items-center justify-between rounded-lg bg-[#8FDD51] px-4 py-2 text-sm font-medium text-black">
-            <div className="flex max-w-[500px] items-center gap-2">
-              <svg className="h-4 w-4" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                />
-              </svg>
-              <span>
-                {t('modals.uploadDoc.connectors.auth.connectedAs', {
-                  email: userEmail,
-                })}
-              </span>
-            </div>
+        <Alert variant="success" className="mb-4">
+          <CircleCheck aria-hidden="true" />
+          <AlertDescription className="flex items-center justify-between">
+            <span className="max-w-[500px]">
+              {t('modals.uploadDoc.connectors.auth.connectedAs', {
+                email: userEmail,
+              })}
+            </span>
             {onDisconnect && (
               <Button
                 type="button"
                 variant="link"
-                size="sm"
+                size="xs"
                 onClick={onDisconnect}
-                className="h-auto p-0 text-xs text-black underline hover:text-gray-700"
+                className="-my-1 ml-2 shrink-0"
               >
                 {t('modals.uploadDoc.connectors.auth.disconnect')}
               </Button>
             )}
-          </div>
-        </div>
+          </AlertDescription>
+        </Alert>
       ) : (
-        <Button
-          type="button"
-          onClick={handleAuth}
-          className="w-full rounded-lg bg-blue-500 px-4 py-3 text-white hover:bg-blue-600"
-        >
+        <Button type="button" onClick={handleAuth} className="w-full">
           <svg className="h-5 w-5" viewBox="0 0 24 24">
             <path
               fill="currentColor"

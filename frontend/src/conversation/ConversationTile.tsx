@@ -20,6 +20,7 @@ import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { cn } from '../lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -196,12 +197,13 @@ export default function ConversationTile({
             : ''
         }`}
       >
-        <div className={`flex w-10/12 gap-4`}>
+        <div className={cn('flex w-10/12 gap-4', isEdit && 'px-1')}>
           {isEdit ? (
             <Input
               autoFocus
               type="text"
-              className="h-6 w-full rounded-2xl border-0 px-1 text-sm leading-6 font-normal shadow-none focus-visible:ring-0 md:text-sm dark:border-0"
+              variant="bare"
+              className="w-full"
               value={conversationName}
               onChange={(e) => setConversationsName(e.target.value)}
               onKeyDown={handleRenameKeyDown}
@@ -218,11 +220,11 @@ export default function ConversationTile({
               <div className="flex gap-1">
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="icon-sm"
+                  variant="ghost-muted"
+                  size="icon-xs"
                   aria-label={t('convTile.save')}
                   title={t('convTile.save')}
-                  className="mr-2 h-auto w-auto bg-transparent p-0 hover:bg-transparent hover:opacity-50"
+                  className="mr-2"
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
                     handleSaveConversation({
@@ -235,12 +237,12 @@ export default function ConversationTile({
                 </Button>
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="icon-sm"
+                  variant="ghost-muted"
+                  size="icon-xs"
                   aria-label={t('cancel')}
                   title={t('cancel')}
                   id={`img-${conversation.id}`}
-                  className="mt-px mr-4 h-auto w-auto bg-transparent p-0 hover:bg-transparent hover:opacity-50"
+                  className="mt-px mr-4"
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
                     onClear();
@@ -256,10 +258,11 @@ export default function ConversationTile({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
+                    shape="pill"
                     onClick={(event: SyntheticEvent) => {
                       event.stopPropagation();
                     }}
-                    className="mr-2 h-6 w-6 rounded-full"
+                    className="mr-2 h-6 w-6"
                   >
                     <img src={threeDots} width={8} alt="menu" />
                   </Button>

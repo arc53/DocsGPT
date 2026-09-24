@@ -3,6 +3,7 @@ import { useSelector } from 'react-redux';
 
 import adminService, { type QuotaScope } from '../api/services/adminService';
 import teamsService from '../api/services/teamsService';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import {
@@ -22,14 +23,7 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { selectToken } from '../preferences/preferenceSlice';
-import {
-  LoadError,
-  Loading,
-  Pill,
-  fmtDate,
-  fmtNumber,
-  fmtRelative,
-} from './AdminUI';
+import { LoadError, Loading, fmtDate, fmtNumber, fmtRelative } from './AdminUI';
 import QuotaEditor from './QuotaEditor';
 import { describeBudget, type QuotaPolicy } from './quotaUtils';
 
@@ -118,8 +112,10 @@ export default function Quotas() {
 
   const bucketPill = (policy: QuotaPolicy) => (
     <>
-      {isAll(policy) ? null : <Pill tone="muted">{policy.bucket} traffic</Pill>}
-      {policy.enabled ? null : <Pill tone="muted">Disabled</Pill>}
+      {isAll(policy) ? null : (
+        <Badge variant="neutral">{policy.bucket} traffic</Badge>
+      )}
+      {policy.enabled ? null : <Badge variant="neutral">Disabled</Badge>}
     </>
   );
 
@@ -132,7 +128,7 @@ export default function Quotas() {
       </p>
 
       {(data.unpriced_models ?? []).length > 0 ? (
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+        <div className="border-warning/50 bg-warning/10 rounded-2xl border px-5 py-4 text-sm">
           <p className="text-foreground font-medium">
             Models without a price are invisible to cost limits
           </p>

@@ -41,10 +41,10 @@ const Help = () => {
     <div className="relative inline-block text-sm" ref={dropdownRef}>
       <Button
         type="button"
-        variant="ghost"
+        variant="sidebar-item"
         ref={buttonRef}
         onClick={toggleDropdown}
-        className="hover:bg-sidebar-accent mx-4 my-auto w-full justify-start gap-2.5 rounded-3xl pr-0 pl-3"
+        className="mx-4 my-auto w-full"
       >
         <img
           src={Info}

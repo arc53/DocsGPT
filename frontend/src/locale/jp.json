@@ -23,7 +23,10 @@
     "sharedTitle": "あなたに共有されました",
     "sharedBody": "チームに{{type}}が共有されました: {{name}}（{{access}}）",
     "sharedBodyNoName": "チームに{{type}}が共有されました（{{access}}）",
-    "dismiss": "閉じる"
+    "dismiss": "閉じる",
+    "toolApprovalTitle": "ツールの承認が必要です",
+    "toolApprovalReview": "確認",
+    "toolApprovalFallbackName": "会話"
   },
   "demo": [
     {
@@ -220,6 +223,7 @@
       "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？",
       "confirmDelete": "このファイルを削除してもよろしいですか？この操作は元に戻せません。",
       "backToAll": "すべてのソースに戻る",
+      "back": "戻る",
       "chunks": "チャンク",
       "noChunks": "チャンクが見つかりません",
       "noChunksAlt": "チャンクが見つかりません",
@@ -370,6 +374,7 @@
       "failed": "失敗",
       "skipped": "スキップ",
       "successful": "成功",
+      "otherSeries": "その他",
       "stats": {
         "messages": "メッセージ",
         "tokens": "トークン",
@@ -1590,6 +1595,7 @@
       "backToRoot": "戻る",
       "currentFolder": "このフォルダ",
       "noSubfolders": "サブフォルダなし",
+      "openFolder": "フォルダーを開く",
       "noFolders": "フォルダがありません"
     },
     "guardrailEvents": {

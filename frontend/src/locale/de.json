@@ -23,7 +23,10 @@
     "sharedTitle": "Mit dir geteilt",
     "sharedBody": "{{type}} mit deinem Team geteilt: {{name}} ({{access}})",
     "sharedBodyNoName": "{{type}} wurde mit deinem Team geteilt ({{access}})",
-    "dismiss": "Schließen"
+    "dismiss": "Schließen",
+    "toolApprovalTitle": "Tool-Freigabe erforderlich",
+    "toolApprovalReview": "Prüfen",
+    "toolApprovalFallbackName": "Unterhaltung"
   },
   "demo": [
     {
@@ -221,6 +224,7 @@
       "deleteWarning": "Bist du sicher, dass du \"{{name}}\" löschen möchtest?",
       "confirmDelete": "Bist du sicher, dass du diese Datei löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
       "backToAll": "Zurück zu allen Quellen",
+      "back": "Zurück",
       "chunks": "Chunks",
       "noChunks": "Keine Chunks gefunden",
       "noChunksAlt": "Keine Chunks gefunden",
@@ -371,6 +375,7 @@
       "failed": "Fehlgeschlagen",
       "skipped": "Übersprungen",
       "successful": "Erfolgreich",
+      "otherSeries": "Andere",
       "stats": {
         "messages": "Nachrichten",
         "tokens": "Tokens",
@@ -1594,6 +1599,7 @@
       "backToRoot": "Zurück",
       "currentFolder": "Dieser Ordner",
       "noSubfolders": "Keine Unterordner",
+      "openFolder": "Ordner öffnen",
       "noFolders": "Noch keine Ordner"
     },
     "guardrailEvents": {

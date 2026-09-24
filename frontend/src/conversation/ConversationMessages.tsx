@@ -7,9 +7,11 @@ import {
   useRef,
   useState,
 } from 'react';
+import { TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import Retry from '../assets/retry.svg?react';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import {
   MessageScroller,
@@ -24,6 +26,7 @@ import { deriveArtifactChips } from './artifactChips';
 import ConversationBubble from './ConversationBubble';
 import { FEEDBACK, Query, Status } from './conversationModels';
 import StreamingStatusLine from './StreamingStatusLine';
+import { cn } from '@/lib/utils';
 
 type ConversationMessagesProps = {
   handleQuestion: (params: {
@@ -116,7 +119,9 @@ export default function ConversationMessages({
       // (dist >= its height) so removing it never shifts the visible content.
       // Reading style.height (the primitive's inline value) avoids a reflow.
       if (!spacerCollapsedRef.current) {
-        const spacer = vp.querySelector<HTMLElement>('.msc-spacer');
+        const spacer = vp.querySelector<HTMLElement>(
+          '[data-message-scroller-spacer]',
+        );
         const spacerH = spacer ? parseFloat(spacer.style.height) || 0 : 0;
         if (spacerH > STICK_THRESHOLD_PX && dist >= spacerH) {
           spacerCollapsedRef.current = true;
@@ -138,8 +143,10 @@ export default function ConversationMessages({
   }, [status, lastTurnContentLength, hasMessages]);
 
   const columnClass = isSplitView
-    ? 'w-full max-w-325 px-2'
-    : 'w-full max-w-325 px-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12';
+    ? // eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions.
+      'w-full max-w-325 px-2'
+    : // eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions.
+      'w-full max-w-325 px-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12';
 
   // The empty state sits directly on top of the composer with nothing between
   // them, so it takes the composer's width rather than the wider message column.
@@ -157,8 +164,10 @@ export default function ConversationMessages({
       const retryButton = (
         <Button
           type="button"
-          variant="ghost"
-          className="dark:text-foreground h-auto self-center rounded-full px-5 py-3 text-lg text-gray-500 delay-100 hover:border-gray-500"
+          variant="ghost-muted"
+          size="icon"
+          shape="pill"
+          className="self-center"
           disabled={status === 'loading'}
           onClick={() => {
             const questionToRetry = queries[index].prompt;
@@ -170,11 +179,7 @@ export default function ConversationMessages({
           }}
           aria-label={t('conversation.retry')}
         >
-          <Retry
-            width={12}
-            height={12}
-            className="text-gray-500 dark:text-[#ECECF1]"
-          />
+          <Retry width={12} height={12} />
         </Button>
       );
       return (
@@ -206,12 +211,14 @@ export default function ConversationMessages({
       return (
         <Fragment key={`${index}-ANSWER`}>
           {query.notice ? (
-            <div
+            <Alert
+              variant="warning"
               role="status"
-              className={`${bubbleMargin} mr-5 self-start rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200`}
+              className={cn(bubbleMargin, 'mr-5 w-auto')}
             >
-              {query.notice}
-            </div>
+              <TriangleAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>{query.notice}</AlertDescription>
+            </Alert>
           ) : null}
           <ConversationBubble
             className={bubbleMargin}
@@ -268,11 +275,13 @@ export default function ConversationMessages({
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller>
-        <MessageScrollerViewport className="sm:pt-6 lg:pt-12">
+        <MessageScrollerViewport
+          /* eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions. */
+          className="sm:pt-6 lg:pt-12"
+        >
           <MessageScrollerContent
-            spacerClassName={
-              spacerCollapsed ? 'msc-spacer max-h-0' : 'msc-spacer'
-            }
+            spacerClassName={spacerCollapsed ? 'max-h-0' : undefined}
+            /* eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions. */
             className={`mx-auto pb-7 ${columnClass}`}
           >
             {headerContent}

@@ -1,9 +1,11 @@
+import { CircleAlert, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
@@ -182,14 +184,14 @@ export default function TestRetrievalModal({
       mobileVariant="sheet"
       // Same width ramp and padding as PromptsModal so the two large modals
       // read as one family.
-      className="bg-card dark:bg-card w-[95vw] max-w-[650px] rounded-2xl px-4 py-4 sm:px-6 sm:py-6 md:max-w-[860px] md:px-8 md:py-6 lg:max-w-[980px]"
+      className="w-[95vw] max-w-[650px] md:max-w-[860px] lg:max-w-[980px]"
       contentClassName="max-h-[70vh]"
     >
       <div className="flex flex-col">
-        <p className="mb-1 text-xl font-semibold text-[#2B2B2B] dark:text-white">
+        <p className="text-foreground mb-1 text-xl font-semibold">
           {tr('title')}
         </p>
-        <p className="dark:text-muted-foreground mb-6 text-sm text-[#6B6B6B]">
+        <p className="text-muted-foreground mb-6 text-sm">
           {document?.name
             ? tr('subtitle', { name: document.name })
             : tr('subtitleGeneric')}
@@ -202,7 +204,8 @@ export default function TestRetrievalModal({
               value={query}
               autoFocus
               placeholder={tr('queryPlaceholder')}
-              className="h-[42px] flex-1 rounded-3xl px-4"
+              shape="pill"
+              className="flex-1"
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleRun();
@@ -212,7 +215,9 @@ export default function TestRetrievalModal({
               type="button"
               disabled={!canRun}
               onClick={handleRun}
-              className="h-[42px] min-w-[96px] shrink-0 rounded-3xl px-6 text-sm font-medium"
+              size="field"
+              shape="pill"
+              className="min-w-[96px] shrink-0"
             >
               {running ? <Spinner size="small" /> : tr('run')}
             </Button>
@@ -230,15 +235,19 @@ export default function TestRetrievalModal({
           <p className="text-muted-foreground text-xs">{tr('notSavedHint')}</p>
 
           {!prescreenValid && (
-            <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-              {t('settings.sources.configModal.prescreenInvalidHint')}
-            </div>
+            <Alert variant="warning">
+              <TriangleAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>
+                {t('settings.sources.configModal.prescreenInvalidHint')}
+              </AlertDescription>
+            </Alert>
           )}
 
           {error && (
-            <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-              {error}
-            </div>
+            <Alert variant="destructive">
+              <CircleAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
           {result && (
@@ -297,8 +306,9 @@ export default function TestRetrievalModal({
                       <Button
                         type="button"
                         variant="link"
+                        size="xs"
                         onClick={() => toggleExpanded(chunk.rank)}
-                        className="text-muted-foreground h-auto px-0 py-1 text-xs"
+                        className="-ml-2"
                       >
                         {isOpen ? tr('showLess') : tr('showMore')}
                       </Button>

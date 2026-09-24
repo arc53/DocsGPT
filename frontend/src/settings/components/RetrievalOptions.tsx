@@ -1,3 +1,4 @@
+import { ChevronRight } from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -21,8 +22,6 @@ import type {
   SourceConfig,
 } from '../../models/misc';
 import type { Model } from '../../models/types';
-
-import ChevronRight from '../../assets/chevron-right.svg';
 
 // Defaults mirror the backend SourceConfig
 // (application/storage/db/source_config.py). A form seeded with these and sent
@@ -462,7 +461,7 @@ export default function RetrievalOptions({
             >
               <SelectTrigger
                 id="retrieval-retriever"
-                className="w-52 rounded-md"
+                className="w-52"
                 size="lg"
               >
                 <SelectValue />
@@ -559,7 +558,7 @@ export default function RetrievalOptions({
               >
                 <SelectTrigger
                   id="retrieval-exposure"
-                  className="w-52 rounded-md"
+                  className="w-52"
                   size="lg"
                 >
                   <SelectValue />
@@ -600,7 +599,6 @@ export default function RetrievalOptions({
               label={tr('prescreen.candidateK')}
               value={String(value.retrieval.prescreen.candidate_k)}
               disabled={disabled}
-              labelBgClassName="bg-card"
               onChange={(e) =>
                 setPrescreen({
                   candidate_k: Math.max(
@@ -616,7 +614,6 @@ export default function RetrievalOptions({
               label={tr('prescreen.maxKeep')}
               value={String(value.retrieval.prescreen.max_keep)}
               disabled={disabled}
-              labelBgClassName="bg-card"
               onChange={(e) =>
                 setPrescreen({
                   max_keep: Math.min(
@@ -632,7 +629,6 @@ export default function RetrievalOptions({
               label={tr('prescreen.batchSize')}
               value={String(value.retrieval.prescreen.batch_size)}
               disabled={disabled}
-              labelBgClassName="bg-card"
               onChange={(e) =>
                 setPrescreen({
                   batch_size: Math.max(1, Number(e.target.value) || 1),
@@ -670,7 +666,7 @@ export default function RetrievalOptions({
               >
                 <SelectTrigger
                   id="graph-seed-strategy"
-                  className="w-52 rounded-md"
+                  className="w-52"
                   size="lg"
                 >
                   <SelectValue />
@@ -744,7 +740,7 @@ export default function RetrievalOptions({
               >
                 <SelectTrigger
                   id="graph-extraction-model"
-                  className="w-52 rounded-md"
+                  className="w-52"
                   size="lg"
                 >
                   <SelectValue />
@@ -814,11 +810,7 @@ export default function RetrievalOptions({
                 setChunking({ strategy: v as ChunkingStrategy })
               }
             >
-              <SelectTrigger
-                id="chunking-strategy"
-                className="w-52 rounded-md"
-                size="lg"
-              >
+              <SelectTrigger id="chunking-strategy" className="w-52" size="lg">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -896,15 +888,13 @@ export default function RetrievalOptions({
       <Button
         type="button"
         variant="link"
+        size="sm"
         onClick={() => setOpen((o) => !o)}
-        className="text-foreground hover:text-foreground h-auto w-fit justify-start px-0 py-2 text-sm font-normal hover:no-underline"
+        className="-ml-3 w-fit justify-start"
       >
-        <img
-          src={ChevronRight}
-          alt=""
-          className={`h-3 w-3 transform transition-transform dark:invert ${
-            expanded ? 'rotate-90' : ''
-          }`}
+        <ChevronRight
+          aria-hidden
+          className={cn('size-3 transition-transform', expanded && 'rotate-90')}
         />
         <span>{tr('title')}</span>
       </Button>

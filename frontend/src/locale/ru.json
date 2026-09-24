@@ -23,7 +23,10 @@
     "sharedTitle": "Поделились с вами",
     "sharedBody": "С вашей командой поделились: {{type}} «{{name}}» ({{access}})",
     "sharedBodyNoName": "С вашей командой поделились: {{type}} ({{access}})",
-    "dismiss": "Закрыть"
+    "dismiss": "Закрыть",
+    "toolApprovalTitle": "Требуется одобрение инструмента",
+    "toolApprovalReview": "Проверить",
+    "toolApprovalFallbackName": "Диалог"
   },
   "demo": [
     {
@@ -233,6 +236,7 @@
       "deleteWarning": "Вы уверены, что хотите удалить \"{{name}}\"?",
       "confirmDelete": "Вы уверены, что хотите удалить этот файл? Это действие нельзя отменить.",
       "backToAll": "Вернуться ко всем источникам",
+      "back": "Назад",
       "chunks": "Фрагменты",
       "noChunks": "Фрагменты не найдены",
       "noChunksAlt": "Фрагменты не найдены",
@@ -383,6 +387,7 @@
       "failed": "Не удалось",
       "skipped": "Пропущено",
       "successful": "Успешно",
+      "otherSeries": "Другие",
       "stats": {
         "messages": "Сообщения",
         "tokens": "Токены",
@@ -1632,6 +1637,7 @@
       "backToRoot": "Назад",
       "currentFolder": "Эта папка",
       "noSubfolders": "Нет подпапок",
+      "openFolder": "Открыть папку",
       "noFolders": "Пока нет папок"
     },
     "guardrailEvents": {

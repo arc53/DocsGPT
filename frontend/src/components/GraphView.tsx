@@ -162,8 +162,9 @@ const GraphView: React.FC<GraphViewProps> = ({
         <Button
           type="button"
           variant="outline"
-          size="icon-sm"
-          className="text-muted-foreground mr-3 h-[29px] w-[29px] rounded-full p-2 dark:border-0"
+          size="icon-xs"
+          shape="pill"
+          className="mr-3"
           onClick={onBackToDocuments}
           aria-label={t('settings.sources.backToAll')}
         >

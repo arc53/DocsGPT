@@ -14,6 +14,7 @@
     "test:watch": "vitest",
     "lint": "eslint ./src --ext .jsx,.js,.ts,.tsx",
     "lint-fix": "eslint ./src --ext .jsx,.js,.ts,.tsx --fix",
+    "lint:design": "eslint ./src -f json | node scripts/design-lint-report.mjs",
     "format": "prettier ./src --write",
     "prepare": "cd .. && husky install frontend/.husky"
   },
@@ -64,6 +65,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@shadcn/lint": "^0.2.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/d3-force": "^3.0.10",
     "@types/lodash": "^4.17.25",
