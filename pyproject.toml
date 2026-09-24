@@ -78,6 +78,8 @@ dependencies = [
   "openapi3-parser>=2.0.0,<3",
   # pandas reads .xlsx through openpyxl but does not depend on it.
   "openpyxl>=3.1.5,<4",
+  # Imported directly by docsgpt.tracing to replay traces as GenAI spans.
+  "opentelemetry-api>=1.29.0,<2",
   "opentelemetry-distro>=0.50b0,<1",
   "opentelemetry-exporter-otlp>=1.29.0,<2",
   "opentelemetry-instrumentation-celery>=0.50b0,<1",

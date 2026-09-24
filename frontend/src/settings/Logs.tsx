@@ -1,3 +1,4 @@
+import { Activity } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -6,6 +7,7 @@ import userService from '../api/services/userService';
 import ChevronRight from '../assets/chevron-right.svg';
 import CopyButton from '../components/CopyButton';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import {
   Select,
@@ -17,7 +19,10 @@ import {
 import { useLoaderState } from '../hooks';
 import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
-import { LogData } from './types';
+import TraceChips from './traces/TraceChips';
+import TraceSheet from './traces/TraceSheet';
+import { formatDurationMs } from './traces/traceUtils';
+import { LogData, TraceRef } from './types';
 
 type LogsProps = {
   agentId?: string;
@@ -36,6 +41,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   const [typeFilter, setTypeFilter] = useState('all');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [openTrace, setOpenTrace] = useState<TraceRef | null>(null);
 
   const logs = Object.values(logsByPage).flat();
 
@@ -128,6 +134,8 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
     { label: t('settings.logs.types.webhook'), value: 'webhook' },
     { label: t('settings.logs.types.workflow'), value: 'workflow' },
     { label: t('settings.logs.types.system'), value: 'system' },
+    { label: t('settings.logs.types.search'), value: 'search' },
+    { label: t('settings.logs.types.graph'), value: 'graph' },
   ];
 
   return (
@@ -174,8 +182,14 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           setPage={setPage}
           loading={loadingLogs}
           tableHeader={tableHeader}
+          onViewTrace={setOpenTrace}
         />
       </div>
+      <TraceSheet
+        traceRef={openTrace}
+        agentId={agentId}
+        onClose={() => setOpenTrace(null)}
+      />
     </div>
   );
 }
@@ -185,8 +199,15 @@ type LogsTableProps = {
   setPage: React.Dispatch<React.SetStateAction<number>>;
   loading: boolean;
   tableHeader?: string;
+  onViewTrace: (ref: TraceRef) => void;
 };
-function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
+function LogsTable({
+  logs,
+  setPage,
+  loading,
+  tableHeader,
+  onViewTrace,
+}: LogsTableProps) {
   const { t } = useTranslation();
   const observerRef = useRef<IntersectionObserver | null>(null);
   const [openLogId, setOpenLogId] = useState<string | null>(null);
@@ -244,6 +265,7 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
                   log={log}
                   isOpen={openLogId === log.id}
                   onToggle={handleLogToggle}
+                  onViewTrace={onViewTrace}
                 />
               </div>
             );
@@ -254,6 +276,7 @@ function LogsTable({ logs, setPage, loading, tableHeader }: LogsTableProps) {
                 log={log}
                 isOpen={openLogId === log.id}
                 onToggle={handleLogToggle}
+                onViewTrace={onViewTrace}
               />
             );
         })}
@@ -267,17 +290,19 @@ function formatDuration(start?: string, end?: string): string | null {
   if (!start || !end) return null;
   const ms = new Date(end).getTime() - new Date(start).getTime();
   if (isNaN(ms) || ms < 0) return null;
-  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+  return formatDurationMs(ms);
 }
 
 function Log({
   log,
   isOpen,
   onToggle,
+  onViewTrace,
 }: {
   log: LogData;
   isOpen: boolean;
   onToggle: (id: string) => void;
+  onViewTrace: (ref: TraceRef) => void;
 }) {
   const { t } = useTranslation();
   const logLevelColor = {
@@ -332,6 +357,17 @@ function Log({
   } else if (log.event_type === 'system' || log.event_type === 'webhook') {
     if (log.endpoint)
       detailRows.push([t('settings.logs.detail.endpoint'), log.endpoint]);
+  } else if (log.event_type === 'search' || log.event_type === 'graph') {
+    if (log.source)
+      detailRows.push([
+        t('settings.logs.detail.source'),
+        t(`settings.logs.trace.sources.${log.source}`, log.source),
+      ]);
+    if (log.status)
+      detailRows.push([
+        t('settings.logs.detail.status'),
+        t(`settings.logs.trace.status.${log.status}`, log.status),
+      ]);
   }
 
   const textBlocks: { label: string; text: string; isError?: boolean }[] = [];
@@ -390,9 +426,18 @@ function Log({
   return (
     <div className="group dark:hover:bg-accent hover:bg-muted w-full rounded-xl bg-transparent">
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isOpen}
         onClick={() => onToggle(log.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle(log.id);
+          }
+        }}
         className={cn(
-          'text-foreground flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3',
+          'text-foreground focus-visible:ring-ring/50 flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 outline-none focus-visible:ring-3 focus-visible:ring-inset',
           isOpen && 'bg-muted rounded-t-xl',
         )}
       >
@@ -409,6 +454,11 @@ function Log({
             </h2>
           )}
           <h2 className="text-warning text-xs">{`[${log.action}]`}</h2>
+          {log.trace && (
+            <h2 className="text-muted-foreground text-xs tabular-nums">
+              {formatDurationMs(log.trace.duration_ms)}
+            </h2>
+          )}
           <h2
             className={cn(
               'max-w-72 text-xs wrap-break-word',
@@ -423,6 +473,26 @@ function Log({
       </div>
       {isOpen && (
         <div className="bg-muted rounded-b-xl px-4 py-3">
+          {log.trace && (
+            <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => log.trace && onViewTrace(log.trace.ref)}
+              >
+                <Activity />
+                {log.trace.count > 1
+                  ? t('settings.logs.trace.viewRounds', {
+                      count: log.trace.count,
+                    })
+                  : t('settings.logs.trace.view')}
+              </Button>
+              <TraceChips
+                durationMs={log.trace.duration_ms}
+                counts={log.trace.summary}
+              />
+            </div>
+          )}
           {detailRows.length > 0 && (
             <div className="flex flex-col gap-1 px-2 pb-2">
               {detailRows.map(([label, value]) => (

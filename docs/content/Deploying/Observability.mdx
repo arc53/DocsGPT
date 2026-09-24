@@ -14,8 +14,9 @@ launch command with `opentelemetry-instrument` and setting OTLP env
 vars.
 
 Auto-instrumentation covers Flask, Starlette, Celery, SQLAlchemy,
-psycopg, Redis, requests, and Python logging. LLM/retriever calls are
-not captured at this layer — see *Going further* below.
+psycopg, Redis, requests, and Python logging. Agent runs, LLM calls,
+tool calls and retrieval are recorded by DocsGPT itself and exported as
+OpenTelemetry GenAI spans — see [Execution traces](#execution-traces).
 
 ## Enabling
 
@@ -66,6 +67,88 @@ dotenv run -- opentelemetry-instrument celery -A docsgpt.app.celery worker -l IN
   `docsgpt/core/logging_config.py` detects the flag and preserves
   the OTEL log handler. Without it, `logging` writes only to stdout.
 </Callout>
+
+## Execution traces
+
+Every request records an **execution trace**: a timed tree of the steps
+behind it. Traces are recorded for chat turns (`/stream`, `/api/answer`,
+`/v1/chat/completions`, including each round of a tool-approval pause),
+scheduled and webhook runs, workflows, the research agent, `/api/search`,
+the MCP `search_docs` tool, and graph builds.
+
+| Step | Recorded when |
+| --- | --- |
+| `invoke_agent` | An agent (or a workflow node's agent) runs |
+| `chat` | An LLM call made during the request, including retries, fallbacks, query rephrasing, prescreening, history compression and guardrail judges |
+| `execute_tool` | A tool is executed, paused for approval, denied or skipped |
+| `retrieval` | A retriever or the multi-source dispatcher searches |
+| `embeddings` | The query is embedded |
+| `search` | One source is searched |
+| `rerank` | Prescreening filters retrieved chunks |
+| `guardrail` | A guardrail calls a remote check or fires |
+| `step` | A workflow node or research phase runs |
+
+Traces are stored in the `request_traces` table and shown in the app: open
+**Settings → Logs** (or an agent's **Logs** tab), expand an entry and choose
+**View trace** to see a waterfall of every step with its timing, tokens,
+cost and details.
+
+Stored traces keep short previews — tool arguments and results, retrieved
+chunk titles and snippets, rephrased queries, answer excerpts — truncated
+and with secret-named fields redacted. Full prompts are never stored. When a
+guardrail fires during a request, every preview is dropped from its trace.
+
+```bash
+TRACES_ENABLED=true            # record traces at all
+TRACES_CAPTURE_CONTENT=true    # keep previews in stored traces
+TRACES_PREVIEW_CHARS=2000      # characters kept per preview
+TRACES_MAX_SPANS=500           # steps kept per trace; the rest are counted
+TRACES_RETENTION_DAYS=30       # a daily task deletes older traces
+TRACES_OTEL_EXPORT=true        # also export traces as OTel GenAI spans
+```
+
+### GenAI spans and metrics
+
+When DocsGPT runs under `opentelemetry-instrument`, each finished trace is
+also exported as spans that follow the
+[OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/):
+`invoke_agent {agent}`, `chat {model}`, `execute_tool {tool}`,
+`embeddings {model}` and `retrieval`, with attributes such as
+`gen_ai.provider.name`, `gen_ai.request.model`,
+`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`,
+`gen_ai.usage.cache_read.input_tokens`, `gen_ai.conversation.id`,
+`gen_ai.agent.id` and `gen_ai.tool.name`. DocsGPT-specific details use the
+`docsgpt.*` prefix (`docsgpt.request_id`, `docsgpt.token_source`,
+`docsgpt.cache_hit`, `docsgpt.ttft_ms`, ...). The trace's root span is a
+child of the request's HTTP server span, and the stored trace keeps the
+OTel trace id so you can move between the two.
+
+Two metrics are recorded for every model call:
+`gen_ai.client.token.usage` and `gen_ai.client.operation.duration`.
+
+Backends that understand the GenAI conventions — Langfuse
+(`/api/public/otel`), Arize Phoenix, Datadog LLM Observability, Grafana —
+render these as LLM traces with token and cost views.
+
+Prompt and tool content is **not** exported by default, because the OTLP
+backend may be a third party. Opt in with the standard variable:
+
+```bash
+OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
+```
+
+This adds the same redacted previews the app stores (for example
+`gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`).
+
+<Callout type="info" emoji="ℹ️">
+  GenAI spans are exported when the request finishes, with their original
+  timestamps. Consequences: a long research run appears only when it ends;
+  HTTP and database spans made during a step sit beside the step rather than
+  under it; and log records carry the request's span ids, not the step's.
+</Callout>
+
+The GenAI conventions are still in development upstream, so attribute names
+may change in later releases.
 
 ## Backend examples
 

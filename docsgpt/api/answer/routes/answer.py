@@ -13,7 +13,10 @@ from docsgpt.api.answer.services.continuation_service import (
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
-from docsgpt.api.answer.services.stream_processor import StreamProcessor
+from docsgpt.api.answer.services.stream_processor import (
+    StreamProcessor,
+    flush_trace_after_request,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +90,10 @@ class AnswerResource(Resource, BaseAnswerResource):
         if error := self.validate_request(data):
             return error
         decoded_token = getattr(request, "decoded_token", None)
-        processor = StreamProcessor(data, decoded_token)
+        processor = StreamProcessor(data, decoded_token, trace_source="answer")
+        # ``complete_stream`` is consumed below and writes the trace itself;
+        # this covers requests refused before it runs.
+        flush_trace_after_request(processor)
         try:
             # ---- Continuation mode ----
             if data.get("tool_actions"):
@@ -115,6 +121,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     decoded_token=processor.decoded_token,
                     agent_id=processor.agent_id,
                     model_id=processor.model_id,
+                    trace=processor.trace,
                     _continuation={
                         "messages": messages,
                         "tools_dict": tools_dict,
@@ -156,6 +163,8 @@ class AnswerResource(Resource, BaseAnswerResource):
                     is_shared_usage=processor.is_shared_usage,
                     shared_token=processor.shared_token,
                     model_id=processor.model_id,
+                    request_id=processor.request_id,
+                    trace=processor.trace,
                 )
 
             stream_result = self.process_response_stream(stream)

@@ -1626,3 +1626,53 @@ class TestResearchAgentClarificationCoverage:
         text = 'Here is my response: {"needs_clarification": false} end.'
         result = agent._parse_clarification_json(text)
         assert result == {"needs_clarification": False}
+
+
+@pytest.mark.unit
+class TestGenInnerTraceSpans:
+    """Each research phase is a step span in the execution trace."""
+
+    def test_phases_become_step_spans(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        log_context,
+        monkeypatch,
+    ):
+        from docsgpt import tracing
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "TRACES_ENABLED", True)
+        agent = ResearchAgent(**agent_base_params)
+        plan_steps = [{"query": "s1", "rationale": "r"}, {"query": "s2", "rationale": "r"}]
+
+        def fake_step(query, tools_dict):
+            with tracing.span(tracing.KIND_LLM, "chat m"):
+                return f"report {query}"
+
+        trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with tracing.activate(trace), \
+             patch.object(agent, "_setup_tools", return_value={}), \
+             patch.object(agent, "_is_follow_up", return_value=False), \
+             patch.object(agent, "_clarification_phase", return_value=None), \
+             patch.object(agent, "_planning_phase", return_value=(plan_steps, "moderate")), \
+             patch.object(agent, "_research_step", side_effect=fake_step), \
+             patch.object(agent, "_synthesis_phase", return_value=iter([{"answer": "final"}])), \
+             patch.object(agent, "_get_truncated_tool_calls", return_value=[]):
+            list(agent._gen_inner("Compare A and B", log_context))
+
+        names = [s.name for s in trace.spans if s.kind == tracing.KIND_STEP]
+        assert names == [
+            "research clarify",
+            "research plan",
+            "research step 1",
+            "research step 2",
+            "research synthesis",
+        ]
+        by_name = {s.name: s for s in trace.spans}
+        assert by_name["research plan"].attributes["docsgpt.research.steps"] == 2
+        llm_spans = [s for s in trace.spans if s.kind == tracing.KIND_LLM]
+        assert llm_spans[0].parent_id == by_name["research step 1"].id
+        assert by_name["research step 1"].previews["query"] == "s1"

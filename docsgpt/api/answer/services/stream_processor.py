@@ -1,9 +1,14 @@
 import datetime
+import functools
 import json
 import logging
+import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional, Set, TypeVar
 
+from flask import after_this_request
+
+from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
 from docsgpt.agents.default_tools import synthesized_default_tools
 from docsgpt.api.answer.services.compression import CompressionOrchestrator
@@ -104,9 +109,63 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
         raise ValueError(f"Invalid prompt ID: {prompt_id}") from e
 
 
+T = TypeVar("T")
+
+
+def _traced_setup(method: Callable[..., T]) -> Callable[..., T]:
+    """Run a request-setup method inside the request's execution trace.
+
+    Agent setup does real work worth seeing in the trace -- pre-fetch
+    retrieval, history compression -- before ``complete_stream`` runs, so
+    the trace is started here, in the request thread, and handed on.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: "StreamProcessor", *args: Any, **kwargs: Any) -> T:
+        trace = getattr(self, "trace", None)
+        if trace is None:
+            trace = tracing.start_trace(source=getattr(self, "trace_source", "stream"))
+            self.trace = trace
+        with tracing.activate(trace):
+            try:
+                return method(self, *args, **kwargs)
+            finally:
+                if trace is not None:
+                    decoded = getattr(self, "decoded_token", None)
+                    trace.bind(
+                        request_id=getattr(self, "request_id", None),
+                        user_id=decoded.get("sub") if isinstance(decoded, dict) else None,
+                        agent_id=getattr(self, "agent_id", None),
+                    )
+
+    return wrapper
+
+
+def flush_trace_after_request(processor: "StreamProcessor") -> None:
+    """Write ``processor``'s setup trace when the request ends, unless it was claimed.
+
+    Registered on the current request with ``after_this_request``; the hook
+    always hands the response back unchanged and never raises.
+
+    Args:
+        processor: The request's processor.
+    """
+
+    @after_this_request
+    def _flush(response: Any) -> Any:
+        try:
+            processor.flush_unclaimed_trace()
+        except Exception:
+            logger.warning("Could not write an unclaimed request trace", exc_info=True)
+        return response
+
+
 class StreamProcessor:
     def __init__(
-        self, request_data: Dict[str, Any], decoded_token: Optional[Dict[str, Any]]
+        self,
+        request_data: Dict[str, Any],
+        decoded_token: Optional[Dict[str, Any]],
+        trace_source: str = "stream",
     ):
         # Legacy attribute retained as None for any external callers that
         # introspect the processor; all DB access uses per-op connections.
@@ -137,6 +196,11 @@ class StreamProcessor:
         self.reserved_message_id: Optional[str] = None
         # Carried through resumes so multi-pause runs keep one request_id.
         self.request_id: Optional[str] = None
+        # The request's execution trace, started by the first traced setup
+        # step and handed to ``complete_stream``; ``trace_source`` names the
+        # entry point it is stored under.
+        self.trace: Optional[tracing.Trace] = None
+        self.trace_source = trace_source
         self.conversation_service = ConversationService()
         self.compression_orchestrator = CompressionOrchestrator(
             self.conversation_service
@@ -161,12 +225,44 @@ class StreamProcessor:
         self._load_conversation_history()
         self._process_attachments()
 
+    def handoff_trace(self) -> Optional[tracing.Trace]:
+        """Hand the setup trace to a streaming ``complete_stream``.
+
+        The stream writes the trace when it ends, after the view has
+        returned; marking the hand-off stops :meth:`flush_unclaimed_trace`
+        from writing it first.
+
+        Returns:
+            The trace to pass as ``complete_stream(trace=...)``.
+        """
+        self._trace_handed_off = True
+        return getattr(self, "trace", None)
+
+    def flush_unclaimed_trace(self) -> None:
+        """Write the setup trace of a request that ended before streaming.
+
+        A request refused after setup started (unauthorized, over its usage
+        limit, a resume conflict, a setup error) still records what ran,
+        marked ``error``. A trace the request already wrote, or handed to a
+        stream, is left alone. Routes arrange this with
+        :func:`flush_trace_after_request`.
+        """
+        if not getattr(self, "_trace_handed_off", False):
+            tracing.flush(getattr(self, "trace", None), tracing.STATUS_ERROR)
+
+    @_traced_setup
     def build_agent(self, question: str):
         """One call to go from request data to a ready-to-run agent.
 
         Combines initialize(), pre_fetch_docs(), pre_fetch_tools(), and
-        create_agent() into a single convenience method.
+        create_agent() into a single convenience method. The request id is
+        minted first so pre-fetch retrieval and its side-channel LLM calls
+        share it with the rest of the turn. It is always generated here, never
+        taken from the request body: request quotas count distinct request
+        ids, so a client-chosen id would let every call count as one.
         """
+        if not getattr(self, "request_id", None):
+            self.request_id = str(uuid.uuid4())
         self.initialize()
 
         agent_type = self.agent_config.get("agent_type", "classic")
@@ -221,6 +317,7 @@ class StreamProcessor:
             tools_data=tools_data,
         )
 
+    @_traced_setup
     def build_continuation_from_messages(self, messages, tool_actions):
         """Rebuild a tool continuation from the request messages (STATELESS).
 
@@ -1118,7 +1215,7 @@ class StreamProcessor:
             user_api_key=self.agent_config["user_api_key"],
             agent_id=self.agent_id,
             decoded_token=self.decoded_token,
-            request_id=self.data.get("request_id"),
+            request_id=self.request_id or self.data.get("request_id"),
         )
 
         def _legacy_classic():
@@ -1440,6 +1537,7 @@ class StreamProcessor:
             logger.warning(f"Failed to fetch memory tool data: {str(e)}")
             return None
 
+    @_traced_setup
     def resume_from_tool_actions(
         self,
         tool_actions: list,
@@ -1813,7 +1911,7 @@ class StreamProcessor:
                 "llm_name": provider or settings.LLM_PROVIDER,
                 "api_key": system_api_key,
                 "decoded_token": self.decoded_token,
-                "request_id": self.data.get("request_id"),
+                "request_id": self.request_id or self.data.get("request_id"),
             }
 
         elif agent_type == "workflow":

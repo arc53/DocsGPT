@@ -8,6 +8,7 @@ from threading import Lock
 import redis
 
 from docsgpt.core.settings import settings
+from docsgpt.tracing.llm import CACHE_HIT_ATTR, record_cached_gen
 from docsgpt.utils import get_hash
 
 logger = logging.getLogger(__name__)
@@ -240,6 +241,7 @@ def gen_cache(func):
                 if cached_response:
                     decoded = cached_response.decode("utf-8")
                     if not _is_stream_payload(decoded):
+                        record_cached_gen(self, model, decoded)
                         return decoded
             except Exception as e:
                 logger.error(f"Error getting cached response: {e}", exc_info=True)
@@ -295,6 +297,12 @@ def stream_cache(func):
 
                     if cached_chunks is not None:
                         logger.info(f"Cache hit for stream key: {cache_key}")
+                        # ``stream_token_usage`` wraps this cache and owns
+                        # the call's span; flag it as served from cache.
+                        try:
+                            setattr(self, CACHE_HIT_ATTR, True)
+                        except AttributeError:
+                            pass
                         for chunk in cached_chunks:
                             yield chunk
                             time.sleep(0.03)  # Simulate streaming delay

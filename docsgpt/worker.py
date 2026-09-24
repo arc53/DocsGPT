@@ -16,6 +16,7 @@ from urllib.parse import urljoin, urlsplit
 
 import requests
 
+from docsgpt import tracing
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.parser.chunking_creator import ChunkerCreator
@@ -2129,6 +2130,7 @@ def agent_webhook_worker(self, agent_id, payload):
             input_data,
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
+            request_id=getattr(getattr(self, "request", None), "id", None),
         )
         result = {
             "answer": outcome.get("answer", ""),
@@ -2942,16 +2944,36 @@ def extract_graph_worker(self, source_id, user):
         },
     )
 
+    trace = tracing.start_trace(
+        source="graph_extraction",
+        name=f"graph_extraction {source.get('name') or source_id}",
+        request_id=getattr(self.request, "id", None),
+        user_id=user,
+    )
     try:
-        summary = extract_graph_for_source(
-            source_id,
-            user,
-            chunks,
-            config=cfg,
-            request_id=getattr(self.request, "id", None),
-            progress_cb=_progress,
-        )
+        with tracing.activate(trace), tracing.span(
+            tracing.KIND_STEP,
+            "graph_extraction",
+            attributes={"docsgpt.source_id": source_id, "docsgpt.chunk_count": total},
+        ) as span:
+            summary = extract_graph_for_source(
+                source_id,
+                user,
+                chunks,
+                config=cfg,
+                request_id=getattr(self.request, "id", None),
+                progress_cb=_progress,
+            )
+            if isinstance(summary, dict):
+                span.set(
+                    **{
+                        "docsgpt.graph.nodes": summary.get("nodes"),
+                        "docsgpt.graph.edges": summary.get("edges"),
+                        "docsgpt.graph.chunks_processed": summary.get("chunks_processed"),
+                    }
+                )
     except Exception as e:
+        tracing.flush(trace, tracing.STATUS_ERROR)
         _publish_graph_event(
             user,
             source_id,
@@ -2960,6 +2982,7 @@ def extract_graph_worker(self, source_id, user):
         )
         raise
 
+    tracing.flush(trace)
     _publish_graph_event(
         user,
         source_id,

@@ -35,6 +35,7 @@ from docsgpt.core.settings.scheduler import SchedulerSettings
 from docsgpt.core.settings.server import ServerSettings
 from docsgpt.core.settings.speech import SpeechSettings
 from docsgpt.core.settings.storage import StorageSettings
+from docsgpt.core.settings.tracing import TracingSettings
 from docsgpt.core.settings.vectorstores import VectorStoreSettings
 from docsgpt.core.settings.workers import WorkerSettings
 
@@ -55,6 +56,7 @@ SETTINGS_GROUPS: tuple[tuple[str, type[SettingsGroup]], ...] = (
     ("Events and devices", EventsSettings),
     ("Agents", AgentSettings),
     ("Guardrails", GuardrailSettings),
+    ("Execution traces", TracingSettings),
     ("Quotas", QuotaSettings),
     ("Scheduler", SchedulerSettings),
     ("Sandbox", SandboxSettings),

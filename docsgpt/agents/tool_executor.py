@@ -13,6 +13,7 @@ from docsgpt.agents.default_tools import (
     resolve_tool_by_id,
     synthesized_default_tools,
 )
+from docsgpt import tracing
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
@@ -27,6 +28,85 @@ from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
+
+
+def record_tool_span_start(call: Any, **attributes: Any) -> Any:
+    """Open an ``execute_tool`` span for ``call`` (no-op without an active trace)."""
+    llm_name = getattr(call, "name", None) or "unknown"
+    base = {
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": llm_name,
+        "gen_ai.tool.call.id": getattr(call, "id", None),
+        "gen_ai.tool.type": "function",
+    }
+    base.update(attributes)
+    return tracing.start_span(
+        tracing.KIND_TOOL,
+        f"execute_tool {llm_name}",
+        attributes={k: v for k, v in base.items() if v is not None},
+    )
+
+
+#: ``tool_calls`` statuses mapped to trace span statuses.
+_TOOL_SPAN_STATUS = {
+    "error": tracing.STATUS_ERROR,
+    "denied": tracing.STATUS_DENIED,
+    "skipped": tracing.STATUS_SKIPPED,
+    "awaiting_approval": tracing.STATUS_PENDING,
+    "requires_client_execution": tracing.STATUS_PENDING,
+}
+
+
+def trace_unexecuted_tool_call(call: Any, data: Dict[str, Any], **attributes: Any) -> None:
+    """Record a tool call that this process did not execute.
+
+    The single entry point for calls that never reach :meth:`ToolExecutor.execute`
+    (which traces executed calls itself): calls paused for approval or for the
+    client, denied ones, ones skipped at the context limit, and results a client
+    sends back on resume. A new pause or refusal path records its call here.
+
+    Args:
+        call: The tool call (anything with ``name`` and ``id``).
+        data: The tool-call record emitted for it (``status``, ``arguments``, ...).
+        **attributes: Extra span attributes.
+    """
+    finish_tool_span(record_tool_span_start(call, **attributes), data)
+
+
+def finish_tool_span(span: Any, data: Dict[str, Any]) -> None:
+    """Close a tool span from the ``tool_calls`` entry the call produced.
+
+    Args:
+        span: The span from :func:`record_tool_span_start`.
+        data: The tool-call record (``tool_name``, ``arguments``, ``result``,
+            ``status``, ...); results in it are already guardrail-scanned.
+    """
+    if not span:
+        return
+    status = str(data.get("status") or "completed")
+    span.set(
+        **{
+            "docsgpt.tool": data.get("tool_name"),
+            "docsgpt.action": data.get("action_name"),
+            "docsgpt.tool_status": status,
+            "docsgpt.artifact_id": data.get("artifact_id"),
+        }
+    )
+    if data.get("arguments") is not None:
+        span.preview("arguments", data.get("arguments"))
+    if data.get("result") is not None:
+        span.preview("result", data.get("result"))
+    span_status = _TOOL_SPAN_STATUS.get(status, tracing.STATUS_OK)
+    # ``error`` and ``result`` are tool output or user text (a denial
+    # comment), so they travel only as previews, which honour the content
+    # capture settings; ``span.error`` is exported and stored unconditionally.
+    if data.get("error"):
+        span.preview("error", data["error"])
+    if span_status == tracing.STATUS_ERROR:
+        error_type = str(data.get("error_type") or "ToolError")
+        span.error = f"Tool call failed ({error_type})"
+        span.set(**{"error.type": error_type})
+    span.end(span_status)
 
 
 def _is_foreign_key_violation(exc: BaseException) -> bool:
@@ -950,7 +1030,31 @@ class ToolExecutor:
     MAX_ADVERTISED_TOOL_NAMES = 30
 
     def execute(self, tools_dict: Dict, call, llm_class_name: str):
-        """Execute a tool call. Yields status events, returns (result, call_id)."""
+        """Execute a tool call. Yields status events, returns (result, call_id).
+
+        Every call is recorded as an ``execute_tool`` trace span; its outcome
+        is read from the ``tool_calls`` entry each branch of :meth:`_execute`
+        appends, so the span matches what the conversation stores.
+        """
+        span = record_tool_span_start(call)
+        recorded = len(self.tool_calls)
+        try:
+            outcome = yield from self._execute(tools_dict, call, llm_class_name)
+        except Exception as exc:
+            # A tool's exception text can quote its response; like tool
+            # output it goes only into the capture-gated preview.
+            span.preview("error", str(exc))
+            span.error = f"Tool call failed ({type(exc).__name__})"
+            span.end(tracing.STATUS_ERROR, attributes={"error.type": type(exc).__name__})
+            raise
+        except GeneratorExit:
+            span.end(tracing.STATUS_CANCELLED)
+            raise
+        data = self.tool_calls[-1] if len(self.tool_calls) > recorded else {}
+        finish_tool_span(span, data)
+        return outcome
+
+    def _execute(self, tools_dict: Dict, call, llm_class_name: str):
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
         llm_name = getattr(call, "name", "unknown")
