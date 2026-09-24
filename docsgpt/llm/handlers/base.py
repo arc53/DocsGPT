@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional, Union
 
+from docsgpt.agents.tool_executor import trace_unexecuted_tool_call
 from docsgpt.logging import build_stack_data
 
 logger = logging.getLogger(__name__)
@@ -1127,6 +1128,10 @@ class LLMHandler(ABC):
 
                     # Mark remaining tools as skipped
                     for remaining_call in tool_calls[i:]:
+                        trace_unexecuted_tool_call(
+                            remaining_call,
+                            {"tool_name": "system", "action_name": remaining_call.name, "status": "skipped"},
+                        )
                         skip_message = {
                             "type": "tool_call",
                             "data": {
@@ -1207,22 +1212,21 @@ class LLMHandler(ABC):
                             message_id=agent.tool_executor.message_id,
                             user_id=agent.tool_executor.user,
                         )
-                    yield {
-                        "type": "tool_call",
-                        "data": {
-                            "tool_name": pause_info["tool_name"],
-                            "call_id": pause_info["call_id"],
-                            "action_name": pause_info.get(
-                                "llm_name", pause_info["name"]
-                            ),
-                            "arguments": pause_info["arguments"],
-                            "status": "denied",
-                            "error": deny_reason,
-                            "error_type": pause_info.get(
-                                "error_type", "tool_not_allowed"
-                            ),
-                        },
+                    denied_data = {
+                        "tool_name": pause_info["tool_name"],
+                        "call_id": pause_info["call_id"],
+                        "action_name": pause_info.get(
+                            "llm_name", pause_info["name"]
+                        ),
+                        "arguments": pause_info["arguments"],
+                        "status": "denied",
+                        "error": deny_reason,
+                        "error_type": pause_info.get(
+                            "error_type", "tool_not_allowed"
+                        ),
                     }
+                    trace_unexecuted_tool_call(call, denied_data)
+                    yield {"type": "tool_call", "data": denied_data}
                     continue
                 # Yield pause event so the client knows this tool is waiting
                 pause_data = {
@@ -1236,6 +1240,7 @@ class LLMHandler(ABC):
                 # can wire the sticky "don't ask again" button.
                 if pause_info.get("device_id"):
                     pause_data["device_id"] = pause_info["device_id"]
+                trace_unexecuted_tool_call(call, pause_data)
                 yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)
                 # Do NOT add messages for pending tools here.

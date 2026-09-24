@@ -2,8 +2,9 @@ import json
 import logging
 import os
 import time
-from typing import Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
+from docsgpt import tracing
 from docsgpt.agents.base import BaseAgent
 from docsgpt.agents.tool_executor import ToolExecutor
 from docsgpt.agents.tools.graph_search import add_graph_search_tool
@@ -44,6 +45,15 @@ CLARIFICATION_PROMPT = _load_prompt("clarification.txt")
 PLANNING_PROMPT = _load_prompt("planning.txt")
 STEP_PROMPT = _load_prompt("step.txt")
 SYNTHESIS_PROMPT = _load_prompt("synthesis.txt")
+
+
+def _phase_span(phase: str, **attributes: Any) -> Any:
+    """Open a trace span for one research phase (clarify, plan, a step, synthesis)."""
+    return tracing.start_span(
+        tracing.KIND_STEP,
+        f"research {phase}",
+        attributes={"docsgpt.research.phase": phase.split(" ")[0], **attributes},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +179,8 @@ class ResearchAgent(BaseAgent):
 
         # Phase 0: Clarification (skip if user is responding to a prior clarification)
         if not self._is_follow_up():
-            clarification = self._clarification_phase(query)
+            with _phase_span("clarify"):
+                clarification = self._clarification_phase(query)
             if clarification:
                 yield {"metadata": {"is_clarification": True}}
                 yield {"answer": clarification}
@@ -182,7 +193,11 @@ class ResearchAgent(BaseAgent):
 
         # Phase 1: Planning (with adaptive depth)
         yield {"type": "research_progress", "data": {"status": "planning"}}
-        plan, complexity = self._planning_phase(query)
+        with _phase_span("plan") as plan_span:
+            plan, complexity = self._planning_phase(query)
+            plan_span.set(
+                **{"docsgpt.research.steps": len(plan or []), "docsgpt.research.complexity": complexity}
+            )
 
         if not plan:
             logger.warning("ResearchAgent: Planning produced no steps, falling back")
@@ -222,7 +237,9 @@ class ResearchAgent(BaseAgent):
                 },
             }
 
-            report = self._research_step(step_query, tools_dict)
+            with _phase_span(f"step {step_num}", **{"docsgpt.research.step": step_num}) as step_span:
+                step_span.preview("query", step_query)
+                report = self._research_step(step_query, tools_dict)
             intermediate_reports.append({"step": step, "content": report})
 
             yield {
@@ -249,9 +266,10 @@ class ResearchAgent(BaseAgent):
                 "tokens_used": self._tokens_used,
             },
         }
-        yield from self._synthesis_phase(
-            query, plan, intermediate_reports, tools_dict, log_context
-        )
+        with _phase_span("synthesis"):
+            yield from self._synthesis_phase(
+                query, plan, intermediate_reports, tools_dict, log_context
+            )
 
         # Sources and tool calls
         self.retrieved_docs = self.citations.get_all_docs()

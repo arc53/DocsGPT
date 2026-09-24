@@ -17,7 +17,74 @@ export type ChunkType = {
 };
 
 export type LogEventType =
-  'chat' | 'schedule' | 'webhook' | 'workflow' | 'system';
+  'chat' | 'schedule' | 'webhook' | 'workflow' | 'system' | 'search' | 'graph';
+
+/** Counts rolled up from a trace's spans; every field may be absent. */
+export type TraceCounts = {
+  llm_calls?: number;
+  tool_calls?: number;
+  retrieval_calls?: number;
+  retrieval_ms?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  errors?: number;
+};
+
+/** The id a Logs row's traces are looked up by. */
+export type TraceRef = {
+  field: 'id' | 'request_id' | 'message_id' | 'activity_id' | 'workflow_run_id';
+  value: string;
+};
+
+/** Trace summary attached to a Logs row (merged over its rounds). */
+export type LogTraceSummary = {
+  ref: TraceRef;
+  count: number;
+  duration_ms: number;
+  status?: string;
+  started_at?: string;
+  summary: TraceCounts;
+};
+
+export type TraceSpanKind =
+  | 'agent'
+  | 'llm'
+  | 'tool'
+  | 'retrieval'
+  | 'search'
+  | 'embedding'
+  | 'rerank'
+  | 'guardrail'
+  | 'step';
+
+export type TraceSpan = {
+  id: string;
+  parent_id: string | null;
+  kind: TraceSpanKind | string;
+  name: string;
+  status: string;
+  offset_ms: number;
+  duration_ms: number;
+  attributes: Record<string, unknown>;
+  preview?: Record<string, unknown>;
+  error?: string;
+};
+
+export type Trace = {
+  id: string;
+  request_id?: string | null;
+  message_id?: string | null;
+  source: string;
+  name?: string | null;
+  status: string;
+  started_at: string;
+  duration_ms: number;
+  span_count: number;
+  dropped_spans: number;
+  summary: TraceCounts;
+  spans: TraceSpan[];
+  otel_trace_id?: string | null;
+};
 
 export type LogData = {
   id: string;
@@ -33,9 +100,17 @@ export type LogData = {
   tool_calls?: Record<string, any>[];
   agent_id?: string;
   attachments?: string[];
+  request_id?: string;
+  message_id?: string;
   // system + webhook events (stack_logs)
   endpoint?: string;
   stacks?: Record<string, any>[];
+  activity_id?: string;
+  // search + graph events (request_traces)
+  source?: string;
+  duration_ms?: number;
+  // Present when the row has a stored execution trace.
+  trace?: LogTraceSummary;
   // workflow events (workflow_runs)
   workflow_name?: string;
   result?: Record<string, any>;

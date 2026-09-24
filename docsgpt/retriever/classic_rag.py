@@ -2,6 +2,11 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from docsgpt.core.settings import settings
+from docsgpt.tracing.retrieval import (
+    describe_documents,
+    start_retrieval_span,
+    start_source_search_span,
+)
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.retriever.base import BaseRetriever
 from docsgpt.retriever.fanout import fetch_per_source, max_parallel_sources
@@ -266,6 +271,15 @@ class ClassicRAG(BaseRetriever):
         logged and reported as ``None`` so one bad source cannot take the rest
         of the retrieval down with it.
         """
+        span = start_source_search_span(
+            plan["id"],
+            top_k=plan["src_k"],
+            **{
+                "docsgpt.vector_store": settings.VECTOR_STORE,
+                "docsgpt.retriever": type(self).__name__,
+                "docsgpt.shared_query_vector": query_vector is not None,
+            },
+        )
         try:
             if docsearch is None:
                 docsearch = VectorCreator.create_vectorstore(
@@ -279,8 +293,14 @@ class ClassicRAG(BaseRetriever):
                 query_vector=query_vector,
             )
             score_kind = self._score_kind(docsearch) if self.include_scores else None
+            try:
+                candidates = len(docs_temp)
+            except TypeError:
+                candidates = None
+            span.end(attributes={"docsgpt.candidate_count": candidates})
             return docs_temp, score_kind
         except Exception as e:
+            span.end(error=e)
             logger.error(
                 f"Error searching vectorstore {plan['id']}: {e}", exc_info=True
             )
@@ -409,11 +429,20 @@ class ClassicRAG(BaseRetriever):
 
     def search(self, query: str = ""):
         """Search for documents using optional query override"""
-        if query:
-            self.original_question = query
-            # Invalidate the cached rephrase so a per-source path that opts in
-            # rephrases against the new query, not a stale one.
-            self._rephrased_question = None
-            self.question = self._rephrase_query()
-            self._rephrased_question = self.question
-        return self._get_data()
+        with start_retrieval_span(
+            f"retrieval {type(self).__name__}",
+            sources=self.vectorstores,
+            **{"docsgpt.retriever": type(self).__name__, "docsgpt.top_k": self.chunks},
+        ) as span:
+            if query:
+                self.original_question = query
+                # Invalidate the cached rephrase so a per-source path that opts in
+                # rephrases against the new query, not a stale one.
+                self._rephrased_question = None
+                self.question = self._rephrase_query()
+                self._rephrased_question = self.question
+            docs = self._get_data()
+            rephrased = self._rephrased_question
+            span.set(**{"docsgpt.rephrased": bool(rephrased and rephrased != self.original_question)})
+            describe_documents(span, docs, query=rephrased or self.original_question)
+            return docs

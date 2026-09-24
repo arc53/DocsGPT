@@ -44,6 +44,10 @@ import os
 os.environ.setdefault("AUTO_MIGRATE", "false")
 os.environ.setdefault("AUTO_CREATE_DB", "false")
 os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")
+# Execution traces write to ``request_traces`` through their own DB session
+# when a request finishes. Off by default so unrelated tests never touch a
+# database through that path; tracing tests switch it on explicitly.
+os.environ.setdefault("TRACES_ENABLED", "false")
 
 import subprocess
 import sys

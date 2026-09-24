@@ -610,6 +610,11 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(
         timedelta(hours=24),
+        cleanup_traces.s(),
+        name="cleanup-traces",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
         cleanup_orphan_memories.s(),
         name="cleanup-orphan-memories",
     )
@@ -824,6 +829,30 @@ def cleanup_guardrail_events(self):
     engine = get_engine()
     with engine.begin() as conn:
         deleted = GuardrailEventsRepository(conn).purge_older_than(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_traces(self):
+    """Delete ``request_traces`` rows older than ``TRACES_RETENTION_DAYS``.
+
+    Every chat turn, scheduled run and search writes a trace, and each one
+    carries content previews, so the table is bounded by a retention window
+    like the other per-request journals.
+    """
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.storage.db.engine import get_engine
+    from docsgpt.storage.db.repositories.request_traces import (
+        RequestTracesRepository,
+    )
+
+    ttl_days = settings.TRACES_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = RequestTracesRepository(conn).purge_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
 
 

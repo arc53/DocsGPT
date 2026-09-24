@@ -8,6 +8,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from docsgpt.agents.tool_executor import (
     ToolExecutor,
+    trace_unexecuted_tool_call,
     result_status,
     truncate_tool_result,
 )
@@ -29,7 +30,7 @@ from docsgpt.guardrails.stream import StreamingOutputGuard
 from docsgpt.guardrails.types import Action, Stage, resolve_tool_result
 from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
 from docsgpt.llm.llm_creator import LLMCreator
-from docsgpt.logging import build_stack_data, log_activity, LogContext
+from docsgpt.logging import build_stack_data, log_activity, LogContext, start_agent_span
 
 logger = logging.getLogger(__name__)
 
@@ -492,12 +493,28 @@ class BaseAgent(ABC):
         or client-side results), appends the resulting messages, then
         hands back to the LLM to continue the conversation.
 
+        Unlike :meth:`gen` this is not wrapped by ``@log_activity``, so the
+        continuation's ``invoke_agent`` trace span is opened here.
+
         Args:
             messages: The saved messages array from the pause point.
             tools_dict: The saved tools dictionary.
             pending_tool_calls: The pending tool call descriptors from the pause.
             tool_actions: Client-provided actions resolving the pending calls.
         """
+        with start_agent_span(self, continuation=True):
+            yield from self._gen_continuation_inner(
+                messages, tools_dict, pending_tool_calls, tool_actions, reasoning_content
+            )
+
+    def _gen_continuation_inner(
+        self,
+        messages: List[Dict],
+        tools_dict: Dict,
+        pending_tool_calls: List[Dict],
+        tool_actions: List[Dict],
+        reasoning_content: str = "",
+    ) -> Generator[Dict, None, None]:
         self._prepare_tools(tools_dict)
 
         actions_by_id = {a["call_id"]: a for a in tool_actions}
@@ -583,16 +600,15 @@ class BaseAgent(ABC):
                 messages.append(
                     self.llm_handler.create_tool_message(tc, denial)
                 )
-                yield {
-                    "type": "tool_call",
-                    "data": {
-                        "tool_name": pending.get("tool_name", "unknown"),
-                        "call_id": call_id,
-                        "action_name": pending.get("llm_name", pending["name"]),
-                        "arguments": args,
-                        "status": "denied",
-                    },
+                denied_data = {
+                    "tool_name": pending.get("tool_name", "unknown"),
+                    "call_id": call_id,
+                    "action_name": pending.get("llm_name", pending["name"]),
+                    "arguments": args,
+                    "status": "denied",
                 }
+                trace_unexecuted_tool_call(tc, {**denied_data, "error": comment or None})
+                yield {"type": "tool_call", "data": denied_data}
 
             elif "result" in action:
                 result = action["result"]
@@ -616,17 +632,16 @@ class BaseAgent(ABC):
                         tc, _bound_tool_response_for_llm(result_str)
                     )
                 )
-                yield {
-                    "type": "tool_call",
-                    "data": {
-                        "tool_name": pending.get("tool_name", "unknown"),
-                        "call_id": call_id,
-                        "action_name": pending.get("llm_name", pending["name"]),
-                        "arguments": args,
-                        "result": truncate_tool_result(result_str),
-                        "status": result_status(result),
-                    },
+                client_data = {
+                    "tool_name": pending.get("tool_name", "unknown"),
+                    "call_id": call_id,
+                    "action_name": pending.get("llm_name", pending["name"]),
+                    "arguments": args,
+                    "result": truncate_tool_result(result_str),
+                    "status": result_status(result),
                 }
+                trace_unexecuted_tool_call(tc, client_data, **{"docsgpt.client_executed": True})
+                yield {"type": "tool_call", "data": client_data}
 
         # Resume the LLM loop with the updated messages
         llm_response = self._llm_gen(messages, preserve_responses_state=True)

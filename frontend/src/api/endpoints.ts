@@ -57,6 +57,7 @@ const endpoints = {
     TOOL_ANALYTICS: '/api/get_tool_analytics',
     SCHEDULE_ANALYTICS: '/api/get_schedule_analytics',
     LOGS: `/api/get_user_logs`,
+    TRACES: (params: string) => `/api/traces?${params}`,
     MANAGE_SYNC: '/api/manage_sync',
     SYNC_SOURCE: '/api/sync_source',
     REINGEST_SOURCE: '/api/sources/reingest',

@@ -1,10 +1,11 @@
 """Analytics and reporting routes."""
 
 import datetime
+from typing import Optional, Tuple
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
-from sqlalchemy import text as _sql_text
+from sqlalchemy import Connection, text as _sql_text
 
 from docsgpt.api import api
 from docsgpt.api.user.base import (
@@ -14,6 +15,10 @@ from docsgpt.api.user.base import (
 )
 from docsgpt.storage.db.redaction import redact_secrets
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.request_traces import (
+    REF_FIELDS as TRACE_REF_FIELDS,
+    RequestTracesRepository,
+)
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_readonly
 
@@ -88,6 +93,157 @@ def _resolve_agent(conn, api_key_id, user_id):
     api_key = (agent or {}).get("key") or None
     agent_pg_id = str(agent["id"]) if agent else None
     return agent, api_key, agent_pg_id
+
+
+def _trace_branch(name: str, sources_sql: str, scope: str) -> dict:
+    """A ``get_user_logs`` branch listing stored traces of the given sources."""
+    return {
+        "name": name,
+        "level": "CASE WHEN t.status = 'error' THEN 'error' ELSE 'info' END",
+        # A search is listed by its query (copied into the small ``summary``
+        # at flush so this never detoasts ``spans``); graph builds are named
+        # after their source.
+        "summary": "COALESCE(t.summary->>'query', t.name, t.source)",
+        "where": [f"t.source IN {sources_sql}", scope],
+        "sql": f"""
+        SELECT '{name}' AS event_type,
+               CAST(t.id AS text) AS id,
+               t.user_id AS user_id,
+               t.started_at AS timestamp,
+               {{level}} AS level,
+               t.source AS action,
+               {{summary}} AS summary,
+               jsonb_build_object(
+                   'status', t.status,
+                   'source', t.source,
+                   'duration_ms', t.duration_ms
+               ) AS payload
+        FROM request_traces t
+        WHERE {{where}}
+        """,
+    }
+
+
+def _trace_ref(item: dict) -> Optional[Tuple[str, str]]:
+    """The ``(field, value)`` that finds a Logs row's trace, if it has one."""
+    event_type = item["event_type"]
+    row_id = item["id"].split("-", 1)[1]
+    if event_type == "chat":
+        return ("request_id", item.get("request_id")) if item.get("request_id") else None
+    if event_type in ("system", "webhook"):
+        return ("activity_id", item.get("activity_id")) if item.get("activity_id") else None
+    if event_type == "workflow":
+        return ("workflow_run_id", row_id)
+    if event_type == "schedule":
+        # The scheduler records the run under its run id.
+        return ("request_id", row_id)
+    if event_type in ("search", "graph"):
+        return ("id", row_id)
+    return None
+
+
+def _merge_trace_summaries(traces: list) -> dict:
+    """One Logs-row summary over every trace for it (a turn plus its resumes)."""
+    totals: dict = {}
+    for trace in traces:
+        for key, value in (trace.get("summary") or {}).items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                totals[key] = totals.get(key, 0) + value
+    if "retrieval_ms" in totals:
+        totals["retrieval_ms"] = round(totals["retrieval_ms"], 1)
+    return {
+        "count": len(traces),
+        "duration_ms": sum(int(t.get("duration_ms") or 0) for t in traces),
+        "status": traces[-1].get("status"),
+        "started_at": traces[0].get("started_at"),
+        "summary": totals,
+    }
+
+
+def _attach_trace_summaries(
+    conn: Connection, items: list, *, user_id: Optional[str], agent_id: Optional[str]
+) -> None:
+    """Add a ``trace`` summary to each Logs row that has a stored trace.
+
+    One batched lookup per link field for the whole page, rather than a join
+    inside the UNION, so the timeline query is unchanged. Rows without a
+    trace (older than the feature, or tracing disabled) get no key.
+    """
+    refs: dict = {}
+    for item in items:
+        ref = _trace_ref(item)
+        if ref:
+            refs.setdefault(ref[0], set()).add(str(ref[1]))
+    if not refs:
+        return
+    found = RequestTracesRepository(conn).summaries_for_refs(
+        refs, user_id=user_id, agent_id=agent_id
+    )
+    for item in items:
+        ref = _trace_ref(item)
+        if not ref:
+            continue
+        traces = found.get(ref[0], {}).get(str(ref[1]))
+        if traces:
+            item["trace"] = {
+                "ref": {"field": ref[0], "value": str(ref[1])},
+                **_merge_trace_summaries(traces),
+            }
+
+
+@analytics_ns.route("/traces")
+class GetTraces(Resource):
+    @api.doc(
+        description=(
+            "Stored execution traces (span timelines) for one Logs row. Pass exactly "
+            "one of message_id, request_id, activity_id, workflow_run_id or id; "
+            "api_key_id scopes to an agent you own."
+        ),
+        params={
+            "message_id": "Assistant message id",
+            "request_id": "Request id (chat turn, scheduled run)",
+            "activity_id": "Agent activity id (webhook and system rows)",
+            "workflow_run_id": "Workflow run id",
+            "id": "Trace id",
+            "api_key_id": "Agent id to scope to",
+        },
+    )
+    def get(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        refs = [
+            (field, request.args.get(field))
+            for field in TRACE_REF_FIELDS
+            if request.args.get(field)
+        ]
+        if len(refs) != 1:
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "Pass exactly one of: " + ", ".join(TRACE_REF_FIELDS),
+                    }
+                ),
+                400,
+            )
+        field, value = refs[0]
+        api_key_id = request.args.get("api_key_id")
+        try:
+            with db_readonly() as conn:
+                agent, _api_key, agent_pg_id = _resolve_agent(conn, api_key_id, user)
+                if api_key_id and agent is None:
+                    return make_response(jsonify({"success": True, "traces": []}), 200)
+                traces = RequestTracesRepository(conn).list_by_ref(
+                    field, value, user_id=user, agent_id=agent_pg_id
+                )
+        except Exception as err:
+            current_app.logger.error(f"Error getting traces: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        for trace in traces:
+            trace.pop("_id", None)
+        return make_response(jsonify({"success": True, "traces": traces}), 200)
 
 
 @analytics_ns.route("/get_message_analytics")
@@ -701,7 +857,9 @@ class GetUserLogs(Resource):
             "event_type": fields.String(
                 required=False,
                 description="Filter by event source",
-                enum=["chat", "schedule", "webhook", "workflow", "system"],
+                enum=[
+                    "chat", "schedule", "webhook", "workflow", "system", "search", "graph",
+                ],
             ),
             "search": fields.String(
                 required=False, description="Substring filter on the summary"
@@ -741,6 +899,8 @@ class GetUserLogs(Resource):
             "webhook",
             "workflow",
             "system",
+            "search",
+            "graph",
         ):
             return make_response(
                 jsonify({"success": False, "message": "Invalid option"}), 400
@@ -783,6 +943,16 @@ class GetUserLogs(Resource):
                     "WHERE e.activity_id = s.activity_id "
                     "AND e.level = 'error'))"
                 )
+                # A failed chat turn now writes its own chat row (level
+                # ``error``) linked to its trace; the agent's error row for
+                # the same activity would list the failure twice. Rows from
+                # before execution traces, or with tracing off, have no such
+                # trace and still show here.
+                chat_failure_dedupe = (
+                    "NOT EXISTS (SELECT 1 FROM request_traces t "
+                    "WHERE t.activity_id = s.activity_id "
+                    "AND t.source IN ('stream', 'answer', 'v1'))"
+                )
                 if api_key_id:
                     # The owner-scoped lookup gates access, so the
                     # chat/webhook/system branches match on the agent
@@ -818,6 +988,7 @@ class GetUserLogs(Resource):
                         "s.level = 'error'",
                         "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
                         stack_agent_match,
+                        chat_failure_dedupe,
                     ]
                     # Owner-gated agent match: drop the user clause so a
                     # shared agent's runs (stamped with the caller's
@@ -831,6 +1002,7 @@ class GetUserLogs(Resource):
                         "wr.user_id = :user_id",
                         "wr.workflow_id = CAST(:agent_workflow_id AS uuid)",
                     ]
+                    trace_scope = "t.agent_id = CAST(:agent_pg_id AS uuid)"
                 else:
                     chat_where = ["l.user_id = :user_id"]
                     webhook_where = [
@@ -842,6 +1014,7 @@ class GetUserLogs(Resource):
                         "s.user_id = :user_id",
                         "s.level = 'error'",
                         "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
+                        chat_failure_dedupe,
                     ]
                     # Terminal statuses only (worker writes ``success`` /
                     # ``failed`` / ``timeout`` / ``skipped``; ``completed``
@@ -852,6 +1025,7 @@ class GetUserLogs(Resource):
                         "r.status IN ('success', 'completed', 'failed', 'timeout', 'skipped')",
                     ]
                     workflow_where = ["wr.user_id = :user_id"]
+                    trace_scope = "t.user_id = :user_id"
 
                 # One normalized timeline over five event sources.
                 # ``payload`` carries the per-type detail; the outer query
@@ -892,7 +1066,8 @@ class GetUserLogs(Resource):
                                {summary} AS summary,
                                jsonb_build_object(
                                    'endpoint', s.endpoint,
-                                   'stacks', s.stacks
+                                   'stacks', s.stacks,
+                                   'activity_id', s.activity_id
                                ) AS payload
                         FROM stack_logs s
                         WHERE {where}
@@ -913,7 +1088,8 @@ class GetUserLogs(Resource):
                                {summary} AS summary,
                                jsonb_build_object(
                                    'endpoint', s.endpoint,
-                                   'stacks', s.stacks
+                                   'stacks', s.stacks,
+                                   'activity_id', s.activity_id
                                ) AS payload
                         FROM stack_logs s
                         WHERE {where}
@@ -989,6 +1165,11 @@ class GetUserLogs(Resource):
                         WHERE {where}
                         """,
                     },
+                    # Runs with no log row of their own are listed from their
+                    # stored trace: searches (/api/search and MCP) and graph
+                    # builds.
+                    _trace_branch("search", "('search', 'mcp')", trace_scope),
+                    _trace_branch("graph", "('graph_extraction')", trace_scope),
                 ]
 
                 if level:
@@ -1062,6 +1243,9 @@ class GetUserLogs(Resource):
                             "tool_calls": payload.get("tool_calls"),
                             "agent_id": payload.get("agent_id"),
                             "attachments": payload.get("attachments"),
+                            "request_id": payload.get("request_id"),
+                            "message_id": payload.get("message_id"),
+                            "error": payload.get("error"),
                         }
                     )
                 elif m["event_type"] in ("system", "webhook"):
@@ -1072,6 +1256,15 @@ class GetUserLogs(Resource):
                             # before write-time redaction still carry the
                             # reflected provider/user secrets in ``stacks``.
                             "stacks": redact_secrets(payload.get("stacks")),
+                            "activity_id": payload.get("activity_id"),
+                        }
+                    )
+                elif m["event_type"] in ("search", "graph"):
+                    item.update(
+                        {
+                            "status": payload.get("status"),
+                            "source": payload.get("source"),
+                            "duration_ms": payload.get("duration_ms"),
                         }
                     )
                 elif m["event_type"] == "workflow":
@@ -1104,6 +1297,22 @@ class GetUserLogs(Resource):
                         }
                     )
                 results.append(item)
+            if results:
+                # Trace chips are an extra: a failed lookup must leave the
+                # page intact, just without them.
+                try:
+                    with db_readonly() as conn:
+                        _attach_trace_summaries(
+                            conn,
+                            results,
+                            user_id=user,
+                            agent_id=agent_pg_id if api_key_id else None,
+                        )
+                except Exception:
+                    current_app.logger.warning(
+                        "Could not attach trace summaries to the logs page",
+                        exc_info=True,
+                    )
         except Exception as err:
             current_app.logger.error(
                 f"Error getting user logs: {err}", exc_info=True

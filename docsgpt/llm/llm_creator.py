@@ -128,6 +128,10 @@ class LLMCreator:
         # llm.model_id is the upstream name (BYOM resolves it above); stamp
         # the canonical id (UUID for BYOM) separately for token_usage.
         llm._canonical_model_id = model_id
+        # The provider plugin that built it: ``openai_compatible`` endpoints
+        # run through the OpenAI client, so the class alone cannot name them
+        # in traces (see ``docsgpt.tracing.llm.llm_provider``).
+        llm._provider_plugin = plugin.name
         # Calls to a user's own model are recorded at $0 (see ``docsgpt/usage.py``).
         llm._is_byom = model is not None and getattr(model, "source", "builtin") == "user"
         return llm

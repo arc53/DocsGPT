@@ -298,6 +298,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_tool_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_schedule_analytics", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     ("/api/get_user_logs", "POST"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
+    ("/api/traces", "GET"): _rule("analytics:read", blocked_by=_ALL_FAMILIES),
     # Teams (read only)
     ("/api/teams", "GET"): _rule("teams:read"),
     ("/api/teams/<string:team_id>", "GET"): _rule("teams:read"),
