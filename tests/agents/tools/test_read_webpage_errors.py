@@ -26,19 +26,21 @@ class TestReadWebpageErrors:
 
         tool = ReadWebpageTool(config={})
         response = MagicMock()
+        response.status_code = 200
         response.headers = {"Content-Type": "text/html"}
         response.raise_for_status.return_value = None
         with patch(
             "docsgpt.agents.tools.read_webpage.html_to_markdown_text",
             side_effect=RuntimeError("boom"),
-        ), patch(
+        ) as convert, patch(
             "docsgpt.agents.tools.read_webpage.pinned_fetch_bytes",
             return_value=(b"<h1>hi</h1>", response),
         ):
             got = tool.execute_action(
                 "read_webpage", url="https://example.com/",
             )
-        assert "Error fetching URL" in got
+        convert.assert_called_once_with("<h1>hi</h1>")
+        assert got == "Error fetching URL https://example.com/: boom"
 
 
 class TestBaseAgentMinorBranches:
