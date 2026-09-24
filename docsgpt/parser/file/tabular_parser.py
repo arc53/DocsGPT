@@ -38,11 +38,12 @@ def _consistent_column_count(sample: str, separator: str, truncated: bool) -> in
     rows: List[List[str]] = []
     reader = csv.reader(io.StringIO(sample, newline=""), delimiter=separator)
     try:
-        for index, row in enumerate(reader):
-            if index >= _SAMPLE_ROWS:
+        for row in reader:
+            if not any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
+                continue
+            if len(rows) == _SAMPLE_ROWS:
                 break
-            if any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
-                rows.append(row)
+            rows.append(row)
         else:
             if truncated and len(rows) > 1:
                 rows.pop()

@@ -100,12 +100,28 @@ def test_a_whitespace_only_line_is_not_a_row() -> None:
     assert detect_separator("Name;Region\nWidget;EU\n   \nGadget;US\n") == ";"
 
 
+def test_leading_blank_lines_do_not_use_up_the_sample() -> None:
+    sample = "\n" * 25 + "Name;Region\nWidget;EU\nGadget;US\n"
+    assert detect_separator(sample) == ";"
+
+
 def test_the_row_the_sample_cuts_is_left_out(tmp_path: Path) -> None:
     """Fewer than the sampled rows fit in the sample, so it ends inside a row."""
     from docsgpt.parser.file.tabular_parser import detect_file_separator
 
     cell = "x" * 4000
     text = "a;b;c\n" + "".join(f"{i};{cell};{cell}\n" for i in range(60))
+
+    assert detect_file_separator(_write(tmp_path, text)) == ";"
+
+
+def test_the_cut_row_is_left_out_when_it_is_the_last_sampled_row(tmp_path: Path) -> None:
+    """The header and 18 rows fit, and the sample ends inside the first field
+    of the 19th, so the row it cuts is the 20th row the detection reads."""
+    from docsgpt.parser.file.tabular_parser import detect_file_separator
+
+    cell = "x" * 1797
+    text = "a;b;c\n" + "".join(f"{i:02d};{cell};{cell}\n" for i in range(40))
 
     assert detect_file_separator(_write(tmp_path, text)) == ";"
 
