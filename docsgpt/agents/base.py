@@ -30,7 +30,13 @@ from docsgpt.guardrails.stream import StreamingOutputGuard
 from docsgpt.guardrails.types import Action, Stage, resolve_tool_result
 from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
 from docsgpt.llm.llm_creator import LLMCreator
-from docsgpt.logging import build_stack_data, log_activity, LogContext, start_agent_span
+from docsgpt.logging import (
+    agent_log_context,
+    build_stack_data,
+    log_activity,
+    LogContext,
+    start_agent_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -494,7 +500,8 @@ class BaseAgent(ABC):
         hands back to the LLM to continue the conversation.
 
         Unlike :meth:`gen` this is not wrapped by ``@log_activity``, so the
-        continuation's ``invoke_agent`` trace span is opened here.
+        continuation's ``invoke_agent`` trace span is opened here, and the
+        user/agent/endpoint log context is bound here too.
 
         Args:
             messages: The saved messages array from the pause point.
@@ -502,7 +509,7 @@ class BaseAgent(ABC):
             pending_tool_calls: The pending tool call descriptors from the pause.
             tool_actions: Client-provided actions resolving the pending calls.
         """
-        with start_agent_span(self, continuation=True):
+        with agent_log_context(self), start_agent_span(self, continuation=True):
             yield from self._gen_continuation_inner(
                 messages, tools_dict, pending_tool_calls, tool_actions, reasoning_content
             )
