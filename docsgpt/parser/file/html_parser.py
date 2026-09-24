@@ -18,10 +18,6 @@ from docsgpt.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
 
-# The crawler's conventions (``crawler_markdown.py`` / ``read_webpage.py``),
-# so file and web ingestion produce the same Markdown shape.
-MARKDOWNIFY_OPTIONS = {"heading_style": "ATX", "newline_style": "BACKSLASH"}
-
 # Elements whose text is never document content. ``title`` is reported via
 # ``get_file_metadata`` instead of leaking in as a stray first line.
 _DROP_TAGS = ("title", "script", "style", "noscript", "template")
@@ -61,7 +57,11 @@ def soup_to_markdown(soup) -> str:
         Markdown with runs of blank lines collapsed to one.
     """
     from bs4 import CData, Declaration, ProcessingInstruction
-    from markdownify import MarkdownConverter
+
+    from docsgpt.parser.markdown_conversion import (
+        MARKDOWNIFY_OPTIONS,
+        WhitespacePreservingConverter,
+    )
 
     for tag in soup.find_all(_DROP_TAGS):
         tag.decompose()
@@ -76,7 +76,7 @@ def soup_to_markdown(soup) -> str:
                 value = " ".join(value)
             if isinstance(value, str) and "data:" in value.lower():
                 del tag[attribute]
-    markdown = MarkdownConverter(**MARKDOWNIFY_OPTIONS).convert_soup(soup)
+    markdown = WhitespacePreservingConverter(**MARKDOWNIFY_OPTIONS).convert_soup(soup)
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
 

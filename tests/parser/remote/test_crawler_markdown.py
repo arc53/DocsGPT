@@ -61,7 +61,7 @@ def _patch_markdownify(monkeypatch):
         return outputs.get(html, html)
 
     monkeypatch.setattr(
-        "docsgpt.parser.remote.crawler_markdown.markdownify",
+        "docsgpt.parser.remote.crawler_markdown.html_to_markdown_text",
         fake_markdownify,
     )
     return outputs
