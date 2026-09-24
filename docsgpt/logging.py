@@ -5,7 +5,8 @@ import time
 
 import logging
 import uuid
-from typing import Any, Callable, Dict, Generator, List, Optional
+from contextlib import contextmanager
+from typing import Any, Callable, Dict, Generator, Iterator, List, Optional
 
 from docsgpt import tracing
 from docsgpt.core import log_context
@@ -87,22 +88,52 @@ def build_stack_data(
     return data
 
 
+def _agent_log_keys(agent: Any, data: Optional[Dict] = None) -> Dict[str, Any]:
+    """Return the log-context keys identifying an agent run."""
+    if data is None:
+        data = build_stack_data(agent)
+    return {
+        "user_id": data.get("user", "local"),
+        "agent_id": getattr(agent, "agent_id", None),
+        "conversation_id": getattr(agent, "conversation_id", None),
+        "endpoint": data.get("endpoint", ""),
+        "model": getattr(agent, "gpt_model", None) or getattr(agent, "model", None),
+    }
+
+
+@contextmanager
+def agent_log_context(agent: Any) -> Iterator[None]:
+    """Bind an agent's identity to the log context without opening an activity.
+
+    Any enclosing ``activity_id`` is kept.
+
+    Args:
+        agent: The agent whose identity the log lines should carry.
+
+    Yields:
+        None, with the context bound until the block exits.
+    """
+    token = log_context.bind(**_agent_log_keys(agent))
+    try:
+        yield
+    finally:
+        log_context.reset(token)
+
+
 def log_activity() -> Callable:
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             activity_id = str(uuid.uuid4())
             data = build_stack_data(args[0])
-            endpoint = data.get("endpoint", "")
-            user = data.get("user", "local")
+            keys = _agent_log_keys(args[0], data)
+            endpoint = keys["endpoint"]
+            user = keys["user_id"]
             api_key = data.get("user_api_key", "")
             query = kwargs.get("query", getattr(args[0], "query", ""))
-            agent_id = getattr(args[0], "agent_id", None) or kwargs.get("agent_id")
-            conversation_id = (
-                kwargs.get("conversation_id")
-                or getattr(args[0], "conversation_id", None)
-            )
-            model = getattr(args[0], "gpt_model", None) or getattr(args[0], "model", None)
+            agent_id = keys["agent_id"] or kwargs.get("agent_id")
+            conversation_id = kwargs.get("conversation_id") or keys["conversation_id"]
+            model = keys["model"]
 
             # Capture the surrounding activity_id before overlaying ours,
             # so nested activities record the parent → child link.
