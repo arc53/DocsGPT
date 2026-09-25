@@ -15,6 +15,48 @@ def bad_request(status_code=400, message=''):
     return response_error(code_status=status_code, message=message)
 
 
+CONTEXT_WINDOW_MESSAGE = (
+    "This request is too large for the selected model's context window. "
+    "Try again with fewer or smaller attachments, start a new conversation, "
+    "or choose a model with a larger context window."
+)
+RATE_LIMITED_MESSAGE = (
+    "The AI service is receiving too much text right now. Please wait a "
+    "moment and try again."
+)
+
+_CONTEXT_WINDOW_MARKERS = (
+    "context_length_exceeded",
+    "context window",
+    "maximum context length",
+    "prompt is too long",
+    "input is too long",
+    "too many input tokens",
+    "exceeds the maximum number of tokens",
+)
+
+
+def user_facing_error(error) -> "tuple[str, str] | None":
+    """Classify a failure the user can act on, with the copy to show them.
+
+    Generic copy ("please try again later") after a request that can never
+    succeed as sent sends the user round the same failure again; these
+    classes say what to change instead.
+
+    Args:
+        error: The exception, or its message.
+
+    Returns:
+        ``(code, message)`` for a recognised failure, otherwise None.
+    """
+    text = str(error).lower()
+    if any(marker in text for marker in _CONTEXT_WINDOW_MARKERS):
+        return "context_window_exceeded", CONTEXT_WINDOW_MESSAGE
+    if "429" in text and ("tokens_per_minute" in text or "tokens per min" in text):
+        return "rate_limited", RATE_LIMITED_MESSAGE
+    return None
+
+
 def sanitize_api_error(error) -> str:
     """
     Convert technical API errors to user-friendly messages.

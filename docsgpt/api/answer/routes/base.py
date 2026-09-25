@@ -24,7 +24,7 @@ from docsgpt.core.model_utils import (
 )
 
 from docsgpt.core.settings import settings
-from docsgpt.error import sanitize_api_error
+from docsgpt.error import sanitize_api_error, user_facing_error
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
 from docsgpt.quotas.service import QuotaService
@@ -1613,6 +1613,7 @@ class BaseAnswerResource:
             return
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            curated_error = user_facing_error(e)
             trace = tracing.current_trace()
             if trace is not None:
                 trace.outcome = tracing.STATUS_ERROR
@@ -1653,6 +1654,11 @@ class BaseAnswerResource:
                 failure_metadata = dict(query_metadata or {})
                 if claim_released:
                     failure_metadata["resume_retryable"] = True
+                if curated_error is not None:
+                    # Reload shows ``metadata.error``: store the curated copy,
+                    # keeping the raw exception alongside for operators.
+                    failure_metadata["error_code"], failure_metadata["error"] = curated_error
+                    failure_metadata["error_detail"] = f"{type(e).__name__}: {e}"
                 try:
                     self.conversation_service.finalize_message(
                         reserved_message_id,
@@ -1686,12 +1692,17 @@ class BaseAnswerResource:
                 message_id=reserved_message_id,
                 error=f"{type(e).__name__}: {e}",
             )
-            yield _emit(
-                {
-                    "type": "error",
-                    "error": "Please try again later. We apologize for any inconvenience.",
-                }
-            )
+            if curated_error is not None:
+                yield _emit(
+                    {"type": "error", "error": curated_error[1], "code": curated_error[0]}
+                )
+            else:
+                yield _emit(
+                    {
+                        "type": "error",
+                        "error": "Please try again later. We apologize for any inconvenience.",
+                    }
+                )
             # Drain the terminal ``error`` event we just yielded so a
             # reconnecting client sees it on snapshot.
             if journal_writer is not None:

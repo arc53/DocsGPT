@@ -1855,3 +1855,160 @@ class TestRealOpenAIFallbackRejectsForeignKwargs:
         sent = fallback.client.chat.completions.last_kwargs
         assert "response_schema" not in sent
         assert sent["response_format"]["type"] == "json_schema"
+
+
+# Tests — attachments on fallback: matched by id, re-planned, counted once
+
+
+def _pdf_row(idx, text, *, tokens=None, filename=None):
+    return {
+        "id": f"pdf-{idx}",
+        "filename": filename or f"report_{idx}.pdf",
+        "mime_type": "application/pdf",
+        "content": text,
+        "token_count": tokens if tokens is not None else len(text.split()),
+        "path": f"up/{idx}.pdf",
+        "metadata": {"extraction": {"status": "ok", "page_count": 1}},
+    }
+
+
+def _file_messages(*file_ids, text="summarize the attached files"):
+    return [
+        {"role": "system", "content": "You are helpful."},
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": text}]
+            + [{"type": "file", "file": {"file_id": fid}} for fid in file_ids],
+        },
+    ]
+
+
+def _native_plan(rows):
+    from docsgpt.agents.attachment_budget import plan_attachments
+
+    return plan_attachments(rows, budget=10_000_000, native_types=["application/pdf"])
+
+
+@pytest.mark.integration
+class TestFallbackAttachmentSwap:
+
+    def test_docx_listed_before_pdf_does_not_take_its_slot(self):
+        fallback = FakeLLM(stream_chunks=["fb"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+        docx = {
+            "id": "docx-1",
+            "filename": "notes.docx",
+            "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "content": "DOCX TEXT",
+        }
+        pdf = _pdf_row(1, "PDF TEXT")
+        list(
+            primary.gen_stream(
+                model="m", messages=_file_messages("file-1"), _usage_attachments=[docx, pdf]
+            )
+        )
+        user = fallback.last_messages_received[1]["content"]
+        assert "PDF TEXT" in user
+        assert "DOCX TEXT" not in user
+
+    def test_file_parts_are_matched_by_file_id(self):
+        fallback = FakeLLM(stream_chunks=["fb"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+        first, second = _pdf_row(1, "FIRST TEXT"), _pdf_row(2, "SECOND TEXT")
+        primary._attachment_plan = _native_plan([first, second])
+        # The parts were emitted in the opposite order to the rows.
+        primary._file_part_sources = {"file-b": first, "file-a": second}
+        list(primary.gen_stream(model="m", messages=_file_messages("file-a", "file-b")))
+        user = fallback.last_messages_received[1]["content"]
+        assert user.index("SECOND TEXT") < user.index("FIRST TEXT")
+        assert 'ref="F2"' in user
+
+    def test_swapped_text_is_replanned_for_a_smaller_window(self, monkeypatch):
+        fallback = FakeLLM(stream_chunks=["fb"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+        big = _pdf_row(1, "word " * 20_000, tokens=20_000)
+        primary._attachment_plan = _native_plan([big])
+        primary._file_part_sources = {"file-1": big}
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_token_limit", lambda mid, user_id=None: 16_000
+        )
+        out = list(primary.gen_stream(model="m", messages=_file_messages("file-1")))
+        assert out == ["fb"]
+        from docsgpt.usage import _count_prompt_tokens
+
+        sent = fallback.last_messages_received
+        assert _count_prompt_tokens(sent) < 16_000
+        assert "attachments_read" in sent[1]["content"] or "not available" in sent[1]["content"]
+
+    def test_fallback_skipped_when_even_the_replanned_payload_cannot_fit(self, monkeypatch):
+        fallback = FakeLLM(stream_chunks=["fb"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+        row = _pdf_row(1, "word " * 500)
+        primary._attachment_plan = _native_plan([row])
+        primary._file_part_sources = {"file-1": row}
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_token_limit", lambda mid, user_id=None: 1_000
+        )
+        messages = _file_messages("file-1", text="word " * 5_000)
+        with pytest.raises(RuntimeError):
+            list(primary.gen_stream(model="m", messages=messages))
+        assert fallback.gen_stream_called is False
+
+    def test_usage_estimate_dropped_once_file_parts_become_text(self):
+        fallback = FakeLLM(stream_chunks=["fb"])
+        primary = FakeLLM(fail_at=0)
+        primary._fallback_llm = fallback
+        row = _pdf_row(1, "PDF TEXT")
+        primary._attachment_plan = _native_plan([row])
+        primary._file_part_sources = {"file-1": row}
+        list(
+            primary.gen_stream(
+                model="m", messages=_file_messages("file-1"), _usage_attachments=4_000
+            )
+        )
+        assert "_usage_attachments" not in (fallback.last_kwargs_received or {})
+
+
+class _ContextLengthError(Exception):
+    pass
+
+
+@pytest.mark.integration
+class TestContextLengthFallback:
+
+    def _pair(self, patch_model_utils, monkeypatch, primary_window, fallback_window):
+        backup = FakeLLM(stream_chunks=["fb"], responses=["fb"])
+        patch_model_utils(
+            get_provider=lambda mid, **_kw: "openai",
+            get_api_key=lambda p: "k",
+            create_llm=lambda type, **kw: backup,
+        )
+        primary = FakeLLM(
+            fail_at=0,
+            backup_models=["backup-model"],
+            error_class=lambda msg: _ContextLengthError(
+                "Error code: 400 - Your input exceeds the context window of this model"
+            ),
+        )
+        windows = {"test-model": primary_window, "backup-model": fallback_window}
+        monkeypatch.setattr(
+            "docsgpt.core.model_utils.get_token_limit",
+            lambda mid, user_id=None: windows.get(mid, primary_window),
+        )
+        return primary, backup
+
+    def test_not_retried_on_an_equal_window_model(self, patch_model_utils, monkeypatch):
+        primary, backup = self._pair(patch_model_utils, monkeypatch, 262_144, 262_144)
+        backup.model_id = "backup-model"
+        with pytest.raises(_ContextLengthError):
+            list(primary.gen_stream(**CALL_ARGS))
+        assert backup.gen_stream_called is False
+
+    def test_retried_on_a_larger_window_model(self, patch_model_utils, monkeypatch):
+        primary, backup = self._pair(patch_model_utils, monkeypatch, 128_000, 1_000_000)
+        backup.model_id = "backup-model"
+        assert list(primary.gen_stream(**CALL_ARGS)) == ["fb"]
