@@ -425,7 +425,12 @@ def plan_attachments(
 
 
 def _attr(value: Any) -> str:
-    return html.escape(str(value), quote=True)
+    """Escape a value for a double-quoted XML attribute.
+
+    Only ``&``, ``<``, ``>`` and ``"`` need escaping; ``html.escape`` would
+    also turn apostrophes into ``&#x27;``, which the model then reads.
+    """
+    return html.escape(str(value), quote=False).replace('"', "&quot;")
 
 
 def _approx_tokens(tokens: int) -> str:
