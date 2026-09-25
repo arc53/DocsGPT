@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { Dropzone } from './dropzone';
+import { FormField } from './form-field';
 
 describe('Dropzone', () => {
   it('renders the default prompt as a dashed card target', () => {
@@ -38,5 +39,21 @@ describe('Dropzone', () => {
   it('never uses raw palette colours', () => {
     const html = renderToStaticMarkup(<Dropzone onDrop={vi.fn()} />);
     expect(html).not.toMatch(/\b(bg|text|border)-(gray|red|green|blue)-\d+/);
+  });
+
+  it('lets a FormField label open the file picker', () => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(
+      <FormField label="Agent Image" hint="Updates on save">
+        <Dropzone onDrop={vi.fn()} />
+      </FormField>,
+    );
+    const input = host.querySelector('input')!;
+    expect(input.id).not.toBe('');
+    expect(host.querySelector('label')!.getAttribute('for')).toBe(input.id);
+    const target = host.querySelector('[data-slot="dropzone"]')!;
+    expect(target.getAttribute('aria-describedby')).toBe(
+      host.querySelector('p')!.id,
+    );
   });
 });

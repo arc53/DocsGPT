@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Skeleton } from '@/components/ui/skeleton';
+
 interface SkeletonLoaderProps {
   count?: number;
   component?:
@@ -50,18 +52,18 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   const renderTable = () => (
     <>
       {[...Array(4)].map((_, idx) => (
-        <tr key={idx} className="animate-pulse">
+        <tr key={idx}>
           <td className="w-[40%] px-4 py-4">
-            <div className="bg-muted h-4 w-full rounded-sm"></div>
+            <Skeleton className="h-4 w-full rounded-sm" />
           </td>
           <td className="w-[30%] px-4 py-4">
-            <div className="bg-muted h-4 w-full rounded-sm"></div>
+            <Skeleton className="h-4 w-full rounded-sm" />
           </td>
           <td className="w-[20%] px-4 py-4">
-            <div className="bg-muted h-4 w-full rounded-sm"></div>
+            <Skeleton className="h-4 w-full rounded-sm" />
           </td>
           <td className="w-[10%] px-4 py-4">
-            <div className="bg-muted h-4 w-full rounded-sm"></div>
+            <Skeleton className="h-4 w-full rounded-sm" />
           </td>
         </tr>
       ))}
@@ -71,18 +73,18 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   const renderChatbot = () => (
     <>
       {[...Array(4)].map((_, idx) => (
-        <tr key={idx} className="animate-pulse">
+        <tr key={idx}>
           <td className="p-2">
-            <div className="bg-muted mx-auto h-4 w-3/4 rounded-sm"></div>
+            <Skeleton className="mx-auto h-4 w-3/4 rounded-sm" />
           </td>
           <td className="p-2">
-            <div className="bg-muted mx-auto h-4 w-full rounded-sm"></div>
+            <Skeleton className="mx-auto h-4 w-full rounded-sm" />
           </td>
           <td className="p-2">
-            <div className="bg-muted mx-auto h-4 w-full rounded-sm"></div>
+            <Skeleton className="mx-auto h-4 w-full rounded-sm" />
           </td>
           <td className="p-2">
-            <div className="bg-muted mx-auto h-4 w-8 rounded-sm"></div>
+            <Skeleton className="mx-auto h-4 w-8 rounded-sm" />
           </td>
         </tr>
       ))}
@@ -100,18 +102,18 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   );
 
   const renderLogs = () => (
-    <div className="w-full animate-pulse space-y-px">
+    <div className="w-full space-y-px">
       {[...Array(8)].map((_, idx) => (
         <div
           key={idx}
           className="dark:hover:bg-accent hover:bg-muted flex w-full items-start p-2"
         >
           <div className="flex w-full items-center gap-2">
-            <div className="bg-muted h-3 w-3 rounded-lg"></div>
+            <Skeleton className="h-3 w-3 rounded-lg" />
             <div className="flex w-full flex-row items-center gap-2">
-              <div className="bg-muted h-3 w-[30%] rounded-lg lg:w-52"></div>
-              <div className="bg-muted h-3 w-[16%] rounded-lg lg:w-28"></div>
-              <div className="bg-muted h-3 w-[40%] rounded-lg lg:w-64"></div>
+              <Skeleton className="h-3 w-[30%] rounded-lg lg:w-52" />
+              <Skeleton className="h-3 w-[16%] rounded-lg lg:w-28" />
+              <Skeleton className="h-3 w-[40%] rounded-lg lg:w-64" />
             </div>
           </div>
         </div>
@@ -126,32 +128,32 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
           key={idx}
           className={`p-6 ${
             skeletonCount === 1 ? 'w-full' : 'w-60'
-          } animate-pulse rounded-3xl`}
+          } rounded-3xl`}
         >
           <div className="space-y-4">
             <div>
-              <div className="bg-muted mb-2 h-4 w-3/4 rounded-sm"></div>
-              <div className="bg-muted mb-2 h-4 w-5/6 rounded-sm"></div>
-              <div className="bg-muted mb-2 h-4 w-1/2 rounded-sm"></div>
-              <div className="bg-muted mb-2 h-4 w-3/4 rounded-sm"></div>
-              <div className="bg-muted mb-2 h-4 w-full rounded-sm"></div>
+              <Skeleton className="mb-2 h-4 w-3/4 rounded-sm" />
+              <Skeleton className="mb-2 h-4 w-5/6 rounded-sm" />
+              <Skeleton className="mb-2 h-4 w-1/2 rounded-sm" />
+              <Skeleton className="mb-2 h-4 w-3/4 rounded-sm" />
+              <Skeleton className="mb-2 h-4 w-full rounded-sm" />
             </div>
             <div className="border-border my-4 border-t"></div>
             <div>
-              <div className="bg-muted mb-2 h-4 w-2/3 rounded-sm"></div>
-              <div className="bg-muted mb-2 h-4 w-1/4 rounded-sm"></div>
-              <div className="bg-muted mb-2 h-4 w-full rounded-sm"></div>
+              <Skeleton className="mb-2 h-4 w-2/3 rounded-sm" />
+              <Skeleton className="mb-2 h-4 w-1/4 rounded-sm" />
+              <Skeleton className="mb-2 h-4 w-full rounded-sm" />
             </div>
             <div className="border-border my-4 border-t"></div>
             <div>
-              <div className="bg-muted mb-2 h-4 w-5/6 rounded-sm"></div>
-              <div className="bg-muted mb-2 h-4 w-1/3 rounded-sm"></div>
-              <div className="bg-muted mb-2 h-4 w-2/3 rounded-sm"></div>
-              <div className="bg-muted mb-2 h-4 w-full rounded-sm"></div>
+              <Skeleton className="mb-2 h-4 w-5/6 rounded-sm" />
+              <Skeleton className="mb-2 h-4 w-1/3 rounded-sm" />
+              <Skeleton className="mb-2 h-4 w-2/3 rounded-sm" />
+              <Skeleton className="mb-2 h-4 w-full rounded-sm" />
             </div>
             <div className="border-border my-4 border-t"></div>
-            <div className="bg-muted mb-2 h-4 w-3/4 rounded-sm"></div>
-            <div className="bg-muted mb-2 h-4 w-5/6 rounded-sm"></div>
+            <Skeleton className="mb-2 h-4 w-3/4 rounded-sm" />
+            <Skeleton className="mb-2 h-4 w-5/6 rounded-sm" />
           </div>
         </div>
       ))}
@@ -193,7 +195,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
       {Array.from({ length: count }).map((_, index) => (
         <div
           key={`chunk-skel-${index}`}
-          className="border-border dark:border-border relative flex h-[197px] w-full max-w-[487px] animate-pulse flex-col overflow-hidden rounded-md border"
+          className="border-border relative flex h-[197px] w-full max-w-[487px] animate-pulse flex-col overflow-hidden rounded-md border"
         >
           <div className="w-full">
             <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
@@ -326,13 +328,13 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   );
 
   const renderFilesSection = () => (
-    <div className="border-border dark:border-border rounded-lg border">
+    <div className="border-border rounded-lg border">
       <div className="p-4">
         <div className="mb-4 flex items-center justify-between">
-          <div className="bg-muted h-5 w-24 animate-pulse rounded"></div>
-          <div className="bg-muted h-8 w-24 animate-pulse rounded"></div>
+          <Skeleton className="h-5 w-24 rounded-sm" />
+          <Skeleton className="h-8 w-24 rounded-sm" />
         </div>
-        <div className="bg-muted h-4 w-40 animate-pulse rounded"></div>
+        <Skeleton className="h-4 w-40 rounded-sm" />
       </div>
     </div>
   );

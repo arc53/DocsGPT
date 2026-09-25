@@ -8,7 +8,7 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import MessageInput from '../components/MessageInput';
 import { Avatar } from '../components/ui/avatar';
-import Spinner from '../components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
 import {

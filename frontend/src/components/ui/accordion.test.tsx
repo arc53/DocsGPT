@@ -47,3 +47,10 @@ describe('AccordionTrigger', () => {
     expect(html).not.toContain('dark:invert');
   });
 });
+
+describe('AccordionItem', () => {
+  it('draws no shadow of its own, like a card', () => {
+    const classes = slotClasses(renderAccordion(), 'accordion-item');
+    expect(classes).not.toMatch(/\bshadow-/);
+  });
+});

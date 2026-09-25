@@ -114,7 +114,6 @@
         "edit": "Bearbeiten",
         "save": "Speichern",
         "cancel": "Abbrechen",
-        "saving": "Speichern…",
         "saveFailed": "Die Seite konnte nicht gespeichert werden. Bitte versuche es erneut.",
         "forbidden": "Du hast keine Berechtigung, diese Seite zu bearbeiten.",
         "conflict": "Diese Seite wurde seit dem Öffnen geändert und neu geladen. Deine Änderungen stehen unten – übernimm sie erneut und speichere noch einmal.",
@@ -328,7 +327,6 @@
         "subtitle": "Konfiguriere, wie \"{{name}}\" in Chunks aufgeteilt und abgerufen wird.",
         "subtitleGeneric": "Konfiguriere, wie diese Quelle in Chunks aufgeteilt und abgerufen wird.",
         "save": "Speichern",
-        "saving": "Speichern…",
         "readOnly": "Du hast nur Lesezugriff auf diese geteilte Quelle und kannst ihre Konfiguration nicht ändern.",
         "chunkingChangeHint": "Du hast eine Chunking-Einstellung geändert. Nach dem Speichern muss diese Quelle erneut indexiert werden, damit die Änderung wirkt.",
         "prescreenInvalidHint": "Prüfe die Vorfilter-Werte: Die abzurufenden Kandidaten müssen mindestens der Chunk-Anzahl entsprechen, und die zu behaltenden Chunks dürfen die Kandidatenzahl nicht überschreiten.",
@@ -679,7 +677,6 @@
       "body": "Body",
       "deleteActionWarning": "Bist du sicher, dass du die Aktion \"{{name}}\" löschen möchtest?",
       "save": "Speichern",
-      "saving": "Speichere...",
       "saveFailed": "Werkzeug-Konfiguration konnte nicht gespeichert werden",
       "fieldName": "Feldname",
       "fieldType": "Feldtyp",
@@ -705,8 +702,6 @@
         "password": "Passwort",
         "timeout": "Timeout (Sekunden)",
         "testConnection": "Verbindung testen",
-        "testing": "Teste...",
-        "saving": "Speichere...",
         "save": "Speichern",
         "cancel": "Abbrechen",
         "noAuth": "Keine Authentifizierung",
@@ -796,7 +791,6 @@
         "installLink": "Du hast docsgpt-cli noch nicht? Installiere es",
         "stepTwo": "2. Gib diesen Code ein, wenn du dazu aufgefordert wirst:",
         "start": "Code generieren",
-        "starting": "Bitte warten…",
         "waitingForCli": "Warte, bis die CLI den Code einlöst…",
         "cancel": "Abbrechen"
       }
@@ -811,9 +805,7 @@
       "addTitle": "Eigenes Modell hinzufügen",
       "editTitle": "Eigenes Modell bearbeiten",
       "save": "Speichern",
-      "saving": "Speichern",
       "testConnection": "Verbindung testen",
-      "testing": "Test läuft",
       "testSuccess": "Verbindung erfolgreich.",
       "testHintNew": "Fülle Basis-URL, Modell-ID und API-Schlüssel aus, um Verbindungstests zu aktivieren.",
       "disabledBadge": "Deaktiviert",
@@ -960,7 +952,6 @@
         "retry": "Erneut versuchen",
         "cancel": "Abbrechen",
         "submit": "Token erstellen",
-        "submitting": "Wird erstellt",
         "error": "Das Token konnte nicht erstellt werden. Bitte versuche es erneut."
       },
       "created": {
@@ -979,7 +970,6 @@
         "warning": "Neues Geheimnis für \"{{name}}\" erzeugen? Das aktuelle Geheimnis funktioniert sofort nicht mehr, alles, was es verwendet, muss aktualisiert werden. Name, Berechtigungen und Einschränkungen bleiben gleich.",
         "newExpiration": "Neues Ablaufdatum",
         "submit": "Neu generieren",
-        "submitting": "Wird neu generiert…",
         "error": "Das Token konnte nicht neu generiert werden. Bitte erneut versuchen.",
         "done": {
           "title": "Token neu generiert",
@@ -1102,7 +1092,6 @@
           "pickerFailed": "Dateiauswahl konnte nicht geöffnet werden. Bitte versuche es erneut.",
           "selectedFiles": "Ausgewählte Dateien",
           "selectFiles": "Dateien auswählen",
-          "loading": "Laden...",
           "noFilesSelected": "Keine Dateien oder Ordner ausgewählt",
           "folders": "Ordner",
           "files": "Dateien",
@@ -1299,6 +1288,7 @@
   },
   "convTile": {
     "share": "Teilen",
+    "menu": "Unterhaltungsaktionen",
     "delete": "Löschen",
     "rename": "Umbenennen",
     "save": "Speichern",
@@ -1400,7 +1390,8 @@
       "unpin": "Agent lösen",
       "open": "Öffnen",
       "remove": "Entfernen",
-      "draft": "Entwurf"
+      "draft": "Entwurf",
+      "actions": "Agentenaktionen"
     },
     "description": "Entdecke und erstelle benutzerdefinierte Versionen von DocsGPT, die Anweisungen, zusätzliches Wissen und beliebige Kombinationen von Fähigkeiten kombinieren",
     "newAgent": "Neuer Agent",

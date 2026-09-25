@@ -20,7 +20,7 @@ export default function SectionIndexPage({ section }: { section: Section }) {
 
   return (
     <div className="flex flex-col">
-      <h1 className="text-foreground dark:text-foreground text-2xl font-bold">
+      <h1 className="text-foreground text-2xl font-bold">
         {section.title ?? t(section.titleKey)}
       </h1>
       <div className="mt-6 flex flex-col gap-6">
@@ -42,15 +42,13 @@ export default function SectionIndexPage({ section }: { section: Section }) {
                   >
                     <Icon
                       className="text-muted-foreground size-5 shrink-0"
-                      strokeWidth={1.75}
                       aria-hidden
                     />
-                    <span className="text-foreground dark:text-foreground flex-1 text-sm">
+                    <span className="text-foreground flex-1 text-sm">
                       {t(item.labelKey)}
                     </span>
                     <ChevronRight
                       className="text-muted-foreground size-4 shrink-0"
-                      strokeWidth={1.75}
                       aria-hidden
                     />
                   </Link>

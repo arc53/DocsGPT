@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react';
+import { Book, ChevronDown } from 'lucide-react';
 import { ActiveState } from '../models/misc';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
@@ -15,7 +15,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
-import BookIcon from '../assets/book.svg';
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
 import { UserToolType } from '../settings/types';
@@ -307,23 +306,15 @@ const useToolVariables = () => {
 };
 
 function AddPrompt({
-  setModalState,
-  handleAddPrompt,
   newPromptName,
   setNewPromptName,
   newPromptContent,
   setNewPromptContent,
-  disableSave,
-  duplicateSourceName,
 }: {
-  setModalState: (state: ActiveState) => void;
-  handleAddPrompt?: () => void;
   newPromptName: string;
   setNewPromptName: (name: string) => void;
   newPromptContent: string;
   setNewPromptContent: (content: string) => void;
-  disableSave: boolean;
-  duplicateSourceName?: string | null;
 }) {
   const { t } = useTranslation();
   const systemVariableOptions = React.useMemo(
@@ -334,18 +325,6 @@ function AddPrompt({
 
   return (
     <div>
-      <p className="text-foreground mb-1 text-xl font-semibold">
-        {duplicateSourceName
-          ? t('modals.prompts.duplicatePrompt')
-          : t('modals.prompts.addPrompt')}
-      </p>
-      <p className="text-muted-foreground mb-6 text-sm">
-        {duplicateSourceName
-          ? t('modals.prompts.duplicateDescription', {
-              name: duplicateSourceName,
-            })
-          : t('modals.prompts.addDescription')}
-      </p>
       <div>
         <Input
           label={t('modals.prompts.promptName')}
@@ -404,71 +383,22 @@ function AddPrompt({
           />
         </div>
       </div>
-      <div className="mt-4 flex flex-col justify-between gap-4 text-sm sm:flex-row sm:gap-0">
-        <div className="flex justify-start">
-          <Link
-            to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary flex items-center gap-2 text-sm font-medium hover:underline"
-          >
-            <img
-              src={BookIcon}
-              alt=""
-              className="flex h-4 w-3 shrink-0 items-center justify-center"
-              aria-hidden="true"
-            />
-            <span className="text-sm font-bold">
-              {t('modals.prompts.learnAboutPrompts')}
-            </span>
-          </Link>
-        </div>
-
-        <div className="flex justify-end gap-2 sm:gap-4">
-          <Button
-            type="button"
-            variant="destructive-outline"
-            onClick={() => setModalState('INACTIVE')}
-            shape="pill"
-          >
-            {t('modals.prompts.cancel')}
-          </Button>
-
-          <Button
-            type="button"
-            onClick={handleAddPrompt}
-            size="lg"
-            shape="pill"
-            disabled={disableSave}
-          >
-            {t('modals.prompts.save')}
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
 
 function EditPrompt({
-  setModalState,
-  handleEditPrompt,
   editPromptName,
   setEditPromptName,
   editPromptContent,
   setEditPromptContent,
   currentPromptEdit,
-  disableSave,
-  onDuplicate,
 }: {
-  setModalState: (state: ActiveState) => void;
-  handleEditPrompt?: (id: string, type: string) => void;
   editPromptName: string;
   setEditPromptName: (name: string) => void;
   editPromptContent: string;
   setEditPromptContent: (content: string) => void;
   currentPromptEdit: { name: string; id: string; type: string };
-  disableSave: boolean;
-  onDuplicate?: () => void;
 }) {
   const { t } = useTranslation();
   const systemVariableOptions = React.useMemo(
@@ -480,20 +410,6 @@ function EditPrompt({
 
   return (
     <div>
-      <p className="text-foreground mb-1 text-xl font-semibold">
-        {t(
-          isReadOnly
-            ? 'modals.prompts.viewPrompt'
-            : 'modals.prompts.editPrompt',
-        )}
-      </p>
-      <p className="text-muted-foreground mb-6 text-sm">
-        {t(
-          isReadOnly
-            ? 'modals.prompts.viewDescription'
-            : 'modals.prompts.editDescription',
-        )}
-      </p>
       <div>
         <Input
           label={t('modals.prompts.promptName')}
@@ -556,71 +472,6 @@ function EditPrompt({
           </div>
         </div>
       )}
-      <div className="mt-4 flex flex-col justify-between gap-4 text-sm sm:flex-row sm:gap-0">
-        <div className="flex justify-start">
-          <Link
-            to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary flex items-center gap-2 text-sm font-medium hover:underline"
-          >
-            <img
-              src={BookIcon}
-              alt=""
-              className="flex h-4 w-3 shrink-0 items-center justify-center"
-              aria-hidden="true"
-            />
-            <span className="text-sm font-bold">
-              {t('modals.prompts.learnAboutPrompts')}
-            </span>
-          </Link>
-        </div>
-
-        <div className="flex justify-end gap-2 sm:gap-4">
-          <Button
-            type="button"
-            variant="destructive-outline"
-            onClick={() => setModalState('INACTIVE')}
-            shape="pill"
-          >
-            {t('modals.prompts.cancel')}
-          </Button>
-
-          {isReadOnly ? (
-            onDuplicate && (
-              <Button
-                type="button"
-                onClick={onDuplicate}
-                size="lg"
-                shape="pill"
-              >
-                {t('modals.prompts.duplicate')}
-              </Button>
-            )
-          ) : (
-            <Button
-              type="button"
-              onClick={() => {
-                handleEditPrompt &&
-                  handleEditPrompt(
-                    currentPromptEdit.id,
-                    currentPromptEdit.type,
-                  );
-              }}
-              size="lg"
-              shape="pill"
-              disabled={disableSave || !editPromptName}
-              title={
-                disableSave && editPromptName
-                  ? t('modals.prompts.nameExists')
-                  : ''
-              }
-            >
-              {t('modals.prompts.save')}
-            </Button>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
@@ -689,37 +540,121 @@ export default function PromptsModal({
     newPromptContent,
   ]);
 
+  const { t } = useTranslation();
+  const isReadOnly = type === 'EDIT' && currentPromptEdit.type === 'public';
+  const closeModal = () => setModalState('INACTIVE');
+
   let view;
+  let title: string;
+  let description: string;
 
   if (type === 'ADD') {
+    title = duplicateSourceName
+      ? t('modals.prompts.duplicatePrompt')
+      : t('modals.prompts.addPrompt');
+    description = duplicateSourceName
+      ? t('modals.prompts.duplicateDescription', {
+          name: duplicateSourceName,
+        })
+      : t('modals.prompts.addDescription');
     view = (
       <AddPrompt
-        setModalState={setModalState}
-        handleAddPrompt={handleAddPrompt}
         newPromptName={newPromptName}
         setNewPromptName={setNewPromptName}
         newPromptContent={newPromptContent}
         setNewPromptContent={setNewPromptContent}
-        disableSave={disableSave}
-        duplicateSourceName={duplicateSourceName}
       />
     );
-  } else if (type === 'EDIT') {
+  } else {
+    title = t(
+      isReadOnly ? 'modals.prompts.viewPrompt' : 'modals.prompts.editPrompt',
+    );
+    description = t(
+      isReadOnly
+        ? 'modals.prompts.viewDescription'
+        : 'modals.prompts.editDescription',
+    );
     view = (
       <EditPrompt
-        setModalState={setModalState}
-        handleEditPrompt={handleEditPrompt}
         editPromptName={editPromptName}
         setEditPromptName={setEditPromptName}
         editPromptContent={editPromptContent}
         setEditPromptContent={setEditPromptContent}
         currentPromptEdit={currentPromptEdit}
-        disableSave={disableSave}
-        onDuplicate={onDuplicate}
+      />
+    );
+  }
+
+  const learnLink = (
+    <Link
+      to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-primary flex items-center gap-2 text-sm font-medium hover:underline"
+    >
+      <Book className="size-4 shrink-0" />
+      <span className="text-sm font-bold">
+        {t('modals.prompts.learnAboutPrompts')}
+      </span>
+    </Link>
+  );
+
+  let footer: React.ReactNode;
+  if (type === 'ADD') {
+    footer = (
+      <ModalActions
+        footerStart={learnLink}
+        cancelLabel={t('modals.prompts.cancel')}
+        onCancel={closeModal}
+        submitLabel={t('modals.prompts.save')}
+        onSubmit={handleAddPrompt}
+        disabled={disableSave}
+      />
+    );
+  } else if (!isReadOnly) {
+    footer = (
+      <ModalActions
+        footerStart={learnLink}
+        cancelLabel={t('modals.prompts.cancel')}
+        onCancel={closeModal}
+        submitLabel={t('modals.prompts.save')}
+        onSubmit={() =>
+          handleEditPrompt?.(currentPromptEdit.id, currentPromptEdit.type)
+        }
+        disabled={disableSave || !editPromptName}
+        submitProps={{
+          title:
+            disableSave && editPromptName ? t('modals.prompts.nameExists') : '',
+        }}
+      />
+    );
+  } else if (onDuplicate) {
+    footer = (
+      <ModalActions
+        footerStart={learnLink}
+        cancelLabel={t('modals.prompts.cancel')}
+        onCancel={closeModal}
+        submitLabel={t('modals.prompts.duplicate')}
+        onSubmit={onDuplicate}
       />
     );
   } else {
-    view = <></>;
+    // A public prompt with nothing to do but close: the link and a lone
+    // Cancel, laid out like ModalActions' footerStart.
+    footer = (
+      <>
+        <div className="flex flex-col sm:mr-auto">{learnLink}</div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="lg"
+          shape="pill"
+          onClick={closeModal}
+        >
+          {t('modals.prompts.cancel')}
+        </Button>
+      </>
+    );
   }
 
   return (
@@ -734,16 +669,9 @@ export default function PromptsModal({
           }
         }
       }}
-      hideTitle
-      title={
-        type === 'ADD'
-          ? duplicateSourceName
-            ? 'Duplicate Prompt'
-            : 'Add Prompt'
-          : currentPromptEdit.type === 'public'
-            ? 'View Prompt'
-            : 'Edit Prompt'
-      }
+      title={title}
+      description={description}
+      footer={footer}
       size="lg"
       mobileVariant="sheet"
       className="w-[95vw] max-w-[650px] md:max-w-[860px] lg:max-w-[980px]"

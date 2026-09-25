@@ -4,10 +4,9 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ConfigFields from '../components/ConfigFields';
-import { Button } from '../components/ui/button';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AvailableToolType } from './types';
@@ -120,26 +119,13 @@ export default function ConfigToolModal({
       title={t('modals.configTool.title')}
       size="lg"
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            shape="pill"
-            onClick={handleClose}
-          >
-            {t('modals.configTool.closeButton')}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleAddTool}
-            shape="pill"
-            disabled={saving}
-          >
-            {saving
-              ? t('modals.configTool.addButton') + '…'
-              : t('modals.configTool.addButton')}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={t('modals.configTool.closeButton')}
+          onCancel={handleClose}
+          submitLabel={t('modals.configTool.addButton')}
+          onSubmit={handleAddTool}
+          pending={saving}
+        />
       }
     >
       <div>
@@ -151,10 +137,7 @@ export default function ConfigToolModal({
         </p>
 
         <div className="mt-6 flex flex-col gap-4 px-1">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="customName">
-              {t('modals.configTool.customNamePlaceholder')}
-            </Label>
+          <FormField label={t('modals.configTool.customNamePlaceholder')}>
             <Input
               id="customName"
               type="text"
@@ -162,7 +145,7 @@ export default function ConfigToolModal({
               onChange={(e) => setCustomName(e.target.value)}
               placeholder={tool.displayName}
             />
-          </div>
+          </FormField>
 
           {hasConfig && (
             <ConfigFields

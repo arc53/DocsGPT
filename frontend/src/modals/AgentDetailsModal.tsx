@@ -1,13 +1,12 @@
 import { envVar } from '@/env';
+import { ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import { Agent } from '../agents/types';
 import userService from '../api/services/userService';
-import ExternalLinkIcon from '../assets/external-link.svg';
 import CopyButton from '../components/CopyButton';
-import Spinner from '../components/Spinner';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
@@ -114,7 +113,7 @@ export default function AgentDetailsModal({
           <div className="mt-8 flex flex-col gap-6">
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
-                <h2 className="text-foreground dark:text-foreground text-base font-semibold">
+                <h2 className="text-foreground text-base font-semibold">
                   {t('modals.agentDetails.publicLink')}
                 </h2>
               </div>
@@ -143,11 +142,7 @@ export default function AgentDetailsModal({
                     <span className="text-sm">
                       {t('modals.agentDetails.learnMore')}
                     </span>
-                    <img
-                      src={ExternalLinkIcon}
-                      alt="External link"
-                      className="h-3 w-3"
-                    />
+                    <ExternalLink className="size-3" />
                   </a>
                 </div>
               ) : (
@@ -156,18 +151,14 @@ export default function AgentDetailsModal({
                   variant="outline-primary"
                   shape="pill"
                   onClick={handleGeneratePublicLink}
-                  className="w-28"
+                  loading={loadingStates.publicLink}
                 >
-                  {loadingStates.publicLink ? (
-                    <Spinner size="small" />
-                  ) : (
-                    t('modals.agentDetails.generate')
-                  )}
+                  {t('modals.agentDetails.generate')}
                 </Button>
               )}
             </div>
             <div className="flex flex-col gap-3">
-              <h2 className="text-foreground dark:text-foreground text-base font-semibold">
+              <h2 className="text-foreground text-base font-semibold">
                 {t('modals.agentDetails.apiKey')}
               </h2>
               {apiKey ? (
@@ -197,11 +188,7 @@ export default function AgentDetailsModal({
                           rel="noopener noreferrer"
                         >
                           {t('modals.agentDetails.test')}
-                          <img
-                            src={ExternalLinkIcon}
-                            alt="External link"
-                            className="h-3 w-3 group-hover:brightness-0 group-hover:invert"
-                          />
+                          <ExternalLink />
                         </a>
                       </Button>
                     )}
@@ -209,35 +196,26 @@ export default function AgentDetailsModal({
                       <Button
                         type="button"
                         onClick={() => setResetKeyConfirmState('ACTIVE')}
-                        disabled={loadingStates.apiKey}
+                        loading={loadingStates.apiKey}
                         variant="outline-primary"
                         size="sm"
                         shape="pill"
                         className="ml-8"
                       >
-                        {loadingStates.apiKey ? (
-                          <Spinner size="small" />
-                        ) : (
-                          t('modals.agentDetails.resetKey')
-                        )}
+                        {t('modals.agentDetails.resetKey')}
                       </Button>
                     )}
                   </div>
                 </div>
               ) : (
-                <Button
-                  type="button"
-                  variant="outline-primary"
-                  shape="pill"
-                  className="w-28"
-                >
+                <Button type="button" variant="outline-primary" shape="pill">
                   {t('modals.agentDetails.generate')}
                 </Button>
               )}
             </div>
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
-                <h2 className="text-foreground dark:text-foreground text-base font-semibold">
+                <h2 className="text-foreground text-base font-semibold">
                   {t('modals.agentDetails.webhookUrl')}
                 </h2>
               </div>
@@ -262,11 +240,7 @@ export default function AgentDetailsModal({
                     <span className="text-sm">
                       {t('modals.agentDetails.learnMore')}
                     </span>
-                    <img
-                      src={ExternalLinkIcon}
-                      alt="External link"
-                      className="h-3 w-3"
-                    />
+                    <ExternalLink className="size-3" />
                   </a>
                 </div>
               ) : (
@@ -275,13 +249,9 @@ export default function AgentDetailsModal({
                   variant="outline-primary"
                   shape="pill"
                   onClick={handleGenerateWebhook}
-                  className="w-28"
+                  loading={loadingStates.webhook}
                 >
-                  {loadingStates.webhook ? (
-                    <Spinner size="small" />
-                  ) : (
-                    t('modals.agentDetails.generate')
-                  )}
+                  {t('modals.agentDetails.generate')}
                 </Button>
               )}
             </div>

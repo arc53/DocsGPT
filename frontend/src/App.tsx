@@ -17,7 +17,7 @@ import DocsGPTMarkWhite from './assets/logo-w.svg';
 import ActionButtons from './components/ActionButtons';
 import AdminRoute from './components/AdminRoute';
 import ErrorBoundary from './components/ErrorBoundary';
-import Spinner from './components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from './components/ui/button';
 import { ToastViewport } from './components/ui/toast';
 import UploadToast from './components/UploadToast';

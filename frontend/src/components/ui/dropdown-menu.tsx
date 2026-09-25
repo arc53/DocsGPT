@@ -1,8 +1,15 @@
 import * as React from 'react';
-import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react';
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CircleIcon,
+  EllipsisVertical,
+  type LucideIcon,
+} from 'lucide-react';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 
 import { cn } from '@/lib/utils';
+import { Button } from './button';
 
 function DropdownMenu({
   ...props
@@ -228,7 +235,7 @@ function DropdownMenuSubContent({
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
       className={cn(
-        'bg-popover text-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 z-50 min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-md border p-1 shadow-lg',
+        'bg-popover text-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 z-50 min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-md border p-1 shadow-md',
         className,
       )}
       {...props}
@@ -236,7 +243,94 @@ function DropdownMenuSubContent({
   );
 }
 
+/** One row of an ActionMenu. */
+type MenuOption = {
+  label: string;
+  onClick: (event: Event) => void;
+  icon?: LucideIcon;
+  variant?: 'default' | 'destructive';
+  disabled?: boolean;
+};
+
+const stopPropagation = (event: React.SyntheticEvent) =>
+  event.stopPropagation();
+
+/**
+ * The three-dots menu on a card, tile or row: an EllipsisVertical icon
+ * trigger and one item per option, icon first.
+ *
+ * Clicks and keys on the trigger and the menu stop propagating, because the
+ * menu usually sits inside a clickable card and a portal still bubbles
+ * through the React tree. The trigger is `ghost-on-accent`: most hosts turn
+ * bg-accent while the pointer is on them.
+ *
+ * @param options The menu rows.
+ * @param triggerLabel The trigger's accessible name.
+ * @param className Layout classes for the trigger (position, margin).
+ * @param triggerTestId A `data-testid` for the trigger.
+ */
+function ActionMenu({
+  options,
+  triggerLabel,
+  align = 'end',
+  open,
+  onOpenChange,
+  disabled,
+  className,
+  triggerTestId,
+}: {
+  options: MenuOption[];
+  triggerLabel: string;
+  align?: 'start' | 'center' | 'end';
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+  triggerTestId?: string;
+}) {
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost-on-accent"
+          size="icon-xs"
+          aria-label={triggerLabel}
+          title={triggerLabel}
+          disabled={disabled}
+          data-testid={triggerTestId}
+          className={className}
+          onClick={stopPropagation}
+          onKeyDown={stopPropagation}
+        >
+          <EllipsisVertical />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align={align}
+        className="min-w-[144px]"
+        onClick={stopPropagation}
+        onKeyDown={stopPropagation}
+      >
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option.label}
+            variant={option.variant}
+            disabled={option.disabled}
+            onSelect={(event) => option.onClick(event)}
+          >
+            {option.icon && <option.icon aria-hidden="true" />}
+            <span>{option.label}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export {
+  ActionMenu,
+  type MenuOption,
   DropdownMenu,
   DropdownMenuPortal,
   DropdownMenuTrigger,

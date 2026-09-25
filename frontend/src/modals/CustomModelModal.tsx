@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import customModelsService from '../api/services/customModelsService';
-import Spinner from '../components/Spinner';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import {
@@ -18,7 +18,7 @@ import {
 } from '../components/ui/select';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 
 import type {
   CreateCustomModelPayload,
@@ -320,373 +320,279 @@ export default function CustomModelModal({
     <Modal
       open={modalState === 'ACTIVE'}
       onOpenChange={(o) => !o && closeModal()}
-      hideTitle
       title={
         isEditMode
           ? t('settings.customModels.editTitle')
           : t('settings.customModels.addTitle')
       }
+      description={t('settings.customModels.modalSubtitle')}
       size="lg"
       mobileVariant="sheet"
       className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
-    >
-      <div className="flex h-full flex-col">
-        <div className="px-2 py-2">
-          <h2 className="text-foreground text-xl font-semibold">
-            {isEditMode
-              ? t('settings.customModels.editTitle')
-              : t('settings.customModels.addTitle')}
-          </h2>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {t('settings.customModels.modalSubtitle')}
-          </p>
-        </div>
-        <div className="flex-1 px-2">
-          <div className="flex flex-col gap-4 px-0.5 py-4">
-            {/* Row 1: Display name + Model ID side-by-side */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="cm-display-name">
-                  {t('settings.customModels.fields.displayName')}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="cm-display-name"
-                  type="text"
-                  value={formData.display_name}
-                  onChange={(e) => handleChange('display_name', e.target.value)}
-                  placeholder={t(
-                    'settings.customModels.placeholders.displayName',
-                  )}
-                  aria-invalid={!!errors.display_name || undefined}
-                />
-                {errors.display_name && (
-                  <p className="text-destructive text-xs">
-                    {errors.display_name}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="cm-model-id">
-                  {t('settings.customModels.fields.modelId')}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="cm-model-id"
-                  type="text"
-                  value={formData.upstream_model_id}
-                  onChange={(e) =>
-                    handleChange('upstream_model_id', e.target.value)
-                  }
-                  placeholder={t('settings.customModels.placeholders.modelId')}
-                  aria-invalid={!!errors.upstream_model_id || undefined}
-                />
-                {errors.upstream_model_id && (
-                  <p className="text-destructive text-xs">
-                    {errors.upstream_model_id}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Row 2: Base URL + API key side-by-side */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="cm-base-url">
-                  {t('settings.customModels.fields.baseUrl')}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="cm-base-url"
-                  type="url"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  value={formData.base_url}
-                  onChange={(e) => handleChange('base_url', e.target.value)}
-                  placeholder={t('settings.customModels.placeholders.baseUrl')}
-                  aria-invalid={
-                    !!errors.base_url || !!errors.base_url_remote || undefined
-                  }
-                />
-                {errors.base_url && (
-                  <p className="text-destructive text-xs">{errors.base_url}</p>
-                )}
-                {errors.base_url_remote && (
-                  <p className="text-destructive text-xs">
-                    {errors.base_url_remote}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="cm-api-key">
-                  {t('settings.customModels.fields.apiKey')}
-                  {!isEditMode && <span className="text-destructive">*</span>}
-                </Label>
-                <Input
-                  id="cm-api-key"
-                  type="text"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
-                  value={formData.api_key}
-                  onChange={(e) => handleChange('api_key', e.target.value)}
-                  placeholder={
-                    isEditMode
-                      ? t('settings.customModels.placeholders.apiKeyEdit')
-                      : t('settings.customModels.placeholders.apiKey')
-                  }
-                  aria-invalid={!!errors.api_key || undefined}
-                />
-                {isEditMode && (
-                  <p className="text-muted-foreground text-xs">
-                    {t('settings.customModels.hints.apiKeyEdit')}
-                  </p>
-                )}
-                {errors.api_key && (
-                  <p className="text-destructive text-xs">{errors.api_key}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Row 3: Description (full width, optional) */}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cm-description">
-                {t('settings.customModels.fields.description')}
-              </Label>
-              <Input
-                id="cm-description"
-                type="text"
-                value={formData.description}
-                onChange={(e) => handleChange('description', e.target.value)}
-                placeholder={t(
-                  'settings.customModels.placeholders.description',
-                )}
-              />
-            </div>
-
-            {/* Row 4: Capabilities — flat (no border), chips + inline ctx */}
-            <div className="flex flex-col gap-2">
-              <Label>{t('settings.customModels.capabilities.title')}</Label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <Label
-                    htmlFor="cm-api-flavor"
-                    className="text-muted-foreground text-xs"
-                  >
-                    {t('settings.customModels.capabilities.apiFlavor')}
-                  </Label>
-                  <Select
-                    value={formData.api_flavor}
-                    onValueChange={(value) =>
-                      handleChange('api_flavor', value as ModelApiFlavor)
-                    }
-                  >
-                    <SelectTrigger id="cm-api-flavor" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="chat_completions">
-                        {t(
-                          'settings.customModels.capabilities.apiFlavors.chatCompletions',
-                        )}
-                      </SelectItem>
-                      <SelectItem value="responses">
-                        {t(
-                          'settings.customModels.capabilities.apiFlavors.responses',
-                        )}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label
-                    htmlFor="cm-reasoning-effort"
-                    className="text-muted-foreground text-xs"
-                  >
-                    {t('settings.customModels.capabilities.reasoningEffort')}
-                  </Label>
-                  <Select
-                    value={formData.reasoning_effort}
-                    onValueChange={(value) =>
-                      handleChange(
-                        'reasoning_effort',
-                        value as ReasoningEffort | 'default',
-                      )
-                    }
-                  >
-                    <SelectTrigger id="cm-reasoning-effort" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">
-                        {t(
-                          'settings.customModels.capabilities.reasoningEfforts.default',
-                        )}
-                      </SelectItem>
-                      {(
-                        [
-                          'none',
-                          'minimal',
-                          'low',
-                          'medium',
-                          'high',
-                          'xhigh',
-                        ] as ReasoningEffort[]
-                      ).map((effort) => (
-                        <SelectItem key={effort} value={effort}>
-                          {effort}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <CapabilityChip
-                  label={t('settings.customModels.capabilities.chips.tools')}
-                  active={formData.supports_tools}
-                  onClick={() =>
-                    handleChange('supports_tools', !formData.supports_tools)
-                  }
-                />
-                <CapabilityChip
-                  label={t(
-                    'settings.customModels.capabilities.chips.structuredOutput',
-                  )}
-                  active={formData.supports_structured_output}
-                  onClick={() =>
-                    handleChange(
-                      'supports_structured_output',
-                      !formData.supports_structured_output,
-                    )
-                  }
-                />
-                <CapabilityChip
-                  label={t('settings.customModels.capabilities.chips.images')}
-                  active={formData.supports_images}
-                  onClick={() =>
-                    handleChange('supports_images', !formData.supports_images)
-                  }
-                />
-              </div>
-              <div className="mt-1 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-                <Label
-                  htmlFor="cm-context-window"
-                  className="text-muted-foreground text-xs sm:mb-0"
-                >
-                  {t('settings.customModels.capabilities.contextWindowShort')}
-                </Label>
-                <Input
-                  id="cm-context-window"
-                  type="number"
-                  value={formData.context_window}
-                  min={MIN_CONTEXT_WINDOW}
-                  max={MAX_CONTEXT_WINDOW}
-                  step={1000}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === '') {
-                      handleChange('context_window', '');
-                    } else {
-                      const n = parseInt(v, 10);
-                      if (!Number.isNaN(n)) {
-                        handleChange('context_window', n);
-                      }
-                    }
-                  }}
-                  aria-invalid={!!errors.context_window || undefined}
-                  className="w-full sm:w-40"
-                />
-                {errors.context_window && (
-                  <p className="text-destructive text-xs">
-                    {errors.context_window}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {testResult && (
-              <Alert variant={testResult.ok ? 'success' : 'destructive'}>
-                {testResult.ok ? (
-                  <CircleCheck className="size-4" aria-hidden="true" />
-                ) : (
-                  <CircleAlert className="size-4" aria-hidden="true" />
-                )}
-                <AlertDescription>{testResult.message}</AlertDescription>
-              </Alert>
-            )}
-
-            {errors.general && (
-              <Alert variant="destructive">
-                <CircleAlert className="size-4" aria-hidden="true" />
-                <AlertDescription>{errors.general}</AlertDescription>
-              </Alert>
-            )}
-          </div>
-        </div>
-
-        <div className="px-2 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
+      footer={
+        <ModalActions
+          footerStart={
             <Button
               type="button"
               variant="outline"
               onClick={handleTest}
-              disabled={!canTest || testing || saving}
+              disabled={!canTest || saving}
+              loading={testing}
               title={testDisabledHint}
               size="lg"
               shape="pill"
-              className="w-full sm:w-auto"
             >
-              {testing ? (
-                <div className="flex items-center justify-center">
-                  <Spinner size="small" />
-                  <span className="ml-2">
-                    {t('settings.customModels.testing')}
-                  </span>
-                </div>
-              ) : (
-                t('settings.customModels.testConnection')
-              )}
+              {t('settings.customModels.testConnection')}
             </Button>
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={closeModal}
-                disabled={saving}
-                size="lg"
-                shape="pill"
-                className="w-full sm:w-auto"
+          }
+          cancelLabel={t('cancel')}
+          onCancel={closeModal}
+          cancelProps={{ disabled: saving }}
+          submitLabel={t('settings.customModels.save')}
+          onSubmit={handleSave}
+          pending={saving}
+        />
+      }
+    >
+      <div className="flex flex-col gap-4 px-0.5 py-4">
+        {/* Row 1: Display name + Model ID side-by-side */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            label={t('settings.customModels.fields.displayName')}
+            required
+            error={errors.display_name}
+          >
+            <Input
+              id="cm-display-name"
+              type="text"
+              value={formData.display_name}
+              onChange={(e) => handleChange('display_name', e.target.value)}
+              placeholder={t('settings.customModels.placeholders.displayName')}
+            />
+          </FormField>
+
+          <FormField
+            label={t('settings.customModels.fields.modelId')}
+            required
+            error={errors.upstream_model_id}
+          >
+            <Input
+              id="cm-model-id"
+              type="text"
+              value={formData.upstream_model_id}
+              onChange={(e) =>
+                handleChange('upstream_model_id', e.target.value)
+              }
+              placeholder={t('settings.customModels.placeholders.modelId')}
+            />
+          </FormField>
+        </div>
+
+        {/* Row 2: Base URL + API key side-by-side */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FormField
+            label={t('settings.customModels.fields.baseUrl')}
+            required
+            error={
+              [errors.base_url, errors.base_url_remote]
+                .filter(Boolean)
+                .join(' ') || undefined
+            }
+          >
+            <Input
+              id="cm-base-url"
+              type="url"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={formData.base_url}
+              onChange={(e) => handleChange('base_url', e.target.value)}
+              placeholder={t('settings.customModels.placeholders.baseUrl')}
+            />
+          </FormField>
+
+          <FormField
+            label={t('settings.customModels.fields.apiKey')}
+            required={!isEditMode}
+            hint={
+              isEditMode
+                ? t('settings.customModels.hints.apiKeyEdit')
+                : undefined
+            }
+            error={errors.api_key}
+          >
+            <Input
+              id="cm-api-key"
+              type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={formData.api_key}
+              onChange={(e) => handleChange('api_key', e.target.value)}
+              placeholder={
+                isEditMode
+                  ? t('settings.customModels.placeholders.apiKeyEdit')
+                  : t('settings.customModels.placeholders.apiKey')
+              }
+            />
+          </FormField>
+        </div>
+
+        {/* Row 3: Description (full width, optional) */}
+        <FormField label={t('settings.customModels.fields.description')}>
+          <Input
+            id="cm-description"
+            type="text"
+            value={formData.description}
+            onChange={(e) => handleChange('description', e.target.value)}
+            placeholder={t('settings.customModels.placeholders.description')}
+          />
+        </FormField>
+
+        {/* Row 4: Capabilities — flat (no border), fields grid then chips */}
+        <div className="flex flex-col gap-2">
+          <Label>{t('settings.customModels.capabilities.title')}</Label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FormField
+              label={t('settings.customModels.capabilities.apiFlavor')}
+              id="cm-api-flavor"
+            >
+              <Select
+                value={formData.api_flavor}
+                onValueChange={(value) =>
+                  handleChange('api_flavor', value as ModelApiFlavor)
+                }
               >
-                {t('cancel')}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                size="lg"
-                shape="pill"
-                className="w-full sm:w-auto"
+                <SelectTrigger size="field" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="chat_completions">
+                    {t(
+                      'settings.customModels.capabilities.apiFlavors.chatCompletions',
+                    )}
+                  </SelectItem>
+                  <SelectItem value="responses">
+                    {t(
+                      'settings.customModels.capabilities.apiFlavors.responses',
+                    )}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </FormField>
+            <FormField
+              label={t('settings.customModels.capabilities.reasoningEffort')}
+              id="cm-reasoning-effort"
+            >
+              <Select
+                value={formData.reasoning_effort}
+                onValueChange={(value) =>
+                  handleChange(
+                    'reasoning_effort',
+                    value as ReasoningEffort | 'default',
+                  )
+                }
               >
-                {saving ? (
-                  <div className="flex items-center justify-center">
-                    <Spinner size="small" />
-                    <span className="ml-2">
-                      {t('settings.customModels.saving')}
-                    </span>
-                  </div>
-                ) : (
-                  t('settings.customModels.save')
-                )}
-              </Button>
-            </div>
+                <SelectTrigger size="field" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">
+                    {t(
+                      'settings.customModels.capabilities.reasoningEfforts.default',
+                    )}
+                  </SelectItem>
+                  {(
+                    [
+                      'none',
+                      'minimal',
+                      'low',
+                      'medium',
+                      'high',
+                      'xhigh',
+                    ] as ReasoningEffort[]
+                  ).map((effort) => (
+                    <SelectItem key={effort} value={effort}>
+                      {effort}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FormField>
+            <FormField
+              label={t('settings.customModels.capabilities.contextWindowShort')}
+              error={errors.context_window}
+            >
+              <Input
+                id="cm-context-window"
+                type="number"
+                value={formData.context_window}
+                min={MIN_CONTEXT_WINDOW}
+                max={MAX_CONTEXT_WINDOW}
+                step={1000}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '') {
+                    handleChange('context_window', '');
+                  } else {
+                    const n = parseInt(v, 10);
+                    if (!Number.isNaN(n)) {
+                      handleChange('context_window', n);
+                    }
+                  }
+                }}
+              />
+            </FormField>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <CapabilityChip
+              label={t('settings.customModels.capabilities.chips.tools')}
+              active={formData.supports_tools}
+              onClick={() =>
+                handleChange('supports_tools', !formData.supports_tools)
+              }
+            />
+            <CapabilityChip
+              label={t(
+                'settings.customModels.capabilities.chips.structuredOutput',
+              )}
+              active={formData.supports_structured_output}
+              onClick={() =>
+                handleChange(
+                  'supports_structured_output',
+                  !formData.supports_structured_output,
+                )
+              }
+            />
+            <CapabilityChip
+              label={t('settings.customModels.capabilities.chips.images')}
+              active={formData.supports_images}
+              onClick={() =>
+                handleChange('supports_images', !formData.supports_images)
+              }
+            />
           </div>
         </div>
+
+        {testResult && (
+          <Alert variant={testResult.ok ? 'success' : 'destructive'}>
+            {testResult.ok ? (
+              <CircleCheck className="size-4" aria-hidden="true" />
+            ) : (
+              <CircleAlert className="size-4" aria-hidden="true" />
+            )}
+            <AlertDescription>{testResult.message}</AlertDescription>
+          </Alert>
+        )}
+
+        {errors.general && (
+          <Alert variant="destructive">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{errors.general}</AlertDescription>
+          </Alert>
+        )}
       </div>
     </Modal>
   );

@@ -143,10 +143,8 @@ export default function ConversationMessages({
   }, [status, lastTurnContentLength, hasMessages]);
 
   const columnClass = isSplitView
-    ? // eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions.
-      'w-full max-w-325 px-2'
-    : // eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions.
-      'w-full max-w-325 px-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12';
+    ? 'w-full max-w-325 px-2'
+    : 'w-full max-w-325 px-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12';
 
   // The empty state sits directly on top of the composer with nothing between
   // them, so it takes the composer's width rather than the wider message column.
@@ -275,13 +273,9 @@ export default function ConversationMessages({
   return (
     <MessageScrollerProvider autoScroll>
       <MessageScroller>
-        <MessageScrollerViewport
-          /* eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions. */
-          className="sm:pt-6 lg:pt-12"
-        >
+        <MessageScrollerViewport className="sm:pt-6 lg:pt-12">
           <MessageScrollerContent
             spacerClassName={spacerCollapsed ? 'max-h-0' : undefined}
-            /* eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions. */
             className={`mx-auto pb-7 ${columnClass}`}
           >
             {headerContent}

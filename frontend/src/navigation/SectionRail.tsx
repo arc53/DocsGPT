@@ -48,7 +48,7 @@ export default function SectionRail({
         aria-label={backLabel}
         title={backLabel}
       >
-        <ArrowLeft className="size-5" strokeWidth={1.75} />
+        <ArrowLeft className="size-5" />
       </Button>
       <div className="bg-border my-1 h-px w-6 shrink-0" aria-hidden />
       {items.map((item) => {
@@ -72,7 +72,7 @@ export default function SectionRail({
               isActive && 'bg-sidebar-accent text-foreground',
             )}
           >
-            <Icon className="size-5" strokeWidth={1.75} aria-hidden />
+            <Icon className="size-5" aria-hidden />
           </Link>
         );
       })}

@@ -149,8 +149,9 @@ describe('ConversationBubble', () => {
   it('renders the question edit actions as pill buttons', async () => {
     await render(<ConversationBubble type="QUESTION" message="Hello" />);
 
-    const edit = container.querySelector('img[alt="Edit"]')!
-      .parentElement as HTMLButtonElement;
+    const edit = container.querySelector(
+      'button[aria-label="Edit"]',
+    ) as HTMLButtonElement;
     expect(edit.dataset.size).toBe('icon-xs');
     expect(edit.dataset.shape).toBe('pill');
     await act(async () => edit.click());

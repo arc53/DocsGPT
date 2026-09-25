@@ -66,6 +66,18 @@ describe('MultiSelectPopover', () => {
     expect(content?.className).toContain('max-h-40');
   });
 
+  it('uses the shared bottom-sheet shape and handle on phones', () => {
+    media.isMobile = true;
+    render();
+    const content = document.querySelector('[data-slot="sheet-content"]')!;
+    expect(content.querySelectorAll('[data-slot="sheet-handle"]')).toHaveLength(
+      1,
+    );
+    expect(content.className).toContain('rounded-t-2xl');
+    expect(content.className).not.toContain('env(');
+    expect(content.className).not.toContain('dark:bg-card');
+  });
+
   it('marks chosen rows with CommandItem checked and a primary tick', () => {
     render();
     const rows = document.querySelectorAll('[data-slot="command-item"]');

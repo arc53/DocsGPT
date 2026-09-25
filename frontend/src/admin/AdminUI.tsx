@@ -1,6 +1,6 @@
 import type { VariantProps } from 'class-variance-authority';
 
-import Spinner from '../components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import type { badgeVariants } from '../components/ui/badge';
 import { formatDateOnly, formatDateTime } from '../utils/dateTimeUtils';
 
@@ -30,9 +30,9 @@ export function StatCard({
   sub?: string;
 }) {
   return (
-    <div className="border-border dark:border-border rounded-2xl border px-6 py-5">
+    <div className="border-border rounded-2xl border px-6 py-5">
       <p className="text-muted-foreground text-sm">{label}</p>
-      <p className="text-foreground dark:text-foreground mt-1 text-2xl font-bold tabular-nums">
+      <p className="text-foreground mt-1 text-2xl font-bold tabular-nums">
         {value}
       </p>
       {sub ? <p className="text-muted-foreground mt-1 text-xs">{sub}</p> : null}

@@ -1,9 +1,11 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import SingleArrowLeft from '../assets/single-left-arrow.svg';
-import SingleArrowRight from '../assets/single-right-arrow.svg';
-import DoubleArrowLeft from '../assets/double-arrow-left.svg';
-import DoubleArrowRight from '../assets/double-arrow-right.svg';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+} from 'lucide-react';
 import { Button } from './ui/button';
 import {
   Select,
@@ -88,12 +90,9 @@ const Pagination: React.FC<PaginationProps> = ({
           size="icon-xs"
           onClick={handleFirstPage}
           disabled={currentPage === 1}
+          aria-label={t('pagination.firstPage')}
         >
-          <img
-            src={DoubleArrowLeft}
-            alt={t('pagination.firstPage')}
-            className="dark:brightness-200 dark:invert dark:sepia"
-          />
+          <ChevronsLeft />
         </Button>
         <Button
           type="button"
@@ -101,12 +100,9 @@ const Pagination: React.FC<PaginationProps> = ({
           size="icon-xs"
           onClick={handlePreviousPage}
           disabled={currentPage === 1}
+          aria-label={t('pagination.previousPage')}
         >
-          <img
-            src={SingleArrowLeft}
-            alt={t('pagination.previousPage')}
-            className="dark:brightness-200 dark:invert dark:sepia"
-          />
+          <ChevronLeft />
         </Button>
         <Button
           type="button"
@@ -114,12 +110,9 @@ const Pagination: React.FC<PaginationProps> = ({
           size="icon-xs"
           onClick={handleNextPage}
           disabled={currentPage === totalPages}
+          aria-label={t('pagination.nextPage')}
         >
-          <img
-            src={SingleArrowRight}
-            alt={t('pagination.nextPage')}
-            className="dark:brightness-200 dark:invert dark:sepia"
-          />
+          <ChevronRight />
         </Button>
         <Button
           type="button"
@@ -127,12 +120,9 @@ const Pagination: React.FC<PaginationProps> = ({
           size="icon-xs"
           onClick={handleLastPage}
           disabled={currentPage === totalPages}
+          aria-label={t('pagination.lastPage')}
         >
-          <img
-            src={DoubleArrowRight}
-            alt={t('pagination.lastPage')}
-            className="dark:brightness-200 dark:invert dark:sepia"
-          />
+          <ChevronsRight />
         </Button>
       </div>
     </div>

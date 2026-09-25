@@ -114,7 +114,6 @@
         "edit": "编辑",
         "save": "保存",
         "cancel": "取消",
-        "saving": "保存中…",
         "saveFailed": "无法保存页面，请重试。",
         "forbidden": "您没有权限编辑此页面。",
         "conflict": "此页面在您打开后已被修改，并已重新加载。您的编辑内容在下方——请重新应用并再次保存。",
@@ -327,7 +326,6 @@
         "subtitle": "配置“{{name}}”的分块与检索方式。",
         "subtitleGeneric": "配置此来源的分块与检索方式。",
         "save": "保存",
-        "saving": "保存中…",
         "readOnly": "您对此共享来源仅有查看权限，无法更改其配置。",
         "chunkingChangeHint": "您更改了分块设置。保存后需要重新索引此来源才能生效。",
         "prescreenInvalidHint": "请检查预筛选参数：获取的候选数量至少应等于文本块数量，且保留的文本块数不得超过获取的候选数量。",
@@ -678,7 +676,6 @@
       "body": "请求体",
       "deleteActionWarning": "您确定要删除操作 \"{{name}}\" 吗？",
       "save": "保存",
-      "saving": "保存中...",
       "saveFailed": "保存工具配置失败",
       "fieldName": "字段名称",
       "fieldType": "字段类型",
@@ -704,8 +701,6 @@
         "password": "密码",
         "timeout": "Timeout (seconds)",
         "testConnection": "Test Connection",
-        "testing": "Testing",
-        "saving": "Saving",
         "save": "Save",
         "cancel": "Cancel",
         "noAuth": "No Authentication",
@@ -795,7 +790,6 @@
         "installLink": "还没有 docsgpt-cli？安装它",
         "stepTwo": "2. 在提示时输入此代码：",
         "start": "生成代码",
-        "starting": "处理中…",
         "waitingForCli": "等待 CLI 兑换代码…",
         "cancel": "取消"
       }
@@ -810,9 +804,7 @@
       "addTitle": "添加自定义模型",
       "editTitle": "编辑自定义模型",
       "save": "保存",
-      "saving": "保存中",
       "testConnection": "测试连接",
-      "testing": "测试中",
       "testSuccess": "连接成功。",
       "testHintNew": "请填写 Base URL、模型 ID 和 API 密钥以启用连接测试。",
       "disabledBadge": "已禁用",
@@ -959,7 +951,6 @@
         "retry": "重试",
         "cancel": "取消",
         "submit": "创建令牌",
-        "submitting": "正在创建",
         "error": "创建令牌失败，请重试。"
       },
       "created": {
@@ -978,7 +969,6 @@
         "warning": "要为“{{name}}”生成新的密钥吗？当前密钥将立即失效，所有使用它的地方都需要更新。名称、权限范围和限制保持不变。",
         "newExpiration": "新的过期时间",
         "submit": "重新生成",
-        "submitting": "正在重新生成…",
         "error": "重新生成令牌失败，请重试。",
         "done": {
           "title": "令牌已重新生成",
@@ -1101,7 +1091,6 @@
           "pickerFailed": "无法打开文件选择器。请重试。",
           "selectedFiles": "已选择的文件",
           "selectFiles": "选择文件",
-          "loading": "加载中...",
           "noFilesSelected": "未选择文件或文件夹",
           "folders": "文件夹",
           "files": "文件",
@@ -1297,6 +1286,7 @@
   },
   "convTile": {
     "share": "分享",
+    "menu": "对话操作",
     "delete": "删除",
     "rename": "重命名",
     "save": "保存",
@@ -1397,7 +1387,8 @@
       "unpin": "取消固定代理",
       "open": "打开",
       "remove": "移除",
-      "draft": "草稿"
+      "draft": "草稿",
+      "actions": "代理操作"
     },
     "description": "发现并创建结合指令、额外知识和任意技能组合的DocsGPT自定义版本",
     "newAgent": "新建代理",

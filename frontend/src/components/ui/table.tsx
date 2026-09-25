@@ -2,11 +2,10 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-interface TableProps {
-  children: React.ReactNode;
-  className?: string;
+type TableProps = React.ComponentProps<'table'> & {
+  /** A min-width class; the table scrolls inside TableContainer below it. */
   minWidth?: string;
-}
+};
 
 interface TableContainerProps {
   children: React.ReactNode;
@@ -15,26 +14,24 @@ interface TableContainerProps {
   bordered?: boolean;
 }
 
-interface TableHeadProps {
-  children: React.ReactNode;
-  className?: string;
-}
-
-interface TableRowProps {
-  children: React.ReactNode;
-  className?: string;
-  onClick?: () => void;
-}
-
-interface TableCellProps {
-  children?: React.ReactNode;
-  className?: string;
+// `align` and `width` are the deprecated HTML attributes on th/td; these parts
+// take them as a text-alignment choice and a CSS width instead.
+type TableCellProps<T extends 'th' | 'td'> = Omit<
+  React.ComponentProps<T>,
+  'align' | 'width'
+> & {
+  /** A min-width class for the column. */
   minWidth?: string;
+  /** A CSS width that fixes the column (min, max and width). */
   width?: string;
   align?: 'left' | 'right' | 'center';
-  /** Span several columns, e.g. a detail row under the row it expands. */
-  colSpan?: number;
-}
+};
+
+const ALIGN_CLASSES = {
+  left: 'text-left',
+  right: 'text-right',
+  center: 'text-center',
+} as const;
 
 const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
   function TableContainer(
@@ -75,11 +72,11 @@ const TableContainer = React.forwardRef<HTMLDivElement, TableContainerProps>(
   },
 );
 
-const Table: React.FC<TableProps> = ({
-  children,
-  className = '',
+function Table({
+  className,
   minWidth = 'min-w-[600px]',
-}) => {
+  ...props
+}: TableProps) {
   return (
     <table
       data-slot="table"
@@ -88,39 +85,36 @@ const Table: React.FC<TableProps> = ({
         minWidth,
         className,
       )}
-    >
-      {children}
-    </table>
+      {...props}
+    />
   );
-};
+}
 
-const TableHead: React.FC<TableHeadProps> = ({ children, className = '' }) => {
+function TableHead({ className, ...props }: React.ComponentProps<'thead'>) {
   return (
     <thead
       data-slot="table-head"
       className={cn('bg-muted sticky top-0 z-10', className)}
-    >
-      {children}
-    </thead>
+      {...props}
+    />
   );
-};
+}
 
-const TableBody: React.FC<TableHeadProps> = ({ children, className = '' }) => {
+function TableBody({ className, ...props }: React.ComponentProps<'tbody'>) {
   return (
     <tbody
       data-slot="table-body"
       className={cn('[&>tr:last-child]:border-b-0', className)}
-    >
-      {children}
-    </tbody>
+      {...props}
+    />
   );
-};
+}
 
-const TableRow: React.FC<TableRowProps> = ({
-  children,
-  className = '',
+function TableRow({
+  className,
   onClick,
-}) => {
+  ...props
+}: React.ComponentProps<'tr'>) {
   return (
     <tr
       data-slot="table-row"
@@ -130,34 +124,24 @@ const TableRow: React.FC<TableRowProps> = ({
         className,
       )}
       onClick={onClick}
-    >
-      {children}
-    </tr>
+      {...props}
+    />
   );
-};
+}
 
-const TableHeader: React.FC<TableCellProps> = ({
-  children,
-  className = '',
+function TableHeader({
+  className,
   minWidth,
   width,
   align = 'left',
-  colSpan,
-}) => {
-  const alignmentClass =
-    align === 'right'
-      ? 'text-right'
-      : align === 'center'
-        ? 'text-center'
-        : 'text-left';
-
+  ...props
+}: TableCellProps<'th'>) {
   return (
     <th
       data-slot="table-header"
-      colSpan={colSpan}
       className={cn(
         'border-border text-muted-foreground relative box-border border-b px-2 py-3 text-sm font-medium lg:px-3',
-        alignmentClass,
+        ALIGN_CLASSES[align],
         minWidth,
         width && 'w-(--cell-width) max-w-(--cell-width) min-w-(--cell-width)',
         className,
@@ -165,34 +149,24 @@ const TableHeader: React.FC<TableCellProps> = ({
       style={
         width ? ({ '--cell-width': width } as React.CSSProperties) : undefined
       }
-    >
-      {children}
-    </th>
+      {...props}
+    />
   );
-};
+}
 
-const TableCell: React.FC<TableCellProps> = ({
-  children,
-  className = '',
+function TableCell({
+  className,
   minWidth,
   width,
   align = 'left',
-  colSpan,
-}) => {
-  const alignmentClass =
-    align === 'right'
-      ? 'text-right'
-      : align === 'center'
-        ? 'text-center'
-        : 'text-left';
-
+  ...props
+}: TableCellProps<'td'>) {
   return (
     <td
       data-slot="table-cell"
-      colSpan={colSpan}
       className={cn(
         'box-border px-2 py-2 text-sm lg:px-3',
-        alignmentClass,
+        ALIGN_CLASSES[align],
         minWidth,
         width && 'w-(--cell-width) max-w-(--cell-width) min-w-(--cell-width)',
         className,
@@ -200,11 +174,10 @@ const TableCell: React.FC<TableCellProps> = ({
       style={
         width ? ({ '--cell-width': width } as React.CSSProperties) : undefined
       }
-    >
-      {children}
-    </td>
+      {...props}
+    />
   );
-};
+}
 
 export {
   Table,

@@ -40,4 +40,14 @@ describe('Card', () => {
     expect(html).toContain('grid-cols-[1fr_auto]');
     expect(html).toContain('col-start-2');
   });
+
+  it('exposes padding and interactive as data attributes', () => {
+    const html = renderToStaticMarkup(
+      <Card padding="none" interactive>
+        Body
+      </Card>,
+    );
+    expect(html).toContain('data-padding="none"');
+    expect(html).toContain('data-interactive="true"');
+  });
 });

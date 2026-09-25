@@ -191,12 +191,7 @@ export default function AgentsList() {
               label={t('agents.searchPlaceholder')}
               labelSurface="background"
               shape="pill"
-              leftIcon={
-                <Search
-                  className="text-muted-foreground size-4"
-                  strokeWidth={1.75}
-                />
-              }
+              leftIcon={<Search className="text-muted-foreground size-4" />}
             />
           </div>
         </div>

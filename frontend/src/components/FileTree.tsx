@@ -1,17 +1,14 @@
-import React, { SyntheticEvent, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
-import Trash from '../assets/red-trash.svg';
+import { Trash2 } from 'lucide-react';
 import { SOURCE_FILE_TREE_ACCEPT_ATTR } from '../constants/fileUpload';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { selectToken } from '../preferences/preferenceSlice';
 import TreeBrowser from './tree/TreeBrowser';
-import type {
-  RowMenuContext,
-  TreeBrowserController,
-  TreeMenuOption,
-} from './tree/types';
+import type { MenuOption } from './ui/dropdown-menu';
+import type { RowMenuContext, TreeBrowserController } from './tree/types';
 import { useReingestSseWaiter } from './tree/useReingestWait';
 
 type QueuedOperation = {
@@ -211,18 +208,13 @@ const FileTree: React.FC<FileTreeProps> = ({
     name,
     isFile,
     defaultViewOption,
-  }: RowMenuContext): TreeMenuOption[] => {
+  }: RowMenuContext): MenuOption[] => {
     return [
       defaultViewOption,
       {
-        icon: Trash,
+        icon: Trash2,
         label: t('convTile.delete'),
-        onClick: (event: SyntheticEvent) => {
-          event.stopPropagation();
-          confirmDeleteItem(name, isFile);
-        },
-        iconWidth: 18,
-        iconHeight: 18,
+        onClick: () => confirmDeleteItem(name, isFile),
         variant: 'destructive',
       },
     ];

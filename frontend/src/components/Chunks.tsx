@@ -1,4 +1,4 @@
-import { Search as SearchIcon } from 'lucide-react';
+import { ArrowLeft, File, Folder, Search as SearchIcon } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -6,9 +6,6 @@ import { useSelector } from 'react-redux';
 import { cn } from '@/lib/utils';
 
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
-import FileIcon from '../assets/file.svg';
-import FolderIcon from '../assets/folder.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import {
@@ -326,7 +323,7 @@ const Chunks: React.FC<ChunksProps> = ({
                   : handleGoBack
             }
           >
-            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
+            <ArrowLeft />
           </Button>
 
           <div className="flex flex-wrap items-center">
@@ -510,7 +507,6 @@ const Chunks: React.FC<ChunksProps> = ({
           leftIcon={
             <SearchIcon
               className="text-muted-foreground size-4"
-              strokeWidth={1.75}
               aria-label="Search"
             />
           }
@@ -529,17 +525,17 @@ const Chunks: React.FC<ChunksProps> = ({
                     key={index}
                     title={result.path}
                     onClick={() => handleSearchResultClick(result)}
-                    className={`hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-center px-3 py-2 ${
+                    className={`hover:bg-muted flex cursor-pointer items-center px-3 py-2 ${
                       index !== fileSearchResults.length - 1
-                        ? 'border-border dark:border-border border-b'
+                        ? 'border-border border-b'
                         : ''
                     }`}
                   >
-                    <img
-                      src={result.isFile ? FileIcon : FolderIcon}
-                      alt={result.isFile ? 'File' : 'Folder'}
-                      className="mr-2 h-4 w-4 shrink-0"
-                    />
+                    {result.isFile ? (
+                      <File className="text-muted-foreground mr-2 size-4 shrink-0" />
+                    ) : (
+                      <Folder className="text-primary mr-2 size-4 shrink-0" />
+                    )}
                     <span className="truncate text-sm">
                       {result.name ||
                         result.path.split('/').pop() ||
@@ -568,7 +564,7 @@ const Chunks: React.FC<ChunksProps> = ({
           {!editingChunk && !isAddingChunk ? (
             <>
               <div className="mb-3 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-                <div className="border-border dark:border-border flex h-[38px] w-full flex-1 items-center overflow-hidden rounded-md border">
+                <div className="border-border flex h-[38px] w-full flex-1 items-center overflow-hidden rounded-md border">
                   <div className="text-foreground flex h-full items-center px-4 font-medium whitespace-nowrap">
                     {totalChunks > 999999
                       ? `${(totalChunks / 1000000).toFixed(2)}M`
@@ -577,7 +573,7 @@ const Chunks: React.FC<ChunksProps> = ({
                         : totalChunks}{' '}
                     {t('settings.sources.chunks')}
                   </div>
-                  <div className="bg-border dark:bg-border h-full w-px"></div>
+                  <div className="bg-border h-full w-px"></div>
                   <div className="h-full flex-1 px-3 py-2">
                     <Input
                       type="text"
@@ -622,7 +618,7 @@ const Chunks: React.FC<ChunksProps> = ({
                     filteredChunks.map((chunk, index) => (
                       <div
                         key={index}
-                        className="border-border dark:border-border relative flex h-[197px] w-full max-w-[487px] transform cursor-pointer flex-col justify-between overflow-hidden rounded-md border transition-transform duration-200 hover:scale-105"
+                        className="border-border relative flex h-[197px] w-full max-w-[487px] transform cursor-pointer flex-col justify-between overflow-hidden rounded-md border transition-transform duration-200 hover:scale-105"
                         onClick={() => {
                           setEditingChunk(chunk);
                           setEditingTitle(chunk.metadata?.title || '');
@@ -650,7 +646,7 @@ const Chunks: React.FC<ChunksProps> = ({
             </>
           ) : isAddingChunk ? (
             <div className="w-full">
-              <div className="border-border dark:border-border relative overflow-hidden rounded-lg border">
+              <div className="border-border relative overflow-hidden rounded-lg border">
                 <LineNumberedTextarea
                   value={editingText}
                   onChange={setEditingText}
@@ -662,7 +658,7 @@ const Chunks: React.FC<ChunksProps> = ({
           ) : (
             editingChunk && (
               <div className="w-full">
-                <div className="border-border dark:border-border relative flex w-full flex-col overflow-hidden rounded-md border">
+                <div className="border-border relative flex w-full flex-col overflow-hidden rounded-md border">
                   <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
                     <div className="text-muted-foreground text-sm">
                       {formatChunkTokens(editingChunk.metadata)}{' '}

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { ChevronRight, MoreHorizontal } from 'lucide-react';
 import { Slot } from 'radix-ui';
 
-import { cn } from '@/lib/utils';
+import { cn, focusRing } from '@/lib/utils';
 
 function Breadcrumb({ ...props }: React.ComponentProps<'nav'>) {
   return <nav aria-label="breadcrumb" data-slot="breadcrumb" {...props} />;
@@ -44,7 +44,7 @@ function BreadcrumbLink({
     <Comp
       data-slot="breadcrumb-link"
       className={cn(
-        'hover:text-foreground focus-visible:ring-ring/50 rounded-sm transition-colors outline-none focus-visible:ring-3',
+        `${focusRing} hover:text-foreground rounded-sm transition-colors outline-none`,
         className,
       )}
       {...props}

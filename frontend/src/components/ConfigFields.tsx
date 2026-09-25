@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 
 import { ConfigRequirements } from '../modals/types';
+import { FormField } from './ui/form-field';
 import { Input } from './ui/input';
-import { Label } from './ui/label';
 import {
   Select,
   SelectContent,
@@ -59,26 +59,22 @@ export default function ConfigFields({
         const hasEncrypted =
           isEditing && spec.secret && hasEncryptedCredentials;
         const placeholder = hasEncrypted ? '••••••••' : '';
-        const hasError = !!errors[key];
+        const error = errors[key] || undefined;
 
         if (spec.enum) {
           return (
-            <div key={key} className="flex flex-col gap-1.5">
-              <Label htmlFor={key}>
-                {spec.label || key}
-                {spec.required && <span className="text-destructive">*</span>}
-              </Label>
+            <FormField
+              key={key}
+              id={key}
+              label={spec.label || key}
+              required={!!spec.required}
+              error={error}
+            >
               <Select
                 value={value || spec.default || ''}
                 onValueChange={(v) => onChange(key, v)}
               >
-                <SelectTrigger
-                  id={key}
-                  variant="ghost"
-                  size="lg"
-                  aria-invalid={hasError || undefined}
-                  className="w-full"
-                >
+                <SelectTrigger variant="ghost" size="lg" className="w-full">
                   <SelectValue placeholder={spec.label || key} />
                 </SelectTrigger>
                 <SelectContent>
@@ -90,19 +86,17 @@ export default function ConfigFields({
                   ))}
                 </SelectContent>
               </Select>
-              {hasError && (
-                <p className="text-destructive text-xs">{errors[key]}</p>
-              )}
-            </div>
+            </FormField>
           );
         }
 
         return (
-          <div key={key} className="flex flex-col gap-1.5">
-            <Label htmlFor={key}>
-              {spec.label || key}
-              {spec.required && <span className="text-destructive">*</span>}
-            </Label>
+          <FormField
+            key={key}
+            label={spec.label || key}
+            required={!!spec.required}
+            error={error}
+          >
             <Input
               id={key}
               type={
@@ -130,12 +124,8 @@ export default function ConfigFields({
               max={
                 spec.type === 'number' && key === 'timeout' ? 300 : undefined
               }
-              aria-invalid={hasError || undefined}
             />
-            {hasError && (
-              <p className="text-destructive text-xs">{errors[key]}</p>
-            )}
-          </div>
+          </FormField>
         );
       })}
     </div>

@@ -39,3 +39,54 @@ describe('SelectItem', () => {
     expect(item!.className).toContain('data-highlighted:bg-muted');
   });
 });
+
+describe('SelectTrigger sizes', () => {
+  const trigger = (props: Parameters<typeof SelectTrigger>[0]) => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => {
+      root!.render(
+        <Select value="a">
+          <SelectTrigger aria-label="Retriever" {...props}>
+            a
+          </SelectTrigger>
+        </Select>,
+      );
+    });
+    return document.querySelector<HTMLElement>('[data-slot="select-trigger"]')!;
+  };
+
+  it('exposes its variant as a data attribute', () => {
+    expect(trigger({}).dataset.variant).toBe('default');
+  });
+
+  it('size="field" is the 42px form-row height, like SelectTrigger lg', () => {
+    const el = trigger({ size: 'field' });
+    expect(el.dataset.size).toBe('field');
+    expect(el.className.split(' ')).toContain('h-10.5');
+  });
+
+  it.each(['default', 'lg', 'field'] as const)(
+    'a %s pill starts its text 21px in (px-5)',
+    (size) => {
+      const classes = trigger({ size, shape: 'pill' }).className.split(' ');
+      expect(classes).toContain('rounded-full');
+      expect(classes).toContain('px-5');
+      expect(classes).not.toContain('px-3');
+      expect(classes).not.toContain('px-4');
+    },
+  );
+
+  it('a small pill keeps px-3', () => {
+    const classes = trigger({ size: 'sm', shape: 'pill' }).className.split(' ');
+    expect(classes).toContain('px-3');
+    expect(classes).not.toContain('px-5');
+  });
+
+  it('shows the not-allowed cursor while disabled', () => {
+    const classes = trigger({}).className.split(' ');
+    expect(classes).toContain('disabled:cursor-not-allowed');
+    expect(classes).toContain('focus-visible:ring-3');
+  });
+});

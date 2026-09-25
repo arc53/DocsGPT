@@ -54,6 +54,7 @@ function Progress({
     <ProgressPrimitive.Root
       data-slot="progress"
       data-variant={variant}
+      data-size={size}
       value={clamped}
       className={cn(progressVariants({ size }), className)}
       {...props}

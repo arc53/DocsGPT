@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { Check, RefreshCw } from 'lucide-react';
 
 import userService from '../api/services/userService';
-import CheckmarkIcon from '../assets/checkMark2.svg';
-import SyncIcon from '../assets/sync.svg';
+import { Spinner } from '@/components/ui/spinner';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -122,11 +122,19 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
               : t('settings.sources.sync')
         }
       >
-        <img
-          src={syncDone ? CheckmarkIcon : SyncIcon}
-          alt={t('settings.sources.sync')}
-          className={`mr-2 h-4 w-4 brightness-0 invert filter ${isSyncing ? 'animate-spin' : ''}`}
-        />
+        {syncDone ? (
+          <Check className="mr-2 size-4" />
+        ) : isSyncing ? (
+          // The busy state shows its percentage, so it keeps the label and
+          // draws the app's ring spinner at icon size (DESIGN.md, Button).
+          <Spinner
+            size="sm"
+            className="mr-2 size-4"
+            label={t('settings.sources.syncing')}
+          />
+        ) : (
+          <RefreshCw className="mr-2 size-4" />
+        )}
         {isSyncing
           ? `${syncProgress}%`
           : syncDone

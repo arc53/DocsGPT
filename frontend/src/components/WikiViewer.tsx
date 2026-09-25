@@ -1,4 +1,4 @@
-import { BookOpen } from 'lucide-react';
+import { ArrowLeft, BookOpen } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -6,10 +6,10 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import { selectToken } from '../preferences/preferenceSlice';
 import { decodeJwtPayload } from '../utils/jwtUtils';
 import { Button } from './ui/button';
+import { Textarea } from './ui/textarea';
 import SkeletonLoader from './SkeletonLoader';
 import {
   WikiPageNode,
@@ -219,7 +219,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
           onClick={onBackToDocuments}
           aria-label={t('settings.sources.backToAll')}
         >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
+          <ArrowLeft />
         </Button>
         <span className="text-primary font-semibold wrap-break-word">
           {sourceName}
@@ -228,12 +228,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
       </div>
 
       <div className="bg-muted/60 text-muted-foreground dark:bg-accent/40 mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-xs">
-        <BookOpen
-          size={16}
-          strokeWidth={1.75}
-          className="mt-0.5 shrink-0"
-          aria-hidden="true"
-        />
+        <BookOpen size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
         <p>
           <span className="text-foreground font-medium">
             {t('settings.sources.wiki.livingTitle')}
@@ -305,11 +300,12 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
 
               {isEditing ? (
                 <div className="flex flex-col gap-3">
-                  <textarea
+                  <Textarea
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     placeholder={t('settings.sources.wiki.editPlaceholder')}
-                    className="border-border bg-card text-foreground min-h-[320px] w-full resize-y rounded-md border p-3 font-mono text-sm leading-relaxed"
+                    variant="filled"
+                    className="min-h-[320px] font-mono"
                     aria-label={selectedPath}
                   />
                   <div className="flex items-center gap-2">
@@ -317,11 +313,9 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
                       type="button"
                       size="sm"
                       onClick={handleSave}
-                      disabled={saving}
+                      loading={saving}
                     >
-                      {saving
-                        ? t('settings.sources.wiki.saving')
-                        : t('settings.sources.wiki.save')}
+                      {t('settings.sources.wiki.save')}
                     </Button>
                     <Button
                       type="button"

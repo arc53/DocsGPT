@@ -3,7 +3,6 @@ import {
   ChevronRight,
   FileText,
   MessageSquare,
-  MoreVertical,
   Pencil,
   Plus,
   Trash2,
@@ -30,14 +29,10 @@ import { Avatar } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { ActionMenu } from '../components/ui/dropdown-menu';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -193,7 +188,7 @@ export default function Teams() {
 
   // Lucide icon for a grant's resource type, shown in the row's type tile.
   const resourceTypeIcon = (type: string): ReactNode => {
-    const props = { size: 16, strokeWidth: 1.75, 'aria-hidden': true } as const;
+    const props = { size: 16, 'aria-hidden': true } as const;
     switch (type) {
       case 'agent':
         return <Bot {...props} />;
@@ -523,7 +518,7 @@ export default function Teams() {
           </p>
         </div>
         <Button className="shrink-0" onClick={openCreateModal}>
-          <Plus size={16} strokeWidth={1.75} aria-hidden />
+          <Plus aria-hidden />
           {t('settings.teams.newTeam')}
         </Button>
       </div>
@@ -544,7 +539,7 @@ export default function Teams() {
                 className="mt-4"
                 onClick={openCreateModal}
               >
-                <Plus size={16} strokeWidth={1.75} aria-hidden />
+                <Plus aria-hidden />
                 {t('settings.teams.newTeam')}
               </Button>,
             )
@@ -571,7 +566,6 @@ export default function Teams() {
                       <ChevronRight
                         className="text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5"
                         size={18}
-                        strokeWidth={1.75}
                         aria-hidden
                       />
                     </div>
@@ -585,7 +579,7 @@ export default function Teams() {
                       </p>
                     )}
                     <div className="text-muted-foreground mt-auto flex items-center gap-1.5 text-xs">
-                      <Users size={13} strokeWidth={1.75} aria-hidden />
+                      <Users size={13} aria-hidden />
                       <span>
                         {t(
                           (team.member_count ?? 0) === 1
@@ -639,31 +633,23 @@ export default function Teams() {
               </div>
             </div>
             {isAdmin && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost-muted"
-                    size="icon-sm"
-                    className="shrink-0"
-                    aria-label={t('settings.teams.teamActions')}
-                  >
-                    <MoreVertical size={18} strokeWidth={1.75} aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[160px]">
-                  <DropdownMenuItem onSelect={openEditModal}>
-                    <Pencil size={15} strokeWidth={1.75} aria-hidden />
-                    <span>{t('settings.teams.editTeam')}</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onSelect={() => requestDeleteTeam(selected)}
-                  >
-                    <Trash2 size={15} strokeWidth={1.75} aria-hidden />
-                    <span>{t('settings.teams.deleteTeam')}</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <ActionMenu
+                options={[
+                  {
+                    label: t('settings.teams.editTeam'),
+                    icon: Pencil,
+                    onClick: openEditModal,
+                  },
+                  {
+                    label: t('settings.teams.deleteTeam'),
+                    icon: Trash2,
+                    variant: 'destructive',
+                    onClick: () => requestDeleteTeam(selected),
+                  },
+                ]}
+                triggerLabel={t('settings.teams.teamActions')}
+                className="shrink-0"
+              />
             )}
           </div>
 
@@ -685,7 +671,7 @@ export default function Teams() {
                   className="shrink-0"
                   onClick={openAddMemberModal}
                 >
-                  <Plus size={15} strokeWidth={1.75} aria-hidden />
+                  <Plus aria-hidden />
                   {t('settings.teams.addMember')}
                 </Button>
               )}
@@ -755,7 +741,7 @@ export default function Teams() {
                         title={t('settings.teams.remove')}
                         onClick={() => requestRemoveMember(m.user_id)}
                       >
-                        <Trash2 size={16} strokeWidth={1.75} aria-hidden />
+                        <Trash2 aria-hidden />
                       </Button>
                     )}
                   </li>
@@ -802,7 +788,7 @@ export default function Teams() {
                         title={t('settings.teams.unshare')}
                         onClick={() => handleUnshare(g)}
                       >
-                        <Trash2 size={16} strokeWidth={1.75} aria-hidden />
+                        <Trash2 aria-hidden />
                       </Button>
                     )}
                   </li>
@@ -823,14 +809,13 @@ export default function Teams() {
         title={t('settings.teams.createTeam')}
         description={t('settings.teams.createTeamDescription')}
         footer={
-          <>
-            <Button variant="ghost" onClick={closeCreateModal}>
-              {t('cancel')}
-            </Button>
-            <Button onClick={handleCreate} disabled={!newTeamName.trim()}>
-              {t('settings.teams.create')}
-            </Button>
-          </>
+          <ModalActions
+            cancelLabel={t('cancel')}
+            onCancel={closeCreateModal}
+            submitLabel={t('settings.teams.create')}
+            onSubmit={handleCreate}
+            disabled={!newTeamName.trim()}
+          />
         }
       >
         <Input
@@ -856,14 +841,13 @@ export default function Teams() {
         mobileVariant="sheet"
         title={t('settings.teams.editTeam')}
         footer={
-          <>
-            <Button variant="ghost" onClick={closeEditModal}>
-              {t('cancel')}
-            </Button>
-            <Button onClick={handleEditSave} disabled={!editName.trim()}>
-              {t('settings.teams.save')}
-            </Button>
-          </>
+          <ModalActions
+            cancelLabel={t('cancel')}
+            onCancel={closeEditModal}
+            submitLabel={t('settings.teams.save')}
+            onSubmit={handleEditSave}
+            disabled={!editName.trim()}
+          />
         }
       >
         <div className="flex flex-col gap-4">
@@ -875,13 +859,7 @@ export default function Teams() {
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
           />
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="team-edit-description"
-              className="text-foreground text-sm font-medium"
-            >
-              {t('settings.teams.descriptionLabel')}
-            </label>
+          <FormField label={t('settings.teams.descriptionLabel')}>
             <Textarea
               id="team-edit-description"
               rows={3}
@@ -890,7 +868,7 @@ export default function Teams() {
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
             />
-          </div>
+          </FormField>
         </div>
         {editError && (
           <p className="text-destructive mt-3 text-sm" role="alert">
@@ -909,14 +887,13 @@ export default function Teams() {
         title={t('settings.teams.addMemberTitle')}
         description={t('settings.teams.addMemberDescription')}
         footer={
-          <>
-            <Button variant="ghost" onClick={closeAddMemberModal}>
-              {t('cancel')}
-            </Button>
-            <Button onClick={handleAddMember} disabled={!newMemberEmail.trim()}>
-              {t('settings.teams.add')}
-            </Button>
-          </>
+          <ModalActions
+            cancelLabel={t('cancel')}
+            onCancel={closeAddMemberModal}
+            submitLabel={t('settings.teams.add')}
+            onSubmit={handleAddMember}
+            disabled={!newMemberEmail.trim()}
+          />
         }
       >
         <div className="flex flex-col gap-4">
@@ -930,13 +907,10 @@ export default function Teams() {
             onChange={(e) => setNewMemberEmail(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddMember()}
           />
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="add-member-role"
-              className="text-foreground text-sm font-medium"
-            >
-              {t('settings.teams.memberRoleLabel')}
-            </label>
+          <FormField
+            id="add-member-role"
+            label={t('settings.teams.memberRoleLabel')}
+          >
             <Select
               value={newMemberRole}
               onValueChange={(value) => setNewMemberRole(value as TeamRole)}
@@ -956,7 +930,7 @@ export default function Teams() {
                 </SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </FormField>
         </div>
         {addMemberError && (
           <p className="text-destructive mt-3 text-sm" role="alert">

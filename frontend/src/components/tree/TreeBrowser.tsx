@@ -1,5 +1,4 @@
 import React, {
-  SyntheticEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -11,11 +10,7 @@ import { useSelector } from 'react-redux';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatBytes } from '../../utils/stringUtils';
 import userService from '../../api/services/userService';
-import ArrowLeft from '../../assets/arrow-left.svg';
-import EyeView from '../../assets/eye-view.svg';
-import FileIcon from '../../assets/file.svg';
-import FolderIcon from '../../assets/folder.svg';
-import ThreeDots from '../../assets/three-dots.svg';
+import { ArrowLeft, Eye, File, Folder } from 'lucide-react';
 import { useLoaderState, useOutsideAlerter } from '../../hooks';
 import Chunks from '../Chunks';
 import SkeletonLoader from '../SkeletonLoader';
@@ -30,19 +25,13 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
+import { ActionMenu, type MenuOption } from '../ui/dropdown-menu';
 import type {
   DirectoryStructure,
   FileNode,
   RowMenuContext,
   SearchResult,
   TreeBrowserController,
-  TreeMenuOption,
 } from './types';
 
 /** Column ordering for the size/tokens pair. */
@@ -70,7 +59,7 @@ export interface TreeBrowserProps {
    * Builds the row action menu. Defaults to a single "View" option.
    * Wrappers can extend this with Delete, etc.
    */
-  getRowMenuOptions?: (ctx: RowMenuContext) => TreeMenuOption[];
+  getRowMenuOptions?: (ctx: RowMenuContext) => MenuOption[];
   /** Modals / overlays the wrapper wants rendered alongside the tree. */
   extraContent?: React.ReactNode;
   /**
@@ -397,20 +386,16 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     name: string,
     isFile: boolean,
     displayName?: string,
-  ): TreeMenuOption => ({
-    icon: EyeView,
+  ): MenuOption => ({
+    icon: Eye,
     label: t('settings.sources.view'),
-    onClick: (event: SyntheticEvent) => {
-      event.stopPropagation();
+    onClick: () => {
       if (isFile) {
         handleFileClick(name, displayName);
       } else {
         navigateToDirectory(name);
       }
     },
-    iconWidth: 18,
-    iconHeight: 18,
-    variant: 'default',
   });
 
   const resolveRowMenuOptions = (
@@ -418,7 +403,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     isFile: boolean,
     itemId: string,
     displayName?: string,
-  ): TreeMenuOption[] => {
+  ): MenuOption[] => {
     const defaultViewOption = buildDefaultViewOption(name, isFile, displayName);
     if (getRowMenuOptions) {
       return getRowMenuOptions({
@@ -438,45 +423,11 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     itemId: string,
     displayName?: string,
   ) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={(e) => e.stopPropagation()}
-          className="h-[35px] w-6 shrink-0"
-          aria-label={t('settings.sources.menuAlt')}
-        >
-          <img
-            src={ThreeDots}
-            alt={t('settings.sources.menuAlt')}
-            className="opacity-60 hover:opacity-100"
-          />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[144px]">
-        {resolveRowMenuOptions(name, isFile, itemId, displayName).map(
-          (option, idx) => (
-            <DropdownMenuItem
-              key={idx}
-              variant={option.variant}
-              onSelect={(event) => {
-                option.onClick(event as unknown as SyntheticEvent);
-              }}
-            >
-              <img
-                src={option.icon}
-                alt=""
-                width={option.iconWidth ?? 16}
-                height={option.iconHeight ?? 16}
-              />
-              <span>{option.label}</span>
-            </DropdownMenuItem>
-          ),
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <ActionMenu
+      options={resolveRowMenuOptions(name, isFile, itemId, displayName)}
+      triggerLabel={t('settings.sources.menuAlt')}
+      className="shrink-0"
+    />
   );
 
   /**
@@ -535,11 +486,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
             <TableRow key="parent-dir" onClick={navigateUp}>
               <TableCell width="40%" align="left">
                 <div className="flex items-center">
-                  <img
-                    src={FolderIcon}
-                    alt={t('settings.sources.parentFolderAlt')}
-                    className="mr-2 h-4 w-4 shrink-0"
-                  />
+                  <Folder className="text-primary mr-2 size-4 shrink-0" />
                   <span className="truncate">..</span>
                 </div>
               </TableCell>
@@ -565,11 +512,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         <TableRow key={itemId} onClick={() => navigateToDirectory(name)}>
           <TableCell width="40%" align="left">
             <div className="flex min-w-0 items-center">
-              <img
-                src={FolderIcon}
-                alt={t('settings.sources.folderAlt')}
-                className="mr-2 h-4 w-4 shrink-0"
-              />
+              <Folder className="text-primary mr-2 size-4 shrink-0" />
               <span className="truncate">{name}</span>
             </div>
           </TableCell>
@@ -596,11 +539,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         >
           <TableCell width="40%" align="left">
             <div className="flex min-w-0 items-center">
-              <img
-                src={FileIcon}
-                alt={t('settings.sources.fileAlt')}
-                className="mr-2 h-4 w-4 shrink-0"
-              />
+              <File className="text-muted-foreground mr-2 size-4 shrink-0" />
               <span className="truncate">{displayName}</span>
             </div>
           </TableCell>
@@ -647,21 +586,17 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
                   key={index}
                   onClick={() => handleSearchSelect(result)}
                   title={result.path}
-                  className={`hover:bg-muted dark:hover:bg-muted flex min-w-0 cursor-pointer items-center px-3 py-2 ${
+                  className={`hover:bg-muted flex min-w-0 cursor-pointer items-center px-3 py-2 ${
                     index !== searchResults.length - 1
-                      ? 'border-border dark:border-border border-b'
+                      ? 'border-border border-b'
                       : ''
                   }`}
                 >
-                  <img
-                    src={result.isFile ? FileIcon : FolderIcon}
-                    alt={
-                      result.isFile
-                        ? t('settings.sources.fileAlt')
-                        : t('settings.sources.folderAlt')
-                    }
-                    className="mr-2 h-4 w-4 shrink-0"
-                  />
+                  {result.isFile ? (
+                    <File className="text-muted-foreground mr-2 size-4 shrink-0" />
+                  ) : (
+                    <Folder className="text-primary mr-2 size-4 shrink-0" />
+                  )}
                   <span className="flex-1 truncate text-sm">{result.name}</span>
                 </div>
               ))
@@ -682,8 +617,9 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           shape="pill"
           className="mr-3"
           onClick={handleBackNavigation}
+          aria-label={t('settings.sources.back')}
         >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
+          <ArrowLeft />
         </Button>
 
         <div className="flex flex-wrap items-center">

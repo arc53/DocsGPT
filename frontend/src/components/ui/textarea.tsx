@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
-import { cn } from '@/lib/utils';
+import { useFormFieldControl } from '@/components/ui/form-field';
+import { cn, focusRing, invalidState, fieldFrame } from '@/lib/utils';
 
 const textareaVariants = cva(
-  'text-foreground placeholder:text-muted-foreground border-border selection:bg-primary selection:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive flex w-full min-w-0 border bg-transparent shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50',
+  `${focusRing} ${invalidState} ${fieldFrame} text-foreground placeholder:text-muted-foreground border-border selection:bg-primary selection:text-primary-foreground focus-visible:border-ring flex w-full min-w-0 bg-transparent disabled:cursor-not-allowed disabled:opacity-50`,
   {
     variants: {
       size: {
@@ -37,13 +38,14 @@ type TextareaProps = React.ComponentProps<'textarea'> &
   VariantProps<typeof textareaVariants>;
 
 /** Multi-line sibling of Input; shares its border, ring and error styling. */
-function Textarea({
-  className,
-  size = 'default',
-  resize = 'vertical',
-  variant = 'default',
-  ...props
-}: TextareaProps) {
+function Textarea(textareaProps: TextareaProps) {
+  const {
+    className,
+    size = 'default',
+    resize = 'vertical',
+    variant = 'default',
+    ...props
+  } = useFormFieldControl(textareaProps);
   return (
     <textarea
       data-slot="textarea"

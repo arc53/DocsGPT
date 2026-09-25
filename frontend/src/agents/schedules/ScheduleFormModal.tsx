@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
@@ -16,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { TimePicker } from '@/components/ui/time-picker';
 
 import { Modal } from '../../components/ui/modal';
@@ -196,15 +199,32 @@ export default function ScheduleFormModal({
       mobileVariant="sheet"
       className="w-[min(560px,92vw)]"
       contentClassName="max-h-[80vh]"
+      footer={
+        <Button
+          type="button"
+          size="lg"
+          shape="pill"
+          loading={submitting}
+          onClick={submit}
+        >
+          {isEdit
+            ? t('agents.schedules.modal.save')
+            : t('agents.schedules.modal.create')}
+        </Button>
+      }
     >
       <div className="flex flex-col gap-5">
         <div className="flex items-start gap-3 pr-6">
-          <input
+          <Input
             type="text"
+            variant="bare"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t('agents.schedules.modal.namePlaceholder')}
-            className="text-foreground placeholder:text-muted-foreground w-full bg-transparent text-xl font-semibold outline-none"
+            /* eslint-disable-next-line shadcn/no-restyle -- the schedule's
+               name is the dialog's editable title, so the bare field keeps
+               title type (20px semibold); DESIGN.md Approved exceptions. */
+            className="w-full text-xl font-semibold"
             aria-label={t('agents.schedules.modal.namePlaceholder')}
           />
         </div>
@@ -252,35 +272,16 @@ export default function ScheduleFormModal({
           </div>
         </div>
 
-        <label className="flex flex-col gap-2">
-          <span className="text-foreground text-sm font-medium">
-            {t('agents.schedules.modal.instructionsLabel')}
-          </span>
-          <textarea
+        <FormField label={t('agents.schedules.modal.instructionsLabel')}>
+          <Textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             placeholder={t('agents.schedules.modal.instructionsPlaceholder')}
             rows={5}
-            className="border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 rounded-md border px-3 py-2 text-sm outline-none focus-visible:ring-2"
           />
-        </label>
+        </FormField>
 
         {error && <p className="text-destructive text-sm">{error}</p>}
-
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            disabled={submitting}
-            onClick={submit}
-            shape="pill"
-          >
-            {submitting
-              ? '…'
-              : isEdit
-                ? t('agents.schedules.modal.save')
-                : t('agents.schedules.modal.create')}
-          </Button>
-        </div>
       </div>
     </Modal>
   );

@@ -163,4 +163,95 @@ describe('Button variants', () => {
     expect(classes).not.toContain('focus-visible:ring-3');
     expect(classes).not.toContain('text-primary');
   });
+
+  it('variant="ghost-on-accent" hovers with a foreground tint, not accent', () => {
+    // It sits on rows that are already bg-accent, where an accent hover
+    // would be invisible.
+    const classes = buttonVariants({ variant: 'ghost-on-accent' }).split(' ');
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-foreground');
+    expect(classes).toContain('hover:bg-foreground/15');
+    expect(classes).toContain('dark:hover:bg-foreground/20');
+    expect(classes).not.toContain('hover:bg-accent');
+  });
+
+  it('variant="ghost-destructive-on-accent" hovers with a destructive tint', () => {
+    const classes = buttonVariants({
+      variant: 'ghost-destructive-on-accent',
+    }).split(' ');
+    expect(classes).toContain('text-muted-foreground');
+    expect(classes).toContain('hover:text-destructive');
+    expect(classes).toContain('hover:bg-destructive/15');
+    expect(classes).toContain('dark:hover:bg-destructive/25');
+    expect(classes).not.toContain('hover:bg-accent');
+  });
+});
+
+describe('Button loading', () => {
+  const parse = (element: React.ReactElement) => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(element);
+    return host.firstElementChild as HTMLButtonElement;
+  };
+
+  it('disables the button and marks it busy', () => {
+    const button = parse(<Button loading>Save</Button>);
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.hasAttribute('data-loading')).toBe(true);
+  });
+
+  it('keeps the label in place, hidden, so the width holds', () => {
+    const button = parse(
+      <Button loading size="lg" shape="pill">
+        Create token
+      </Button>,
+    );
+    const label = button.querySelector('span.invisible')!;
+    expect(label.textContent).toBe('Create token');
+    expect(label.className).toContain('contents');
+    expect(button.className).toContain('relative');
+  });
+
+  it('centres a 16px spinner over the label', () => {
+    const button = parse(<Button loading>Save</Button>);
+    const overlay = button.querySelector('span.absolute')!;
+    expect(overlay.className).toContain('inset-0');
+    const spinner = overlay.querySelector('[data-slot="spinner"]')!;
+    expect(spinner.className).toContain('size-4');
+    expect(spinner.className).not.toContain('size-5');
+  });
+
+  it('renders plainly when not loading', () => {
+    const button = parse(<Button loading={false}>Save</Button>);
+    expect(button.disabled).toBe(false);
+    expect(button.hasAttribute('aria-busy')).toBe(false);
+    expect(button.innerHTML).toBe('Save');
+  });
+});
+
+describe('Button loading with an icon', () => {
+  it('keeps the icon padding while the label is wrapped', () => {
+    const html = renderToStaticMarkup(
+      <Button loading size="lg" shape="pill">
+        <svg />
+        Download
+      </Button>,
+    );
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    const button = host.firstElementChild as HTMLButtonElement;
+    // The label wrapper is marked, and every icon-padding rule also matches an
+    // svg one level down inside it, so the width doesn't grow.
+    expect(
+      button.querySelector('[data-slot="button-label"]')?.querySelector('svg'),
+    ).not.toBeNull();
+    const iconRules = button.className
+      .split(' ')
+      .filter((c) => c.startsWith('has-['));
+    expect(iconRules.length).toBeGreaterThan(0);
+    for (const rule of iconRules) {
+      expect(rule).toContain('>[data-slot=button-label]>svg');
+    }
+  });
 });

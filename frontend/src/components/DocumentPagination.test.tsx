@@ -73,4 +73,20 @@ describe('DocumentPagination rows-per-page', () => {
     await act(async () => option!.click());
     expect(onChange).toHaveBeenCalledWith(50);
   });
+
+  it('labels the page buttons by their action', async () => {
+    await render();
+    const labels = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button[aria-label]'),
+    ).map((b) => b.getAttribute('aria-label'));
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'pagination.firstPage',
+        'pagination.previousPage',
+        'pagination.nextPage',
+        'pagination.lastPage',
+      ]),
+    );
+    expect(container.querySelector('img')).toBeNull();
+  });
 });

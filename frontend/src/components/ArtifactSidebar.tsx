@@ -17,7 +17,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { isDocumentArtifact, type DocumentArtifact } from './artifactViewUtils';
 import CopyButton from './CopyButton';
 import DocumentArtifactView from './DocumentArtifactView';
-import Spinner from './Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Sheet, SheetContent } from './ui/sheet';

@@ -59,6 +59,7 @@ export function TimePicker({
 
   return (
     <div
+      data-slot="time-picker"
       className={cn('inline-flex items-center gap-1.5', className)}
       role="group"
       aria-label={ariaLabel}
@@ -74,9 +75,8 @@ export function TimePicker({
         onValueChange={(v) => emit(Number(v), minute)}
       >
         <SelectTrigger
-          size="sm"
           aria-label={ariaLabel ? `${ariaLabel} hours` : 'Hours'}
-          className="h-9 w-[4.25rem]"
+          className="w-17"
         >
           <SelectValue>{pad2(hour)}</SelectValue>
         </SelectTrigger>
@@ -94,9 +94,8 @@ export function TimePicker({
         onValueChange={(v) => emit(hour, Number(v))}
       >
         <SelectTrigger
-          size="sm"
           aria-label={ariaLabel ? `${ariaLabel} minutes` : 'Minutes'}
-          className="h-9 w-[4.25rem]"
+          className="w-17"
         >
           <SelectValue>{pad2(minute)}</SelectValue>
         </SelectTrigger>

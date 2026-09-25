@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -178,8 +177,12 @@ export default function TestRetrievalModal({
     <Modal
       open={modalState === 'ACTIVE'}
       onOpenChange={(o) => !o && closeModal()}
-      hideTitle
       title={tr('title')}
+      description={
+        document?.name
+          ? tr('subtitle', { name: document.name })
+          : tr('subtitleGeneric')
+      }
       size="lg"
       mobileVariant="sheet"
       // Same width ramp and padding as PromptsModal so the two large modals
@@ -188,15 +191,6 @@ export default function TestRetrievalModal({
       contentClassName="max-h-[70vh]"
     >
       <div className="flex flex-col">
-        <p className="text-foreground mb-1 text-xl font-semibold">
-          {tr('title')}
-        </p>
-        <p className="text-muted-foreground mb-6 text-sm">
-          {document?.name
-            ? tr('subtitle', { name: document.name })
-            : tr('subtitleGeneric')}
-        </p>
-
         <div className="flex flex-col gap-4">
           <div className="flex flex-row items-center gap-2">
             <Input
@@ -217,9 +211,10 @@ export default function TestRetrievalModal({
               onClick={handleRun}
               size="field"
               shape="pill"
-              className="min-w-[96px] shrink-0"
+              loading={running}
+              className="shrink-0"
             >
-              {running ? <Spinner size="small" /> : tr('run')}
+              {tr('run')}
             </Button>
           </div>
 

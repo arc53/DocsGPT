@@ -7,7 +7,8 @@ import {
   type FileRejection,
 } from 'react-dropzone';
 
-import { cn } from '@/lib/utils';
+import { useFormFieldControl } from '@/components/ui/form-field';
+import { cn, focusRing } from '@/lib/utils';
 
 type DropzoneProps = {
   /** Receives accepted files and, when `accept`/`maxSize` reject some, the rejections. */
@@ -55,6 +56,12 @@ function Dropzone({
   className,
   validator,
 }: DropzoneProps) {
+  // Inside a FormField the hidden input takes the field's id, so its label
+  // opens the file picker, and the target is described by the hint/error.
+  const field = useFormFieldControl<{
+    id?: string;
+    'aria-describedby'?: string;
+  }>({});
   const { getRootProps, getInputProps, isDragActive, isDragReject } =
     useDropzone({
       onDrop,
@@ -70,13 +77,14 @@ function Dropzone({
     <div className={cn('flex flex-col gap-2', className)}>
       <div
         {...getRootProps()}
+        aria-describedby={field['aria-describedby']}
         data-slot="dropzone"
         data-size={size}
         data-disabled={disabled || undefined}
         data-drag-active={isDragActive || undefined}
         data-drag-reject={isDragReject || undefined}
         className={cn(
-          'border-border bg-card text-foreground hover:bg-accent/40 focus-visible:ring-ring/50 flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed text-center transition-colors outline-none focus-visible:ring-3',
+          `${focusRing} border-border bg-card text-foreground hover:bg-accent/40 flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed text-center transition-colors outline-none`,
           'data-[drag-active]:border-primary data-[drag-active]:bg-primary/5',
           'data-[drag-reject]:border-destructive data-[drag-reject]:bg-destructive/5',
           'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
@@ -84,7 +92,7 @@ function Dropzone({
           size === 'compact' && 'flex-row justify-start px-4 py-3 text-left',
         )}
       >
-        <input {...getInputProps()} />
+        <input {...getInputProps({ id: field.id })} />
         {children ?? (
           <>
             <span

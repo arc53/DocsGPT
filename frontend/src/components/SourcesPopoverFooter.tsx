@@ -1,7 +1,7 @@
+import { ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
-import RedirectIcon from '../assets/redirect.svg';
 import { Button } from './ui/button';
 
 type SourcesPopoverFooterProps = {
@@ -25,7 +25,7 @@ export default function SourcesPopoverFooter({
         onClick={onNavigate}
       >
         {t('settings.sources.goToSources')}
-        <img src={RedirectIcon} alt="" aria-hidden="true" className="h-3 w-3" />
+        <ArrowRight className="size-3" />
       </Link>
       <Button
         type="button"

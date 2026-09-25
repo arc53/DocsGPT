@@ -8,7 +8,6 @@ import {
   Flag,
   GitBranch,
   Link,
-  Loader2,
   Pencil,
   Play,
   Plus,
@@ -41,6 +40,8 @@ import ReactFlow, {
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
 import {
@@ -52,6 +53,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SettingRow } from '@/components/ui/setting-row';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -1603,34 +1605,29 @@ function WorkflowBuilderInner() {
                   ref={workflowSettingsRef}
                   className="border-border bg-card absolute top-full left-0 z-50 mt-2 w-80 rounded-xl border p-4 shadow-lg"
                 >
-                  <div className="mb-3">
-                    <label className="text-foreground mb-1 block text-sm font-medium">
-                      Workflow Name
-                    </label>
+                  <FormField label="Workflow Name" className="mb-3">
                     <Input
                       type="text"
                       value={workflowName}
                       onChange={(e) => setWorkflowName(e.target.value)}
                       placeholder="Enter workflow name"
                     />
-                  </div>
-                  <div className="mb-3">
-                    <label className="text-foreground mb-1 block text-sm font-medium">
-                      Description
-                    </label>
+                  </FormField>
+                  <FormField label="Description" className="mb-3">
                     <Textarea
                       value={workflowDescription}
                       onChange={(e) => setWorkflowDescription(e.target.value)}
                       rows={3}
                       placeholder="Describe what this workflow does"
                     />
-                  </div>
-                  <div className="mb-3">
-                    <label className="text-foreground mb-1 block text-sm font-medium">
-                      Agent Image
-                    </label>
+                  </FormField>
+                  <FormField
+                    label="Agent Image"
+                    hint="Image updates are included the next time you save."
+                    className="mb-3"
+                  >
                     {currentAgentImage && !imageFile && (
-                      <div className="mb-2 flex items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <img
                           src={currentAgentImage}
                           alt="Agent image"
@@ -1658,25 +1655,15 @@ function WorkflowBuilderInner() {
                         },
                       ]}
                     />
-                    <p className="text-muted-foreground mt-1 text-xs">
-                      Image updates are included the next time you save.
-                    </p>
-                  </div>
+                  </FormField>
                   <div className="mb-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label
-                          htmlFor="workflow-system-prompt-override"
-                          className="text-foreground block text-sm font-medium"
-                        >
-                          {t('agents.form.advanced.systemPromptOverride')}
-                        </label>
-                        <p className="text-muted-foreground mt-0.5 text-xs">
-                          {t(
-                            'agents.form.advanced.systemPromptOverrideDescription',
-                          )}
-                        </p>
-                      </div>
+                    <SettingRow
+                      label={t('agents.form.advanced.systemPromptOverride')}
+                      description={t(
+                        'agents.form.advanced.systemPromptOverrideDescription',
+                      )}
+                      htmlFor="workflow-system-prompt-override"
+                    >
                       <Switch
                         id="workflow-system-prompt-override"
                         checked={Boolean(
@@ -1690,7 +1677,7 @@ function WorkflowBuilderInner() {
                           }))
                         }
                       />
-                    </div>
+                    </SettingRow>
                   </div>
                   <Button
                     type="button"
@@ -1722,10 +1709,10 @@ function WorkflowBuilderInner() {
                 variant="destructive-outline"
                 shape="pill"
                 onClick={() => setDeleteConfirmation('ACTIVE')}
-                disabled={isDeletingAgent}
+                loading={isDeletingAgent}
               >
                 <Trash2 size={16} />
-                {isDeletingAgent ? 'Deleting...' : 'Delete'}
+                Delete
               </Button>
             )}
             <Button
@@ -1749,20 +1736,11 @@ function WorkflowBuilderInner() {
               type="button"
               onClick={handlePrimaryAction}
               disabled={isPrimaryActionDisabled}
+              loading={showPrimaryActionSpinner}
               size="lg"
               shape="pill"
-              className="relative"
             >
-              <span
-                className={
-                  showPrimaryActionSpinner ? 'opacity-0' : 'opacity-100'
-                }
-              >
-                {primaryActionLabel}
-              </span>
-              {showPrimaryActionSpinner ? (
-                <Loader2 size={16} className="absolute animate-spin" />
-              ) : null}
+              {primaryActionLabel}
             </Button>
           </div>
         </div>
@@ -1995,10 +1973,7 @@ function WorkflowBuilderInner() {
                       {selectedNode.type !== 'start' &&
                         selectedNode.type !== 'end' && (
                           <>
-                            <div>
-                              <label className="text-foreground mb-2 block text-sm font-medium">
-                                Title
-                              </label>
+                            <FormField label="Title">
                               <Input
                                 type="text"
                                 value={
@@ -2014,14 +1989,11 @@ function WorkflowBuilderInner() {
                                 }
                                 placeholder="Enter node title"
                               />
-                            </div>
+                            </FormField>
 
                             {selectedNode.type === 'agent' && (
                               <>
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Agent Type
-                                  </label>
+                                <FormField label="Agent Type">
                                   <Select
                                     value={
                                       selectedNode.data.config?.agent_type ||
@@ -2048,11 +2020,8 @@ function WorkflowBuilderInner() {
                                       </SelectItem>
                                     </SelectContent>
                                   </Select>
-                                </div>
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Model
-                                  </label>
+                                </FormField>
+                                <FormField label="Model">
                                   <Select
                                     value={
                                       selectedNode.data.config?.model_id || ''
@@ -2126,11 +2095,8 @@ function WorkflowBuilderInner() {
                                       })()}
                                     </SelectContent>
                                   </Select>
-                                </div>
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    System Prompt
-                                  </label>
+                                </FormField>
+                                <FormField label="System Prompt">
                                   <Textarea
                                     value={
                                       selectedNode.data.config?.system_prompt ??
@@ -2147,7 +2113,7 @@ function WorkflowBuilderInner() {
                                     rows={3}
                                     placeholder="System prompt for the agent"
                                   />
-                                </div>
+                                </FormField>
                                 <PromptTextArea
                                   label="Prompt Template"
                                   value={
@@ -2167,10 +2133,7 @@ function WorkflowBuilderInner() {
                                   selectedNodeId={selectedNode.id}
                                   placeholder="Use {{ agent.variable }} for dynamic content"
                                 />
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Output Variable
-                                  </label>
+                                <FormField label="Output Variable">
                                   <Input
                                     type="text"
                                     value={
@@ -2188,24 +2151,22 @@ function WorkflowBuilderInner() {
                                     }}
                                     placeholder="Variable name for output"
                                   />
-                                </div>
+                                </FormField>
                                 <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
+                                  <Checkbox
                                     id="stream_to_user"
                                     checked={
                                       selectedNode.data.config
                                         ?.stream_to_user ?? true
                                     }
-                                    onChange={(e) =>
+                                    onCheckedChange={(checked) =>
                                       handleUpdateNodeData({
                                         config: {
                                           ...(selectedNode.data.config || {}),
-                                          stream_to_user: e.target.checked,
+                                          stream_to_user: checked === true,
                                         },
                                       })
                                     }
-                                    className="h-4 w-4"
                                   />
                                   <label
                                     htmlFor="stream_to_user"
@@ -2214,10 +2175,7 @@ function WorkflowBuilderInner() {
                                     Stream output to user
                                   </label>
                                 </div>{' '}
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Tools
-                                  </label>
+                                <FormField label="Tools">
                                   <MultiSelect
                                     options={availableTools.map((tool) => ({
                                       value: tool.id,
@@ -2238,11 +2196,8 @@ function WorkflowBuilderInner() {
                                     searchPlaceholder="Search tools..."
                                     emptyText="No tools available"
                                   />
-                                </div>
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Sources
-                                  </label>
+                                </FormField>
+                                <FormField label="Sources">
                                   <MultiSelect
                                     options={sourceOptions}
                                     selected={
@@ -2260,7 +2215,7 @@ function WorkflowBuilderInner() {
                                     searchPlaceholder="Search sources..."
                                     emptyText="No sources available"
                                   />
-                                </div>
+                                </FormField>
                                 <NodeDocumentsControl
                                   key={selectedNode.id}
                                   value={
@@ -2279,10 +2234,10 @@ function WorkflowBuilderInner() {
                                   label="Documents"
                                   helpText="Documents passed to this agent from uploads or upstream nodes."
                                 />
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    File passing
-                                  </label>
+                                <FormField
+                                  label="File passing"
+                                  hint="Auto: send native when the model supports it, otherwise extract text."
+                                >
                                   <Select
                                     value={normalizeFilePassing(
                                       selectedNode.data.config?.file_passing,
@@ -2310,17 +2265,24 @@ function WorkflowBuilderInner() {
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  <p className="text-muted-foreground mt-1 text-xs">
-                                    Auto: send native when the model supports
-                                    it, otherwise extract text.
-                                  </p>
-                                </div>
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Structured Output (JSON Schema)
-                                  </label>
+                                </FormField>
+                                <FormField
+                                  label="Structured Output (JSON Schema)"
+                                  hint={
+                                    selectedAgentJsonSchemaText.trim() !== '' &&
+                                    !selectedAgentJsonSchemaError
+                                      ? 'Valid JSON schema'
+                                      : undefined
+                                  }
+                                  error={
+                                    selectedAgentJsonSchemaText.trim() !== '' &&
+                                    selectedAgentJsonSchemaError
+                                      ? `Invalid JSON schema: ${selectedAgentJsonSchemaError}`
+                                      : undefined
+                                  }
+                                >
                                   {!selectedAgentModelSupportsStructuredOutput && (
-                                    <p className="text-destructive mb-2 text-xs">
+                                    <p className="text-destructive text-xs">
                                       Selected model does not support structured
                                       output.
                                     </p>
@@ -2342,29 +2304,12 @@ function WorkflowBuilderInner() {
   "required": ["summary"]
 }`}
                                   />
-                                  {selectedAgentJsonSchemaText.trim() !==
-                                    '' && (
-                                    <p
-                                      className={`mt-2 text-xs ${
-                                        selectedAgentJsonSchemaError
-                                          ? 'text-destructive'
-                                          : 'text-success'
-                                      }`}
-                                    >
-                                      {selectedAgentJsonSchemaError
-                                        ? `Invalid JSON schema: ${selectedAgentJsonSchemaError}`
-                                        : 'Valid JSON schema'}
-                                    </p>
-                                  )}
-                                </div>
+                                </FormField>
                               </>
                             )}
 
                             {selectedNode.type === 'note' && (
-                              <div>
-                                <label className="text-foreground mb-2 block text-sm font-medium">
-                                  Note Content
-                                </label>
+                              <FormField label="Note Content">
                                 <Textarea
                                   value={selectedNode.data.content || ''}
                                   onChange={(e) =>
@@ -2375,7 +2320,7 @@ function WorkflowBuilderInner() {
                                   rows={4}
                                   placeholder="Enter note content"
                                 />
-                              </div>
+                              </FormField>
                             )}
 
                             {selectedNode.type === 'state' && (
@@ -2857,10 +2802,7 @@ function WorkflowBuilderInner() {
                                   Run code in the workflow sandbox. Produced
                                   files are saved as artifacts.
                                 </p>
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Code
-                                  </label>
+                                <FormField label="Code">
                                   <Textarea
                                     value={selectedNode.data.config?.code ?? ''}
                                     onChange={(e) =>
@@ -2876,7 +2818,7 @@ function WorkflowBuilderInner() {
                                     spellCheck={false}
                                     placeholder={'print("hello world")'}
                                   />
-                                </div>
+                                </FormField>
                                 <NodeDocumentsControl
                                   key={selectedNode.id}
                                   value={selectedNode.data.config?.inputs ?? []}
@@ -2892,10 +2834,7 @@ function WorkflowBuilderInner() {
                                   label="Input files"
                                   helpText="Artifacts/upstream refs staged as files in the sandbox (one becomes inputs/<name>)."
                                 />
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Output Variable
-                                  </label>
+                                <FormField label="Output Variable">
                                   <Input
                                     type="text"
                                     value={
@@ -2912,11 +2851,8 @@ function WorkflowBuilderInner() {
                                     }
                                     placeholder="Variable name for output"
                                   />
-                                </div>
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Timeout (seconds)
-                                  </label>
+                                </FormField>
+                                <FormField label="Timeout (seconds)">
                                   <Input
                                     type="number"
                                     min={1}
@@ -2942,11 +2878,22 @@ function WorkflowBuilderInner() {
                                     }}
                                     placeholder="Optional"
                                   />
-                                </div>
-                                <div>
-                                  <label className="text-foreground mb-2 block text-sm font-medium">
-                                    Structured Output (JSON Schema)
-                                  </label>
+                                </FormField>
+                                <FormField
+                                  label="Structured Output (JSON Schema)"
+                                  hint={
+                                    selectedCodeJsonSchemaText.trim() !== '' &&
+                                    !selectedCodeJsonSchemaError
+                                      ? 'Valid JSON schema'
+                                      : undefined
+                                  }
+                                  error={
+                                    selectedCodeJsonSchemaText.trim() !== '' &&
+                                    selectedCodeJsonSchemaError
+                                      ? `Invalid JSON schema: ${selectedCodeJsonSchemaError}`
+                                      : undefined
+                                  }
+                                >
                                   <Textarea
                                     value={selectedCodeJsonSchemaText}
                                     onChange={(e) =>
@@ -2962,20 +2909,7 @@ function WorkflowBuilderInner() {
   "required": ["result"]
 }`}
                                   />
-                                  {selectedCodeJsonSchemaText.trim() !== '' && (
-                                    <p
-                                      className={`mt-2 text-xs ${
-                                        selectedCodeJsonSchemaError
-                                          ? 'text-destructive'
-                                          : 'text-success'
-                                      }`}
-                                    >
-                                      {selectedCodeJsonSchemaError
-                                        ? `Invalid JSON schema: ${selectedCodeJsonSchemaError}`
-                                        : 'Valid JSON schema'}
-                                    </p>
-                                  )}
-                                </div>
+                                </FormField>
                               </>
                             )}
                           </>

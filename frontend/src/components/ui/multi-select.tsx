@@ -3,7 +3,9 @@
 import { Check, ChevronsUpDown, X } from 'lucide-react';
 import * as React from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useFormFieldControl } from '@/components/ui/form-field';
 import {
   Command,
   CommandEmpty,
@@ -41,6 +43,8 @@ interface MultiSelectProps {
    * pointerdown instead.
    */
   modal?: boolean;
+  /** The trigger's id; inside a FormField it defaults to the field's. */
+  id?: string;
 }
 
 export function MultiSelect({
@@ -52,8 +56,16 @@ export function MultiSelect({
   searchPlaceholder = 'Search...',
   className,
   modal = false,
+  id,
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
+  const control = useFormFieldControl<{
+    id?: string;
+    disabled?: boolean;
+    'aria-invalid'?: React.AriaAttributes['aria-invalid'];
+    'aria-describedby'?: string;
+    'aria-required'?: React.AriaAttributes['aria-required'];
+  }>({ id });
 
   const handleSelect = (value: string) => {
     const newSelected = selected.includes(value)
@@ -76,12 +88,16 @@ export function MultiSelect({
     <Popover open={open} onOpenChange={setOpen} modal={modal}>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant="combobox"
+          size="field"
           role="combobox"
           aria-expanded={open}
+          data-slot="multi-select-trigger"
+          data-placeholder={selected.length ? undefined : ''}
+          {...control}
           className={cn(
-            'border-border bg-card hover:bg-accent h-auto min-h-10 w-full justify-between py-1.5',
-            !selected.length && 'text-muted-foreground',
+            // Grows past the 42px row when the chips wrap.
+            'h-auto min-h-10.5 w-full justify-between py-1.5',
             className,
           )}
         >
@@ -97,9 +113,9 @@ export function MultiSelect({
                 {selectedLabels.slice(0, 2).map((label) => {
                   const option = options.find((o) => o.label === label);
                   return (
-                    <span
+                    <Badge
                       key={option?.value || label}
-                      className="bg-primary/20 dark:bg-primary/30 text-primary inline-flex max-w-[calc(100%-1rem)] min-w-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium"
+                      className="max-w-[calc(100%-1rem)] min-w-0"
                     >
                       <span className="truncate">{label}</span>
                       <span
@@ -123,7 +139,7 @@ export function MultiSelect({
                       >
                         <X className="h-3 w-3" />
                       </span>
-                    </span>
+                    </Badge>
                   );
                 })}
                 {selected.length > 2 && (
@@ -165,7 +181,7 @@ export function MultiSelect({
                           : 'border-input',
                       )}
                     >
-                      {isSelected && <Check className="h-3 w-3 stroke-white" />}
+                      {isSelected && <Check className="h-3 w-3" />}
                     </div>
                     {option.label}
                   </CommandItem>

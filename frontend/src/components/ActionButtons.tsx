@@ -60,7 +60,7 @@ export default function ActionButtons({
             onClick={newChat}
             className="lg:hidden"
           >
-            <Plus className="size-5" strokeWidth={1.75} aria-label="NewChat" />
+            <Plus className="size-5" aria-label="NewChat" />
           </Button>
         )}
 
@@ -74,7 +74,7 @@ export default function ActionButtons({
               title={t('actionButtons.share')}
               onClick={() => setShareModalState(true)}
             >
-              <Share className="size-5" strokeWidth={1.75} aria-label="share" />
+              <Share className="size-5" aria-label="share" />
             </Button>
             {isShareModalOpen && (
               <ShareConversationModal

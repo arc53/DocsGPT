@@ -1,16 +1,20 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
-import { cn } from '@/lib/utils';
+import { useFormFieldControl } from '@/components/ui/form-field';
+import { cn, focusRing, invalidState, fieldFrame } from '@/lib/utils';
 
 const inputVariants = cva(
-  'text-foreground file:text-foreground placeholder:text-muted-foreground border-border w-full min-w-0 border bg-transparent shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 selection:bg-primary selection:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
+  `${focusRing} ${invalidState} ${fieldFrame} text-foreground file:text-foreground placeholder:text-muted-foreground border-border w-full min-w-0 bg-transparent file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:cursor-not-allowed disabled:opacity-50 selection:bg-primary selection:text-primary-foreground focus-visible:border-ring`,
   {
     variants: {
       size: {
         default: 'h-10.5 px-3 py-2 text-base md:text-sm',
         sm: 'h-8 px-2 py-1 text-sm',
         lg: 'h-12 px-5 py-3 text-base md:text-sm',
+        // The form-row height (42px) by name, shared with Button field and
+        // SelectTrigger field; the same classes as default.
+        field: 'h-10.5 px-3 py-2 text-base md:text-sm',
       },
       shape: {
         default: 'rounded-md',
@@ -34,7 +38,7 @@ const inputVariants = cva(
       // Not on `bare`, which has no padding of its own.
       {
         shape: 'pill',
-        size: 'default',
+        size: ['default', 'field'],
         variant: ['default', 'filled'],
         class: 'px-5',
       },
@@ -55,6 +59,7 @@ const LABEL_RESTING_CLASSES: Record<
   default: 'peer-placeholder-shown:top-2.5 peer-placeholder-shown:text-base',
   sm: 'peer-placeholder-shown:top-1.5 peer-placeholder-shown:text-sm',
   lg: 'peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-base',
+  field: 'peer-placeholder-shown:top-2.5 peer-placeholder-shown:text-base',
 };
 
 // The floating label sits on the field's border, so its background has to
@@ -73,20 +78,21 @@ type InputProps = Omit<React.ComponentProps<'input'>, 'size'> &
     labelSurface?: keyof typeof LABEL_SURFACE_CLASSES;
   };
 
-function Input({
-  className,
-  type,
-  label,
-  leftIcon,
-  labelSurface = 'card',
-  id,
-  placeholder,
-  required,
-  size = 'default',
-  shape = 'default',
-  variant = 'default',
-  ...props
-}: InputProps) {
+function Input(inputProps: InputProps) {
+  const {
+    className,
+    type,
+    label,
+    leftIcon,
+    labelSurface = 'card',
+    id,
+    placeholder,
+    required,
+    size = 'default',
+    shape = 'default',
+    variant = 'default',
+    ...props
+  } = useFormFieldControl(inputProps);
   const generatedId = React.useId();
   const inputId = id ?? (label ? generatedId : undefined);
 

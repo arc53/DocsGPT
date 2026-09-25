@@ -33,8 +33,15 @@ export default function AccessTokenCreatedModal({
     <Modal
       open={token !== null}
       onOpenChange={(o) => !o && onClose()}
-      hideTitle
       title={t(`${copy}.title`)}
+      description={
+        <span className="break-words">
+          {t(`${copy}.subtitle`, {
+            name,
+            ...NO_ESCAPE,
+          })}
+        </span>
+      }
       size="lg"
       mobileVariant="sheet"
       // The secret cannot be shown again, so a stray click outside must not
@@ -47,18 +54,6 @@ export default function AccessTokenCreatedModal({
       }
     >
       <div className="flex flex-col gap-5 px-1">
-        <div>
-          <h2 className="text-foreground text-xl font-semibold">
-            {t(`${copy}.title`)}
-          </h2>
-          <p className="text-muted-foreground mt-2 text-sm break-words">
-            {t(`${copy}.subtitle`, {
-              name,
-              ...NO_ESCAPE,
-            })}
-          </p>
-        </div>
-
         <div
           role="alert"
           className="bg-warning/10 text-foreground flex items-start gap-3 rounded-lg px-4 py-3 text-sm"

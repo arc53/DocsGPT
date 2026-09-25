@@ -159,7 +159,7 @@ export default function AddToolModal({
                         <div className="mt-[9px]">
                           <p
                             title={tool.displayName}
-                            className="text-foreground dark:text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
+                            className="text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
                           >
                             {tool.displayName}
                           </p>

@@ -1,15 +1,16 @@
+import { CloudUpload } from 'lucide-react';
 import { useState } from 'react';
 import { type FileRejection, useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Upload from '../assets/upload.svg';
-import Spinner from '../components/Spinner';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType } from '../settings/types';
@@ -177,37 +178,26 @@ export default function ImportSpecModal({
       size="lg"
       contentClassName="max-h-[70vh]"
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleClose}
-            shape="pill"
-          >
-            {t('modals.importSpec.cancel')}
-          </Button>
-          {!parsedResult ? (
-            <Button
-              type="button"
-              onClick={handleParse}
-              disabled={!file || loading}
-              shape="pill"
-              className="w-20"
-            >
-              {loading && <Spinner size="small" />}
-              {!loading && t('modals.importSpec.parse')}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleImport}
-              disabled={selectedActions.size === 0}
-              shape="pill"
-            >
-              {t('modals.importSpec.import', { count: selectedActions.size })}
-            </Button>
-          )}
-        </>
+        !parsedResult ? (
+          <ModalActions
+            cancelLabel={t('modals.importSpec.cancel')}
+            onCancel={handleClose}
+            submitLabel={t('modals.importSpec.parse')}
+            onSubmit={handleParse}
+            pending={loading}
+            disabled={!file}
+          />
+        ) : (
+          <ModalActions
+            cancelLabel={t('modals.importSpec.cancel')}
+            onCancel={handleClose}
+            submitLabel={t('modals.importSpec.import', {
+              count: selectedActions.size,
+            })}
+            onSubmit={handleImport}
+            disabled={selectedActions.size === 0}
+          />
+        )
       }
     >
       <div className="flex flex-col gap-4">
@@ -219,7 +209,7 @@ export default function ImportSpecModal({
 
             <div
               {...getRootProps({
-                className: `border-border dark:border-border hover:border-primary dark:hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
+                className: `border-border hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
                   isDragReject
                     ? 'border-destructive'
                     : isDragActive
@@ -228,12 +218,8 @@ export default function ImportSpecModal({
                 }`,
               })}
             >
-              <img
-                src={Upload}
-                alt="Upload"
-                className="mb-3 h-10 w-10 opacity-60 dark:invert"
-              />
-              <p className="text-foreground dark:text-foreground text-sm font-medium">
+              <CloudUpload className="text-muted-foreground mb-3 size-10" />
+              <p className="text-foreground text-sm font-medium">
                 {file ? file.name : t('modals.importSpec.dropzoneText')}
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
@@ -247,7 +233,7 @@ export default function ImportSpecModal({
         ) : (
           <div className="flex flex-col gap-4">
             <div className="bg-muted rounded-xl p-4">
-              <h3 className="text-foreground dark:text-foreground font-medium">
+              <h3 className="text-foreground font-medium">
                 {parsedResult.metadata.title}
               </h3>
               {parsedResult.metadata.description && (
@@ -259,10 +245,10 @@ export default function ImportSpecModal({
                 {t('modals.importSpec.version')}:{' '}
                 {parsedResult.metadata.version}
               </p>
-              <div className="mt-3">
-                <label className="text-foreground mb-1 block text-xs font-medium">
-                  {t('modals.importSpec.baseUrl')}
-                </label>
+              <FormField
+                label={t('modals.importSpec.baseUrl')}
+                className="mt-3"
+              >
                 <Input
                   type="text"
                   variant="filled"
@@ -272,11 +258,11 @@ export default function ImportSpecModal({
                     parsedResult.metadata.base_url || 'https://api.example.com'
                   }
                 />
-              </div>
+              </FormField>
             </div>
 
             <div className="flex items-center justify-between px-1">
-              <p className="text-foreground dark:text-foreground text-sm font-medium">
+              <p className="text-foreground text-sm font-medium">
                 {t('modals.importSpec.actionsFound', {
                   count: parsedResult.actions.length,
                 })}
@@ -298,20 +284,21 @@ export default function ImportSpecModal({
               {parsedResult.actions.map((action, index) => (
                 <label
                   key={index}
-                  className="border-border dark:border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
+                  htmlFor={`import-spec-action-${index}`}
+                  className="border-border hover:bg-muted flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
+                    id={`import-spec-action-${index}`}
                     checked={selectedActions.has(index)}
-                    onChange={() => toggleAction(index)}
-                    className="text-primary focus:ring-ring border-border mt-1 h-4 w-4 rounded"
+                    onCheckedChange={() => toggleAction(index)}
+                    className="mt-1"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <Badge variant={getMethodBadgeVariant(action.method)}>
                         {action.method.toUpperCase()}
                       </Badge>
-                      <span className="text-foreground dark:text-foreground truncate font-medium">
+                      <span className="text-foreground truncate font-medium">
                         {action.name}
                       </span>
                     </div>

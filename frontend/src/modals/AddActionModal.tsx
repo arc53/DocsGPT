@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 
 type AddActionModalProps = {
@@ -51,19 +50,12 @@ export default function AddActionModal({
       }}
       title={t('modals.addAction.title')}
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            shape="pill"
-            onClick={handleCancel}
-          >
-            {t('modals.configTool.closeButton')}
-          </Button>
-          <Button type="button" shape="pill" onClick={handleAddAction}>
-            {t('modals.addAction.addButton')}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={t('modals.configTool.closeButton')}
+          onCancel={handleCancel}
+          submitLabel={t('modals.addAction.addButton')}
+          onSubmit={handleAddAction}
+        />
       }
     >
       <div className="relative">

@@ -72,10 +72,7 @@ export default function ProfileButton() {
             data-testid="oidc-signout"
             className="text-foreground hover:bg-sidebar-accent flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm"
           >
-            <LogOut
-              className="text-muted-foreground size-4 shrink-0"
-              strokeWidth={1.75}
-            />
+            <LogOut className="text-muted-foreground size-4 shrink-0" />
             {t('auth.signOut')}
           </button>
         </div>

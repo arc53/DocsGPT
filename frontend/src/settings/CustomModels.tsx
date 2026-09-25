@@ -1,23 +1,15 @@
-import { Globe, Search as SearchIcon, Tag, Trash } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Globe, Pencil, Search as SearchIcon, Tag, Trash } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import customModelsService from '../api/services/customModelsService';
 import modelService from '../api/services/modelService';
-import Edit from '../assets/edit.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
-import ThreeDotsIcon from '../assets/three-dots.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { useDarkTheme, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -29,15 +21,6 @@ import {
 } from '../preferences/preferenceSlice';
 
 import type { CustomModel } from '../models/types';
-
-type CustomModelMenuOption = {
-  icon: string | LucideIcon;
-  label: string;
-  onClick: () => void;
-  variant: 'default' | 'destructive';
-  iconWidth?: number;
-  iconHeight?: number;
-};
 
 const formatBaseUrlHost = (baseUrl: string): string => {
   if (!baseUrl) return '';
@@ -143,22 +126,18 @@ export default function CustomModels() {
     }
   };
 
-  const getMenuOptions = (model: CustomModel): CustomModelMenuOption[] => [
+  const getMenuOptions = (model: CustomModel): MenuOption[] => [
     {
-      icon: Edit,
+      icon: Pencil,
       label: t('settings.customModels.actions.edit'),
       onClick: () => openEditModal(model),
       variant: 'default',
-      iconWidth: 14,
-      iconHeight: 14,
     },
     {
       icon: Trash,
       label: t('settings.customModels.actions.delete'),
       onClick: () => requestDelete(model),
       variant: 'destructive',
-      iconWidth: 16,
-      iconHeight: 16,
     },
   ];
 
@@ -201,12 +180,7 @@ export default function CustomModels() {
               onChange={(e) => setSearchTerm(e.target.value)}
               labelSurface="background"
               shape="pill"
-              leftIcon={
-                <SearchIcon
-                  className="text-muted-foreground size-4"
-                  strokeWidth={1.75}
-                />
-              }
+              leftIcon={<SearchIcon className="text-muted-foreground size-4" />}
             />
           </div>
           <Button
@@ -218,7 +192,7 @@ export default function CustomModels() {
             {t('settings.customModels.addModel')}
           </Button>
         </div>
-        <div className="border-border dark:border-border mt-5 mb-8 border-b" />
+        <div className="border-border mt-5 mb-8 border-b" />
         {loading ? (
           <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
             <SkeletonLoader component="toolCards" count={3} />
@@ -232,71 +206,18 @@ export default function CustomModels() {
                     key={model.id}
                     className="bg-muted hover:bg-accent relative flex w-[300px] flex-col overflow-hidden rounded-2xl p-5"
                   >
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          onClick={(e) => e.stopPropagation()}
-                          className="absolute top-3 right-3 z-10 cursor-pointer"
-                          aria-label={t(
-                            'settings.customModels.actionsMenuAria',
-                            { modelName: model.display_name },
-                          )}
-                        >
-                          <img
-                            src={ThreeDotsIcon}
-                            alt={t('settings.customModels.actionsMenuAria', {
-                              modelName: model.display_name,
-                            })}
-                            className="h-[19px] w-[19px]"
-                          />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="min-w-[144px]"
-                      >
-                        {getMenuOptions(model).map((option, index) => {
-                          const IconCmp =
-                            typeof option.icon !== 'string'
-                              ? option.icon
-                              : null;
-                          return (
-                            <DropdownMenuItem
-                              key={index}
-                              variant={option.variant}
-                              onSelect={() => option.onClick()}
-                            >
-                              {typeof option.icon === 'string' ? (
-                                <img
-                                  src={option.icon}
-                                  alt=""
-                                  width={option.iconWidth ?? 16}
-                                  height={option.iconHeight ?? 16}
-                                />
-                              ) : (
-                                IconCmp && (
-                                  <IconCmp
-                                    size={Math.max(
-                                      option.iconWidth ?? 16,
-                                      option.iconHeight ?? 16,
-                                    )}
-                                    strokeWidth={1.75}
-                                    aria-hidden="true"
-                                  />
-                                )
-                              )}
-                              <span>{option.label}</span>
-                            </DropdownMenuItem>
-                          );
-                        })}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <ActionMenu
+                      options={getMenuOptions(model)}
+                      triggerLabel={t('settings.customModels.actionsMenuAria', {
+                        modelName: model.display_name,
+                      })}
+                      className="absolute top-3 right-3 z-10"
+                    />
                     <div className="w-full pr-7">
                       <div className="flex items-center gap-2">
                         <p
                           title={model.display_name}
-                          className="text-foreground dark:text-foreground truncate text-sm leading-snug font-semibold"
+                          className="text-foreground truncate text-sm leading-snug font-semibold"
                         >
                           {model.display_name}
                         </p>

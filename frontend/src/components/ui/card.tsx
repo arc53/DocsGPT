@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 
-import { cn } from '@/lib/utils';
+import { cn, focusRing } from '@/lib/utils';
 
 const cardVariants = cva(
   'text-card-foreground flex flex-col gap-3 rounded-2xl text-sm transition-colors',
@@ -25,7 +25,7 @@ const cardVariants = cva(
       interactive: {
         false: '',
         // Whole card is a target: picker tiles, navigable list items.
-        true: 'hover:border-primary/40 hover:bg-accent focus-visible:border-ring focus-visible:ring-ring/50 cursor-pointer text-left outline-none focus-visible:ring-3 data-[selected=true]:border-primary data-[selected=true]:bg-primary/5',
+        true: `${focusRing} hover:border-primary/40 hover:bg-accent focus-visible:border-ring cursor-pointer text-left outline-none data-[selected=true]:border-primary data-[selected=true]:bg-primary/5`,
       },
     },
     defaultVariants: {
@@ -58,6 +58,8 @@ function Card({
     <Comp
       data-slot="card"
       data-variant={variant}
+      data-padding={padding}
+      data-interactive={interactive || undefined}
       data-selected={selected || undefined}
       className={cn(cardVariants({ variant, padding, interactive }), className)}
       {...props}

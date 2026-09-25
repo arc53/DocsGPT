@@ -6,7 +6,7 @@ import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import { useDarkTheme, useMediaQuery } from '../hooks';
 import { cn } from '@/lib/utils';
-import Spinner from './Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import {
   Command,
   CommandEmpty,
@@ -192,7 +192,7 @@ export function MultiSelectPopover({
 
       {loading ? (
         <div className="text-foreground flex items-center justify-center py-8">
-          <Spinner size="small" />
+          <Spinner size="sm" />
         </div>
       ) : (
         <div className="border-border mx-4 my-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border">
@@ -232,23 +232,14 @@ export function MultiSelectPopover({
         <SheetTrigger asChild>{trigger}</SheetTrigger>
         <SheetContent
           side="bottom"
+          handle
           showCloseButton={false}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className={cn(
-            /* eslint-disable-next-line shadcn/no-restyle, shadcn/no-arbitrary-values --
-               bottom-sheet shape: rounded top, no gap, card fill in dark to match Command's
-               bg-popover, and pb-[env(safe-area-inset-bottom)] to clear the iPhone home indicator. */
-            'dark:bg-card flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-t-2xl p-0 pb-[env(safe-area-inset-bottom)]',
-            className,
-          )}
+          className={cn('overflow-hidden', className)}
         >
           <SheetTitle className="sr-only">
             {title || effectivePlaceholder}
           </SheetTitle>
-          <div
-            className="bg-border mx-auto mt-2 mb-1 h-1.5 w-12 shrink-0 rounded-full"
-            aria-hidden="true"
-          />
           {commandBody}
         </SheetContent>
       </Sheet>

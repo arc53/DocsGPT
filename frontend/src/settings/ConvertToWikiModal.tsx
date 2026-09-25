@@ -1,13 +1,13 @@
 import { CircleAlert, CircleCheck } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 
@@ -126,63 +126,68 @@ export default function ConvertToWikiModal({
     fail(start.message);
   };
 
+  let footer: ReactNode = null;
+  if (phase === 'confirm') {
+    footer = (
+      <ModalActions
+        cancelLabel={t('cancel')}
+        onCancel={closeModal}
+        submitLabel={t('settings.sources.wiki.convert.confirm')}
+        onSubmit={handleConvert}
+      />
+    );
+  } else if (phase === 'summary' && summary) {
+    footer = (
+      <Button type="button" onClick={closeModal} size="lg" shape="pill">
+        {t('settings.sources.wiki.convert.done')}
+      </Button>
+    );
+  } else if (phase === 'error') {
+    footer = (
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={closeModal}
+        size="lg"
+        shape="pill"
+      >
+        {t('cancel')}
+      </Button>
+    );
+  }
+
   return (
     <Modal
       open={modalState === 'ACTIVE'}
       onOpenChange={(o) => !o && closeModal()}
-      hideTitle
       title={t('settings.sources.wiki.convert.title')}
+      description={
+        phase === 'confirm'
+          ? document?.name
+            ? t('settings.sources.wiki.convert.intro', {
+                name: document.name,
+              })
+            : t('settings.sources.wiki.convert.introGeneric')
+          : undefined
+      }
+      footer={footer}
       size="md"
       mobileVariant="sheet"
       className="max-w-[480px]"
       isPerformingTask={phase === 'converting'}
     >
       <div className="flex flex-col gap-5 px-1 py-1">
-        <h2 className="text-foreground text-xl font-semibold">
-          {t('settings.sources.wiki.convert.title')}
-        </h2>
-
         {phase === 'confirm' && (
-          <>
-            <p className="text-muted-foreground text-sm">
-              {document?.name
-                ? t('settings.sources.wiki.convert.intro', {
-                    name: document.name,
-                  })
-                : t('settings.sources.wiki.convert.introGeneric')}
-            </p>
-            <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
-              <li>{t('settings.sources.wiki.convert.costReparse')}</li>
-              <li>{t('settings.sources.wiki.convert.costSkipped')}</li>
-              <li>{t('settings.sources.wiki.convert.costIrreversible')}</li>
-            </ul>
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={closeModal}
-                size="lg"
-                shape="pill"
-                className="w-full sm:w-auto"
-              >
-                {t('cancel')}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleConvert}
-                size="lg"
-                shape="pill"
-                className="w-full sm:w-auto"
-              >
-                {t('settings.sources.wiki.convert.confirm')}
-              </Button>
-            </div>
-          </>
+          <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
+            <li>{t('settings.sources.wiki.convert.costReparse')}</li>
+            <li>{t('settings.sources.wiki.convert.costSkipped')}</li>
+            <li>{t('settings.sources.wiki.convert.costIrreversible')}</li>
+          </ul>
         )}
 
         {phase === 'converting' && (
           <div className="flex flex-col items-center gap-3 py-6">
-            <Spinner size="medium" />
+            <Spinner />
             <p className="text-muted-foreground text-sm">
               {t('settings.sources.wiki.convert.inProgress')}
             </p>
@@ -219,39 +224,14 @@ export default function ConvertToWikiModal({
                 </ul>
               </div>
             )}
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={closeModal}
-                size="lg"
-                shape="pill"
-                className="w-full sm:w-auto"
-              >
-                {t('settings.sources.wiki.convert.done')}
-              </Button>
-            </div>
           </>
         )}
 
         {phase === 'error' && (
-          <>
-            <Alert variant="destructive">
-              <CircleAlert className="size-4" aria-hidden="true" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={closeModal}
-                size="lg"
-                shape="pill"
-                className="w-full sm:w-auto"
-              >
-                {t('cancel')}
-              </Button>
-            </div>
-          </>
+          <Alert variant="destructive">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
       </div>
     </Modal>

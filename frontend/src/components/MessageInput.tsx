@@ -1,5 +1,6 @@
 import { envVar } from '@/env';
 import { cn } from '@/lib/utils';
+import { CloudUpload, Database } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -15,9 +16,7 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
-import DragFileUpload from '../assets/DragFileUpload.svg';
 import SendArrow from '../assets/send.svg?react';
-import SourceIcon from '../assets/source.svg';
 import {
   addAttachment,
   removeAttachment,
@@ -1495,7 +1494,7 @@ export default function MessageInput({
           own: t('conversation.sources.groupOwn'),
           team: t('conversation.sources.groupTeam'),
         },
-        SourceIcon,
+        <Database />,
       ),
     [sourceDocs, t],
   );
@@ -1842,11 +1841,11 @@ export default function MessageInput({
       {handleDragActive &&
         createPortal(
           <div className="dark:bg-background/85 pointer-events-none fixed top-0 left-0 z-50 flex size-full flex-col items-center justify-center bg-white/85">
-            <img className="filter dark:invert" src={DragFileUpload} />
-            <span className="text-muted-foreground dark:text-muted-foreground px-2 text-2xl font-bold">
+            <CloudUpload className="size-18" />
+            <span className="text-muted-foreground px-2 text-2xl font-bold">
               {t('modals.uploadDoc.drag.title')}
             </span>
-            <span className="text-muted-foreground dark:text-muted-foreground w-48 p-2 text-center text-sm">
+            <span className="text-muted-foreground w-48 p-2 text-center text-sm">
               {t('modals.uploadDoc.drag.description')}
             </span>
           </div>,

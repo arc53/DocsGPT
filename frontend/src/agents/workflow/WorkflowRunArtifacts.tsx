@@ -4,7 +4,7 @@ import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
 import DocumentArtifactView from '../../components/DocumentArtifactView';
-import Spinner from '../../components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import {
   isDocumentArtifact,
   type DocumentArtifact,
@@ -132,7 +132,7 @@ export default function WorkflowRunArtifacts({
   if (loading) {
     return (
       <div className="text-muted-foreground flex items-center gap-2 px-3 py-4 text-sm">
-        <Spinner size="small" /> Loading artifacts...
+        <Spinner size="sm" /> Loading artifacts...
       </div>
     );
   }

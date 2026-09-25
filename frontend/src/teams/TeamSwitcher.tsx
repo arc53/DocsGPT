@@ -161,10 +161,7 @@ export default function TeamSwitcher({
             className="hover:bg-muted dark:hover:bg-accent text-foreground flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors"
           >
             {expandedBrand}
-            <ChevronsUpDown
-              className="text-muted-foreground size-4 shrink-0"
-              strokeWidth={1.75}
-            />
+            <ChevronsUpDown className="text-muted-foreground size-4 shrink-0" />
           </button>
         )}
       </DropdownMenuTrigger>
@@ -173,9 +170,9 @@ export default function TeamSwitcher({
           <div className="flex items-center gap-2">
             <span className="bg-muted dark:bg-accent flex size-7 shrink-0 items-center justify-center rounded-md">
               {currentTeam ? (
-                <Users className="size-4" strokeWidth={1.75} />
+                <Users className="size-4" />
               ) : (
-                <User className="size-4" strokeWidth={1.75} />
+                <User className="size-4" />
               )}
             </span>
             <span className="min-w-0 flex-1">
@@ -191,7 +188,7 @@ export default function TeamSwitcher({
 
         {currentTeam && (
           <DropdownMenuItem onSelect={goToManage}>
-            <SettingsIcon className="size-4" strokeWidth={1.75} />
+            <SettingsIcon className="size-4" />
             <span>{t('teams.switcher.manageTeam')}</span>
           </DropdownMenuItem>
         )}
@@ -201,7 +198,7 @@ export default function TeamSwitcher({
         {/* Personal account entry */}
         {currentTeam && (
           <DropdownMenuItem onSelect={() => selectTeam(null)}>
-            <User className="size-4" strokeWidth={1.75} />
+            <User className="size-4" />
             <span className="min-w-0 flex-1 truncate">
               {t('teams.switcher.personal')}
             </span>
@@ -212,7 +209,7 @@ export default function TeamSwitcher({
         {/* Other teams to switch to */}
         {otherTeams.map((team) => (
           <DropdownMenuItem key={team.id} onSelect={() => selectTeam(team.id)}>
-            <Users className="size-4" strokeWidth={1.75} />
+            <Users className="size-4" />
             <span className="min-w-0 flex-1 truncate" title={team.name}>
               {team.name}
             </span>
@@ -222,7 +219,7 @@ export default function TeamSwitcher({
         <DropdownMenuSeparator />
 
         <DropdownMenuItem onSelect={goToCreate}>
-          <Plus className="size-4" strokeWidth={1.75} />
+          <Plus className="size-4" />
           <span>{t('teams.switcher.createTeam')}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

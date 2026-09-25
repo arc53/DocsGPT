@@ -7,6 +7,7 @@ import {
   Moon,
   MoreHorizontal,
   Pencil,
+  Pin,
   Plus,
   Search,
   Settings,
@@ -49,6 +50,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dropzone } from '@/components/ui/dropzone';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -70,6 +72,7 @@ import {
   CommandShortcut,
 } from '@/components/ui/command';
 import {
+  ActionMenu,
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
@@ -78,12 +81,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Modal } from '@/components/ui/modal';
+import { Modal, ModalActions } from '@/components/ui/modal';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { OptionCard } from '@/components/ui/option-card';
 import { Progress } from '@/components/ui/progress';
+import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
@@ -205,6 +210,8 @@ const BUTTON_VARIANTS = [
   'ghost',
   'ghost-muted',
   'ghost-destructive',
+  'ghost-on-accent',
+  'ghost-destructive-on-accent',
   'link',
   'destructive',
   'destructive-outline',
@@ -361,6 +368,9 @@ export default function DesignSystem() {
   const [agentType, setAgentType] = useState<'classic' | 'workflow'>('classic');
   const [toolOn, setToolOn] = useState(false);
   const [sectionOpen, setSectionOpen] = useState(false);
+  const [scopes, setScopes] = useState<string[]>(['agents:read']);
+  const [tokenLimit, setTokenLimit] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [sourceType, setSourceType] = useState<string>('Upload file');
 
   return (
@@ -683,6 +693,31 @@ export default function DesignSystem() {
               </div>
             </div>
           </Example>
+          <Example title="Loading" code="<Button loading={saving}>">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                size="lg"
+                shape="pill"
+                loading={saving}
+                onClick={() => {
+                  setSaving(true);
+                  window.setTimeout(() => setSaving(false), 1500);
+                }}
+              >
+                Create token
+              </Button>
+              <Button variant="outline" size="lg" shape="pill" loading>
+                Test connection
+              </Button>
+              <Button variant="destructive" loading>
+                Delete team
+              </Button>
+              <span className="text-muted-foreground text-xs">
+                Disabled, aria-busy, 16px spinner over the kept label; the width
+                holds.
+              </span>
+            </div>
+          </Example>
           <Example
             title="Section panel toggle"
             code='<div className="has-[[data-variant=section-toggle]:focus-visible]:ring-3 …"><Button variant="section-toggle" size="sm" aria-expanded>'
@@ -785,6 +820,74 @@ export default function DesignSystem() {
                   </span>
                 </div>
               ))}
+            </div>
+          </Example>
+          <Example
+            title="On an accent row"
+            code='variant="ghost-on-accent" · "ghost-destructive-on-accent"'
+          >
+            <div className="flex flex-col gap-3">
+              <div className="bg-accent text-accent-foreground flex w-80 items-center justify-between rounded-sm px-2 py-1.5 text-sm">
+                <span>Carrier onboarding checklist</span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-on-accent"
+                    aria-label="Edit"
+                  >
+                    <Pencil />
+                  </Button>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-on-accent"
+                    aria-label="Duplicate"
+                  >
+                    <Copy />
+                  </Button>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-destructive-on-accent"
+                    aria-label="Delete"
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              </div>
+              <div className="bg-sidebar-accent flex h-9 w-80 items-center justify-between rounded-3xl pl-3 text-sm">
+                <span>Vendor Due Diligence</span>
+                <div className="flex items-center px-1.5">
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-on-accent"
+                    aria-label="Pin agent"
+                  >
+                    <Pin />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Example>
+          <Example
+            title="Action menu"
+            code="<ActionMenu options triggerLabel />"
+          >
+            <div className="bg-muted hover:bg-accent relative h-24 w-48 rounded-2xl p-4 text-sm">
+              <span className="font-semibold">Vendor Due Diligence</span>
+              <ActionMenu
+                triggerLabel="Agent actions"
+                className="absolute top-3 right-3"
+                options={[
+                  { icon: Pencil, label: 'Edit', onClick: () => {} },
+                  { icon: Copy, label: 'Duplicate', onClick: () => {} },
+                  { icon: Pin, label: 'Pin agent', onClick: () => {} },
+                  {
+                    icon: Trash2,
+                    label: 'Delete',
+                    variant: 'destructive',
+                    onClick: () => {},
+                  },
+                ]}
+              />
             </div>
           </Example>
           <Example title="States" code="disabled · asChild">
@@ -1382,6 +1485,103 @@ export default function DesignSystem() {
             </div>
           </Example>
           <Example
+            title="FormField"
+            code="<FormField label required hint error disabled>{field}</FormField>"
+          >
+            <div className="grid items-start gap-6 md:grid-cols-3">
+              <FormField
+                label="Server name"
+                required
+                hint="Shown in the tool list"
+              >
+                <Input placeholder="My MCP server" />
+              </FormField>
+              <FormField label="Authentication type">
+                <Select defaultValue="none">
+                  <SelectTrigger size="lg" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No authentication</SelectItem>
+                    <SelectItem value="bearer">Bearer token</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+              <FormField
+                label="Server URL"
+                required
+                error="Server URL is required"
+              >
+                <Input placeholder="https://" />
+              </FormField>
+            </div>
+          </Example>
+          <Example
+            title="SettingRow"
+            code="<SettingRows><SettingRow label description htmlFor after>{control}</SettingRow></SettingRows>"
+          >
+            <SettingRows className="max-w-xl">
+              <SettingRow
+                label="Token limiting"
+                description="Limit daily total tokens that can be used by this agent"
+                htmlFor="ds-token-limiting"
+                after={
+                  <Input
+                    shape="pill"
+                    placeholder="Enter token limit"
+                    disabled={!tokenLimit}
+                  />
+                }
+              >
+                <Switch
+                  id="ds-token-limiting"
+                  checked={tokenLimit}
+                  onCheckedChange={setTokenLimit}
+                />
+              </SettingRow>
+              <SettingRow
+                label="Allow prompt override"
+                description="Let v1 API callers replace this agent's system prompt"
+                htmlFor="ds-prompt-override"
+              >
+                <Switch id="ds-prompt-override" />
+              </SettingRow>
+            </SettingRows>
+          </Example>
+          <Example
+            title="Checkbox"
+            code='<Checkbox size="sm | default" checked onCheckedChange>'
+          >
+            <div className="flex flex-col gap-3">
+              {['agents:read', 'agents:write', 'agents:keys'].map((scope) => (
+                <div key={scope} className="flex items-center gap-3">
+                  <Checkbox
+                    id={`ds-${scope}`}
+                    checked={scopes.includes(scope)}
+                    onCheckedChange={(checked) =>
+                      setScopes((current) =>
+                        checked === true
+                          ? [...current, scope]
+                          : current.filter((s) => s !== scope),
+                      )
+                    }
+                  />
+                  <Label htmlFor={`ds-${scope}`} className="font-mono">
+                    {scope}
+                  </Label>
+                </div>
+              ))}
+              <div className="flex items-center gap-3">
+                <Checkbox id="ds-cb-sm" size="sm" defaultChecked />
+                <Label htmlFor="ds-cb-sm">Small (table cells)</Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Checkbox id="ds-cb-disabled" disabled defaultChecked />
+                <Label htmlFor="ds-cb-disabled">Disabled</Label>
+              </div>
+            </div>
+          </Example>
+          <Example
             title="Switch and multi-select"
             code="<Switch> · <MultiSelect>"
           >
@@ -1634,6 +1834,31 @@ export default function DesignSystem() {
             </Tabs>
           </Example>
           <Example
+            title="Underline tabs"
+            code='<TabsList variant="underline"> · <TabsTrigger variant="underline">'
+          >
+            <Tabs defaultValue="my_files">
+              <TabsList variant="underline">
+                <TabsTrigger variant="underline" value="my_files">
+                  My Files
+                </TabsTrigger>
+                <TabsTrigger variant="underline" value="shared">
+                  Shared with Me
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="my_files">
+                <p className="text-muted-foreground pt-4 text-sm">
+                  Files in your own drive.
+                </p>
+              </TabsContent>
+              <TabsContent value="shared">
+                <p className="text-muted-foreground pt-4 text-sm">
+                  Files other people shared with you.
+                </p>
+              </TabsContent>
+            </Tabs>
+          </Example>
+          <Example
             title="Accordion and breadcrumb"
             code="<Accordion> · <Breadcrumb>"
           >
@@ -1747,11 +1972,11 @@ export default function DesignSystem() {
         <Section
           id="overlays"
           title="Overlays"
-          intro="Modal is the only dialog API for app code; the Radix Dialog underneath is private to ui/. Sheet is for side panels. Popovers and menus share the popover surface."
+          intro="Modal is the only dialog API for app code; the Radix Dialog underneath is private to ui/. Sheet is for side panels and phone bottom sheets. Popovers and menus share the popover surface."
         >
           <Example
             title="Modal and sheet"
-            code='<Modal size="md"> · <SheetContent side="right">'
+            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SheetContent side="right"> · <SheetContent side="bottom" handle>'
           >
             <div className="flex flex-wrap items-center gap-3">
               <Button variant="outline" onClick={() => setModalOpen(true)}>
@@ -1763,15 +1988,12 @@ export default function DesignSystem() {
                 title="Move to folder"
                 description="Pick where this agent should live."
                 footer={
-                  <>
-                    <Button
-                      variant="outline"
-                      onClick={() => setModalOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button onClick={() => setModalOpen(false)}>Move</Button>
-                  </>
+                  <ModalActions
+                    cancelLabel="Cancel"
+                    onCancel={() => setModalOpen(false)}
+                    submitLabel="Move"
+                    onSubmit={() => setModalOpen(false)}
+                  />
                 }
               >
                 <div className="flex flex-col gap-4">
@@ -1796,6 +2018,20 @@ export default function DesignSystem() {
                     <SheetTitle>Run details</SheetTitle>
                     <SheetDescription>
                       Started 09:30, finished 09:31, 3 tools called.
+                    </SheetDescription>
+                  </SheetHeader>
+                </SheetContent>
+              </Sheet>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline">Open bottom sheet</Button>
+                </SheetTrigger>
+                <SheetContent side="bottom" handle showCloseButton={false}>
+                  <SheetHeader>
+                    <SheetTitle>Tools</SheetTitle>
+                    <SheetDescription>
+                      The phone picker shape: card fill, rounded top, grab
+                      handle, clear of the home indicator.
                     </SheetDescription>
                   </SheetHeader>
                 </SheetContent>

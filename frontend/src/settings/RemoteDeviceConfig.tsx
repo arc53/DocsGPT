@@ -9,7 +9,7 @@ import devicesService, {
   Device,
 } from '../api/services/devicesService';
 import CopyButton from '../components/CopyButton';
-import Spinner from '../components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import ToolIcon from '../components/ToolIcon';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import {
@@ -189,7 +189,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   if (loading && !device) {
     return (
       <div className="mt-8 flex items-center justify-center py-16">
-        <Spinner size="large" />
+        <Spinner size="lg" />
       </div>
     );
   }
@@ -209,9 +209,10 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           size="sm"
           shape="pill"
           onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges || saving || loading}
+          disabled={!hasUnsavedChanges || loading}
+          loading={saving}
         >
-          {saving ? t('settings.tools.saving') : t('settings.tools.save')}
+          {t('settings.tools.save')}
         </Button>
       </div>
 

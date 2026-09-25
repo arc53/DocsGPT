@@ -9,11 +9,9 @@ import patService, {
   CreateAccessTokenResponse,
   PersonalAccessToken,
 } from '../api/services/patService';
-import Spinner from '../components/Spinner';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Button } from '../components/ui/button';
-import { Label } from '../components/ui/label';
-import { Modal } from '../components/ui/modal';
+import { FormField } from '../components/ui/form-field';
+import { Modal, ModalActions } from '../components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -91,59 +89,44 @@ export default function RegenerateAccessTokenModal({
     <Modal
       open={item !== null}
       onOpenChange={(o) => !o && handleClose()}
-      hideTitle
       title={t('settings.accessTokens.regenerate.title')}
+      description={
+        <span className="break-words">
+          {t('settings.accessTokens.regenerate.warning', {
+            name: item?.name ?? '',
+            ...NO_ESCAPE,
+          })}
+        </span>
+      }
       size="md"
       mobileVariant="sheet"
       isPerformingTask={submitting}
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleClose}
-            disabled={submitting}
-            size="lg"
-            shape="pill"
-          >
-            {t('settings.accessTokens.create.cancel')}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={submitting}
-            size="lg"
-            shape="pill"
-          >
-            {submitting ? (
-              <span className="flex items-center gap-2">
-                <Spinner size="small" />
-                {t('settings.accessTokens.regenerate.submitting')}
-              </span>
-            ) : (
-              t('settings.accessTokens.regenerate.submit')
-            )}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={t('settings.accessTokens.create.cancel')}
+          onCancel={handleClose}
+          submitLabel={t('settings.accessTokens.regenerate.submit')}
+          onSubmit={handleSubmit}
+          pending={submitting}
+          cancelProps={{ disabled: submitting }}
+        />
       }
     >
       <div className="flex flex-col gap-5 px-1">
-        <div>
-          <h2 className="text-foreground text-xl font-semibold">
-            {t('settings.accessTokens.regenerate.title')}
-          </h2>
-          <p className="text-muted-foreground mt-2 text-sm break-words">
-            {t('settings.accessTokens.regenerate.warning', {
-              name: item?.name ?? '',
-              ...NO_ESCAPE,
-            })}
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="pat-regenerate-expiry">
-            {t('settings.accessTokens.regenerate.newExpiration')}
-          </Label>
+        <FormField
+          id="pat-regenerate-expiry"
+          label={t('settings.accessTokens.regenerate.newExpiration')}
+          hint={
+            expiry === NO_EXPIRY
+              ? undefined
+              : t('settings.accessTokens.create.expiresOn', {
+                  date: formatDateOnly(
+                    new Date(Date.now() + expiry * DAY_MS).toISOString(),
+                  ),
+                  ...NO_ESCAPE,
+                })
+          }
+        >
           <Select
             value={String(expiry)}
             onValueChange={(value) => setExpiry(Number(value))}
@@ -170,17 +153,8 @@ export default function RegenerateAccessTokenModal({
                 {t('settings.accessTokens.create.noExpirationHint')}
               </AlertDescription>
             </Alert>
-          ) : (
-            <p className="text-muted-foreground text-xs">
-              {t('settings.accessTokens.create.expiresOn', {
-                date: formatDateOnly(
-                  new Date(Date.now() + expiry * DAY_MS).toISOString(),
-                ),
-                ...NO_ESCAPE,
-              })}
-            </p>
-          )}
-        </div>
+          ) : null}
+        </FormField>
 
         {error && (
           <p

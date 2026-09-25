@@ -86,15 +86,21 @@ describe('FilePicker', () => {
 
   it('renders the drive switch as underline tabs with the active one marked', async () => {
     await renderSharePoint();
+    const list = container.querySelector('[data-slot="tabs-list"]')!;
+    expect(list.getAttribute('role')).toBe('tablist');
+    expect(list.getAttribute('data-variant')).toBe('underline');
     const tabs = Array.from(
-      container.querySelectorAll('[data-slot="button"][data-variant="tab"]'),
+      list.querySelectorAll('[data-slot="tabs-trigger"][role="tab"]'),
     );
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       'filePicker.myFiles',
       'filePicker.sharedWithMe',
     ]);
-    expect(tabs[0].getAttribute('data-active')).toBe('true');
-    expect(tabs[1].getAttribute('data-active')).not.toBe('true');
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+    expect(tabs[1].getAttribute('aria-selected')).toBe('false');
+    // The file list below is the active tab's panel.
+    const panel = container.querySelector('[role="tabpanel"]')!;
+    expect(panel.id).toBe(tabs[0].getAttribute('aria-controls'));
   });
 
   it('shows the folder trail as a breadcrumb with the current folder as the page', async () => {

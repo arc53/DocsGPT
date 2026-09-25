@@ -1,9 +1,8 @@
+import { ChevronDown, Cloud } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
-import ChevronDown from '../assets/chevron-down.svg?react';
-import Cloud from '../assets/cloud.svg';
 import CopyButton from '../components/CopyButton';
 import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
@@ -185,7 +184,7 @@ function InlineThoughtChip({
         // svg child) puts the icon on the answer's ml-6 text column.
         className="ml-3.5 w-fit max-w-full justify-start"
       >
-        <img src={Cloud} alt="" aria-hidden className="h-4 w-4 shrink-0" />
+        <Cloud aria-hidden />
         <span
           className={`min-w-0 truncate text-left ${
             isActive ? 'shimmer-text' : 'text-muted-foreground'

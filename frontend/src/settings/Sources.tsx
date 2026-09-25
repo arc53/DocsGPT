@@ -1,11 +1,15 @@
 import {
   BookOpen,
+  CalendarIcon,
+  Eye,
+  HardDrive,
   Network,
+  RefreshCw,
   Search as SearchIcon,
   SlidersHorizontal,
+  Trash2,
   Users,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -13,23 +17,19 @@ import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
 
-import EyeView from '../assets/eye-view.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import Trash from '../assets/red-trash.svg';
-import SyncIcon from '../assets/sync.svg';
-import ThreeDots from '../assets/three-dots.svg';
-import CalendarIcon from '../assets/calendar.svg';
-import DiscIcon from '../assets/disc.svg';
 import Pagination from '../components/DocumentPagination';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
+  ActionMenu,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  type MenuOption,
 } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
@@ -62,15 +62,6 @@ import EnableGraphRAGModal from './EnableGraphRAGModal';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import SourceConfigModal from './SourceConfigModal';
 import TestRetrievalModal from './TestRetrievalModal';
-
-type SourceMenuOption = {
-  icon: string | LucideIcon;
-  label: string;
-  onClick: () => void;
-  variant: 'default' | 'destructive';
-  iconWidth?: number;
-  iconHeight?: number;
-};
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -356,18 +347,15 @@ export default function Sources({
     }
   };
 
-  const getActionOptions = (
-    index: number,
-    document: Doc,
-  ): SourceMenuOption[] => {
+  const getActionOptions = (index: number, document: Doc): MenuOption[] => {
     const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
     const isGraphRAG = document.config?.kind === 'graphrag';
     // 'team' viewers cannot write; convert is owner/editor only.
     const canEdit =
       document.ownership !== 'team' || document.team_access === 'editor';
-    const actions: SourceMenuOption[] = [
+    const actions: MenuOption[] = [
       {
-        icon: isGraphRAG ? Network : EyeView,
+        icon: isGraphRAG ? Network : Eye,
         label: isWiki
           ? t('settings.sources.wiki.view')
           : isGraphRAG
@@ -376,28 +364,24 @@ export default function Sources({
         onClick: () => {
           setDocumentToView(document);
         },
-        iconWidth: 18,
-        iconHeight: 18,
         variant: 'default',
       },
     ];
 
     if (document.ingestStatus === 'failed') {
       actions.push({
-        icon: SyncIcon,
+        icon: RefreshCw,
         label: t('settings.sources.reingest'),
         onClick: () => {
           handleReingest(document);
         },
-        iconWidth: 14,
-        iconHeight: 14,
         variant: 'default',
       });
     }
 
     if (document.syncFrequency) {
       actions.push({
-        icon: SyncIcon,
+        icon: RefreshCw,
         label: t('settings.sources.sync'),
         onClick: () => {
           setSyncMenuState({
@@ -406,18 +390,14 @@ export default function Sources({
             document: document,
           });
         },
-        iconWidth: 14,
-        iconHeight: 14,
         variant: 'default',
       });
       actions.push({
-        icon: SyncIcon,
+        icon: RefreshCw,
         label: t('settings.sources.syncNow'),
         onClick: () => {
           handleSyncNow(document);
         },
-        iconWidth: 14,
-        iconHeight: 14,
         variant: 'default',
       });
     }
@@ -430,8 +410,6 @@ export default function Sources({
           setDocumentToConfigure(document);
           setConfigModalState('ACTIVE');
         },
-        iconWidth: 16,
-        iconHeight: 16,
         variant: 'default',
       });
     }
@@ -444,8 +422,6 @@ export default function Sources({
           setDocumentToTest(document);
           setTestRetrievalState('ACTIVE');
         },
-        iconWidth: 16,
-        iconHeight: 16,
         variant: 'default',
       });
     }
@@ -464,8 +440,6 @@ export default function Sources({
           setDocumentToConvert(document);
           setConvertModalState('ACTIVE');
         },
-        iconWidth: 16,
-        iconHeight: 16,
         variant: 'default',
       });
     }
@@ -479,20 +453,16 @@ export default function Sources({
         onClick: () => {
           setDocumentToShare(document);
         },
-        iconWidth: 16,
-        iconHeight: 16,
         variant: 'default',
       });
     }
 
     actions.push({
-      icon: Trash,
+      icon: Trash2,
       label: t('convTile.delete'),
       onClick: () => {
         handleDeleteConfirmation(index, document);
       },
-      iconWidth: 18,
-      iconHeight: 18,
       variant: 'destructive',
     });
 
@@ -641,12 +611,7 @@ export default function Sources({
               }}
               labelSurface="background"
               shape="pill"
-              leftIcon={
-                <SearchIcon
-                  className="text-muted-foreground size-4"
-                  strokeWidth={1.75}
-                />
-              }
+              leftIcon={<SearchIcon className="text-muted-foreground size-4" />}
             />
           </div>
           <Button
@@ -752,64 +717,15 @@ export default function Sources({
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             )}
-                            <DropdownMenu
+                            <ActionMenu
+                              options={getActionOptions(index, document)}
+                              triggerLabel={t('settings.sources.menuAlt')}
+                              triggerTestId={`menu-button-${docId}`}
                               open={actionMenuDocId === docId}
                               onOpenChange={(open) =>
                                 setActionMenuDocId(open ? docId : null)
                               }
-                            >
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="h-[35px] w-6"
-                                  aria-label={t('settings.sources.menuAlt')}
-                                  data-testid={`menu-button-${docId}`}
-                                >
-                                  <img
-                                    src={ThreeDots}
-                                    alt={t('settings.sources.menuAlt')}
-                                    className="opacity-60 hover:opacity-100"
-                                  />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                className="min-w-[144px]"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {getActionOptions(index, document).map(
-                                  (option, idx) => (
-                                    <DropdownMenuItem
-                                      key={idx}
-                                      variant={option.variant}
-                                      onSelect={() => option.onClick()}
-                                    >
-                                      {typeof option.icon === 'string' ? (
-                                        <img
-                                          src={option.icon}
-                                          alt=""
-                                          width={option.iconWidth ?? 16}
-                                          height={option.iconHeight ?? 16}
-                                        />
-                                      ) : (
-                                        <option.icon
-                                          size={Math.max(
-                                            option.iconWidth ?? 16,
-                                            option.iconHeight ?? 16,
-                                          )}
-                                          strokeWidth={1.75}
-                                          aria-hidden="true"
-                                        />
-                                      )}
-                                      <span>{option.label}</span>
-                                    </DropdownMenuItem>
-                                  ),
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            />
                           </div>
                         </div>
                       </div>
@@ -817,11 +733,7 @@ export default function Sources({
                       <div className="flex flex-col items-start justify-start gap-1">
                         {document.ownership === 'team' && (
                           <Badge variant="neutral">
-                            <Users
-                              size={11}
-                              strokeWidth={2}
-                              aria-hidden="true"
-                            />
+                            <Users size={11} aria-hidden="true" />
                             {document.team_access === 'editor'
                               ? t('teamAccess.editor')
                               : t('teamAccess.viewer')}
@@ -854,11 +766,7 @@ export default function Sources({
                                 : null;
                             return (
                               <Badge variant="neutral">
-                                <Network
-                                  size={11}
-                                  strokeWidth={2}
-                                  aria-hidden="true"
-                                />
+                                <Network size={11} aria-hidden="true" />
                                 {isBuilding
                                   ? pct !== null
                                     ? t(
@@ -871,17 +779,13 @@ export default function Sources({
                             );
                           })()}
                         <div className="flex items-center gap-2">
-                          <img
-                            src={CalendarIcon}
-                            alt=""
-                            className="h-3.5 w-3.5"
-                          />
+                          <CalendarIcon className="text-muted-foreground size-3.5" />
                           <span className="text-muted-foreground text-xs leading-4.5 font-medium">
                             {document.date ? formatDate(document.date) : ''}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <img src={DiscIcon} alt="" className="h-3.5 w-3.5" />
+                          <HardDrive className="text-muted-foreground size-3.5" />
                           <span className="text-muted-foreground text-xs leading-4.5 font-medium">
                             {document.tokens
                               ? formatTokens(+document.tokens)

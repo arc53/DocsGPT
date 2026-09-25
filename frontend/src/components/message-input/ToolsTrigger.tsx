@@ -1,7 +1,6 @@
+import { ArrowRight, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import RedirectIcon from '../../assets/redirect.svg';
-import ToolIcon from '../../assets/tool.svg';
 import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
@@ -44,12 +43,7 @@ export default function ToolsTrigger({
           className="text-primary inline-flex items-center text-base font-medium"
         >
           {t('settings.tools.manageTools')}
-          <img
-            src={RedirectIcon}
-            alt=""
-            aria-hidden="true"
-            className="ml-2 h-[11px] w-[11px]"
-          />
+          <ArrowRight className="ml-2 size-3" />
         </a>
       }
       trigger={
@@ -60,11 +54,7 @@ export default function ToolsTrigger({
           shape="pill"
           className="max-w-[130px] justify-start"
         >
-          <img
-            src={ToolIcon}
-            alt="Tools"
-            className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4 dark:invert"
-          />
+          <Wrench />
           <span className="dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs sm:text-sm">
             {t('settings.tools.label')}
           </span>

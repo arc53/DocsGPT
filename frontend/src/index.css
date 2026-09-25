@@ -30,6 +30,18 @@
   }
 }
 
+/* Bottom padding that clears the iPhone home indicator (about 34px, since
+   index.html sets viewport-fit=cover). pb-safe keeps at least 1rem elsewhere,
+   for a sheet with a footer; pb-safe-0 is the bare inset, for a sheet whose
+   content brings its own padding. */
+@utility pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 1rem);
+}
+
+@utility pb-safe-0 {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 @utility no-scrollbar {
   /* Chrome, Safari and Opera */
   &::-webkit-scrollbar {

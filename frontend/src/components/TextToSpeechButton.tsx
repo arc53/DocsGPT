@@ -1,9 +1,7 @@
+import { Square, Volume2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
-import Speaker from '../assets/speaker.svg?react';
-import Stopspeech from '../assets/stopspeech.svg?react';
 import userService from '../api/services/userService';
 import { Button } from './ui/button';
-import Spinner from './Spinner';
 
 let currentlyPlayingAudio: {
   audio: HTMLAudioElement;
@@ -186,15 +184,9 @@ export default function SpeakButton({ text }: { text: string }) {
             ? 'Stop speaking'
             : 'Speak text'
       }
-      disabled={isLoading}
+      loading={isLoading}
     >
-      {isLoading ? (
-        <Spinner size="small" />
-      ) : isSpeaking ? (
-        <Stopspeech />
-      ) : (
-        <Speaker />
-      )}
+      {isSpeaking ? <Square /> : <Volume2 />}
     </Button>
   );
 }

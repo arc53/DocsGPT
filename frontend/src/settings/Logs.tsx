@@ -1,10 +1,9 @@
-import { Activity } from 'lucide-react';
+import { Activity, ChevronRight } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import ChevronRight from '../assets/chevron-right.svg';
 import CopyButton from '../components/CopyButton';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
@@ -441,10 +440,8 @@ function Log({
           isOpen && 'bg-muted rounded-t-xl',
         )}
       >
-        <img
-          src={ChevronRight}
-          alt="Expand log entry"
-          className={`mt-[3px] h-3 w-3 transition duration-300 dark:invert ${isOpen ? 'rotate-90' : ''}`}
+        <ChevronRight
+          className={`text-muted-foreground mt-[3px] size-3 transition duration-300 ${isOpen ? 'rotate-90' : ''}`}
         />
         <span className="flex flex-row flex-wrap gap-2">
           <h2 className="text-muted-foreground text-xs">{`${log.timestamp}`}</h2>

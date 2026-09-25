@@ -190,15 +190,15 @@ describe('MoveToFolderModal', () => {
     await render('f2');
     const chevron = chevronOf('Carriers');
     expect(chevron?.getAttribute('type')).toBe('button');
-    expect(chevron?.getAttribute('data-variant')).toBe('ghost-muted');
+    expect(chevron?.getAttribute('data-variant')).toBe('ghost-on-accent');
     expect(chevron?.getAttribute('data-size')).toBe('icon-xs');
     expect(chevron?.getAttribute('aria-label')).toBe(
       'agents.folders.openFolder',
     );
     // The folder icon is decorative; the row's text names it.
-    expect(itemFor('Carriers')?.querySelector('img')?.getAttribute('alt')).toBe(
-      '',
-    );
+    expect(
+      itemFor('Carriers')?.querySelector('svg')?.getAttribute('aria-hidden'),
+    ).toBe('true');
     expect(chevron?.querySelector('svg')).not.toBeNull();
     // The chevron is the row's last child, and only rows with subfolders get one.
     expect(itemFor('Carriers')?.lastElementChild).toBe(chevron);

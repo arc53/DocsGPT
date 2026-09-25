@@ -2,26 +2,29 @@ import { envVar } from '@/env';
 import { cn } from '@/lib/utils';
 import 'katex/dist/katex.min.css';
 
-import { ChevronDown as ChevronDownIcon, Pencil } from 'lucide-react';
+import {
+  ChevronDown as ChevronDownIcon,
+  Database,
+  Download,
+  Eye,
+  FileText,
+  Pencil,
+  ThumbsDown,
+  ThumbsUp,
+  ExternalLink,
+} from 'lucide-react';
 import { forwardRef, Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
-import ChevronDown from '../assets/chevron-down.svg';
-import Dislike from '../assets/dislike.svg?react';
-import Document from '../assets/document.svg';
 import DocumentationDark from '../assets/documentation-dark.svg';
-import Edit from '../assets/edit.svg';
-import Like from '../assets/like.svg?react';
-import Link from '../assets/link.svg';
-import Sources from '../assets/sources.svg';
 import CopyButton from '../components/CopyButton';
 
-import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Sheet, SheetContent } from '../components/ui/sheet';
+import { Textarea } from '../components/ui/textarea';
 import SpeakButton from '../components/TextToSpeechButton';
 import { useOutsideAlerter } from '../hooks';
 import {
@@ -217,8 +220,9 @@ const ConversationBubble = forwardRef<
                     setEditInputBox(message ?? '');
                   }}
                   className="invisible mt-3 shrink-0 cursor-pointer group-hover:visible"
+                  aria-label="Edit"
                 >
-                  <img src={Edit} alt="Edit" className="cursor-pointer" />
+                  <Pencil />
                 </Button>
               </>
             )}
@@ -228,7 +232,7 @@ const ConversationBubble = forwardRef<
               ref={editableQueryRef}
               className="mx-auto flex w-full flex-col gap-4 rounded-lg bg-transparent p-4"
             >
-              <textarea
+              <Textarea
                 placeholder={t('conversation.edit.placeholder')}
                 onChange={(e) => {
                   setEditInputBox(e.target.value);
@@ -241,7 +245,8 @@ const ConversationBubble = forwardRef<
                 }}
                 rows={5}
                 value={editInputBox}
-                className="border-border text-foreground dark:border-border dark:text-foreground focus-visible:ring-ring/50 focus-visible:border-ring w-full resize-none rounded-3xl border px-4 py-3 text-base leading-relaxed focus:outline-hidden focus-visible:ring-3"
+                size="lg"
+                resize="none"
               />
               <div className="flex items-center justify-end gap-2">
                 <Button
@@ -285,12 +290,7 @@ const ConversationBubble = forwardRef<
               // so a fit-content parent would leave its width to the cards.
               <div className="mb-4 flex w-full flex-col flex-wrap items-start self-stretch lg:flex-nowrap">
                 <div className="my-2 ml-6 flex flex-row items-center justify-center gap-3">
-                  <Avatar
-                    src={Sources}
-                    alt={t('conversation.sources.title')}
-                    className="h-6.5 w-7.5"
-                    imgClassName="h-full w-full object-fill"
-                  />
+                  <Database className="size-6" />
                   <p className="text-base font-semibold">
                     {t('conversation.sources.title')}
                   </p>
@@ -329,11 +329,7 @@ const ConversationBubble = forwardRef<
                                 : null
                             }
                           >
-                            <img
-                              src={Document}
-                              alt="Document"
-                              className="h-4.25 w-4.25 object-fill"
-                            />
+                            <FileText className="text-muted-foreground size-4 shrink-0" />
                             <p
                               className="mt-0.5 truncate text-xs"
                               title={
@@ -393,25 +389,7 @@ const ConversationBubble = forwardRef<
                 variant="secondary"
                 shape="pill"
               >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                  />
-                </svg>
+                <Eye />
                 <span className="max-w-50 truncate" title={artifact.label}>
                   {artifact.label}
                 </span>
@@ -493,25 +471,7 @@ const ConversationBubble = forwardRef<
                         shape="pill"
                         aria-label="View artifact"
                       >
-                        <svg
-                          className="h-4 w-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                          />
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                          />
-                        </svg>
+                        <Eye />
                         <span
                           className="max-w-50 truncate"
                           title={artifact.label}
@@ -548,18 +508,7 @@ const ConversationBubble = forwardRef<
                           aria-label="Export as Markdown"
                           title="Export as Markdown"
                         >
-                          <svg
-                            className="stroke-muted-foreground h-5 w-5"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            strokeWidth={1.5}
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
-                            />
-                          </svg>
+                          <Download />
                         </Button>
                       </div>
                     )}
@@ -588,9 +537,12 @@ const ConversationBubble = forwardRef<
                               feedback === 'LIKE' ? 'Remove like' : 'Like'
                             }
                           >
-                            <Like
-                              className={`${feedback === 'LIKE' ? 'stroke-primary fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-transparent'}`}
-                            ></Like>
+                            <ThumbsUp
+                              className={cn(
+                                feedback === 'LIKE' &&
+                                  'text-primary fill-white dark:fill-transparent',
+                              )}
+                            />
                           </Button>
                         </div>
 
@@ -614,9 +566,12 @@ const ConversationBubble = forwardRef<
                                 : 'Dislike'
                             }
                           >
-                            <Dislike
-                              className={`${feedback === 'DISLIKE' ? 'stroke-destructive fill-white dark:fill-transparent' : 'stroke-muted-foreground fill-transparent'}`}
-                            ></Dislike>
+                            <ThumbsDown
+                              className={cn(
+                                feedback === 'DISLIKE' &&
+                                  'text-destructive fill-white dark:fill-transparent',
+                              )}
+                            />
                           </Button>
                         </div>
                       </>
@@ -686,15 +641,7 @@ function AllSources(sources: AllSourcesProps) {
               >
                 {`${index + 1}. ${source.title}`}
                 {isExternalSource && (
-                  <img
-                    src={Link}
-                    alt="External Link"
-                    className={`ml-1 inline h-3 w-3 object-fill dark:invert ${
-                      isExternalSource
-                        ? 'group-hover/card:contrast-50 group-hover/card:hue-rotate-235 group-hover/card:invert-31 group-hover/card:saturate-752 group-hover/card:sepia-80 group-hover/card:filter'
-                        : ''
-                    }`}
-                  />
+                  <ExternalLink className="text-muted-foreground group-hover/card:text-primary ml-1 inline size-3" />
                 )}
               </p>
               <p className="text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word">
@@ -818,11 +765,13 @@ function ToolCallApprovalBar({
             shape="pill"
             onClick={() => setExpanded(!expanded)}
             title="Details"
+            aria-label="expand"
           >
-            <img
-              src={ChevronDown}
-              alt="expand"
-              className={`h-3.5 w-3.5 transition-transform duration-200 dark:invert ${expanded ? 'rotate-180' : ''}`}
+            <ChevronDownIcon
+              className={cn(
+                'transition-transform duration-200',
+                expanded && 'rotate-180',
+              )}
             />
           </Button>
         </div>

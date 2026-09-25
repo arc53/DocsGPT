@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
-import Spinner from '../../components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import { Sheet, SheetContent } from '../../components/ui/sheet';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatDateTime } from '../../utils/dateTimeUtils';

@@ -1,11 +1,10 @@
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Folder } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { AgentFolder } from '../agents/types';
 import userService from '../api/services/userService';
-import FolderIcon from '../assets/folder.svg';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -279,19 +278,14 @@ export default function MoveToFolderModal({
                       className="justify-between"
                     >
                       <span className="flex flex-1 items-center gap-2">
-                        <img
-                          src={FolderIcon}
-                          alt=""
-                          aria-hidden="true"
-                          className="h-4 w-4"
-                        />
+                        <Folder className="text-primary" />
                         <span className="truncate">{folder.name}</span>
                       </span>
                       {/* Check if folder has subfolders */}
                       {folders.some((f) => f.parent_id === folder.id) && (
                         <Button
                           type="button"
-                          variant="ghost-muted"
+                          variant="ghost-on-accent"
                           size="icon-xs"
                           aria-label={t('agents.folders.openFolder')}
                           onClick={(e) => {
@@ -306,6 +300,8 @@ export default function MoveToFolderModal({
                             if (e.key === 'Enter') e.stopPropagation();
                           }}
                         >
+                          {/* text-current keeps the Button's colour: the
+                              CommandItem mutes every uncoloured svg in it. */}
                           <ChevronRight className="text-current" />
                         </Button>
                       )}

@@ -176,9 +176,9 @@ export default function Usage() {
         />
       </div>
 
-      <div className="border-border dark:border-border mt-4 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
+      <div className="border-border mt-4 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
         <div className="flex flex-row items-center justify-between gap-3">
-          <p className="text-foreground dark:text-foreground font-bold">
+          <p className="text-foreground font-bold">
             {metric === 'cost' ? 'Spend' : 'Token usage'}
           </p>
           <div
@@ -203,10 +203,8 @@ export default function Usage() {
         </div>
       </div>
 
-      <div className="border-border dark:border-border mt-4 w-full overflow-hidden rounded-2xl border px-6 py-5">
-        <p className="text-foreground dark:text-foreground mb-3 font-bold">
-          Top users
-        </p>
+      <div className="border-border mt-4 w-full overflow-hidden rounded-2xl border px-6 py-5">
+        <p className="text-foreground mb-3 font-bold">Top users</p>
         {topUsers.length === 0 ? (
           <p className="text-muted-foreground text-sm">No usage.</p>
         ) : (

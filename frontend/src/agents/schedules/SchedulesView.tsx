@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
 import userService from '../../api/services/userService';
-import Spinner from '../../components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import { Button } from '../../components/ui/button';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';

@@ -3,12 +3,14 @@ import {
   ChevronRight,
   CircleCheck,
   CircleX,
+  Database,
   MoreHorizontal,
 } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
   useMemo,
+  useId,
   useRef,
   useState,
 } from 'react';
@@ -25,6 +27,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 
 import {
@@ -34,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -43,14 +47,12 @@ import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
 import ScienceSparkDarkIcon from '../assets/science-spark-dark.svg';
 import ScienceSparkIcon from '../assets/science-spark.svg';
-import SourceIcon from '../assets/source.svg';
 import { FileUpload } from '../components/FileUpload';
 import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
 } from '../components/MultiSelectPopover';
 import SourcesPopoverFooter from '../components/SourcesPopoverFooter';
-import Spinner from '../components/Spinner';
 import ToolIcon from '../components/ToolIcon';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
@@ -184,6 +186,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
+  const tokenLimitSwitchId = useId();
+  const requestLimitSwitchId = useId();
+  const promptOverrideSwitchId = useId();
   const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
     useState(false);
 
@@ -268,7 +273,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         own: t('agents.form.sourcePopup.groupOwn'),
         team: t('agents.form.sourcePopup.groupTeam'),
       },
-      SourceIcon,
+      <Database />,
     );
     // An attached source the caller can't list — an owner's private source on
     // a team-shared agent — still needs a row of its own, or it reads as
@@ -276,7 +281,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const listed = new Set(items.map((item) => item.id));
     const unlisted = Array.from(selectedSourceIds)
       .filter((id) => !listed.has(id))
-      .map((id) => ({ id, label: resolveSourceLabel(id), icon: SourceIcon }));
+      .map((id) => ({ id, label: resolveSourceLabel(id), icon: <Database /> }));
     return [...items, ...unlisted];
   }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t]);
 
@@ -827,32 +832,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               variant="outline-primary"
               shape="pill"
               disabled={isDraftBlocked()}
+              loading={draftLoading}
               onClick={handleSaveDraft}
-              className="min-w-28"
             >
-              <span className="flex items-center justify-center transition-all duration-200">
-                {draftLoading ? (
-                  <Spinner size="small" />
-                ) : (
-                  t('agents.form.buttons.saveDraft')
-                )}
-              </span>
+              {t('agents.form.buttons.saveDraft')}
             </Button>
           )}
           <Button
             type="button"
             disabled={!isPublishable() || !hasChanges}
+            loading={publishLoading}
             onClick={handlePublish}
             shape="pill"
-            className="min-w-28"
           >
-            <span className="flex items-center justify-center transition-all duration-200">
-              {publishLoading ? (
-                <Spinner size="small" />
-              ) : (
-                modeConfig[effectiveMode].buttonText
-              )}
-            </span>
+            {modeConfig[effectiveMode].buttonText}
           </Button>
           {modeConfig[effectiveMode].showAccessDetails && (
             <DropdownMenu>
@@ -1174,10 +1167,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 }
               />
               {selectedModelIds.size > 0 && (
-                <div>
-                  <label className="mb-2 block text-sm font-medium">
-                    {t('agents.form.labels.defaultModel')}
-                  </label>
+                <FormField label={t('agents.form.labels.defaultModel')}>
                   <Select
                     value={agent.default_model_id || undefined}
                     onValueChange={(value) =>
@@ -1201,7 +1191,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         ))}
                     </SelectContent>
                   </Select>
-                </div>
+                </FormField>
               )}
             </div>
           </div>
@@ -1274,17 +1264,36 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   </div>
                 )}
 
-                <div className="mt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-sm font-medium">
-                        {t('agents.form.advanced.tokenLimiting')}
-                      </h2>
-                      <p className="text-muted-foreground mt-1 text-xs">
-                        {t('agents.form.advanced.tokenLimitingDescription')}
-                      </p>
-                    </div>
+                <SettingRows className="mt-6">
+                  <SettingRow
+                    label={t('agents.form.advanced.tokenLimiting')}
+                    description={t(
+                      'agents.form.advanced.tokenLimitingDescription',
+                    )}
+                    htmlFor={tokenLimitSwitchId}
+                    after={
+                      <Input
+                        type="number"
+                        min="0"
+                        value={agent.token_limit || ''}
+                        onChange={(e) =>
+                          setAgent({
+                            ...agent,
+                            token_limit: e.target.value
+                              ? parseInt(e.target.value)
+                              : undefined,
+                          })
+                        }
+                        disabled={!agent.limited_token_mode}
+                        placeholder={t(
+                          'agents.form.placeholders.enterTokenLimit',
+                        )}
+                        shape="pill"
+                      />
+                    }
+                  >
                     <Switch
+                      id={tokenLimitSwitchId}
                       checked={agent.limited_token_mode}
                       onCheckedChange={(checked) => {
                         setAgent({
@@ -1296,37 +1305,36 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         });
                       }}
                     />
-                  </div>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={agent.token_limit || ''}
-                    onChange={(e) =>
-                      setAgent({
-                        ...agent,
-                        token_limit: e.target.value
-                          ? parseInt(e.target.value)
-                          : undefined,
-                      })
+                  </SettingRow>
+                  <SettingRow
+                    label={t('agents.form.advanced.requestLimiting')}
+                    description={t(
+                      'agents.form.advanced.requestLimitingDescription',
+                    )}
+                    htmlFor={requestLimitSwitchId}
+                    after={
+                      <Input
+                        type="number"
+                        min="0"
+                        value={agent.request_limit || ''}
+                        onChange={(e) =>
+                          setAgent({
+                            ...agent,
+                            request_limit: e.target.value
+                              ? parseInt(e.target.value)
+                              : undefined,
+                          })
+                        }
+                        disabled={!agent.limited_request_mode}
+                        placeholder={t(
+                          'agents.form.placeholders.enterRequestLimit',
+                        )}
+                        shape="pill"
+                      />
                     }
-                    disabled={!agent.limited_token_mode}
-                    placeholder={t('agents.form.placeholders.enterTokenLimit')}
-                    shape="pill"
-                    className="mt-2"
-                  />
-                </div>
-
-                <div className="mt-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-sm font-medium">
-                        {t('agents.form.advanced.requestLimiting')}
-                      </h2>
-                      <p className="text-muted-foreground mt-1 text-xs">
-                        {t('agents.form.advanced.requestLimitingDescription')}
-                      </p>
-                    </div>
+                  >
                     <Switch
+                      id={requestLimitSwitchId}
                       checked={agent.limited_request_mode}
                       onCheckedChange={(checked) => {
                         setAgent({
@@ -1338,42 +1346,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         });
                       }}
                     />
-                  </div>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={agent.request_limit || ''}
-                    onChange={(e) =>
-                      setAgent({
-                        ...agent,
-                        request_limit: e.target.value
-                          ? parseInt(e.target.value)
-                          : undefined,
-                      })
-                    }
-                    disabled={!agent.limited_request_mode}
-                    placeholder={t(
-                      'agents.form.placeholders.enterRequestLimit',
+                  </SettingRow>
+                  <SettingRow
+                    label={t('agents.form.advanced.systemPromptOverride')}
+                    description={t(
+                      'agents.form.advanced.systemPromptOverrideDescription',
                     )}
-                    shape="pill"
-                    className="mt-2"
-                  />
-                </div>
-
-                <div className="mt-6">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-sm font-medium">
-                        {t('agents.form.advanced.systemPromptOverride')}
-                      </h2>
-                      <p className="text-muted-foreground mt-1 text-xs">
-                        {t(
-                          'agents.form.advanced.systemPromptOverrideDescription',
-                        )}
-                      </p>
-                    </div>
+                    htmlFor={promptOverrideSwitchId}
+                  >
                     <Switch
-                      className="shrink-0"
+                      id={promptOverrideSwitchId}
                       checked={agent.allow_system_prompt_override}
                       onCheckedChange={(checked) =>
                         setAgent({
@@ -1382,8 +1364,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         })
                       }
                     />
-                  </div>
-                </div>
+                  </SettingRow>
+                </SettingRows>
               </div>
             )}
           </div>

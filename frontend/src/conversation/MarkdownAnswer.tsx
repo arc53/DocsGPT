@@ -282,7 +282,7 @@ export default function MarkdownAnswer({
                     return match ? (
                       <div className="group border-border relative overflow-hidden rounded-xl border">
                         <div className="bg-muted flex items-center justify-between px-2 py-1">
-                          <span className="text-foreground dark:text-foreground text-xs font-medium">
+                          <span className="text-foreground text-xs font-medium">
                             {language}
                           </span>
                           <CopyButton

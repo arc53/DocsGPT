@@ -1,4 +1,10 @@
-import { Search as SearchIcon, TriangleAlert } from 'lucide-react';
+import {
+  Check,
+  File,
+  Folder,
+  Search as SearchIcon,
+  TriangleAlert,
+} from 'lucide-react';
 import React, {
   Fragment,
   useState,
@@ -16,9 +22,6 @@ import {
   removeSessionToken,
 } from '../utils/providerUtils';
 import ConnectorAuth from '../components/ConnectorAuth';
-import FileIcon from '../assets/file.svg';
-import FolderIcon from '../assets/folder.svg';
-import CheckIcon from '../assets/checkmark.svg';
 import { Alert, AlertDescription } from './ui/alert';
 import {
   Breadcrumb,
@@ -28,7 +31,6 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from './ui/breadcrumb';
-import { Button } from './ui/button';
 import { Input } from './ui/input';
 import {
   Table,
@@ -39,6 +41,7 @@ import {
   TableHeader,
   TableCell,
 } from './ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { useDebouncedCallback } from '../hooks';
 
 interface CloudFile {
@@ -48,6 +51,26 @@ interface CloudFile {
   size?: number;
   modifiedTime: string;
   isFolder?: boolean;
+}
+
+/**
+ * The file browser under the drive tabs. With the tabs shown it is the active
+ * tab's panel; without them (one drive) it renders as is.
+ */
+function DrivePanel({
+  tabbed,
+  value,
+  children,
+}: {
+  tabbed: boolean;
+  value: string;
+  children: React.ReactNode;
+}) {
+  return tabbed ? (
+    <TabsContent value={value}>{children}</TabsContent>
+  ) : (
+    <>{children}</>
+  );
 }
 
 interface CloudFilePickerProps {
@@ -354,6 +377,8 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     }
   };
 
+  const showDriveTabs = provider === 'share_point' && allowsSharedContent;
+
   const handleTabChange = (tab: 'my_files' | 'shared') => {
     if (tab === activeTab) return;
     setActiveTab(tab);
@@ -448,115 +473,182 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
       {isConnected && (
         <div className="border-border mt-3 overflow-hidden rounded-lg border">
-          <div className="border-border rounded-t-lg">
-            {provider === 'share_point' && allowsSharedContent && (
-              <div className="border-border flex border-b">
-                <Button
-                  type="button"
-                  variant="tab"
-                  data-active={activeTab === 'my_files'}
-                  onClick={() => handleTabChange('my_files')}
-                >
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) =>
+              handleTabChange(value as 'my_files' | 'shared')
+            }
+          >
+            {showDriveTabs && (
+              <TabsList variant="underline">
+                <TabsTrigger variant="underline" value="my_files">
                   {t('filePicker.myFiles')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="tab"
-                  data-active={activeTab === 'shared'}
-                  onClick={() => handleTabChange('shared')}
-                >
+                </TabsTrigger>
+                <TabsTrigger variant="underline" value="shared">
                   {t('filePicker.sharedWithMe')}
-                </Button>
-              </div>
+                </TabsTrigger>
+              </TabsList>
             )}
-            <div className="bg-muted rounded-t-lg px-4 pt-4">
-              <Breadcrumb className="mb-2 min-w-0">
-                <BreadcrumbList className="flex-nowrap">
-                  {folderPath.map((path, index) => (
-                    <Fragment key={path.id || 'root'}>
-                      {index > 0 && <BreadcrumbSeparator />}
-                      {index === folderPath.length - 1 ? (
-                        <BreadcrumbItem className="min-w-0">
-                          <BreadcrumbPage
-                            title={path.name}
-                            className="max-w-[32ch]"
-                          >
-                            {path.name}
-                          </BreadcrumbPage>
-                        </BreadcrumbItem>
-                      ) : (
-                        <BreadcrumbItem>
-                          <BreadcrumbLink asChild>
-                            <button
-                              type="button"
-                              onClick={() => navigateBack(index)}
+            <DrivePanel tabbed={showDriveTabs} value={activeTab}>
+              <div className="bg-muted rounded-t-lg px-4 pt-4">
+                <Breadcrumb className="mb-2 min-w-0">
+                  <BreadcrumbList className="flex-nowrap">
+                    {folderPath.map((path, index) => (
+                      <Fragment key={path.id || 'root'}>
+                        {index > 0 && <BreadcrumbSeparator />}
+                        {index === folderPath.length - 1 ? (
+                          <BreadcrumbItem className="min-w-0">
+                            <BreadcrumbPage
+                              title={path.name}
+                              className="max-w-[32ch]"
                             >
                               {path.name}
-                            </button>
-                          </BreadcrumbLink>
-                        </BreadcrumbItem>
-                      )}
-                    </Fragment>
-                  ))}
-                </BreadcrumbList>
-              </Breadcrumb>
+                            </BreadcrumbPage>
+                          </BreadcrumbItem>
+                        ) : (
+                          <BreadcrumbItem>
+                            <BreadcrumbLink asChild>
+                              <button
+                                type="button"
+                                onClick={() => navigateBack(index)}
+                              >
+                                {path.name}
+                              </button>
+                            </BreadcrumbLink>
+                          </BreadcrumbItem>
+                        )}
+                      </Fragment>
+                    ))}
+                  </BreadcrumbList>
+                </Breadcrumb>
 
-              <div className="text-muted-foreground mb-3 text-sm">
-                Select Files from {getProviderConfig(provider).displayName}
+                <div className="text-muted-foreground mb-3 text-sm">
+                  Select Files from {getProviderConfig(provider).displayName}
+                </div>
+
+                <div className="mb-3 max-w-md">
+                  <Input
+                    type="text"
+                    label={t('filePicker.searchPlaceholder')}
+                    value={searchQuery}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    labelSurface="muted"
+                    leftIcon={
+                      <SearchIcon className="text-muted-foreground size-4" />
+                    }
+                  />
+                </div>
+
+                {/* Selected Files Message */}
+                <div className="text-muted-foreground pb-3 text-sm">
+                  {t('filePicker.itemsSelected', {
+                    count: selectedFiles.length + selectedFolders.length,
+                  })}
+                </div>
               </div>
 
-              <div className="mb-3 max-w-md">
-                <Input
-                  type="text"
-                  label={t('filePicker.searchPlaceholder')}
-                  value={searchQuery}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  labelSurface="muted"
-                  leftIcon={
-                    <SearchIcon
-                      className="text-muted-foreground size-4"
-                      strokeWidth={1.75}
-                    />
-                  }
-                />
-              </div>
-
-              {/* Selected Files Message */}
-              <div className="text-muted-foreground pb-3 text-sm">
-                {t('filePicker.itemsSelected', {
-                  count: selectedFiles.length + selectedFolders.length,
-                })}
-              </div>
-            </div>
-
-            <div className="border-border scrollbar-overlay h-72 border-t">
-              <TableContainer
-                ref={scrollContainerRef}
-                height="288px"
-                className="md:w-4xl lg:w-5xl"
-                bordered={false}
-              >
-                {
-                  <>
-                    <Table minWidth="1200px">
-                      <TableHead>
-                        <TableRow>
-                          <TableHeader width="40px"></TableHeader>
-                          <TableHeader width="60%">
-                            {t('filePicker.name')}
-                          </TableHeader>
-                          <TableHeader width="20%">
-                            {t('filePicker.lastModified')}
-                          </TableHeader>
-                          <TableHeader width="20%">
-                            {t('filePicker.size')}
-                          </TableHeader>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {isLoading && files.length === 0
-                          ? Array.from({ length: 5 }).map((_, i) => (
-                              <TableRow key={`skeleton-${i}`}>
+              <div className="border-border scrollbar-overlay h-72 border-t">
+                <TableContainer
+                  ref={scrollContainerRef}
+                  height="288px"
+                  className="md:w-4xl lg:w-5xl"
+                  bordered={false}
+                >
+                  {
+                    <>
+                      <Table minWidth="1200px">
+                        <TableHead>
+                          <TableRow>
+                            <TableHeader width="40px"></TableHeader>
+                            <TableHeader width="60%">
+                              {t('filePicker.name')}
+                            </TableHeader>
+                            <TableHeader width="20%">
+                              {t('filePicker.lastModified')}
+                            </TableHeader>
+                            <TableHeader width="20%">
+                              {t('filePicker.size')}
+                            </TableHeader>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {isLoading && files.length === 0
+                            ? Array.from({ length: 5 }).map((_, i) => (
+                                <TableRow key={`skeleton-${i}`}>
+                                  <TableCell width="40px" align="center">
+                                    <div className="bg-muted mx-auto h-5 w-5 animate-pulse rounded" />
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="bg-muted h-4 w-48 animate-pulse rounded" />
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="bg-muted h-4 w-24 animate-pulse rounded" />
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="bg-muted h-4 w-16 animate-pulse rounded" />
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            : files.map((file, index) => (
+                                <TableRow
+                                  key={`${file.id}-${index}`}
+                                  onClick={() => {
+                                    if (isFolder(file)) {
+                                      handleFolderClick(file.id, file.name);
+                                    } else {
+                                      handleFileSelect(file.id, false);
+                                    }
+                                  }}
+                                >
+                                  <TableCell width="40px" align="center">
+                                    <div
+                                      className="border-border mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border text-sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleFileSelect(
+                                          file.id,
+                                          isFolder(file),
+                                        );
+                                      }}
+                                    >
+                                      {(isFolder(file)
+                                        ? selectedFolders
+                                        : selectedFiles
+                                      ).includes(file.id) && (
+                                        <Check
+                                          role="img"
+                                          aria-label="Selected"
+                                          className="text-success size-4"
+                                        />
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex min-w-0 items-center gap-3">
+                                      <div className="shrink-0">
+                                        {isFolder(file) ? (
+                                          <Folder className="text-primary size-6" />
+                                        ) : (
+                                          <File className="text-muted-foreground size-6" />
+                                        )}
+                                      </div>
+                                      <span className="truncate">
+                                        {file.name}
+                                      </span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-xs">
+                                    {formatDateTime(file.modifiedTime)}
+                                  </TableCell>
+                                  <TableCell className="text-xs">
+                                    {file.size ? formatBytes(file.size) : '-'}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                          {isLoading &&
+                            files.length > 0 &&
+                            Array.from({ length: 3 }).map((_, i) => (
+                              <TableRow key={`load-more-skeleton-${i}`}>
                                 <TableCell width="40px" align="center">
                                   <div className="bg-muted mx-auto h-5 w-5 animate-pulse rounded" />
                                 </TableCell>
@@ -570,87 +662,15 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                                   <div className="bg-muted h-4 w-16 animate-pulse rounded" />
                                 </TableCell>
                               </TableRow>
-                            ))
-                          : files.map((file, index) => (
-                              <TableRow
-                                key={`${file.id}-${index}`}
-                                onClick={() => {
-                                  if (isFolder(file)) {
-                                    handleFolderClick(file.id, file.name);
-                                  } else {
-                                    handleFileSelect(file.id, false);
-                                  }
-                                }}
-                              >
-                                <TableCell width="40px" align="center">
-                                  <div
-                                    className="border-border mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border text-sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleFileSelect(file.id, isFolder(file));
-                                    }}
-                                  >
-                                    {(isFolder(file)
-                                      ? selectedFolders
-                                      : selectedFiles
-                                    ).includes(file.id) && (
-                                      <img
-                                        src={CheckIcon}
-                                        alt="Selected"
-                                        className="h-4 w-4"
-                                      />
-                                    )}
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex min-w-0 items-center gap-3">
-                                    <div className="shrink-0">
-                                      <img
-                                        src={
-                                          isFolder(file) ? FolderIcon : FileIcon
-                                        }
-                                        alt={isFolder(file) ? 'Folder' : 'File'}
-                                        className="h-6 w-6"
-                                      />
-                                    </div>
-                                    <span className="truncate">
-                                      {file.name}
-                                    </span>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-xs">
-                                  {formatDateTime(file.modifiedTime)}
-                                </TableCell>
-                                <TableCell className="text-xs">
-                                  {file.size ? formatBytes(file.size) : '-'}
-                                </TableCell>
-                              </TableRow>
                             ))}
-                        {isLoading &&
-                          files.length > 0 &&
-                          Array.from({ length: 3 }).map((_, i) => (
-                            <TableRow key={`load-more-skeleton-${i}`}>
-                              <TableCell width="40px" align="center">
-                                <div className="bg-muted mx-auto h-5 w-5 animate-pulse rounded" />
-                              </TableCell>
-                              <TableCell>
-                                <div className="bg-muted h-4 w-48 animate-pulse rounded" />
-                              </TableCell>
-                              <TableCell>
-                                <div className="bg-muted h-4 w-24 animate-pulse rounded" />
-                              </TableCell>
-                              <TableCell>
-                                <div className="bg-muted h-4 w-16 animate-pulse rounded" />
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                      </TableBody>
-                    </Table>
-                  </>
-                }
-              </TableContainer>
-            </div>
-          </div>
+                        </TableBody>
+                      </Table>
+                    </>
+                  }
+                </TableContainer>
+              </div>
+            </DrivePanel>
+          </Tabs>
         </div>
       )}
     </div>

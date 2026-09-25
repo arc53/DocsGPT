@@ -1,7 +1,6 @@
-import { X } from 'lucide-react';
+import { TriangleAlert, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import AlertIcon from '../../assets/alert.svg';
 import DocumentationDark from '../../assets/documentation-dark.svg';
 import type { Attachment } from '../../upload/uploadSlice';
 import { Button } from '../ui/button';
@@ -77,10 +76,9 @@ export default function AttachmentChipList({
                 )}
 
                 {attachment.status === 'failed' && (
-                  <img
-                    src={AlertIcon}
-                    alt="Failed"
-                    className="h-[15px] w-[15px] object-fill"
+                  <TriangleAlert
+                    aria-label="Failed"
+                    className="text-primary-foreground size-4"
                   />
                 )}
 

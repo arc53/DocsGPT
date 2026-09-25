@@ -498,7 +498,13 @@ export default function ShareToTeamModal({
       title={title}
       size="md"
       footer={
-        <Button variant="outline" disabled={inFlight} onClick={onClose}>
+        <Button
+          variant="outline"
+          size="lg"
+          shape="pill"
+          disabled={inFlight}
+          onClick={onClose}
+        >
           {t('settings.teams.share.done')}
         </Button>
       }

@@ -195,7 +195,7 @@ const toastStatusVariants = cva(
 );
 
 const STATUS_ICON = {
-  pending: <Spinner size="sm" className="size-6" />,
+  pending: <Spinner size="sm" />,
   success: <Check strokeWidth={3} />,
   warning: <TriangleAlert strokeWidth={3} />,
   destructive: <AlertCircle strokeWidth={3} />,
@@ -259,6 +259,8 @@ function ToastMessage({
   return (
     <span
       data-slot="toast-message"
+      data-variant={variant}
+      data-size={size}
       className={cn(toastMessageVariants({ variant, size }), className)}
       {...props}
     />

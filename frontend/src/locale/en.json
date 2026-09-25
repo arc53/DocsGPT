@@ -118,7 +118,6 @@
         "edit": "Edit",
         "save": "Save",
         "cancel": "Cancel",
-        "saving": "Saving…",
         "saveFailed": "Could not save the page. Please try again.",
         "forbidden": "You do not have permission to edit this page.",
         "conflict": "This page changed since you opened it and has been reloaded. Your edits are below — reapply and save again.",
@@ -332,7 +331,6 @@
         "subtitle": "Configure how \"{{name}}\" is chunked and retrieved.",
         "subtitleGeneric": "Configure how this source is chunked and retrieved.",
         "save": "Save",
-        "saving": "Saving…",
         "readOnly": "You have view-only access to this shared source and cannot change its config.",
         "chunkingChangeHint": "You changed a chunking setting. Saving will require re-ingesting this source for it to take effect.",
         "prescreenInvalidHint": "Check the prescreen values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
@@ -684,7 +682,6 @@
       "body": "Body",
       "deleteActionWarning": "Are you sure you want to delete the action \"{{name}}\"?",
       "save": "Save",
-      "saving": "Saving...",
       "saveFailed": "Failed to save tool configuration",
       "fieldName": "Field Name",
       "fieldType": "Field Type",
@@ -710,8 +707,6 @@
         "password": "Password",
         "timeout": "Timeout (seconds)",
         "testConnection": "Test Connection",
-        "testing": "Testing",
-        "saving": "Saving",
         "save": "Save",
         "cancel": "Cancel",
         "noAuth": "No Authentication",
@@ -801,7 +796,6 @@
         "installLink": "Don't have docsgpt-cli? Install it",
         "stepTwo": "2. Enter this code when prompted:",
         "start": "Generate code",
-        "starting": "Working…",
         "waitingForCli": "Waiting for the CLI to redeem the code…",
         "cancel": "Cancel"
       }
@@ -816,9 +810,7 @@
       "addTitle": "Add Custom Model",
       "editTitle": "Edit Custom Model",
       "save": "Save",
-      "saving": "Saving",
       "testConnection": "Test connection",
-      "testing": "Testing",
       "testSuccess": "Connection successful.",
       "testHintNew": "Fill in Base URL, Model ID, and API key to enable connection tests.",
       "disabledBadge": "Disabled",
@@ -965,7 +957,6 @@
         "retry": "Retry",
         "cancel": "Cancel",
         "submit": "Create token",
-        "submitting": "Creating",
         "error": "Failed to create the token. Please try again."
       },
       "created": {
@@ -984,7 +975,6 @@
         "warning": "Generate a new secret for \"{{name}}\"? The current secret stops working immediately, so anything using it must be updated. The name, scopes and restrictions stay the same.",
         "newExpiration": "New expiration",
         "submit": "Regenerate",
-        "submitting": "Regenerating…",
         "error": "Failed to regenerate the token. Please try again.",
         "done": {
           "title": "Token regenerated",
@@ -1107,7 +1097,6 @@
           "pickerFailed": "Failed to open file picker. Please try again.",
           "selectedFiles": "Selected Files",
           "selectFiles": "Select Files",
-          "loading": "Loading...",
           "noFilesSelected": "No files or folders selected",
           "folders": "Folders",
           "files": "Files",
@@ -1304,6 +1293,7 @@
   },
   "convTile": {
     "share": "Share",
+    "menu": "Conversation actions",
     "delete": "Delete",
     "rename": "Rename",
     "save": "Save",
@@ -1411,7 +1401,8 @@
       "unpin": "Unpin agent",
       "open": "Open",
       "remove": "Remove",
-      "draft": "Draft"
+      "draft": "Draft",
+      "actions": "Agent actions"
     },
     "description": "Discover and create custom versions of DocsGPT that combine instructions, extra knowledge, and any combination of skills",
     "newAgent": "New Agent",

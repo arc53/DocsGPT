@@ -1,19 +1,13 @@
-import { Share, X } from 'lucide-react';
+import { Check, Pencil, Share, Trash2, X } from 'lucide-react';
 import {
   SyntheticEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
-  type ReactNode,
 } from 'react';
 import { useSelector } from 'react-redux';
-import Edit from '../assets/edit.svg';
-import { useDarkTheme } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
-import CheckMark2 from '../assets/checkMark2.svg';
-import Trash from '../assets/red-trash.svg';
-import threeDots from '../assets/three-dots.svg';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
@@ -21,12 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { useOutsideAlerter } from '../hooks';
 
 interface ConversationProps {
@@ -50,7 +39,6 @@ export default function ConversationTile({
 }: ConversationTileProps) {
   const conversationId = useSelector(selectConversationId);
   const tileRef = useRef<HTMLInputElement>(null);
-  const [isDarkTheme] = useDarkTheme();
   const [isEdit, setIsEdit] = useState(false);
   const [conversationName, setConversationsName] = useState('');
   const [isOpen, setOpen] = useState<boolean>(false);
@@ -63,8 +51,7 @@ export default function ConversationTile({
     setConversationsName(conversation.name);
   }, [conversation.name]);
 
-  function handleEditConversation(event: SyntheticEvent) {
-    event.stopPropagation();
+  function handleEditConversation() {
     setIsEdit(true);
     setOpen(false);
   }
@@ -127,35 +114,24 @@ export default function ConversationTile({
     }
   };
 
-  type ConversationMenuOption = {
-    icon: ReactNode;
-    label: string;
-    onClick: (event: SyntheticEvent) => void;
-    variant: 'default' | 'destructive';
-  };
-
-  const menuOptions: ConversationMenuOption[] = [
+  const menuOptions: MenuOption[] = [
     {
-      icon: <Share className="size-4" strokeWidth={1.75} />,
+      icon: Share,
       label: t('convTile.share'),
-      onClick: (event: SyntheticEvent) => {
-        event.stopPropagation();
+      onClick: () => {
         setShareModalState(true);
         setOpen(false);
       },
-      variant: 'default',
     },
     {
-      icon: <img src={Edit} alt="" width={16} height={16} />,
+      icon: Pencil,
       label: t('convTile.rename'),
       onClick: handleEditConversation,
-      variant: 'default',
     },
     {
-      icon: <img src={Trash} alt="" width={18} height={18} />,
+      icon: Trash2,
       label: t('convTile.delete'),
-      onClick: (event: SyntheticEvent) => {
-        event.stopPropagation();
+      onClick: () => {
         setDeleteModalState('ACTIVE');
         setOpen(false);
       },
@@ -209,7 +185,7 @@ export default function ConversationTile({
               onKeyDown={handleRenameKeyDown}
             />
           ) : (
-            <p className="text-foreground dark:text-foreground my-auto overflow-hidden text-sm leading-6 font-normal text-ellipsis whitespace-nowrap">
+            <p className="text-foreground my-auto overflow-hidden text-sm leading-6 font-normal text-ellipsis whitespace-nowrap">
               {conversationName}
             </p>
           )}
@@ -220,7 +196,7 @@ export default function ConversationTile({
               <div className="flex gap-1">
                 <Button
                   type="button"
-                  variant="ghost-muted"
+                  variant="ghost-on-accent"
                   size="icon-xs"
                   aria-label={t('convTile.save')}
                   title={t('convTile.save')}
@@ -233,11 +209,11 @@ export default function ConversationTile({
                     });
                   }}
                 >
-                  <img src={CheckMark2} alt="" className="h-4 w-4" />
+                  <Check />
                 </Button>
                 <Button
                   type="button"
-                  variant="ghost-muted"
+                  variant="ghost-on-accent"
                   size="icon-xs"
                   aria-label={t('cancel')}
                   title={t('cancel')}
@@ -248,40 +224,17 @@ export default function ConversationTile({
                     onClear();
                   }}
                 >
-                  <X className="h-3 w-3" />
+                  <X />
                 </Button>
               </div>
             ) : (
-              <DropdownMenu open={isOpen} onOpenChange={setOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    shape="pill"
-                    onClick={(event: SyntheticEvent) => {
-                      event.stopPropagation();
-                    }}
-                    className="mr-2 h-6 w-6"
-                  >
-                    <img src={threeDots} width={8} alt="menu" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[144px]">
-                  {menuOptions.map((option, index) => (
-                    <DropdownMenuItem
-                      key={index}
-                      variant={option.variant}
-                      onSelect={(event) => {
-                        option.onClick(event as unknown as SyntheticEvent);
-                      }}
-                    >
-                      {option.icon}
-                      <span>{option.label}</span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <ActionMenu
+                options={menuOptions}
+                triggerLabel={t('convTile.menu')}
+                open={isOpen}
+                onOpenChange={setOpen}
+                className="mr-2"
+              />
             )}
           </div>
         )}

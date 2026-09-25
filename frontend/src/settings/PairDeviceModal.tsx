@@ -12,7 +12,7 @@ import CopyButton from '../components/CopyButton';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -235,25 +235,17 @@ export default function PairDeviceModal({
   const footer = (() => {
     if (stage === 'form') {
       return (
-        <>
-          <Button variant="ghost" shape="pill" onClick={close}>
-            {t('settings.devices.pairing.cancel')}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleStart}
-            disabled={submitting}
-            shape="pill"
-          >
-            {submitting
-              ? t('settings.devices.pairing.starting')
-              : t('settings.devices.pairing.start')}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={t('settings.devices.pairing.cancel')}
+          onCancel={close}
+          submitLabel={t('settings.devices.pairing.start')}
+          onSubmit={handleStart}
+          pending={submitting}
+        />
       );
     }
     return (
-      <Button variant="ghost" shape="pill" onClick={close}>
+      <Button variant="ghost" size="lg" shape="pill" onClick={close}>
         {t('settings.devices.pairing.cancel')}
       </Button>
     );

@@ -3,6 +3,7 @@ import {
   type CSSProperties,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -10,6 +11,7 @@ import {
 import { Edge, Node } from 'reactflow';
 
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import {
   Popover,
@@ -245,6 +247,10 @@ function VariableListWithSearch({
   onSelect: (templatePath: string) => void;
 }) {
   const [search, setSearch] = useState('');
+  // Own id: this list renders inside PromptTextArea's FormField (also through
+  // the popover portal), whose context would otherwise hand the textarea's id
+  // to this search box too.
+  const searchId = useId();
 
   const filtered = useMemo(
     () =>
@@ -263,6 +269,7 @@ function VariableListWithSearch({
       <div className="border-border flex items-center gap-2 border-b px-3 py-2">
         <Search className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
         <Input
+          id={searchId}
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -330,6 +337,7 @@ export default function PromptTextArea({
   rows = 4,
   label,
 }: PromptTextAreaProps) {
+  const textareaId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -444,95 +452,96 @@ export default function PromptTextArea({
     }
   }, [showDropdown]);
 
-  return (
-    <div>
-      {label && (
-        <label className="text-foreground mb-2 block text-sm font-medium">
-          {label}
-        </label>
-      )}
+  const field = (
+    <div
+      ref={wrapperRef}
+      className="border-border focus-within:ring-ring bg-card relative rounded-xl border transition-all focus-within:ring-2"
+    >
       <div
-        ref={wrapperRef}
-        className="border-border focus-within:ring-ring bg-card relative rounded-xl border transition-all focus-within:ring-2"
+        ref={overlayRef}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl border border-transparent px-3 py-2 text-sm wrap-break-word whitespace-pre-wrap"
       >
-        <div
-          ref={overlayRef}
-          aria-hidden
-          className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl border border-transparent px-3 py-2 text-sm wrap-break-word whitespace-pre-wrap"
-        >
-          {value ? (
-            <HighlightedOverlay text={value} />
-          ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
-          )}
-        </div>
-
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => {
-            onChange(e.target.value);
-            setTimeout(checkForTrigger, 0);
-          }}
-          onKeyUp={checkForTrigger}
-          onKeyDown={(e) => {
-            if (showDropdown && e.key === 'Escape') {
-              e.preventDefault();
-              e.stopPropagation();
-              setShowDropdown(false);
-            }
-          }}
-          onScroll={() => {
-            if (overlayRef.current && textareaRef.current) {
-              overlayRef.current.scrollTop = textareaRef.current.scrollTop;
-            }
-          }}
-          className="focus-visible:ring-ring/50 focus-visible:border-ring relative w-full rounded-xl bg-transparent px-3 pt-2 pb-8 text-sm text-transparent caret-black outline-none focus-visible:ring-3 dark:caret-white"
-          rows={rows}
-          placeholder={placeholder}
-          spellCheck={false}
-        />
-
-        <div className="absolute right-4 bottom-1.5 z-10">
-          <Popover open={contextOpen} onOpenChange={setContextOpen}>
-            <PopoverTrigger asChild>
-              <Button type="button" variant="link" size="xs">
-                <Plus className="h-3 w-3" />
-                Add context
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="end"
-              side="top"
-              className="w-60 p-0"
-              onOpenAutoFocus={(e) => e.preventDefault()}
-            >
-              <VariableListWithSearch
-                variables={variables}
-                onSelect={insertVariableFromButton}
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
-
-        {showDropdown && filtered.length > 0 && (
-          <div
-            ref={dropdownRef}
-            className="border-border bg-card absolute top-(--dropdown-top) left-(--dropdown-left) z-50 w-64 rounded-xl border shadow-lg"
-            style={
-              {
-                '--dropdown-top': `${dropdownPos.top}px`,
-                '--dropdown-left': `${dropdownPos.left}px`,
-              } as CSSProperties
-            }
-          >
-            <VariableListWithSearch
-              variables={filtered}
-              onSelect={insertVariable}
-            />
-          </div>
+        {value ? (
+          <HighlightedOverlay text={value} />
+        ) : (
+          <span className="text-muted-foreground">{placeholder}</span>
         )}
       </div>
+
+      <textarea
+        id={textareaId}
+        ref={textareaRef}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setTimeout(checkForTrigger, 0);
+        }}
+        onKeyUp={checkForTrigger}
+        onKeyDown={(e) => {
+          if (showDropdown && e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            setShowDropdown(false);
+          }
+        }}
+        onScroll={() => {
+          if (overlayRef.current && textareaRef.current) {
+            overlayRef.current.scrollTop = textareaRef.current.scrollTop;
+          }
+        }}
+        className="focus-visible:ring-ring/50 focus-visible:border-ring relative w-full rounded-xl bg-transparent px-3 pt-2 pb-8 text-sm text-transparent caret-black outline-none focus-visible:ring-3 dark:caret-white"
+        rows={rows}
+        placeholder={placeholder}
+        spellCheck={false}
+      />
+
+      <div className="absolute right-4 bottom-1.5 z-10">
+        <Popover open={contextOpen} onOpenChange={setContextOpen}>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="link" size="xs">
+              <Plus className="h-3 w-3" />
+              Add context
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            side="top"
+            className="w-60 p-0"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <VariableListWithSearch
+              variables={variables}
+              onSelect={insertVariableFromButton}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {showDropdown && filtered.length > 0 && (
+        <div
+          ref={dropdownRef}
+          className="border-border bg-card absolute top-(--dropdown-top) left-(--dropdown-left) z-50 w-64 rounded-xl border shadow-lg"
+          style={
+            {
+              '--dropdown-top': `${dropdownPos.top}px`,
+              '--dropdown-left': `${dropdownPos.left}px`,
+            } as CSSProperties
+          }
+        >
+          <VariableListWithSearch
+            variables={filtered}
+            onSelect={insertVariable}
+          />
+        </div>
+      )}
     </div>
+  );
+
+  if (!label) return <div>{field}</div>;
+  return (
+    <FormField label={label} id={textareaId}>
+      {field}
+    </FormField>
   );
 }

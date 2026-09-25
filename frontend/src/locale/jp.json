@@ -114,7 +114,6 @@
         "edit": "編集",
         "save": "保存",
         "cancel": "キャンセル",
-        "saving": "保存中…",
         "saveFailed": "ページを保存できませんでした。もう一度お試しください。",
         "forbidden": "このページを編集する権限がありません。",
         "conflict": "このページは開いた後に変更されたため、再読み込みされました。あなたの編集内容は下にあります。再適用して、もう一度保存してください。",
@@ -327,7 +326,6 @@
         "subtitle": "「{{name}}」のチャンク分割と検索の方法を設定します。",
         "subtitleGeneric": "このソースのチャンク分割と検索の方法を設定します。",
         "save": "保存",
-        "saving": "保存中…",
         "readOnly": "この共有ソースには閲覧のみのアクセス権があるため、設定を変更できません。",
         "chunkingChangeHint": "チャンク分割の設定を変更しました。保存後、反映にはこのソースの再インデックスが必要です。",
         "prescreenInvalidHint": "プリスクリーニングの値を確認してください。取得する候補数はチャンク数以上、保持するチャンク数は取得する候補数以下である必要があります。",
@@ -678,7 +676,6 @@
       "body": "ボディ",
       "deleteActionWarning": "アクション \"{{name}}\" を削除してもよろしいですか？",
       "save": "保存",
-      "saving": "保存中...",
       "saveFailed": "ツール設定の保存に失敗しました",
       "fieldName": "フィールド名",
       "fieldType": "フィールドタイプ",
@@ -704,8 +701,6 @@
         "password": "パスワード",
         "timeout": "Timeout (seconds)",
         "testConnection": "Test Connection",
-        "testing": "Testing",
-        "saving": "Saving",
         "save": "Save",
         "cancel": "Cancel",
         "noAuth": "No Authentication",
@@ -795,7 +790,6 @@
         "installLink": "docsgpt-cliがない場合はインストール",
         "stepTwo": "2. 求められたらこのコードを入力:",
         "start": "コードを生成",
-        "starting": "処理中…",
         "waitingForCli": "CLIがコードを使用するのを待機中…",
         "cancel": "キャンセル"
       }
@@ -810,9 +804,7 @@
       "addTitle": "カスタムモデルを追加",
       "editTitle": "カスタムモデルを編集",
       "save": "保存",
-      "saving": "保存中",
       "testConnection": "接続をテスト",
-      "testing": "テスト中",
       "testSuccess": "接続に成功しました。",
       "testHintNew": "接続テストを有効にするには、ベース URL、モデル ID、API キーを入力してください。",
       "disabledBadge": "無効",
@@ -959,7 +951,6 @@
         "retry": "再試行",
         "cancel": "キャンセル",
         "submit": "トークンを作成",
-        "submitting": "作成中",
         "error": "トークンを作成できませんでした。もう一度お試しください。"
       },
       "created": {
@@ -978,7 +969,6 @@
         "warning": "「{{name}}」の新しいシークレットを生成しますか？現在のシークレットは直ちに無効になるため、使用している箇所をすべて更新する必要があります。名前、スコープ、制限は変わりません。",
         "newExpiration": "新しい有効期限",
         "submit": "再生成",
-        "submitting": "再生成中…",
         "error": "トークンを再生成できませんでした。もう一度お試しください。",
         "done": {
           "title": "トークンを再生成しました",
@@ -1101,7 +1091,6 @@
           "pickerFailed": "ファイルピッカーを開けませんでした。もう一度お試しください。",
           "selectedFiles": "選択されたファイル",
           "selectFiles": "ファイルを選択",
-          "loading": "読み込み中...",
           "noFilesSelected": "ファイルまたはフォルダが選択されていません",
           "folders": "フォルダ",
           "files": "ファイル",
@@ -1297,6 +1286,7 @@
   },
   "convTile": {
     "share": "共有",
+    "menu": "会話の操作",
     "delete": "削除",
     "rename": "名前変更",
     "save": "保存",
@@ -1397,7 +1387,8 @@
       "unpin": "エージェントのピン留めを解除",
       "open": "開く",
       "remove": "削除",
-      "draft": "下書き"
+      "draft": "下書き",
+      "actions": "エージェントの操作"
     },
     "description": "指示、追加知識、スキルの組み合わせを含むDocsGPTのカスタムバージョンを発見して作成します",
     "newAgent": "新しいエージェント",

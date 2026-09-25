@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
-import Spinner from '../components/Spinner';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import {
@@ -13,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { SettingRow } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { Doc } from '../models/misc';
 import {
@@ -41,6 +41,7 @@ export const ShareConversationModal = ({
   const [isCopied, setIsCopied] = useState(false);
   const [status, setStatus] = useState<StatusType>('idle');
   const [allowPrompt, setAllowPrompt] = useState<boolean>(false);
+  const promptSwitchId = useId();
 
   const sourceDocs = useSelector(selectSourceDocs);
   const preSelectedDoc = useSelector(selectSelectedDocs);
@@ -112,15 +113,16 @@ export const ShareConversationModal = ({
       contentClassName="!overflow-visible"
     >
       <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <span className="text-foreground text-lg dark:text-white">
-            {t('modals.shareConv.option')}
-          </span>
+        <SettingRow
+          label={t('modals.shareConv.option')}
+          htmlFor={promptSwitchId}
+        >
           <Switch
+            id={promptSwitchId}
             checked={allowPrompt}
             onCheckedChange={togglePromptPermission}
           />
-        </div>
+        </SettingRow>
         {allowPrompt && (
           <div className="my-4">
             <Select
@@ -164,13 +166,13 @@ export const ShareConversationModal = ({
               type="button"
               size="lg"
               shape="pill"
-              className="my-1 w-28 justify-evenly text-center"
+              className="my-1 w-28"
+              loading={status === 'loading'}
               onClick={() => {
                 shareCoversationPublicly(allowPrompt);
               }}
             >
               {t('modals.shareConv.create')}
-              {status === 'loading' && <Spinner size="small" />}
             </Button>
           )}
         </div>

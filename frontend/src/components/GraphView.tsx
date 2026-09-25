@@ -1,12 +1,11 @@
 import { forceCollide, type SimulationNodeDatum } from 'd3-force';
-import { Network, X } from 'lucide-react';
+import { ArrowLeft, Network, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import { selectToken } from '../preferences/preferenceSlice';
 import { Button } from './ui/button';
 import SkeletonLoader from './SkeletonLoader';
@@ -168,7 +167,7 @@ const GraphView: React.FC<GraphViewProps> = ({
           onClick={onBackToDocuments}
           aria-label={t('settings.sources.backToAll')}
         >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
+          <ArrowLeft />
         </Button>
         <span className="text-primary font-semibold wrap-break-word">
           {sourceName}
@@ -177,12 +176,7 @@ const GraphView: React.FC<GraphViewProps> = ({
       </div>
 
       <div className="bg-muted/60 text-muted-foreground dark:bg-accent/40 mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-xs">
-        <Network
-          size={16}
-          strokeWidth={1.75}
-          className="mt-0.5 shrink-0"
-          aria-hidden="true"
-        />
+        <Network size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
         <p>
           <span className="text-foreground font-medium">
             {t('settings.sources.graphrag.view.title')}
@@ -195,7 +189,7 @@ const GraphView: React.FC<GraphViewProps> = ({
         <SkeletonLoader count={4} />
       ) : isEmpty ? (
         <div className="border-border text-muted-foreground flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-12 text-center text-sm">
-          <Network size={28} strokeWidth={1.5} aria-hidden="true" />
+          <Network size={28} aria-hidden="true" />
           <p>{t('settings.sources.graphrag.view.empty')}</p>
         </div>
       ) : (

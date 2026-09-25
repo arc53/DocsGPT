@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   Eye,
   Gauge,
   LogOut,
@@ -11,14 +12,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import adminService from '../api/services/adminService';
-import ThreeDots from '../assets/three-dots.svg';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
+  ActionMenu,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  type MenuOption,
 } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
@@ -337,56 +339,31 @@ export default function Users() {
                           className="flex items-center justify-end"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <DropdownMenu
+                          <ActionMenu
                             open={menuUserId === u.user_id}
                             onOpenChange={(open) =>
                               setMenuUserId(open ? u.user_id : null)
                             }
-                          >
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost-muted"
-                                size="icon"
-                                disabled={disabled}
-                                className="h-[35px] w-7"
-                                aria-label="User actions"
-                              >
-                                <img
-                                  src={ThreeDots}
-                                  alt="User actions"
-                                  className="filter dark:invert"
-                                />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              className="min-w-[176px]"
-                            >
-                              <DropdownMenuItem
-                                onSelect={() => openDetail(u.user_id)}
-                              >
-                                <Eye size={16} />
-                                <span>View details</span>
-                              </DropdownMenuItem>
-                              {buildActions(u.user_id, isAdmin, u.active).map(
-                                (act) => (
-                                  <DropdownMenuItem
-                                    key={act.key}
-                                    variant={
-                                      act.destructive
-                                        ? 'destructive'
-                                        : 'default'
-                                    }
-                                    onSelect={act.perform}
-                                  >
-                                    <act.icon size={16} />
-                                    <span>{act.label}</span>
-                                  </DropdownMenuItem>
-                                ),
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                            disabled={disabled}
+                            triggerLabel="User actions"
+                            options={[
+                              {
+                                label: 'View details',
+                                icon: Eye,
+                                onClick: () => openDetail(u.user_id),
+                              },
+                              ...buildActions(u.user_id, isAdmin, u.active).map(
+                                (act): MenuOption => ({
+                                  label: act.label,
+                                  icon: act.icon,
+                                  variant: act.destructive
+                                    ? 'destructive'
+                                    : 'default',
+                                  onClick: act.perform,
+                                }),
+                              ),
+                            ]}
+                          />
                         </div>
                       </TableCell>
                     </TableRow>
@@ -450,29 +427,35 @@ export default function Users() {
         size="lg"
         footer={
           detail ? (
-            <div className="flex flex-wrap justify-end gap-2">
-              {buildActions(
-                detail.user.user_id,
-                (detail.roles ?? []).includes('admin'),
-                detail.user?.active ?? true,
-              ).map((act) => (
-                <Button
-                  key={act.key}
-                  type="button"
-                  variant={act.destructive ? 'destructive-outline' : 'outline'}
-                  size="sm"
-                  onClick={() => {
-                    // Close the detail dialog before any confirm dialog opens
-                    // (avoids stacked modals); the list + toast reflect the result.
-                    setDetail(null);
-                    act.perform();
-                  }}
-                >
-                  <act.icon size={16} />
-                  {act.label}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="lg" shape="pill">
+                  Actions
+                  <ChevronDown />
                 </Button>
-              ))}
-            </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {buildActions(
+                  detail.user.user_id,
+                  (detail.roles ?? []).includes('admin'),
+                  detail.user?.active ?? true,
+                ).map((act) => (
+                  <DropdownMenuItem
+                    key={act.key}
+                    variant={act.destructive ? 'destructive' : 'default'}
+                    onSelect={() => {
+                      // Close the detail dialog before any confirm dialog opens
+                      // (avoids stacked modals); the list + toast reflect the result.
+                      setDetail(null);
+                      act.perform();
+                    }}
+                  >
+                    <act.icon aria-hidden="true" />
+                    <span>{act.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : undefined
         }
       >

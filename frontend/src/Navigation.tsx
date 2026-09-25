@@ -7,6 +7,8 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Pin,
+  PinOff,
   Plus,
   Search as SearchIcon,
   Settings as SettingsIcon,
@@ -22,12 +24,10 @@ import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
 import Discord from './assets/discord.svg';
 import Github from './assets/git_nav.svg';
-import Pin from './assets/pin.svg';
 import { Avatar } from './components/ui/avatar';
 import { Button } from './components/ui/button';
-import Spinner from './components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import Twitter from './assets/TwitterX.svg';
-import UnPin from './assets/unpin.svg';
 import Help from './components/Help';
 import {
   handleAbort,
@@ -405,7 +405,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             onClick={() => setNavOpen(true)}
             aria-label="Open navigation menu"
           >
-            <PanelLeftOpen className="size-5" strokeWidth={1.75} />
+            <PanelLeftOpen className="size-5" />
           </Button>
           {activeSection ? (
             <SectionRail
@@ -425,7 +425,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   onClick={() => newChat()}
                   aria-label="Start new chat"
                 >
-                  <Plus className="size-5" strokeWidth={1.75} />
+                  <Plus className="size-5" />
                 </Button>
               )}
               <Button
@@ -438,7 +438,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 }}
                 aria-label={t('manageAgents')}
               >
-                <LayoutGrid className="size-5" strokeWidth={1.75} />
+                <LayoutGrid className="size-5" />
               </Button>
               {conversations?.data && conversations.data.length > 0 && (
                 <Button
@@ -449,7 +449,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   aria-label={t('modals.searchConversations.searchPlaceholder')}
                   title={t('modals.searchConversations.searchPlaceholder')}
                 >
-                  <SearchIcon className="size-5" strokeWidth={1.75} />
+                  <SearchIcon className="size-5" />
                 </Button>
               )}
               <div className="mt-auto flex flex-col items-center gap-2">
@@ -460,7 +460,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   onClick={() => goToLevel('/settings')}
                   aria-label={t('settings.label')}
                 >
-                  <SettingsIcon className="size-5" strokeWidth={1.75} />
+                  <SettingsIcon className="size-5" />
                 </Button>
               </div>
             </>
@@ -498,15 +498,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             aria-label={navOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
             {navOpen ? (
-              <PanelLeftClose
-                className="size-5 transition-all duration-300 ease-in-out hover:scale-110"
-                strokeWidth={1.75}
-              />
+              <PanelLeftClose className="size-5 transition-all duration-300 ease-in-out hover:scale-110" />
             ) : (
-              <PanelLeftOpen
-                className="size-5 transition-all duration-300 ease-in-out hover:scale-110"
-                strokeWidth={1.75}
-              />
+              <PanelLeftOpen className="size-5 transition-all duration-300 ease-in-out hover:scale-110" />
             )}
           </Button>
         </div>
@@ -531,7 +525,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             >
               <Plus
                 className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
-                strokeWidth={1.75}
                 aria-label="Create new chat"
               />
               <p className="text-muted-foreground group-hover:text-foreground text-sm">
@@ -548,7 +541,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   role="status"
                   aria-label="Loading conversations"
                 >
-                  <Spinner size="small" />
+                  <Spinner size="sm" />
                 </div>
               )}
               {recentAgents?.length > 0 ? (
@@ -585,14 +578,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                             </p>
                           </div>
                           <div
-                            className={`${isMobile || isTablet ? 'flex' : 'invisible flex group-hover:visible'} items-center px-3`}
+                            className={`${isMobile || isTablet ? 'flex' : 'invisible flex group-hover:visible'} items-center px-1.5`}
                           >
                             <Button
                               type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              /* eslint-disable-next-line shadcn/no-restyle -- the pin is a bare 16px image on a sidebar row that already fills on hover; an accent fill would be invisible on it, so hover dims the icon instead */
-                              className="h-auto w-auto rounded-full p-0 hover:bg-transparent hover:opacity-75"
+                              variant="ghost-on-accent"
+                              size="icon-xs"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleTogglePin(agent);
@@ -601,10 +592,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                                 agent.pinned ? 'Unpin agent' : 'Pin agent'
                               }
                             >
-                              <img
-                                src={agent.pinned ? UnPin : Pin}
-                                className="h-4 w-4"
-                              ></img>
+                              {agent.pinned ? <PinOff /> : <Pin />}
                             </Button>
                           </div>
                         </div>
@@ -630,7 +618,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                         <div className="flex w-6 justify-center">
                           <LayoutGrid
                             className="text-muted-foreground size-5"
-                            strokeWidth={1.75}
                             aria-label="manage-agents"
                           />
                         </div>
@@ -661,7 +648,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   >
                     <LayoutGrid
                       className="text-muted-foreground size-5 shrink-0"
-                      strokeWidth={1.75}
                       aria-label="manage-agents"
                     />
                     <p className="text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
@@ -688,11 +674,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                       )}
                       title={t('modals.searchConversations.searchPlaceholder')}
                     >
-                      <SearchIcon
-                        className="size-5"
-                        strokeWidth={1.75}
-                        aria-label="search"
-                      />
+                      <SearchIcon className="size-5" aria-label="search" />
                     </Button>
                   </div>
                   <div>
@@ -781,7 +763,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               >
                 <SettingsIcon
                   className="text-muted-foreground size-5 shrink-0"
-                  strokeWidth={1.75}
                   aria-label="Settings"
                 />
                 <p className="text-foreground text-sm dark:text-white">
@@ -849,7 +830,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             onClick={() => setNavOpen(true)}
             aria-label="Toggle mobile menu"
           >
-            <Menu className="size-5" strokeWidth={1.75} />
+            <Menu className="size-5" />
           </Button>
         </div>
       </div>

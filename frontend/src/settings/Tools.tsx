@@ -1,26 +1,24 @@
-import { RefreshCcw, Search as SearchIcon, Trash, Users } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import {
+  Pencil,
+  RefreshCcw,
+  Search as SearchIcon,
+  Trash,
+  Users,
+} from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
-import Edit from '../assets/edit.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
-import ThreeDotsIcon from '../assets/three-dots.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Switch } from '../components/ui/switch';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
 import { useDarkTheme, useLoaderState } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
@@ -32,16 +30,6 @@ import ShareToTeamModal from '../teams/ShareToTeamModal';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
-
-type ToolsMenuOption = {
-  icon: string | LucideIcon;
-  label: string;
-  onClick: () => void;
-  variant: 'default' | 'destructive';
-  iconWidth?: number;
-  iconHeight?: number;
-  iconClassName?: string;
-};
 
 export default function Tools() {
   const { t } = useTranslation();
@@ -119,23 +107,19 @@ export default function Tools() {
     setReconnectModalState('ACTIVE');
   };
 
-  const getMenuOptions = (tool: UserToolType): ToolsMenuOption[] => {
-    const options: ToolsMenuOption[] = [
+  const getMenuOptions = (tool: UserToolType): MenuOption[] => {
+    const options: MenuOption[] = [
       {
-        icon: Edit,
+        icon: Pencil,
         label: t('settings.tools.edit'),
         onClick: () => handleSettingsClick(tool),
         variant: 'default',
-        iconWidth: 14,
-        iconHeight: 14,
       },
       {
         icon: Trash,
         label: t('settings.tools.delete'),
         onClick: () => handleDeleteTool(tool),
         variant: 'destructive',
-        iconWidth: 16,
-        iconHeight: 16,
       },
     ];
     // Sharing is an owner-only action: hide it for tools shared into the
@@ -146,8 +130,6 @@ export default function Tools() {
         label: t('settings.tools.shareWithTeam'),
         onClick: () => setToolToShare(tool),
         variant: 'default',
-        iconWidth: 16,
-        iconHeight: 16,
       });
     }
     if (tool.name === 'mcp_tool') {
@@ -156,9 +138,6 @@ export default function Tools() {
         label: t('settings.tools.reconnect'),
         onClick: () => handleReconnect(tool),
         variant: 'default',
-        iconWidth: 16,
-        iconHeight: 16,
-        iconClassName: 'text-muted-foreground',
       });
     }
     return options;
@@ -298,10 +277,7 @@ export default function Tools() {
                   labelSurface="background"
                   shape="pill"
                   leftIcon={
-                    <SearchIcon
-                      className="text-muted-foreground size-4"
-                      strokeWidth={1.75}
-                    />
+                    <SearchIcon className="text-muted-foreground size-4" />
                   }
                 />
               </div>
@@ -316,7 +292,7 @@ export default function Tools() {
                 {t('settings.tools.addTool')}
               </Button>
             </div>
-            <div className="border-border dark:border-border mt-5 mb-8 border-b" />
+            <div className="border-border mt-5 mb-8 border-b" />
             {loading ? (
               <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
                 <SkeletonLoader component="toolCards" count={6} />
@@ -359,65 +335,11 @@ export default function Tools() {
                           className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-5"
                         >
                           {!tool.default && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="absolute top-4 right-4 z-10 cursor-pointer"
-                                  aria-label={t(
-                                    'settings.tools.settingsIconAlt',
-                                  )}
-                                >
-                                  <img
-                                    src={ThreeDotsIcon}
-                                    alt={t('settings.tools.settingsIconAlt')}
-                                    className="h-[19px] w-[19px]"
-                                  />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                className="min-w-[144px]"
-                              >
-                                {getMenuOptions(tool).map((option, idx) => {
-                                  const IconCmp =
-                                    typeof option.icon !== 'string'
-                                      ? option.icon
-                                      : null;
-                                  return (
-                                    <DropdownMenuItem
-                                      key={idx}
-                                      variant={option.variant}
-                                      onSelect={() => option.onClick()}
-                                    >
-                                      {typeof option.icon === 'string' ? (
-                                        <img
-                                          src={option.icon}
-                                          alt=""
-                                          width={option.iconWidth ?? 16}
-                                          height={option.iconHeight ?? 16}
-                                          className={option.iconClassName}
-                                        />
-                                      ) : (
-                                        IconCmp && (
-                                          <IconCmp
-                                            size={Math.max(
-                                              option.iconWidth ?? 16,
-                                              option.iconHeight ?? 16,
-                                            )}
-                                            strokeWidth={1.75}
-                                            aria-hidden="true"
-                                            className={option.iconClassName}
-                                          />
-                                        )
-                                      )}
-                                      <span>{option.label}</span>
-                                    </DropdownMenuItem>
-                                  );
-                                })}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <ActionMenu
+                              options={getMenuOptions(tool)}
+                              triggerLabel={t('settings.tools.settingsIconAlt')}
+                              className="absolute top-3 right-3 z-10"
+                            />
                           )}
                           <div className="w-full">
                             <div className="flex w-full items-center gap-2 px-1">
@@ -455,11 +377,7 @@ export default function Tools() {
                                 )}
                               {tool.ownership === 'team' && (
                                 <Badge variant="neutral">
-                                  <Users
-                                    size={11}
-                                    strokeWidth={2}
-                                    aria-hidden="true"
-                                  />
+                                  <Users size={11} aria-hidden="true" />
                                   {tool.team_access === 'editor'
                                     ? t('teamAccess.editor')
                                     : t('teamAccess.viewer')}
@@ -469,7 +387,7 @@ export default function Tools() {
                             <div className="mt-[9px]">
                               <p
                                 title={tool.customName || tool.displayName}
-                                className="text-foreground dark:text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
+                                className="text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
                               >
                                 {tool.customName || tool.displayName}
                               </p>

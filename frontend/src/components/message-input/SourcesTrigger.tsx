@@ -1,6 +1,6 @@
+import { Database } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import SourceIcon from '../../assets/source.svg';
 import type { Doc } from '../../models/misc';
 import {
   MultiSelectPopover,
@@ -59,11 +59,7 @@ export default function SourcesTrigger({
               : t('conversation.sources.title')
           }
         >
-          <img
-            src={SourceIcon}
-            alt="Sources"
-            className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4 dark:invert"
-          />
+          <Database />
           <span className="dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs sm:text-sm">
             {selectedDocs && selectedDocs.length > 0
               ? selectedDocs.length === 1

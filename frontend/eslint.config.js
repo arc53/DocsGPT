@@ -184,6 +184,13 @@ export default [
               allow: ['layout', 'spacing'],
             },
             {
+              // The primitive measures Content's padding-block for its scroll
+              // math, and the Viewport's top gap must scroll with the
+              // messages, so padding here is part of the layout.
+              pattern: '^MessageScroller(Viewport|Content)$',
+              allow: ['layout', 'spacing'],
+            },
+            {
               pattern: '^OptionCard$',
               allow: ['layout'],
             },

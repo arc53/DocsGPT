@@ -1,12 +1,15 @@
-import { Search, Trash2 } from 'lucide-react';
+import {
+  ChevronRight,
+  CircleCheck,
+  CircleX,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import ChevronRight from '../assets/chevron-right.svg';
-import CircleCheck from '../assets/circle-check.svg';
-import CircleX from '../assets/circle-x.svg';
 import NoFilesDarkIcon from '../assets/no-files-dark.svg';
 import NoFilesIcon from '../assets/no-files.svg';
 import ConfigFields from '../components/ConfigFields';
@@ -20,6 +23,7 @@ import {
 } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
 import { Input } from '../components/ui/input';
 import { Switch } from '../components/ui/switch';
 import { useDarkTheme } from '../hooks';
@@ -343,9 +347,10 @@ export default function ToolConfig({
           size="sm"
           shape="pill"
           onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges || saving}
+          disabled={!hasUnsavedChanges}
+          loading={saving}
         >
-          {saving ? t('settings.tools.saving') : t('settings.tools.save')}
+          {t('settings.tools.save')}
         </Button>
       </div>
       {saveError && (
@@ -354,7 +359,7 @@ export default function ToolConfig({
         </Alert>
       )}
       <div className="mt-1">
-        <p className="text-foreground dark:text-foreground text-sm font-semibold">
+        <p className="text-foreground text-sm font-semibold">
           {t('settings.tools.customName')}
         </p>
         <div className="relative mt-4 w-full max-w-96">
@@ -370,7 +375,7 @@ export default function ToolConfig({
         {tool.name !== 'api_tool' &&
           Object.keys(configRequirements).length > 0 && (
             <div>
-              <p className="text-foreground dark:text-foreground mb-4 text-sm font-semibold">
+              <p className="text-foreground mb-4 text-sm font-semibold">
                 {t('settings.tools.authentication')}
               </p>
               <div className="max-w-96">
@@ -391,7 +396,7 @@ export default function ToolConfig({
       <div className="flex flex-col gap-4">
         <div className="bg-border mx-0 my-2 h-[0.8px] w-full rounded-full"></div>
         <div className="flex w-full flex-row items-center justify-between gap-2">
-          <p className="text-foreground dark:text-foreground text-base font-semibold">
+          <p className="text-foreground text-base font-semibold">
             {t('settings.tools.actions')}
           </p>
           {tool.name === 'api_tool' && (
@@ -462,19 +467,17 @@ export default function ToolConfig({
                   return (
                     <div
                       key={originalIndex}
-                      className="border-border dark:border-border w-full rounded-xl border"
+                      className="border-border w-full rounded-xl border"
                     >
                       <div
-                        className={`border-border dark:border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
+                        className={`border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
                         onClick={() => toggleUserActionExpand(originalIndex)}
                       >
                         <div className="flex items-center gap-3">
-                          <img
-                            src={ChevronRight}
-                            alt="expand"
-                            className={`h-4 w-4 opacity-60 transition-transform duration-200 dark:invert ${isExpanded ? 'rotate-90' : ''}`}
+                          <ChevronRight
+                            className={`text-muted-foreground size-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
                           />
-                          <p className="text-foreground dark:text-foreground font-semibold">
+                          <p className="text-foreground font-semibold">
                             {action.name}
                           </p>
                           {action.description && (
@@ -584,12 +587,14 @@ export default function ToolConfig({
                                         >
                                           <div className="flex items-center">
                                             &#8203;
-                                            <input
+                                            <Checkbox
+                                              size="sm"
                                               checked={param[1].filled_by_llm}
                                               id={uniqueKey}
-                                              type="checkbox"
-                                              className="border-border size-4 rounded-sm bg-transparent"
-                                              onChange={() =>
+                                              aria-label={t(
+                                                'settings.tools.filledByLLM',
+                                              )}
+                                              onCheckedChange={() =>
                                                 handleCheckboxChange(
                                                   originalIndex,
                                                   param[0],
@@ -888,24 +893,20 @@ function APIToolConfig({
           return (
             <div
               key={actionIndex}
-              className="border-border dark:border-border w-full rounded-xl border"
+              className="border-border w-full rounded-xl border"
             >
               <div
-                className={`border-border dark:border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
+                className={`border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
                 onClick={() => toggleActionExpand(actionName)}
               >
                 <div className="flex items-center gap-3">
-                  <img
-                    src={ChevronRight}
-                    alt="expand"
-                    className={`h-4 w-4 opacity-60 transition-transform duration-200 dark:invert ${isExpanded ? 'rotate-90' : ''}`}
+                  <ChevronRight
+                    className={`text-muted-foreground size-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
                   />
                   <Badge variant={getMethodBadgeVariant(action.method)}>
                     {action.method}
                   </Badge>
-                  <p className="text-foreground dark:text-foreground font-semibold">
-                    {action.name}
-                  </p>
+                  <p className="text-foreground font-semibold">{action.name}</p>
                   {action.description && (
                     <p className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md">
                       {action.description}
@@ -1137,7 +1138,7 @@ function APIToolConfig({
                           </SelectContent>
                         </Select>
                       </div>
-                      <p className="text-foreground dark:text-foreground mt-2 text-xs opacity-60">
+                      <p className="text-foreground mt-2 text-xs opacity-60">
                         {action.body_content_type === 'multipart/form-data' &&
                           'For APIs requiring multipart format. File uploads not supported through LLM.'}
                         {action.body_content_type ===
@@ -1200,6 +1201,7 @@ function APIActionTable({
   ) => void;
 }) {
   const { t } = useTranslation();
+  const idPrefix = React.useId();
 
   const [action, setAction] = React.useState<APIActionType>(apiAction);
   const [newPropertyKey, setNewPropertyKey] = React.useState('');
@@ -1405,20 +1407,18 @@ function APIActionTable({
                         size="icon-xs"
                         onClick={handleRenameProperty}
                         className="mr-1"
+                        aria-label="check"
                       >
-                        <img
-                          src={CircleCheck}
-                          alt="check"
-                          className="h-5 w-5"
-                        />
+                        <CircleCheck className="text-success" />
                       </Button>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-xs"
                         onClick={handleRenamePropertyCancel}
+                        aria-label="cancel"
                       >
-                        <img src={CircleX} alt="cancel" className="h-5 w-5" />
+                        <CircleX className="text-destructive" />
                       </Button>
                     </div>
                   </div>
@@ -1456,18 +1456,22 @@ function APIActionTable({
                 </Select>
               </td>
               <td>
-                <label className="ml-2.5 flex cursor-pointer items-start gap-4">
+                <label
+                  htmlFor={`${idPrefix}-${section}-${index}-filled-by-llm`}
+                  className="ml-2.5 flex cursor-pointer items-start gap-4"
+                >
                   <div className="flex items-center">
-                    <input
+                    <Checkbox
+                      size="sm"
+                      id={`${idPrefix}-${section}-${index}-filled-by-llm`}
+                      aria-label={t('settings.tools.filledByLLM')}
                       checked={param.filled_by_llm}
-                      type="checkbox"
-                      className="border-border size-4 rounded-sm bg-transparent"
-                      onChange={(e) =>
+                      onCheckedChange={(checked) =>
                         handlePropertyChange(
                           section,
                           key,
                           'filled_by_llm',
-                          e.target.checked,
+                          checked === true,
                         )
                       }
                     />
@@ -1498,9 +1502,7 @@ function APIActionTable({
                   size="sm"
                 />
               </td>
-              <td
-                className={`border-border dark:border-border border-b ${NARROW_CELL}`}
-              >
+              <td className={`border-border border-b ${NARROW_CELL}`}>
                 <Button
                   type="button"
                   variant="ghost-destructive"
@@ -1617,20 +1619,18 @@ function APIActionTable({
                         size="icon-xs"
                         onClick={handleRenameProperty}
                         className="mr-1"
+                        aria-label="check"
                       >
-                        <img
-                          src={CircleCheck}
-                          alt="check"
-                          className="h-5 w-5"
-                        />
+                        <CircleCheck className="text-success" />
                       </Button>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-xs"
                         onClick={handleRenamePropertyCancel}
+                        aria-label="cancel"
                       >
-                        <img src={CircleX} alt="cancel" className="h-5 w-5" />
+                        <CircleX className="text-destructive" />
                       </Button>
                     </div>
                   </div>
@@ -1673,9 +1673,7 @@ function APIActionTable({
                   }
                 />
               </td>
-              <td
-                className={`border-border dark:border-border border-b ${NARROW_CELL}`}
-              >
+              <td className={`border-border border-b ${NARROW_CELL}`}>
                 <Button
                   type="button"
                   variant="ghost-destructive"
@@ -1751,19 +1749,19 @@ function APIActionTable({
   return (
     <div className="scrollbar-overlay flex flex-col gap-6">
       <div>
-        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
+        <h3 className="text-foreground mb-1 text-base font-normal">
           {t('settings.tools.headers')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.name')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
               <th className={NARROW_CELL}></th>
@@ -1773,25 +1771,25 @@ function APIActionTable({
         </table>
       </div>
       <div>
-        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
+        <h3 className="text-foreground mb-1 text-base font-normal">
           {t('settings.tools.queryParameters')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.name')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.type')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.filledByLLM')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
               <th className={NARROW_CELL}></th>
@@ -1801,25 +1799,25 @@ function APIActionTable({
         </table>
       </div>
       <div className="mb-6">
-        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
+        <h3 className="text-foreground mb-1 text-base font-normal">
           {t('settings.tools.body')}
         </h3>
         <table className="table-default">
           <thead>
             <tr>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.name')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.type')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.filledByLLM')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.description')}
               </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
+              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
                 {t('settings.tools.value')}
               </th>
               <th className={NARROW_CELL}></th>

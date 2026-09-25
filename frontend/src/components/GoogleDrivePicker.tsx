@@ -274,13 +274,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                     type="button"
                     size="sm"
                     onClick={() => handleOpenPicker()}
-                    disabled={isLoading}
+                    loading={isLoading}
                   >
-                    {isLoading
-                      ? t('modals.uploadDoc.connectors.googleDrive.loading')
-                      : t(
-                          'modals.uploadDoc.connectors.googleDrive.selectFiles',
-                        )}
+                    {t('modals.uploadDoc.connectors.googleDrive.selectFiles')}
                   </Button>
                 </div>
 

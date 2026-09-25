@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { Alert, AlertDescription } from './alert';
+import { Alert, AlertDescription, AlertTitle } from './alert';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -51,5 +51,20 @@ describe('Alert', () => {
   it('lets the caller override the role', async () => {
     await render(<Alert variant="destructive" role="status" />);
     expect(alertRole()).toBe('status');
+  });
+
+  it('marks its parts with data-slot and the variant', async () => {
+    await render(
+      <Alert variant="warning">
+        <AlertTitle>Heads up</AlertTitle>
+        <AlertDescription>Notice</AlertDescription>
+      </Alert>,
+    );
+    const alert = document.querySelector('[data-slot="alert"]')!;
+    expect(alert.getAttribute('data-variant')).toBe('warning');
+    expect(alert.querySelector('[data-slot="alert-title"]')).not.toBeNull();
+    expect(
+      alert.querySelector('[data-slot="alert-description"]'),
+    ).not.toBeNull();
   });
 });

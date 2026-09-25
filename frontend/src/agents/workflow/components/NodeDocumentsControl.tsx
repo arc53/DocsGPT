@@ -1,7 +1,8 @@
 import { Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
 
@@ -41,6 +42,7 @@ export default function NodeDocumentsControl({
     getDocumentsMode(value),
   );
   const [refDraft, setRefDraft] = useState('');
+  const fieldId = useId();
 
   const chosen = documentsModeToInputDocuments('choose', value);
   const showChoose = mode === 'choose';
@@ -59,11 +61,13 @@ export default function NodeDocumentsControl({
   };
 
   return (
-    <div>
-      <label className="text-foreground mb-2 block text-sm font-medium">
-        {label}
-      </label>
-      <div className="border-border bg-card flex gap-1 rounded-xl border p-1">
+    <FormField label={label} hint={helpText} id={fieldId}>
+      <div
+        id={fieldId}
+        role="group"
+        aria-label={label}
+        className="border-border bg-card flex gap-1 rounded-xl border p-1"
+      >
         {MODE_OPTIONS.map(({ mode: optionMode, label: modeLabel }) => (
           <Button
             key={optionMode}
@@ -78,7 +82,7 @@ export default function NodeDocumentsControl({
         ))}
       </div>
       {showChoose && (
-        <div className="mt-2 flex flex-col gap-2">
+        <div className="flex flex-col gap-2">
           <MultiSelect
             options={withChosenDocumentOptions(options, chosen)}
             selected={chosen}
@@ -91,6 +95,7 @@ export default function NodeDocumentsControl({
           />
           <div className="flex gap-2">
             <Input
+              id={`${fieldId}-ref`}
               type="text"
               value={refDraft}
               onChange={(e) => setRefDraft(e.target.value)}
@@ -114,9 +119,6 @@ export default function NodeDocumentsControl({
           </div>
         </div>
       )}
-      {helpText && (
-        <p className="text-muted-foreground mt-1 text-xs">{helpText}</p>
-      )}
-    </div>
+    </FormField>
   );
 }

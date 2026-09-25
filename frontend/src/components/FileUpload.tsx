@@ -1,10 +1,9 @@
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FileRejection } from 'react-dropzone';
-import { ImageUp } from 'lucide-react';
+import { ImageUp, X } from 'lucide-react';
 
 import { Dropzone } from '@/components/ui/dropzone';
-import Cross from '../assets/cross.svg';
 
 type UploadTextSegment = {
   text: string;
@@ -157,8 +156,9 @@ export const FileUpload = ({
           handleRemove();
         }}
         className="bg-primary hover:bg-primary/90 absolute -top-2 -right-2 rounded-full p-1 transition-colors"
+        aria-label="remove"
       >
-        <img src={Cross} alt="remove" className="h-3 w-3" />
+        <X className="text-primary-foreground size-3" />
       </button>
     </div>
   );

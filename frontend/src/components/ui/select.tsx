@@ -1,7 +1,10 @@
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import * as React from 'react';
 
-import { cn } from '@/lib/utils';
+import { cva, type VariantProps } from 'class-variance-authority';
+
+import { useFormFieldControl } from '@/components/ui/form-field';
+import { cn, fieldFrame, focusRing, invalidState } from '@/lib/utils';
 import { Select as SelectPrimitive } from 'radix-ui';
 
 function Select({
@@ -22,34 +25,60 @@ function SelectValue({
   return <SelectPrimitive.Value data-slot="select-value" {...props} />;
 }
 
-function SelectTrigger({
-  className,
-  size = 'default',
-  variant = 'default',
-  shape = 'default',
-  children,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
-  size?: 'sm' | 'default' | 'lg';
-  variant?: 'default' | 'ghost';
-  shape?: 'default' | 'pill';
-}) {
+const selectTriggerVariants = cva(
+  `${focusRing} ${invalidState} ${fieldFrame} group border-border [&_svg:not([class*='text-'])]:text-muted-foreground flex w-fit items-center justify-between gap-2 px-3 py-2 text-sm whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4`,
+  {
+    variants: {
+      size: {
+        sm: 'h-8',
+        default: 'h-9',
+        lg: 'h-10.5',
+        // The form-row height (42px), shared with Button field and Input
+        // default, so a column of mixed fields has one name for one height.
+        field: 'h-10.5',
+      },
+      variant: {
+        default:
+          'bg-card hover:bg-accent data-placeholder:text-muted-foreground',
+        ghost:
+          'hover:bg-accent data-[state=open]:bg-muted data-placeholder:text-muted-foreground bg-transparent',
+      },
+      shape: {
+        default: 'rounded-md',
+        pill: 'rounded-full',
+      },
+    },
+    compoundVariants: [
+      // Pills start their text 21px in, like the Input and Button field pills.
+      { shape: 'pill', size: ['default', 'lg', 'field'], class: 'px-5' },
+    ],
+    defaultVariants: {
+      size: 'default',
+      variant: 'default',
+      shape: 'default',
+    },
+  },
+);
+
+function SelectTrigger(
+  triggerProps: React.ComponentProps<typeof SelectPrimitive.Trigger> &
+    VariantProps<typeof selectTriggerVariants>,
+) {
+  const {
+    className,
+    size = 'default',
+    variant = 'default',
+    shape = 'default',
+    children,
+    ...props
+  } = useFormFieldControl(triggerProps);
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
+      data-variant={variant}
       data-shape={shape}
-      className={cn(
-        "group aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive [&_svg:not([class*='text-'])]:text-muted-foreground flex w-fit items-center justify-between gap-2 border px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-3 disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:h-9 data-[size=lg]:h-10.5 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        variant === 'default' &&
-          'border-border bg-card focus-visible:ring-ring/50 hover:bg-accent data-placeholder:text-muted-foreground',
-        variant === 'ghost' &&
-          'border-border focus-visible:ring-ring/50 hover:bg-accent data-[state=open]:bg-muted data-placeholder:text-muted-foreground dark:border-border dark:hover:bg-accent dark:data-[state=open]:bg-muted bg-transparent',
-        shape === 'default' && 'rounded-md',
-        shape === 'pill' &&
-          'rounded-full px-4 data-[size=lg]:px-5 data-[size=sm]:px-3',
-        className,
-      )}
+      className={cn(selectTriggerVariants({ size, variant, shape }), className)}
       {...props}
     >
       {children}
@@ -197,4 +226,5 @@ export {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
+  selectTriggerVariants,
 };

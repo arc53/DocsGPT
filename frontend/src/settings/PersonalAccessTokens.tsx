@@ -54,7 +54,7 @@ function ScopeChips({ scopes }: { scopes: string[] }) {
       {visible.map((scope) => (
         <span
           key={scope}
-          className="bg-muted text-foreground dark:text-foreground rounded-full px-2 py-0.5 font-mono text-xs leading-4 whitespace-nowrap"
+          className="bg-muted text-foreground rounded-full px-2 py-0.5 font-mono text-xs leading-4 whitespace-nowrap"
         >
           {scope}
         </span>
@@ -283,9 +283,7 @@ export default function PersonalAccessTokens() {
   const mobileField = (label: string, value: React.ReactNode) => (
     <div className="flex items-start justify-between gap-4 text-sm">
       <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className="text-foreground dark:text-foreground min-w-0 text-right">
-        {value}
-      </span>
+      <span className="text-foreground min-w-0 text-right">{value}</span>
     </div>
   );
 
@@ -336,7 +334,7 @@ export default function PersonalAccessTokens() {
           </Alert>
         )}
 
-        <div className="border-border dark:border-border mt-5 mb-8 border-b" />
+        <div className="border-border mt-5 mb-8 border-b" />
 
         {loading ? (
           <SkeletonLoader component="default" />
@@ -377,7 +375,7 @@ export default function PersonalAccessTokens() {
                     <TableRow key={item.id}>
                       <TableCell className="max-w-[220px]">
                         <p
-                          className="text-foreground dark:text-foreground truncate font-medium"
+                          className="text-foreground truncate font-medium"
                           title={item.name}
                         >
                           {item.name}
@@ -423,7 +421,7 @@ export default function PersonalAccessTokens() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p
-                        className="text-foreground dark:text-foreground truncate text-sm font-semibold"
+                        className="text-foreground truncate text-sm font-semibold"
                         title={item.name}
                       >
                         {item.name}

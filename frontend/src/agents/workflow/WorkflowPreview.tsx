@@ -1,6 +1,7 @@
 import {
   Bot,
   CheckCircle2,
+  ChevronDown,
   Circle,
   CircleAlert,
   Code2,
@@ -30,7 +31,6 @@ import {
 } from '@/components/ui/message-scroller';
 import { cn } from '@/lib/utils';
 
-import ChevronDownIcon from '../../assets/chevron-down.svg';
 import MessageInput from '../../components/MessageInput';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
@@ -134,12 +134,10 @@ function ExecutionDetails({
               {completedSteps.length === 1 ? 'step' : 'steps'})
             </span>
           </p>
-          <img
-            src={ChevronDownIcon}
-            alt="ChevronDown"
+          <ChevronDown
             className={cn(
-              'h-4 w-4 transform transition-transform duration-200 dark:invert',
-              isOpen ? 'rotate-180' : '',
+              'transition-transform duration-200',
+              isOpen && 'rotate-180',
             )}
           />
         </Button>
@@ -286,12 +284,10 @@ function RunArtifactsSection({
           className="-ml-2.5"
         >
           <p className="text-base font-semibold">Artifacts</p>
-          <img
-            src={ChevronDownIcon}
-            alt="ChevronDown"
+          <ChevronDown
             className={cn(
-              'h-4 w-4 transform transition-transform duration-200 dark:invert',
-              isOpen ? 'rotate-180' : '',
+              'transition-transform duration-200',
+              isOpen && 'rotate-180',
             )}
           />
         </Button>
@@ -660,10 +656,7 @@ export default function WorkflowPreview({
             ) : (
               <MessageScrollerProvider autoScroll>
                 <MessageScroller>
-                  <MessageScrollerViewport
-                    /* eslint-disable-next-line shadcn/no-restyle -- MessageScroller padding: the primitive measures Content's padding-block for its scroll math, and the Viewport's top gap must scroll with the messages. See DESIGN.md, Approved exceptions. */
-                    className="scrollbar-thin px-4 pt-4"
-                  >
+                  <MessageScrollerViewport className="scrollbar-thin px-4 pt-4">
                     <MessageScrollerContent className="w-full">
                       {queries.map((query, index) => {
                         const querySteps = query.executionSteps || [];

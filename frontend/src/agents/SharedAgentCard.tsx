@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
+import { Pencil } from 'lucide-react';
 
-import EditIcon from '../assets/edit.svg';
 import ToolIcon from '../components/ToolIcon';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
@@ -23,7 +23,7 @@ export default function SharedAgentCard({
     agent.shared_metadata !== null &&
     Object.keys(agent.shared_metadata).length > 0;
   return (
-    <div className="border-border dark:border-border flex w-full max-w-[720px] flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-[480px]">
+    <div className="border-border flex w-full max-w-[720px] flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-[480px]">
       <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full p-1">
           <Avatar
@@ -52,7 +52,7 @@ export default function SharedAgentCard({
             className="shrink-0"
             aria-label={t('agents.edit')}
           >
-            <img src={EditIcon} alt="" className="h-3.5 w-3.5" />
+            <Pencil />
             {t('agents.edit')}
           </Button>
         )}

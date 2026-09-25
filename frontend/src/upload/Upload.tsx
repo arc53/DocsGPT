@@ -1,3 +1,4 @@
+import { ChevronLeft } from 'lucide-react';
 import { envVar } from '@/env';
 import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
@@ -21,6 +22,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
+import { Textarea } from '../components/ui/textarea';
 import { Modal } from '../components/ui/modal';
 import { OptionCard } from '../components/ui/option-card';
 import { ActiveState, Doc } from '../models/misc';
@@ -51,8 +53,6 @@ import RetrievalOptions, {
   optionsToConfig,
   type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
-
-import ChevronRight from '../assets/chevron-right.svg';
 
 function Upload({
   receivedFile = [],
@@ -264,7 +264,7 @@ function Upload({
             >
               {field.label}
             </Label>
-            <textarea
+            <Textarea
               id={`field-${field.name}`}
               name={field.name}
               value={String(
@@ -279,7 +279,8 @@ function Upload({
               }
               required={isRequired}
               rows={8}
-              className="border-border bg-card text-foreground focus:border-primary w-full resize-y rounded-2xl border p-3 text-sm outline-none"
+              size="lg"
+              variant="filled"
             />
           </div>
         );
@@ -293,7 +294,7 @@ function Upload({
               </span>
             </div>
             <div className="mt-4 max-w-full">
-              <p className="text-foreground dark:text-foreground mb-3.5 text-sm font-medium">
+              <p className="text-foreground mb-3.5 text-sm font-medium">
                 {t('modals.uploadDoc.selectedFiles')}
               </p>
               <div className="max-w-full overflow-hidden">
@@ -1046,6 +1047,21 @@ function Upload({
       onOpenChange={(o) => !o && handleClose()}
       hideTitle
       title={t('modals.uploadDoc.label')}
+      footer={
+        activeTab && ingestor.type ? (
+          <Button
+            type="button"
+            onClick={handleUpload}
+            disabled={isUploadDisabled()}
+            size="lg"
+            shape="pill"
+          >
+            {ingestor.type === 'wiki'
+              ? t('modals.uploadDoc.create')
+              : t('modals.uploadDoc.train')}
+          </Button>
+        ) : undefined
+      }
       size="lg"
       mobileVariant="sheet"
       className="max-h-[90vh] w-11/12 sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
@@ -1053,7 +1069,7 @@ function Upload({
     >
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
-          <p className="text-foreground dark:text-foreground text-left text-xl leading-7 font-semibold">
+          <p className="text-foreground text-left text-xl leading-7 font-semibold">
             {t('modals.uploadDoc.selectSource')}
           </p>
         )}
@@ -1070,11 +1086,7 @@ function Upload({
                   onClick={() => handleIngestorTypeChange(null)}
                   className="-ml-3 w-fit justify-start"
                 >
-                  <img
-                    src={ChevronRight}
-                    alt="back"
-                    className="h-3 w-3 rotate-180 transform dark:invert"
-                  />
+                  <ChevronLeft />
                   <span>{t('modals.uploadDoc.back')}</span>
                 </Button>
 
@@ -1128,20 +1140,6 @@ function Upload({
               )}
           </>
         )}
-        <div className="flex justify-end gap-4">
-          {activeTab && ingestor.type && (
-            <Button
-              type="button"
-              onClick={handleUpload}
-              disabled={isUploadDisabled()}
-              shape="pill"
-            >
-              {ingestor.type === 'wiki'
-                ? t('modals.uploadDoc.create')
-                : t('modals.uploadDoc.train')}
-            </Button>
-          )}
-        </div>
       </div>
     </Modal>
   );

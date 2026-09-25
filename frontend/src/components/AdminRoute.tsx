@@ -5,7 +5,7 @@ import {
   selectIsAdmin,
   selectRolesResolved,
 } from '../preferences/preferenceSlice';
-import Spinner from './Spinner';
+import { Spinner } from '@/components/ui/spinner';
 
 /**
  * Cosmetic route guard — NOT a security boundary. The server enforces admin

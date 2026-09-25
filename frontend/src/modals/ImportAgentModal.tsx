@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CloudUpload } from 'lucide-react';
 import { useState } from 'react';
 import { type FileRejection, useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
@@ -6,12 +6,10 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import Upload from '../assets/upload.svg';
-import Spinner from '../components/Spinner';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -253,6 +251,7 @@ export default function ImportAgentModal({
             handleClose();
             if (path) navigate(path);
           }}
+          size="lg"
           shape="pill"
         >
           {t('modals.importAgent.continueToAgent')}
@@ -260,44 +259,22 @@ export default function ImportAgentModal({
       );
     }
     return (
-      <>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={handleClose}
-          shape="pill"
-        >
-          {t('modals.importAgent.cancel')}
-        </Button>
-        {!plan ? (
-          <Button
-            type="button"
-            onClick={handleAnalyze}
-            disabled={!yamlText || loading}
-            shape="pill"
-            className="w-24"
-          >
-            {loading ? (
-              <Spinner size="small" />
-            ) : (
-              t('modals.importAgent.review')
-            )}
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            onClick={handleImport}
-            disabled={importing}
-            shape="pill"
-          >
-            {importing ? (
-              <Spinner size="small" />
-            ) : (
-              t('modals.importAgent.import')
-            )}
-          </Button>
-        )}
-      </>
+      <ModalActions
+        cancelLabel={t('modals.importAgent.cancel')}
+        onCancel={handleClose}
+        {...(!plan
+          ? {
+              submitLabel: t('modals.importAgent.review'),
+              onSubmit: handleAnalyze,
+              pending: loading,
+              disabled: !yamlText,
+            }
+          : {
+              submitLabel: t('modals.importAgent.import'),
+              onSubmit: handleImport,
+              pending: importing,
+            })}
+      />
     );
   };
 
@@ -343,11 +320,7 @@ export default function ImportAgentModal({
                 }`,
               })}
             >
-              <img
-                src={Upload}
-                alt=""
-                className="mb-3 h-10 w-10 opacity-60 dark:invert"
-              />
+              <CloudUpload className="text-muted-foreground mb-3 size-10" />
               <p className="text-foreground text-sm font-medium">
                 {fileName || t('modals.importAgent.dropzoneText')}
               </p>

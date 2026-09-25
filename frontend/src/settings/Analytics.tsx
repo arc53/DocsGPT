@@ -461,10 +461,10 @@ export default function Analytics({ agentId }: AnalyticsProps) {
           <div
             key={card.label}
             title={card.hint}
-            className={`border-border dark:border-border rounded-2xl border px-6 py-5 ${card.hint ? 'cursor-help' : ''}`}
+            className={`border-border rounded-2xl border px-6 py-5 ${card.hint ? 'cursor-help' : ''}`}
           >
             <p className="text-muted-foreground text-sm">{card.label}</p>
-            <p className="text-foreground dark:text-foreground mt-1 text-2xl font-bold">
+            <p className="text-foreground mt-1 text-2xl font-bold">
               {card.value}
             </p>
           </div>
@@ -473,9 +473,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
 
       {/* Messages Analytics */}
       <div className="mt-4 flex w-full flex-col gap-3 [@media(min-width:1080px)]:flex-row">
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
+        <div className="border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
+            <p className="text-foreground font-bold">
               {t('settings.analytics.messages')}
             </p>
           </div>
@@ -511,9 +511,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
         </div>
 
         {/* Token Usage Analytics */}
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
+        <div className="border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
           <div className="flex flex-row flex-wrap items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
+            <p className="text-foreground font-bold">
               {t('settings.analytics.tokenUsage')}
             </p>
             <Select
@@ -567,9 +567,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
 
       {/* Scheduled runs + tool usage */}
       <div className="mt-4 flex w-full flex-col gap-3 [@media(min-width:1080px)]:flex-row">
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
+        <div className="border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
+            <p className="text-foreground font-bold">
               {t('settings.analytics.scheduledRuns')}
             </p>
           </div>
@@ -620,9 +620,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
           </div>
         </div>
 
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
+        <div className="border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
+            <p className="text-foreground font-bold">
               {t('settings.analytics.toolUsage')}
             </p>
           </div>
@@ -665,9 +665,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
 
       {/* Feedback Analytics */}
       <div className="mt-4 flex w-full flex-col gap-3">
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
+        <div className="border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
           <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
+            <p className="text-foreground font-bold">
               {t('settings.analytics.userFeedback')}
             </p>
           </div>

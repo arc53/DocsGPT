@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import close from '../assets/cross.svg';
+import { X } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface NotificationProps {
@@ -96,10 +96,9 @@ export default function Notification({
       <Button
         type="button"
         variant="ghost"
-        /* eslint-disable-next-line shadcn/no-restyle -- a 16px bare close on
-           the promo gradient: no size fits, and ghost's accent hover fill
-           would paint a grey square on the purple. */
-        className="absolute top-2 right-2 z-30 h-4 w-4 rounded-none bg-transparent p-0 hover:bg-transparent hover:opacity-70"
+        size="icon-xs"
+        /* eslint-disable-next-line shadcn/no-restyle -- the close X on the promo gradient: any fill would be a grey square on the purple, so hover dims it instead; primary-foreground keeps it white because the button inherits the page colour */
+        className="text-primary-foreground absolute top-1 right-1 z-30 hover:bg-transparent hover:opacity-70 dark:hover:bg-transparent"
         aria-label={t('notification.closeAriaLabel')}
         onClick={(e) => {
           e.stopPropagation();
@@ -107,7 +106,7 @@ export default function Notification({
           handleCloseNotification();
         }}
       >
-        <img className="w-full" src={close} alt="Close notification" />
+        <X />
       </Button>
     </a>
   );

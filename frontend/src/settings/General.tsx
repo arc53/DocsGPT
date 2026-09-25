@@ -74,7 +74,7 @@ export default function General() {
         />
       </div>
       <div className="flex flex-col gap-4">
-        <label className="text-foreground dark:text-foreground text-base font-medium">
+        <label className="text-foreground text-base font-medium">
           {t('settings.general.selectTheme')}
         </label>
         <Select
@@ -97,7 +97,7 @@ export default function General() {
         </Select>
       </div>
       <div className="flex flex-col gap-4">
-        <label className="text-foreground dark:text-foreground text-base font-medium">
+        <label className="text-foreground text-base font-medium">
           {t('settings.general.selectLanguage')}
         </label>
         <Select
@@ -119,7 +119,7 @@ export default function General() {
           </SelectContent>
         </Select>
       </div>
-      <hr className="border-border dark:border-border my-4 w-[calc(min(665px,100%))] border-t" />
+      <hr className="border-border my-4 w-[calc(min(665px,100%))] border-t" />
       <div className="flex flex-col gap-2">
         <Button
           type="button"

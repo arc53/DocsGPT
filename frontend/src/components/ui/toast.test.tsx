@@ -125,4 +125,24 @@ describe('Toast', () => {
       /\b(bg|text)-(red|green|amber|gray|black|white)\b/,
     );
   });
+
+  it('exposes the message variant and size as data attributes', () => {
+    const html = renderToStaticMarkup(
+      <ToastMessage variant="destructive" size="sm">
+        Failed
+      </ToastMessage>,
+    );
+    expect(html).toContain('data-variant="destructive"');
+    expect(html).toContain('data-size="sm"');
+  });
+
+  it('shows the pending status with the small Spinner, unresized', () => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(<ToastStatus status="pending" />);
+    const spinner = host.querySelector('[data-slot="spinner"]')!;
+    expect(spinner.getAttribute('data-size')).toBe('sm');
+    const classes = spinner.getAttribute('class')!.split(' ');
+    expect(classes).toContain('size-5');
+    expect(classes).not.toContain('size-6');
+  });
 });

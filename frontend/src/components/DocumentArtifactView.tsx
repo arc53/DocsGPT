@@ -7,7 +7,7 @@ import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import MarkdownPreview from './MarkdownPreview';
 import { renderMermaidDiagram } from './mermaidSecurity';
-import Spinner from './Spinner';
+import { Spinner } from '@/components/ui/spinner';
 import {
   buildPreviewDocument,
   bytesPreviewModeForMime,
@@ -141,13 +141,9 @@ function DownloadCard({
           variant="outline"
           size="sm"
           onClick={onDownload}
-          disabled={downloading}
+          loading={downloading}
         >
-          {downloading ? (
-            <Spinner size="small" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
+          <Download className="h-4 w-4" />
           Download
         </Button>
       </div>
@@ -396,13 +392,9 @@ export default function DocumentArtifactView({
           variant="outline"
           size="sm"
           onClick={handleDownload}
-          disabled={downloading}
+          loading={downloading}
         >
-          {downloading ? (
-            <Spinner size="small" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
+          <Download className="h-4 w-4" />
           Download
         </Button>
 
@@ -412,13 +404,9 @@ export default function DocumentArtifactView({
             variant="ghost"
             size="sm"
             onClick={handleRestore}
-            disabled={restoring}
+            loading={restoring}
           >
-            {restoring ? (
-              <Spinner size="small" />
-            ) : (
-              <RotateCcw className="h-4 w-4" />
-            )}
+            <RotateCcw className="h-4 w-4" />
             Restore
           </Button>
         )}

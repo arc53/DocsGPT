@@ -60,12 +60,8 @@ export default function SectionNav({
           isActive && 'bg-sidebar-accent',
         )}
       >
-        <Icon
-          className="text-muted-foreground size-5 shrink-0"
-          strokeWidth={1.75}
-          aria-hidden
-        />
-        <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
+        <Icon className="text-muted-foreground size-5 shrink-0" aria-hidden />
+        <p className="text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
           {t(item.labelKey)}
         </p>
       </Link>
@@ -81,7 +77,6 @@ export default function SectionNav({
       >
         <ArrowLeft
           className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
-          strokeWidth={1.75}
           aria-hidden
         />
         <p className="text-muted-foreground group-hover:text-foreground text-sm">

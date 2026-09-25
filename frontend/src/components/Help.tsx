@@ -1,10 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { Info, Mail, ShieldCheck } from 'lucide-react';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
-import Info from '../assets/info.svg';
 import PageIcon from '../assets/documentation.svg';
-import EmailIcon from '../assets/envelope.svg';
 import { useTranslation } from 'react-i18next';
 import { selectIsAdmin } from '../preferences/preferenceSlice';
 import { Button } from './ui/button';
@@ -46,11 +44,7 @@ const Help = () => {
         onClick={toggleDropdown}
         className="mx-4 my-auto w-full"
       >
-        <img
-          src={Info}
-          alt="info"
-          className="w-5 shrink-0 filter dark:invert"
-        />
+        <Info className="text-muted-foreground size-5 shrink-0" />
         {t('help')}
       </Button>
       {isOpen && (
@@ -67,7 +61,6 @@ const Help = () => {
             >
               <ShieldCheck
                 size={20}
-                strokeWidth={1.75}
                 className="text-muted-foreground shrink-0"
               />
               {t('admin.label', 'Admin')}
@@ -93,12 +86,7 @@ const Help = () => {
             href="mailto:support@docsgpt.cloud"
             className="hover:bg-muted text-foreground flex items-start gap-4 rounded-b-xl px-4 py-2"
           >
-            <img
-              src={EmailIcon}
-              alt="Email Us"
-              className="p-0.5 filter dark:invert"
-              width={20}
-            />
+            <Mail className="size-5 shrink-0" />
             {t('emailUs')}
           </a>
         </div>

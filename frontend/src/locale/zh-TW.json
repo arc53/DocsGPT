@@ -114,7 +114,6 @@
         "edit": "編輯",
         "save": "儲存",
         "cancel": "取消",
-        "saving": "儲存中…",
         "saveFailed": "無法儲存頁面。請再試一次。",
         "forbidden": "您沒有編輯此頁面的權限。",
         "conflict": "此頁面在您開啟後已變更，並已重新載入。您的編輯內容如下——請重新套用後再次儲存。",
@@ -327,7 +326,6 @@
         "subtitle": "設定「{{name}}」的分塊與檢索方式。",
         "subtitleGeneric": "設定此來源的分塊與檢索方式。",
         "save": "儲存",
-        "saving": "儲存中…",
         "readOnly": "您對此共享來源僅有檢視權限，無法變更其設定。",
         "chunkingChangeHint": "您變更了分塊設定。儲存後需重新索引此來源才會生效。",
         "prescreenInvalidHint": "請檢查預篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
@@ -678,7 +676,6 @@
       "body": "主體",
       "deleteActionWarning": "您確定要刪除操作 \"{{name}}\" 嗎？",
       "save": "儲存",
-      "saving": "儲存中...",
       "saveFailed": "儲存工具設定失敗",
       "fieldName": "欄位名稱",
       "fieldType": "欄位類型",
@@ -704,8 +701,6 @@
         "password": "密碼",
         "timeout": "Timeout (seconds)",
         "testConnection": "Test Connection",
-        "testing": "Testing",
-        "saving": "Saving",
         "save": "Save",
         "cancel": "Cancel",
         "noAuth": "No Authentication",
@@ -795,7 +790,6 @@
         "installLink": "還沒有 docsgpt-cli？安裝它",
         "stepTwo": "2. 在提示時輸入此配對碼：",
         "start": "產生配對碼",
-        "starting": "處理中…",
         "waitingForCli": "等待 CLI 兌換配對碼…",
         "cancel": "取消"
       }
@@ -810,9 +804,7 @@
       "addTitle": "新增自訂模型",
       "editTitle": "編輯自訂模型",
       "save": "儲存",
-      "saving": "儲存中",
       "testConnection": "測試連線",
-      "testing": "測試中",
       "testSuccess": "連線成功。",
       "testHintNew": "請填寫 Base URL、模型 ID 與 API 金鑰以啟用連線測試。",
       "disabledBadge": "已停用",
@@ -959,7 +951,6 @@
         "retry": "重試",
         "cancel": "取消",
         "submit": "建立權杖",
-        "submitting": "建立中",
         "error": "建立權杖失敗，請再試一次。"
       },
       "created": {
@@ -978,7 +969,6 @@
         "warning": "要為「{{name}}」產生新的密鑰嗎？目前的密鑰會立即失效，所有使用它的地方都需要更新。名稱、權限範圍和限制維持不變。",
         "newExpiration": "新的到期時間",
         "submit": "重新產生",
-        "submitting": "正在重新產生…",
         "error": "重新產生權杖失敗，請再試一次。",
         "done": {
           "title": "權杖已重新產生",
@@ -1101,7 +1091,6 @@
           "pickerFailed": "無法開啟檔案選擇器。請重試。",
           "selectedFiles": "已選擇的檔案",
           "selectFiles": "選擇檔案",
-          "loading": "載入中...",
           "noFilesSelected": "未選擇檔案或資料夾",
           "folders": "資料夾",
           "files": "檔案",
@@ -1297,6 +1286,7 @@
   },
   "convTile": {
     "share": "分享",
+    "menu": "對話操作",
     "delete": "刪除",
     "rename": "重新命名",
     "save": "儲存",
@@ -1397,7 +1387,8 @@
       "unpin": "取消釘選代理",
       "open": "開啟",
       "remove": "移除",
-      "draft": "草稿"
+      "draft": "草稿",
+      "actions": "代理操作"
     },
     "description": "探索並創建結合指令、額外知識和任意技能組合的DocsGPT自訂版本",
     "newAgent": "新建代理",

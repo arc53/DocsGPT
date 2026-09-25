@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -13,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SettingRow } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -113,6 +115,8 @@ export default function GuardrailsSection({
   const [catalog, setCatalog] = React.useState<GuardrailCatalog | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [openSettings, setOpenSettings] = React.useState<string | null>(null);
+  const enabledId = React.useId();
+  const failOpenId = React.useId();
 
   const config = value ?? DEFAULT_GUARDRAILS;
 
@@ -292,53 +296,51 @@ export default function GuardrailsSection({
             </Alert>
           )}
 
-          <div className="mt-4 flex items-center justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-medium">
-                {t('agents.form.guardrails.enable')}
-              </h3>
-              <p className="text-muted-foreground mt-1 text-xs">
-                {t('agents.form.guardrails.enableDescription')}
-              </p>
-            </div>
+          <SettingRow
+            className="mt-4"
+            label={t('agents.form.guardrails.enable')}
+            description={t('agents.form.guardrails.enableDescription')}
+            htmlFor={enabledId}
+          >
             <Switch
-              className="shrink-0"
+              id={enabledId}
               checked={config.enabled}
               disabled={disabled}
               data-testid="guardrails-enabled"
               onCheckedChange={(checked) => patch({ enabled: checked })}
             />
-          </div>
+          </SettingRow>
 
           {config.enabled && (
             <>
               <div className="mt-5">
-                <label className="mb-2 block text-sm font-medium">
-                  {t('agents.form.guardrails.mode')}
-                </label>
-                <Select
-                  value={config.mode}
-                  onValueChange={(mode) =>
-                    patch({ mode: mode as GuardrailsConfig['mode'] })
-                  }
-                  disabled={disabled}
-                >
-                  <SelectTrigger
-                    className="w-full"
-                    size="lg"
-                    shape="pill"
-                    data-testid="guardrails-mode"
+                <FormField label={t('agents.form.guardrails.mode')}>
+                  <Select
+                    value={config.mode}
+                    onValueChange={(mode) =>
+                      patch({ mode: mode as GuardrailsConfig['mode'] })
+                    }
+                    disabled={disabled}
                   >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(catalog?.modes ?? Object.keys(MODE_KEYS)).map((mode) => (
-                      <SelectItem key={mode} value={mode}>
-                        {t(MODE_KEYS[mode] ?? mode)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <SelectTrigger
+                      className="w-full"
+                      size="lg"
+                      shape="pill"
+                      data-testid="guardrails-mode"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(catalog?.modes ?? Object.keys(MODE_KEYS)).map(
+                        (mode) => (
+                          <SelectItem key={mode} value={mode}>
+                            {t(MODE_KEYS[mode] ?? mode)}
+                          </SelectItem>
+                        ),
+                      )}
+                    </SelectContent>
+                  </Select>
+                </FormField>
                 {config.mode === 'monitor_only' && (
                   <p className="text-warning mt-2 text-xs">
                     {t('agents.form.guardrails.monitorHint')}
@@ -394,10 +396,11 @@ export default function GuardrailsSection({
                 </div>
               </div>
 
-              <div className="mt-6">
-                <label className="mb-2 block text-sm font-medium">
-                  {t('agents.form.guardrails.blockMessage')}
-                </label>
+              <FormField
+                className="mt-6"
+                label={t('agents.form.guardrails.blockMessage')}
+                hint={t('agents.form.guardrails.blockMessageDescription')}
+              >
                 <Input
                   type="text"
                   value={config.block_message}
@@ -407,33 +410,27 @@ export default function GuardrailsSection({
                   onChange={(e) => patch({ block_message: e.target.value })}
                   shape="pill"
                 />
-                <p className="text-muted-foreground mt-1 text-xs">
-                  {t('agents.form.guardrails.blockMessageDescription')}
-                </p>
-              </div>
+              </FormField>
 
-              <div className="mt-6 flex items-center justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-medium">
-                    {t('agents.form.guardrails.failOpen')}
-                  </h3>
-                  <p className="text-muted-foreground mt-1 text-xs">
-                    {t('agents.form.guardrails.failOpenDescription')}
-                  </p>
-                </div>
+              <SettingRow
+                className="mt-6"
+                label={t('agents.form.guardrails.failOpen')}
+                description={t('agents.form.guardrails.failOpenDescription')}
+                htmlFor={failOpenId}
+              >
                 <Switch
-                  className="shrink-0"
+                  id={failOpenId}
                   checked={config.fail_open}
                   disabled={disabled}
                   data-testid="guardrails-fail-open"
                   onCheckedChange={(checked) => patch({ fail_open: checked })}
                 />
-              </div>
+              </SettingRow>
 
-              <div className="mt-4">
-                <label className="mb-2 block text-sm font-medium">
-                  {t('agents.form.guardrails.timeout')}
-                </label>
+              <FormField
+                className="mt-4"
+                label={t('agents.form.guardrails.timeout')}
+              >
                 <NumberField
                   value={config.timeout_ms}
                   min={100}
@@ -444,7 +441,7 @@ export default function GuardrailsSection({
                   testId="guardrails-timeout"
                   onCommit={(timeout_ms) => patch({ timeout_ms })}
                 />
-              </div>
+              </FormField>
             </>
           )}
         </div>
@@ -771,8 +768,7 @@ function CheckSettings({
   const set = (next: Record<string, any>) => onChange({ ...s, ...next });
 
   const listField = (fieldKey: string, label: string, placeholder: string) => (
-    <div className="mt-2">
-      <label className="mb-1 block text-xs font-medium">{label}</label>
+    <FormField className="mt-2" label={label}>
       <Textarea
         rows={2}
         size="sm"
@@ -790,7 +786,7 @@ function CheckSettings({
         }
         variant="filled"
       />
-    </div>
+    </FormField>
   );
 
   return (
@@ -851,10 +847,10 @@ function CheckSettings({
       )}
 
       {control.check === 'policy' && (
-        <div className="mt-2">
-          <label className="mb-1 block text-xs font-medium">
-            {t('agents.form.guardrails.policyText')}
-          </label>
+        <FormField
+          className="mt-2"
+          label={t('agents.form.guardrails.policyText')}
+        >
           <Textarea
             rows={4}
             size="sm"
@@ -864,15 +860,12 @@ function CheckSettings({
             onChange={(e) => set({ policy: e.target.value })}
             variant="filled"
           />
-        </div>
+        </FormField>
       )}
 
       {control.check === 'groundedness' && (
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium">
-              {t('agents.form.guardrails.minOverlap')}
-            </label>
+          <FormField label={t('agents.form.guardrails.minOverlap')}>
             <NumberField
               value={s.min_overlap ?? 0.3}
               min={0}
@@ -882,11 +875,8 @@ function CheckSettings({
               disabled={disabled}
               onCommit={(min_overlap) => set({ min_overlap })}
             />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium">
-              {t('agents.form.guardrails.minWords')}
-            </label>
+          </FormField>
+          <FormField label={t('agents.form.guardrails.minWords')}>
             <NumberField
               value={s.min_words ?? 25}
               min={1}
@@ -896,15 +886,16 @@ function CheckSettings({
               disabled={disabled}
               onCommit={(min_words) => set({ min_words })}
             />
-          </div>
+          </FormField>
         </div>
       )}
 
       {control.check === 'policy' && (
-        <div className="mt-2">
-          <label className="mb-1 block text-xs font-medium">
-            {t('agents.form.guardrails.confidence')}
-          </label>
+        <FormField
+          className="mt-2"
+          label={t('agents.form.guardrails.confidence')}
+          hint={t('agents.form.guardrails.confidenceHint')}
+        >
           <NumberField
             value={s.confidence_threshold ?? 0.7}
             min={0}
@@ -914,10 +905,7 @@ function CheckSettings({
             disabled={disabled}
             onCommit={(confidence_threshold) => set({ confidence_threshold })}
           />
-          <p className="text-muted-foreground mt-1 text-xs">
-            {t('agents.form.guardrails.confidenceHint')}
-          </p>
-        </div>
+        </FormField>
       )}
     </div>
   );

@@ -127,3 +127,25 @@ describe('Input variants', () => {
     expect(html).toContain('shadow-xs');
   });
 });
+
+describe('Input field size and disabled state', () => {
+  it('size="field" is the 42px form-row height, like Button field', () => {
+    const classes = inputVariants({ size: 'field' });
+    expect(classes).toContain('h-10.5');
+    expect(classes).toBe(inputVariants({ size: 'default' }));
+  });
+
+  it('a field pill pads px-5 like the default pill', () => {
+    const html = renderToStaticMarkup(<Input size="field" shape="pill" />);
+    const classes = (/class="([^"]*)"/.exec(html)?.[1] ?? '').split(' ');
+    expect(classes).toContain('px-5');
+    expect(html).toContain('data-size="field"');
+  });
+
+  it('shows the not-allowed cursor while disabled', () => {
+    const classes = inputVariants().split(' ');
+    expect(classes).toContain('disabled:cursor-not-allowed');
+    // pointer-events-none would hide the cursor behind the field.
+    expect(classes).not.toContain('disabled:pointer-events-none');
+  });
+});

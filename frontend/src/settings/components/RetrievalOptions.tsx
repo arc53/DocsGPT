@@ -1,12 +1,11 @@
 import { ChevronRight } from 'lucide-react';
-import { type ReactNode, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -14,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
+import { SettingRow, SettingRows } from '../../components/ui/setting-row';
 import { Switch } from '../../components/ui/switch';
 import type {
   ChunkingStrategy,
@@ -161,48 +161,6 @@ function GroupHeader({ title, tag }: { title: string; tag: string }) {
         {tag}
       </span>
     </h4>
-  );
-}
-
-/**
- * One settings row: a left block (medium-weight label plus optional muted
- * description) and a right block holding the control. `alignStart` top-aligns
- * the row for controls paired with a multi-line description; otherwise both
- * sides are vertically centered.
- */
-function SettingRow({
-  label,
-  htmlFor,
-  description,
-  alignStart = false,
-  children,
-}: {
-  label: string;
-  htmlFor?: string;
-  description?: ReactNode;
-  alignStart?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex flex-row justify-between gap-4 py-3 first:pt-0 last:pb-0',
-        alignStart ? 'items-start' : 'items-center',
-      )}
-    >
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <Label
-          htmlFor={htmlFor}
-          className="text-foreground pointer-events-none w-fit text-sm font-medium"
-        >
-          {label}
-        </Label>
-        {description ? (
-          <p className="text-muted-foreground text-xs">{description}</p>
-        ) : null}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
   );
 }
 
@@ -447,7 +405,7 @@ export default function RetrievalOptions({
       <div className="flex flex-col gap-3">
         <GroupHeader title={tr('retrieval.title')} tag={tr('retrieval.tag')} />
 
-        <div className="divide-border/50 divide-y">
+        <SettingRows>
           <SettingRow
             label={tr('retrieval.retriever')}
             htmlFor="retrieval-retriever"
@@ -588,7 +546,7 @@ export default function RetrievalOptions({
               onCheckedChange={(checked) => setPrescreen({ enabled: checked })}
             />
           </SettingRow>
-        </div>
+        </SettingRows>
 
         {/* Prescreen expanded inputs (kept as floating-label cards) */}
         {value.retrieval.prescreen.enabled && (
@@ -650,7 +608,7 @@ export default function RetrievalOptions({
             {tr('graphRetrieval.agentToolHint')}
           </p>
 
-          <div className="divide-border/50 divide-y">
+          <SettingRows>
             <SettingRow
               label={tr('graphRetrieval.seedStrategy')}
               htmlFor="graph-seed-strategy"
@@ -713,7 +671,7 @@ export default function RetrievalOptions({
                 }
               />
             </SettingRow>
-          </div>
+          </SettingRows>
         </div>
       )}
 
@@ -722,7 +680,7 @@ export default function RetrievalOptions({
         <div className="flex flex-col gap-3">
           <GroupHeader title={tr('graph.title')} tag={tr('graph.tag')} />
 
-          <div className="divide-border/50 divide-y">
+          <SettingRows>
             <SettingRow
               label={tr('graph.extractionModel')}
               htmlFor="graph-extraction-model"
@@ -790,7 +748,7 @@ export default function RetrievalOptions({
                 }}
               />
             </SettingRow>
-          </div>
+          </SettingRows>
         </div>
       )}
 
@@ -798,7 +756,7 @@ export default function RetrievalOptions({
       <div className={cn('flex flex-col gap-3', queryOnly && 'hidden')}>
         <GroupHeader title={tr('chunking.title')} tag={tr('chunking.tag')} />
 
-        <div className="divide-border/50 divide-y">
+        <SettingRows>
           <SettingRow
             label={tr('chunking.strategy')}
             htmlFor="chunking-strategy"
@@ -874,7 +832,7 @@ export default function RetrievalOptions({
               }
             />
           </SettingRow>
-        </div>
+        </SettingRows>
       </div>
     </div>
   );
