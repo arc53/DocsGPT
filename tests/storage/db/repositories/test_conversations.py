@@ -144,6 +144,38 @@ class TestDelete:
         assert len(repo.list_for_user("user-2")) == 1
 
 
+class TestAttachmentIds:
+    def _attachment(self, conn, user, name):
+        from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+
+        return str(AttachmentsRepository(conn).create(user, name, f"/{name}")["id"])
+
+    def test_lists_a_conversations_attachments_once(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        a = self._attachment(pg_conn, "user-1", "a.txt")
+        b = self._attachment(pg_conn, "user-1", "b.txt")
+        repo.append_message(conv["id"], {"prompt": "1", "response": "r", "attachments": [a]})
+        repo.append_message(conv["id"], {"prompt": "2", "response": "r", "attachments": [a, b]})
+        assert sorted(repo.attachment_ids(str(conv["id"]))) == sorted([a, b])
+
+    def test_lists_every_attachment_of_a_user(self, pg_conn):
+        repo = _repo(pg_conn)
+        first = repo.create("user-1", "c1")
+        second = repo.create("user-1", "c2")
+        other = repo.create("user-2", "c3")
+        a = self._attachment(pg_conn, "user-1", "a.txt")
+        b = self._attachment(pg_conn, "user-1", "b.txt")
+        c = self._attachment(pg_conn, "user-2", "c.txt")
+        repo.append_message(first["id"], {"prompt": "1", "response": "r", "attachments": [a]})
+        repo.append_message(second["id"], {"prompt": "1", "response": "r", "attachments": [b]})
+        repo.append_message(other["id"], {"prompt": "1", "response": "r", "attachments": [c]})
+        assert sorted(repo.attachment_ids_for_user("user-1")) == sorted([a, b])
+
+    def test_non_uuid_conversation(self, pg_conn):
+        assert _repo(pg_conn).attachment_ids("not-a-uuid") == []
+
+
 # ------------------------------------------------------------------
 # Messages
 # ------------------------------------------------------------------

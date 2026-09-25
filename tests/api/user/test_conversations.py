@@ -180,6 +180,31 @@ class TestDeleteConversationHappy:
         # Gone
         assert ConversationsRepository(pg_conn).get_any(conv_id, user) is None
 
+    def test_purges_the_conversations_attachment_indexes(self, app, pg_conn):
+        from docsgpt.api.user.conversations.routes import DeleteConversation
+        from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "user-purge"
+        conv_id = _seed_conversation(pg_conn, user)
+        att = str(AttachmentsRepository(pg_conn).create(user, "a.pdf", "/a.pdf")["id"])
+        ConversationsRepository(pg_conn).append_message(
+            conv_id, {"prompt": "p", "response": "r", "attachments": [att]}
+        )
+
+        with _patch_conversations_db(pg_conn), patch(
+            "docsgpt.api.user.conversations.routes.purge_attachment_indexes"
+        ) as purge, app.test_request_context(f"/api/delete_conversation?id={conv_id}"):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = DeleteConversation().post()
+
+        assert response.status_code == 200
+        purge.assert_called_once_with(user, [att])
+
     def test_delete_nonexistent_still_returns_200(self, app, pg_conn):
         """get_any returns None, so delete is a no-op but endpoint succeeds."""
         from docsgpt.api.user.conversations.routes import DeleteConversation
@@ -236,6 +261,30 @@ class TestDeleteAllConversationsHappy:
 
         assert response.status_code == 200
         assert ConversationsRepository(pg_conn).list_for_user(user) == []
+
+    def test_purges_every_attachment_index(self, app, pg_conn):
+        from docsgpt.api.user.conversations.routes import DeleteAllConversations
+        from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "user-purge-all"
+        conv_id = _seed_conversation(pg_conn, user)
+        att = str(AttachmentsRepository(pg_conn).create(user, "a.pdf", "/a.pdf")["id"])
+        ConversationsRepository(pg_conn).append_message(
+            conv_id, {"prompt": "p", "response": "r", "attachments": [att]}
+        )
+
+        with _patch_conversations_db(pg_conn), patch(
+            "docsgpt.api.user.conversations.routes.purge_attachment_indexes"
+        ) as purge, app.test_request_context("/api/delete_all_conversations"):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            DeleteAllConversations().get()
+
+        purge.assert_called_once_with(user, [att])
 
     def test_db_error_returns_400(self, app):
         from docsgpt.api.user.conversations.routes import (

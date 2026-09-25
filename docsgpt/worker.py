@@ -2698,6 +2698,154 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
     return {"status": "embedded", "added": added, "deleted": deleted}
 
 
+def index_attachment_worker(self, attachment_id, user):
+    """Embed a chat attachment's text into its own hidden source.
+
+    Runs in the background after parsing, never on the request path:
+    ``attachments_search`` ranks by keyword until the attachment's
+    ``metadata.index.status`` is ``done``, then semantically. Chunks come from
+    the same chunker the keyword ranker uses, so a hit's ``offset`` is the
+    same whichever ranker found it.
+
+    The source (``type = chat_attachment``) is derived from the attachment
+    id, so a retry or redelivery reuses it, and listings leave it out.
+
+    Args:
+        self: Celery task instance.
+        attachment_id: PG id or upload handle of the attachment.
+        user: The attachment's owner; the row is looked up scoped to them.
+
+    Returns:
+        ``{"status": "done", "chunks": n, "source_id": ...}``, or a status
+        of ``missing`` / ``skipped`` when there is nothing to index.
+    """
+    from docsgpt.agents.attachment_search import chunk_text
+    from docsgpt.storage.db.repositories.sources import ATTACHMENT_SOURCE_TYPE
+    from docsgpt.storage.db.source_ids import derive_source_id
+    from docsgpt.vectorstore.document_class import Document as VectorDocument
+
+    with db_readonly() as conn:
+        row = AttachmentsRepository(conn).get_any(str(attachment_id), user)
+    if row is None:
+        return {"status": "missing"}
+    pg_id = str(row["id"])
+    metadata = row.get("metadata") or {}
+    extraction = metadata.get("extraction") or {}
+    content = row.get("content") or ""
+    if not content.strip() or extraction.get("status") not in (None, "ok"):
+        with db_session() as conn:
+            AttachmentsRepository(conn).merge_metadata(pg_id, user, {"index": {"status": "skipped"}})
+        return {"status": "skipped"}
+
+    filename = row.get("filename") or "attachment"
+    source_id = str(derive_source_id(f"attachment-index:{pg_id}"))
+    with db_session() as conn:
+        sources = SourcesRepository(conn)
+        if sources.get(source_id, user) is None:
+            sources.create(
+                f"Attachment: {filename}",
+                source_id=source_id,
+                user_id=user,
+                type=ATTACHMENT_SOURCE_TYPE,
+                metadata={"attachment_id": pg_id},
+                retriever="classic",
+                model=settings.EMBEDDINGS_NAME,
+            )
+        AttachmentsRepository(conn).merge_metadata(
+            pg_id, user, {"index": {"status": "indexing", "source_id": source_id}}
+        )
+
+    docs = [
+        VectorDocument(
+            page_content=chunk.text,
+            metadata={
+                "offset": chunk.offset,
+                "attachment_id": pg_id,
+                "source": filename,
+                "title": filename,
+                "filename": filename,
+            },
+        )
+        for chunk in chunk_text(pg_id, content)
+    ]
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            embed_and_store_documents(
+                docs,
+                os.path.join(temp_dir, "vector_store"),
+                source_id,
+                self,
+                attempt_id=getattr(getattr(self, "request", None), "id", None),
+            )
+        assert_index_complete(source_id)
+    except Exception:
+        with db_session() as conn:
+            AttachmentsRepository(conn).merge_metadata(
+                pg_id, user, {"index": {"status": "failed", "source_id": source_id}}
+            )
+        raise
+    with db_session() as conn:
+        AttachmentsRepository(conn).merge_metadata(
+            pg_id,
+            user,
+            {"index": {"status": "done", "source_id": source_id, "chunks": len(docs)}},
+        )
+    return {"status": "done", "chunks": len(docs), "source_id": source_id}
+
+
+def purge_attachment_indexes_worker(self, attachment_ids, user):
+    """Delete the vectors and hidden sources of chat attachments.
+
+    Called when the conversation holding them is deleted. The attachment
+    rows themselves stay (they are the user's uploads); only the derived
+    index goes, and ``metadata.index`` is cleared so nothing points at it.
+
+    Args:
+        self: Celery task instance.
+        attachment_ids: PG ids of the attachments.
+        user: Their owner.
+
+    Returns:
+        ``{"purged": n}``, the number of indexes removed.
+    """
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    with db_readonly() as conn:
+        rows = AttachmentsRepository(conn).list_by_ids(
+            [str(a) for a in attachment_ids or []], user, include_content=False
+        )
+    purged = 0
+    for row in rows:
+        index = (row.get("metadata") or {}).get("index") or {}
+        source_id = index.get("source_id")
+        if source_id:
+            try:
+                if settings.VECTOR_STORE == "faiss":
+                    storage = StorageCreator.get_storage()
+                    for name in ("index.faiss", "index.json", "index.pkl"):
+                        path = f"indexes/{source_id}/{name}"
+                        if storage.file_exists(path):
+                            storage.delete_file(path)
+                else:
+                    VectorCreator.create_vectorstore(
+                        settings.VECTOR_STORE, source_id=source_id
+                    ).delete_index()
+                with db_session() as conn:
+                    SourcesRepository(conn).delete(source_id, user)
+                purged += 1
+            except Exception:
+                logging.warning(
+                    f"Could not purge the index of attachment {row['id']}",
+                    exc_info=True,
+                )
+                continue
+        with db_session() as conn:
+            AttachmentsRepository(conn).merge_metadata(
+                str(row["id"]), user, {"index": {"status": "purged"}}
+            )
+    return {"purged": purged}
+
+
 def _wiki_page_path_from_rel(rel_path):
     """Build a validated leading-slash wiki page path, or None if invalid.
 

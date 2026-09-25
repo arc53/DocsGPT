@@ -563,6 +563,31 @@ class ConversationsRepository:
         )
         return result.rowcount > 0
 
+    def attachment_ids(self, conversation_id: str) -> list[str]:
+        """Every attachment id referenced by the conversation's messages."""
+        if not looks_like_uuid(conversation_id):
+            return []
+        result = self._conn.execute(
+            text(
+                "SELECT DISTINCT unnest(attachments)::text FROM conversation_messages "
+                "WHERE conversation_id = CAST(:id AS uuid)"
+            ),
+            {"id": conversation_id},
+        )
+        return [str(row[0]) for row in result.fetchall()]
+
+    def attachment_ids_for_user(self, user_id: str) -> list[str]:
+        """Every attachment id referenced by any of the user's conversations."""
+        result = self._conn.execute(
+            text(
+                "SELECT DISTINCT unnest(m.attachments)::text "
+                "FROM conversation_messages m JOIN conversations c ON c.id = m.conversation_id "
+                "WHERE c.user_id = :user_id"
+            ),
+            {"user_id": user_id},
+        )
+        return [str(row[0]) for row in result.fetchall()]
+
     def delete(self, conversation_id: str, user_id: str) -> bool:
         # Shape-gate: see ``rename`` — prevents transaction poisoning when
         # a non-UUID id reaches this code path.

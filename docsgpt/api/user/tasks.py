@@ -320,7 +320,55 @@ def _emit_attachment_poison_event(task_name, bound):
 )
 def store_attachment(self, file_info, user, idempotency_key=None):
     resp = attachment_worker(self, file_info, user)
+    _enqueue_attachment_index(resp, user)
     return resp
+
+
+def _enqueue_attachment_index(resp, user) -> None:
+    """Queue the background embed for a freshly stored attachment.
+
+    Best-effort: an attachment is fully usable without its index (search
+    ranks by keyword until it lands), so a broker hiccup here must never
+    fail the upload.
+    """
+    from docsgpt.core.settings import settings
+
+    if not settings.ATTACHMENT_INDEXING_ENABLED or not isinstance(resp, dict):
+        return
+    index = (resp.get("metadata") or {}).get("index") or {}
+    if index.get("status") != "pending":
+        return
+    attachment_id = resp.get("attachment_id")
+    if not attachment_id:
+        return
+    try:
+        index_attachment.delay(
+            str(attachment_id),
+            user,
+            idempotency_key=f"index-attachment:{attachment_id}",
+        )
+    except Exception:
+        logger.warning(
+            "Could not queue attachment indexing",
+            extra={"attachment_id": str(attachment_id)},
+            exc_info=True,
+        )
+
+
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="index_attachment")
+def index_attachment(self, attachment_id, user, idempotency_key=None):
+    from docsgpt.worker import index_attachment_worker
+
+    return index_attachment_worker(self, attachment_id, user)
+
+
+@celery.task(**DURABLE_TASK)
+@with_idempotency(task_name="purge_attachment_indexes")
+def purge_attachment_indexes(self, attachment_ids, user, idempotency_key=None):
+    from docsgpt.worker import purge_attachment_indexes_worker
+
+    return purge_attachment_indexes_worker(self, attachment_ids, user)
 
 
 @celery.task(**DURABLE_TASK)

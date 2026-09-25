@@ -314,3 +314,31 @@ class TestDelete:
         deleted = repo.delete(created["id"], "other-user")
         assert deleted is False
         assert repo.get(created["id"], "u") is not None
+
+
+class TestAttachmentIndexSourcesAreHidden:
+    """Chat attachments get a real source for their vectors, never listed."""
+
+    def test_list_and_count_skip_attachment_sources(self, pg_conn):
+        from docsgpt.storage.db.repositories.sources import (
+            ATTACHMENT_SOURCE_TYPE,
+            SourcesRepository,
+        )
+
+        repo = SourcesRepository(pg_conn)
+        visible = repo.create("my docs", user_id="u-hide")
+        repo.create("Attachment: a.pdf", user_id="u-hide", type=ATTACHMENT_SOURCE_TYPE)
+
+        rows = repo.list_for_user("u-hide")
+        assert [r["id"] for r in rows] == [visible["id"]]
+        assert repo.count_for_user("u-hide") == 1
+
+    def test_attachment_source_still_resolvable_by_id(self, pg_conn):
+        from docsgpt.storage.db.repositories.sources import (
+            ATTACHMENT_SOURCE_TYPE,
+            SourcesRepository,
+        )
+
+        repo = SourcesRepository(pg_conn)
+        hidden = repo.create("Attachment: a.pdf", user_id="u-hide", type=ATTACHMENT_SOURCE_TYPE)
+        assert repo.get(str(hidden["id"]), "u-hide") is not None

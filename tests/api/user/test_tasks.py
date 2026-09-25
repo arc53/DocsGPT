@@ -183,6 +183,53 @@ class TestStoreAttachmentTask:
         assert result == {"status": "ok"}
 
     @pytest.mark.unit
+    @patch("docsgpt.api.user.tasks.index_attachment")
+    @patch("docsgpt.api.user.tasks.attachment_worker")
+    def test_queues_indexing_for_a_pending_attachment(self, mock_worker, mock_index, monkeypatch):
+        from docsgpt.api.user.tasks import store_attachment
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_INDEXING_ENABLED", True)
+        mock_worker.return_value = {
+            "attachment_id": "handle-1",
+            "metadata": {"index": {"status": "pending"}},
+        }
+
+        store_attachment({"file": "info"}, "user1")
+
+        mock_index.delay.assert_called_once_with(
+            "handle-1", "user1", idempotency_key="index-attachment:handle-1"
+        )
+
+    @pytest.mark.unit
+    @patch("docsgpt.api.user.tasks.index_attachment")
+    @patch("docsgpt.api.user.tasks.attachment_worker")
+    def test_no_indexing_without_text(self, mock_worker, mock_index, monkeypatch):
+        from docsgpt.api.user.tasks import store_attachment
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_INDEXING_ENABLED", True)
+        mock_worker.return_value = {"attachment_id": "handle-1", "metadata": {}}
+
+        store_attachment({"file": "info"}, "user1")
+
+        mock_index.delay.assert_not_called()
+
+    @pytest.mark.unit
+    @patch("docsgpt.api.user.tasks.index_attachment")
+    @patch("docsgpt.api.user.tasks.attachment_worker")
+    def test_broker_failure_does_not_fail_the_upload(self, mock_worker, mock_index, monkeypatch):
+        from docsgpt.api.user.tasks import store_attachment
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "ATTACHMENT_INDEXING_ENABLED", True)
+        resp = {"attachment_id": "h", "metadata": {"index": {"status": "pending"}}}
+        mock_worker.return_value = resp
+        mock_index.delay.side_effect = RuntimeError("broker down")
+
+        assert store_attachment({"file": "info"}, "user1") == resp
+
+    @pytest.mark.unit
     def test_data_errors_are_not_autoretried(self):
         # A DataError is deterministic (poison payload) — retrying it five
         # times just multiplies log noise for the same terminal failure.

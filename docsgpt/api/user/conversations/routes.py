@@ -24,6 +24,24 @@ conversations_ns = Namespace(
 )
 
 
+def purge_attachment_indexes(user_id: str, attachment_ids: list) -> None:
+    """Queue removal of the search indexes built for these attachments.
+
+    Best-effort and after the delete: a broker failure leaves orphaned
+    vectors behind, never a conversation the user cannot delete.
+    """
+    if not attachment_ids:
+        return
+    try:
+        from docsgpt.api.user.tasks import purge_attachment_indexes as purge_task
+
+        purge_task.delay(list(attachment_ids), user_id)
+    except Exception as err:
+        current_app.logger.warning(
+            f"Could not queue attachment index purge: {err}", exc_info=True
+        )
+
+
 @conversations_ns.route("/delete_conversation")
 class DeleteConversation(Resource):
     @api.doc(
@@ -40,11 +58,13 @@ class DeleteConversation(Resource):
                 jsonify({"success": False, "message": "ID is required"}), 400
             )
         user_id = decoded_token["sub"]
+        attachment_ids: list = []
         try:
             with db_session() as conn:
                 repo = ConversationsRepository(conn)
                 conv = repo.get_any(conversation_id, user_id)
                 if conv is not None:
+                    attachment_ids = repo.attachment_ids(str(conv["id"]))
                     repo.delete(str(conv["id"]), user_id)
                     record_event(
                         conn,
@@ -57,6 +77,7 @@ class DeleteConversation(Resource):
                 f"Error deleting conversation: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+        purge_attachment_indexes(user_id, attachment_ids)
         return make_response(jsonify({"success": True}), 200)
 
 
@@ -70,9 +91,12 @@ class DeleteAllConversations(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user_id = decoded_token.get("sub")
+        attachment_ids: list = []
         try:
             with db_session() as conn:
-                deleted = ConversationsRepository(conn).delete_all_for_user(user_id)
+                repo = ConversationsRepository(conn)
+                attachment_ids = repo.attachment_ids_for_user(user_id)
+                deleted = repo.delete_all_for_user(user_id)
                 # Nothing deleted is not an event; the endpoint is idempotent
                 # and a row here would render as a destructive action.
                 if deleted:
@@ -87,6 +111,7 @@ class DeleteAllConversations(Resource):
                 f"Error deleting all conversations: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+        purge_attachment_indexes(user_id, attachment_ids)
         return make_response(jsonify({"success": True}), 200)
 
 
