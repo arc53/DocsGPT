@@ -33,6 +33,42 @@ class AgentSettings(SettingsGroup):
         description="Cap on one tool result entering the LLM context (0 disables); journal and DB keep it whole.",
     )
 
+    # Chat attachments.
+    ATTACHMENT_CONTEXT_SHARE: float = Field(
+        default=0.6,
+        gt=0,
+        le=1,
+        description=(
+            "Largest share of the model's context window a turn's attachments may take. Files are inlined in "
+            "upload order until it is spent; the rest stay reachable through the attachments tool."
+        ),
+    )
+    ATTACHMENT_NATIVE_MAX_FILES: int = Field(
+        default=10,
+        ge=0,
+        description="Most files sent to the model as native file or image parts in one turn; later ones go as text.",
+    )
+    ATTACHMENT_PARTIAL_MIN_TOKENS: int = Field(
+        default=4000,
+        ge=0,
+        description=(
+            "Smallest leftover budget worth inlining the start of a file that does not fit whole. The cut is "
+            "marked so the model can read on with the attachments tool."
+        ),
+    )
+    ATTACHMENT_READ_MAX_TOKENS: int = Field(
+        default=8000,
+        ge=500,
+        description="Most tokens one attachments_read call returns; the reply names the offset to continue from.",
+    )
+    ATTACHMENT_INDEXING_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Embed each chat attachment in the background after parsing, so attachments_search can rank by "
+            "meaning. Until an attachment is indexed (or with this off) search falls back to keyword ranking."
+        ),
+    )
+
     # Conversation compression.
     ENABLE_CONVERSATION_COMPRESSION: bool = Field(
         default=True, description="Compress long conversations once they approach the context window."
