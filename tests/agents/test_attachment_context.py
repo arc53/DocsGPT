@@ -355,6 +355,15 @@ class TestAgentsThatBuildTheirOwnMessages:
         from docsgpt.agents.attachment_budget import plan_attachments
 
         agent = _agent(agent_base_params, [])
-        plan = plan_attachments([_att(0, 100)], budget=10_000, supports_tools=False)
-        assert agent._attachment_excerpts(plan, "word", 100) == ""
-        assert agent._attachment_excerpts(plan, "word", 5_000) == ""  # nothing left out
+        # Every file fits: there is nothing to excerpt, whatever the room.
+        all_in = plan_attachments([_att(0, 100)], budget=10_000, supports_tools=False)
+        assert all_in.files[0].status == "inline"
+        assert agent._attachment_excerpts(all_in, "word", 5_000) == ""
+
+        # A file was left out and matches the question, but no room is left.
+        left_out = plan_attachments([_att(0, 2_000)], budget=100, supports_tools=False)
+        assert left_out.files[0].status == "omitted"
+        assert agent._attachment_excerpts(left_out, "word", 0) == ""
+        assert agent._attachment_excerpts(left_out, "word", 100) == ""
+        # With room, the same file does contribute an excerpt.
+        assert "<file_excerpts>" in agent._attachment_excerpts(left_out, "word", 2_000)
