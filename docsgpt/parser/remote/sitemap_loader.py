@@ -3,6 +3,7 @@ import re
 
 import defusedxml.ElementTree as ET
 from bs4 import BeautifulSoup
+from docsgpt.parser.html_text import html_to_text
 
 from docsgpt.parser.remote.base import BaseRemote
 from docsgpt.parser.schema.base import Document
@@ -49,7 +50,7 @@ class SitemapLoader(BaseRemote):
                 soup = BeautifulSoup(response.text, "html.parser")
                 documents.append(
                     Document(
-                        soup.get_text(separator="\n", strip=True),
+                        html_to_text(soup),
                         extra_info={"source": url},
                     )
                 )
