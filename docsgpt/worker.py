@@ -1682,6 +1682,45 @@ def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
     return tmp.name, True
 
 
+def _attachment_identity(local_path: str, filename: str) -> Dict[str, Any]:
+    """Hash an upload's original bytes and, for a PDF, count its pages.
+
+    The hash lets the budget planner collapse re-uploads of the same file
+    onto one ref; the page count prices a natively read PDF. Both are
+    best-effort: a failure is logged and the attachment still processes.
+
+    Args:
+        local_path: The original file on local disk.
+        filename: Its upload name, for the PDF check.
+
+    Returns:
+        ``{"content_hash": ..., "page_count": ...}``, either key possibly absent.
+    """
+    import hashlib
+
+    out: Dict[str, Any] = {}
+    try:
+        digest = hashlib.sha256()
+        with open(local_path, "rb") as fh:
+            for block in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(block)
+        out["content_hash"] = digest.hexdigest()
+    except OSError:
+        logging.warning(f"Could not hash attachment {filename}", exc_info=True)
+    if (mimetypes.guess_type(filename)[0] or "") == "application/pdf":
+        try:
+            import pypdfium2 as pdfium
+
+            pdf = pdfium.PdfDocument(local_path)
+            try:
+                out["page_count"] = len(pdf)
+            finally:
+                pdf.close()
+        except Exception:
+            logging.info(f"Could not count pages of {filename}", exc_info=True)
+    return out
+
+
 def _upsert_attachment_row(
     user, filename, relative_path, *, mime_type, content, token_count, metadata, attachment_id
 ):
@@ -1820,7 +1859,13 @@ def attachment_worker(self, file_info, user):
         _parser = file_extractor.get(os.path.splitext(filename)[1].lower())
         parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
 
+        identity: Dict[str, Any] = {}
+
         def _parse_local_file(local_path: str, **kwargs) -> Document:
+            # Identity first, while the original bytes are on local disk: it
+            # must survive a parse that raises (a scan has no text layer but
+            # is still a usable attachment).
+            identity.update(_attachment_identity(local_path, filename))
             _reject_unparseable_attachment(local_path, filename, set(file_extractor))
             _reject_attachment_zip_bomb(local_path)
             parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
@@ -1891,8 +1936,18 @@ def attachment_worker(self, file_info, user):
                 "original_tokens": original_tokens,
                 "stored_tokens": token_count,
                 **({"reason": no_text_reason} if no_text_reason else {}),
+                **({"page_count": identity["page_count"]} if identity.get("page_count") else {}),
             },
         }
+        if identity.get("content_hash"):
+            metadata["content_hash"] = identity["content_hash"]
+        if settings.ATTACHMENT_INDEXING_ENABLED and content:
+            # ``store_attachment`` enqueues the embed once this row lands; the
+            # state is set here so the model's file list says "pending" rather
+            # than nothing until the indexer picks it up.
+            metadata["index"] = {"status": "pending"}
+        else:
+            metadata.pop("index", None)
 
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
