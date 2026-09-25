@@ -1327,7 +1327,17 @@
     },
     "attachments": {
       "attach": "添付",
-      "remove": "添付ファイルを削除"
+      "remove": "添付ファイルを削除",
+      "plan": {
+        "inline": "コンテキスト内",
+        "partial": "一部のみコンテキスト内",
+        "tool": "検索可能",
+        "omitted": "含まれていません",
+        "unreadable": "読み取れません",
+        "summary": "{{total}} 件中 {{inFull}} 件を全文読み込み",
+        "summarySearchable": "{{count}} 件は検索可能",
+        "summaryNotIncluded": "{{count}} 件は含まれていません"
+      }
     },
     "retry": "再試行",
     "reasoning": "推論",

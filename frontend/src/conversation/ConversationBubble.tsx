@@ -10,7 +10,6 @@ import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
 import ChevronDown from '../assets/chevron-down.svg';
 import Dislike from '../assets/dislike.svg?react';
 import Document from '../assets/document.svg';
-import DocumentationDark from '../assets/documentation-dark.svg';
 import Edit from '../assets/edit.svg';
 import Like from '../assets/like.svg?react';
 import Link from '../assets/link.svg';
@@ -33,7 +32,13 @@ import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
-import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import AttachmentChips from './AttachmentChips';
+import {
+  AttachmentPlanEntry,
+  FEEDBACK,
+  MESSAGE_TYPE,
+  ResearchState,
+} from './conversationModels';
 import MarkdownAnswer from './MarkdownAnswer';
 import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
@@ -67,6 +72,8 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
+    /** Where each attached file went this turn (in context, searchable, ...). */
+    attachmentPlan?: AttachmentPlanEntry[];
     /**
      * Every artifact in the conversation, for resolving inline links. Refs
      * are conversation-scoped, so a link may point at an earlier turn's file.
@@ -100,6 +107,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    attachmentPlan,
     conversationArtifacts,
     onOpenArtifact,
     onToolAction,
@@ -145,26 +153,7 @@ const ConversationBubble = forwardRef<
       <div className={`group ${className}`}>
         <div className="flex flex-col items-end">
           {filesAttached && filesAttached.length > 0 && (
-            <div className="mr-5 mb-4 flex flex-wrap justify-end gap-2">
-              {filesAttached.map((file, index) => (
-                <div
-                  key={index}
-                  title={file.fileName}
-                  className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-sm"
-                >
-                  <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
-                    <img
-                      src={DocumentationDark}
-                      alt="Attachment"
-                      className="h-3.75 w-3.75 object-fill"
-                    />
-                  </div>
-                  <span className="max-w-37.5 truncate font-normal">
-                    {file.fileName}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <AttachmentChips files={filesAttached} plan={attachmentPlan} />
           )}
           <div
             ref={ref}

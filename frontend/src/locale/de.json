@@ -1330,7 +1330,17 @@
     },
     "attachments": {
       "attach": "Anhängen",
-      "remove": "Anhang entfernen"
+      "remove": "Anhang entfernen",
+      "plan": {
+        "inline": "Im Kontext",
+        "partial": "Teilweise im Kontext",
+        "tool": "Durchsuchbar",
+        "omitted": "Nicht enthalten",
+        "unreadable": "Nicht lesbar",
+        "summary": "{{inFull}} von {{total}} Dateien vollständig gelesen",
+        "summarySearchable": "{{count}} durchsuchbar",
+        "summaryNotIncluded": "{{count}} nicht enthalten"
+      }
     },
     "retry": "Erneut versuchen",
     "reasoning": "Begründung",

@@ -15,8 +15,10 @@ import reducer, {
   addQuery,
   applyMessageTail,
   fetchAnswer,
+  mapServerQueryToClient,
   raiseNotice,
   resendQuery,
+  setAttachmentPlan,
   setConversation,
 } from './conversationSlice';
 
@@ -194,6 +196,44 @@ describe('raiseNotice — non-fatal notice', () => {
       }),
     );
     expect(next.queries[0].notice).toBeUndefined();
+  });
+});
+
+describe('attachment plan', () => {
+  const plan = [
+    { ref: 'F1', id: 'a', filename: 'a.pdf', status: 'inline' as const },
+    { ref: 'F2', id: 'b', filename: 'b.pdf', status: 'tool' as const },
+  ];
+
+  it('stores the streamed plan on the query', () => {
+    const next = reducer(
+      seedSlice(),
+      setAttachmentPlan({ conversationId: null, index: 0, plan }),
+    );
+    expect(next.queries[0].attachmentPlan).toEqual(plan);
+  });
+
+  it('ignores a plan for another conversation', () => {
+    const next = reducer(
+      seedSlice(),
+      setAttachmentPlan({ conversationId: 'other', index: 0, plan }),
+    );
+    expect(next.queries[0].attachmentPlan).toBeUndefined();
+  });
+
+  it('restores the persisted plan on reload', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      status: 'complete',
+      response: 'r',
+      metadata: { attachment_plan: plan },
+    });
+    expect(query.attachmentPlan).toEqual(plan);
+  });
+
+  it('leaves the plan out when the message has none', () => {
+    const query = mapServerQueryToClient({ prompt: 'q', status: 'complete' });
+    expect(query.attachmentPlan).toBeUndefined();
   });
 });
 

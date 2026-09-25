@@ -1380,7 +1380,17 @@
     },
     "attachments": {
       "attach": "Прикрепить",
-      "remove": "Удалить вложение"
+      "remove": "Удалить вложение",
+      "plan": {
+        "inline": "В контексте",
+        "partial": "Частично в контексте",
+        "tool": "Доступен для поиска",
+        "omitted": "Не включён",
+        "unreadable": "Не удаётся прочитать",
+        "summary": "Полностью прочитано файлов: {{inFull}} из {{total}}",
+        "summarySearchable": "доступно для поиска: {{count}}",
+        "summaryNotIncluded": "не включено: {{count}}"
+      }
     },
     "retry": "Повторить",
     "reasoning": "Рассуждение",

@@ -1327,7 +1327,17 @@
     },
     "attachments": {
       "attach": "附件",
-      "remove": "刪除附件"
+      "remove": "刪除附件",
+      "plan": {
+        "inline": "已在上下文中",
+        "partial": "部分在上下文中",
+        "tool": "可搜尋",
+        "omitted": "未包含",
+        "unreadable": "無法讀取",
+        "summary": "已完整讀取 {{total}} 個檔案中的 {{inFull}} 個",
+        "summarySearchable": "{{count}} 個可搜尋",
+        "summaryNotIncluded": "{{count}} 個未包含"
+      }
     },
     "retry": "重試",
     "reasoning": "推理",

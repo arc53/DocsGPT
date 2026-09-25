@@ -1341,7 +1341,17 @@
       "cancelQueuedSend": "Cancel",
       "sendBlockedByFailed": "{{names}} couldn't be processed — remove to send",
       "unsupportedType": "Not a supported file type ({{extension}})",
-      "unreadableByModel": "{{model}} can't read {{name}} — switch to a model that supports images or PDFs"
+      "unreadableByModel": "{{model}} can't read {{name}} — switch to a model that supports images or PDFs",
+      "plan": {
+        "inline": "In context",
+        "partial": "Partly in context",
+        "tool": "Searchable",
+        "omitted": "Not included",
+        "unreadable": "Can't be read",
+        "summary": "{{inFull}} of {{total}} files read in full",
+        "summarySearchable": "{{count}} searchable",
+        "summaryNotIncluded": "{{count}} not included"
+      }
     },
     "retry": "Retry",
     "reasoning": "Reasoning",
