@@ -275,10 +275,10 @@ class AttachmentsTool(Tool):
         semantic_hits = semantic_search(
             indexed, text, limit, store_factory=_store_for_source
         ) if indexed else []
-        if indexed and not semantic_hits:
-            # Indexed but the store gave nothing back (or failed): keyword
-            # ranking still works on the stored text.
-            keyword_ids.extend(indexed)
+        answered = {hit.attachment_id for hit in semantic_hits}
+        # An indexed file whose store gave nothing back (or failed) still gets
+        # keyword ranking on its stored text, so it never silently drops out.
+        keyword_ids.extend(a for a in indexed if a not in answered)
         chunks = []
         for attachment_id in keyword_ids:
             if attachment_id not in self._chunks:

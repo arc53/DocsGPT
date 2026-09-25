@@ -108,6 +108,17 @@ class TestUserFacingError:
         assert code == "rate_limited"
         assert "try again" in message.lower()
 
+    def test_token_rate_limit_wins_over_context_wording(self):
+        from docsgpt.error import user_facing_error
+
+        code, _ = user_facing_error(
+            RuntimeError(
+                "Error code: 429 - Request exceeds the maximum number of tokens "
+                "(tokens_per_minute limit)"
+            )
+        )
+        assert code == "rate_limited"
+
     def test_other_errors_are_not_classified(self):
         from docsgpt.error import user_facing_error
 

@@ -217,6 +217,44 @@ class TestSearch:
         assert 'ref="F1"' in out
         assert 'offset="6"' in out
 
+    def test_a_failed_store_falls_back_to_keywords_for_that_file_only(self, pg_conn):
+        ok = _make(
+            pg_conn,
+            "ok.txt",
+            "alpha beta gamma",
+            index={"status": "done", "source_id": "11111111-1111-1111-1111-111111111111"},
+        )
+        broken = _make(
+            pg_conn,
+            "broken.txt",
+            "the walrus has tusks",
+            index={"status": "done", "source_id": "22222222-2222-2222-2222-222222222222"},
+        )
+        tool = _tool([ok, broken])
+
+        class _Doc(str):
+            def __new__(cls, text, metadata):
+                obj = str.__new__(cls, text)
+                obj.page_content = text
+                obj.metadata = metadata
+                return obj
+
+        class _Store:
+            def __init__(self, source_id):
+                self.source_id = source_id
+
+            def search(self, query, k):
+                if self.source_id.startswith("2222"):
+                    raise RuntimeError("index unavailable")
+                return [_Doc("alpha beta", {"offset": 0})]
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.agents.tools.attachments._store_for_source", _Store
+        ):
+            out = tool.execute_action("attachments_search", query="walrus tusks")
+        assert 'ref="F1"' in out
+        assert 'ref="F2"' in out and "walrus has tusks" in out
+
     def test_requires_a_query(self, pg_conn):
         a = _make(pg_conn, "a.txt", "apples")
         tool = _tool([a])

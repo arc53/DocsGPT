@@ -279,8 +279,13 @@ class GetSingleConversation(Resource):
                         # workflow run's produced artifacts on reload.
                         "workflow_run_id": metadata.get("workflow_run_id"),
                     }
-                    if metadata:
-                        query["metadata"] = metadata
+                    # ``error_detail`` is the raw provider exception kept for
+                    # operators; the client shows the curated ``error``.
+                    client_metadata = {
+                        k: v for k, v in metadata.items() if k != "error_detail"
+                    }
+                    if client_metadata:
+                        query["metadata"] = client_metadata
                     # Feedback on conversation_messages is a JSONB blob with
                     # shape {"text": <str>, "timestamp": <iso>}. The legacy
                     # frontend consumed a flat scalar feedback string, so

@@ -418,6 +418,42 @@ class TestGetSingleConversationHappy:
         assert data["queries"][0]["prompt"] == "hi"
         assert data["queries"][0]["response"] == "hello"
 
+    def test_raw_error_detail_is_not_sent_to_the_client(self, app, pg_conn):
+        from docsgpt.api.user.conversations.routes import (
+            GetSingleConversation,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "user-err"
+        conv_id = _seed_conversation(pg_conn, user, name="err")
+        ConversationsRepository(pg_conn).append_message(
+            conv_id,
+            {
+                "prompt": "p",
+                "response": "",
+                "metadata": {
+                    "error": "This request is too large.",
+                    "error_code": "context_window_exceeded",
+                    "error_detail": "BadRequestError: upstream internals",
+                },
+            },
+        )
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/get_single_conversation?id={conv_id}"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = GetSingleConversation().get()
+
+        metadata = response.json["queries"][0]["metadata"]
+        assert metadata["error"] == "This request is too large."
+        assert metadata["error_code"] == "context_window_exceeded"
+        assert "error_detail" not in metadata
+
     def test_returns_message_with_dict_feedback(self, app, pg_conn):
         from docsgpt.api.user.conversations.routes import (
             GetSingleConversation,

@@ -50,10 +50,13 @@ def user_facing_error(error) -> "tuple[str, str] | None":
         ``(code, message)`` for a recognised failure, otherwise None.
     """
     text = str(error).lower()
-    if any(marker in text for marker in _CONTEXT_WINDOW_MARKERS):
-        return "context_window_exceeded", CONTEXT_WINDOW_MESSAGE
+    # A token-rate 429 can also say the request "exceeds the maximum number of
+    # tokens" (per minute), so it is checked first: waiting fixes it, trimming
+    # attachments does not.
     if "429" in text and ("tokens_per_minute" in text or "tokens per min" in text):
         return "rate_limited", RATE_LIMITED_MESSAGE
+    if any(marker in text for marker in _CONTEXT_WINDOW_MARKERS):
+        return "context_window_exceeded", CONTEXT_WINDOW_MESSAGE
     return None
 
 

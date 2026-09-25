@@ -877,8 +877,17 @@ class BaseAnswerResource:
                         # "quota" and rewrite it into a misleading rate-limit message, so
                         # emit it verbatim; sanitize only raw/technical errors.
                         error_text = line.get("error", "An error occurred")
+                        error_code = None
                         if not line.get("user_facing"):
-                            error_text = sanitize_api_error(error_text)
+                            # A failure the user can act on (a workflow node
+                            # hitting the context window) gets the same curated
+                            # copy and code as one raised out of the agent.
+                            curated = user_facing_error(error_text)
+                            if curated is not None:
+                                error_code, error_text = curated
+                                query_metadata["error_code"] = error_code
+                            else:
+                                error_text = sanitize_api_error(error_text)
                         stream_error = error_text
                         guardrail_meta = line.get("guardrail")
                         if guardrail_meta:
@@ -903,7 +912,11 @@ class BaseAnswerResource:
                                     "retract": True,
                                 }
                             )
-                        yield _emit({"type": "error", "error": error_text})
+                        yield _emit(
+                            {"type": "error", "error": error_text, "code": error_code}
+                            if error_code
+                            else {"type": "error", "error": error_text}
+                        )
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
                         # documents were dropped). Forwarded verbatim so the client can
