@@ -268,3 +268,71 @@ def test_tool_without_attachments(action):
     tool = AttachmentsTool({"attachments": [], "user_id": USER})
     out = tool.execute_action(action, ref="F1", query="x")
     assert "no attachments" in out.lower()
+
+
+class TestArgumentHandling:
+    def test_unknown_action_and_missing_user(self, pg_conn):
+        a = _make(pg_conn, "a.txt", "hello")
+        assert "Unknown action" in _tool([a]).execute_action("attachments_nope")
+        assert "no user scope" in _tool([a], user=None).execute_action("attachments_list")
+
+    def test_bad_offset_and_size_fall_back_to_defaults(self, pg_conn):
+        a = _make(pg_conn, "a.txt", "hello world")
+        tool = _tool([a])
+        with _patch_db(pg_conn):
+            out = tool.execute_action("attachments_read", ref="F1", offset="x", max_tokens="big")
+        assert "hello world" in out
+
+    def test_truncated_extraction_is_named_at_the_end(self, pg_conn):
+        repo = AttachmentsRepository(pg_conn)
+        row = repo.create(
+            USER,
+            "long.pdf",
+            "/uploads/long.pdf",
+            mime_type="application/pdf",
+            content="start of the document",
+            token_count=5,
+            metadata={"extraction": {"status": "ok", "truncated": True, "original_tokens": 250_000}},
+        )
+        tool = _tool([row])
+        with _patch_db(pg_conn):
+            out = tool.execute_action("attachments_read", ref="F1")
+        assert "~250,000 tokens" in out
+
+    def test_row_gone_since_the_turn_started(self, pg_conn):
+        a = _make(pg_conn, "a.txt", "hello")
+        tool = _tool([{**a, "id": "00000000-0000-0000-0000-000000000abc"}])
+        with _patch_db(pg_conn):
+            out = tool.execute_action("attachments_read", ref="F1")
+        assert "no longer available" in out
+
+    def test_search_arguments(self, pg_conn):
+        a = _make(pg_conn, "a.txt", "apples and pears")
+        tool = _tool([a])
+        with _patch_db(pg_conn):
+            assert 'ref="F1"' in tool.execute_action("attachments_search", query="apples", k="many")
+            assert 'ref="F1"' in tool.execute_action("attachments_search", query="apples", refs="F1")
+            assert "No attachment matches" in tool.execute_action(
+                "attachments_search", query="apples", refs=["F7"]
+            )
+
+    def test_list_reports_how_each_file_is_searched(self, pg_conn):
+        done = _make(pg_conn, "done.txt", "x", index={"status": "done", "source_id": "s"})
+        pending = _make(pg_conn, "pending.txt", "y", index={"status": "pending"})
+        plain = _make(pg_conn, "plain.txt", "z")
+        with _patch_db(pg_conn):
+            out = _tool([done, pending, plain]).execute_action("attachments_list")
+        assert 'search="semantic"' in out
+        assert "semantic index pending" in out
+        assert 'search="keyword"' in out
+
+    def test_default_store_factory_uses_the_configured_backend(self, monkeypatch):
+        from docsgpt.agents.tools import attachments as mod
+
+        calls = []
+        monkeypatch.setattr(
+            "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+            lambda *a, **k: calls.append(a) or "store",
+        )
+        assert mod._store_for_source("src-1") == "store"
+        assert calls[0][1] == "src-1"

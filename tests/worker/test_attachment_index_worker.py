@@ -176,3 +176,57 @@ class TestPurgeAttachmentIndexes:
         row = _attachment(user="someone-else")
         purge_attachment_indexes_worker(_StubTask(), [str(row["id"])], USER)
         assert _row(row["id"], user="someone-else")["metadata"]["index"] == {"status": "pending"}
+
+    def test_faiss_index_files_are_deleted_from_storage(self, embedded, monkeypatch):
+        from docsgpt.worker import purge_attachment_indexes_worker
+
+        row = _attachment()
+        _run(row["id"])
+        source_id = _row(row["id"])["metadata"]["index"]["source_id"]
+        deleted = []
+
+        class _Storage:
+            def file_exists(self, path):
+                return path.endswith("index.faiss")
+
+            def delete_file(self, path):
+                deleted.append(path)
+
+        monkeypatch.setattr("docsgpt.worker.settings.VECTOR_STORE", "faiss")
+        monkeypatch.setattr(
+            "docsgpt.worker.StorageCreator.get_storage", staticmethod(lambda: _Storage())
+        )
+
+        assert purge_attachment_indexes_worker(_StubTask(), [str(row["id"])], USER) == {"purged": 1}
+        assert deleted == [f"indexes/{source_id}/index.faiss"]
+
+    def test_a_failed_purge_keeps_going(self, embedded, monkeypatch):
+        from docsgpt.worker import purge_attachment_indexes_worker
+
+        row = _attachment()
+        _run(row["id"])
+
+        def _boom(*a, **k):
+            raise RuntimeError("store down")
+
+        monkeypatch.setattr("docsgpt.worker.settings.VECTOR_STORE", "pgvector")
+        monkeypatch.setattr(
+            "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore", _boom
+        )
+        assert purge_attachment_indexes_worker(_StubTask(), [str(row["id"])], USER) == {"purged": 0}
+
+
+class TestAttachmentIdentity:
+    def test_unreadable_file_yields_no_hash(self, tmp_path):
+        from docsgpt.worker import _attachment_identity
+
+        assert _attachment_identity(str(tmp_path / "missing.txt"), "missing.txt") == {}
+
+    def test_broken_pdf_yields_a_hash_but_no_page_count(self, tmp_path):
+        from docsgpt.worker import _attachment_identity
+
+        path = tmp_path / "broken.pdf"
+        path.write_bytes(b"not really a pdf")
+        out = _attachment_identity(str(path), "broken.pdf")
+        assert "content_hash" in out
+        assert "page_count" not in out

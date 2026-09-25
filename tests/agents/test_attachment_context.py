@@ -280,3 +280,81 @@ class TestModelsWithoutTools:
         monkeypatch.setattr(agent, "_load_attachment_texts", lambda ids: {earlier["id"]: loaded["content"]})
         user = agent._build_messages("SYSTEM", "walrus tusks?")[-1]["content"]
         assert "walrus section explains tusks" in user
+
+
+@pytest.mark.unit
+class TestAgentsThatBuildTheirOwnMessages:
+    def test_apply_attachments_prefixes_the_last_user_message(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent = _agent(agent_base_params, [_att(0, 50, words="synthesis input text")])
+        messages = [
+            {"role": "system", "content": "Write the report."},
+            {"role": "user", "content": "Please write the report."},
+        ]
+        out = agent._apply_attachments(messages)
+        assert out[-1]["content"].startswith("<attached_files")
+        assert "synthesis input text" in out[-1]["content"]
+        assert agent.attachment_plan is not None
+
+    def test_apply_attachments_without_files_is_a_no_op(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent = _agent(agent_base_params, [])
+        messages = [{"role": "user", "content": "q"}]
+        assert agent._apply_attachments(messages) == [{"role": "user", "content": "q"}]
+
+    def test_listing_only_when_the_tool_is_offered(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent = _agent(agent_base_params, [_att(0, 50)])
+        assert agent._attachment_listing() == ""
+        _enable_tool(agent)
+        listing = agent._attachment_listing()
+        assert 'ref="F1"' in listing and 'status="not_in_context"' in listing
+
+    def test_supported_types_that_fail_mean_no_native_parts(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent = _agent(agent_base_params, [])
+        agent.llm.get_supported_attachment_types = Mock(side_effect=RuntimeError("x"))
+        assert agent._native_attachment_types() == []
+        agent.llm.get_supported_attachment_types = Mock(return_value="image/png")
+        assert agent._native_attachment_types() == []
+
+    def test_loading_text_for_excerpts(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, pg_conn
+    ):
+        from contextlib import contextmanager
+        from unittest.mock import patch
+
+        from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+
+        agent = _agent(agent_base_params, [])
+        row = AttachmentsRepository(pg_conn).create(agent.user, "a.txt", "/a", content="stored text")
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        with patch("docsgpt.storage.db.session.db_readonly", _yield):
+            assert agent._load_attachment_texts([str(row["id"])]) == {str(row["id"]): "stored text"}
+        assert agent._load_attachment_texts([]) == {}
+
+        @contextmanager
+        def _broken():
+            raise RuntimeError("db down")
+            yield
+
+        with patch("docsgpt.storage.db.session.db_readonly", _broken):
+            assert agent._load_attachment_texts(["x"]) == {}
+
+    def test_excerpts_skip_when_there_is_no_room(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        from docsgpt.agents.attachment_budget import plan_attachments
+
+        agent = _agent(agent_base_params, [])
+        plan = plan_attachments([_att(0, 100)], budget=10_000, supports_tools=False)
+        assert agent._attachment_excerpts(plan, "word", 100) == ""
+        assert agent._attachment_excerpts(plan, "word", 5_000) == ""  # nothing left out

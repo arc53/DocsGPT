@@ -230,6 +230,38 @@ class TestStoreAttachmentTask:
         assert store_attachment({"file": "info"}, "user1") == resp
 
     @pytest.mark.unit
+    @patch("docsgpt.api.user.tasks.index_attachment")
+    def test_enqueue_skips_what_it_cannot_index(self, mock_index, monkeypatch):
+        from docsgpt.api.user.tasks import _enqueue_attachment_index
+        from docsgpt.core.settings import settings
+
+        pending = {"metadata": {"index": {"status": "pending"}}}
+        monkeypatch.setattr(settings, "ATTACHMENT_INDEXING_ENABLED", False)
+        _enqueue_attachment_index({**pending, "attachment_id": "a"}, "u")
+        monkeypatch.setattr(settings, "ATTACHMENT_INDEXING_ENABLED", True)
+        _enqueue_attachment_index(None, "u")
+        _enqueue_attachment_index(pending, "u")  # no attachment id
+        mock_index.delay.assert_not_called()
+
+    @pytest.mark.unit
+    @patch("docsgpt.worker.index_attachment_worker")
+    def test_index_attachment_task_runs_the_worker(self, mock_worker):
+        from docsgpt.api.user.tasks import index_attachment
+
+        mock_worker.return_value = {"status": "done"}
+        assert index_attachment("a", "u") == {"status": "done"}
+        mock_worker.assert_called_once_with(ANY, "a", "u")
+
+    @pytest.mark.unit
+    @patch("docsgpt.worker.purge_attachment_indexes_worker")
+    def test_purge_task_runs_the_worker(self, mock_worker):
+        from docsgpt.api.user.tasks import purge_attachment_indexes
+
+        mock_worker.return_value = {"purged": 1}
+        assert purge_attachment_indexes(["a"], "u") == {"purged": 1}
+        mock_worker.assert_called_once_with(ANY, ["a"], "u")
+
+    @pytest.mark.unit
     def test_data_errors_are_not_autoretried(self):
         # A DataError is deterministic (poison payload) — retrying it five
         # times just multiplies log noise for the same terminal failure.

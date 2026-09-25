@@ -2012,3 +2012,22 @@ class TestContextLengthFallback:
         primary, backup = self._pair(patch_model_utils, monkeypatch, 128_000, 1_000_000)
         backup.model_id = "backup-model"
         assert list(primary.gen_stream(**CALL_ARGS)) == ["fb"]
+
+
+@pytest.mark.integration
+def test_swapped_text_without_the_tool_says_the_rest_is_unavailable(monkeypatch):
+    from docsgpt.agents.attachment_budget import plan_attachments
+
+    fallback = FakeLLM(stream_chunks=["fb"])
+    primary = FakeLLM(fail_at=0)
+    primary._fallback_llm = fallback
+    big = _pdf_row(1, "word " * 20_000, tokens=20_000)
+    primary._attachment_plan = plan_attachments(
+        [big], budget=10_000_000, native_types=["application/pdf"], supports_tools=False
+    )
+    primary._file_part_sources = {"file-1": big}
+    monkeypatch.setattr(
+        "docsgpt.core.model_utils.get_token_limit", lambda mid, user_id=None: 16_000
+    )
+    list(primary.gen_stream(model="m", messages=_file_messages("file-1")))
+    assert "the rest is not available" in fallback.last_messages_received[1]["content"]

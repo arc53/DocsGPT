@@ -303,3 +303,60 @@ def test_zero_budget_puts_everything_behind_the_tool(budget):
     plan = _plan([_att(0, 1_000), _att(1, 1_000)], budget=budget)
     assert [f.status for f in plan.files] == [STATUS_TOOL, STATUS_TOOL]
     assert plan.inline_tokens == 0
+
+
+class TestEdgeCases:
+    def test_token_count_falls_back_to_extraction_then_content(self):
+        row = _att(0, 10)
+        row["token_count"] = None
+        assert plan_attachments([row], budget=10_000).files[0].text_tokens == 10
+        row["metadata"]["extraction"].pop("stored_tokens")
+        assert plan_attachments([row], budget=10_000).files[0].text_tokens > 0
+        row["content"] = ""
+        assert plan_attachments([row], budget=10_000).files[0].text_tokens == 0
+
+    def test_native_pdf_without_page_count_is_priced_from_its_tokens(self):
+        pdf = _att(0, 6_000, mime=PDF)
+        plan = _plan([pdf], budget=100_000, native=[PDF])
+        # 6k tokens -> 10 pages at 500 each.
+        assert plan.files[0].cost == 6_000 + 10 * 500
+
+    def test_synthetic_images_without_page_count_assume_the_render_cap(self):
+        scan = _att(0, 0, mime=PDF, status="no_text")
+        plan = _plan([scan], budget=100_000, native=[PNG])
+        assert plan.files[0].mode == MODE_IMAGES
+        assert plan.native_part_count == 20
+
+    def test_non_dict_rows_are_ignored(self):
+        plan = plan_attachments(["junk", _att(0, 10)], budget=10_000)
+        assert [f.ref for f in plan.files] == ["F1"]
+
+    def test_lookup_helpers(self):
+        a = _att(0, 10)
+        a["legacy_mongo_id"] = "handle-0"
+        plan = plan_attachments([a, _att(1, 10)], budget=10_000)
+        assert plan.get(" f2 ").ref == "F2"
+        assert plan.get("F9") is None
+        assert plan.ref_for(a["id"]) == "F1"
+        assert plan.to_metadata()[0]["upload_id"] == "handle-0"
+        assert plan.summary() == {STATUS_INLINE: 2}
+        assert not plan.has_overflow
+
+    def test_extraction_truncated_file_is_flagged_in_manifest_and_text(self):
+        big = _att(0, 1_000, original=250_000, truncated=True)
+        plan = _plan([big], budget=100_000)
+        assert "only the start of this document could be extracted" in render_manifest(plan)
+        assert "~250,000 tokens" in render_inline_blocks(plan)
+
+    def test_partial_without_tools_says_the_rest_is_unavailable(self):
+        plan = _plan([_att(0, 20_000)], budget=8_000, tools=False)
+        assert plan.files[0].status == STATUS_PARTIAL
+        assert "not available to you" in render_inline_blocks(plan)
+
+    def test_empty_plan_renders_nothing(self):
+        plan = plan_attachments([], budget=1_000)
+        assert render_manifest(plan) == ""
+        assert render_inline_blocks(plan) == ""
+
+    def test_zero_window_has_no_budget(self):
+        assert attachment_budget(0, used_tokens=0, share=0.6) == 0
