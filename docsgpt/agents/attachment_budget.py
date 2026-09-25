@@ -465,8 +465,9 @@ def render_manifest(plan: AttachmentPlan) -> str:
         note = (
             "These are real files the user uploaded in this conversation, listed "
             "in upload order. Only files marked in_context (and the included part "
-            "of partly_in_context files) are available to you. Never guess what "
-            "the other files contain: tell the user they were not included "
+            "of partly_in_context files) are available to you, plus any passages "
+            "of other files quoted in a <file_excerpts> block. Never guess what "
+            "the rest contains: tell the user those files were not included "
             "because of their size."
         )
     lines = [f'<attached_files note="{_attr(note)}">']

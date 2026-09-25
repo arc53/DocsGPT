@@ -1166,6 +1166,7 @@ class BaseAgent(ABC):
         attachment_block, attachment_tokens = self._plan_attachment_context(
             context_limit,
             used_tokens=system_tokens + num_tokens_from_string(query),
+            query=query,
         )
 
         # Then shed whole documents, lowest-ranked first: a middle-truncated
@@ -1342,12 +1343,14 @@ class BaseAgent(ABC):
             partial_min_tokens=settings.ATTACHMENT_PARTIAL_MIN_TOKENS,
         )
 
-    def _plan_attachment_context(self, context_limit: int, used_tokens: int):
+    def _plan_attachment_context(self, context_limit: int, used_tokens: int, query: str = ""):
         """Plan the attachments and render what goes into the user message.
 
         Args:
             context_limit: The model's context window.
             used_tokens: Tokens the system prompt and the question already take.
+            query: The question, to pick excerpts from left-out files when
+                the model cannot call the attachments tool.
 
         Returns:
             ``(block, tokens)``: the manifest and inlined text to prepend to
@@ -1371,6 +1374,8 @@ class BaseAgent(ABC):
         self._attachments_applied = True
         self._share_plan_with_tool(plan)
         parts = [render_manifest(plan), render_inline_blocks(plan)]
+        if not plan.supports_tools and query:
+            parts.append(self._attachment_excerpts(plan, query, budget - plan.inline_tokens))
         block = "\n\n".join(part for part in parts if part)
         tokens = num_tokens_from_string(block) + plan.native_tokens
         if plan.has_overflow:
@@ -1384,6 +1389,73 @@ class BaseAgent(ABC):
                 },
             )
         return block, tokens
+
+    # Most excerpt tokens handed to a model without tools, whatever is left.
+    _EXCERPT_MAX_TOKENS = 8000
+
+    def _attachment_excerpts(self, plan, query: str, budget: int) -> str:
+        """Passages from left-out files that match the question.
+
+        A model that cannot call the attachments tool has no other way to
+        reach files that did not fit, so the budget the plan left over goes
+        to their best keyword matches, labelled by ref so they can be cited.
+        """
+        from docsgpt.agents.attachment_budget import (
+            STATUS_OMITTED,
+            STATUS_PARTIAL,
+            STATUS_TOOL,
+        )
+        from docsgpt.agents.attachment_search import (
+            chunk_text,
+            keyword_search,
+            render_excerpts,
+        )
+        from docsgpt.utils import num_tokens_from_string
+
+        budget = min(max(0, budget), self._EXCERPT_MAX_TOKENS)
+        if budget < 500:
+            return ""
+        left_out = [
+            f
+            for f in plan.files
+            if f.has_text and f.status in (STATUS_TOOL, STATUS_OMITTED, STATUS_PARTIAL)
+        ]
+        if not left_out:
+            return ""
+        texts = {f.attachment_id: f.content for f in left_out if "content" in f.attachment}
+        missing = [f.attachment_id for f in left_out if f.attachment_id not in texts]
+        if missing:
+            texts.update(self._load_attachment_texts(missing))
+        chunks = []
+        for f in left_out:
+            content = texts.get(f.attachment_id) or ""
+            start = f.included_chars if f.status == STATUS_PARTIAL and f.included_chars else 0
+            chunks.extend(c for c in chunk_text(f.attachment_id, content) if c.offset >= start)
+        chosen = []
+        spent = 0
+        for hit in keyword_search(chunks, query, 12):
+            cost = num_tokens_from_string(hit.text) + 20
+            if spent + cost > budget:
+                continue
+            chosen.append(hit)
+            spent += cost
+        labels = {f.attachment_id: (f.ref, f.filename) for f in left_out}
+        return render_excerpts(chosen, labels)
+
+    def _load_attachment_texts(self, attachment_ids: List[str]) -> Dict[str, str]:
+        """Stored text of the caller's attachments, by id."""
+        from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
+        from docsgpt.storage.db.session import db_readonly
+
+        if not attachment_ids or not self.user:
+            return {}
+        try:
+            with db_readonly() as conn:
+                rows = AttachmentsRepository(conn).list_by_ids(attachment_ids, self.user)
+        except Exception:
+            logger.warning("Could not load attachment text for excerpts", exc_info=True)
+            return {}
+        return {str(r["id"]): r.get("content") or "" for r in rows}
 
     def _apply_attachments(self, messages: List[Dict]) -> List[Dict]:
         """Plan attachments into messages an agent built itself.
@@ -1400,7 +1472,15 @@ class BaseAgent(ABC):
             self.model_id, user_id=self.model_user_id or self.user
         )
         used = self._calculate_current_context_tokens(messages)
-        block, _ = self._plan_attachment_context(context_limit, used)
+        question = next(
+            (
+                m["content"]
+                for m in reversed(messages)
+                if m.get("role") == "user" and isinstance(m.get("content"), str)
+            ),
+            "",
+        )
+        block, _ = self._plan_attachment_context(context_limit, used, query=question)
         if block:
             for message in reversed(messages):
                 if message.get("role") == "user" and isinstance(message.get("content"), str):

@@ -238,3 +238,45 @@ class TestToolAndEvents:
         assert kinds.index("attachment_plan") < kinds.index("answer")
         meta = next(e for e in events if "metadata" in e)
         assert meta["metadata"]["attachment_plan"][0]["ref"] == "F1"
+
+
+@pytest.mark.unit
+class TestModelsWithoutTools:
+    def test_overflow_files_contribute_matching_excerpts(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, window
+    ):
+        window(20_000)
+        files = [_att(i, 3_000) for i in range(5)]
+        files.append(
+            _att(5, 3_000, words=("filler " * 1500) + "the capybara exam question answer " + "filler " * 1400)
+        )
+        agent = _agent(agent_base_params, files, tools=False)
+        user = agent._build_messages("SYSTEM", "What did the capybara exam ask?")[-1]["content"]
+
+        assert "<file_excerpts" in user
+        assert 'ref="F6"' in user.split("<file_excerpts", 1)[1]
+        assert "capybara exam question" in user
+        total = num_tokens_from_string(user)
+        assert total < 20_000
+
+    def test_no_excerpts_when_the_model_can_use_the_tool(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, window
+    ):
+        window(20_000)
+        files = [_att(i, 3_000) for i in range(5)]
+        files.append(_att(5, 3_000, words=("filler " * 1500) + "capybara " + "filler " * 1400))
+        agent = _agent(agent_base_params, files)
+        _enable_tool(agent)
+        user = agent._build_messages("SYSTEM", "capybara?")[-1]["content"]
+        assert "<file_excerpts" not in user
+
+    def test_earlier_files_are_loaded_for_excerpts(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        earlier = _att(0, 50, filename="old.txt")
+        earlier.pop("content")
+        agent = _agent(agent_base_params, [], earlier=[earlier], tools=False)
+        loaded = {**earlier, "content": "the walrus section explains tusks"}
+        monkeypatch.setattr(agent, "_load_attachment_texts", lambda ids: {earlier["id"]: loaded["content"]})
+        user = agent._build_messages("SYSTEM", "walrus tusks?")[-1]["content"]
+        assert "walrus section explains tusks" in user
