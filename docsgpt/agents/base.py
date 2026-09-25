@@ -89,6 +89,10 @@ class BaseAgent(ABC):
     # Inert defaults: an instance built without __init__ still resolves these.
     _guardrail_engine = None
     _guardrail_engine_built = False
+    # Set by the chat pipeline, whose attachments are rows of the caller's
+    # ``attachments`` table the tool can read; workflow nodes stage theirs as
+    # artifacts instead and leave it off.
+    attachments_tool_enabled = False
     guardrails_config = None
     request_id = None
 
@@ -107,6 +111,7 @@ class BaseAgent(ABC):
         sources_were_searched: bool = False,
         decoded_token: Optional[Dict] = None,
         attachments: Optional[List[Dict]] = None,
+        earlier_attachments: Optional[List[Dict]] = None,
         json_schema: Optional[Dict] = None,
         json_schema_strict: bool = True,
         json_object: bool = False,
@@ -192,6 +197,17 @@ class BaseAgent(ABC):
             )
 
         self.attachments = attachments or []
+        # Attachments from earlier turns of the conversation (rows without
+        # their text). They are listed to the model and reachable through the
+        # attachments tool, never inlined again.
+        self.earlier_attachments = earlier_attachments or []
+        # Set by ``_build_messages`` once the turn's attachments are planned
+        # and merged into the messages, so the LLM handler does not merge
+        # them a second time.
+        self.attachment_plan = None
+        self._attachments_applied = False
+        # Set when the attachments tool is added for this run.
+        self._attachments_tool_entry: Optional[Dict] = None
         self.json_schema = None
         if json_schema is not None:
             try:
@@ -347,8 +363,27 @@ class BaseAgent(ABC):
             )
             self.flush_guardrail_audit()
             return
-        yield from self._gen_inner(query, log_context)
+        plan_emitted = False
+        for event in self._gen_inner(query, log_context):
+            # The plan is made while the first messages are built, before the
+            # first LLM call, so it is ready by the first event: surface it
+            # ahead of the answer so the client can mark the files straight away.
+            if not plan_emitted and getattr(self, "attachment_plan", None) is not None:
+                plan_emitted = True
+                yield from self._attachment_plan_events()
+            yield event
+        if not plan_emitted and getattr(self, "attachment_plan", None) is not None:
+            yield from self._attachment_plan_events()
         yield from self._emit_responses_metadata()
+
+    def _attachment_plan_events(self) -> Generator[Dict, None, None]:
+        """Persist and stream where each attachment went this turn."""
+        plan = getattr(self, "attachment_plan", None)
+        if plan is None or not plan.files:
+            return
+        files = plan.to_metadata()
+        yield {"metadata": {"attachment_plan": files}}
+        yield {"type": "attachment_plan", "attachment_plan": files}
 
     def _emit_responses_metadata(self) -> Generator[Dict, None, None]:
         """Surface Responses continuity and usage for durable next turns."""
@@ -685,10 +720,11 @@ class BaseAgent(ABC):
         self.tools = self.tool_executor.prepare_tools_for_llm(tools_dict)
 
     def _execute_tool_action(self, tools_dict, call):
-        # Mirror the request's attachments onto the executor so sandbox tools
-        # can lazily bridge a referenced chat attachment to a conversation
-        # artifact; only the caller's own (user-scoped) attachments are passed.
-        self.tool_executor.attachments = self.attachments
+        # Mirror the conversation's attachments onto the executor so sandbox
+        # tools can lazily bridge a referenced chat attachment to a
+        # conversation artifact, by id, filename or ref (F3); only the
+        # caller's own (user-scoped) attachments are passed.
+        self.tool_executor.attachments = self._referenceable_attachments()
         return self.tool_executor.execute(
             tools_dict, call, self.llm.__class__.__name__
         )
@@ -702,7 +738,32 @@ class BaseAgent(ABC):
         from docsgpt.api.answer.services.compression.token_counter import (
             TokenCounter,
         )
-        return TokenCounter.count_message_tokens(messages)
+        return TokenCounter.count_message_tokens(messages) + self._native_token_correction(messages)
+
+    def _native_token_correction(self, messages: List[Dict]) -> int:
+        """Tokens native file parts cost beyond the counter's flat estimate.
+
+        ``TokenCounter`` charges every file or image part a flat 1,500
+        tokens, so a 300-page PDF sent natively counted as a thumbnail and
+        sailed through the context gate. The plan knows each native file's
+        estimated size; the difference is added while those parts are still
+        in the messages.
+        """
+        plan = getattr(self, "attachment_plan", None)
+        if plan is None or not plan.native_tokens:
+            return 0
+        from docsgpt.agents.attachment_budget import IMAGE_TOKEN_ESTIMATE
+
+        has_parts = any(
+            isinstance(m, dict) and isinstance(m.get("content"), list) and any(
+                isinstance(p, dict) and p.get("type") not in (None, "text")
+                for p in m["content"]
+            )
+            for m in messages
+        )
+        if not has_parts:
+            return 0
+        return max(0, plan.native_tokens - IMAGE_TOKEN_ESTIMATE * plan.native_part_count)
 
     def _check_context_limit(self, messages: List[Dict]) -> bool:
         from docsgpt.core.model_utils import get_token_limit
@@ -984,13 +1045,18 @@ class BaseAgent(ABC):
         the graph carries the answer as much as a search hit does, so both are
         cited. Tools are looked up the way the executor caches them.
         """
+        from docsgpt.agents.tools.attachments import ATTACHMENTS_TOOL_ID
         from docsgpt.agents.tools.graph_search import GRAPH_TOOL_ID
         from docsgpt.agents.tools.internal_search import INTERNAL_TOOL_ID
 
         executor = getattr(self, "tool_executor", None)
         loaded = getattr(executor, "_loaded_tools", None) or {}
         docs: List[Dict] = []
-        for name, tool_id in (("internal_search", INTERNAL_TOOL_ID), ("graph_search", GRAPH_TOOL_ID)):
+        for name, tool_id in (
+            ("internal_search", INTERNAL_TOOL_ID),
+            ("graph_search", GRAPH_TOOL_ID),
+            ("attachments", ATTACHMENTS_TOOL_ID),
+        ):
             tool = loaded.get(f"{name}:{tool_id}:{self.user or ''}")
             docs.extend(getattr(tool, "retrieved_docs", None) or [])
         return docs
@@ -1094,20 +1160,31 @@ class BaseAgent(ABC):
         if num_tokens_from_string(query) > query_budget:
             query = self._truncate_text_middle(query, query_budget)
 
+        # Attachments are planned next, against what the system prompt and the
+        # question leave: they are the user's own material for this turn, so
+        # retrieved documents and history make room for them, not the reverse.
+        attachment_block, attachment_tokens = self._plan_attachment_context(
+            context_limit,
+            used_tokens=system_tokens + num_tokens_from_string(query),
+        )
+
         # Then shed whole documents, lowest-ranked first: a middle-truncated
         # document block would corrupt its XML, and retriever order is
         # relevance-descending so the tail is the least useful.
+        document_budget = max_query_tokens - attachment_tokens
         document_block = self._build_document_block()
         while (
             document_block
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
-            > max_query_tokens
+            > document_budget
         ):
             self.retrieved_docs = self.retrieved_docs[:-1]
             document_block = self._build_document_block()
 
         user_content = self._compose_user_turn(document_block, query)
-        user_tokens = num_tokens_from_string(user_content)
+        user_tokens = num_tokens_from_string(user_content) + attachment_tokens
+        if attachment_block:
+            user_content = f"{attachment_block}\n\n{user_content}"
 
         available_for_history = max(available_after_system - user_tokens, 0)
 
@@ -1218,15 +1295,186 @@ class BaseAgent(ABC):
         # is used only for token budgeting / retrieval. The document block is
         # prepended as its own text part so images and documents coexist.
         if getattr(self, "multimodal_content", None):
+            prefix = "\n\n".join(part for part in (attachment_block, document_block) if part)
             final_content: Any = (
-                [{"type": "text", "text": document_block}, *self.multimodal_content]
-                if document_block
+                [{"type": "text", "text": prefix}, *self.multimodal_content]
+                if prefix
                 else self.multimodal_content
             )
         else:
             final_content = user_content
         messages.append({"role": "user", "content": final_content})
-        return messages
+        return self._attach_native_files(messages)
+
+    # ---- Attachments ----
+
+    def _attachment_rows(self) -> List[Dict]:
+        """Every attachment of the conversation: earlier turns, then this one."""
+        return [
+            *(getattr(self, "earlier_attachments", None) or []),
+            *(getattr(self, "attachments", None) or []),
+        ]
+
+    def _native_attachment_types(self) -> List[str]:
+        getter = getattr(self.llm, "get_supported_attachment_types", None)
+        if not callable(getter):
+            return []
+        try:
+            types = getter()
+            return [str(t) for t in types] if isinstance(types, (list, tuple, set)) else []
+        except Exception:
+            logger.debug("Could not read supported attachment types", exc_info=True)
+            return []
+
+    def _plan_attachments(self, budget: int):
+        """Plan this turn's attachments against ``budget`` tokens."""
+        from docsgpt.agents.attachment_budget import plan_attachments
+
+        return plan_attachments(
+            list(getattr(self, "attachments", None) or []),
+            list(getattr(self, "earlier_attachments", None) or []),
+            budget=budget,
+            native_types=self._native_attachment_types(),
+            supports_tools=(
+                getattr(self, "_attachments_tool_entry", None) is not None and self._llm_supports_tools()
+            ),
+            native_max_files=settings.ATTACHMENT_NATIVE_MAX_FILES,
+            partial_min_tokens=settings.ATTACHMENT_PARTIAL_MIN_TOKENS,
+        )
+
+    def _plan_attachment_context(self, context_limit: int, used_tokens: int):
+        """Plan the attachments and render what goes into the user message.
+
+        Args:
+            context_limit: The model's context window.
+            used_tokens: Tokens the system prompt and the question already take.
+
+        Returns:
+            ``(block, tokens)``: the manifest and inlined text to prepend to
+            the user message, and every token the attachments cost including
+            native parts, which ``block`` does not contain.
+        """
+        from docsgpt.agents.attachment_budget import (
+            attachment_budget,
+            render_inline_blocks,
+            render_manifest,
+        )
+        from docsgpt.utils import num_tokens_from_string
+
+        if not getattr(self, "attachments", None) and not getattr(self, "earlier_attachments", None):
+            return "", 0
+        budget = attachment_budget(
+            context_limit, used_tokens, settings.ATTACHMENT_CONTEXT_SHARE
+        )
+        plan = self._plan_attachments(budget)
+        self.attachment_plan = plan
+        self._attachments_applied = True
+        self._share_plan_with_tool(plan)
+        parts = [render_manifest(plan), render_inline_blocks(plan)]
+        block = "\n\n".join(part for part in parts if part)
+        tokens = num_tokens_from_string(block) + plan.native_tokens
+        if plan.has_overflow:
+            logger.info(
+                "attachment_plan_overflow",
+                extra={
+                    "files": len(plan.files),
+                    "budget": budget,
+                    "inline_tokens": plan.inline_tokens,
+                    "statuses": plan.summary(),
+                },
+            )
+        return block, tokens
+
+    def _apply_attachments(self, messages: List[Dict]) -> List[Dict]:
+        """Plan attachments into messages an agent built itself.
+
+        ``_build_messages`` plans as it budgets; agents that assemble their
+        own messages (the research agent's synthesis) call this instead, and
+        the attachments go in front of the last user message the same way.
+        """
+        from docsgpt.core.model_utils import get_token_limit
+
+        if not getattr(self, "attachments", None) and not getattr(self, "earlier_attachments", None):
+            return messages
+        context_limit = get_token_limit(
+            self.model_id, user_id=self.model_user_id or self.user
+        )
+        used = self._calculate_current_context_tokens(messages)
+        block, _ = self._plan_attachment_context(context_limit, used)
+        if block:
+            for message in reversed(messages):
+                if message.get("role") == "user" and isinstance(message.get("content"), str):
+                    message["content"] = f"{block}\n\n{message['content']}"
+                    break
+        return self._attach_native_files(messages)
+
+    def _attachment_listing(self) -> str:
+        """The manifest alone, every file behind the tool, for tool-only calls."""
+        from docsgpt.agents.attachment_budget import render_manifest
+
+        if getattr(self, "_attachments_tool_entry", None) is None:
+            return ""
+        return render_manifest(self._plan_attachments(0))
+
+    def _attach_native_files(self, messages: List[Dict]) -> List[Dict]:
+        """Hand the plan's native files to the provider as file or image parts."""
+        plan = getattr(self, "attachment_plan", None)
+        natives = plan.native_attachments() if plan is not None else []
+        if not natives:
+            return messages
+        return self.llm_handler.prepare_messages(self, messages, natives)
+
+    def _share_plan_with_tool(self, plan) -> None:
+        """Tell the attachments tool what the model already has in context."""
+        entry = getattr(self, "_attachments_tool_entry", None)
+        if entry is None:
+            return
+        config = entry.setdefault("config", {})
+        config["statuses"] = {f.ref: f.status for f in plan.files}
+
+    def _referenceable_attachments(self) -> List[Dict]:
+        """Rows sandbox tools may bridge, each stamped with its ref."""
+        from docsgpt.agents.attachment_budget import plan_attachments
+
+        rows = self._attachment_rows()
+        if not rows:
+            return []
+        plan = getattr(self, "attachment_plan", None) or plan_attachments(
+            list(getattr(self, "attachments", None) or []),
+            list(getattr(self, "earlier_attachments", None) or []),
+            budget=0,
+        )
+        out = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            row_id = str(row.get("id") or row.get("_id") or row.get("legacy_mongo_id") or "")
+            ref = plan.ref_for(row_id)
+            out.append({**row, "ref": ref} if ref else row)
+        return out
+
+    def _add_attachments_tool(self, tools_dict: Dict) -> None:
+        """Offer the attachments tool when the conversation has files.
+
+        Only conversation attachments (loaded from the ``attachments`` table
+        for the caller) are reachable; a workflow node's staged artifacts are
+        not, so no tool is added there.
+        """
+        from docsgpt.agents.tools.attachments import add_attachments_tool
+
+        if not getattr(self, "attachments_tool_enabled", False):
+            return
+        rows = self._attachment_rows()
+        if not rows or not self.user:
+            return
+        self._attachments_tool_entry = add_attachments_tool(
+            tools_dict,
+            attachments=rows,
+            current_ids=[
+                str(r.get("id") or r.get("_id") or "") for r in (self.attachments or []) if isinstance(r, dict)
+            ],
+            user_id=self.user,
+        )
 
     def _truncate_history_to_fit(
         self,
@@ -1341,7 +1589,16 @@ class BaseAgent(ABC):
         # Built-in models: same as self.model_id. BYOM: the user's
         # typed model name, not the internal UUID.
         gen_kwargs = {"model": self.upstream_model_id, "messages": messages}
-        if self.attachments:
+        plan = getattr(self, "attachment_plan", None)
+        if plan is not None:
+            # Text attachments are already in ``messages`` and counted there;
+            # only native parts, which a text count cannot see, are added.
+            # The plan also rides on the LLM so a fallback can swap native
+            # parts back to the right file's text.
+            self.llm._attachment_plan = plan
+            if plan.native_tokens:
+                gen_kwargs["_usage_attachments"] = plan.native_tokens
+        elif self.attachments:
             gen_kwargs["_usage_attachments"] = self.attachments
 
         if self.tools and self._llm_supports_tools():
@@ -1446,7 +1703,11 @@ class BaseAgent(ABC):
             return
 
         processed_response_gen = self._llm_handler(
-            response, tools_dict, messages, log_context, self.attachments
+            response,
+            tools_dict,
+            messages,
+            log_context,
+            None if getattr(self, "_attachments_applied", False) else self.attachments,
         )
 
         def as_text(event):

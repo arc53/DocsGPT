@@ -179,6 +179,10 @@ class StreamProcessor:
         self.source = {}
         self.all_sources = []
         self.attachments = []
+        # Attachments from earlier turns of the conversation, without their
+        # text: listed to the model and readable through the attachments tool.
+        self.earlier_attachments = []
+        self._earlier_attachment_ids: list = []
         self.history = []
         self.retrieved_docs = []
         self.agent_config = {}
@@ -383,6 +387,7 @@ class StreamProcessor:
             )
             if not conversation:
                 raise ValueError("Conversation not found or unauthorized")
+            self._earlier_attachment_ids = self._conversation_attachment_ids(conversation)
 
             # Check if compression is enabled and needed
             if settings.ENABLE_CONVERSATION_COMPRESSION:
@@ -511,21 +516,67 @@ class StreamProcessor:
                 for query in conversation.get("queries", [])
             ]
 
+    def _conversation_attachment_ids(self, conversation: Dict[str, Any]) -> list:
+        """Attachment ids of the turns before this one, in upload order.
+
+        An edit or regenerate at ``index`` replaces that turn and everything
+        after it, so only the turns before it count.
+        """
+        queries = [
+            q for q in conversation.get("queries", []) or []
+            if not is_compression_summary_row(q)
+        ]
+        index = self.data.get("index")
+        if isinstance(index, int) and 0 <= index < len(queries):
+            queries = queries[:index]
+        ids: list = []
+        seen = set()
+        for query in queries:
+            for attachment_id in query.get("attachments") or []:
+                key = str(attachment_id)
+                if key not in seen:
+                    seen.add(key)
+                    ids.append(key)
+        return ids
+
     def _process_attachments(self):
-        """Process any attachments in the request"""
+        """Load this turn's attachments, and list the conversation's earlier ones."""
         attachment_ids = self.data.get("attachments", [])
         self.attachments = self._get_attachments_content(
             attachment_ids, self.initial_user_id
         )
+        current = {str(a.get("id")) for a in self.attachments if isinstance(a, dict)}
+        earlier_ids = [i for i in self._earlier_attachment_ids if i not in current]
+        self.earlier_attachments = self._get_attachment_listing(
+            earlier_ids, self.initial_user_id
+        )
+
+    def _get_attachment_listing(self, attachment_ids, user_id) -> list:
+        """The caller's rows for ``attachment_ids``, without their text."""
+        if not attachment_ids or not user_id:
+            return []
+        try:
+            with db_readonly() as conn:
+                return AttachmentsRepository(conn).list_by_ids(
+                    attachment_ids, user_id, include_content=False
+                )
+        except Exception as e:
+            logger.error(f"Error listing conversation attachments: {e}", exc_info=True)
+            return []
 
     def _get_attachments_content(self, attachment_ids, user_id):
         if not attachment_ids:
             return []
         attachments = []
+        seen = set()
         try:
             with db_readonly() as conn:
                 repo = AttachmentsRepository(conn)
                 for attachment_id in attachment_ids:
+                    # The same id sent twice is one file, not two.
+                    if str(attachment_id) in seen:
+                        continue
+                    seen.add(str(attachment_id))
                     try:
                         attachment_doc = repo.get_any(str(attachment_id), user_id)
                         if attachment_doc:
@@ -1761,7 +1812,7 @@ class StreamProcessor:
                 docs=docs,
                 docs_together=docs_together,
                 tools_data=tools_data,
-                attachments=self.attachments,
+                attachments=[*self.earlier_attachments, *self.attachments],
                 enabled_tools=self._enabled_tool_names(),
                 persona=self._persona,
                 artifact_parent={"conversation_id": self.conversation_id},
@@ -1845,6 +1896,7 @@ class StreamProcessor:
             "sources_were_searched": self._has_active_docs(),
             "decoded_token": self.decoded_token,
             "attachments": self.attachments,
+            "earlier_attachments": self.earlier_attachments,
             "json_schema": self.agent_config.get("json_schema"),
             "json_schema_strict": self.agent_config.get("json_schema_strict", True),
             "json_object": self.agent_config.get("json_object", False),
@@ -1934,5 +1986,8 @@ class StreamProcessor:
 
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
+        # Chat attachments are the caller's own ``attachments`` rows, which
+        # the attachments tool can read; offer it to the model.
+        agent.attachments_tool_enabled = True
 
         return agent
