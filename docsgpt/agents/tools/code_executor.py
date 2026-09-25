@@ -140,7 +140,8 @@ class CodeExecutorTool(Tool):
                             "items": {"type": "string"},
                             "description": "Files to materialize into the workspace; each accepts the short "
                             "ref like `A1` returned by a previous artifact action, a full artifact id, or "
-                            "the name/id of a file the user attached to this conversation. Each is staged "
+                            "the ref (`F1`), name or id of a file the user attached to this conversation. "
+                            "Each is staged "
                             "at `inputs/<filename>` before the code runs — read it from that path (the "
                             "result's `inputs_loaded` echoes the exact staged paths).",
                         },

@@ -160,6 +160,16 @@ def test_match_by_filename_exact_and_normalized(monkeypatch):
 
 
 @pytest.mark.unit
+def test_match_by_conversation_ref(monkeypatch):
+    _patch_bridge(monkeypatch)
+    first = {**_attachment(filename="a.pdf"), "ref": "F1"}
+    second = {**_attachment(filename="b.pdf"), "ref": "F2"}
+    _FakeAttachmentsRepo.rows = {first["id"]: first, second["id"]: second}
+    out = match_attachment([first, second], "f2", USER)
+    assert out is not None and out["id"] == second["id"]
+
+
+@pytest.mark.unit
 def test_no_match_returns_none(monkeypatch):
     _patch_bridge(monkeypatch)
     att = _attachment(filename="a.pdf")
