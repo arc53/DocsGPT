@@ -60,3 +60,22 @@ def test_markdown_token_chunking_via_max_tokens():
     assert len(tups) > 1
     for _hdr, chunk in tups:
         assert len(chunk) <= 4
+
+
+def test_markdown_consecutive_headers_are_not_dropped():
+    content = "# Project Title\n## Installation\nRun pip install docsgpt.\n"
+    parser = MarkdownParser()
+    tups = parser.markdown_to_tups(content)
+    headers = [header for header, _ in tups]
+    assert "Installation" in headers
+    installation_text = dict(tups)["Installation"]
+    assert "Run pip install docsgpt." in installation_text
+
+
+def test_markdown_headerless_content_keeps_word_boundaries():
+    content = "Alpha beta\ngamma delta\n"
+    parser = MarkdownParser()
+    tups = parser.markdown_to_tups(content)
+    text = tups[0][1]
+    assert "betagamma" not in text
+    assert "beta gamma" in text
