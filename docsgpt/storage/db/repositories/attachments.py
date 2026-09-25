@@ -179,6 +179,78 @@ class AttachmentsRepository:
         row = result.fetchone()
         return _attachment_to_dict(row) if row is not None else None
 
+    def list_by_ids(
+        self, ids: list[str], user_id: str, *, include_content: bool = True
+    ) -> list[dict]:
+        """Fetch the caller's attachments by id, in the order asked for.
+
+        Accepts PG UUIDs and upload handles (``legacy_mongo_id``) alike, and
+        silently drops ids that are unknown or belong to someone else, so a
+        conversation's id list can be passed as-is.
+
+        Args:
+            ids: Attachment ids or upload handles.
+            user_id: The owner every row must belong to.
+            include_content: Leave the parsed text out when False; listing a
+                conversation's files must not pull megabytes of text.
+
+        Returns:
+            One dict per matched id, first match wins for repeated ids.
+        """
+        wanted = [str(i) for i in ids or [] if i is not None]
+        if not wanted:
+            return []
+        columns = "*" if include_content else (
+            "id, user_id, filename, upload_path, mime_type, size, token_count, "
+            "openai_file_id, google_file_uri, metadata, created_at, legacy_mongo_id"
+        )
+        result = self._conn.execute(
+            text(
+                f"SELECT {columns} FROM attachments "
+                "WHERE user_id = :user_id "
+                "AND (id::text = ANY(:ids) OR legacy_mongo_id = ANY(:ids))"
+            ),
+            {"ids": wanted, "user_id": user_id},
+        )
+        by_key: dict[str, dict] = {}
+        for row in result.fetchall():
+            doc = _attachment_to_dict(row)
+            by_key.setdefault(str(doc["id"]), doc)
+            if doc.get("legacy_mongo_id"):
+                by_key.setdefault(str(doc["legacy_mongo_id"]), doc)
+        out: list[dict] = []
+        seen: set[str] = set()
+        for key in wanted:
+            doc = by_key.get(key)
+            if doc is None or str(doc["id"]) in seen:
+                continue
+            seen.add(str(doc["id"]))
+            out.append(doc)
+        return out
+
+    def merge_metadata(self, attachment_id: str, user_id: str, patch: dict) -> bool:
+        """Merge ``patch`` into the row's metadata at the top level.
+
+        A single ``||`` update, so a background writer (the indexer) never
+        clobbers keys another writer set in between.
+
+        Returns:
+            True when the caller's row was updated.
+        """
+        result = self._conn.execute(
+            text(
+                "UPDATE attachments SET metadata = "
+                "COALESCE(metadata, '{}'::jsonb) || CAST(:patch AS jsonb) "
+                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+            ),
+            {
+                "patch": json.dumps(strip_null_bytes(patch)),
+                "id": str(attachment_id),
+                "user_id": user_id,
+            },
+        )
+        return result.rowcount > 0
+
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
             text("SELECT * FROM attachments WHERE user_id = :user_id ORDER BY created_at DESC"),

@@ -155,3 +155,62 @@ class TestUpdateMetadataIfContentNull:
     def test_missing_row_returns_false(self, pg_conn):
         repo = _repo(pg_conn)
         assert repo.update_metadata_if_content_null("nope", "u", {"x": 1}) is False
+
+
+class TestListByIds:
+    def test_returns_rows_in_requested_order(self, pg_conn):
+        repo = _repo(pg_conn)
+        a = repo.create("u", "a.txt", "/a", content="alpha")
+        b = repo.create("u", "b.txt", "/b", content="beta")
+        rows = repo.list_by_ids([b["id"], a["id"]], "u")
+        assert [r["filename"] for r in rows] == ["b.txt", "a.txt"]
+        assert rows[0]["content"] == "beta"
+
+    def test_is_scoped_to_the_owner(self, pg_conn):
+        repo = _repo(pg_conn)
+        mine = repo.create("u", "mine.txt", "/m")
+        theirs = repo.create("other", "theirs.txt", "/t")
+        rows = repo.list_by_ids([mine["id"], theirs["id"]], "u")
+        assert [r["filename"] for r in rows] == ["mine.txt"]
+
+    def test_resolves_upload_handles(self, pg_conn):
+        repo = _repo(pg_conn)
+        row = repo.create("u", "a.txt", "/a", legacy_mongo_id="handle-1")
+        rows = repo.list_by_ids(["handle-1"], "u")
+        assert [r["id"] for r in rows] == [row["id"]]
+
+    def test_can_leave_content_out(self, pg_conn):
+        repo = _repo(pg_conn)
+        row = repo.create("u", "a.txt", "/a", content="x" * 1000, token_count=250)
+        rows = repo.list_by_ids([row["id"]], "u", include_content=False)
+        assert "content" not in rows[0]
+        assert rows[0]["token_count"] == 250
+        assert rows[0]["path"] == "/a"
+
+    def test_empty_and_unknown_ids(self, pg_conn):
+        repo = _repo(pg_conn)
+        assert repo.list_by_ids([], "u") == []
+        assert repo.list_by_ids(["not-a-real-id"], "u") == []
+
+
+class TestMergeMetadata:
+    def test_merges_top_level_keys(self, pg_conn):
+        repo = _repo(pg_conn)
+        row = repo.create("u", "a.txt", "/a", metadata={"extraction": {"status": "ok"}})
+        assert repo.merge_metadata(row["id"], "u", {"index": {"status": "done"}})
+        fetched = repo.get(row["id"], "u")
+        assert fetched["metadata"] == {
+            "extraction": {"status": "ok"},
+            "index": {"status": "done"},
+        }
+
+    def test_works_on_null_metadata(self, pg_conn):
+        repo = _repo(pg_conn)
+        row = repo.create("u", "a.txt", "/a")
+        assert repo.merge_metadata(row["id"], "u", {"index": {"status": "pending"}})
+        assert repo.get(row["id"], "u")["metadata"] == {"index": {"status": "pending"}}
+
+    def test_refuses_other_users(self, pg_conn):
+        repo = _repo(pg_conn)
+        row = repo.create("u", "a.txt", "/a")
+        assert not repo.merge_metadata(row["id"], "other", {"index": {}})
