@@ -1,20 +1,23 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
-import { useFormFieldControl } from '@/components/ui/form-field';
+import {
+  useFormFieldControl,
+  useFormFieldFloating,
+} from '@/components/ui/form-field';
 import { cn, focusRing, invalidState, fieldFrame } from '@/lib/utils';
 
 const inputVariants = cva(
-  `${focusRing} ${invalidState} ${fieldFrame} text-foreground file:text-foreground placeholder:text-muted-foreground border-border w-full min-w-0 bg-transparent file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:cursor-not-allowed disabled:opacity-50 selection:bg-primary selection:text-primary-foreground focus-visible:border-ring`,
+  `${focusRing} ${invalidState} ${fieldFrame} text-foreground file:text-foreground placeholder:text-muted-foreground w-full min-w-0 bg-transparent file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:cursor-not-allowed disabled:opacity-50 selection:bg-primary selection:text-primary-foreground focus-visible:border-ring`,
   {
     variants: {
       size: {
-        default: 'h-10.5 px-3 py-2 text-base md:text-sm',
+        default: 'h-9.5 px-3 py-1.5 text-base md:text-sm',
         sm: 'h-8 px-2 py-1 text-sm',
         lg: 'h-12 px-5 py-3 text-base md:text-sm',
-        // The form-row height (42px) by name, shared with Button field and
+        // The form-row height (38px) by name, shared with Button field and
         // SelectTrigger field; the same classes as default.
-        field: 'h-10.5 px-3 py-2 text-base md:text-sm',
+        field: 'h-9.5 px-3 py-1.5 text-base md:text-sm',
       },
       shape: {
         default: 'rounded-md',
@@ -56,10 +59,10 @@ const LABEL_RESTING_CLASSES: Record<
   NonNullable<VariantProps<typeof inputVariants>['size']>,
   string
 > = {
-  default: 'peer-placeholder-shown:top-2.5 peer-placeholder-shown:text-base',
+  default: 'peer-placeholder-shown:top-2 peer-placeholder-shown:text-base',
   sm: 'peer-placeholder-shown:top-1.5 peer-placeholder-shown:text-sm',
   lg: 'peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-base',
-  field: 'peer-placeholder-shown:top-2.5 peer-placeholder-shown:text-base',
+  field: 'peer-placeholder-shown:top-2 peer-placeholder-shown:text-base',
 };
 
 // The floating label sits on the field's border, so its background has to
@@ -93,6 +96,7 @@ function Input(inputProps: InputProps) {
     variant = 'default',
     ...props
   } = useFormFieldControl(inputProps);
+  const floating = useFormFieldFloating();
   const generatedId = React.useId();
   const inputId = id ?? (label ? generatedId : undefined);
 
@@ -101,14 +105,19 @@ function Input(inputProps: InputProps) {
       <input
         type={type}
         id={id}
-        placeholder={placeholder}
+        // Under a FormField's floating label a blank placeholder drives the
+        // resting position; a real one stays hidden until focus.
+        placeholder={placeholder ?? (floating ? ' ' : undefined)}
         required={required}
         data-slot="input"
         data-size={size}
         data-shape={shape}
         data-variant={variant}
+        data-left-icon={leftIcon ? '' : undefined}
         className={cn(
           inputVariants({ size, shape, variant }),
+          floating &&
+            'focus:placeholder:text-muted-foreground placeholder:text-transparent',
           leftIcon && 'pl-10',
           className,
         )}
@@ -142,7 +151,7 @@ function Input(inputProps: InputProps) {
         required={required}
         className={cn(
           inputVariants({ size, shape, variant }),
-          'peer placeholder:text-transparent',
+          'peer focus:placeholder:text-muted-foreground placeholder:text-transparent',
           leftIcon && 'pl-10',
           className,
         )}
@@ -156,7 +165,7 @@ function Input(inputProps: InputProps) {
       <label
         htmlFor={inputId}
         className={cn(
-          'text-muted-foreground pointer-events-none absolute -top-2.5 left-3 max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-xs text-ellipsis whitespace-nowrap transition-all select-none',
+          'text-muted-foreground pointer-events-none absolute -top-2.5 left-3 max-w-[calc(100%-24px)] overflow-hidden px-2 text-xs text-ellipsis whitespace-nowrap transition-all select-none',
           LABEL_RESTING_CLASSES[size ?? 'default'],
           leftIcon
             ? 'peer-placeholder-shown:left-7'

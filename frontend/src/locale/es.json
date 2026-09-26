@@ -8,6 +8,7 @@
   "sourceDocs": "Fuente",
   "none": "Ninguno",
   "loading": "Cargando...",
+  "retry": "Reintentar",
   "cancel": "Cancelar",
   "help": "Asistencia",
   "emailUs": "Envíanos un correo",
@@ -75,7 +76,14 @@
       "high": "Alto",
       "unlimited": "Ilimitado",
       "default": "Predeterminado",
-      "add": "Añadir"
+      "add": "Añadir",
+      "promptActions": {
+        "select": "Selecciona un prompt",
+        "edit": "Editar prompt",
+        "view": "Ver prompt",
+        "duplicate": "Duplicar prompt",
+        "delete": "Eliminar prompt"
+      }
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
@@ -672,6 +680,14 @@
       "description": "Descripción",
       "descriptionPlaceholder": "Ingresa descripción",
       "bodyContentType": "Tipo de contenido del cuerpo",
+      "bodyTypeHint": {
+        "json": "El formato más común. Úsalo para APIs REST modernas.",
+        "formUrlencoded": "Formato estándar de envío de formularios. Ideal para APIs heredadas y formularios de inicio de sesión.",
+        "multipart": "Para APIs que requieren formato multipart. No se admite la subida de archivos a través del LLM.",
+        "text": "Datos de texto sin formato. Cada campo en una línea nueva.",
+        "xml": "Formato XML estructurado. Úsalo para APIs SOAP y empresariales.",
+        "octetStream": "Datos binarios sin procesar, codificados en base64 para su transmisión."
+      },
       "headers": "Encabezados",
       "queryParameters": "Parámetros de Consulta",
       "body": "Cuerpo",
@@ -740,7 +756,14 @@
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
-      }
+      },
+      "configErrors": {
+        "required": "{{field}} es obligatorio",
+        "positiveNumber": "Debe ser un número positivo",
+        "maxTimeout": "El tiempo de espera máximo es de 300 segundos"
+      },
+      "headerValuePlaceholder": "p. ej., application/json",
+      "toolIconTitle": "Icono de {{name}}"
     },
     "devices": {
       "label": "Dispositivos",
@@ -793,7 +816,9 @@
         "start": "Generar código",
         "waitingForCli": "Esperando a que la CLI canjee el código…",
         "cancel": "Cancelar"
-      }
+      },
+      "auditDurationValue": "{{value}} ms",
+      "fallbackName": "dispositivo"
     },
     "customModels": {
       "label": "Modelos personalizados",
@@ -906,15 +931,6 @@
         "workflows_one": "{{count}} flujo de trabajo",
         "workflows_other": "{{count}} flujos de trabajo"
       },
-      "relative": {
-        "now": "Ahora mismo",
-        "minutes_one": "Hace {{count}} minuto",
-        "minutes_other": "Hace {{count}} minutos",
-        "hours_one": "Hace {{count}} hora",
-        "hours_other": "Hace {{count}} horas",
-        "days_one": "Hace {{count}} día",
-        "days_other": "Hace {{count}} días"
-      },
       "families": {
         "agents": "Agentes",
         "sources": "Fuentes",
@@ -1026,7 +1042,8 @@
         "collapseDetails": "Contraer detalles de subida",
         "dismiss": "Descartar notificación de subida",
         "uploadProgress": "Progreso de subida {{progress}}%",
-        "clear": "Limpiar"
+        "clear": "Limpiar",
+        "ingestionFailed": "La ingesta falló."
       },
       "showAdvanced": "Mostrar opciones avanzadas",
       "hideAdvanced": "Ocultar opciones avanzadas",
@@ -1117,6 +1134,16 @@
           "folderAlt": "Carpeta",
           "fileAlt": "Archivo"
         }
+      },
+      "fields": {
+        "url": "URL",
+        "awsAccessKeyId": "ID de clave de acceso de AWS",
+        "awsSecretAccessKey": "Clave de acceso secreta de AWS",
+        "bucket": "Nombre del bucket",
+        "prefix": "Prefijo de ruta (opcional)",
+        "region": "Región de AWS",
+        "endpointUrl": "URL de endpoint personalizada (opcional)",
+        "initialContent": "Contenido inicial (opcional)"
       }
     },
     "createAPIKey": {
@@ -1157,7 +1184,10 @@
       "apiKeyPlaceholder": "Ingrese la Clave API / OAuth",
       "addButton": "Agregar Herramienta",
       "closeButton": "Cerrar",
-      "customNamePlaceholder": "Enter custom name (optional)"
+      "customNamePlaceholder": "Enter custom name (optional)",
+      "fieldRequired": "{{field}} es obligatorio",
+      "positiveNumber": "Debe ser un número positivo",
+      "maxTimeout": "El tiempo de espera máximo es de 300 segundos"
     },
     "prompts": {
       "addPrompt": "Agregar Prompt",
@@ -1279,12 +1309,18 @@
       "review": "Review",
       "import": "Import",
       "continueToAgent": "Continue to agent"
+    },
+    "jwt": {
+      "title": "Añadir token JWT",
+      "label": "Token JWT",
+      "save": "Guardar token"
     }
   },
   "sharedConv": {
     "subtitle": "Creado con",
     "button": "Comienza con DocsGPT",
-    "meta": "DocsGPT utiliza GenAI, por favor revisa la información crítica utilizando fuentes."
+    "meta": "DocsGPT utiliza GenAI, por favor revisa la información crítica utilizando fuentes.",
+    "metaDescription": "Conversaciones compartidas con DocsGPT"
   },
   "convTile": {
     "share": "Compartir",
@@ -1310,7 +1346,8 @@
     "edit": {
       "update": "Actualizar",
       "cancel": "Cancelar",
-      "placeholder": "Ingrese la consulta actualizada..."
+      "placeholder": "Ingrese la consulta actualizada...",
+      "label": "Editar"
     },
     "sources": {
       "title": "Fuentes",
@@ -1325,7 +1362,10 @@
     },
     "attachments": {
       "attach": "Adjuntar",
-      "remove": "Eliminar adjunto"
+      "remove": "Eliminar adjunto",
+      "attached": "Adjunto",
+      "failed": "Error",
+      "attachment": "Adjunto"
     },
     "retry": "Reintentar",
     "reasoning": "Razonamiento",
@@ -1380,7 +1420,56 @@
     "quotaExceeded": {
       "tokens": "Has usado {{used}} de tu cuota de {{limit}} tokens. Se restablece el {{resetsAt}}.",
       "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}."
-    }
+    },
+    "voice": {
+      "start": "Entrada de voz",
+      "stopRecording": "Detener grabación",
+      "transcribingAudio": "Transcribiendo audio",
+      "voice": "Voz",
+      "stop": "Detener",
+      "transcribing": "Transcribiendo",
+      "unavailable": "La entrada de voz no está disponible en este momento.",
+      "insecure": "La entrada de voz requiere una conexión segura (HTTPS o localhost).",
+      "unsupported": "La entrada de voz no está disponible en este navegador.",
+      "noWebAudio": "La entrada de voz requiere compatibilidad con Web Audio en este navegador.",
+      "micBlocked": "Se bloqueó el acceso al micrófono. Permite el acceso al micrófono e inténtalo de nuevo.",
+      "micNotFound": "No se encontró ningún micrófono en este dispositivo.",
+      "micBusy": "El micrófono no está disponible o ya está en uso.",
+      "micInterrupted": "El acceso al micrófono se interrumpió antes de empezar a grabar.",
+      "micDenied": "Se denegó el acceso al micrófono.",
+      "transcribeFailed": "No se pudo transcribir el audio.",
+      "finalizeFailed": "No se pudo finalizar la transcripción en vivo.",
+      "startFailed": "No se pudo iniciar la transcripción en vivo."
+    },
+    "selectModel": "Seleccionar modelo",
+    "question": {
+      "expand": "Mostrar mensaje completo",
+      "collapse": "Mostrar menos"
+    },
+    "exportMarkdown": "Exportar como Markdown",
+    "feedback": {
+      "like": "Me gusta",
+      "removeLike": "Quitar me gusta",
+      "dislike": "No me gusta",
+      "removeDislike": "Quitar no me gusta"
+    },
+    "toolApproval": {
+      "approve": "Aprobar",
+      "approveAlways": "Aprobar y no volver a preguntar",
+      "deny": "Denegar",
+      "details": "Detalles",
+      "denyReasonPlaceholder": "Motivo del rechazo (opcional)…"
+    },
+    "research": {
+      "title": "Investigación",
+      "planning": "Planificando la investigación…",
+      "researching": "Investigando…",
+      "synthesizing": "Redactando el informe…",
+      "complete": "Completado",
+      "researched_one": "{{count}} tema investigado",
+      "researched_other": "{{count}} temas investigados"
+    },
+    "openFile": "Abrir archivo"
   },
   "agents": {
     "title": "Agentes",
@@ -1517,7 +1606,8 @@
       },
       "agentTypes": {
         "classic": "Clásico",
-        "react": "ReAct"
+        "react": "ReAct",
+        "research": "Investigación"
       },
       "labels": {
         "defaultModel": "Modelo Predeterminado"
@@ -1673,13 +1763,95 @@
           "nov": "Nov",
           "dec": "Dic"
         }
+      },
+      "status": {
+        "active": "Activa",
+        "paused": "En pausa",
+        "completed": "Completada",
+        "cancelled": "Cancelada",
+        "success": "Correcta",
+        "failed": "Fallida",
+        "skipped": "Omitida",
+        "running": "En curso",
+        "pending": "Pendiente",
+        "timeout": "Tiempo agotado"
+      },
+      "trigger": {
+        "cron": "Programada",
+        "manual": "Manual"
+      },
+      "runDetails": {
+        "title": "Detalles de la ejecución",
+        "status": "Estado",
+        "scheduledFor": "Programada para",
+        "started": "Iniciada",
+        "finished": "Finalizada",
+        "tokens": "Tokens",
+        "tokensValue": "{{prompt}} de prompt · {{generated}} generados",
+        "trigger": "Origen",
+        "error": "Error",
+        "errorWithType": "Error ({{type}})",
+        "output": "Salida",
+        "truncated": "(truncada)"
+      },
+      "timezoneMeta": "zona horaria: {{timezone}}",
+      "nextRunMeta": "próxima: {{time}}",
+      "toolCard": {
+        "cancelFailed": "No se pudo cancelar",
+        "taskCancelled": "Tarea programada cancelada.",
+        "pendingCount_one": "{{count}} tarea programada pendiente",
+        "pendingCount_other": "{{count}} tareas programadas pendientes",
+        "schedulingFailed": "No se pudo programar",
+        "scheduling": "Programando…",
+        "scheduled": "Tarea programada"
+      },
+      "cron": {
+        "daily": "Diariamente a las {{time}}",
+        "weekly": "Semanalmente el {{day}} a las {{time}}",
+        "monthly": "Mensualmente el día {{day}} a las {{time}}",
+        "yearly": "Anualmente el {{day}} de {{month}} a las {{time}}",
+        "custom": "Personalizado: {{expression}}",
+        "dayNames": {
+          "sun": "domingo",
+          "mon": "lunes",
+          "tue": "martes",
+          "wed": "miércoles",
+          "thu": "jueves",
+          "fri": "viernes",
+          "sat": "sábado"
+        },
+        "monthNames": {
+          "jan": "enero",
+          "feb": "febrero",
+          "mar": "marzo",
+          "apr": "abril",
+          "may": "mayo",
+          "jun": "junio",
+          "jul": "julio",
+          "aug": "agosto",
+          "sep": "septiembre",
+          "oct": "octubre",
+          "nov": "noviembre",
+          "dec": "diciembre"
+        }
+      },
+      "runLog": {
+        "when": "Cuándo",
+        "details": "Detalles",
+        "empty": "Aún no hay ejecuciones registradas para esta programación."
       }
     },
     "shared": {
-      "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido."
+      "notFound": "No se encontró el agente. Asegúrate de que el agente esté compartido.",
+      "logoAlt": "Logotipo del agente",
+      "sharedBy": "por {{name}}",
+      "sharedOn": "Compartido el {{date}}",
+      "connectedTools": "Herramientas conectadas",
+      "toolIconTitle": "Icono de {{name}}"
     },
     "preview": {
-      "testMessage": "Prueba tu agente aquí. Los agentes publicados se pueden usar en conversaciones."
+      "testMessage": "Prueba tu agente aquí. Los agentes publicados se pueden usar en conversaciones.",
+      "emptyTitle": "Prueba tu agente"
     },
     "deleteConfirmation": "¿Estás seguro de que quieres eliminar este agente?",
     "folders": {
@@ -1698,7 +1870,8 @@
       "currentFolder": "Esta carpeta",
       "noSubfolders": "Sin subcarpetas",
       "openFolder": "Abrir carpeta",
-      "noFolders": "No hay carpetas todavía"
+      "noFolders": "No hay carpetas todavía",
+      "menuAriaLabel": "Acciones para {{folderName}}"
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -1722,6 +1895,198 @@
       "emptyForFilter": "No decisions match this filter.",
       "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
+    },
+    "workflow": {
+      "artifacts": {
+        "previewUnsupported": "Este artefacto no se puede previsualizar",
+        "loadListFailed": "No se pudieron cargar los artefactos",
+        "loadFailed": "No se pudo cargar el artefacto",
+        "loading": "Cargando artefactos...",
+        "inProgress": "Ejecución en curso: los artefactos aparecen aquí a medida que los nodos los generan.",
+        "empty": "Esta ejecución no generó artefactos.",
+        "back": "Volver a los artefactos",
+        "untitled": "Artefacto {{id}}",
+        "fileKind": "archivo"
+      },
+      "builder": {
+        "deleteFailed": "No se pudo eliminar el agente de flujo de trabajo",
+        "updateWorkflowFailed": "No se pudo actualizar el flujo de trabajo",
+        "updateAgentFailed": "No se pudo actualizar el agente",
+        "createWorkflowFailed": "No se pudo crear el flujo de trabajo",
+        "createAgentFailed": "No se pudo crear el agente",
+        "saveFailed": "No se pudo guardar el flujo de trabajo",
+        "defaultDescription": "Agente de flujo de trabajo: {{name}}",
+        "newWorkflow": "Nuevo flujo de trabajo",
+        "editDetails": "Editar detalles del flujo de trabajo",
+        "workflowName": "Nombre del flujo de trabajo",
+        "workflowNamePlaceholder": "Introduce el nombre del flujo de trabajo",
+        "workflowDescriptionPlaceholder": "Describe qué hace este flujo de trabajo",
+        "agentImageAlt": "Imagen del agente",
+        "currentImage": "Imagen actual",
+        "agentImage": "Imagen del agente",
+        "agentImageHint": "Los cambios de imagen se incluyen la próxima vez que guardes.",
+        "done": "Listo",
+        "unablePreview": "No se puede previsualizar el flujo de trabajo",
+        "unableSave": "No se puede guardar el flujo de trabajo",
+        "unablePublish": "No se puede publicar el flujo de trabajo",
+        "coreNodes": "Nodos principales",
+        "logicNodes": "Lógica y datos",
+        "aiAgent": "Agente de IA",
+        "setStateHint": "Modifica las variables del flujo de trabajo",
+        "conditionHint": "Ramificación condicional",
+        "codeHint": "Ejecuta código en un entorno aislado",
+        "startNode": "Nodo de inicio",
+        "endNode": "Nodo final",
+        "stateTitle": "Establecer variables globales",
+        "nodeId": "ID del nodo",
+        "title": "Título",
+        "titlePlaceholder": "Introduce el título del nodo",
+        "agentType": "Tipo de agente",
+        "agentTypePlaceholder": "Selecciona el tipo de agente",
+        "model": "Modelo",
+        "modelPlaceholder": "Selecciona un modelo",
+        "systemPrompt": "Prompt del sistema",
+        "systemPromptPlaceholder": "Prompt del sistema para el agente",
+        "promptTemplate": "Plantilla de prompt",
+        "promptTemplatePlaceholder": "Usa {{example}} para contenido dinámico",
+        "outputVariable": "Variable de salida",
+        "outputVariablePlaceholder": "Nombre de la variable de salida",
+        "streamToUser": "Transmitir la salida al usuario",
+        "sources": "Fuentes",
+        "documents": "Documentos",
+        "documentsHint": "Documentos que se pasan a este agente desde cargas o nodos anteriores.",
+        "filePassing": "Paso de archivos",
+        "filePassingHint": "Auto: envía el archivo nativo si el modelo lo admite; si no, extrae el texto.",
+        "structuredOutput": "Salida estructurada (esquema JSON)",
+        "modelNoStructuredOutput": "El modelo seleccionado no admite salida estructurada.",
+        "validSchema": "Esquema JSON válido",
+        "invalidSchema": "Esquema JSON no válido: {{error}}",
+        "noteContent": "Contenido de la nota",
+        "noteContentPlaceholder": "Introduce el contenido de la nota",
+        "stateIntro": "Asigna valores a las variables de estado del flujo de trabajo",
+        "assignValue": "Asignar valor",
+        "celHint": "Usa Common Expression Language para crear una expresión personalizada. Haz referencia al estado por su nombre sin llaves (<code>query</code>), no <code>{{braced}}</code>.",
+        "learnMore": "Más información",
+        "toVariable": "A la variable",
+        "conditionIntro": "Crea condiciones para ramificar tu flujo de trabajo",
+        "modeSimple": "Simple",
+        "modeAdvanced": "Avanzado",
+        "caseNamePlaceholder": "Nombre del caso (opcional)",
+        "variablePlaceholder": "Variable",
+        "valuePlaceholder": "Valor",
+        "opContains": "contiene",
+        "opStartsWith": "empieza",
+        "conditionPlaceholder": "Introduce una condición, p. ej. query.contains(\"refund\")",
+        "codeIntro": "Ejecuta código en el entorno aislado del flujo de trabajo. Los archivos generados se guardan como artefactos.",
+        "inputFiles": "Archivos de entrada",
+        "inputFilesHint": "Artefactos o referencias anteriores que se colocan como archivos en el entorno aislado (cada uno pasa a ser inputs/<name>).",
+        "timeout": "Tiempo límite (segundos)",
+        "optional": "Opcional",
+        "cannotDeleteStart": "No se puede eliminar el nodo de inicio",
+        "deleteNode": "Eliminar nodo",
+        "deleteConfirm": "¿Seguro que quieres eliminar «{{name}}»?",
+        "deleteConfirmUnnamed": "¿Seguro que quieres eliminar este agente de flujo de trabajo?"
+      },
+      "validation": {
+        "nameRequired": "El nombre del flujo de trabajo es obligatorio",
+        "oneStart": "El flujo de trabajo debe tener exactamente un nodo de inicio",
+        "needEnd": "El flujo de trabajo debe tener al menos un nodo final",
+        "needAgent": "El flujo de trabajo debe tener al menos un nodo de agente de IA",
+        "agentModel": "El agente «{{name}}» debe tener un modelo seleccionado",
+        "agentStructuredOutput": "El modelo seleccionado para el agente «{{name}}» no admite salida estructurada",
+        "agentSchema": "Esquema JSON del agente «{{name}}»: {{error}}",
+        "startConnected": "El nodo de inicio debe estar conectado a otro nodo",
+        "endIncoming": "El nodo final «{{name}}» debe tener una conexión entrante",
+        "edgeSource": "Una conexión hace referencia a un nodo de origen inexistente",
+        "edgeTarget": "Una conexión hace referencia a un nodo de destino inexistente",
+        "conditionNeedsCase": "La condición «{{name}}» debe tener al menos un caso con una expresión",
+        "conditionCaseNoHandle": "La condición «{{name}}» tiene un caso sin identificador de rama",
+        "conditionDuplicateHandle": "La condición «{{name}}» tiene el identificador de caso duplicado «{{handle}}»",
+        "conditionTwoOutgoing": "La condición «{{name}}» debe tener al menos 2 conexiones salientes",
+        "conditionEdgeNoHandle": "La condición «{{name}}» tiene una conexión sin identificador de rama",
+        "conditionUnknownBranch": "La condición «{{name}}» tiene una conexión desde la rama desconocida «{{handle}}»",
+        "conditionMultipleEdges": "La condición «{{name}}» tiene varias conexiones desde la rama «{{handle}}»",
+        "conditionNeedsElse": "La condición «{{name}}» debe tener una rama Si no",
+        "caseNoConnection": "En la condición «{{name}}», el caso «{{handle}}» tiene una expresión pero no una conexión de rama",
+        "caseNoExpression": "En la condición «{{name}}», el caso «{{handle}}» tiene una conexión de rama pero no una expresión",
+        "caseNoVariable": "En la condición «{{name}}», el caso «{{handle}}» debe indicar una variable en el modo simple",
+        "branchReachEnd": "La rama «{{handle}}» de la condición «{{name}}» debe llegar finalmente a un nodo final",
+        "codeRequired": "El nodo de código «{{name}}» debe tener código que ejecutar",
+        "codeSchema": "Esquema JSON del nodo de código «{{name}}»: {{error}}"
+      },
+      "schema": {
+        "notObject": "debe ser un objeto JSON válido",
+        "missingType": "debe incluir un campo \"type\" o \"schema\"",
+        "invalidJson": "debe ser JSON válido"
+      },
+      "filePassing": {
+        "auto": "Automático",
+        "native": "Nativo",
+        "extract": "Extraer"
+      },
+      "mobileBlocker": {
+        "title": "Se requiere un ordenador",
+        "body": "El creador de flujos de trabajo necesita una pantalla más grande para ofrecer la mejor experiencia. Abre esta página en un ordenador de sobremesa o portátil."
+      },
+      "nodes": {
+        "start": "Inicio",
+        "startHint": "Punto de entrada del flujo de trabajo",
+        "end": "Fin",
+        "endHint": "Finalización del flujo de trabajo",
+        "agent": "Agente",
+        "note": "Nota",
+        "condition": "Si / Si no",
+        "code": "Código",
+        "setState": "Establecer estado",
+        "output": "Salida: {{variable}}",
+        "noCode": "Aún no hay código",
+        "modeSimple": "simple",
+        "modeAdvanced": "avanzado",
+        "if": "Si",
+        "elseIf": "Si no, si",
+        "else": "Si no",
+        "operationCount_one": "{{count}} operación",
+        "operationCount_other": "{{count}} operaciones",
+        "variableCount_one": "{{count}} variable",
+        "variableCount_other": "{{count}} variables",
+        "variableTitle": "Variable: {{name}}",
+        "valueTitle": "Valor: {{value}}"
+      },
+      "preview": {
+        "executionDetails": "Detalles de la ejecución",
+        "stepCount_one": "({{count}} paso)",
+        "stepCount_other": "({{count}} pasos)",
+        "outputLabel": "Salida:",
+        "errorLabel": "Error:",
+        "artifacts": "Artefactos",
+        "minimapHeading": "Flujo de trabajo",
+        "emptyTitle": "Prueba el flujo de trabajo",
+        "unsavedDraftAttachments": "Guarda el flujo de trabajo antes de adjuntar documentos en la vista previa."
+      },
+      "documents": {
+        "modeAll": "Todos los documentos de entrada",
+        "modeNone": "Ninguno",
+        "modeChoose": "Elegir…",
+        "selectPlaceholder": "Selecciona documentos...",
+        "searchPlaceholder": "Buscar variables...",
+        "empty": "No hay documentos anteriores",
+        "refPlaceholder": "Añadir referencia (p. ej. A1)"
+      },
+      "variables": {
+        "globalContext": "Contexto global",
+        "workflowInput": "Entrada del flujo de trabajo",
+        "searchPlaceholder": "Buscar variables...",
+        "empty": "No se encontraron variables",
+        "addContext": "Añadir contexto"
+      }
+    },
+    "typeModal": {
+      "title": "Crear un agente nuevo",
+      "description": "Elige el tipo de agente que quieres crear",
+      "classicTitle": "Agente clásico",
+      "classicDescription": "Crea un agente de IA estándar con un solo modelo, herramientas y fuentes de conocimiento",
+      "workflowTitle": "Agente de flujo de trabajo",
+      "workflowDescription": "Diseña flujos de trabajo complejos de varios pasos con distintos modelos, lógica condicional y gestión de estado"
     }
   },
   "components": {
@@ -1730,7 +2095,40 @@
       "dropFiles": "Drop the files here",
       "fileTypes": "PNG, JPG, JPEG up to",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit"
+      "fileSizeError": "File exceeds {{size}}MB limit",
+      "preview": "Vista previa de la imagen",
+      "remove": "Quitar archivo"
+    },
+    "artifact": {
+      "types": {
+        "todoList": "Lista de tareas",
+        "note": "Nota",
+        "memory": "Memoria"
+      },
+      "fallbackTitle": "Artefacto",
+      "todo": {
+        "done": "{{count}} hechas",
+        "open": "{{count}} pendientes",
+        "empty": "Aún no hay tareas"
+      },
+      "note": {
+        "lines_one": "{{count}} línea",
+        "lines_other": "{{count}} líneas",
+        "empty": "Nota vacía"
+      },
+      "notFound": "Artefacto no encontrado",
+      "loadFailed": "No se pudo cargar el artefacto",
+      "fetchFailed": "No se pudo obtener el artefacto",
+      "preview": "Vista previa del artefacto",
+      "download": "Descargar",
+      "restore": "Restaurar",
+      "version": "Versión {{version}}",
+      "versionCurrent": "Versión {{version}} (actual)",
+      "downloadFailed": "Error en la descarga",
+      "restoreFailed": "Error al restaurar"
+    },
+    "profile": {
+      "avatarAlt": "Avatar del usuario"
     }
   },
   "pageNotFound": {
@@ -1746,7 +2144,14 @@
     "size": "Tamaño",
     "myFiles": "Mis archivos",
     "sharedWithMe": "Compartido conmigo",
-    "loadingMore": "Cargando más archivos..."
+    "loadingMore": "Cargando más archivos...",
+    "myDrive": "Mi unidad",
+    "spaces": "Espacios",
+    "root": "Raíz",
+    "shared": "Compartido",
+    "connectTo": "Conectar a {{provider}}",
+    "sessionExpiredFor": "Sesión expirada. Por favor, reconecte a {{provider}}.",
+    "selectFilesFrom": "Seleccionar archivos de {{provider}}"
   },
   "actionButtons": {
     "openNewChat": "Abrir nuevo chat",
@@ -1757,7 +2162,13 @@
     "viewCode": "Ver código",
     "decreaseZoom": "Reducir zoom",
     "resetZoom": "Restablecer zoom",
-    "increaseZoom": "Aumentar zoom"
+    "increaseZoom": "Aumentar zoom",
+    "download": "Descargar",
+    "downloadAs": "Descargar como {{format}}",
+    "code": "Código",
+    "loading": "Cargando diagrama...",
+    "codeTitle": "Código Mermaid",
+    "renderFailed": "No se pudo renderizar el diagrama: {{message}}"
   },
   "navigation": {
     "agents": "Agentes",
@@ -1770,6 +2181,13 @@
         "insights": "Estadísticas",
         "administration": "Administración"
       }
+    },
+    "openSidebar": "Abrir barra lateral",
+    "closeSidebar": "Cerrar barra lateral",
+    "social": {
+      "discord": "Únete a la comunidad de Discord",
+      "x": "Síguenos en X",
+      "github": "Ver en GitHub"
     }
   },
   "teams": {
@@ -1780,7 +2198,8 @@
       "roleAdmin": "Admin",
       "roleMember": "Miembro",
       "manageTeam": "Gestionar equipo",
-      "createTeam": "Crear equipo"
+      "createTeam": "Crear equipo",
+      "logoAlt": "Logotipo de DocsGPT"
     }
   },
   "notification": {

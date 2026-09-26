@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { Input, inputVariants } from './input';
 
 describe('Input variants', () => {
-  it('keeps the historical 42px rectangular field by default', () => {
+  it('keeps the 38px form-row rectangular field by default', () => {
     const classes = inputVariants();
-    expect(classes).toContain('h-10.5');
+    expect(classes).toContain('h-9.5');
     expect(classes).toContain('rounded-md');
   });
 
@@ -14,7 +14,7 @@ describe('Input variants', () => {
     const classes = inputVariants({ size: 'sm' });
     expect(classes).toContain('h-8');
     expect(classes).toContain('px-2');
-    expect(classes).not.toMatch(/\bh-10\.5\b/);
+    expect(classes).not.toMatch(/\bh-9\.5\b/);
   });
 
   it('shape="pill" with size="lg" is the chat-style field', () => {
@@ -27,7 +27,7 @@ describe('Input variants', () => {
   it('a default-size pill starts its text 20px in, like the Select pill', () => {
     const html = renderToStaticMarkup(<Input shape="pill" />);
     const classes = (/class="([^"]*)"/.exec(html)?.[1] ?? '').split(' ');
-    expect(classes).toContain('h-10.5');
+    expect(classes).toContain('h-9.5');
     expect(classes).toContain('px-5');
     expect(classes).not.toContain('px-3');
   });
@@ -98,7 +98,7 @@ describe('Input variants', () => {
     ]) {
       expect(classes).toContain(cls);
     }
-    for (const cls of ['h-10.5', 'px-3', 'shadow-xs', 'rounded-md', 'border']) {
+    for (const cls of ['h-9.5', 'px-3', 'shadow-xs', 'rounded-md', 'border']) {
       expect(classes).not.toContain(cls);
     }
     expect(html).toContain('data-variant="bare"');
@@ -129,9 +129,9 @@ describe('Input variants', () => {
 });
 
 describe('Input field size and disabled state', () => {
-  it('size="field" is the 42px form-row height, like Button field', () => {
+  it('size="field" is the 38px form-row height, like Button field', () => {
     const classes = inputVariants({ size: 'field' });
-    expect(classes).toContain('h-10.5');
+    expect(classes).toContain('h-9.5');
     expect(classes).toBe(inputVariants({ size: 'default' }));
   });
 

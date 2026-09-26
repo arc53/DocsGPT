@@ -8,6 +8,7 @@
   "sourceDocs": "Source",
   "none": "None",
   "loading": "Loading...",
+  "retry": "Retry",
   "cancel": "Cancel",
   "errorBoundary": {
     "message": "Something went wrong displaying this content.",
@@ -79,7 +80,14 @@
       "high": "High",
       "unlimited": "Unlimited",
       "default": "Default",
-      "add": "Add"
+      "add": "Add",
+      "promptActions": {
+        "select": "Select a prompt",
+        "edit": "Edit prompt",
+        "view": "View prompt",
+        "duplicate": "Duplicate prompt",
+        "delete": "Delete prompt"
+      }
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
@@ -107,7 +115,8 @@
         "never": "Never",
         "daily": "Daily",
         "weekly": "Weekly",
-        "monthly": "Monthly"
+        "monthly": "Monthly",
+        "option": "Sync: {{frequency}}"
       },
       "actions": "Actions",
       "view": "View",
@@ -677,6 +686,14 @@
       "description": "Description",
       "descriptionPlaceholder": "Enter description",
       "bodyContentType": "Body Content Type",
+      "bodyTypeHint": {
+        "json": "Most common format. Use for modern REST APIs.",
+        "formUrlencoded": "Standard form submission format. Best for legacy APIs and login forms.",
+        "multipart": "For APIs requiring multipart format. File uploads not supported through LLM.",
+        "text": "Raw text data. Each field on a new line.",
+        "xml": "Structured XML format. Use for SOAP and enterprise APIs.",
+        "octetStream": "Raw binary data, base64-encoded for transmission."
+      },
       "headers": "Headers",
       "queryParameters": "Query Parameters",
       "body": "Body",
@@ -745,7 +762,14 @@
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
-      }
+      },
+      "configErrors": {
+        "required": "{{field}} is required",
+        "positiveNumber": "Must be a positive number",
+        "maxTimeout": "Maximum timeout is 300 seconds"
+      },
+      "headerValuePlaceholder": "e.g., application/json",
+      "toolIconTitle": "{{name}} icon"
     },
     "devices": {
       "label": "Devices",
@@ -798,7 +822,9 @@
         "start": "Generate code",
         "waitingForCli": "Waiting for the CLI to redeem the code…",
         "cancel": "Cancel"
-      }
+      },
+      "auditDurationValue": "{{value}} ms",
+      "fallbackName": "device"
     },
     "customModels": {
       "label": "Custom Models",
@@ -911,15 +937,6 @@
         "workflows_one": "{{count}} workflow",
         "workflows_other": "{{count}} workflows"
       },
-      "relative": {
-        "now": "Just now",
-        "minutes_one": "{{count}} minute ago",
-        "minutes_other": "{{count}} minutes ago",
-        "hours_one": "{{count}} hour ago",
-        "hours_other": "{{count}} hours ago",
-        "days_one": "{{count}} day ago",
-        "days_other": "{{count}} days ago"
-      },
       "families": {
         "agents": "Agents",
         "sources": "Sources",
@@ -1031,7 +1048,8 @@
         "collapseDetails": "Collapse upload details",
         "dismiss": "Dismiss upload toast",
         "uploadProgress": "Upload progress {{progress}}%",
-        "clear": "Clear"
+        "clear": "Clear",
+        "ingestionFailed": "Ingestion failed."
       },
       "showAdvanced": "Show advanced options",
       "hideAdvanced": "Hide advanced options",
@@ -1122,6 +1140,16 @@
           "folderAlt": "Folder",
           "fileAlt": "File"
         }
+      },
+      "fields": {
+        "url": "URL",
+        "awsAccessKeyId": "AWS Access Key ID",
+        "awsSecretAccessKey": "AWS Secret Access Key",
+        "bucket": "Bucket Name",
+        "prefix": "Path Prefix (optional)",
+        "region": "AWS Region",
+        "endpointUrl": "Custom Endpoint URL (optional)",
+        "initialContent": "Initial content (optional)"
       }
     },
     "createAPIKey": {
@@ -1162,7 +1190,10 @@
       "apiKeyPlaceholder": "Enter API Key / OAuth",
       "addButton": "Add Tool",
       "closeButton": "Close",
-      "customNamePlaceholder": "Enter custom name (optional)"
+      "customNamePlaceholder": "Enter custom name (optional)",
+      "fieldRequired": "{{field}} is required",
+      "positiveNumber": "Must be a positive number",
+      "maxTimeout": "Maximum timeout is 300 seconds"
     },
     "prompts": {
       "addPrompt": "Add Prompt",
@@ -1284,12 +1315,18 @@
       "review": "Review",
       "import": "Import",
       "continueToAgent": "Continue to agent"
+    },
+    "jwt": {
+      "title": "Add JWT Token",
+      "label": "JWT Token",
+      "save": "Save Token"
     }
   },
   "sharedConv": {
     "subtitle": "Created with",
     "button": "Get Started with DocsGPT",
-    "meta": "DocsGPT uses GenAI, please review critical information using sources."
+    "meta": "DocsGPT uses GenAI, please review critical information using sources.",
+    "metaDescription": "Shared conversations with DocsGPT"
   },
   "convTile": {
     "share": "Share",
@@ -1315,7 +1352,8 @@
     "edit": {
       "update": "Update",
       "cancel": "Cancel",
-      "placeholder": "Type the updated query..."
+      "placeholder": "Type the updated query...",
+      "label": "Edit"
     },
     "sources": {
       "title": "Sources",
@@ -1336,7 +1374,10 @@
       "cancelQueuedSend": "Cancel",
       "sendBlockedByFailed": "{{names}} couldn't be processed — remove to send",
       "unsupportedType": "Not a supported file type ({{extension}})",
-      "unreadableByModel": "{{model}} can't read {{name}} — switch to a model that supports images or PDFs"
+      "unreadableByModel": "{{model}} can't read {{name}} — switch to a model that supports images or PDFs",
+      "attached": "Attachment",
+      "failed": "Failed",
+      "attachment": "Attachment"
     },
     "retry": "Retry",
     "reasoning": "Reasoning",
@@ -1391,7 +1432,61 @@
     "quotaExceeded": {
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}.",
       "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}."
-    }
+    },
+    "send": "Send",
+    "viewArtifact": "View artifact",
+    "jumpToSource": "Jump to source {{num}}",
+    "stopSpeaking": "Stop speaking",
+    "loadingAudio": "Loading audio",
+    "voice": {
+      "start": "Voice input",
+      "stopRecording": "Stop recording",
+      "transcribingAudio": "Transcribing audio",
+      "voice": "Voice",
+      "stop": "Stop",
+      "transcribing": "Transcribing",
+      "unavailable": "Voice input is unavailable right now.",
+      "insecure": "Voice input requires a secure connection (HTTPS or localhost).",
+      "unsupported": "Voice input is not available in this browser.",
+      "noWebAudio": "Voice input requires Web Audio support in this browser.",
+      "micBlocked": "Microphone access was blocked. Allow microphone permission and try again.",
+      "micNotFound": "No microphone was found on this device.",
+      "micBusy": "The microphone is unavailable or already in use.",
+      "micInterrupted": "Microphone access was interrupted before recording started.",
+      "micDenied": "Microphone access was denied.",
+      "transcribeFailed": "Failed to transcribe audio.",
+      "finalizeFailed": "Failed to finalize live transcription.",
+      "startFailed": "Failed to start live transcription."
+    },
+    "selectModel": "Select Model",
+    "question": {
+      "expand": "Show full message",
+      "collapse": "Show less"
+    },
+    "exportMarkdown": "Export as Markdown",
+    "feedback": {
+      "like": "Like",
+      "removeLike": "Remove like",
+      "dislike": "Dislike",
+      "removeDislike": "Remove dislike"
+    },
+    "toolApproval": {
+      "approve": "Approve",
+      "approveAlways": "Approve, don't ask again",
+      "deny": "Deny",
+      "details": "Details",
+      "denyReasonPlaceholder": "Optional reason for denying…"
+    },
+    "research": {
+      "title": "Research",
+      "planning": "Planning research…",
+      "researching": "Researching…",
+      "synthesizing": "Writing report…",
+      "complete": "Complete",
+      "researched_one": "Researched {{count}} topic",
+      "researched_other": "Researched {{count}} topics"
+    },
+    "openFile": "Open file"
   },
   "agents": {
     "title": "Agents",
@@ -1528,10 +1623,13 @@
       },
       "agentTypes": {
         "classic": "Classic",
-        "react": "ReAct"
+        "react": "ReAct",
+        "research": "Research"
       },
       "labels": {
-        "defaultModel": "Default Model"
+        "defaultModel": "Default Model",
+        "name": "Name",
+        "description": "Description"
       },
       "advanced": {
         "jsonSchema": "JSON response schema",
@@ -1543,7 +1641,9 @@
         "requestLimiting": "Request limiting",
         "requestLimitingDescription": "Limit daily total requests that can be made to this agent",
         "systemPromptOverride": "Allow prompt override",
-        "systemPromptOverrideDescription": "Let v1 API callers replace this agent's system prompt"
+        "systemPromptOverrideDescription": "Let v1 API callers replace this agent's system prompt",
+        "tokenLimit": "Token limit",
+        "requestLimit": "Request limit"
       },
       "preview": {
         "publishedPreview": "Published agents can be previewed here"
@@ -1683,14 +1783,98 @@
           "oct": "Oct",
           "nov": "Nov",
           "dec": "Dec"
+        },
+        "frequencyLabel": "Frequency",
+        "dayOfWeek": "Day of the week"
+      },
+      "status": {
+        "active": "Active",
+        "paused": "Paused",
+        "completed": "Completed",
+        "cancelled": "Cancelled",
+        "success": "Success",
+        "failed": "Failed",
+        "skipped": "Skipped",
+        "running": "Running",
+        "pending": "Pending",
+        "timeout": "Timeout"
+      },
+      "trigger": {
+        "cron": "Scheduled",
+        "manual": "Manual"
+      },
+      "runDetails": {
+        "title": "Run details",
+        "status": "Status",
+        "scheduledFor": "Scheduled for",
+        "started": "Started",
+        "finished": "Finished",
+        "tokens": "Tokens",
+        "tokensValue": "{{prompt}} prompt · {{generated}} generated",
+        "trigger": "Trigger",
+        "error": "Error",
+        "errorWithType": "Error ({{type}})",
+        "output": "Output",
+        "truncated": "(truncated)"
+      },
+      "timezoneMeta": "tz: {{timezone}}",
+      "nextRunMeta": "next: {{time}}",
+      "toolCard": {
+        "cancelFailed": "Cancel failed",
+        "taskCancelled": "Scheduled task cancelled.",
+        "pendingCount_one": "{{count}} pending scheduled task",
+        "pendingCount_other": "{{count}} pending scheduled tasks",
+        "schedulingFailed": "Scheduling failed",
+        "scheduling": "Scheduling…",
+        "scheduled": "Scheduled task"
+      },
+      "cron": {
+        "daily": "Daily at {{time}}",
+        "weekly": "Weekly on {{day}} at {{time}}",
+        "monthly": "Monthly on day {{day}} at {{time}}",
+        "yearly": "Yearly on {{month}} {{day}} at {{time}}",
+        "custom": "Custom: {{expression}}",
+        "dayNames": {
+          "sun": "Sunday",
+          "mon": "Monday",
+          "tue": "Tuesday",
+          "wed": "Wednesday",
+          "thu": "Thursday",
+          "fri": "Friday",
+          "sat": "Saturday"
+        },
+        "monthNames": {
+          "jan": "January",
+          "feb": "February",
+          "mar": "March",
+          "apr": "April",
+          "may": "May",
+          "jun": "June",
+          "jul": "July",
+          "aug": "August",
+          "sep": "September",
+          "oct": "October",
+          "nov": "November",
+          "dec": "December"
         }
+      },
+      "runLog": {
+        "when": "When",
+        "details": "Details",
+        "empty": "No runs recorded for this schedule yet."
       }
     },
     "shared": {
-      "notFound": "No agent found. Please ensure the agent is shared."
+      "notFound": "No agent found. Please ensure the agent is shared.",
+      "logoAlt": "Agent logo",
+      "sharedBy": "by {{name}}",
+      "sharedOn": "Shared on {{date}}",
+      "connectedTools": "Connected Tools",
+      "toolIconTitle": "{{name}} icon"
     },
     "preview": {
-      "testMessage": "Test your agent here. Published agents can be used in conversations."
+      "testMessage": "Test your agent here. Published agents can be used in conversations.",
+      "emptyTitle": "Test your agent"
     },
     "deleteConfirmation": "Are you sure you want to delete this agent?",
     "folders": {
@@ -1709,7 +1893,9 @@
       "currentFolder": "This folder",
       "noSubfolders": "No subfolders",
       "openFolder": "Open folder",
-      "noFolders": "No folders yet"
+      "noFolders": "No folders yet",
+      "moveTitle": "Move \"{{name}}\" to",
+      "menuAriaLabel": "Actions for {{folderName}}"
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -1733,6 +1919,210 @@
       "emptyForFilter": "No decisions match this filter.",
       "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
+    },
+    "workflow": {
+      "expressionRow": "Expression {{index}}",
+      "conditionRow": "Condition {{index}}",
+      "conditionNameRow": "Condition {{index}} name",
+      "conditionVariableRow": "Condition {{index}} variable",
+      "conditionOperatorRow": "Condition {{index}} operator",
+      "conditionValueRow": "Condition {{index}} value",
+      "undo": "Undo",
+      "undoHint": "Undo (Ctrl+Z)",
+      "redo": "Redo",
+      "redoHint": "Redo (Ctrl+Shift+Z)",
+      "removeAssignment": "Remove assignment {{index}}",
+      "removeCondition": "Remove condition {{index}}",
+      "artifacts": {
+        "previewUnsupported": "This artifact cannot be previewed",
+        "loadListFailed": "Failed to load artifacts",
+        "loadFailed": "Failed to load artifact",
+        "loading": "Loading artifacts...",
+        "inProgress": "Run in progress — artifacts appear here as nodes produce them.",
+        "empty": "No artifacts produced by this run.",
+        "back": "Back to artifacts",
+        "untitled": "Artifact {{id}}",
+        "fileKind": "file"
+      },
+      "builder": {
+        "deleteFailed": "Failed to delete workflow agent",
+        "updateWorkflowFailed": "Failed to update workflow",
+        "updateAgentFailed": "Failed to update agent",
+        "createWorkflowFailed": "Failed to create workflow",
+        "createAgentFailed": "Failed to create agent",
+        "saveFailed": "Failed to save workflow",
+        "defaultDescription": "Workflow agent: {{name}}",
+        "newWorkflow": "New Workflow",
+        "editDetails": "Edit workflow details",
+        "workflowName": "Workflow Name",
+        "workflowNamePlaceholder": "Enter workflow name",
+        "workflowDescriptionPlaceholder": "Describe what this workflow does",
+        "agentImageAlt": "Agent image",
+        "currentImage": "Current image",
+        "agentImage": "Agent Image",
+        "agentImageHint": "Image updates are included the next time you save.",
+        "done": "Done",
+        "unablePreview": "Unable to preview workflow",
+        "unableSave": "Unable to save workflow",
+        "unablePublish": "Unable to publish workflow",
+        "coreNodes": "Core Nodes",
+        "logicNodes": "Logic & Data",
+        "aiAgent": "AI Agent",
+        "setStateHint": "Modify workflow variables",
+        "conditionHint": "Conditional branching",
+        "codeHint": "Run code in a sandbox",
+        "startNode": "Start Node",
+        "endNode": "End Node",
+        "stateTitle": "Set global variables",
+        "nodeId": "Node ID",
+        "title": "Title",
+        "titlePlaceholder": "Enter node title",
+        "agentType": "Agent Type",
+        "agentTypePlaceholder": "Select agent type",
+        "model": "Model",
+        "modelPlaceholder": "Select a model",
+        "systemPrompt": "System Prompt",
+        "systemPromptPlaceholder": "System prompt for the agent",
+        "promptTemplate": "Prompt Template",
+        "promptTemplatePlaceholder": "Use {{example}} for dynamic content",
+        "outputVariable": "Output Variable",
+        "outputVariablePlaceholder": "Variable name for output",
+        "streamToUser": "Stream output to user",
+        "sources": "Sources",
+        "documents": "Documents",
+        "documentsHint": "Documents passed to this agent from uploads or upstream nodes.",
+        "filePassing": "File passing",
+        "filePassingHint": "Auto: send native when the model supports it, otherwise extract text.",
+        "structuredOutput": "Structured Output (JSON Schema)",
+        "modelNoStructuredOutput": "Selected model does not support structured output.",
+        "validSchema": "Valid JSON schema",
+        "invalidSchema": "Invalid JSON schema: {{error}}",
+        "noteContent": "Note Content",
+        "noteContentPlaceholder": "Enter note content",
+        "stateIntro": "Assign values to workflow's state variables",
+        "assignValue": "Assign value",
+        "celHint": "Use Common Expression Language to create a custom expression. Reference state by bare name (<code>query</code>), not <code>{{braced}}</code>.",
+        "learnMore": "Learn more",
+        "toVariable": "To variable",
+        "conditionIntro": "Create conditions to branch your workflow",
+        "modeSimple": "Simple",
+        "modeAdvanced": "Advanced",
+        "caseNamePlaceholder": "Case name (optional)",
+        "variablePlaceholder": "Variable",
+        "valuePlaceholder": "Value",
+        "opContains": "contains",
+        "opStartsWith": "starts",
+        "conditionPlaceholder": "Enter condition, e.g. query.contains(\"refund\")",
+        "codeIntro": "Run code in the workflow sandbox. Produced files are saved as artifacts.",
+        "inputFiles": "Input files",
+        "inputFilesHint": "Artifacts/upstream refs staged as files in the sandbox (one becomes inputs/<name>).",
+        "timeout": "Timeout (seconds)",
+        "optional": "Optional",
+        "cannotDeleteStart": "Cannot Delete Start Node",
+        "deleteNode": "Delete Node",
+        "deleteConfirm": "Are you sure you want to delete \"{{name}}\"?",
+        "deleteConfirmUnnamed": "Are you sure you want to delete \"this workflow agent\"?"
+      },
+      "validation": {
+        "nameRequired": "Workflow name is required",
+        "oneStart": "Workflow must have exactly one start node",
+        "needEnd": "Workflow must have at least one end node",
+        "needAgent": "Workflow must have at least one AI agent node",
+        "agentModel": "Agent \"{{name}}\" must have a model selected",
+        "agentStructuredOutput": "Agent \"{{name}}\" selected model does not support structured output",
+        "agentSchema": "Agent \"{{name}}\" JSON schema {{error}}",
+        "startConnected": "Start node must be connected to another node",
+        "endIncoming": "End node \"{{name}}\" must have an incoming connection",
+        "edgeSource": "Edge references non-existent source node",
+        "edgeTarget": "Edge references non-existent target node",
+        "conditionNeedsCase": "Condition \"{{name}}\" must have at least one case with an expression",
+        "conditionCaseNoHandle": "Condition \"{{name}}\" has a case without a branch handle",
+        "conditionDuplicateHandle": "Condition \"{{name}}\" has duplicate case handle \"{{handle}}\"",
+        "conditionTwoOutgoing": "Condition \"{{name}}\" must have at least 2 outgoing connections",
+        "conditionEdgeNoHandle": "Condition \"{{name}}\" has a connection without a branch handle",
+        "conditionUnknownBranch": "Condition \"{{name}}\" has a connection from unknown branch \"{{handle}}\"",
+        "conditionMultipleEdges": "Condition \"{{name}}\" has multiple connections from branch \"{{handle}}\"",
+        "conditionNeedsElse": "Condition \"{{name}}\" must have an Else branch",
+        "caseNoConnection": "Condition \"{{name}}\" case \"{{handle}}\" has an expression but no branch connection",
+        "caseNoExpression": "Condition \"{{name}}\" case \"{{handle}}\" has a branch connection but no expression",
+        "caseNoVariable": "Condition \"{{name}}\" case \"{{handle}}\" must specify a variable in Simple mode",
+        "branchReachEnd": "Branch \"{{handle}}\" of condition \"{{name}}\" must eventually reach an end node",
+        "codeRequired": "Code node \"{{name}}\" must have code to run",
+        "codeSchema": "Code node \"{{name}}\" JSON schema {{error}}"
+      },
+      "schema": {
+        "notObject": "must be a valid JSON object",
+        "missingType": "must include either a \"type\" or \"schema\" field",
+        "invalidJson": "must be valid JSON"
+      },
+      "filePassing": {
+        "auto": "Auto",
+        "native": "Native",
+        "extract": "Extract"
+      },
+      "mobileBlocker": {
+        "title": "Desktop Required",
+        "body": "The Workflow Builder requires a larger screen for the best experience. Please open this page on a desktop or laptop computer."
+      },
+      "nodes": {
+        "start": "Start",
+        "startHint": "Entry point of the workflow",
+        "end": "End",
+        "endHint": "Workflow completion",
+        "agent": "Agent",
+        "note": "Note",
+        "condition": "If / Else",
+        "code": "Code",
+        "setState": "Set State",
+        "output": "Output: {{variable}}",
+        "noCode": "No code yet",
+        "modeSimple": "simple",
+        "modeAdvanced": "advanced",
+        "if": "If",
+        "elseIf": "Else if",
+        "else": "Else",
+        "operationCount_one": "{{count}} operation",
+        "operationCount_other": "{{count}} operations",
+        "variableCount_one": "{{count}} variable",
+        "variableCount_other": "{{count}} variables",
+        "variableTitle": "Variable: {{name}}",
+        "valueTitle": "Value: {{value}}"
+      },
+      "preview": {
+        "executionDetails": "Execution Details",
+        "stepCount_one": "({{count}} step)",
+        "stepCount_other": "({{count}} steps)",
+        "outputLabel": "Output:",
+        "errorLabel": "Error:",
+        "artifacts": "Artifacts",
+        "minimapHeading": "Workflow",
+        "emptyTitle": "Test the workflow",
+        "unsavedDraftAttachments": "Save the workflow before attaching documents in Preview."
+      },
+      "documents": {
+        "modeAll": "All input docs",
+        "modeNone": "None",
+        "modeChoose": "Choose…",
+        "selectPlaceholder": "Select documents...",
+        "searchPlaceholder": "Search variables...",
+        "empty": "No upstream documents",
+        "refPlaceholder": "Add ref (e.g. A1)"
+      },
+      "variables": {
+        "globalContext": "Global context",
+        "workflowInput": "Workflow input",
+        "searchPlaceholder": "Search variables...",
+        "empty": "No variables found",
+        "addContext": "Add context"
+      }
+    },
+    "typeModal": {
+      "title": "Create New Agent",
+      "description": "Choose the type of agent you want to create",
+      "classicTitle": "Classic Agent",
+      "classicDescription": "Create a standard AI agent with a single model, tools, and knowledge sources",
+      "workflowTitle": "Workflow Agent",
+      "workflowDescription": "Design complex multi-step workflows with different models, conditional logic, and state management"
     }
   },
   "components": {
@@ -1741,7 +2131,40 @@
       "dropFiles": "Drop the files here",
       "fileTypes": "PNG, JPG, JPEG up to",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit"
+      "fileSizeError": "File exceeds {{size}}MB limit",
+      "preview": "Image preview",
+      "remove": "Remove file"
+    },
+    "artifact": {
+      "types": {
+        "todoList": "Todo List",
+        "note": "Note",
+        "memory": "Memory"
+      },
+      "fallbackTitle": "Artifact",
+      "todo": {
+        "done": "{{count}} done",
+        "open": "{{count}} open",
+        "empty": "No todos yet"
+      },
+      "note": {
+        "lines_one": "{{count}} line",
+        "lines_other": "{{count}} lines",
+        "empty": "Empty note"
+      },
+      "notFound": "Artifact not found",
+      "loadFailed": "Failed to load artifact",
+      "fetchFailed": "Failed to fetch artifact",
+      "preview": "Artifact preview",
+      "download": "Download",
+      "restore": "Restore",
+      "version": "Version {{version}}",
+      "versionCurrent": "Version {{version}} (current)",
+      "downloadFailed": "Download failed",
+      "restoreFailed": "Restore failed"
+    },
+    "profile": {
+      "avatarAlt": "User avatar"
     }
   },
   "pageNotFound": {
@@ -1757,7 +2180,14 @@
     "size": "Size",
     "myFiles": "My Files",
     "sharedWithMe": "Shared with Me",
-    "loadingMore": "Loading more files..."
+    "loadingMore": "Loading more files...",
+    "myDrive": "My Drive",
+    "spaces": "Spaces",
+    "root": "Root",
+    "shared": "Shared",
+    "connectTo": "Connect to {{provider}}",
+    "sessionExpiredFor": "Session expired. Please reconnect to {{provider}}.",
+    "selectFilesFrom": "Select Files from {{provider}}"
   },
   "actionButtons": {
     "openNewChat": "Open New Chat",
@@ -1768,7 +2198,13 @@
     "viewCode": "View Code",
     "decreaseZoom": "Decrease zoom",
     "resetZoom": "Reset zoom",
-    "increaseZoom": "Increase zoom"
+    "increaseZoom": "Increase zoom",
+    "download": "Download",
+    "downloadAs": "Download as {{format}}",
+    "code": "Code",
+    "loading": "Loading diagram...",
+    "codeTitle": "Mermaid Code",
+    "renderFailed": "Failed to render diagram: {{message}}"
   },
   "navigation": {
     "agents": "Agents",
@@ -1781,6 +2217,13 @@
         "insights": "Insights",
         "administration": "Administration"
       }
+    },
+    "openSidebar": "Open sidebar",
+    "closeSidebar": "Close sidebar",
+    "social": {
+      "discord": "Join Discord community",
+      "x": "Follow us on X",
+      "github": "View on GitHub"
     }
   },
   "teams": {
@@ -1791,7 +2234,8 @@
       "roleAdmin": "Admin",
       "roleMember": "Member",
       "manageTeam": "Manage team",
-      "createTeam": "Create team"
+      "createTeam": "Create team",
+      "logoAlt": "DocsGPT logo"
     }
   },
   "notification": {
@@ -1810,6 +2254,13 @@
       "usage": "Usage",
       "quotas": "Quotas",
       "audit": "Activity"
+    },
+    "quotas": {
+      "unpriced": {
+        "title": "Models without a price are invisible to cost limits",
+        "body": "These were used this {{period}} and recorded at $0: {{models}}. Use a token limit for them, or declare their rates in the model catalog.",
+        "model": "{{model}} ({{tokens}} tokens)"
+      }
     }
   }
 }

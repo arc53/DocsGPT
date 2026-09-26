@@ -1,6 +1,5 @@
-import { CloudUpload } from 'lucide-react';
 import { useState } from 'react';
-import { type FileRejection, useDropzone } from 'react-dropzone';
+import { type FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
@@ -8,9 +7,11 @@ import userService from '../api/services/userService';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Checkbox } from '../components/ui/checkbox';
+import { Dropzone } from '../components/ui/dropzone';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
+import { SectionHeader } from '../components/ui/section-header';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType } from '../settings/types';
@@ -75,28 +76,20 @@ export default function ImportSpecModal({
     setParsedResult(null);
   };
 
-  const { getRootProps, getInputProps, isDragActive, isDragReject } =
-    useDropzone({
-      onDrop: (acceptedFiles: File[], fileRejections: FileRejection[]) => {
-        // A rejected file never reaches acceptedFiles, so without this the
-        // drop is a silent no-op and any previously picked file stays staged.
-        if (fileRejections.length > 0) {
-          setFile(null);
-          setParsedResult(null);
-          setError(t('modals.importSpec.invalidFileType'));
-          return;
-        }
-        if (acceptedFiles[0]) processFile(acceptedFiles[0]);
-      },
-      multiple: false,
-      // Declared here (not via getInputProps) so drag-and-drop is filtered
-      // too; processFile's extension check stays as a backstop.
-      accept: {
-        'application/json': ['.json'],
-        'application/x-yaml': ['.yaml', '.yml'],
-        'text/yaml': ['.yaml', '.yml'],
-      },
-    });
+  const handleDrop = (
+    acceptedFiles: File[],
+    fileRejections: FileRejection[],
+  ) => {
+    // A rejected file never reaches acceptedFiles, so without this the
+    // drop is a silent no-op and any previously picked file stays staged.
+    if (fileRejections.length > 0) {
+      setFile(null);
+      setParsedResult(null);
+      setError(t('modals.importSpec.invalidFileType'));
+      return;
+    }
+    if (acceptedFiles[0]) processFile(acceptedFiles[0]);
+  };
 
   const handleParse = async () => {
     if (!file) return;
@@ -176,7 +169,6 @@ export default function ImportSpecModal({
       onOpenChange={(o) => !o && handleClose()}
       title={t('modals.importSpec.title')}
       size="lg"
-      contentClassName="max-h-[70vh]"
       footer={
         !parsedResult ? (
           <ModalActions
@@ -207,35 +199,28 @@ export default function ImportSpecModal({
               {t('modals.importSpec.description')}
             </p>
 
-            <div
-              {...getRootProps({
-                className: `border-border hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
-                  isDragReject
-                    ? 'border-destructive'
-                    : isDragActive
-                      ? 'border-primary'
-                      : ''
-                }`,
-              })}
-            >
-              <CloudUpload className="text-muted-foreground mb-3 size-10" />
-              <p className="text-foreground text-sm font-medium">
-                {file ? file.name : t('modals.importSpec.dropzoneText')}
-              </p>
-              <p className="text-muted-foreground mt-1 text-xs">
-                {t('modals.importSpec.supportedFormats')}
-              </p>
-              <input {...getInputProps()} />
-            </div>
-
-            {error && <p className="text-destructive text-sm">{error}</p>}
+            <Dropzone
+              onDrop={handleDrop}
+              // Declared here so drag-and-drop is filtered too; processFile's
+              // extension check stays as a backstop.
+              accept={{
+                'application/json': ['.json'],
+                'application/x-yaml': ['.yaml', '.yml'],
+                'text/yaml': ['.yaml', '.yml'],
+              }}
+              title={file ? file.name : t('modals.importSpec.dropzoneText')}
+              description={t('modals.importSpec.supportedFormats')}
+              error={error}
+            />
           </div>
         ) : (
           <div className="flex flex-col gap-4">
             <div className="bg-muted rounded-xl p-4">
-              <h3 className="text-foreground font-medium">
-                {parsedResult.metadata.title}
-              </h3>
+              <SectionHeader
+                as="h3"
+                size="xs"
+                title={parsedResult.metadata.title}
+              />
               {parsedResult.metadata.description && (
                 <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
                   {parsedResult.metadata.description}
@@ -247,7 +232,8 @@ export default function ImportSpecModal({
               </p>
               <FormField
                 label={t('modals.importSpec.baseUrl')}
-                className="mt-3"
+                labelSurface="muted"
+                className="mt-5"
               >
                 <Input
                   type="text"
@@ -280,7 +266,7 @@ export default function ImportSpecModal({
               </Button>
             </div>
 
-            <div className="max-h-72 space-y-2 overflow-y-auto px-1">
+            <div className="flex max-h-72 flex-col gap-2 overflow-y-auto px-1">
               {parsedResult.actions.map((action, index) => (
                 <label
                   key={index}

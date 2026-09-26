@@ -11,6 +11,7 @@ import devicesService, {
 import CopyButton from '../components/CopyButton';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
 import {
@@ -200,20 +201,31 @@ export default function PairDeviceModal({
         <span className="text-muted-foreground text-xs">
           {t('settings.devices.pairing.stepOne')}
         </span>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <pre className="grow font-mono text-sm break-all whitespace-pre-wrap select-all">
+        <Card
+          variant="filled"
+          padding="sm"
+          className="flex-row items-start gap-2"
+        >
+          <pre className="min-w-0 flex-1 font-mono text-xs wrap-break-word whitespace-pre-wrap select-all">
             {installCommand}
           </pre>
           <CopyButton textToCopy={installCommand} />
-        </div>
-        <a
-          href="https://github.com/arc53/DocsGPT-cli#installation"
-          target="_blank"
-          rel="noreferrer"
-          className="text-muted-foreground hover:text-foreground text-xs underline"
+        </Card>
+        <Button
+          variant="link"
+          size="inline"
+          asChild
+          // eslint-disable-next-line shadcn/no-restyle -- a link in a 12px hint keeps the sentence's size and weight
+          className="self-start text-xs font-normal"
         >
-          {t('settings.devices.pairing.installLink')}
-        </a>
+          <a
+            href="https://github.com/arc53/DocsGPT-cli#installation"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t('settings.devices.pairing.installLink')}
+          </a>
+        </Button>
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-muted-foreground text-xs">

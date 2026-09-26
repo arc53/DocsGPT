@@ -49,7 +49,9 @@ export type FieldType =
 
 export interface FormField {
   name: string;
+  /** English fallback; the form shows `t(labelKey)` when one is set. */
   label: string;
+  labelKey?: string;
   type: FieldType;
   required?: boolean;
   advanced?: boolean;
@@ -85,14 +87,30 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     label: 'Crawler',
     icon: CrawlerIcon,
     heading: 'Add content with Web Crawler',
-    fields: [{ name: 'url', label: 'URL', type: 'string', required: true }],
+    fields: [
+      {
+        name: 'url',
+        label: 'URL',
+        labelKey: 'modals.uploadDoc.fields.url',
+        type: 'string',
+        required: true,
+      },
+    ],
   },
   {
     key: 'url',
     label: 'Link',
     icon: UrlIcon,
     heading: 'Add content from URL',
-    fields: [{ name: 'url', label: 'URL', type: 'string', required: true }],
+    fields: [
+      {
+        name: 'url',
+        label: 'URL',
+        labelKey: 'modals.uploadDoc.fields.url',
+        type: 'string',
+        required: true,
+      },
+    ],
   },
   {
     key: 'github',
@@ -103,6 +121,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
       {
         name: 'repo_url',
         label: 'Repository URL',
+        labelKey: 'modals.uploadDoc.repoUrl',
         type: 'string',
         required: true,
       },
@@ -114,28 +133,38 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     icon: RedditIcon,
     heading: 'Add content from Reddit',
     fields: [
-      { name: 'client_id', label: 'Client ID', type: 'string', required: true },
+      {
+        name: 'client_id',
+        label: 'Client ID',
+        labelKey: 'modals.uploadDoc.reddit.id',
+        type: 'string',
+        required: true,
+      },
       {
         name: 'client_secret',
         label: 'Client Secret',
+        labelKey: 'modals.uploadDoc.reddit.secret',
         type: 'string',
         required: true,
       },
       {
         name: 'user_agent',
         label: 'User Agent',
+        labelKey: 'modals.uploadDoc.reddit.agent',
         type: 'string',
         required: true,
       },
       {
         name: 'search_queries',
         label: 'Search Queries',
+        labelKey: 'modals.uploadDoc.reddit.searchQueries',
         type: 'string',
         required: true,
       },
       {
         name: 'number_posts',
         label: 'Number of Posts',
+        labelKey: 'modals.uploadDoc.reddit.numberOfPosts',
         type: 'number',
         required: true,
       },
@@ -168,36 +197,42 @@ export const IngestorFormSchemas: IngestorSchema[] = [
       {
         name: 'aws_access_key_id',
         label: 'AWS Access Key ID',
+        labelKey: 'modals.uploadDoc.fields.awsAccessKeyId',
         type: 'string',
         required: true,
       },
       {
         name: 'aws_secret_access_key',
         label: 'AWS Secret Access Key',
+        labelKey: 'modals.uploadDoc.fields.awsSecretAccessKey',
         type: 'string',
         required: true,
       },
       {
         name: 'bucket',
         label: 'Bucket Name',
+        labelKey: 'modals.uploadDoc.fields.bucket',
         type: 'string',
         required: true,
       },
       {
         name: 'prefix',
         label: 'Path Prefix (optional)',
+        labelKey: 'modals.uploadDoc.fields.prefix',
         type: 'string',
         required: false,
       },
       {
         name: 'region',
         label: 'AWS Region',
+        labelKey: 'modals.uploadDoc.fields.region',
         type: 'string',
         required: false,
       },
       {
         name: 'endpoint_url',
         label: 'Custom Endpoint URL (optional)',
+        labelKey: 'modals.uploadDoc.fields.endpointUrl',
         type: 'string',
         required: false,
       },
@@ -248,6 +283,7 @@ export const IngestorFormSchemas: IngestorSchema[] = [
       {
         name: 'initial_content',
         label: 'Initial content (optional)',
+        labelKey: 'modals.uploadDoc.fields.initialContent',
         type: 'textarea',
         required: false,
       },

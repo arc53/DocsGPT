@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
@@ -58,7 +59,14 @@ export default function AddActionModal({
         />
       }
     >
-      <div className="relative">
+      <FormField
+        label={t('modals.addAction.actionNamePlaceholder')}
+        required
+        hint={functionNameError ? undefined : t('modals.addAction.formatHelp')}
+        error={
+          functionNameError ? t('modals.addAction.invalidFormat') : undefined
+        }
+      >
         <Input
           type="text"
           value={actionName}
@@ -67,19 +75,8 @@ export default function AddActionModal({
             setActionName(value);
             setFunctionNameError(!isValidFunctionName(value));
           }}
-          label={t('modals.addAction.actionNamePlaceholder')}
-          required={true}
         />
-        <p
-          className={`mt-2 ml-1 text-xs italic ${
-            functionNameError ? 'text-destructive' : 'text-muted-foreground'
-          }`}
-        >
-          {functionNameError
-            ? t('modals.addAction.invalidFormat')
-            : t('modals.addAction.formatHelp')}
-        </p>
-      </div>
+      </FormField>
     </Modal>
   );
 }

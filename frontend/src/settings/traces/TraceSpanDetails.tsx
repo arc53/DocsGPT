@@ -1,12 +1,17 @@
-import React from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Alert, AlertDescription } from '../../components/ui/alert';
+import { Card } from '../../components/ui/card';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../../components/ui/description-list';
 import { ToolCallPanel } from '../../conversation/AnswerFlow';
 import { TraceSpan } from '../types';
 import { formatDurationMs, formatTokens } from './traceUtils';
 
-type Row = [string, string];
+/** A fact row: label, value and whether the value is an id (set in mono). */
+type Row = [string, string, boolean];
 
 function str(value: unknown): string | undefined {
   if (value === null || value === undefined || value === '') return undefined;
@@ -32,9 +37,9 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
   const f = (key: string) => t(`settings.logs.trace.fields.${key}`);
   const yes = t('settings.logs.trace.fields.yes');
   const rows: Row[] = [];
-  const push = (label: string, value: unknown) => {
+  const push = (label: string, value: unknown, mono = false) => {
     const text = str(value);
-    if (text !== undefined) rows.push([label, text]);
+    if (text !== undefined) rows.push([label, text, mono]);
   };
 
   push(
@@ -72,7 +77,7 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
     case 'tool':
       push(f('tool'), a['docsgpt.tool']);
       push(f('action'), a['docsgpt.action'] ?? a['gen_ai.tool.name']);
-      push(f('callId'), a['gen_ai.tool.call.id']);
+      push(f('callId'), a['gen_ai.tool.call.id'], true);
       break;
     case 'retrieval':
     case 'search':
@@ -117,24 +122,25 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
 
   return (
     <div className="flex flex-col gap-3 text-xs">
-      <div className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] gap-x-3 gap-y-1">
-        {rows.map(([label, value]) => (
-          <React.Fragment key={label}>
-            <span className="text-muted-foreground">{label}</span>
-            <span className="text-foreground break-all">{value}</span>
-          </React.Fragment>
+      <DescriptionList size="xs">
+        {rows.map(([label, value, mono]) => (
+          <DescriptionItem key={label} label={label} mono={mono}>
+            {value}
+          </DescriptionItem>
         ))}
-      </div>
+      </DescriptionList>
       {span.error && (
         <Alert variant="destructive">
           <AlertDescription>
-            <pre className="font-mono whitespace-pre-wrap">{span.error}</pre>
+            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+              {span.error}
+            </pre>
           </AlertDescription>
         </Alert>
       )}
       {preview.query !== undefined && (
         <ToolCallPanel title={f('query')} copyText={jsonText(preview.query)}>
-          <p className="font-mono whitespace-pre-wrap">
+          <p className="max-h-60 overflow-y-auto wrap-break-word whitespace-pre-wrap">
             {jsonText(preview.query)}
           </p>
         </ToolCallPanel>
@@ -144,21 +150,21 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
           title={f('arguments')}
           copyText={jsonText(preview.arguments)}
         >
-          <p className="max-h-60 overflow-y-auto font-mono whitespace-pre-wrap">
+          <pre className="max-h-60 overflow-y-auto font-mono text-xs wrap-break-word whitespace-pre-wrap">
             {jsonText(preview.arguments)}
-          </p>
+          </pre>
         </ToolCallPanel>
       )}
       {preview.result !== undefined && (
         <ToolCallPanel title={f('result')} copyText={jsonText(preview.result)}>
-          <p className="max-h-60 overflow-y-auto font-mono whitespace-pre-wrap">
+          <pre className="max-h-60 overflow-y-auto font-mono text-xs wrap-break-word whitespace-pre-wrap">
             {jsonText(preview.result)}
-          </p>
+          </pre>
         </ToolCallPanel>
       )}
       {preview.output !== undefined && (
         <ToolCallPanel title={f('output')} copyText={jsonText(preview.output)}>
-          <p className="max-h-60 overflow-y-auto whitespace-pre-wrap">
+          <p className="max-h-60 overflow-y-auto wrap-break-word whitespace-pre-wrap">
             {jsonText(preview.output)}
           </p>
         </ToolCallPanel>
@@ -191,18 +197,24 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
       )}
       {otherPreviews.map(([key, value]) => (
         <ToolCallPanel key={key} title={key} copyText={jsonText(value)}>
-          <p className="max-h-60 overflow-y-auto font-mono whitespace-pre-wrap">
+          <pre className="max-h-60 overflow-y-auto font-mono text-xs wrap-break-word whitespace-pre-wrap">
             {jsonText(value)}
-          </p>
+          </pre>
         </ToolCallPanel>
       ))}
       <details>
         <summary className="text-muted-foreground cursor-pointer select-none">
           {f('allAttributes')}
         </summary>
-        <pre className="text-muted-foreground mt-1 max-h-60 overflow-y-auto font-mono whitespace-pre-wrap">
-          {JSON.stringify(a, null, 2)}
-        </pre>
+        <Card
+          variant="filled"
+          padding="sm"
+          className="mt-1 max-h-60 overflow-y-auto"
+        >
+          <pre className="text-muted-foreground font-mono text-xs wrap-break-word whitespace-pre-wrap">
+            {JSON.stringify(a, null, 2)}
+          </pre>
+        </Card>
       </details>
     </div>
   );

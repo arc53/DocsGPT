@@ -1,6 +1,8 @@
-import { LoaderCircle, Mic, Square } from 'lucide-react';
+import { Mic, Square } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { Button } from '../ui/button';
+import { Spinner } from '../ui/spinner';
 
 export type RecordingState = 'idle' | 'recording' | 'transcribing' | 'error';
 
@@ -10,16 +12,18 @@ type MicButtonProps = {
   onClick: () => void;
 };
 
-const getVoiceButtonLabel = (recordingState: RecordingState): string => {
-  if (recordingState === 'recording') return 'Stop recording';
-  if (recordingState === 'transcribing') return 'Transcribing audio';
-  return 'Voice input';
+const VOICE_LABEL_KEY: Record<RecordingState, string> = {
+  idle: 'conversation.voice.start',
+  error: 'conversation.voice.start',
+  recording: 'conversation.voice.stopRecording',
+  transcribing: 'conversation.voice.transcribingAudio',
 };
 
-const getVoiceButtonText = (recordingState: RecordingState): string => {
-  if (recordingState === 'recording') return 'Stop';
-  if (recordingState === 'transcribing') return 'Transcribing';
-  return 'Voice';
+const VOICE_TEXT_KEY: Record<RecordingState, string> = {
+  idle: 'conversation.voice.voice',
+  error: 'conversation.voice.voice',
+  recording: 'conversation.voice.stop',
+  transcribing: 'conversation.voice.transcribing',
 };
 
 export default function MicButton({
@@ -27,8 +31,9 @@ export default function MicButton({
   loading,
   onClick,
 }: MicButtonProps) {
-  const voiceButtonLabel = getVoiceButtonLabel(recordingState);
-  const voiceButtonText = getVoiceButtonText(recordingState);
+  const { t } = useTranslation();
+  const voiceButtonLabel = t(VOICE_LABEL_KEY[recordingState]);
+  const voiceButtonText = t(VOICE_TEXT_KEY[recordingState]);
   const isRecording = recordingState === 'recording';
 
   return (
@@ -44,7 +49,7 @@ export default function MicButton({
       className="justify-start"
     >
       {recordingState === 'transcribing' ? (
-        <LoaderCircle className="size-3.5 animate-spin sm:size-4" />
+        <Spinner size="xs" label={t('conversation.voice.transcribingAudio')} />
       ) : isRecording ? (
         <Square className="size-3.5 fill-current sm:size-4" />
       ) : (
@@ -54,7 +59,7 @@ export default function MicButton({
         className={
           isRecording
             ? 'text-xs sm:text-sm'
-            : 'text-muted-foreground dark:text-foreground text-xs sm:text-sm'
+            : 'text-foreground text-xs sm:text-sm'
         }
       >
         {voiceButtonText}

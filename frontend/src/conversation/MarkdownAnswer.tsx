@@ -1,6 +1,7 @@
 import 'katex/dist/katex.min.css';
 
 import { Fragment, type ReactNode, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import {
@@ -10,6 +11,8 @@ import {
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
+
+import { markdownHeadings } from '@/lib/markdown';
 
 import CopyButton from '../components/CopyButton';
 import MermaidRenderer from '../components/MermaidRenderer';
@@ -21,6 +24,7 @@ import {
   type SandboxArtifact,
   sandboxUrlTransform,
 } from './sandboxLinks';
+import { cn } from '@/lib/utils';
 
 // One fenced block or inline code span. Backtick runs are length-matched, so a
 // ```` fence closes only on ```` and nested fences stay masked. The
@@ -144,6 +148,7 @@ export default function MarkdownAnswer({
   turnArtifacts?: SandboxArtifact[];
   onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
 }) {
+  const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   // Re-runs on every streamed token otherwise.
   const contentSegments = useMemo(
@@ -172,7 +177,6 @@ export default function MarkdownAnswer({
         }
         /* Sits mid-sentence, so it must wrap with the surrounding text. */
         className="whitespace-normal"
-        title={artifact.label}
       >
         {content}
       </Button>
@@ -184,7 +188,7 @@ export default function MarkdownAnswer({
       {contentSegments.map((segment, index) => (
         <Fragment key={index}>
           {segment.type === 'text' ? (
-            <div className="fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap">
+            <div className="animate-in fade-in flex flex-col gap-3 leading-normal wrap-break-word whitespace-pre-wrap duration-160 ease-out motion-reduce:animate-none">
               <ReactMarkdown
                 remarkPlugins={[
                   remarkGfm,
@@ -193,6 +197,7 @@ export default function MarkdownAnswer({
                 rehypePlugins={[rehypeKatex]}
                 urlTransform={sandboxUrlTransform}
                 components={{
+                  ...markdownHeadings,
                   a({ href, children }) {
                     // A generated file is already on the turn as a download
                     // chip, but the model links it with a `sandbox:`/`artifact:`
@@ -236,7 +241,7 @@ export default function MarkdownAnswer({
                             }
                           }}
                           className="mx-0.5 h-5 min-w-5"
-                          title={`Jump to source ${num}`}
+                          title={t('conversation.jumpToSource', { num })}
                         >
                           {num}
                         </Button>
@@ -264,7 +269,7 @@ export default function MarkdownAnswer({
                       const { artifact } = sandboxLink;
                       return renderArtifactChip(
                         artifact,
-                        alt || artifact.label || 'Open file',
+                        alt || artifact.label || t('conversation.openFile'),
                       );
                     }
                     if (sandboxLink.kind === 'plain') {
@@ -287,6 +292,7 @@ export default function MarkdownAnswer({
                           </span>
                           <CopyButton
                             textToCopy={String(children).replace(/\n$/, '')}
+                            side="bottom"
                           />
                         </div>
                         <SyntaxHighlighter
@@ -302,7 +308,7 @@ export default function MarkdownAnswer({
                         </SyntaxHighlighter>
                       </div>
                     ) : (
-                      <code className="bg-accent dark:text-foreground rounded-md px-2 py-1 text-xs font-normal whitespace-pre-line">
+                      <code className="bg-accent text-foreground rounded-md px-2 py-1 text-xs font-normal whitespace-pre-line">
                         {children}
                       </code>
                     );
@@ -310,7 +316,10 @@ export default function MarkdownAnswer({
                   ul({ children }) {
                     return (
                       <ul
-                        className={`list-inside list-disc pl-4 whitespace-normal ${classes.list}`}
+                        className={cn(
+                          'list-inside list-disc pl-4 whitespace-normal',
+                          classes.list,
+                        )}
                       >
                         {children}
                       </ul>
@@ -319,7 +328,10 @@ export default function MarkdownAnswer({
                   ol({ children }) {
                     return (
                       <ol
-                        className={`list-inside list-decimal pl-4 whitespace-normal ${classes.list}`}
+                        className={cn(
+                          'list-inside list-decimal pl-4 whitespace-normal',
+                          classes.list,
+                        )}
                       >
                         {children}
                       </ol>

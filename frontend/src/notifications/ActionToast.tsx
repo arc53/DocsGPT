@@ -50,7 +50,7 @@ export default function ActionToast() {
             onClick={() => dispatch(dismissActionToast(toast.id))}
             aria-label={t('notifications.dismiss')}
           >
-            <X className="size-4" />
+            <X />
           </Button>
         </ToastActions>
       </ToastHeader>

@@ -22,9 +22,9 @@ export function SectionBackLink({
 }) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const { isMobile, isTablet } = useMediaQuery();
+  const { isMobile } = useMediaQuery();
 
-  if (!(isMobile || isTablet)) return null;
+  if (!isMobile) return null;
 
   // Up one level, matching the sidebar's back button: out of an agent lands
   // on the agent list, out of a settings page on the settings index. A

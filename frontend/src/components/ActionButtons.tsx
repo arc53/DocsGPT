@@ -10,8 +10,9 @@ import {
   setConversation,
   updateConversationId,
 } from '../conversation/conversationSlice';
-import { Button } from './ui/button';
+import { IconButton } from './ui/icon-button';
 import ProfileButton from './ProfileButton';
+import { cn } from '@/lib/utils';
 
 interface ActionButtonsProps {
   className?: string;
@@ -45,37 +46,38 @@ export default function ActionButtons({
   };
   return (
     <div
-      className={`fixed top-0 z-10 flex h-16 flex-col justify-center transition-all duration-300 ${
-        isArtifactOpen ? 'right-[calc(50%+1rem)]' : 'right-4'
-      }`}
+      className={cn(
+        'fixed top-0 z-10 flex h-16 flex-col justify-center transition-[right] duration-300 ease-in-out',
+        isArtifactOpen ? 'right-[calc(50%+1rem)]' : 'right-4',
+      )}
     >
-      <div className={`flex items-center gap-2 sm:gap-4 ${className}`}>
+      <div className={cn('flex items-center gap-2 sm:gap-4', className)}>
         {showNewChat && (
-          <Button
-            type="button"
+          <IconButton
+            label={t('newChat')}
+            side="bottom"
             variant="ghost-muted"
             size="icon"
             shape="pill"
-            title={t('actionButtons.openNewChat')}
             onClick={newChat}
             className="lg:hidden"
           >
-            <Plus className="size-5" aria-label="NewChat" />
-          </Button>
+            <Plus aria-hidden />
+          </IconButton>
         )}
 
         {showShare && conversationId && (
           <>
-            <Button
-              type="button"
+            <IconButton
+              label={t('actionButtons.share')}
+              side="bottom"
               variant="ghost-muted"
               size="icon"
               shape="pill"
-              title={t('actionButtons.share')}
               onClick={() => setShareModalState(true)}
             >
-              <Share className="size-5" aria-label="share" />
-            </Button>
+              <Share aria-hidden />
+            </IconButton>
             {isShareModalOpen && (
               <ShareConversationModal
                 close={() => setShareModalState(false)}

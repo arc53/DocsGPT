@@ -1,18 +1,11 @@
-import {
-  ChevronRight,
-  CircleCheck,
-  CircleX,
-  Search,
-  Trash2,
-} from 'lucide-react';
+import { ChevronRight, CircleCheck, CircleX, Trash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
 import ConfigFields from '../components/ConfigFields';
+import SearchInput from '../components/SearchInput';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import {
   Select,
@@ -24,9 +17,21 @@ import {
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Checkbox } from '../components/ui/checkbox';
+import { EmptyState } from '../components/ui/empty-state';
+import { FormField } from '../components/ui/form-field';
+import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
+import { SectionHeader } from '../components/ui/section-header';
 import { Switch } from '../components/ui/switch';
-import { useDarkTheme } from '../hooks';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table';
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
@@ -35,13 +40,22 @@ import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { getMethodBadgeVariant } from '../utils/httpMethodColors';
 import { areObjectsEqual } from '../utils/objectUtils';
+import { cn, focusRing } from '@/lib/utils';
 import { APIActionType, APIToolType, UserToolType } from './types';
 
-// The `!` suffix is required because the surrounding `@utility table-default`
-// rules in index.css (min-w 150px, max-w 320px, p-4 / px-4 py-2) out-specify
-// plain Tailwind utility classes. Inline style={{...}} used to win on
-// specificity; the `!` keeps that behaviour without resorting to inline styles.
-const NARROW_CELL = 'w-[50px]! min-w-[50px]! max-w-[50px]! p-0!';
+const BODY_TYPE_HINT_KEYS: Record<string, string> = {
+  'application/json': 'json',
+  'application/x-www-form-urlencoded': 'formUrlencoded',
+  'multipart/form-data': 'multipart',
+  'text/plain': 'text',
+  'application/xml': 'xml',
+  'application/octet-stream': 'octetStream',
+};
+
+/** Maps a body content type to its hint's locale key suffix (JSON by default). */
+function bodyTypeHintKey(contentType?: string): string {
+  return BODY_TYPE_HINT_KEYS[contentType || 'application/json'] ?? 'json';
+}
 
 export default function ToolConfig({
   tool,
@@ -94,7 +108,6 @@ export default function ToolConfig({
     Set<number>
   >(new Set());
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
 
   const toggleUserActionExpand = (index: number) => {
     setExpandedUserActions((prev) => {
@@ -147,7 +160,9 @@ export default function ToolConfig({
       if (spec.required && !configValues[key]?.toString().trim()) {
         const hasEncCreds = !!(tool as any).config?.has_encrypted_credentials;
         if (!(spec.secret && hasEncCreds)) {
-          newErrors[key] = `${spec.label || key} is required`;
+          newErrors[key] = t('settings.tools.configErrors.required', {
+            field: spec.label || key,
+          });
         }
       }
       if (
@@ -157,10 +172,10 @@ export default function ToolConfig({
       ) {
         const num = Number(configValues[key]);
         if (isNaN(num) || num < 1) {
-          newErrors[key] = 'Must be a positive number';
+          newErrors[key] = t('settings.tools.configErrors.positiveNumber');
         }
         if (key === 'timeout' && num > 300) {
-          newErrors[key] = 'Maximum timeout is 300 seconds';
+          newErrors[key] = t('settings.tools.configErrors.maxTimeout');
         }
       }
     });
@@ -335,7 +350,7 @@ export default function ToolConfig({
     });
   };
   return (
-    <div className="scrollbar-overlay mt-8 flex flex-col gap-4">
+    <div className="scrollbar-overlay flex flex-col gap-4">
       <div className="mb-4 flex items-center justify-between gap-3">
         <DetailBreadcrumb
           parentLabel={t('settings.tools.label')}
@@ -358,28 +373,30 @@ export default function ToolConfig({
           <AlertDescription>{saveError}</AlertDescription>
         </Alert>
       )}
-      <div className="mt-1">
-        <p className="text-foreground text-sm font-semibold">
-          {t('settings.tools.customName')}
-        </p>
-        <div className="relative mt-4 w-full max-w-96">
-          <Input
-            type="text"
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-            placeholder={t('settings.tools.customNamePlaceholder')}
-          />
-        </div>
-      </div>
+      <FormField
+        label={t('settings.tools.customName')}
+        labelSurface="background"
+        className="mt-4 w-full max-w-96"
+      >
+        <Input
+          type="text"
+          value={customName}
+          onChange={(e) => setCustomName(e.target.value)}
+          placeholder={t('settings.tools.customNamePlaceholder')}
+        />
+      </FormField>
       <div className="mt-1">
         {tool.name !== 'api_tool' &&
           Object.keys(configRequirements).length > 0 && (
-            <div>
-              <p className="text-foreground mb-4 text-sm font-semibold">
-                {t('settings.tools.authentication')}
-              </p>
+            <div className="flex flex-col gap-4">
+              <SectionHeader
+                as="h3"
+                size="xs"
+                title={t('settings.tools.authentication')}
+              />
               <div className="max-w-96">
                 <ConfigFields
+                  labelSurface="background"
                   configRequirements={configRequirements}
                   values={configValues}
                   onChange={handleFieldChange}
@@ -395,71 +412,59 @@ export default function ToolConfig({
       </div>
       <div className="flex flex-col gap-4">
         <div className="bg-border mx-0 my-2 h-[0.8px] w-full rounded-full"></div>
-        <div className="flex w-full flex-row items-center justify-between gap-2">
-          <p className="text-foreground text-base font-semibold">
-            {t('settings.tools.actions')}
-          </p>
-          {tool.name === 'api_tool' && (
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline-primary"
-                shape="pill"
-                onClick={() => setImportModalState('ACTIVE')}
-              >
-                {t('settings.tools.importSpec')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline-primary"
-                shape="pill"
-                onClick={() => setActionModalState('ACTIVE')}
-              >
-                {t('settings.tools.addAction')}
-              </Button>
-            </div>
-          )}
-        </div>
+        <SectionHeader
+          title={t('settings.tools.actions')}
+          actions={
+            tool.name === 'api_tool' ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  onClick={() => setImportModalState('ACTIVE')}
+                >
+                  {t('settings.tools.importSpec')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  onClick={() => setActionModalState('ACTIVE')}
+                >
+                  {t('settings.tools.addAction')}
+                </Button>
+              </>
+            ) : null
+          }
+        />
         {tool.name === 'api_tool' ? (
           <>
             {tool.config.actions &&
             Object.keys(tool.config.actions).length > 0 ? (
               <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
             ) : (
-              <div className="flex flex-col items-center justify-center py-8">
-                <img
-                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                  alt="No actions found"
-                  className="mx-auto mb-4 h-24 w-24"
-                />
-                <p className="text-muted-foreground text-center">
-                  {t('settings.tools.noActionsFound')}
-                </p>
-              </div>
+              <EmptyState
+                size="sm"
+                title={t('settings.tools.noActionsFound')}
+              />
             )}
           </>
         ) : (
           <div className="flex flex-col gap-4">
             {'actions' in tool && tool.actions && tool.actions.length > 0 ? (
               <>
-                <Input
-                  type="text"
+                <SearchInput
                   value={userActionsSearch}
                   onChange={(e) => setUserActionsSearch(e.target.value)}
-                  placeholder={t('settings.tools.searchActions')}
-                  shape="pill"
-                  leftIcon={
-                    <Search
-                      className="text-muted-foreground size-4"
-                      aria-hidden
-                    />
-                  }
+                  label={t('settings.tools.searchActions')}
                 />
 
                 {filteredUserActions.length === 0 && userActionsSearch && (
-                  <p className="text-muted-foreground py-4 text-center">
-                    {t('settings.tools.noActionsMatch')}
-                  </p>
+                  <EmptyState
+                    size="xs"
+                    illustration="none"
+                    title={t('settings.tools.noActionsMatch')}
+                  />
                 )}
 
                 {filteredUserActions.map(({ action, originalIndex }) => {
@@ -470,12 +475,29 @@ export default function ToolConfig({
                       className="border-border w-full rounded-xl border"
                     >
                       <div
-                        className={`border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
+                        className={cn(
+                          'border-border bg-muted flex cursor-pointer flex-wrap items-center justify-between px-4 py-3 outline-none',
+                          isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl',
+                          focusRing,
+                        )}
                         onClick={() => toggleUserActionExpand(originalIndex)}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isExpanded}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleUserActionExpand(originalIndex);
+                          }
+                        }}
                       >
                         <div className="flex items-center gap-3">
                           <ChevronRight
-                            className={`text-muted-foreground size-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                            className={cn(
+                              'text-muted-foreground size-4 transition-transform duration-200',
+                              isExpanded && 'rotate-90',
+                            )}
                           />
                           <p className="text-foreground font-semibold">
                             {action.name}
@@ -491,9 +513,12 @@ export default function ToolConfig({
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center gap-1">
-                            <span className="text-muted-foreground text-xs">
+                            <label
+                              htmlFor={`approvalToggle-${originalIndex}`}
+                              className="text-muted-foreground text-xs"
+                            >
                               {t('settings.tools.requireApproval', 'Approval')}
-                            </span>
+                            </label>
                             <Switch
                               checked={action.require_approval ?? false}
                               onCheckedChange={(checked) => {
@@ -527,6 +552,9 @@ export default function ToolConfig({
                               });
                             }}
                             id={`actionToggle-${originalIndex}`}
+                            aria-label={t('settings.tools.toggleToolAria', {
+                              toolName: action.name,
+                            })}
                           />
                         </div>
                       </div>
@@ -556,134 +584,149 @@ export default function ToolConfig({
                             />
                           </div>
                           <div className="px-5 py-4">
-                            <table className="table-default">
-                              <thead>
-                                <tr>
-                                  <th>{t('settings.tools.fieldName')}</th>
-                                  <th>{t('settings.tools.fieldType')}</th>
-                                  <th>{t('settings.tools.filledByLLM')}</th>
-                                  <th>
-                                    {t('settings.tools.fieldDescription')}
-                                  </th>
-                                  <th>{t('settings.tools.value')}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {Object.entries(
-                                  action.parameters?.properties,
-                                ).map((param, paramIndex) => {
-                                  const uniqueKey = `${originalIndex}-${param[0]}`;
-                                  return (
-                                    <tr
-                                      key={paramIndex}
-                                      className="font-normal text-nowrap"
-                                    >
-                                      <td>{param[0]}</td>
-                                      <td>{param[1].type}</td>
-                                      <td>
-                                        <label
-                                          htmlFor={uniqueKey}
-                                          className="ml-2.5 flex cursor-pointer items-start gap-4"
-                                        >
-                                          <div className="flex items-center">
-                                            &#8203;
-                                            <Checkbox
-                                              size="sm"
-                                              checked={param[1].filled_by_llm}
-                                              id={uniqueKey}
-                                              aria-label={t(
-                                                'settings.tools.filledByLLM',
-                                              )}
-                                              onCheckedChange={() =>
-                                                handleCheckboxChange(
-                                                  originalIndex,
-                                                  param[0],
-                                                )
-                                              }
-                                            />
-                                          </div>
-                                        </label>
-                                      </td>
-                                      <td className="w-10">
-                                        <Input
-                                          key={uniqueKey}
-                                          value={param[1].description}
-                                          size="sm"
-                                          onChange={(e) => {
-                                            setTool({
-                                              ...tool,
-                                              actions: tool.actions.map(
-                                                (act, index) => {
-                                                  if (index === originalIndex) {
-                                                    return {
-                                                      ...act,
-                                                      parameters: {
-                                                        ...act.parameters,
-                                                        properties: {
-                                                          ...act.parameters
-                                                            .properties,
-                                                          [param[0]]: {
+                            <TableContainer>
+                              <Table>
+                                <TableHead>
+                                  <TableRow>
+                                    <TableHeader>
+                                      {t('settings.tools.fieldName')}
+                                    </TableHeader>
+                                    <TableHeader>
+                                      {t('settings.tools.fieldType')}
+                                    </TableHeader>
+                                    <TableHeader>
+                                      {t('settings.tools.filledByLLM')}
+                                    </TableHeader>
+                                    <TableHeader>
+                                      {t('settings.tools.fieldDescription')}
+                                    </TableHeader>
+                                    <TableHeader>
+                                      {t('settings.tools.value')}
+                                    </TableHeader>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {Object.entries(
+                                    action.parameters?.properties,
+                                  ).map((param, paramIndex) => {
+                                    const uniqueKey = `${originalIndex}-${param[0]}`;
+                                    return (
+                                      <TableRow key={paramIndex}>
+                                        <TableCell className="text-nowrap">
+                                          {param[0]}
+                                        </TableCell>
+                                        <TableCell className="text-nowrap">
+                                          {param[1].type}
+                                        </TableCell>
+                                        <TableCell>
+                                          <label
+                                            htmlFor={uniqueKey}
+                                            className="ml-2.5 flex cursor-pointer items-start gap-4"
+                                          >
+                                            <div className="flex items-center">
+                                              &#8203;
+                                              <Checkbox
+                                                size="sm"
+                                                checked={param[1].filled_by_llm}
+                                                id={uniqueKey}
+                                                aria-label={t(
+                                                  'settings.tools.filledByLLM',
+                                                )}
+                                                onCheckedChange={() =>
+                                                  handleCheckboxChange(
+                                                    originalIndex,
+                                                    param[0],
+                                                  )
+                                                }
+                                              />
+                                            </div>
+                                          </label>
+                                        </TableCell>
+                                        <TableCell>
+                                          <Input
+                                            key={uniqueKey}
+                                            value={param[1].description}
+                                            size="sm"
+                                            onChange={(e) => {
+                                              setTool({
+                                                ...tool,
+                                                actions: tool.actions.map(
+                                                  (act, index) => {
+                                                    if (
+                                                      index === originalIndex
+                                                    ) {
+                                                      return {
+                                                        ...act,
+                                                        parameters: {
+                                                          ...act.parameters,
+                                                          properties: {
                                                             ...act.parameters
-                                                              .properties[
-                                                              param[0]
-                                                            ],
-                                                            description:
-                                                              e.target.value,
+                                                              .properties,
+                                                            [param[0]]: {
+                                                              ...act.parameters
+                                                                .properties[
+                                                                param[0]
+                                                              ],
+                                                              description:
+                                                                e.target.value,
+                                                            },
                                                           },
                                                         },
-                                                      },
-                                                    };
-                                                  }
-                                                  return act;
-                                                },
-                                              ),
-                                            });
-                                          }}
-                                        />
-                                      </td>
-                                      <td>
-                                        <Input
-                                          value={param[1].value}
-                                          key={uniqueKey}
-                                          disabled={param[1].filled_by_llm}
-                                          size="sm"
-                                          onChange={(e) => {
-                                            setTool({
-                                              ...tool,
-                                              actions: tool.actions.map(
-                                                (act, index) => {
-                                                  if (index === originalIndex) {
-                                                    return {
-                                                      ...act,
-                                                      parameters: {
-                                                        ...act.parameters,
-                                                        properties: {
-                                                          ...act.parameters
-                                                            .properties,
-                                                          [param[0]]: {
+                                                      };
+                                                    }
+                                                    return act;
+                                                  },
+                                                ),
+                                              });
+                                            }}
+                                          />
+                                        </TableCell>
+                                        <TableCell>
+                                          <Input
+                                            value={param[1].value}
+                                            key={uniqueKey}
+                                            disabled={param[1].filled_by_llm}
+                                            size="sm"
+                                            onChange={(e) => {
+                                              setTool({
+                                                ...tool,
+                                                actions: tool.actions.map(
+                                                  (act, index) => {
+                                                    if (
+                                                      index === originalIndex
+                                                    ) {
+                                                      return {
+                                                        ...act,
+                                                        parameters: {
+                                                          ...act.parameters,
+                                                          properties: {
                                                             ...act.parameters
-                                                              .properties[
-                                                              param[0]
-                                                            ],
-                                                            value:
-                                                              e.target.value,
+                                                              .properties,
+                                                            [param[0]]: {
+                                                              ...act.parameters
+                                                                .properties[
+                                                                param[0]
+                                                              ],
+                                                              value:
+                                                                e.target.value,
+                                                            },
                                                           },
                                                         },
-                                                      },
-                                                    };
-                                                  }
-                                                  return act;
-                                                },
-                                              ),
-                                            });
-                                          }}
-                                        />
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+                                                      };
+                                                    }
+                                                    return act;
+                                                  },
+                                                ),
+                                              });
+                                            }}
+                                          />
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </TableContainer>
                           </div>
                         </>
                       )}
@@ -692,16 +735,10 @@ export default function ToolConfig({
                 })}
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center py-8">
-                <img
-                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                  alt="No actions found"
-                  className="mx-auto mb-4 h-24 w-24"
-                />
-                <p className="text-muted-foreground text-center">
-                  {t('settings.tools.noActionsFound')}
-                </p>
-              </div>
+              <EmptyState
+                size="sm"
+                title={t('settings.tools.noActionsFound')}
+              />
             )}
           </div>
         )}
@@ -870,21 +907,18 @@ function APIToolConfig({
 
   return (
     <div className="scrollbar-overlay flex flex-col gap-4">
-      <Input
-        type="text"
+      <SearchInput
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder={t('settings.tools.searchActions')}
-        shape="pill"
-        leftIcon={
-          <Search className="text-muted-foreground size-4" aria-hidden />
-        }
+        label={t('settings.tools.searchActions')}
       />
 
       {filteredActions.length === 0 && searchQuery && (
-        <p className="text-muted-foreground py-4 text-center">
-          {t('settings.tools.noActionsMatch')}
-        </p>
+        <EmptyState
+          size="xs"
+          illustration="none"
+          title={t('settings.tools.noActionsMatch')}
+        />
       )}
 
       <div className="flex flex-col gap-4">
@@ -896,12 +930,29 @@ function APIToolConfig({
               className="border-border w-full rounded-xl border"
             >
               <div
-                className={`border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
+                className={cn(
+                  'border-border bg-muted flex cursor-pointer flex-wrap items-center justify-between px-4 py-3 outline-none',
+                  isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl',
+                  focusRing,
+                )}
                 onClick={() => toggleActionExpand(actionName)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={isExpanded}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleActionExpand(actionName);
+                  }
+                }}
               >
                 <div className="flex items-center gap-3">
                   <ChevronRight
-                    className={`text-muted-foreground size-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                    className={cn(
+                      'text-muted-foreground size-4 transition-transform duration-200',
+                      isExpanded && 'rotate-90',
+                    )}
                   />
                   <Badge variant={getMethodBadgeVariant(action.method)}>
                     {action.method}
@@ -917,22 +968,22 @@ function APIToolConfig({
                   className="flex items-center gap-2"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <Button
-                    type="button"
+                  <IconButton
+                    label={t('convTile.delete')}
+                    icon={Trash2}
                     variant="ghost-destructive"
                     size="icon-xs"
                     shape="pill"
                     onClick={() => handleDeleteActionClick(actionName)}
                     className="mr-2"
-                    title={t('convTile.delete')}
-                    aria-label={t('convTile.delete')}
-                  >
-                    <Trash2 aria-hidden />
-                  </Button>
+                  />
                   <div className="flex items-center gap-1">
-                    <span className="text-muted-foreground text-xs">
+                    <label
+                      htmlFor={`approvalToggle-${actionIndex}`}
+                      className="text-muted-foreground text-xs"
+                    >
                       {t('settings.tools.requireApproval', 'Approval')}
-                    </span>
+                    </label>
                     <Switch
                       checked={action.require_approval ?? false}
                       onCheckedChange={() => {
@@ -961,6 +1012,9 @@ function APIToolConfig({
                     checked={action.active}
                     onCheckedChange={() => handleActionToggle(actionName)}
                     id={`actionToggle-${actionIndex}`}
+                    aria-label={t('settings.tools.toggleToolAria', {
+                      toolName: actionName,
+                    })}
                   />
                 </div>
               </div>
@@ -995,10 +1049,11 @@ function APIToolConfig({
                     />
                   </div>
                   <div className="mt-4 px-5 py-2">
-                    <div className="relative w-full">
-                      <span className="text-muted-foreground bg-background absolute -top-2 left-5 z-10 px-2 text-xs">
-                        {t('settings.tools.method')}
-                      </span>
+                    <FormField
+                      label={t('settings.tools.method')}
+                      labelSurface="background"
+                      className="w-full max-w-80"
+                    >
                       <Select
                         value={action.method}
                         onValueChange={(value) => {
@@ -1028,7 +1083,11 @@ function APIToolConfig({
                           });
                         }}
                       >
-                        <SelectTrigger className="w-56" size="lg" shape="pill">
+                        <SelectTrigger
+                          className="w-full"
+                          size="field"
+                          shape="pill"
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1047,7 +1106,7 @@ function APIToolConfig({
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
+                    </FormField>
                   </div>
                   <div className="mt-4 px-5 py-2">
                     <Input
@@ -1083,10 +1142,16 @@ function APIToolConfig({
                     action.method === 'HEAD' ||
                     action.method === 'OPTIONS') && (
                     <div className="mt-4 px-5 py-2">
-                      <div className="relative w-full">
-                        <span className="text-muted-foreground bg-background absolute -top-2 left-5 z-10 px-2 text-xs">
-                          {t('settings.tools.bodyContentType')}
-                        </span>
+                      <FormField
+                        label={t('settings.tools.bodyContentType')}
+                        hint={t(
+                          `settings.tools.bodyTypeHint.${bodyTypeHintKey(
+                            action.body_content_type,
+                          )}`,
+                        )}
+                        labelSurface="background"
+                        className="w-full max-w-80"
+                      >
                         <Select
                           value={action.body_content_type || 'application/json'}
                           onValueChange={(value) => {
@@ -1116,8 +1181,8 @@ function APIToolConfig({
                           }}
                         >
                           <SelectTrigger
-                            className="w-56"
-                            size="lg"
+                            className="w-full"
+                            size="field"
                             shape="pill"
                           >
                             <SelectValue />
@@ -1137,24 +1202,7 @@ function APIToolConfig({
                             ))}
                           </SelectContent>
                         </Select>
-                      </div>
-                      <p className="text-foreground mt-2 text-xs opacity-60">
-                        {action.body_content_type === 'multipart/form-data' &&
-                          'For APIs requiring multipart format. File uploads not supported through LLM.'}
-                        {action.body_content_type ===
-                          'application/octet-stream' &&
-                          'Raw binary data, base64-encoded for transmission.'}
-                        {action.body_content_type ===
-                          'application/x-www-form-urlencoded' &&
-                          'Standard form submission format. Best for legacy APIs and login forms.'}
-                        {action.body_content_type === 'application/xml' &&
-                          'Structured XML format. Use for SOAP and enterprise APIs.'}
-                        {action.body_content_type === 'text/plain' &&
-                          'Raw text data. Each field on a new line.'}
-                        {(!action.body_content_type ||
-                          action.body_content_type === 'application/json') &&
-                          'Most common format. Use for modern REST APIs.'}
-                      </p>
+                      </FormField>
                     </div>
                   )}
                   <div className="mt-4 px-5 py-2">
@@ -1183,7 +1231,7 @@ function APIToolConfig({
             setActionToDelete(null);
           }}
           submitLabel={t('convTile.delete')}
-          variant="danger"
+          variant="destructive"
         />
       )}
     </div>
@@ -1384,8 +1432,8 @@ function APIActionTable({
       <>
         {Object.entries(action[section].properties).map(
           ([key, param], index) => (
-            <tr key={index} className="font-normal text-nowrap">
-              <td className="relative">
+            <TableRow key={index}>
+              <TableCell className="relative">
                 {editingPropertyKey.section === section &&
                 editingPropertyKey.oldKey === key ? (
                   <div className="flex flex-row items-center justify-between gap-2">
@@ -1401,25 +1449,23 @@ function APIActionTable({
                       }}
                     />
                     <div className="mt-1">
-                      <Button
-                        type="button"
+                      <IconButton
+                        label={t('settings.tools.save')}
                         variant="ghost"
                         size="icon-xs"
                         onClick={handleRenameProperty}
                         className="mr-1"
-                        aria-label="check"
                       >
-                        <CircleCheck className="text-success" />
-                      </Button>
-                      <Button
-                        type="button"
+                        <CircleCheck className="text-success" aria-hidden />
+                      </IconButton>
+                      <IconButton
+                        label={t('settings.tools.cancel')}
                         variant="ghost"
                         size="icon-xs"
                         onClick={handleRenamePropertyCancel}
-                        aria-label="cancel"
                       >
-                        <CircleX className="text-destructive" />
-                      </Button>
+                        <CircleX className="text-destructive" aria-hidden />
+                      </IconButton>
                     </div>
                   </div>
                 ) : (
@@ -1431,8 +1477,8 @@ function APIActionTable({
                     readOnly
                   />
                 )}
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Select
                   value={param.type}
                   onValueChange={(value) =>
@@ -1454,8 +1500,8 @@ function APIActionTable({
                     <SelectItem value="integer">integer</SelectItem>
                   </SelectContent>
                 </Select>
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <label
                   htmlFor={`${idPrefix}-${section}-${index}-filled-by-llm`}
                   className="ml-2.5 flex cursor-pointer items-start gap-4"
@@ -1477,8 +1523,8 @@ function APIActionTable({
                     />
                   </div>
                 </label>
-              </td>
-              <td className="w-10">
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.description}
                   size="sm"
@@ -1491,8 +1537,8 @@ function APIActionTable({
                     )
                   }
                 />
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.value}
                   disabled={param.filled_by_llm}
@@ -1501,24 +1547,22 @@ function APIActionTable({
                   }
                   size="sm"
                 />
-              </td>
-              <td className={`border-border border-b ${NARROW_CELL}`}>
-                <Button
-                  type="button"
+              </TableCell>
+              <TableCell width="50px" align="center">
+                <IconButton
+                  label={t('convTile.delete')}
+                  icon={Trash2}
                   variant="ghost-destructive"
                   size="icon-xs"
                   onClick={() => handlePorpertyDelete(section, key)}
-                  aria-label={t('convTile.delete')}
-                >
-                  <Trash2 aria-hidden />
-                </Button>
-              </td>
-            </tr>
+                />
+              </TableCell>
+            </TableRow>
           ),
         )}
         {addingPropertySection === section ? (
-          <tr>
-            <td>
+          <TableRow>
+            <TableCell>
               <Input
                 value={newPropertyKey}
                 onChange={(e) => setNewPropertyKey(e.target.value)}
@@ -1531,8 +1575,8 @@ function APIActionTable({
                 size="sm"
                 className="min-w-[130.5px]"
               />
-            </td>
-            <td>
+            </TableCell>
+            <TableCell>
               <Select
                 value={newPropertyType}
                 onValueChange={(value) =>
@@ -1547,8 +1591,8 @@ function APIActionTable({
                   <SelectItem value="integer">integer</SelectItem>
                 </SelectContent>
               </Select>
-            </td>
-            <td colSpan={3} className="text-right">
+            </TableCell>
+            <TableCell colSpan={3} className="text-right">
               <Button
                 type="button"
                 variant="default"
@@ -1561,19 +1605,19 @@ function APIActionTable({
               </Button>
               <Button
                 type="button"
-                variant="destructive-outline"
+                variant="ghost"
                 size="sm"
                 shape="pill"
                 onClick={handleAddPropertyCancel}
               >
                 {t('settings.tools.cancel')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="50px" align="center"></TableCell>
+          </TableRow>
         ) : (
-          <tr>
-            <td colSpan={5}>
+          <TableRow>
+            <TableCell colSpan={5}>
               <Button
                 type="button"
                 variant="outline-primary"
@@ -1583,9 +1627,9 @@ function APIActionTable({
               >
                 {t('settings.tools.addNew')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="50px" align="center"></TableCell>
+          </TableRow>
         )}
       </>
     );
@@ -1596,8 +1640,8 @@ function APIActionTable({
       <>
         {Object.entries(action.headers.properties).map(
           ([key, param], index) => (
-            <tr key={index} className="font-normal text-nowrap">
-              <td className="relative">
+            <TableRow key={index}>
+              <TableCell className="relative">
                 {editingPropertyKey.section === 'headers' &&
                 editingPropertyKey.oldKey === key ? (
                   <div className="flex flex-row items-center justify-between gap-2">
@@ -1613,25 +1657,23 @@ function APIActionTable({
                       }}
                     />
                     <div className="mt-1">
-                      <Button
-                        type="button"
+                      <IconButton
+                        label={t('settings.tools.save')}
                         variant="ghost"
                         size="icon-xs"
                         onClick={handleRenameProperty}
                         className="mr-1"
-                        aria-label="check"
                       >
-                        <CircleCheck className="text-success" />
-                      </Button>
-                      <Button
-                        type="button"
+                        <CircleCheck className="text-success" aria-hidden />
+                      </IconButton>
+                      <IconButton
+                        label={t('settings.tools.cancel')}
                         variant="ghost"
                         size="icon-xs"
                         onClick={handleRenamePropertyCancel}
-                        aria-label="cancel"
                       >
-                        <CircleX className="text-destructive" />
-                      </Button>
+                        <CircleX className="text-destructive" aria-hidden />
+                      </IconButton>
                     </div>
                   </div>
                 ) : (
@@ -1643,8 +1685,8 @@ function APIActionTable({
                     readOnly
                   />
                 )}
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.value}
                   onChange={(e) =>
@@ -1655,11 +1697,11 @@ function APIActionTable({
                       e.target.value,
                     )
                   }
-                  placeholder="e.g., application/json"
+                  placeholder={t('settings.tools.headerValuePlaceholder')}
                   size="sm"
                 />
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.description}
                   size="sm"
@@ -1672,24 +1714,22 @@ function APIActionTable({
                     )
                   }
                 />
-              </td>
-              <td className={`border-border border-b ${NARROW_CELL}`}>
-                <Button
-                  type="button"
+              </TableCell>
+              <TableCell width="50px" align="center">
+                <IconButton
+                  label={t('convTile.delete')}
+                  icon={Trash2}
                   variant="ghost-destructive"
                   size="icon-xs"
                   onClick={() => handlePorpertyDelete('headers', key)}
-                  aria-label={t('convTile.delete')}
-                >
-                  <Trash2 aria-hidden />
-                </Button>
-              </td>
-            </tr>
+                />
+              </TableCell>
+            </TableRow>
           ),
         )}
         {addingPropertySection === 'headers' ? (
-          <tr>
-            <td>
+          <TableRow>
+            <TableCell>
               <Input
                 value={newPropertyKey}
                 onChange={(e) => setNewPropertyKey(e.target.value)}
@@ -1702,8 +1742,8 @@ function APIActionTable({
                 size="sm"
                 className="min-w-[130.5px]"
               />
-            </td>
-            <td colSpan={2} className="text-right">
+            </TableCell>
+            <TableCell colSpan={2} className="text-right">
               <Button
                 type="button"
                 variant="default"
@@ -1716,19 +1756,19 @@ function APIActionTable({
               </Button>
               <Button
                 type="button"
-                variant="destructive-outline"
+                variant="ghost"
                 size="sm"
                 shape="pill"
                 onClick={handleAddPropertyCancel}
               >
                 {t('settings.tools.cancel')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="50px" align="center"></TableCell>
+          </TableRow>
         ) : (
-          <tr>
-            <td colSpan={3}>
+          <TableRow>
+            <TableCell colSpan={3}>
               <Button
                 type="button"
                 variant="outline-primary"
@@ -1738,9 +1778,9 @@ function APIActionTable({
               >
                 {t('settings.tools.addNew')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="50px" align="center"></TableCell>
+          </TableRow>
         )}
       </>
     );
@@ -1748,83 +1788,61 @@ function APIActionTable({
 
   return (
     <div className="scrollbar-overlay flex flex-col gap-6">
-      <div>
-        <h3 className="text-foreground mb-1 text-base font-normal">
-          {t('settings.tools.headers')}
-        </h3>
-        <table className="table-default">
-          <thead>
-            <tr>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.name')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.description')}
-              </th>
-              <th className={NARROW_CELL}></th>
-            </tr>
-          </thead>
-          <tbody>{renderHeadersTable()}</tbody>
-        </table>
+      <div className="flex flex-col gap-1">
+        <SectionHeader as="h3" size="xs" title={t('settings.tools.headers')} />
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader>{t('settings.tools.name')}</TableHeader>
+                <TableHeader>{t('settings.tools.value')}</TableHeader>
+                <TableHeader>{t('settings.tools.description')}</TableHeader>
+                <TableHeader width="50px" align="center"></TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>{renderHeadersTable()}</TableBody>
+          </Table>
+        </TableContainer>
       </div>
-      <div>
-        <h3 className="text-foreground mb-1 text-base font-normal">
-          {t('settings.tools.queryParameters')}
-        </h3>
-        <table className="table-default">
-          <thead>
-            <tr>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.name')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.type')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.filledByLLM')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.description')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
-              </th>
-              <th className={NARROW_CELL}></th>
-            </tr>
-          </thead>
-          <tbody>{renderPropertiesTable('query_params')}</tbody>
-        </table>
+      <div className="flex flex-col gap-1">
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.tools.queryParameters')}
+        />
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader>{t('settings.tools.name')}</TableHeader>
+                <TableHeader>{t('settings.tools.type')}</TableHeader>
+                <TableHeader>{t('settings.tools.filledByLLM')}</TableHeader>
+                <TableHeader>{t('settings.tools.description')}</TableHeader>
+                <TableHeader>{t('settings.tools.value')}</TableHeader>
+                <TableHeader width="50px" align="center"></TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>{renderPropertiesTable('query_params')}</TableBody>
+          </Table>
+        </TableContainer>
       </div>
-      <div className="mb-6">
-        <h3 className="text-foreground mb-1 text-base font-normal">
-          {t('settings.tools.body')}
-        </h3>
-        <table className="table-default">
-          <thead>
-            <tr>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.name')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.type')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.filledByLLM')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.description')}
-              </th>
-              <th className="text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
-              </th>
-              <th className={NARROW_CELL}></th>
-            </tr>
-          </thead>
-          <tbody>{renderPropertiesTable('body')}</tbody>
-        </table>
+      <div className="mb-6 flex flex-col gap-1">
+        <SectionHeader as="h3" size="xs" title={t('settings.tools.body')} />
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader>{t('settings.tools.name')}</TableHeader>
+                <TableHeader>{t('settings.tools.type')}</TableHeader>
+                <TableHeader>{t('settings.tools.filledByLLM')}</TableHeader>
+                <TableHeader>{t('settings.tools.description')}</TableHeader>
+                <TableHeader>{t('settings.tools.value')}</TableHeader>
+                <TableHeader width="50px" align="center"></TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>{renderPropertiesTable('body')}</TableBody>
+          </Table>
+        </TableContainer>
       </div>
     </div>
   );

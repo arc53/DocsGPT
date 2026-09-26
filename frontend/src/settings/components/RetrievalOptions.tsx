@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
+import { SectionHeader } from '../../components/ui/section-header';
 import { SettingRow, SettingRows } from '../../components/ui/setting-row';
 import { Switch } from '../../components/ui/switch';
 import type {
@@ -149,18 +150,24 @@ export function availableRetrievers(
 }
 
 /**
- * Group eyebrow: an uppercase, tracked title with a normal-weight muted ` · tag`
- * suffix. Reads as more prominent than the individual field labels below it.
+ * Group eyebrow: an uppercase, tracked title with a normal-weight ` · tag`
+ * suffix, set above the field rows of a group.
  */
 function GroupHeader({ title, tag }: { title: string; tag: string }) {
   return (
-    <h4 className="text-foreground text-xs font-semibold tracking-wider uppercase">
-      {title}
-      <span className="text-muted-foreground font-normal normal-case">
-        {' · '}
-        {tag}
-      </span>
-    </h4>
+    <SectionHeader
+      as="h4"
+      size="sm"
+      title={
+        <>
+          {title}
+          <span className="text-muted-foreground font-normal normal-case">
+            {' · '}
+            {tag}
+          </span>
+        </>
+      }
+    />
   );
 }
 
@@ -420,7 +427,7 @@ export default function RetrievalOptions({
               <SelectTrigger
                 id="retrieval-retriever"
                 className="w-52"
-                size="lg"
+                size="field"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -517,7 +524,7 @@ export default function RetrievalOptions({
                 <SelectTrigger
                   id="retrieval-exposure"
                   className="w-52"
-                  size="lg"
+                  size="field"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -625,7 +632,7 @@ export default function RetrievalOptions({
                 <SelectTrigger
                   id="graph-seed-strategy"
                   className="w-52"
-                  size="lg"
+                  size="field"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -699,7 +706,7 @@ export default function RetrievalOptions({
                 <SelectTrigger
                   id="graph-extraction-model"
                   className="w-52"
-                  size="lg"
+                  size="field"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -768,7 +775,11 @@ export default function RetrievalOptions({
                 setChunking({ strategy: v as ChunkingStrategy })
               }
             >
-              <SelectTrigger id="chunking-strategy" className="w-52" size="lg">
+              <SelectTrigger
+                id="chunking-strategy"
+                className="w-52"
+                size="field"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -852,14 +863,20 @@ export default function RetrievalOptions({
       >
         <ChevronRight
           aria-hidden
-          className={cn('size-3 transition-transform', expanded && 'rotate-90')}
+          className={cn(
+            'size-3 transition-transform duration-200',
+            expanded && 'rotate-90',
+          )}
         />
         <span>{tr('title')}</span>
       </Button>
       <div
-        className={`grid transition-all duration-300 ease-in-out ${
-          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-        }`}
+        className={cn(
+          'grid transition-[grid-template-rows,opacity] duration-300 ease-out',
+          expanded
+            ? 'grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0',
+        )}
       >
         <div className="overflow-hidden">{body}</div>
       </div>

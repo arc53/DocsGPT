@@ -5,7 +5,9 @@ import adminService from '../api/services/adminService';
 import teamsService from '../api/services/teamsService';
 import { Modal } from '../components/ui/modal';
 import { selectToken } from '../preferences/preferenceSlice';
-import { LoadError, Loading, fmtDate } from './AdminUI';
+import { LoadingState } from '@/components/ui/loading-state';
+import { SectionHeader } from '@/components/ui/section-header';
+import { LoadError, fmtDate } from './AdminUI';
 import QuotaEditor, { UsageBar } from './QuotaEditor';
 import {
   sourceLabel,
@@ -79,13 +81,13 @@ export default function UserQuotaModal({
       title={userId ? `Quota · ${userId}` : 'Quota'}
     >
       {data === null ? (
-        <Loading />
+        <LoadingState fill="block" />
       ) : !data.success ? (
-        <LoadError message="Failed to load this user's quota." />
+        <LoadError message="Failed to load this user's quota." onRetry={load} />
       ) : (
-        <div className="space-y-5">
+        <div className="flex flex-col gap-5">
           {overall ? (
-            <div className="space-y-3">
+            <div className="flex flex-col gap-3">
               <UsageBar
                 label={`Tokens this ${data.period}`}
                 kind="tokens"
@@ -103,10 +105,8 @@ export default function UserQuotaModal({
               </p>
             </div>
           ) : null}
-          <div className="border-border border-t pt-4">
-            <p className="text-foreground mb-2 text-sm font-bold">
-              User override
-            </p>
+          <div className="border-border flex flex-col gap-2 border-t pt-4">
+            <SectionHeader as="h3" size="xs" title="User override" />
             <QuotaEditor
               scope="user"
               subjectId={userId}

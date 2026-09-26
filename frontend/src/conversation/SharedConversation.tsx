@@ -132,23 +132,29 @@ export const SharedConversation = () => {
     <>
       <DocumentHead
         title={`DocsGPT | ${title}`}
-        description="Shared conversations with DocsGPT"
+        description={t('sharedConv.metaDescription')}
         ogTitle={title}
-        ogDescription="Shared conversations with DocsGPT"
+        ogDescription={t('sharedConv.metaDescription')}
         twitterCard="summary_large_image"
         twitterTitle={title}
-        twitterDescription="Shared conversations with DocsGPT"
+        twitterDescription={t('sharedConv.metaDescription')}
       />
       <div className="bg-background flex h-full flex-col items-center justify-between gap-2 overflow-y-hidden">
         <div className="border-b-border w-full max-w-325 border-b p-2 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12">
           <h1 className="text-foreground text-4xl font-semibold">{title}</h1>
-          <h2 className="text-foreground text-base font-semibold">
+          <p className="text-muted-foreground text-sm">
             {t('sharedConv.subtitle')}{' '}
-            <a href="/" className="text-info">
-              DocsGPT
-            </a>
-          </h2>
-          <h2 className="text-foreground text-base font-semibold">{date}</h2>
+            <Button
+              variant="link"
+              size="inline"
+              asChild
+              // eslint-disable-next-line shadcn/no-restyle -- a link inside a regular-weight subtitle
+              className="font-normal"
+            >
+              <a href="/">DocsGPT</a>
+            </Button>
+          </p>
+          <p className="text-muted-foreground text-sm">{date}</p>
         </div>
         <ConversationMessages
           handleQuestion={handleQuestion}

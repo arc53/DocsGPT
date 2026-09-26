@@ -1,10 +1,12 @@
 import { Plus } from 'lucide-react';
 import { useId, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 import {
   appendDocumentRef,
@@ -22,10 +24,10 @@ interface NodeDocumentsControlProps {
   helpText?: string;
 }
 
-const MODE_OPTIONS: { mode: DocumentsMode; label: string }[] = [
-  { mode: 'all', label: 'All input docs' },
-  { mode: 'none', label: 'None' },
-  { mode: 'choose', label: 'Choose…' },
+const MODE_OPTIONS: { mode: DocumentsMode; labelKey: string }[] = [
+  { mode: 'all', labelKey: 'agents.workflow.documents.modeAll' },
+  { mode: 'none', labelKey: 'agents.workflow.documents.modeNone' },
+  { mode: 'choose', labelKey: 'agents.workflow.documents.modeChoose' },
 ];
 
 /** Shared All/None/Choose documents picker for agent and code workflow nodes. */
@@ -36,6 +38,7 @@ export default function NodeDocumentsControl({
   label,
   helpText,
 }: NodeDocumentsControlProps) {
+  const { t } = useTranslation();
   // Track mode in component state so "Choose" stays reachable even when the
   // chosen list is empty (an empty list otherwise reads back as "None").
   const [mode, setMode] = useState<DocumentsMode>(() =>
@@ -61,37 +64,42 @@ export default function NodeDocumentsControl({
   };
 
   return (
-    <FormField label={label} hint={helpText} id={fieldId}>
-      <div
-        id={fieldId}
-        role="group"
-        aria-label={label}
-        className="border-border bg-card flex gap-1 rounded-xl border p-1"
-      >
-        {MODE_OPTIONS.map(({ mode: optionMode, label: modeLabel }) => (
-          <Button
-            key={optionMode}
-            type="button"
-            variant={mode === optionMode ? 'outline' : 'ghost-muted'}
-            size="xs"
-            onClick={() => selectMode(optionMode)}
-            className="flex-1"
-          >
-            {modeLabel}
-          </Button>
-        ))}
+    <FormField label={label} hint={helpText} id={fieldId} float={false}>
+      {/* The track is a plain wrapper: ToggleGroup takes layout only. */}
+      <div className="border-border bg-card rounded-xl border p-1">
+        <ToggleGroup
+          id={fieldId}
+          type="single"
+          size="xs"
+          value={mode}
+          onValueChange={(next) => next && selectMode(next as DocumentsMode)}
+          aria-label={label}
+          className="flex-nowrap"
+        >
+          {MODE_OPTIONS.map(({ mode: optionMode, labelKey }) => (
+            <ToggleGroupItem
+              key={optionMode}
+              value={optionMode}
+              className="flex-1"
+            >
+              {t(labelKey)}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       </div>
       {showChoose && (
         <div className="flex flex-col gap-2">
           <MultiSelect
+            // Its own id: the FormField id belongs to the mode group above.
+            id={`${fieldId}-pick`}
             options={withChosenDocumentOptions(options, chosen)}
             selected={chosen}
             onChange={(next) =>
               onChange(documentsModeToInputDocuments('choose', next))
             }
-            placeholder="Select documents..."
-            searchPlaceholder="Search variables..."
-            emptyText="No upstream documents"
+            placeholder={t('agents.workflow.documents.selectPlaceholder')}
+            searchPlaceholder={t('agents.workflow.documents.searchPlaceholder')}
+            emptyText={t('agents.workflow.documents.empty')}
           />
           <div className="flex gap-2">
             <Input
@@ -105,7 +113,7 @@ export default function NodeDocumentsControl({
                   addRef();
                 }
               }}
-              placeholder="Add ref (e.g. A1)"
+              placeholder={t('agents.workflow.documents.refPlaceholder')}
             />
             <Button
               type="button"
@@ -113,8 +121,8 @@ export default function NodeDocumentsControl({
               onClick={addRef}
               className="shrink-0"
             >
-              <Plus size={14} />
-              Add
+              <Plus className="size-3.5" />
+              {t('agents.form.buttons.add')}
             </Button>
           </div>
         </div>

@@ -10,12 +10,16 @@ import patService, {
   CreateAccessTokenResponse,
   PersonalAccessToken,
 } from '../api/services/patService';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
+import PageToolbar from '../components/PageToolbar';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
+import { EmptyState } from '../components/ui/empty-state';
 import {
   Table,
   TableBody,
@@ -25,19 +29,21 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import { useDarkTheme } from '../hooks';
 import AccessTokenCreatedModal from '../modals/AccessTokenCreatedModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CreateAccessTokenModal from '../modals/CreateAccessTokenModal';
 import RegenerateAccessTokenModal from '../modals/RegenerateAccessTokenModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import { formatDateOnly, formatDateTime } from '../utils/dateTimeUtils';
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatRelative,
+} from '../utils/dateTimeUtils';
 import {
   countLiveTokens,
   expiryStatus,
   NO_ESCAPE,
-  relativeTime,
   restrictionCounts,
 } from './accessTokenUtils';
 
@@ -52,25 +58,23 @@ function ScopeChips({ scopes }: { scopes: string[] }) {
   return (
     <div className="flex flex-wrap items-center gap-1">
       {visible.map((scope) => (
-        <span
-          key={scope}
-          className="bg-muted text-foreground rounded-full px-2 py-0.5 font-mono text-xs leading-4 whitespace-nowrap"
-        >
+        // eslint-disable-next-line shadcn/no-restyle -- scope names are identifiers, set in mono (item 37)
+        <Badge key={scope} variant="neutral" className="font-mono">
           {scope}
-        </span>
+        </Badge>
       ))}
       {scopes.length > VISIBLE_SCOPES && (
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="xs"
           onClick={() => setExpanded((prev) => !prev)}
           aria-expanded={expanded}
-          title={expanded ? undefined : scopes.slice(VISIBLE_SCOPES).join(', ')}
-          className="text-primary hover:bg-primary/10 cursor-pointer rounded-full px-2 py-0.5 text-xs leading-4 font-medium whitespace-nowrap"
         >
           {expanded
             ? t('settings.accessTokens.showLess')
             : t('settings.accessTokens.moreScopes', { count: hidden })}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -79,7 +83,6 @@ function ScopeChips({ scopes }: { scopes: string[] }) {
 export default function PersonalAccessTokens() {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const [isDarkTheme] = useDarkTheme();
 
   const [tokens, setTokens] = React.useState<PersonalAccessToken[]>([]);
   const [scopes, setScopes] = React.useState<AccessTokenScope[]>([]);
@@ -187,18 +190,10 @@ export default function PersonalAccessTokens() {
   };
 
   const renderLastUsed = (item: PersonalAccessToken) => {
-    const relative = relativeTime(item.last_used_at);
-    if (!relative || !item.last_used_at) {
+    const label = formatRelative(item.last_used_at, { dateAfterDays: 30 });
+    if (!label || !item.last_used_at) {
       return t('settings.accessTokens.never');
     }
-    const label =
-      relative.unit === 'date'
-        ? formatDateOnly(item.last_used_at)
-        : relative.unit === 'now'
-          ? t('settings.accessTokens.relative.now')
-          : t(`settings.accessTokens.relative.${relative.unit}`, {
-              count: relative.count,
-            });
     const details = [formatDateTime(item.last_used_at), item.last_used_ip]
       .filter(Boolean)
       .join(' · ');
@@ -263,78 +258,62 @@ export default function PersonalAccessTokens() {
   );
 
   const renderEmptyState = () => (
-    <div className="flex w-full flex-col items-center justify-center py-12">
-      <img
-        src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-        alt=""
-        className="mx-auto mb-6 h-32 w-32"
-      />
-      <p className="text-muted-foreground text-center text-lg">
-        {t('settings.accessTokens.empty')}
-      </p>
-      {policy?.enabled && (
-        <p className="text-muted-foreground mt-2 max-w-md text-center text-sm">
-          {t('settings.accessTokens.emptyHint')}
-        </p>
-      )}
-    </div>
+    <EmptyState
+      title={t('settings.accessTokens.empty')}
+      description={
+        policy?.enabled ? t('settings.accessTokens.emptyHint') : undefined
+      }
+    />
   );
 
-  const mobileField = (label: string, value: React.ReactNode) => (
-    <div className="flex items-start justify-between gap-4 text-sm">
-      <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className="text-foreground min-w-0 text-right">{value}</span>
-    </div>
-  );
+  const showDisabledNotice = !!policy && !policy.enabled;
+  const showLimitNotice = !!policy?.enabled && limitReached;
+  const hasNotices = showDisabledNotice || showLimitNotice || !!error;
 
   return (
-    <div className="mt-8">
+    <div>
       <div className="relative flex flex-col">
-        <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-muted-foreground max-w-2xl text-sm leading-6">
-            {t('settings.accessTokens.subtitle')}
-          </p>
-          {policy?.enabled && (
-            <Button
-              type="button"
-              shape="pill"
-              className="h-11 min-w-[108px] shrink-0 whitespace-normal"
-              onClick={() => setCreateOpen(true)}
-              disabled={limitReached}
-              title={
-                limitReached
-                  ? t('settings.accessTokens.limitReached', {
-                      count: policy.max_per_user,
-                    })
-                  : undefined
-              }
-            >
-              {t('settings.accessTokens.createToken')}
-            </Button>
+        <PageToolbar
+          intro={t('settings.accessTokens.subtitle')}
+          action={
+            policy?.enabled ? (
+              <Button
+                type="button"
+                size="field"
+                shape="pill"
+                onClick={() => setCreateOpen(true)}
+                disabled={limitReached}
+              >
+                {t('settings.accessTokens.createToken')}
+              </Button>
+            ) : undefined
+          }
+          divider
+        >
+          {hasNotices && (
+            <div className="mb-6 flex flex-col gap-2">
+              {showDisabledNotice && (
+                <Alert>
+                  <AlertDescription>
+                    {t('settings.accessTokens.disabledNotice')}
+                  </AlertDescription>
+                </Alert>
+              )}
+              {showLimitNotice && policy && (
+                <p className="text-muted-foreground text-xs">
+                  {t('settings.accessTokens.limitReached', {
+                    count: policy.max_per_user,
+                  })}
+                </p>
+              )}
+              {error && (
+                <Alert variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+            </div>
           )}
-        </div>
-
-        {policy && !policy.enabled && (
-          <Alert className="mt-2">
-            <AlertDescription>
-              {t('settings.accessTokens.disabledNotice')}
-            </AlertDescription>
-          </Alert>
-        )}
-        {policy?.enabled && limitReached && (
-          <p className="text-muted-foreground mt-1 text-xs">
-            {t('settings.accessTokens.limitReached', {
-              count: policy.max_per_user,
-            })}
-          </p>
-        )}
-        {error && (
-          <Alert variant="destructive" className="mt-2">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        <div className="border-border mt-5 mb-8 border-b" />
+        </PageToolbar>
 
         {loading ? (
           <SkeletonLoader component="default" />
@@ -416,12 +395,12 @@ export default function PersonalAccessTokens() {
               {tokens.map((item) => (
                 <li
                   key={item.id}
-                  className="bg-muted/60 flex flex-col gap-3 rounded-2xl p-4"
+                  className="bg-muted flex flex-col gap-3 rounded-2xl p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p
-                        className="text-foreground truncate text-sm font-semibold"
+                        className="text-foreground truncate text-sm font-medium"
                         title={item.name}
                       >
                         {item.name}
@@ -430,24 +409,26 @@ export default function PersonalAccessTokens() {
                     </div>
                   </div>
                   <ScopeChips scopes={item.scopes} />
-                  <div className="flex flex-col gap-1.5">
-                    {mobileField(
-                      t('settings.accessTokens.resources'),
-                      renderRestrictions(item),
-                    )}
-                    {mobileField(
-                      t('settings.accessTokens.createdAt'),
-                      item.created_at ? formatDateOnly(item.created_at) : '-',
-                    )}
-                    {mobileField(
-                      t('settings.accessTokens.lastUsed'),
-                      renderLastUsed(item),
-                    )}
-                    {mobileField(
-                      t('settings.accessTokens.expires'),
-                      renderExpiry(item),
-                    )}
-                  </div>
+                  <DescriptionList layout="justified" size="sm">
+                    <DescriptionItem
+                      label={t('settings.accessTokens.resources')}
+                    >
+                      {renderRestrictions(item)}
+                    </DescriptionItem>
+                    <DescriptionItem
+                      label={t('settings.accessTokens.createdAt')}
+                    >
+                      {item.created_at ? formatDateOnly(item.created_at) : '-'}
+                    </DescriptionItem>
+                    <DescriptionItem
+                      label={t('settings.accessTokens.lastUsed')}
+                    >
+                      {renderLastUsed(item)}
+                    </DescriptionItem>
+                    <DescriptionItem label={t('settings.accessTokens.expires')}>
+                      {renderExpiry(item)}
+                    </DescriptionItem>
+                  </DescriptionList>
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     {renderRegenerateButton(item)}
                     {renderRevokeButton(item)}
@@ -491,7 +472,7 @@ export default function PersonalAccessTokens() {
         setModalState={setRevokeState}
         handleSubmit={confirmRevoke}
         submitLabel={t('settings.accessTokens.revoke')}
-        variant="danger"
+        variant="destructive"
       />
     </div>
   );

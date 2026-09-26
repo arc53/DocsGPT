@@ -5,11 +5,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-import Pagination from './DocumentPagination';
+import { Pagination } from './pagination';
+import { TooltipProvider } from './tooltip';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-describe('DocumentPagination rows-per-page', () => {
+describe('Pagination page size', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -27,13 +28,15 @@ describe('DocumentPagination rows-per-page', () => {
   const render = async (onRowsPerPageChange = vi.fn()) => {
     await act(async () => {
       root.render(
-        <Pagination
-          currentPage={1}
-          totalPages={3}
-          rowsPerPage={10}
-          onPageChange={vi.fn()}
-          onRowsPerPageChange={onRowsPerPageChange}
-        />,
+        <TooltipProvider>
+          <Pagination
+            page={1}
+            pageCount={3}
+            pageSize={10}
+            onPageChange={vi.fn()}
+            onPageSizeChange={onRowsPerPageChange}
+          />
+        </TooltipProvider>,
       );
     });
     return onRowsPerPageChange;
@@ -88,5 +91,8 @@ describe('DocumentPagination rows-per-page', () => {
       ]),
     );
     expect(container.querySelector('img')).toBeNull();
+    // IconButton: the name is aria-label and the hint is a tooltip, never a
+    // native title.
+    expect(container.querySelector('button[title]')).toBeNull();
   });
 });

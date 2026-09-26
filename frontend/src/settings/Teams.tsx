@@ -1,6 +1,7 @@
 import {
   Bot,
   ChevronRight,
+  CircleAlert,
   FileText,
   MessageSquare,
   Pencil,
@@ -19,20 +20,28 @@ import teamsService, {
   TeamRole,
 } from '../api/services/teamsService';
 import userService from '../api/services/userService';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
 import SkeletonLoader from '../components/SkeletonLoader';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
-import { SectionBackLink } from '../navigation/SectionPageHeader';
-import { SETTINGS_SECTION } from '../navigation/sections';
+import SectionShell from '../navigation/SectionShell';
+import PageToolbar from '../components/PageToolbar';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card } from '../components/ui/card';
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardTitle,
+} from '../components/ui/card';
 import { ActionMenu } from '../components/ui/dropdown-menu';
+import { EmptyState } from '../components/ui/empty-state';
 import { FormField } from '../components/ui/form-field';
+import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
+import { ListRow, ListRows } from '../components/ui/list-row';
 import { Modal, ModalActions } from '../components/ui/modal';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -41,9 +50,9 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { Textarea } from '../components/ui/textarea';
-import { useDarkTheme } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import {
   selectAgents,
   selectPrompts,
@@ -96,10 +105,12 @@ const initialOf = (label: string): string => {
 
 export default function Teams() {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
+  // A failed action on the team detail page is a fire-and-forget result.
+  const reportError = (message: string) =>
+    dispatch(showActionToast({ variant: 'destructive', message }));
   const token = useSelector(selectToken);
   const teams = useSelector(selectTeams);
   const teamsLoading = useSelector(selectTeamsLoading);
@@ -126,7 +137,6 @@ export default function Teams() {
   const [newMemberRole, setNewMemberRole] = useState<TeamRole>('team_member');
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const [deleteTeamModalState, setDeleteTeamModalState] =
     useState<ActiveState>('INACTIVE');
@@ -213,7 +223,6 @@ export default function Teams() {
 
   const openTeam = async (team: Team) => {
     setSelected(team);
-    setError(null);
     // Clear the previous team's data so the detail view doesn't flash stale
     // members/grants while this team's fetch is in flight.
     setMembers([]);
@@ -267,7 +276,7 @@ export default function Teams() {
       }
     } catch {
       // Surface the failure instead of silently rendering an empty team.
-      setError(t('settings.teams.openTeamError'));
+      reportError(t('settings.teams.openTeamError'));
     }
   };
 
@@ -410,7 +419,6 @@ export default function Teams() {
 
   const handleRoleChange = async (memberId: string, role: TeamRole) => {
     if (!selected) return;
-    setError(null);
     try {
       const res = await teamsService.setMemberRole(
         selected.id,
@@ -419,10 +427,10 @@ export default function Teams() {
         token,
       );
       if (res?.success === false)
-        setError(res.message ?? t('settings.teams.updateFailed'));
+        reportError(res.message ?? t('settings.teams.updateFailed'));
       openTeam(selected);
     } catch {
-      setError(t('settings.teams.roleChangeError'));
+      reportError(t('settings.teams.roleChangeError'));
     }
   };
 
@@ -439,7 +447,7 @@ export default function Teams() {
       await teamsService.removeMember(selected.id, memberId, token);
       openTeam(selected);
     } catch {
-      setError(t('settings.teams.removeMemberError'));
+      reportError(t('settings.teams.removeMemberError'));
     }
   };
 
@@ -456,13 +464,12 @@ export default function Teams() {
       await dispatch(deleteTeam({ id: team.id, token })).unwrap();
       if (selected?.id === team.id) setSelected(null);
     } catch {
-      setError(t('settings.teams.deleteTeamError'));
+      reportError(t('settings.teams.deleteTeamError'));
     }
   };
 
   const handleUnshare = async (grant: Grant) => {
     if (!selected) return;
-    setError(null);
     try {
       await teamsService.unshare(
         selected.id,
@@ -474,77 +481,64 @@ export default function Teams() {
       );
       openTeam(selected);
     } catch {
-      setError(t('settings.teams.unshareError'));
+      reportError(t('settings.teams.unshareError'));
     }
   };
 
   const isAdmin = selected?.member_role === 'team_admin';
 
   const roleBadge = (role: TeamRole) => (
-    <Badge variant={role === 'team_admin' ? 'outline' : 'neutral'}>
+    <Badge variant={role === 'team_admin' ? 'default' : 'neutral'}>
       {role === 'team_admin'
         ? t('settings.teams.roleAdmin')
         : t('settings.teams.roleMember')}
     </Badge>
   );
 
-  const emptyState = (message: string, extra?: ReactNode) => (
-    <div className="flex flex-col items-center justify-center py-12">
-      <img
-        src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-        alt=""
-        aria-hidden="true"
-        className="mx-auto mb-6 h-32 w-32"
-      />
-      <p className="text-muted-foreground max-w-sm text-center text-sm">
-        {message}
-      </p>
-      {extra}
-    </div>
-  );
-
   return (
-    <div className="h-full overflow-auto p-4 md:p-12">
-      <div className="mx-auto w-full max-w-5xl">
-        <SectionBackLink section={SETTINGS_SECTION} />
-      </div>
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-foreground text-2xl font-bold">
-            {t('settings.teams.label')}
-          </p>
-          <p className="text-muted-foreground text-sm">
-            {t('settings.teams.subtitle')}
-          </p>
-        </div>
-        <Button className="shrink-0" onClick={openCreateModal}>
-          <Plus aria-hidden />
-          {t('settings.teams.newTeam')}
-        </Button>
-      </div>
+    <SectionShell>
+      <PageToolbar
+        intro={t('settings.teams.subtitle')}
+        action={
+          <Button size="field" shape="pill" onClick={openCreateModal}>
+            <Plus aria-hidden />
+            {t('settings.teams.newTeam')}
+          </Button>
+        }
+      />
 
       {!selected ? (
-        <div className="mx-auto mt-8 w-full max-w-5xl">
+        <div>
           {teamsLoading ? (
             <SkeletonLoader component="default" />
           ) : teamsError ? (
-            <p className="text-destructive text-sm" role="alert">
-              {t('settings.teams.loadError')}
-            </p>
+            <EmptyState
+              tone="destructive"
+              size="sm"
+              illustration="none"
+              title={t('settings.teams.loadError')}
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => dispatch(loadTeams({ token }))}
+                >
+                  {t('retry')}
+                </Button>
+              }
+            />
           ) : teams.length === 0 ? (
-            emptyState(
-              t('settings.teams.noTeams'),
-              <Button
-                variant="ghost"
-                className="mt-4"
-                onClick={openCreateModal}
-              >
-                <Plus aria-hidden />
-                {t('settings.teams.newTeam')}
-              </Button>,
-            )
+            <EmptyState
+              title={t('settings.teams.noTeams')}
+              action={
+                <Button variant="ghost" onClick={openCreateModal}>
+                  <Plus aria-hidden />
+                  {t('settings.teams.newTeam')}
+                </Button>
+              }
+            />
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {teams.map((team) => (
                 <Card
                   key={team.id}
@@ -555,31 +549,35 @@ export default function Teams() {
                   <button onClick={() => openTeam(team)}>
                     <div className="flex items-center gap-3">
                       <span aria-hidden="true" className="contents">
-                        <Avatar alt="" size="lg" shape="square" variant="muted">
+                        <Avatar
+                          alt=""
+                          size="default"
+                          shape="square"
+                          variant="muted"
+                        >
                           {initialOf(team.name)}
                         </Avatar>
                       </span>
-                      <span className="text-foreground min-w-0 flex-1 truncate text-sm font-semibold">
+                      <CardTitle className="min-w-0 flex-1 truncate">
                         {team.name}
-                      </span>
+                      </CardTitle>
                       {roleBadge(team.member_role ?? 'team_member')}
                       <ChevronRight
-                        className="text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5"
-                        size={18}
+                        className="text-muted-foreground size-4.5 shrink-0 transition-transform group-hover:translate-x-0.5"
                         aria-hidden
                       />
                     </div>
                     {team.description ? (
-                      <p className="text-muted-foreground line-clamp-2 text-xs leading-relaxed">
+                      <CardDescription size="xs" className="line-clamp-2">
                         {team.description}
-                      </p>
+                      </CardDescription>
                     ) : (
                       <p className="text-muted-foreground/50 text-xs italic">
                         {t('settings.teams.noDescription')}
                       </p>
                     )}
-                    <div className="text-muted-foreground mt-auto flex items-center gap-1.5 text-xs">
-                      <Users size={13} aria-hidden />
+                    <CardFooter className="gap-1.5">
+                      <Users className="size-3.5" aria-hidden />
                       <span>
                         {t(
                           (team.member_count ?? 0) === 1
@@ -594,7 +592,7 @@ export default function Teams() {
                           count: team.shared_count ?? 0,
                         })}
                       </span>
-                    </div>
+                    </CardFooter>
                   </button>
                 </Card>
               ))}
@@ -602,7 +600,7 @@ export default function Teams() {
           )}
         </div>
       ) : (
-        <div className="mx-auto mt-8 max-w-5xl space-y-6">
+        <div className="flex flex-col gap-6">
           <DetailBreadcrumb
             parentLabel={t('settings.teams.label')}
             currentLabel={selected.name}
@@ -610,19 +608,18 @@ export default function Teams() {
               setSelected(null);
               setMembers([]);
               setGrants([]);
-              setError(null);
             }}
           />
 
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <span aria-hidden="true" className="contents">
-                <Avatar alt="" size="xl" shape="square" variant="muted">
+                <Avatar alt="" size="lg" shape="square" variant="muted">
                   {initialOf(selected.name)}
                 </Avatar>
               </span>
               <div className="min-w-0">
-                <h3 className="text-foreground truncate text-xl font-bold">
+                <h3 className="text-foreground truncate text-xl leading-tight font-semibold">
                   {selected.name}
                 </h3>
                 {selected.description && (
@@ -653,147 +650,134 @@ export default function Teams() {
             )}
           </div>
 
-          {error && (
-            <p className="text-destructive text-sm" role="alert">
-              {error}
-            </p>
-          )}
-
-          <div className="border-border mt-6 border-t pt-6">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h4 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-                {t('settings.teams.members')} · {members.length}
-              </h4>
-              {isAdmin && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={openAddMemberModal}
-                >
-                  <Plus aria-hidden />
-                  {t('settings.teams.addMember')}
-                </Button>
-              )}
-            </div>
-            {members.length === 0 ? (
-              emptyState(t('settings.teams.noMembers'))
-            ) : (
-              <ul>
-                {members.map((m) => (
-                  <li
-                    key={`${m.user_id}-${m.source}`}
-                    className="border-border/60 flex items-center gap-3 border-b px-1 py-2.5 last:border-b-0"
+          <div className="border-border flex flex-col gap-3 border-t pt-6">
+            <SectionHeader
+              as="h4"
+              size="sm"
+              title={`${t('settings.teams.members')} · ${members.length}`}
+              actions={
+                isAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={openAddMemberModal}
                   >
-                    <span aria-hidden="true" className="contents">
-                      <Avatar
-                        alt=""
-                        size="default"
-                        shape="circle"
-                        variant="muted"
-                      >
-                        {initialOf(memberLabel(m))}
-                      </Avatar>
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p
-                        className="text-foreground truncate text-sm font-medium"
-                        title={memberLabel(m)}
-                      >
-                        {memberLabel(m)}
-                      </p>
-                      <p className="text-muted-foreground truncate text-xs">
-                        {sourceLabel(m.source)}
-                      </p>
-                    </div>
-                    {isAdmin ? (
-                      <Select
-                        value={m.role}
-                        onValueChange={(value) =>
-                          handleRoleChange(m.user_id, value as TeamRole)
-                        }
-                      >
-                        <SelectTrigger
-                          size="sm"
-                          className="shrink-0"
-                          aria-label={t('settings.teams.memberRoleLabel')}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="team_member">
-                            {t('settings.teams.roleMember')}
-                          </SelectItem>
-                          <SelectItem value="team_admin">
-                            {t('settings.teams.roleAdmin')}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <span className="shrink-0">{roleBadge(m.role)}</span>
-                    )}
-                    {isAdmin && (
-                      <Button
-                        variant="ghost-destructive"
-                        size="icon-sm"
-                        className="shrink-0"
-                        aria-label={t('settings.teams.remove')}
-                        title={t('settings.teams.remove')}
-                        onClick={() => requestRemoveMember(m.user_id)}
-                      >
-                        <Trash2 aria-hidden />
-                      </Button>
-                    )}
-                  </li>
+                    <Plus aria-hidden />
+                    {t('settings.teams.addMember')}
+                  </Button>
+                )
+              }
+            />
+            {members.length === 0 ? (
+              <EmptyState size="sm" title={t('settings.teams.noMembers')} />
+            ) : (
+              <ListRows>
+                {members.map((m) => (
+                  <ListRow
+                    key={`${m.user_id}-${m.source}`}
+                    leading={
+                      <span aria-hidden="true" className="contents">
+                        <Avatar alt="" size="sm" shape="circle" variant="muted">
+                          {initialOf(memberLabel(m))}
+                        </Avatar>
+                      </span>
+                    }
+                    title={<span title={memberLabel(m)}>{memberLabel(m)}</span>}
+                    description={sourceLabel(m.source)}
+                    trailing={
+                      <>
+                        {isAdmin ? (
+                          <Select
+                            value={m.role}
+                            onValueChange={(value) =>
+                              handleRoleChange(m.user_id, value as TeamRole)
+                            }
+                          >
+                            <SelectTrigger
+                              size="sm"
+                              className="shrink-0"
+                              aria-label={t('settings.teams.memberRoleLabel')}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="team_member">
+                                {t('settings.teams.roleMember')}
+                              </SelectItem>
+                              <SelectItem value="team_admin">
+                                {t('settings.teams.roleAdmin')}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="shrink-0">{roleBadge(m.role)}</span>
+                        )}
+                        {isAdmin && (
+                          <IconButton
+                            variant="ghost-destructive"
+                            size="icon-sm"
+                            className="shrink-0"
+                            label={t('settings.teams.remove')}
+                            icon={Trash2}
+                            onClick={() => requestRemoveMember(m.user_id)}
+                          />
+                        )}
+                      </>
+                    }
+                  />
                 ))}
-              </ul>
+              </ListRows>
             )}
           </div>
 
-          <div className="border-border mt-6 border-t pt-6">
-            <h4 className="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
-              {t('settings.teams.sharedResources')} · {grants.length}
-            </h4>
+          <div className="border-border flex flex-col gap-3 border-t pt-6">
+            <SectionHeader
+              as="h4"
+              size="sm"
+              title={`${t('settings.teams.sharedResources')} · ${grants.length}`}
+            />
             {grants.length === 0 ? (
-              emptyState(t('settings.teams.nothingShared'))
+              <EmptyState size="sm" title={t('settings.teams.nothingShared')} />
             ) : (
-              <ul>
+              <ListRows>
                 {grants.map((g) => (
-                  <li
+                  <ListRow
                     key={`${g.resource_type}-${g.resource_id}`}
-                    className="border-border/60 flex items-center gap-3 border-b px-1 py-2.5 last:border-b-0"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="bg-muted-foreground/10 text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
-                      title={resourceTypeLabel(g.resource_type)}
-                    >
-                      {resourceTypeIcon(g.resource_type)}
-                    </span>
-                    <span
-                      className="text-foreground min-w-0 flex-1 truncate text-sm font-medium"
-                      title={g.resource_id}
-                    >
-                      {resolveResourceName(g)}
-                    </span>
-                    <Badge variant="neutral">
-                      {accessLevelLabel(g.access_level)}
-                    </Badge>
-                    {isAdmin && (
-                      <Button
-                        variant="ghost-destructive"
-                        size="icon-sm"
-                        className="shrink-0"
-                        aria-label={t('settings.teams.unshare')}
-                        title={t('settings.teams.unshare')}
-                        onClick={() => handleUnshare(g)}
+                    leading={
+                      <span
+                        aria-hidden="true"
+                        className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                        title={resourceTypeLabel(g.resource_type)}
                       >
-                        <Trash2 aria-hidden />
-                      </Button>
-                    )}
-                  </li>
+                        {resourceTypeIcon(g.resource_type)}
+                      </span>
+                    }
+                    title={
+                      <span title={g.resource_id}>
+                        {resolveResourceName(g)}
+                      </span>
+                    }
+                    trailing={
+                      <>
+                        <Badge variant="neutral">
+                          {accessLevelLabel(g.access_level)}
+                        </Badge>
+                        {isAdmin && (
+                          <IconButton
+                            variant="ghost-destructive"
+                            size="icon-sm"
+                            className="shrink-0"
+                            label={t('settings.teams.unshare')}
+                            icon={Trash2}
+                            onClick={() => handleUnshare(g)}
+                          />
+                        )}
+                      </>
+                    }
+                  />
                 ))}
-              </ul>
+              </ListRows>
             )}
           </div>
         </div>
@@ -818,19 +802,20 @@ export default function Teams() {
           />
         }
       >
-        <Input
-          type="text"
-          autoFocus
-          label={t('settings.teams.teamNamePlaceholder')}
-          aria-label={t('settings.teams.teamNamePlaceholder')}
-          value={newTeamName}
-          onChange={(e) => setNewTeamName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-        />
+        <FormField label={t('settings.teams.teamNamePlaceholder')}>
+          <Input
+            type="text"
+            autoFocus
+            value={newTeamName}
+            onChange={(e) => setNewTeamName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+          />
+        </FormField>
         {createError && (
-          <p className="text-destructive mt-3 text-sm" role="alert">
-            {createError}
-          </p>
+          <Alert variant="destructive" className="mt-3">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{createError}</AlertDescription>
+          </Alert>
         )}
       </Modal>
 
@@ -850,18 +835,17 @@ export default function Teams() {
           />
         }
       >
-        <div className="flex flex-col gap-4">
-          <Input
-            type="text"
-            autoFocus
-            label={t('settings.teams.teamNamePlaceholder')}
-            aria-label={t('settings.teams.teamNamePlaceholder')}
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-          />
+        <div className="flex flex-col gap-5">
+          <FormField label={t('settings.teams.teamNamePlaceholder')}>
+            <Input
+              type="text"
+              autoFocus
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+          </FormField>
           <FormField label={t('settings.teams.descriptionLabel')}>
             <Textarea
-              id="team-edit-description"
               rows={3}
               resize="none"
               placeholder={t('settings.teams.descriptionPlaceholder')}
@@ -871,9 +855,10 @@ export default function Teams() {
           </FormField>
         </div>
         {editError && (
-          <p className="text-destructive mt-3 text-sm" role="alert">
-            {editError}
-          </p>
+          <Alert variant="destructive" className="mt-3">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{editError}</AlertDescription>
+          </Alert>
         )}
       </Modal>
 
@@ -896,29 +881,23 @@ export default function Teams() {
           />
         }
       >
-        <div className="flex flex-col gap-4">
-          <Input
-            type="email"
-            autoFocus
-            label={t('settings.teams.memberEmailLabel')}
-            aria-label={t('settings.teams.memberEmailLabel')}
-            placeholder={t('settings.teams.memberEmailPlaceholder')}
-            value={newMemberEmail}
-            onChange={(e) => setNewMemberEmail(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddMember()}
-          />
-          <FormField
-            id="add-member-role"
-            label={t('settings.teams.memberRoleLabel')}
-          >
+        <div className="flex flex-col gap-5">
+          <FormField label={t('settings.teams.memberEmailLabel')}>
+            <Input
+              type="email"
+              autoFocus
+              placeholder={t('settings.teams.memberEmailPlaceholder')}
+              value={newMemberEmail}
+              onChange={(e) => setNewMemberEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddMember()}
+            />
+          </FormField>
+          <FormField label={t('settings.teams.memberRoleLabel')}>
             <Select
               value={newMemberRole}
               onValueChange={(value) => setNewMemberRole(value as TeamRole)}
             >
-              <SelectTrigger
-                id="add-member-role"
-                aria-label={t('settings.teams.memberRoleLabel')}
-              >
+              <SelectTrigger size="field" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -933,9 +912,10 @@ export default function Teams() {
           </FormField>
         </div>
         {addMemberError && (
-          <p className="text-destructive mt-3 text-sm" role="alert">
-            {addMemberError}
-          </p>
+          <Alert variant="destructive" className="mt-3">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{addMemberError}</AlertDescription>
+          </Alert>
         )}
       </Modal>
 
@@ -948,7 +928,7 @@ export default function Teams() {
         submitLabel={t('settings.teams.deleteTeam')}
         handleSubmit={confirmDeleteTeam}
         handleCancel={() => setTeamToDelete(null)}
-        variant="danger"
+        variant="destructive"
       />
       <ConfirmationModal
         message={t('settings.teams.removeMemberConfirmation')}
@@ -957,8 +937,8 @@ export default function Teams() {
         submitLabel={t('settings.teams.remove')}
         handleSubmit={confirmRemoveMember}
         handleCancel={() => setMemberToRemove(null)}
-        variant="danger"
+        variant="destructive"
       />
-    </div>
+    </SectionShell>
   );
 }

@@ -1,7 +1,9 @@
+import { CircleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import adminService, { type QuotaScope } from '../api/services/adminService';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Progress } from '../components/ui/progress';
@@ -188,7 +190,7 @@ export default function QuotaEditor({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <p className="text-muted-foreground text-xs">{inheritHint}</p>
       {policy && !policy.enabled ? (
         <p className="text-warning text-xs">
@@ -225,9 +227,10 @@ export default function QuotaEditor({
         />
       </div>
       {error ? (
-        <p role="alert" className="text-destructive text-sm">
-          {error}
-        </p>
+        <Alert variant="destructive">
+          <CircleAlert className="size-4" aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       ) : null}
       <div className="flex justify-end gap-2">
         {policy ? (

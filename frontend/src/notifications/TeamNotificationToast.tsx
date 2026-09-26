@@ -69,7 +69,7 @@ function ShareToast({
             onClick={() => onDismiss(id)}
             aria-label={dismissLabel}
           >
-            <X className="h-4 w-4" />
+            <X />
           </Button>
         </ToastActions>
       </ToastHeader>

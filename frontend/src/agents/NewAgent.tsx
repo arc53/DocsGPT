@@ -1,11 +1,5 @@
 import isEqual from 'lodash/isEqual';
-import {
-  ChevronRight,
-  CircleCheck,
-  CircleX,
-  Database,
-  MoreHorizontal,
-} from 'lucide-react';
+import { ChevronRight, CircleCheck, CircleX, Database } from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -21,12 +15,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { Card } from '@/components/ui/card';
+import { ActionMenu } from '@/components/ui/dropdown-menu';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 
@@ -37,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SectionHeader } from '@/components/ui/section-header';
 import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -225,7 +216,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
   const agentTypes = [
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
-    { label: 'Research', value: 'research' },
+    { label: t('agents.form.agentTypes.research'), value: 'research' },
   ];
 
   const isPublishable = () => {
@@ -597,7 +588,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           const base: MultiSelectPopoverItem = {
             id: tool.id,
             label: getToolDisplayName(tool),
-            icon: <ToolIcon name={tool.name} className="h-5 w-5" />,
+            icon: <ToolIcon name={tool.name} className="size-5" />,
             group: groupFor(tool),
           };
           if (tool.name === 'remote_device') {
@@ -812,7 +803,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const showAgentNav = effectiveMode === 'edit' && Boolean(agent.id);
 
   return (
-    <div className="flex flex-col p-4 pb-2 max-[1179px]:min-h-dvh min-[1180px]:h-dvh md:p-12 md:pt-4 md:pb-3">
+    <div className="flex min-h-dvh flex-col p-4 pb-2 md:p-12 md:pt-4 md:pb-3 xl:h-dvh">
       {agent.agent_type === 'workflow' && (
         <div className="mt-4 w-full">
           <WorkflowBuilder />
@@ -822,7 +813,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         {showAgentNav ? <CurrentSectionHeader /> : <span aria-hidden />}
         <div className="flex flex-wrap items-center gap-2">
           {hasChanges && (
-            <Button type="button" variant="link" onClick={handleCancel}>
+            <Button
+              type="button"
+              variant="ghost"
+              shape="pill"
+              onClick={handleCancel}
+            >
               {t('agents.form.buttons.cancel')}
             </Button>
           )}
@@ -848,31 +844,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             {modeConfig[effectiveMode].buttonText}
           </Button>
           {modeConfig[effectiveMode].showAccessDetails && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('agents.form.buttons.moreActions')}
-                  title={t('agents.form.buttons.moreActions')}
-                >
-                  <MoreHorizontal className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => setAgentDetails('ACTIVE')}>
-                  {t('agents.form.buttons.accessDetails')}
-                </DropdownMenuItem>
-                {/* Sharing is owner-only — hidden for agents shared into the
-                    workspace by a team (ownership === 'team'). */}
-                {agent.ownership !== 'team' && agent.id && (
-                  <DropdownMenuItem onSelect={() => setShareModalOpen(true)}>
-                    {t('agents.shareWithTeam')}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <ActionMenu
+              triggerLabel={t('agents.form.buttons.moreActions')}
+              options={[
+                {
+                  label: t('agents.form.buttons.accessDetails'),
+                  onClick: () => setAgentDetails('ACTIVE'),
+                },
+                // Sharing is owner-only — hidden for agents shared into the
+                // workspace by a team (ownership === 'team').
+                ...(agent.ownership !== 'team' && agent.id
+                  ? [
+                      {
+                        label: t('agents.shareWithTeam'),
+                        onClick: () => setShareModalOpen(true),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           )}
         </div>
       </div>
@@ -883,30 +873,31 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <AlertDescription>{submitError}</AlertDescription>
         </Alert>
       )}
-      <div className="bg-muted dark:bg-background mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 max-[1179px]:overflow-visible min-[1180px]:grid min-[1180px]:gap-5 min-[1180px]:overflow-hidden">
-        <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 max-[1179px]:overflow-visible min-[1180px]:max-h-full min-[1180px]:overflow-y-auto min-[1180px]:pr-3">
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.meta')}
-            </h2>
-            <Input
-              shape="pill"
-              className="mt-3"
-              type="text"
-              value={agent.name}
-              placeholder={t('agents.form.placeholders.agentName')}
-              onChange={(e) => setAgent({ ...agent, name: e.target.value })}
-            />
-            <Textarea
-              size="lg"
-              className="mt-3 h-32"
-              placeholder={t('agents.form.placeholders.describeAgent')}
-              value={agent.description}
-              onChange={(e) =>
-                setAgent({ ...agent, description: e.target.value })
-              }
-            />
-            <div className="mt-3">
+      <div className="bg-muted mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 xl:grid xl:gap-5 xl:overflow-hidden">
+        <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 xl:max-h-full xl:overflow-y-auto xl:pr-3">
+          <div className="bg-card flex flex-col gap-5 rounded-2xl px-6 py-3">
+            <SectionHeader title={t('agents.form.sections.meta')} />
+            <div className="flex flex-col gap-5">
+              <FormField label={t('agents.form.labels.name')}>
+                <Input
+                  shape="pill"
+                  type="text"
+                  value={agent.name}
+                  placeholder={t('agents.form.placeholders.agentName')}
+                  onChange={(e) => setAgent({ ...agent, name: e.target.value })}
+                />
+              </FormField>
+              <FormField label={t('agents.form.labels.description')}>
+                <Textarea
+                  size="lg"
+                  className="h-32"
+                  placeholder={t('agents.form.placeholders.describeAgent')}
+                  value={agent.description}
+                  onChange={(e) =>
+                    setAgent({ ...agent, description: e.target.value })
+                  }
+                />
+              </FormField>
               <FileUpload
                 showPreview
                 size="compact"
@@ -925,11 +916,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.source')}
-            </h2>
-            <div className="mt-3">
+          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
+            <SectionHeader title={t('agents.form.sections.source')} />
+            <div>
               <div className="flex flex-wrap items-center gap-1">
                 <MultiSelectPopover
                   open={isSourcePopupOpen}
@@ -960,19 +949,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       size="field"
                       shape="pill"
                       ref={sourceAnchorButtonRef}
-                      title={selectedSourceNames.join(', ')}
                       data-placeholder={
                         selectedSourceIds.size > 0 ? undefined : ''
                       }
                       className="w-full justify-start text-left"
                     >
-                      <span className="truncate">{sourceTriggerLabel}</span>
+                      <span
+                        className="truncate"
+                        title={selectedSourceNames.join(', ')}
+                      >
+                        {sourceTriggerLabel}
+                      </span>
                     </Button>
                   }
                 />
               </div>
               {selectedSourceIds.size === 0 && (
-                <p className="text-muted-foreground mt-2 text-xs">
+                <p className="text-muted-foreground mt-1.5 text-xs">
                   {t('agents.form.sourcePopup.noSourceHint')}
                 </p>
               )}
@@ -1006,7 +999,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   }
                   setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
                   title={t('agents.form.sections.prompt')}
-                  titleClassName="text-lg font-semibold"
+                  titleAs="heading"
                   showAddButton={false}
                   dropdownProps={{ className: 'w-full' }}
                 />
@@ -1023,11 +1016,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </Button>
             </div>
           </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.tools')}
-            </h2>
-            <div className="mt-3 flex flex-wrap items-center gap-1">
+          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
+            <SectionHeader title={t('agents.form.sections.tools')} />
+            <div className="flex flex-wrap items-center gap-1">
               <MultiSelectPopover
                 open={isToolsPopupOpen}
                 onOpenChange={setIsToolsPopupOpen}
@@ -1079,18 +1070,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               />
             </div>
           </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.agentType')}
-            </h2>
-            <div className="mt-3">
+          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
+            <SectionHeader title={t('agents.form.sections.agentType')} />
+            <div>
               <Select
                 value={agent.agent_type || undefined}
                 onValueChange={(value) =>
                   setAgent({ ...agent, agent_type: value })
                 }
               >
-                <SelectTrigger className="w-full" shape="pill" size="lg">
+                <SelectTrigger className="w-full" shape="pill" size="field">
                   <SelectValue
                     placeholder={t('agents.form.placeholders.selectType')}
                   />
@@ -1105,11 +1094,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </Select>
             </div>
           </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <h2 className="text-lg font-semibold">
-              {t('agents.form.sections.models')}
-            </h2>
-            <div className="mt-3 flex flex-col gap-3">
+          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
+            <SectionHeader title={t('agents.form.sections.models')} />
+            <div className="flex flex-col gap-3">
               <MultiSelectPopover
                 open={isModelsPopupOpen}
                 onOpenChange={setIsModelsPopupOpen}
@@ -1174,7 +1161,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       setAgent({ ...agent, default_model_id: value })
                     }
                   >
-                    <SelectTrigger className="w-full" shape="pill" size="lg">
+                    <SelectTrigger className="w-full" shape="pill" size="field">
                       <SelectValue
                         placeholder={t(
                           'agents.form.placeholders.selectDefaultModel',
@@ -1212,7 +1199,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 <ChevronRight
                   aria-hidden="true"
                   className={cn(
-                    'transition-transform',
+                    'transition-transform duration-200',
                     isAdvancedSectionExpanded && 'rotate-90',
                   )}
                 />
@@ -1222,20 +1209,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </Button>
             </h2>
             {isAdvancedSectionExpanded && (
-              <div className="mt-3">
-                <div>
-                  <h2 className="text-sm font-medium">
-                    {t('agents.form.advanced.jsonSchema')}
-                  </h2>
-                  <p className="text-muted-foreground mt-1 text-xs">
-                    {t('agents.form.advanced.jsonSchemaDescription')}
-                  </p>
-                </div>
-                <Textarea
-                  size="lg"
-                  value={jsonSchemaText}
-                  onChange={(e) => validateAndSetJsonSchema(e.target.value)}
-                  placeholder={`{
+              <div className="mt-5">
+                <FormField
+                  label={t('agents.form.advanced.jsonSchema')}
+                  hint={t('agents.form.advanced.jsonSchemaDescription')}
+                >
+                  <Textarea
+                    size="lg"
+                    value={jsonSchemaText}
+                    onChange={(e) => validateAndSetJsonSchema(e.target.value)}
+                    placeholder={`{
   "type": "object",
   "properties": {
     "name": {"type": "string"},
@@ -1244,14 +1227,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   "required": ["name", "email"],
   "additionalProperties": false
 }`}
-                  rows={9}
-                  className="mt-2 font-mono"
-                />
+                    rows={9}
+                    className="font-mono"
+                  />
+                </FormField>
                 {jsonSchemaText.trim() !== '' && (
                   <div
-                    className={`mt-2 flex items-center gap-2 text-sm ${
-                      jsonSchemaValid ? 'text-success' : 'text-destructive'
-                    }`}
+                    className={cn(
+                      'mt-2 flex items-center gap-2 text-sm',
+                      jsonSchemaValid ? 'text-success' : 'text-destructive',
+                    )}
                   >
                     {jsonSchemaValid ? (
                       <CircleCheck className="size-4" aria-hidden="true" />
@@ -1288,6 +1273,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         placeholder={t(
                           'agents.form.placeholders.enterTokenLimit',
                         )}
+                        aria-label={t('agents.form.advanced.tokenLimit')}
                         shape="pill"
                       />
                     }
@@ -1329,6 +1315,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         placeholder={t(
                           'agents.form.placeholders.enterRequestLimit',
                         )}
+                        aria-label={t('agents.form.advanced.requestLimit')}
                         shape="pill"
                       />
                     }
@@ -1390,31 +1377,31 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             }
           />
           {modeConfig[effectiveMode].showDelete && agent.id && (
-            <div className="border-destructive/40 bg-destructive/5 rounded-2xl border px-6 py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-destructive text-lg font-semibold">
-                    {t('agents.form.dangerZone.heading')}
-                  </h2>
-                  <p className="text-muted-foreground mt-1 text-xs">
-                    {t('agents.form.dangerZone.description')}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="destructive-outline"
-                  size="sm"
-                  onClick={() => setDeleteConfirmation('ACTIVE')}
-                  className="shrink-0"
-                >
-                  {t('agents.form.dangerZone.deleteButton')}
-                </Button>
-              </div>
-            </div>
+            <Card
+              tone="destructive"
+              padding="lg"
+              className="flex-row flex-wrap items-start justify-between"
+            >
+              <SectionHeader
+                tone="destructive"
+                title={t('agents.form.dangerZone.heading')}
+                description={t('agents.form.dangerZone.description')}
+                className="min-w-0 flex-1"
+              />
+              <Button
+                type="button"
+                variant="destructive-outline"
+                size="sm"
+                onClick={() => setDeleteConfirmation('ACTIVE')}
+                className="shrink-0"
+              >
+                {t('agents.form.dangerZone.deleteButton')}
+              </Button>
+            </Card>
           )}
         </div>
-        <div className="col-span-3 flex flex-col gap-2 max-[1179px]:h-auto max-[1179px]:px-0 max-[1179px]:py-0 min-[1180px]:h-full min-[1180px]:py-2">
-          <div className="flex-1 max-[1179px]:overflow-visible min-[1180px]:min-h-0 min-[1180px]:overflow-hidden">
+        <div className="col-span-3 flex flex-col gap-2 xl:h-full xl:py-2">
+          <div className="flex-1 xl:min-h-0 xl:overflow-hidden">
             <AgentPreviewArea />
           </div>
         </div>
@@ -1429,7 +1416,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setDeleteConfirmation('INACTIVE');
         }}
         cancelLabel={t('agents.form.buttons.cancel')}
-        variant="danger"
+        variant="destructive"
       />
       <AgentDetailsModal
         agent={agent}
@@ -1473,7 +1460,7 @@ function AgentPreviewArea() {
   const { t } = useTranslation();
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="bg-card border-border w-full rounded-2xl border max-[1179px]:h-[600px] min-[1180px]:h-full">
+    <div className="bg-card border-border h-[600px] w-full rounded-2xl border xl:h-full">
       {selectedAgent?.status === 'published' ? (
         <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl">
           <AgentPreview />

@@ -1,13 +1,17 @@
+import { ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import ResearchIcon from '../assets/research.svg';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { Spinner } from '../components/ui/spinner';
 import { ResearchState } from './conversationModels';
 import { cn } from '@/lib/utils';
 
 const SmallCheck = () => (
   <svg
-    className="text-success h-3 w-3"
+    className="text-success size-3"
     fill="none"
     viewBox="0 0 24 24"
     stroke="currentColor"
@@ -17,38 +21,17 @@ const SmallCheck = () => (
   </svg>
 );
 
-const SmallSpinner = () => (
-  <svg
-    className="text-primary h-3 w-3 animate-spin"
-    fill="none"
-    viewBox="0 0 24 24"
-  >
-    <circle
-      className="opacity-25"
-      cx="12"
-      cy="12"
-      r="10"
-      stroke="currentColor"
-      strokeWidth="4"
-    />
-    <path
-      className="opacity-75"
-      fill="currentColor"
-      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-    />
-  </svg>
-);
-
 const SmallPending = () => (
-  <div className="border-muted-foreground h-2.5 w-2.5 rounded-full border" />
+  <div className="border-muted-foreground size-2.5 rounded-full border" />
 );
 
 function StatusText({ status, elapsed }: { status: string; elapsed?: number }) {
+  const { t } = useTranslation();
   const labels: Record<string, string> = {
-    planning: 'Planning research...',
-    researching: 'Researching...',
-    synthesizing: 'Writing report...',
-    complete: 'Complete',
+    planning: t('conversation.research.planning'),
+    researching: t('conversation.research.researching'),
+    synthesizing: t('conversation.research.synthesizing'),
+    complete: t('conversation.research.complete'),
   };
   const elapsed_str = elapsed ? ` \u00B7 ${Math.round(elapsed)}s` : '';
   return (
@@ -73,6 +56,7 @@ export default function ResearchProgress({
 }: {
   research: ResearchState;
 }) {
+  const { t } = useTranslation();
   const { plan, status, elapsed_seconds } = research;
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -92,8 +76,8 @@ export default function ResearchProgress({
   // Collapsed: single-line summary
   const summaryText =
     totalSteps > 0
-      ? `Researched ${completedSteps} topic${completedSteps !== 1 ? 's' : ''}`
-      : 'Research';
+      ? t('conversation.research.researched', { count: completedSteps })
+      : t('conversation.research.title');
 
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
@@ -101,7 +85,7 @@ export default function ResearchProgress({
       <div className="my-2 flex flex-row items-center gap-3">
         <Avatar
           src={ResearchIcon}
-          alt="Research"
+          alt={t('conversation.research.title')}
           className="h-[26px] w-[30px]"
           imgClassName="h-full w-full object-fill"
         />
@@ -113,43 +97,33 @@ export default function ResearchProgress({
           onClick={() => setIsExpanded(!isExpanded)}
         >
           <p className="text-sm font-semibold">
-            {isExpanded ? 'Research' : summaryText}
+            {isExpanded ? t('conversation.research.title') : summaryText}
           </p>
-          <svg
+          <ChevronDown
             className={cn(
-              'text-muted-foreground h-4 w-4 transition-transform duration-200',
+              'text-muted-foreground transition-transform duration-200',
               isExpanded && 'rotate-180',
             )}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
+          />
         </Button>
         {status && <StatusText status={status} elapsed={elapsed_seconds} />}
       </div>
 
       {/* Expanded: vertical timeline of steps */}
       {isExpanded && plan && plan.length > 0 && (
-        <div className="fade-in mr-5 ml-[42px] max-w-[90vw] md:max-w-[70vw] lg:max-w-[50vw]">
-          <div className="space-y-0">
+        <div className="animate-in fade-in mr-5 ml-[42px] max-w-[90vw] duration-160 ease-out motion-reduce:animate-none md:max-w-[70vw] lg:max-w-[50vw]">
+          <div className="flex flex-col">
             {plan.map((step, i) => {
               const isLast = i === plan.length - 1;
               return (
                 <div key={i} className="flex items-stretch gap-3">
                   {/* Timeline: dot + vertical line */}
                   <div className="flex flex-col items-center pt-1">
-                    <div className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
+                    <div className="flex size-4 flex-shrink-0 items-center justify-center">
                       {step.status === 'complete' ? (
                         <SmallCheck />
                       ) : step.status === 'researching' ? (
-                        <SmallSpinner />
+                        <Spinner size="xs" className="text-primary" />
                       ) : (
                         <SmallPending />
                       )}
@@ -157,7 +131,7 @@ export default function ResearchProgress({
                     {!isLast && <div className="bg-border mt-1 w-px flex-1" />}
                   </div>
                   {/* Step content */}
-                  <div className={`pb-3 ${isLast ? '' : ''}`}>
+                  <div className="pb-3">
                     <p
                       className={cn(
                         'text-sm',

@@ -210,7 +210,6 @@ export default function CreateAccessTokenModal({
       size="lg"
       mobileVariant="sheet"
       isPerformingTask={submitting}
-      contentClassName="max-h-[65vh]"
       footer={
         <ModalActions
           cancelLabel={t('settings.accessTokens.create.cancel')}
@@ -224,16 +223,15 @@ export default function CreateAccessTokenModal({
       }
     >
       <form
-        className="flex flex-col gap-6 px-1"
+        className="flex flex-col gap-6"
         onSubmit={(e) => {
           e.preventDefault();
           handleSubmit();
         }}
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
           <FormField label={t('settings.accessTokens.create.name')} required>
             <Input
-              id="pat-name"
               type="text"
               value={name}
               maxLength={MAX_NAME_LENGTH}
@@ -246,7 +244,6 @@ export default function CreateAccessTokenModal({
             />
           </FormField>
           <FormField
-            id="pat-expiry"
             label={t('settings.accessTokens.create.expiration')}
             hint={
               expiry === NO_EXPIRY
@@ -263,7 +260,7 @@ export default function CreateAccessTokenModal({
               value={String(expiry)}
               onValueChange={(value) => setExpiry(Number(value))}
             >
-              <SelectTrigger id="pat-expiry" className="w-full" size="lg">
+              <SelectTrigger className="w-full" size="field">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -376,6 +373,7 @@ export default function CreateAccessTokenModal({
                   <FormField
                     key={family}
                     id={`pat-resources-${family}`}
+                    float={false}
                     label={
                       <span className="capitalize">{familyLabel(family)}</span>
                     }

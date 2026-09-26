@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
+import { cn } from '../lib/utils';
 import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -183,12 +184,9 @@ export default function TestRetrievalModal({
           ? tr('subtitle', { name: document.name })
           : tr('subtitleGeneric')
       }
-      size="lg"
+      // xl, like PromptsModal, so the two large modals read as one family.
+      size="xl"
       mobileVariant="sheet"
-      // Same width ramp and padding as PromptsModal so the two large modals
-      // read as one family.
-      className="w-[95vw] max-w-[650px] md:max-w-[860px] lg:max-w-[980px]"
-      contentClassName="max-h-[70vh]"
     >
       <div className="flex flex-col">
         <div className="flex flex-col gap-4">
@@ -267,7 +265,7 @@ export default function TestRetrievalModal({
                   return (
                     <div
                       key={chunk.rank}
-                      className="border-border bg-muted/40 rounded-xl border p-4"
+                      className="border-border bg-muted rounded-xl border p-4"
                     >
                       <div className="mb-2 flex flex-row items-center justify-between gap-2">
                         <div className="flex min-w-0 flex-row items-center gap-2">
@@ -292,9 +290,10 @@ export default function TestRetrievalModal({
                           in, the collapsed clamp spends its 3 lines on nothing
                           and the preview looks empty. */}
                       <p
-                        className={`text-muted-foreground text-sm whitespace-pre-wrap ${
-                          isOpen ? '' : 'line-clamp-3'
-                        }`}
+                        className={cn(
+                          'text-muted-foreground text-sm whitespace-pre-wrap',
+                          !isOpen && 'line-clamp-3',
+                        )}
                       >
                         {chunk.text.trim()}
                       </p>

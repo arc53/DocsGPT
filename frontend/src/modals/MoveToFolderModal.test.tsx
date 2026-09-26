@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('../hooks', () => ({
-  useMediaQuery: () => ({ isMobile: false, isTablet: false, isDesktop: true }),
+  useMediaQuery: () => ({ isMobile: false, isDesktop: true }),
 }));
 
 const getAgentFolders = vi.fn();
@@ -89,8 +89,9 @@ describe('MoveToFolderModal', () => {
     );
   const itemFor = (name: string) =>
     items().find((el) => el.textContent?.includes(name));
+  // An IconButton: TooltipTrigger's asChild renames the Button's data-slot.
   const chevronOf = (name: string) =>
-    itemFor(name)?.querySelector<HTMLButtonElement>('[data-slot="button"]');
+    itemFor(name)?.querySelector<HTMLButtonElement>('button');
 
   it('turns ancestors into breadcrumb link buttons after navigating in', async () => {
     await render();

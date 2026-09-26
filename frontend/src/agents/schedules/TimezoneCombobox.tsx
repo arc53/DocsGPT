@@ -142,12 +142,11 @@ export default function TimezoneCombobox({
           ) : (
             <span className="truncate">{placeholder}</span>
           )}
-          <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      {/* z-200 keeps the popover above Modal (z-50); matches DatePicker. */}
       <PopoverContent
-        className="z-200 w-[min(20rem,calc(100vw-2rem))] p-0"
+        className="w-[min(20rem,calc(100vw-2rem))] p-0"
         align="start"
       >
         <Command shouldFilter={false}>
@@ -173,7 +172,7 @@ export default function TimezoneCombobox({
                   >
                     <Check
                       className={cn(
-                        'mr-2 size-4 shrink-0',
+                        'size-4 shrink-0',
                         selected ? 'opacity-100' : 'opacity-0',
                       )}
                     />

@@ -1,17 +1,19 @@
-import { Globe, Pencil, Search as SearchIcon, Tag, Trash } from 'lucide-react';
+import { Globe, Pencil, Tag, Trash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import customModelsService from '../api/services/customModelsService';
 import modelService from '../api/services/modelService';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
+import PageToolbar from '../components/PageToolbar';
+import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card, CardFooter, CardTitle } from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
-import { Input } from '../components/ui/input';
-import { useDarkTheme, useLoaderState } from '../hooks';
+import { EmptyState } from '../components/ui/empty-state';
+import { useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import CustomModelModal from '../modals/CustomModelModal';
 import { ActiveState } from '../models/misc';
@@ -38,7 +40,6 @@ export default function CustomModels() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
-  const [isDarkTheme] = useDarkTheme();
 
   const [models, setModels] = React.useState<CustomModel[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -134,7 +135,7 @@ export default function CustomModels() {
       variant: 'default',
     },
     {
-      icon: Trash,
+      icon: Trash2,
       label: t('settings.customModels.actions.delete'),
       onClick: () => requestDelete(model),
       variant: 'destructive',
@@ -150,106 +151,94 @@ export default function CustomModels() {
   });
 
   const renderEmptyState = () => (
-    <div className="flex w-full flex-col items-center justify-center py-12">
-      <img
-        src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-        alt={t('settings.customModels.empty')}
-        className="mx-auto mb-6 h-32 w-32"
-      />
-      <p className="text-muted-foreground text-center text-lg">
-        {t('settings.customModels.empty')}
-      </p>
-    </div>
+    <EmptyState title={t('settings.customModels.empty')} />
   );
 
   return (
-    <div className="mt-8">
+    <div>
       <div className="relative flex flex-col">
-        <p className="text-muted-foreground mb-5 text-sm leading-6">
-          {t('settings.customModels.subtitle')}
-        </p>
-        <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="w-full max-w-md">
-            <Input
+        <PageToolbar
+          intro={t('settings.customModels.subtitle')}
+          search={
+            <SearchInput
               maxLength={256}
               label={t('settings.customModels.searchPlaceholder')}
               name="custom-models-search-input"
-              type="text"
               id="custom-models-search-input"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              labelSurface="background"
-              shape="pill"
-              leftIcon={<SearchIcon className="text-muted-foreground size-4" />}
             />
-          </div>
-          <Button
-            type="button"
-            shape="pill"
-            className="h-11 min-w-[108px] whitespace-normal"
-            onClick={openAddModal}
-          >
-            {t('settings.customModels.addModel')}
-          </Button>
-        </div>
-        <div className="border-border mt-5 mb-8 border-b" />
+          }
+          action={
+            <Button
+              type="button"
+              size="field"
+              shape="pill"
+              onClick={openAddModal}
+            >
+              {t('settings.customModels.addModel')}
+            </Button>
+          }
+          divider
+        />
         {loading ? (
-          <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <SkeletonLoader component="toolCards" count={3} />
           </div>
+        ) : filteredModels.length === 0 ? (
+          renderEmptyState()
         ) : (
-          <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
-            {filteredModels.length === 0
-              ? renderEmptyState()
-              : filteredModels.map((model) => (
-                  <div
-                    key={model.id}
-                    className="bg-muted hover:bg-accent relative flex w-[300px] flex-col overflow-hidden rounded-2xl p-5"
-                  >
-                    <ActionMenu
-                      options={getMenuOptions(model)}
-                      triggerLabel={t('settings.customModels.actionsMenuAria', {
-                        modelName: model.display_name,
-                      })}
-                      className="absolute top-3 right-3 z-10"
-                    />
-                    <div className="w-full pr-7">
-                      <div className="flex items-center gap-2">
-                        <p
-                          title={model.display_name}
-                          className="text-foreground truncate text-sm leading-snug font-semibold"
-                        >
-                          {model.display_name}
-                        </p>
-                        {!model.enabled && (
-                          <span className="bg-muted-foreground/15 text-muted-foreground shrink-0 rounded-full px-2 py-0.5 text-xs leading-none font-medium">
-                            {t('settings.customModels.disabledBadge')}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-3 space-y-1.5">
-                        <div
-                          className="text-muted-foreground/80 flex items-center gap-1.5 text-xs leading-relaxed"
-                          title={model.upstream_model_id}
-                        >
-                          <Tag className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                          <span className="truncate">
-                            {model.upstream_model_id}
-                          </span>
-                        </div>
-                        <div
-                          className="text-muted-foreground/80 flex items-center gap-1.5 text-xs leading-relaxed"
-                          title={model.base_url}
-                        >
-                          <Globe className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                          <span className="truncate">
-                            {formatBaseUrlHost(model.base_url)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filteredModels.map((model) => (
+              <Card
+                key={model.id}
+                variant="filled"
+                padding="lg"
+                className="relative overflow-hidden"
+              >
+                <ActionMenu
+                  options={getMenuOptions(model)}
+                  triggerLabel={t('settings.customModels.actionsMenuAria', {
+                    modelName: model.display_name,
+                  })}
+                  className="absolute top-3 right-3 z-10"
+                />
+                <div className="w-full pr-7">
+                  <div className="flex items-center gap-2">
+                    <CardTitle
+                      as="h2"
+                      title={model.display_name}
+                      className="min-w-0 truncate"
+                    >
+                      {model.display_name}
+                    </CardTitle>
+                    {!model.enabled && (
+                      <Badge variant="neutral">
+                        {t('settings.customModels.disabledBadge')}
+                      </Badge>
+                    )}
                   </div>
-                ))}
+                </div>
+                <CardFooter className="flex-col items-stretch gap-1.5 pr-7">
+                  <div
+                    className="flex items-center gap-1.5 leading-relaxed"
+                    title={model.upstream_model_id}
+                  >
+                    <Tag className="size-3.5 shrink-0 opacity-70" />
+                    <span className="truncate">{model.upstream_model_id}</span>
+                  </div>
+                  <div
+                    className="flex items-center gap-1.5 leading-relaxed"
+                    title={model.base_url}
+                  >
+                    <Globe className="size-3.5 shrink-0 opacity-70" />
+                    <span className="truncate">
+                      {formatBaseUrlHost(model.base_url)}
+                    </span>
+                  </div>
+                </CardFooter>
+              </Card>
+            ))}
           </div>
         )}
       </div>
@@ -267,7 +256,7 @@ export default function CustomModels() {
         setModalState={setDeleteState}
         handleSubmit={confirmDelete}
         submitLabel={t('settings.customModels.actions.delete')}
-        variant="danger"
+        variant="destructive"
       />
     </div>
   );

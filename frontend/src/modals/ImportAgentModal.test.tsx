@@ -132,4 +132,55 @@ describe('ImportAgentModal', () => {
     ]);
     expect(document.querySelector('[role="alert"]')).toBeNull();
   });
+  it('draws plan warnings and a failed import as Alerts', async () => {
+    service.planImportAgent.mockResolvedValue(
+      jsonResponse({
+        success: true,
+        plan: {
+          target: { action: 'update', agent_id: 'a1', matched_by: 'name' },
+          workflow: { action: 'delete', nodes: 3 },
+          sources: [],
+          tools: [{ key: 't1', type: 'brave', status: 'unavailable' }],
+          prompt: { status: 'default' },
+          models: [],
+        },
+      }),
+    );
+    service.importAgent.mockResolvedValue(
+      jsonResponse({ success: false, message: 'Import blew up' }),
+    );
+    act(() => {
+      root.render(
+        <ImportAgentModal
+          modalState="ACTIVE"
+          setModalState={() => undefined}
+        />,
+      );
+    });
+
+    const file = new File(['name: Agent\n'], 'agent.yaml', {
+      type: 'application/x-yaml',
+    });
+    await act(async () => dropzone.onDrop!([file], []));
+    await flush();
+    await clickButton('modals.importAgent.review');
+
+    const warnings = Array.from(
+      document.querySelectorAll('[data-slot="alert"][data-variant="warning"]'),
+    ).map((a) => a.textContent);
+    expect(warnings).toEqual([
+      'modals.importAgent.workflowDelete',
+      'modals.importAgent.toolUnavailable',
+    ]);
+
+    await clickButton('modals.importAgent.import');
+    const error = document.querySelector(
+      '[data-slot="alert"][data-variant="destructive"]',
+    );
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toBe('Import blew up');
+    expect(error?.querySelector('svg')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    );
+  });
 });

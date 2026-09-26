@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 
 import adminService from '../api/services/adminService';
-import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import {
   Table,
@@ -13,10 +12,15 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import { useDarkTheme } from '../hooks';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { selectToken } from '../preferences/preferenceSlice';
 import { formatDate } from '../utils/dateTimeUtils';
-import { Loading, LoadError, StatCard, fmtNumber, fmtUsd } from './AdminUI';
+import { Card } from '@/components/ui/card';
+import { LoadingState } from '@/components/ui/loading-state';
+import { SectionHeader } from '@/components/ui/section-header';
+import StatCard from '@/components/StatCard';
+import { LoadError, fmtNumber, fmtUsd } from './AdminUI';
+import { useChartPalette } from '../utils/chartUtils';
 import UsageChart, { usageColors } from './UsageChart';
 
 type Bucket = {
@@ -106,10 +110,12 @@ export default function UserUsageModal({
   onClose: () => void;
 }) {
   const token = useSelector(selectToken);
-  const [isDarkTheme] = useDarkTheme();
+  // Re-read on every theme change; Chart.js can't read CSS variables.
+  const palette = useChartPalette();
   const [days, setDays] = useState(30);
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!userId) {
@@ -132,11 +138,11 @@ export default function UserUsageModal({
     return () => {
       cancelled = true;
     };
-  }, [userId, days, token]);
+  }, [userId, days, token, reloadKey]);
 
   const series: Bucket[] = data?.series ?? [];
   const chartData = useMemo(() => {
-    const colors = usageColors();
+    const colors = usageColors(palette);
     return {
       labels: series.map((bucket) => formatDate(bucket.bucket)),
       datasets: [
@@ -152,8 +158,7 @@ export default function UserUsageModal({
         },
       ],
     };
-    // isDarkTheme re-resolves the canvas colors when the theme toggles.
-  }, [series, isDarkTheme]);
+  }, [series, palette]);
 
   const totals = data?.totals ?? {};
 
@@ -164,38 +169,54 @@ export default function UserUsageModal({
       title={userId ? `Usage · ${userId}` : 'Usage'}
       size="lg"
     >
-      <div className="mb-4 flex items-center gap-1">
+      <ToggleGroup
+        type="single"
+        size="sm"
+        value={String(days)}
+        onValueChange={(value) => value && setDays(Number(value))}
+        aria-label="Range"
+        className="mb-4"
+      >
         {RANGES.map((range) => (
-          <Button
-            key={range}
-            variant={range === days ? 'default' : 'outline'}
-            size="sm"
-            shape="pill"
-            onClick={() => setDays(range)}
-          >
+          <ToggleGroupItem key={range} value={String(range)}>
             {range}d
-          </Button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
 
       {loading ? (
-        <Loading />
+        <LoadingState fill="block" />
       ) : data && !data.success ? (
-        <LoadError message="Failed to load usage." />
+        <LoadError
+          message="Failed to load usage."
+          onRetry={() => setReloadKey((k) => k + 1)}
+        />
       ) : (
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <StatCard label="Cost" value={fmtUsd(totals.cost)} />
-            <StatCard label="Tokens" value={fmtNumber(totals.tokens)} />
-            <StatCard label="Calls" value={fmtNumber(totals.calls)} />
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-3 gap-4">
+            <StatCard
+              variant="outline"
+              label="Cost"
+              value={fmtUsd(totals.cost)}
+            />
+            <StatCard
+              variant="outline"
+              label="Tokens"
+              value={fmtNumber(totals.tokens)}
+            />
+            <StatCard
+              variant="outline"
+              label="Calls"
+              value={fmtNumber(totals.calls)}
+            />
           </div>
 
-          <div className="border-border h-64 rounded-2xl border px-4 py-3">
+          <Card variant="outline" padding="default" className="h-66">
             <div className="flex items-center justify-between">
-              <p className="text-foreground text-sm font-bold">Daily tokens</p>
+              <SectionHeader as="h3" size="xs" title="Daily tokens" />
               <div id="admin-user-usage-legend" className="flex" />
             </div>
-            <div className="relative mt-px h-48 w-full">
+            <div className="relative h-48 w-full">
               {series.length === 0 ? (
                 <p className="text-muted-foreground mt-8 text-sm">
                   No usage in this period.
@@ -204,10 +225,12 @@ export default function UserUsageModal({
                 <UsageChart
                   data={chartData}
                   legendID="admin-user-usage-legend"
+                  gridColor={palette.border}
+                  tickColor={palette.mutedForeground}
                 />
               )}
             </div>
-          </div>
+          </Card>
 
           <SplitTable title="Model" rows={data?.by_model ?? []} />
           <SplitTable

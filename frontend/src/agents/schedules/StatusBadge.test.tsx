@@ -1,5 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import i18n from '../../locale/i18n';
 
 import ScheduleStatusBadge, {
   formatStatusLabel,
@@ -104,5 +106,17 @@ describe('getStatusVariant', () => {
   it('returns neutral for an unknown status', () => {
     // @ts-expect-error -- exercising the runtime fallback for unknown values
     expect(getStatusVariant('unknown')).toBe('neutral');
+  });
+});
+
+describe('ScheduleStatusBadge locale', () => {
+  afterEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  it('reads its label from the locale files', async () => {
+    await i18n.changeLanguage('de');
+    const html = renderToStaticMarkup(<ScheduleStatusBadge status="failed" />);
+    expect(html).toContain('Fehlgeschlagen');
   });
 });

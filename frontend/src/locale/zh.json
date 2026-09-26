@@ -8,6 +8,7 @@
   "sourceDocs": "源",
   "none": "无",
   "loading": "加载中...",
+  "retry": "重试",
   "cancel": "取消",
   "help": "帮助",
   "emailUs": "给我们发邮件",
@@ -75,7 +76,14 @@
       "high": "高",
       "unlimited": "无限",
       "default": "默认",
-      "add": "添加"
+      "add": "添加",
+      "promptActions": {
+        "select": "选择提示词",
+        "edit": "编辑提示词",
+        "view": "查看提示词",
+        "duplicate": "复制提示词",
+        "delete": "删除提示词"
+      }
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
@@ -671,6 +679,14 @@
       "description": "描述",
       "descriptionPlaceholder": "输入描述",
       "bodyContentType": "请求体内容类型",
+      "bodyTypeHint": {
+        "json": "最常用的格式。适用于现代 REST API。",
+        "formUrlencoded": "标准表单提交格式。最适合旧版 API 和登录表单。",
+        "multipart": "适用于需要 multipart 格式的 API。不支持通过 LLM 上传文件。",
+        "text": "纯文本数据。每个字段占一行。",
+        "xml": "结构化 XML 格式。适用于 SOAP 和企业级 API。",
+        "octetStream": "原始二进制数据，传输时使用 base64 编码。"
+      },
       "headers": "请求头",
       "queryParameters": "查询参数",
       "body": "请求体",
@@ -739,7 +755,14 @@
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
-      }
+      },
+      "configErrors": {
+        "required": "{{field}}为必填项",
+        "positiveNumber": "必须是正数",
+        "maxTimeout": "超时时间最长为 300 秒"
+      },
+      "headerValuePlaceholder": "例如：application/json",
+      "toolIconTitle": "{{name}} 图标"
     },
     "devices": {
       "label": "设备",
@@ -792,7 +815,9 @@
         "start": "生成代码",
         "waitingForCli": "等待 CLI 兑换代码…",
         "cancel": "取消"
-      }
+      },
+      "auditDurationValue": "{{value}} 毫秒",
+      "fallbackName": "设备"
     },
     "customModels": {
       "label": "自定义模型",
@@ -905,15 +930,6 @@
         "workflows_one": "{{count}} 个工作流",
         "workflows_other": "{{count}} 个工作流"
       },
-      "relative": {
-        "now": "刚刚",
-        "minutes_one": "{{count}} 分钟前",
-        "minutes_other": "{{count}} 分钟前",
-        "hours_one": "{{count}} 小时前",
-        "hours_other": "{{count}} 小时前",
-        "days_one": "{{count}} 天前",
-        "days_other": "{{count}} 天前"
-      },
       "families": {
         "agents": "代理",
         "sources": "来源",
@@ -1025,7 +1041,8 @@
         "collapseDetails": "折叠上传详情",
         "dismiss": "关闭上传通知",
         "uploadProgress": "上传进度 {{progress}}%",
-        "clear": "清除"
+        "clear": "清除",
+        "ingestionFailed": "导入失败。"
       },
       "showAdvanced": "显示高级选项",
       "hideAdvanced": "隐藏高级选项",
@@ -1116,6 +1133,16 @@
           "folderAlt": "文件夹",
           "fileAlt": "文件"
         }
+      },
+      "fields": {
+        "url": "URL",
+        "awsAccessKeyId": "AWS 访问密钥 ID",
+        "awsSecretAccessKey": "AWS 秘密访问密钥",
+        "bucket": "存储桶名称",
+        "prefix": "路径前缀（可选）",
+        "region": "AWS 区域",
+        "endpointUrl": "自定义端点 URL（可选）",
+        "initialContent": "初始内容（可选）"
       }
     },
     "createAPIKey": {
@@ -1156,7 +1183,10 @@
       "apiKeyPlaceholder": "输入 API 密钥 / OAuth",
       "addButton": "添加工具",
       "closeButton": "关闭",
-      "customNamePlaceholder": "Enter custom name (optional)"
+      "customNamePlaceholder": "Enter custom name (optional)",
+      "fieldRequired": "{{field}} 为必填项",
+      "positiveNumber": "必须是正数",
+      "maxTimeout": "超时时间最长为 300 秒"
     },
     "prompts": {
       "addPrompt": "添加提示",
@@ -1277,12 +1307,18 @@
       "review": "Review",
       "import": "Import",
       "continueToAgent": "Continue to agent"
+    },
+    "jwt": {
+      "title": "添加 JWT 令牌",
+      "label": "JWT 令牌",
+      "save": "保存令牌"
     }
   },
   "sharedConv": {
     "subtitle": "使用创建",
     "button": "开始使用 DocsGPT",
-    "meta": "DocsGPT 使用 GenAI，请使用资源查看关键信息。"
+    "meta": "DocsGPT 使用 GenAI，请使用资源查看关键信息。",
+    "metaDescription": "使用 DocsGPT 分享的对话"
   },
   "convTile": {
     "share": "分享",
@@ -1308,7 +1344,8 @@
     "edit": {
       "update": "更新",
       "cancel": "取消",
-      "placeholder": "输入更新的查询..."
+      "placeholder": "输入更新的查询...",
+      "label": "编辑"
     },
     "sources": {
       "title": "来源",
@@ -1322,7 +1359,10 @@
     },
     "attachments": {
       "attach": "附件",
-      "remove": "删除附件"
+      "remove": "删除附件",
+      "attached": "附件",
+      "failed": "失败",
+      "attachment": "附件"
     },
     "retry": "重试",
     "reasoning": "推理",
@@ -1377,7 +1417,55 @@
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。",
       "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。"
-    }
+    },
+    "voice": {
+      "start": "语音输入",
+      "stopRecording": "停止录音",
+      "transcribingAudio": "正在转写音频",
+      "voice": "语音",
+      "stop": "停止",
+      "transcribing": "转写中",
+      "unavailable": "语音输入暂时不可用。",
+      "insecure": "语音输入需要安全连接（HTTPS 或 localhost）。",
+      "unsupported": "此浏览器不支持语音输入。",
+      "noWebAudio": "语音输入需要此浏览器支持 Web Audio。",
+      "micBlocked": "麦克风访问被阻止。请允许麦克风权限后重试。",
+      "micNotFound": "未在此设备上找到麦克风。",
+      "micBusy": "麦克风不可用或已被占用。",
+      "micInterrupted": "录音开始前麦克风访问被中断。",
+      "micDenied": "麦克风访问被拒绝。",
+      "transcribeFailed": "音频转写失败。",
+      "finalizeFailed": "无法完成实时转写。",
+      "startFailed": "无法启动实时转写。"
+    },
+    "selectModel": "选择模型",
+    "question": {
+      "expand": "显示完整消息",
+      "collapse": "收起"
+    },
+    "exportMarkdown": "导出为 Markdown",
+    "feedback": {
+      "like": "赞",
+      "removeLike": "取消赞",
+      "dislike": "踩",
+      "removeDislike": "取消踩"
+    },
+    "toolApproval": {
+      "approve": "批准",
+      "approveAlways": "批准，不再询问",
+      "deny": "拒绝",
+      "details": "详情",
+      "denyReasonPlaceholder": "拒绝原因（可选）…"
+    },
+    "research": {
+      "title": "研究",
+      "planning": "正在规划研究…",
+      "researching": "正在研究…",
+      "synthesizing": "正在撰写报告…",
+      "complete": "已完成",
+      "researched": "已研究 {{count}} 个主题"
+    },
+    "openFile": "打开文件"
   },
   "agents": {
     "title": "代理",
@@ -1514,7 +1602,8 @@
       },
       "agentTypes": {
         "classic": "经典",
-        "react": "ReAct"
+        "react": "ReAct",
+        "research": "研究"
       },
       "labels": {
         "defaultModel": "默认模型"
@@ -1669,13 +1758,95 @@
           "nov": "11月",
           "dec": "12月"
         }
+      },
+      "status": {
+        "active": "活跃",
+        "paused": "已暂停",
+        "completed": "已完成",
+        "cancelled": "已取消",
+        "success": "成功",
+        "failed": "失败",
+        "skipped": "已跳过",
+        "running": "运行中",
+        "pending": "等待中",
+        "timeout": "超时"
+      },
+      "trigger": {
+        "cron": "计划",
+        "manual": "手动"
+      },
+      "runDetails": {
+        "title": "运行详情",
+        "status": "状态",
+        "scheduledFor": "计划时间",
+        "started": "开始",
+        "finished": "结束",
+        "tokens": "令牌",
+        "tokensValue": "提示 {{prompt}} · 生成 {{generated}}",
+        "trigger": "触发方式",
+        "error": "错误",
+        "errorWithType": "错误（{{type}}）",
+        "output": "输出",
+        "truncated": "（已截断）"
+      },
+      "timezoneMeta": "时区：{{timezone}}",
+      "nextRunMeta": "下次：{{time}}",
+      "toolCard": {
+        "cancelFailed": "取消失败",
+        "taskCancelled": "已取消计划任务。",
+        "pendingCount_other": "{{count}} 个待执行的计划任务",
+        "schedulingFailed": "计划失败",
+        "scheduling": "正在计划…",
+        "scheduled": "计划任务",
+        "pendingCount_one": "{{count}} 个待执行的计划任务"
+      },
+      "cron": {
+        "daily": "每天 {{time}}",
+        "weekly": "每周{{day}} {{time}}",
+        "monthly": "每月 {{day}} 日 {{time}}",
+        "yearly": "每年{{month}}{{day}}日 {{time}}",
+        "custom": "自定义：{{expression}}",
+        "dayNames": {
+          "sun": "日",
+          "mon": "一",
+          "tue": "二",
+          "wed": "三",
+          "thu": "四",
+          "fri": "五",
+          "sat": "六"
+        },
+        "monthNames": {
+          "jan": "1月",
+          "feb": "2月",
+          "mar": "3月",
+          "apr": "4月",
+          "may": "5月",
+          "jun": "6月",
+          "jul": "7月",
+          "aug": "8月",
+          "sep": "9月",
+          "oct": "10月",
+          "nov": "11月",
+          "dec": "12月"
+        }
+      },
+      "runLog": {
+        "when": "时间",
+        "details": "详情",
+        "empty": "此计划尚无运行记录。"
       }
     },
     "shared": {
-      "notFound": "未找到代理。请确保代理已共享。"
+      "notFound": "未找到代理。请确保代理已共享。",
+      "logoAlt": "智能体标志",
+      "sharedBy": "来自 {{name}}",
+      "sharedOn": "分享于 {{date}}",
+      "connectedTools": "已连接的工具",
+      "toolIconTitle": "{{name}} 图标"
     },
     "preview": {
-      "testMessage": "在此测试您的代理。已发布的代理可以在对话中使用。"
+      "testMessage": "在此测试您的代理。已发布的代理可以在对话中使用。",
+      "emptyTitle": "测试你的智能体"
     },
     "deleteConfirmation": "您确定要删除此代理吗？",
     "folders": {
@@ -1694,7 +1865,8 @@
       "currentFolder": "此文件夹",
       "noSubfolders": "没有子文件夹",
       "openFolder": "打开文件夹",
-      "noFolders": "暂无文件夹"
+      "noFolders": "暂无文件夹",
+      "menuAriaLabel": "{{folderName}} 的操作"
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -1718,6 +1890,198 @@
       "emptyForFilter": "No decisions match this filter.",
       "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
+    },
+    "workflow": {
+      "artifacts": {
+        "previewUnsupported": "此产物无法预览",
+        "loadListFailed": "无法加载产物",
+        "loadFailed": "无法加载产物",
+        "loading": "正在加载产物...",
+        "inProgress": "运行中——节点生成的产物会显示在这里。",
+        "empty": "此次运行未生成产物。",
+        "back": "返回产物列表",
+        "untitled": "产物 {{id}}",
+        "fileKind": "文件"
+      },
+      "builder": {
+        "deleteFailed": "无法删除工作流智能体",
+        "updateWorkflowFailed": "无法更新工作流",
+        "updateAgentFailed": "无法更新智能体",
+        "createWorkflowFailed": "无法创建工作流",
+        "createAgentFailed": "无法创建智能体",
+        "saveFailed": "无法保存工作流",
+        "defaultDescription": "工作流智能体：{{name}}",
+        "newWorkflow": "新建工作流",
+        "editDetails": "编辑工作流详情",
+        "workflowName": "工作流名称",
+        "workflowNamePlaceholder": "输入工作流名称",
+        "workflowDescriptionPlaceholder": "描述此工作流的用途",
+        "agentImageAlt": "智能体图片",
+        "currentImage": "当前图片",
+        "agentImage": "智能体图片",
+        "agentImageHint": "图片更新将在下次保存时生效。",
+        "done": "完成",
+        "unablePreview": "无法预览工作流",
+        "unableSave": "无法保存工作流",
+        "unablePublish": "无法发布工作流",
+        "coreNodes": "核心节点",
+        "logicNodes": "逻辑与数据",
+        "aiAgent": "AI 智能体",
+        "setStateHint": "修改工作流变量",
+        "conditionHint": "条件分支",
+        "codeHint": "在沙箱中运行代码",
+        "startNode": "开始节点",
+        "endNode": "结束节点",
+        "stateTitle": "设置全局变量",
+        "nodeId": "节点 ID",
+        "title": "标题",
+        "titlePlaceholder": "输入节点标题",
+        "agentType": "智能体类型",
+        "agentTypePlaceholder": "选择智能体类型",
+        "model": "模型",
+        "modelPlaceholder": "选择模型",
+        "systemPrompt": "系统提示词",
+        "systemPromptPlaceholder": "智能体的系统提示词",
+        "promptTemplate": "提示词模板",
+        "promptTemplatePlaceholder": "使用 {{example}} 插入动态内容",
+        "outputVariable": "输出变量",
+        "outputVariablePlaceholder": "输出的变量名",
+        "streamToUser": "将输出流式传输给用户",
+        "sources": "来源",
+        "documents": "文档",
+        "documentsHint": "从上传或上游节点传给此智能体的文档。",
+        "filePassing": "文件传递",
+        "filePassingHint": "自动：模型支持时以原生方式发送，否则提取文本。",
+        "structuredOutput": "结构化输出（JSON Schema）",
+        "modelNoStructuredOutput": "所选模型不支持结构化输出。",
+        "validSchema": "JSON Schema 有效",
+        "invalidSchema": "JSON Schema 无效：{{error}}",
+        "noteContent": "备注内容",
+        "noteContentPlaceholder": "输入备注内容",
+        "stateIntro": "为工作流的状态变量赋值",
+        "assignValue": "赋值",
+        "celHint": "使用 Common Expression Language 编写自定义表达式。直接用名称引用状态（<code>query</code>），而不是 <code>{{braced}}</code>。",
+        "learnMore": "了解更多",
+        "toVariable": "目标变量",
+        "conditionIntro": "创建条件以分支你的工作流",
+        "modeSimple": "简单",
+        "modeAdvanced": "高级",
+        "caseNamePlaceholder": "分支名称（可选）",
+        "variablePlaceholder": "变量",
+        "valuePlaceholder": "值",
+        "opContains": "包含",
+        "opStartsWith": "开头为",
+        "conditionPlaceholder": "输入条件，例如 query.contains(\"refund\")",
+        "codeIntro": "在工作流沙箱中运行代码。生成的文件会保存为产物。",
+        "inputFiles": "输入文件",
+        "inputFilesHint": "在沙箱中作为文件放置的产物/上游引用（每个都会成为 inputs/<name>）。",
+        "timeout": "超时（秒）",
+        "optional": "可选",
+        "cannotDeleteStart": "无法删除开始节点",
+        "deleteNode": "删除节点",
+        "deleteConfirm": "确定要删除“{{name}}”吗？",
+        "deleteConfirmUnnamed": "确定要删除此工作流智能体吗？"
+      },
+      "validation": {
+        "nameRequired": "工作流名称为必填项",
+        "oneStart": "工作流必须有且仅有一个开始节点",
+        "needEnd": "工作流必须至少有一个结束节点",
+        "needAgent": "工作流必须至少有一个 AI 智能体节点",
+        "agentModel": "智能体“{{name}}”必须选择模型",
+        "agentStructuredOutput": "智能体“{{name}}”所选模型不支持结构化输出",
+        "agentSchema": "智能体“{{name}}”的 JSON Schema：{{error}}",
+        "startConnected": "开始节点必须连接到其他节点",
+        "endIncoming": "结束节点“{{name}}”必须有传入连接",
+        "edgeSource": "连线引用了不存在的源节点",
+        "edgeTarget": "连线引用了不存在的目标节点",
+        "conditionNeedsCase": "条件“{{name}}”必须至少有一个包含表达式的分支",
+        "conditionCaseNoHandle": "条件“{{name}}”有一个缺少分支句柄的分支",
+        "conditionDuplicateHandle": "条件“{{name}}”的分支句柄“{{handle}}”重复",
+        "conditionTwoOutgoing": "条件“{{name}}”必须至少有 2 个传出连接",
+        "conditionEdgeNoHandle": "条件“{{name}}”有一个缺少分支句柄的连接",
+        "conditionUnknownBranch": "条件“{{name}}”有来自未知分支“{{handle}}”的连接",
+        "conditionMultipleEdges": "条件“{{name}}”的分支“{{handle}}”有多个连接",
+        "conditionNeedsElse": "条件“{{name}}”必须有 Else 分支",
+        "caseNoConnection": "条件“{{name}}”的分支“{{handle}}”有表达式但没有分支连接",
+        "caseNoExpression": "条件“{{name}}”的分支“{{handle}}”有分支连接但没有表达式",
+        "caseNoVariable": "条件“{{name}}”的分支“{{handle}}”在简单模式下必须指定变量",
+        "branchReachEnd": "条件“{{name}}”的分支“{{handle}}”最终必须到达结束节点",
+        "codeRequired": "代码节点“{{name}}”必须包含要运行的代码",
+        "codeSchema": "代码节点“{{name}}”的 JSON Schema：{{error}}"
+      },
+      "schema": {
+        "notObject": "必须是有效的 JSON 对象",
+        "missingType": "必须包含 \"type\" 或 \"schema\" 字段",
+        "invalidJson": "必须是有效的 JSON"
+      },
+      "filePassing": {
+        "auto": "自动",
+        "native": "原生",
+        "extract": "提取"
+      },
+      "mobileBlocker": {
+        "title": "需要桌面设备",
+        "body": "工作流构建器需要更大的屏幕才能获得最佳体验。请在台式机或笔记本电脑上打开此页面。"
+      },
+      "nodes": {
+        "start": "开始",
+        "startHint": "工作流的入口",
+        "end": "结束",
+        "endHint": "工作流完成",
+        "agent": "智能体",
+        "note": "备注",
+        "condition": "If / Else",
+        "code": "代码",
+        "setState": "设置状态",
+        "output": "输出：{{variable}}",
+        "noCode": "暂无代码",
+        "modeSimple": "简单",
+        "modeAdvanced": "高级",
+        "if": "If",
+        "elseIf": "Else if",
+        "else": "Else",
+        "operationCount_other": "{{count}} 个操作",
+        "variableCount_other": "{{count}} 个变量",
+        "variableTitle": "变量：{{name}}",
+        "valueTitle": "值：{{value}}",
+        "operationCount_one": "{{count}} 个操作",
+        "variableCount_one": "{{count}} 个变量"
+      },
+      "preview": {
+        "executionDetails": "执行详情",
+        "stepCount_other": "（{{count}} 步）",
+        "outputLabel": "输出：",
+        "errorLabel": "错误：",
+        "artifacts": "产物",
+        "minimapHeading": "工作流",
+        "emptyTitle": "测试工作流",
+        "unsavedDraftAttachments": "在预览中附加文档前，请先保存工作流。",
+        "stepCount_one": "（{{count}} 步）"
+      },
+      "documents": {
+        "modeAll": "所有输入文档",
+        "modeNone": "无",
+        "modeChoose": "选择…",
+        "selectPlaceholder": "选择文档...",
+        "searchPlaceholder": "搜索变量...",
+        "empty": "没有上游文档",
+        "refPlaceholder": "添加引用（例如 A1）"
+      },
+      "variables": {
+        "globalContext": "全局上下文",
+        "workflowInput": "工作流输入",
+        "searchPlaceholder": "搜索变量...",
+        "empty": "未找到变量",
+        "addContext": "添加上下文"
+      }
+    },
+    "typeModal": {
+      "title": "创建新智能体",
+      "description": "选择要创建的智能体类型",
+      "classicTitle": "经典智能体",
+      "classicDescription": "创建一个使用单一模型、工具和知识来源的标准 AI 智能体",
+      "workflowTitle": "工作流智能体",
+      "workflowDescription": "设计包含不同模型、条件逻辑和状态管理的复杂多步骤工作流"
     }
   },
   "components": {
@@ -1726,7 +2090,39 @@
       "dropFiles": "Drop the files here",
       "fileTypes": "PNG, JPG, JPEG up to",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit"
+      "fileSizeError": "File exceeds {{size}}MB limit",
+      "preview": "图片预览",
+      "remove": "移除文件"
+    },
+    "artifact": {
+      "types": {
+        "todoList": "待办列表",
+        "note": "笔记",
+        "memory": "记忆"
+      },
+      "fallbackTitle": "工件",
+      "todo": {
+        "done": "已完成 {{count}}",
+        "open": "未完成 {{count}}",
+        "empty": "暂无待办事项"
+      },
+      "note": {
+        "lines_other": "{{count}} 行",
+        "empty": "空笔记"
+      },
+      "notFound": "未找到工件",
+      "loadFailed": "无法加载工件",
+      "fetchFailed": "无法获取工件",
+      "preview": "工件预览",
+      "download": "下载",
+      "restore": "恢复",
+      "version": "版本 {{version}}",
+      "versionCurrent": "版本 {{version}}（当前）",
+      "downloadFailed": "下载失败",
+      "restoreFailed": "恢复失败"
+    },
+    "profile": {
+      "avatarAlt": "用户头像"
     }
   },
   "pageNotFound": {
@@ -1742,7 +2138,14 @@
     "size": "大小",
     "myFiles": "我的文件",
     "sharedWithMe": "与我共享",
-    "loadingMore": "加载更多文件..."
+    "loadingMore": "加载更多文件...",
+    "myDrive": "我的云端硬盘",
+    "spaces": "空间",
+    "root": "根目录",
+    "shared": "共享",
+    "connectTo": "连接到 {{provider}}",
+    "sessionExpiredFor": "会话已过期。请重新连接到 {{provider}}。",
+    "selectFilesFrom": "从 {{provider}} 选择文件"
   },
   "actionButtons": {
     "openNewChat": "打开新聊天",
@@ -1753,7 +2156,13 @@
     "viewCode": "查看代码",
     "decreaseZoom": "缩小",
     "resetZoom": "重置缩放",
-    "increaseZoom": "放大"
+    "increaseZoom": "放大",
+    "download": "下载",
+    "downloadAs": "下载为 {{format}}",
+    "code": "代码",
+    "loading": "正在加载图表...",
+    "codeTitle": "Mermaid 代码",
+    "renderFailed": "无法渲染图表：{{message}}"
   },
   "navigation": {
     "agents": "代理",
@@ -1766,6 +2175,13 @@
         "insights": "洞察",
         "administration": "管理"
       }
+    },
+    "openSidebar": "打开侧边栏",
+    "closeSidebar": "关闭侧边栏",
+    "social": {
+      "discord": "加入 Discord 社区",
+      "x": "在 X 上关注我们",
+      "github": "在 GitHub 上查看"
     }
   },
   "teams": {
@@ -1776,7 +2192,8 @@
       "roleAdmin": "管理员",
       "roleMember": "成员",
       "manageTeam": "管理团队",
-      "createTeam": "创建团队"
+      "createTeam": "创建团队",
+      "logoAlt": "DocsGPT 标志"
     }
   },
   "notification": {

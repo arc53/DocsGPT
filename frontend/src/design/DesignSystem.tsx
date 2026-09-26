@@ -1,5 +1,7 @@
 import {
   Check,
+  CircleAlert,
+  TriangleAlert,
   Clock,
   Copy,
   Mail,
@@ -29,6 +31,8 @@ import {
   Workflow,
   Sun,
   Trash2,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -43,6 +47,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
+  BreadcrumbEllipsis,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
@@ -51,7 +56,12 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '@/components/ui/description-list';
 import { Dropzone } from '@/components/ui/dropzone';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Calendar } from '@/components/ui/calendar';
 import {
   Card,
@@ -64,6 +74,7 @@ import {
 } from '@/components/ui/card';
 import {
   Command,
+  CommandDialog,
   CommandEmpty,
   CommandGroup,
   CommandInput,
@@ -78,16 +89,36 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { FormField } from '@/components/ui/form-field';
+import { IconButton } from '@/components/ui/icon-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ListRow, ListRows } from '@/components/ui/list-row';
+import { LoadingState } from '@/components/ui/loading-state';
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from '@/components/ui/message-scroller';
 import { Modal, ModalActions } from '@/components/ui/modal';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { OptionCard } from '@/components/ui/option-card';
+import { Pagination } from '@/components/ui/pagination';
 import { Progress } from '@/components/ui/progress';
+import { SectionHeader } from '@/components/ui/section-header';
+import { Separator } from '@/components/ui/separator';
 import { SettingRow, SettingRows } from '@/components/ui/setting-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
@@ -140,6 +171,7 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TimePicker } from '@/components/ui/time-picker';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useDarkTheme } from '../hooks';
 
 /**
@@ -172,6 +204,26 @@ const SURFACE_TOKENS = [
   { name: 'muted', bg: 'bg-muted', fg: 'text-muted-foreground' },
   { name: 'accent', bg: 'bg-accent', fg: 'text-accent-foreground' },
   { name: 'sidebar', bg: 'bg-sidebar', fg: 'text-sidebar-foreground' },
+  {
+    name: 'sidebar-accent',
+    bg: 'bg-sidebar-accent',
+    fg: 'text-sidebar-accent-foreground',
+  },
+  {
+    name: 'sidebar-primary',
+    bg: 'bg-sidebar-primary',
+    fg: 'text-sidebar-primary-foreground',
+  },
+  {
+    name: 'sidebar-border',
+    bg: 'bg-sidebar-border',
+    fg: 'text-sidebar-foreground',
+  },
+  {
+    name: 'sidebar-ring',
+    bg: 'bg-sidebar-ring',
+    fg: 'text-sidebar-primary-foreground',
+  },
   { name: 'answer-bubble', bg: 'bg-answer-bubble', fg: 'text-foreground' },
 ] as const;
 
@@ -230,7 +282,7 @@ const BADGE_VARIANTS = [
   'outline',
 ] as const;
 
-const AVATAR_SIZES = ['sm', 'default', 'lg', 'xl'] as const;
+const AVATAR_SIZES = ['xs', 'sm', 'default', 'lg'] as const;
 
 const MULTI_OPTIONS = [
   { value: 'pdf', label: 'PDF' },
@@ -359,6 +411,7 @@ export default function DesignSystem() {
     window.history.replaceState(null, '', `#${id}`);
   };
   const [switchOn, setSwitchOn] = useState(true);
+  const [pagerPage, setPagerPage] = useState(2);
   const [formats, setFormats] = useState<string[]>(['pdf', 'md']);
   const [time, setTime] = useState('09:30');
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -372,6 +425,13 @@ export default function DesignSystem() {
   const [tokenLimit, setTokenLimit] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sourceType, setSourceType] = useState<string>('Upload file');
+  const [range, setRange] = useState('30d');
+  const [trackRange, setTrackRange] = useState('7d');
+  const [days, setDays] = useState<string[]>(['mon', 'wed', 'fri']);
+  const [agentFilter, setAgentFilter] = useState('all');
+  const [modalDemo, setModalDemo] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [sortBy, setSortBy] = useState('recent');
 
   return (
     <div
@@ -416,7 +476,7 @@ export default function DesignSystem() {
           intro="Every colour in the UI resolves to one of these variables from src/index.css. The value shown is the one currently applied, so toggle the theme to compare."
         >
           <Example title="Surfaces" code="bg-card text-card-foreground">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
               {SURFACE_TOKENS.map((t) => (
                 <Swatch key={t.name} {...t} isDark={isDark} />
               ))}
@@ -491,12 +551,63 @@ export default function DesignSystem() {
                 Base, 16px, inputs on mobile and prose
               </p>
               <p className="text-lg font-semibold">
-                Large, 18px, dialog titles
+                Large, 18px, section titles
               </p>
-              <p className="text-xl font-semibold">
-                Extra large, 20px, page titles
+              <p className="text-xl leading-tight font-semibold">
+                Extra large, 20px, dialog, sheet and detail-page titles
               </p>
-              <p className="font-mono text-sm">Mono: ids, code, token values</p>
+              <p className="font-mono text-xs">Mono 12px: ids, keys, code</p>
+            </div>
+          </Example>
+          <Example
+            title="Roles"
+            code='<SectionHeader size="default | sm | xs" tone="destructive"> · CardTitle + CardDescription size="xs"'
+          >
+            <div className="flex max-w-md flex-col gap-6">
+              <SectionHeader
+                title="Prompts"
+                description="System prompts your agents can use."
+              />
+              <div className="flex flex-col gap-3">
+                <SectionHeader as="h3" size="sm" title="Recurring" />
+                <SectionHeader as="h3" size="xs" title="Connection" />
+                <SectionHeader
+                  as="h3"
+                  size="xs"
+                  tone="destructive"
+                  title="Danger zone"
+                />
+              </div>
+              <Card variant="filled">
+                <CardTitle>Vendor Due Diligence</CardTitle>
+                <CardDescription size="xs">
+                  Checks new carriers against sanctions lists and insurance
+                  certificates before onboarding.
+                </CardDescription>
+              </Card>
+            </div>
+          </Example>
+          <Example
+            title="Separator"
+            code='<Separator /> · <Separator orientation="vertical" />'
+          >
+            <div className="flex flex-col gap-6">
+              <div className="flex max-w-md flex-col gap-3 text-sm">
+                <p>Carrier network: 42 carriers across 18 lanes.</p>
+                <Separator />
+                <p className="text-muted-foreground">
+                  Last synced from SharePoint 12 minutes ago.
+                </p>
+              </div>
+              <div className="flex h-8 items-center gap-2">
+                <Button variant="ghost" size="sm">
+                  Export
+                </Button>
+                <Separator orientation="vertical" />
+                <Button variant="ghost" size="sm">
+                  Share
+                </Button>
+              </div>
             </div>
           </Example>
         </Section>
@@ -623,13 +734,13 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Form row (field height)"
-            code='<Input shape="pill"> · <SelectTrigger size="lg" shape="pill"> · <Button variant="combobox" size="field" shape="pill">'
+            code='<Input shape="pill"> · <SelectTrigger size="field" shape="pill"> · <Button variant="combobox" size="field" shape="pill">'
           >
             <div className="flex max-w-md flex-col gap-3">
               <Input shape="pill" placeholder="Agent name" />
               <div className="flex gap-2">
                 <Select defaultValue="default">
-                  <SelectTrigger size="lg" shape="pill" className="flex-1">
+                  <SelectTrigger size="field" shape="pill" className="flex-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -654,12 +765,12 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Link inside running text"
-            code='<Button variant="link" size="inline">'
+            code='<Button variant="link" size="inline" asChild><a href>'
           >
             <p className="text-foreground max-w-md text-base">
               The quarterly review for Halvorsen Logistics is ready. Open{' '}
-              <Button variant="link" size="inline">
-                QBR report.html
+              <Button variant="link" size="inline" asChild>
+                <a href="#buttons">QBR report.html</a>
               </Button>{' '}
               to see lane costs and the renewal summary.
             </p>
@@ -765,22 +876,20 @@ export default function DesignSystem() {
                         : 'bg-muted flex items-center gap-2 rounded-lg border p-4'
                   }
                 >
-                  <Button
+                  <IconButton
                     variant="ghost-muted"
                     size="icon-sm"
                     shape="pill"
-                    aria-label="Copy"
-                  >
-                    <Copy />
-                  </Button>
-                  <Button
+                    label="Copy"
+                    icon={Copy}
+                  />
+                  <IconButton
                     variant="secondary"
                     size="icon-sm"
                     shape="pill"
-                    aria-label="Copied"
-                  >
-                    <Check />
-                  </Button>
+                    label="Copied"
+                    icon={Check}
+                  />
                   <Button variant="secondary" size="xs" shape="pill">
                     <Check />
                     Copied
@@ -792,28 +901,131 @@ export default function DesignSystem() {
               ))}
             </div>
           </Example>
-          <Example title="Icon buttons" code='size="icon-xs" … "icon-lg"'>
+          <Example
+            title="Segmented control"
+            code='<ToggleGroup type="single" value onValueChange={(v) => v && set(v)}> · size="xs" in a bg-muted rounded-full p-1 wrapper · type="multiple"'
+          >
+            <div className="flex flex-col gap-6">
+              <ToggleGroup
+                type="single"
+                aria-label="Date range"
+                value={range}
+                onValueChange={(v) => v && setRange(v)}
+              >
+                <ToggleGroupItem value="7d">7d</ToggleGroupItem>
+                <ToggleGroupItem value="30d">30d</ToggleGroupItem>
+                <ToggleGroupItem value="90d">90d</ToggleGroupItem>
+              </ToggleGroup>
+              {/* The track is a plain wrapper: ToggleGroup takes layout only. */}
+              <div className="bg-muted max-w-xs rounded-full p-1">
+                <ToggleGroup
+                  type="single"
+                  size="xs"
+                  aria-label="Chart range"
+                  value={trackRange}
+                  onValueChange={(v) => v && setTrackRange(v)}
+                  className="w-full"
+                >
+                  <ToggleGroupItem value="7d" className="flex-1">
+                    7d
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="30d" className="flex-1">
+                    30d
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="90d" className="flex-1">
+                    90d
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+              <ToggleGroup
+                type="multiple"
+                aria-label="Days of the week"
+                value={days}
+                onValueChange={setDays}
+              >
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(
+                  (day) => (
+                    <ToggleGroupItem key={day} value={day.toLowerCase()}>
+                      {day}
+                    </ToggleGroupItem>
+                  ),
+                )}
+              </ToggleGroup>
+              <div className="flex flex-col gap-2">
+                <nav
+                  aria-label="Agent filters"
+                  className="flex flex-wrap gap-1"
+                >
+                  {(
+                    [
+                      ['all', 'All agents'],
+                      ['mine', 'Mine'],
+                      ['shared', 'Shared with me'],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <Button
+                      key={id}
+                      asChild
+                      variant={agentFilter === id ? 'outline' : 'ghost-muted'}
+                      size="sm"
+                      shape="pill"
+                    >
+                      <a
+                        href="#buttons"
+                        aria-current={agentFilter === id ? 'page' : undefined}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          setAgentFilter(id);
+                        }}
+                      >
+                        {label}
+                      </a>
+                    </Button>
+                  ))}
+                </nav>
+                <span className="text-muted-foreground text-xs">
+                  Route links are not a ToggleGroup: Button asChild
+                  variant=&#123;active ? &apos;outline&apos; :
+                  &apos;ghost-muted&apos;&#125; size=&quot;sm&quot;
+                  shape=&quot;pill&quot; around each Link, aria-current on the
+                  current one.
+                </span>
+              </div>
+            </div>
+          </Example>
+          <Example
+            title="Icon buttons"
+            code='<IconButton label="Edit" icon={Pencil} size="icon-xs" … "icon-lg">'
+          >
             <div className="flex flex-wrap items-center gap-6">
               {ICON_SIZES.map((size) => (
                 <div key={size} className="flex flex-col items-center gap-2">
                   <div className="flex items-center gap-2">
-                    <Button size={size} variant="default" aria-label="Add">
-                      <Plus />
-                    </Button>
-                    <Button size={size} variant="outline" aria-label="Edit">
-                      <Pencil />
-                    </Button>
-                    <Button size={size} variant="ghost-muted" aria-label="More">
-                      <MoreHorizontal />
-                    </Button>
-                    <Button
+                    <IconButton
+                      size={size}
+                      variant="default"
+                      label="Add"
+                      icon={Plus}
+                    />
+                    <IconButton
+                      size={size}
+                      variant="outline"
+                      label="Edit"
+                      icon={Pencil}
+                    />
+                    <IconButton
+                      size={size}
+                      variant="ghost-muted"
+                      label="More"
+                      icon={MoreHorizontal}
+                    />
+                    <IconButton
                       size={size}
                       variant="ghost-destructive"
                       shape="pill"
-                      aria-label="Delete"
-                    >
-                      <Trash2 />
-                    </Button>
+                      label="Delete"
+                      icon={Trash2}
+                    />
                   </div>
                   <span className="text-muted-foreground font-mono text-xs">
                     {size}
@@ -830,39 +1042,35 @@ export default function DesignSystem() {
               <div className="bg-accent text-accent-foreground flex w-80 items-center justify-between rounded-sm px-2 py-1.5 text-sm">
                 <span>Carrier onboarding checklist</span>
                 <div className="flex items-center gap-1">
-                  <Button
+                  <IconButton
                     size="icon-xs"
                     variant="ghost-on-accent"
-                    aria-label="Edit"
-                  >
-                    <Pencil />
-                  </Button>
-                  <Button
+                    label="Edit"
+                    icon={Pencil}
+                  />
+                  <IconButton
                     size="icon-xs"
                     variant="ghost-on-accent"
-                    aria-label="Duplicate"
-                  >
-                    <Copy />
-                  </Button>
-                  <Button
+                    label="Duplicate"
+                    icon={Copy}
+                  />
+                  <IconButton
                     size="icon-xs"
                     variant="ghost-destructive-on-accent"
-                    aria-label="Delete"
-                  >
-                    <Trash2 />
-                  </Button>
+                    label="Delete"
+                    icon={Trash2}
+                  />
                 </div>
               </div>
               <div className="bg-sidebar-accent flex h-9 w-80 items-center justify-between rounded-3xl pl-3 text-sm">
                 <span>Vendor Due Diligence</span>
                 <div className="flex items-center px-1.5">
-                  <Button
+                  <IconButton
                     size="icon-xs"
                     variant="ghost-on-accent"
-                    aria-label="Pin agent"
-                  >
-                    <Pin />
-                  </Button>
+                    label="Pin agent"
+                    icon={Pin}
+                  />
                 </div>
               </div>
             </div>
@@ -913,7 +1121,7 @@ export default function DesignSystem() {
         <Section
           id="badges"
           title="Badges, toasts & notices"
-          intro="Status meaning comes from the four status tokens. Pills are Badge. Messages to the user are toasts in the bottom-right corner. Alert is only for an inline notice inside a form or modal, never for feedback on an action."
+          intro="Status meaning comes from the four status tokens. Pills are Badge. A field error is FormField error; a result inside an open modal, or a notice to read before acting, is an Alert; anything else the user did is a toast in the bottom-right corner."
         >
           <Example title="Badge variants" code='<Badge variant="success">'>
             <div className="flex flex-wrap items-center gap-2">
@@ -930,7 +1138,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Toasts"
-            code="<ToastViewport> (one, in App.tsx) > <Toast><ToastHeader variant><ToastTitle wrap?> · <ToastItem icon? label meta><ToastStatus status/> · <ToastMessage variant size>"
+            code='<ToastViewport> (one, in App.tsx) > <Toast><ToastHeader variant="default | success | warning | destructive | info"><ToastTitle wrap?> · <ToastItem icon? label meta><ToastStatus status/> · <ToastMessage variant size>'
           >
             <div className="bg-muted/40 flex flex-wrap items-start gap-4 rounded-xl p-6">
               <Toast>
@@ -1040,11 +1248,46 @@ export default function DesignSystem() {
                   </ToastMessage>
                 </ToastContent>
               </Toast>
+              <Toast>
+                <ToastHeader variant="success">
+                  <ToastTitle>Sync finished</ToastTitle>
+                </ToastHeader>
+                <ToastContent>
+                  <ToastItem label="SharePoint">
+                    <ToastStatus status="success" />
+                  </ToastItem>
+                  <ToastMessage variant="success">
+                    412 documents are up to date.
+                  </ToastMessage>
+                  <ToastItem label="Google Drive">
+                    <ToastStatus status="warning" />
+                  </ToastItem>
+                  <ToastMessage variant="warning">
+                    3 files were skipped: over the 25 MB limit.
+                  </ToastMessage>
+                  <ToastItem label="Confluence">
+                    <ToastStatus status="info" />
+                  </ToastItem>
+                  <ToastMessage variant="info">
+                    Queued behind the nightly re-embed.
+                  </ToastMessage>
+                </ToastContent>
+              </Toast>
+              <Toast>
+                <ToastHeader variant="info">
+                  <ToastTitle>New model available</ToastTitle>
+                </ToastHeader>
+                <ToastContent>
+                  <ToastMessage size="sm">
+                    Re-embed your sources to use it for retrieval.
+                  </ToastMessage>
+                </ToastContent>
+              </Toast>
             </div>
           </Example>
           <Example
             title="Inline notices (forms and modals only)"
-            code='<Alert variant="default | success | warning | info | destructive">'
+            code='<Alert variant="default (= neutral) | success | warning | info | destructive">'
           >
             <div className="flex flex-col gap-3">
               <Alert>
@@ -1082,6 +1325,19 @@ export default function DesignSystem() {
                   The SharePoint token expired. Reconnect to resume syncing.
                 </AlertDescription>
               </Alert>
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertDescription>
+                  Failed to regenerate the token. Please try again.
+                </AlertDescription>
+              </Alert>
+              <Alert variant="warning" className="max-w-md">
+                <TriangleAlert />
+                <AlertDescription>
+                  Copy the token now and store it somewhere safe. For security
+                  reasons it won&apos;t be shown again.
+                </AlertDescription>
+              </Alert>
             </div>
           </Example>
         </Section>
@@ -1102,13 +1358,12 @@ export default function DesignSystem() {
                     Doc 1 - Tender Guidance and Checklist.docx
                   </CardTitle>
                   <CardAction>
-                    <Button
+                    <IconButton
                       size="icon-xs"
                       variant="ghost-muted"
-                      aria-label="More"
-                    >
-                      <MoreHorizontal />
-                    </Button>
+                      label="More"
+                      icon={MoreHorizontal}
+                    />
                   </CardAction>
                 </CardHeader>
                 <CardFooter className="flex-col items-start gap-1">
@@ -1127,13 +1382,12 @@ export default function DesignSystem() {
                     <Badge variant="neutral">GraphRAG</Badge>
                   </div>
                   <CardAction>
-                    <Button
+                    <IconButton
                       size="icon-xs"
                       variant="ghost-muted"
-                      aria-label="More"
-                    >
-                      <MoreHorizontal />
-                    </Button>
+                      label="More"
+                      icon={MoreHorizontal}
+                    />
                   </CardAction>
                 </CardHeader>
                 <CardFooter className="flex-col items-start gap-1">
@@ -1151,13 +1405,12 @@ export default function DesignSystem() {
                     <FileText className="size-4" />
                   </span>
                   <CardAction>
-                    <Button
+                    <IconButton
                       size="icon-xs"
                       variant="ghost-muted"
-                      aria-label="More"
-                    >
-                      <MoreHorizontal />
-                    </Button>
+                      label="More"
+                      icon={MoreHorizontal}
+                    />
                   </CardAction>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-1">
@@ -1186,7 +1439,7 @@ export default function DesignSystem() {
                 <a href="#cards">
                   <CardHeader>
                     <div className="flex items-center gap-3">
-                      <Avatar size="lg" shape="square" variant="muted">
+                      <Avatar size="default" shape="square" variant="muted">
                         A
                       </Avatar>
                       <CardTitle>Arc</CardTitle>
@@ -1207,7 +1460,7 @@ export default function DesignSystem() {
               <Card>
                 <CardHeader>
                   <div className="flex items-start gap-3">
-                    <Avatar size="xl" shape="circle" imgClassName="size-full" />
+                    <Avatar size="lg" shape="circle" imgClassName="size-full" />
                     <div className="flex flex-col gap-1">
                       <CardTitle>DocsGPT New Contact Responder</CardTitle>
                       <CardDescription className="line-clamp-2">
@@ -1257,6 +1510,38 @@ export default function DesignSystem() {
             </div>
           </Example>
           <Example
+            title="Subtle surface and paddings"
+            code='<Card variant="subtle"> on bg-muted · tone="destructive" · padding="lg" · padding="none"'
+          >
+            <div className="bg-muted grid items-start gap-4 rounded-2xl p-4 md:grid-cols-2">
+              <Card variant="subtle" padding="lg">
+                <CardTitle>Subtle</CardTitle>
+                <CardDescription>
+                  subtle is a bordered background-coloured box on a muted page;
+                  lg pads it 24px.
+                </CardDescription>
+              </Card>
+              <Card tone="destructive" padding="lg">
+                <CardTitle>Danger zone</CardTitle>
+                <CardDescription>
+                  tone=&quot;destructive&quot;: the status soft fill and border,
+                  for danger zones and a red stat tile.
+                </CardDescription>
+              </Card>
+              <Card padding="none" className="overflow-hidden">
+                <div className="bg-muted/40 flex h-20 items-center justify-center">
+                  <FileText className="text-muted-foreground size-6" />
+                </div>
+                <CardContent className="px-4 pb-4">
+                  <CardTitle>QBR report.html</CardTitle>
+                  <CardDescription>
+                    padding=&quot;none&quot;: the preview bleeds to the edge.
+                  </CardDescription>
+                </CardContent>
+              </Card>
+            </div>
+          </Example>
+          <Example
             title="Picker tiles"
             code="<OptionCard icon title description? selected onClick>"
           >
@@ -1293,18 +1578,121 @@ export default function DesignSystem() {
               </div>
             </div>
           </Example>
+          <Example
+            title="Identity rows"
+            code="<ListRows><ListRow leading title description trailing interactive asChild>"
+          >
+            <Card padding="none" className="overflow-hidden">
+              <ListRows>
+                <ListRow
+                  leading={
+                    <Avatar size="sm" shape="circle" variant="muted">
+                      L
+                    </Avatar>
+                  }
+                  title="lena.fischer@meridianfreight.com"
+                  description="Added manually"
+                  trailing={<Badge variant="default">admin</Badge>}
+                />
+                <ListRow
+                  leading={
+                    <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">
+                      <FileText className="size-4" />
+                    </span>
+                  }
+                  title="Carrier contracts 2026"
+                  description="Source"
+                  trailing={<Badge variant="neutral">viewer</Badge>}
+                />
+                <ListRow
+                  interactive
+                  asChild
+                  title="Sources"
+                  trailing={
+                    <ChevronRight className="text-muted-foreground size-4" />
+                  }
+                >
+                  <button type="button" />
+                </ListRow>
+              </ListRows>
+            </Card>
+          </Example>
+          <Example
+            title="Key/value rows"
+            code='<DescriptionList layout="columns | justified" size="sm | xs"><DescriptionItem label mono>'
+          >
+            <div className="grid items-start gap-6 md:grid-cols-2">
+              <DescriptionList>
+                <DescriptionItem label="Status">
+                  <Badge variant="success">Success</Badge>
+                </DescriptionItem>
+                <DescriptionItem label="Started">
+                  24/09/2026, 09:00
+                </DescriptionItem>
+                <DescriptionItem label="Endpoint" mono>
+                  https://api.meridianfreight.example/v2/carriers/renewals
+                </DescriptionItem>
+              </DescriptionList>
+              <DescriptionList layout="justified">
+                <DescriptionItem label="Last used">
+                  3 minutes ago
+                </DescriptionItem>
+                <DescriptionItem label="Tokens">1,204</DescriptionItem>
+              </DescriptionList>
+            </div>
+          </Example>
+          <Example
+            title="Pager"
+            code='<Pagination page pageCount onPageChange pageSize? summary? labels="icons | text">'
+          >
+            <div className="flex flex-col gap-4">
+              <Pagination
+                page={pagerPage}
+                pageCount={5}
+                onPageChange={setPagerPage}
+                pageSize={10}
+                onPageSizeChange={() => undefined}
+              />
+              <Pagination
+                page={pagerPage}
+                pageCount={5}
+                onPageChange={setPagerPage}
+                summary="1,024 users"
+              />
+            </div>
+          </Example>
+          <Example
+            title="Empty, loading and failed"
+            code="<EmptyState size tone illustration> · <LoadingState fill label>"
+          >
+            <div className="grid items-center gap-6 md:grid-cols-3">
+              <EmptyState size="sm" title="No existing Sources" />
+              <EmptyState
+                tone="destructive"
+                size="sm"
+                illustration="none"
+                title="Failed to load usage."
+                action={
+                  <Button variant="outline" size="sm">
+                    Retry
+                  </Button>
+                }
+              />
+              <LoadingState fill="block" label="Converting..." />
+            </div>
+          </Example>
         </Section>
 
         <Section
           id="forms"
           title="Forms"
-          intro="Inputs and selects share the 42px default height, the sm and lg densities and the pill shape. Labels float inside the field when passed as a prop."
+          intro="Inputs and selects share the 38px form-row height (size field), the sm and lg densities and the pill shape. Every form field is labelled by a floating label (FormField, or the Input label shorthand)."
         >
           <Example
             title="Input sizes"
-            code='<Input size="sm" | "default" | "lg">'
+            code='<Input size="sm" | "default" | "field" | "lg">'
           >
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="in-sm">Small</Label>
                 <Input id="in-sm" size="sm" placeholder="Filter rows…" />
@@ -1312,6 +1700,10 @@ export default function DesignSystem() {
               <div className="flex flex-col gap-2">
                 <Label htmlFor="in-md">Default</Label>
                 <Input id="in-md" placeholder="Agent name" />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="in-field">Field (38px form row)</Label>
+                <Input id="in-field" size="field" placeholder="Server URL" />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="in-lg">Large</Label>
@@ -1377,16 +1769,18 @@ export default function DesignSystem() {
                   defaultValue="Q3 carrier renewals"
                   className="flex-1"
                 />
-                <Button variant="ghost-muted" size="icon-xs" aria-label="Save">
-                  <Check />
-                </Button>
-                <Button
+                <IconButton
                   variant="ghost-muted"
                   size="icon-xs"
-                  aria-label="Cancel"
-                >
-                  <X />
-                </Button>
+                  label="Save"
+                  icon={Check}
+                />
+                <IconButton
+                  variant="ghost-muted"
+                  size="icon-xs"
+                  label="Cancel"
+                  icon={X}
+                />
               </div>
             </div>
           </Example>
@@ -1433,7 +1827,7 @@ export default function DesignSystem() {
                 </SelectContent>
               </Select>
               <Select defaultValue="finance">
-                <SelectTrigger size="lg">
+                <SelectTrigger size="field">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1442,7 +1836,7 @@ export default function DesignSystem() {
                 </SelectContent>
               </Select>
               <Select defaultValue="finance">
-                <SelectTrigger size="lg" shape="pill">
+                <SelectTrigger size="field" shape="pill">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1486,7 +1880,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="FormField"
-            code="<FormField label required hint error disabled>{field}</FormField>"
+            code="<FormField label required hint error disabled labelSurface float>{field}</FormField>"
           >
             <div className="grid items-start gap-6 md:grid-cols-3">
               <FormField
@@ -1498,7 +1892,7 @@ export default function DesignSystem() {
               </FormField>
               <FormField label="Authentication type">
                 <Select defaultValue="none">
-                  <SelectTrigger size="lg" className="w-full">
+                  <SelectTrigger size="field" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1514,11 +1908,25 @@ export default function DesignSystem() {
               >
                 <Input placeholder="https://" />
               </FormField>
+              <FormField label="Description" hint="Optional">
+                <Textarea rows={3} placeholder="What this server is for" />
+              </FormField>
+              <div className="bg-muted rounded-2xl p-4">
+                <FormField label="Policy" labelSurface="muted">
+                  <Textarea rows={3} />
+                </FormField>
+              </div>
+              <FormField label="Scopes" float={false}>
+                <div className="flex flex-col gap-2 text-sm">
+                  <span>Agents: read</span>
+                  <span>Sources: read and write</span>
+                </div>
+              </FormField>
             </div>
           </Example>
           <Example
             title="SettingRow"
-            code="<SettingRows><SettingRow label description htmlFor after>{control}</SettingRow></SettingRows>"
+            code='<SettingRows><SettingRow label description htmlFor after alignStart as="label | h2 | h3">{control}</SettingRow></SettingRows>'
           >
             <SettingRows className="max-w-xl">
               <SettingRow
@@ -1545,6 +1953,21 @@ export default function DesignSystem() {
                 htmlFor="ds-prompt-override"
               >
                 <Switch id="ds-prompt-override" />
+              </SettingRow>
+              <SettingRow
+                as="h3"
+                label="Guardrails"
+                description="A heading title keeps the outline; the control names itself"
+              >
+                <Switch aria-label="Enable guardrails" />
+              </SettingRow>
+              <SettingRow
+                alignStart
+                label="Redact personal data"
+                description="Mask names, email addresses, phone numbers and account ids in both the question and the answer before they are stored in the run log. Wrapped descriptions top-align the control."
+                htmlFor="ds-redact"
+              >
+                <Switch id="ds-redact" />
               </SettingRow>
             </SettingRows>
           </Example>
@@ -1665,31 +2088,86 @@ export default function DesignSystem() {
         <Section
           id="feedback"
           title="Feedback & loading"
-          intro="Tooltip replaces title attributes; Spinner and Skeleton replace the hand-drawn loaders; Progress replaces width-percent divs."
+          intro="IconButton names every icon-only button and gives it a tooltip, so no button sets title; Spinner and Skeleton replace the hand-drawn loaders; Progress replaces width-percent divs."
         >
           <Example
-            title="Tooltip"
-            code="<Tooltip><TooltipTrigger asChild>…<TooltipContent>"
+            title="Icon buttons with tooltips"
+            code='<IconButton label icon hint? side="bottom" (header) | "top" (default) variant size>'
+          >
+            <div className="flex flex-col gap-6">
+              <div className="border-border flex items-center justify-between border-b pb-3">
+                <span className="text-sm font-medium">Run details</span>
+                <div className="flex items-center gap-1">
+                  <IconButton
+                    variant="ghost-muted"
+                    side="bottom"
+                    label="Search runs"
+                    icon={Search}
+                  />
+                  <IconButton
+                    variant="ghost-muted"
+                    side="bottom"
+                    label="Settings"
+                    icon={Settings}
+                  />
+                  <IconButton
+                    variant="ghost-muted"
+                    side="bottom"
+                    label="Close"
+                    icon={X}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <p className="text-foreground max-w-md text-sm">
+                  The renewal summary for Halvorsen Logistics lists three lanes
+                  above target cost.
+                </p>
+                <div className="flex items-center gap-1">
+                  <IconButton
+                    variant="ghost-muted"
+                    size="icon-sm"
+                    shape="pill"
+                    label="Copy"
+                    icon={Copy}
+                  />
+                  <IconButton
+                    variant="ghost-muted"
+                    size="icon-sm"
+                    shape="pill"
+                    label="Undo"
+                    hint="Undo (Ctrl+Z)"
+                    icon={Undo2}
+                  />
+                  <IconButton
+                    variant="ghost-muted"
+                    size="icon-sm"
+                    shape="pill"
+                    label="Redo"
+                    hint="Redo (Ctrl+Shift+Z)"
+                    icon={Redo2}
+                  />
+                  <IconButton
+                    variant="ghost-destructive"
+                    size="icon-sm"
+                    shape="pill"
+                    label="Delete"
+                    icon={Trash2}
+                  />
+                </div>
+              </div>
+              <span className="text-muted-foreground text-xs">
+                Header and toolbar buttons open below; buttons under text, in
+                the composer and in rows open above. Toast close and collapse
+                stay a plain Button with aria-label.
+              </span>
+            </div>
+          </Example>
+          <Example
+            title="Tooltip on something else"
+            code="<Tooltip><TooltipTrigger asChild>…</TooltipTrigger><TooltipContent>"
           >
             <div className="flex flex-wrap items-center gap-3">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button size="icon" variant="ghost-muted" aria-label="Delete">
-                    <Trash2 />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Delete source</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button size="icon" variant="ghost-muted" aria-label="Copy">
-                    <Copy />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  Copy conversation link
-                </TooltipContent>
-              </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Badge variant="neutral">GraphRAG</Badge>
@@ -1706,10 +2184,11 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Spinner and skeleton"
-            code='<Spinner size="sm | default | lg"> · <Skeleton className="h-4 w-40">'
+            code='<Spinner size="xs | sm | default | lg"> · <Skeleton className="h-4 w-40"> · <Skeleton surface="muted"> in a filled Card'
           >
             <div className="grid items-start gap-8 md:grid-cols-2">
               <div className="flex items-center gap-6">
+                <Spinner size="xs" />
                 <Spinner size="sm" />
                 <Spinner />
                 <Spinner size="lg" />
@@ -1725,6 +2204,11 @@ export default function DesignSystem() {
                   <Skeleton className="h-3 w-2/5" />
                 </div>
               </div>
+              <Card variant="filled" padding="lg" className="md:col-span-2">
+                <Skeleton surface="muted" className="size-10 rounded-full" />
+                <Skeleton surface="muted" className="h-4 w-2/5" />
+                <Skeleton surface="muted" className="h-3 w-3/5" />
+              </Card>
             </div>
           </Example>
           <Example
@@ -1760,6 +2244,53 @@ export default function DesignSystem() {
                 </div>
                 <Progress value={18} variant="destructive" size="lg" />
               </div>
+              <div className="flex flex-col gap-2">
+                <div className="text-muted-foreground flex justify-between text-xs">
+                  <span>Re-embedding</span>
+                  <span>40%</span>
+                </div>
+                <Progress value={40} variant="info" />
+              </div>
+            </div>
+          </Example>
+          <Example
+            title="Message scroller"
+            code="<MessageScrollerProvider autoScroll><MessageScroller><MessageScrollerViewport><MessageScrollerContent><MessageScrollerItem messageId scrollAnchor?> · <MessageScrollerButton />"
+          >
+            <div className="border-border h-64 max-w-md overflow-hidden rounded-lg border">
+              <MessageScrollerProvider autoScroll>
+                <MessageScroller>
+                  <MessageScrollerViewport className="px-4 pt-4">
+                    <MessageScrollerContent className="gap-3 pb-4">
+                      {[
+                        'Which carriers renew this quarter?',
+                        'Halvorsen Logistics, Nordhavn Freight and Baltic Line renew before 30 November.',
+                        'Which of them are above target cost?',
+                        'Two lanes on Halvorsen and one on Baltic Line are 6-9% above target.',
+                        'Draft the renewal summary.',
+                        'The summary is ready: three lanes to renegotiate, two to keep as they are.',
+                      ].map((text, index) => (
+                        <MessageScrollerItem
+                          key={text}
+                          messageId={`ds-m-${index}`}
+                          scrollAnchor={index % 2 === 0}
+                        >
+                          <p
+                            className={
+                              index % 2 === 0
+                                ? 'bg-answer-bubble ml-auto w-fit max-w-[80%] rounded-2xl px-3 py-2 text-sm'
+                                : 'text-foreground text-sm'
+                            }
+                          >
+                            {text}
+                          </p>
+                        </MessageScrollerItem>
+                      ))}
+                    </MessageScrollerContent>
+                  </MessageScrollerViewport>
+                  <MessageScrollerButton />
+                </MessageScroller>
+              </MessageScrollerProvider>
             </div>
           </Example>
         </Section>
@@ -1771,7 +2302,7 @@ export default function DesignSystem() {
         >
           <Example
             title="Sizes, shapes, tones"
-            code='<Avatar size="lg" shape="circle" variant="primary">LK</Avatar>'
+            code='<Avatar size="xs | sm | default | lg" shape="circle" variant="primary">LK</Avatar>'
           >
             <div className="flex flex-wrap items-end gap-8">
               <div className="flex items-end gap-3">
@@ -1794,8 +2325,12 @@ export default function DesignSystem() {
                 ))}
               </div>
               <div className="flex items-end gap-3">
-                <Avatar size="xl" shape="circle" imgClassName="size-full" />
-                <Avatar size="lg" shape="square" imgClassName="size-full" />
+                <Avatar size="lg" shape="circle" imgClassName="size-full" />
+                <Avatar
+                  size="default"
+                  shape="square"
+                  imgClassName="size-full"
+                />
                 <span className="text-muted-foreground self-center text-xs">
                   image, robot fallback
                 </span>
@@ -1860,7 +2395,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Accordion and breadcrumb"
-            code="<Accordion> · <Breadcrumb>"
+            code="<Accordion> · <Breadcrumb> · <BreadcrumbEllipsis />"
           >
             <div className="grid gap-8 md:grid-cols-2">
               <Accordion type="single" collapsible defaultValue="a">
@@ -1912,6 +2447,21 @@ export default function DesignSystem() {
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink href="#navigation">Sources</BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbEllipsis />
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>Carrier contracts</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
             </div>
           </Example>
         </Section>
@@ -1946,20 +2496,18 @@ export default function DesignSystem() {
                         {row.runs}
                       </TableCell>
                       <TableCell align="right">
-                        <Button
+                        <IconButton
                           size="icon-sm"
                           variant="ghost-muted"
-                          aria-label="Copy"
-                        >
-                          <Copy />
-                        </Button>
-                        <Button
+                          label="Copy"
+                          icon={Copy}
+                        />
+                        <IconButton
                           size="icon-sm"
                           variant="ghost-muted"
-                          aria-label="Edit"
-                        >
-                          <Pencil />
-                        </Button>
+                          label="Edit"
+                          icon={Pencil}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1976,7 +2524,7 @@ export default function DesignSystem() {
         >
           <Example
             title="Modal and sheet"
-            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SheetContent side="right"> · <SheetContent side="bottom" handle>'
+            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SheetContent side="right | left | top"> · <SheetContent side="bottom" handle>'
           >
             <div className="flex flex-wrap items-center gap-3">
               <Button variant="outline" onClick={() => setModalOpen(true)}>
@@ -2024,6 +2572,32 @@ export default function DesignSystem() {
               </Sheet>
               <Sheet>
                 <SheetTrigger asChild>
+                  <Button variant="outline">Left sheet</Button>
+                </SheetTrigger>
+                <SheetContent side="left">
+                  <SheetHeader>
+                    <SheetTitle>Folders</SheetTitle>
+                    <SheetDescription>
+                      side=&quot;left&quot;: a navigation drawer.
+                    </SheetDescription>
+                  </SheetHeader>
+                </SheetContent>
+              </Sheet>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline">Top sheet</Button>
+                </SheetTrigger>
+                <SheetContent side="top">
+                  <SheetHeader>
+                    <SheetTitle>Announcement</SheetTitle>
+                    <SheetDescription>
+                      side=&quot;top&quot;: full width, as tall as its content.
+                    </SheetDescription>
+                  </SheetHeader>
+                </SheetContent>
+              </Sheet>
+              <Sheet>
+                <SheetTrigger asChild>
                   <Button variant="outline">Open bottom sheet</Button>
                 </SheetTrigger>
                 <SheetContent side="bottom" handle showCloseButton={false}>
@@ -2039,8 +2613,146 @@ export default function DesignSystem() {
             </div>
           </Example>
           <Example
+            title="Modal sizes and footers"
+            code='size="sm | lg | xl | full" · mobileVariant="sheet" · hideTitle · <ModalActions destructive | pending | footerStart> · no submitLabel = Cancel only'
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              {(
+                [
+                  ['sm', 'sm, destructive'],
+                  ['lg', 'lg, footerStart'],
+                  ['xl', 'xl, cancel only'],
+                  ['full', 'full, pending'],
+                  ['sheet', 'Sheet on phones'],
+                  ['hidden', 'hideTitle'],
+                ] as const
+              ).map(([id, label]) => (
+                <Button
+                  key={id}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setModalDemo(id)}
+                >
+                  {label}
+                </Button>
+              ))}
+              <Modal
+                size="sm"
+                open={modalDemo === 'sm'}
+                onOpenChange={(open) => !open && setModalDemo(null)}
+                title="Delete source?"
+                description="Carrier contracts and its 1,204 chunks will be removed. Agents using it lose the source."
+                footer={
+                  <ModalActions
+                    cancelLabel="Cancel"
+                    onCancel={() => setModalDemo(null)}
+                    submitLabel="Delete"
+                    destructive
+                    onSubmit={() => setModalDemo(null)}
+                  />
+                }
+              >
+                <p className="text-muted-foreground text-sm">
+                  This can&apos;t be undone.
+                </p>
+              </Modal>
+              <Modal
+                size="lg"
+                open={modalDemo === 'lg'}
+                onOpenChange={(open) => !open && setModalDemo(null)}
+                title="Edit MCP server"
+                footer={
+                  <ModalActions
+                    footerStart={
+                      <Button variant="outline" size="lg" shape="pill">
+                        Test connection
+                      </Button>
+                    }
+                    cancelLabel="Cancel"
+                    onCancel={() => setModalDemo(null)}
+                    submitLabel="Save"
+                    onSubmit={() => setModalDemo(null)}
+                  />
+                }
+              >
+                <div className="flex flex-col gap-4">
+                  <Input label="Server name" defaultValue="Carrier rates" />
+                  <Input
+                    label="Server URL"
+                    defaultValue="https://mcp.meridianfreight.example"
+                  />
+                </div>
+              </Modal>
+              <Modal
+                size="xl"
+                open={modalDemo === 'xl'}
+                onOpenChange={(open) => !open && setModalDemo(null)}
+                title="Run details"
+                description="Read only: the footer is Cancel alone."
+                footer={
+                  <ModalActions
+                    cancelLabel="Close"
+                    onCancel={() => setModalDemo(null)}
+                  />
+                }
+              >
+                <p className="text-muted-foreground text-sm">
+                  Started 09:30, finished 09:31, 3 tools called.
+                </p>
+              </Modal>
+              <Modal
+                size="full"
+                open={modalDemo === 'full'}
+                onOpenChange={(open) => !open && setModalDemo(null)}
+                title="Import agents"
+                footer={
+                  <ModalActions
+                    cancelLabel="Cancel"
+                    onCancel={() => setModalDemo(null)}
+                    submitLabel="Import"
+                    pending
+                  />
+                }
+              >
+                <p className="text-muted-foreground text-sm">
+                  pending spins and disables the submit; the label stays.
+                </p>
+              </Modal>
+              <Modal
+                mobileVariant="sheet"
+                open={modalDemo === 'sheet'}
+                onOpenChange={(open) => !open && setModalDemo(null)}
+                title="Share to team"
+                description="A centred modal from sm up; a bottom sheet with a grab handle on phones."
+                footer={
+                  <ModalActions
+                    cancelLabel="Cancel"
+                    onCancel={() => setModalDemo(null)}
+                    submitLabel="Share"
+                    onSubmit={() => setModalDemo(null)}
+                  />
+                }
+              >
+                <Input label="Add people" />
+              </Modal>
+              <Modal
+                hideTitle
+                open={modalDemo === 'hidden'}
+                onOpenChange={(open) => !open && setModalDemo(null)}
+                title="Image preview"
+              >
+                <div className="bg-muted flex h-48 items-center justify-center rounded-lg">
+                  <FileText className="text-muted-foreground size-8" />
+                </div>
+                <p className="text-muted-foreground mt-3 text-xs">
+                  The title is still announced to screen readers.
+                </p>
+              </Modal>
+            </div>
+          </Example>
+          <Example
             title="Popover and dropdown menu"
-            code="<Popover> · <DropdownMenu>"
+            code="<Popover> · <DropdownMenu> with Shortcut, Sub, RadioGroup, CheckboxItem"
           >
             <div className="flex flex-wrap items-center gap-3">
               <Popover>
@@ -2069,11 +2781,38 @@ export default function DesignSystem() {
                   <DropdownMenuItem>
                     <Pencil />
                     Rename
+                    <DropdownMenuShortcut>F2</DropdownMenuShortcut>
                   </DropdownMenuItem>
                   <DropdownMenuItem>
                     <Copy />
                     Duplicate
+                    <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
                   </DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Book />
+                      Move to
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem>Finance</DropdownMenuItem>
+                      <DropdownMenuItem>Legal</DropdownMenuItem>
+                      <DropdownMenuItem>Operations</DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={sortBy}
+                    onValueChange={setSortBy}
+                  >
+                    <DropdownMenuRadioItem value="recent">
+                      Most recent
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="name">
+                      Name
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
                   <DropdownMenuCheckboxItem
                     checked={showArchived}
                     onCheckedChange={(v) => setShowArchived(Boolean(v))}
@@ -2091,33 +2830,60 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Command palette"
-            code='<Command variant="palette">, the spacing CommandDialog uses'
+            code='<Command variant="palette">, the spacing CommandDialog uses · <CommandDialog open onOpenChange title description>'
           >
-            <div className="border-border max-w-md overflow-hidden rounded-lg border">
-              <Command variant="palette">
-                <CommandInput placeholder="Search agents, sources, settings…" />
+            <div className="flex flex-col items-start gap-4">
+              <Button variant="outline" onClick={() => setPaletteOpen(true)}>
+                <Search />
+                Open CommandDialog
+              </Button>
+              <CommandDialog
+                open={paletteOpen}
+                onOpenChange={setPaletteOpen}
+                title="Search conversations"
+                description="Search your conversations by title"
+              >
+                <CommandInput placeholder="Search conversations…" />
                 <CommandList>
                   <CommandEmpty>No results.</CommandEmpty>
-                  <CommandGroup heading="Agents">
-                    <CommandItem>
-                      <Settings />
-                      Contracts & Policy Assistant
-                      <CommandShortcut>⌘1</CommandShortcut>
+                  <CommandGroup heading="Recent">
+                    <CommandItem onSelect={() => setPaletteOpen(false)}>
+                      <MessageSquare />
+                      Q3 carrier renewals
                     </CommandItem>
-                    <CommandItem>
-                      <Settings />
-                      Customer Renewal Desk
-                      <CommandShortcut>⌘2</CommandShortcut>
-                    </CommandItem>
-                  </CommandGroup>
-                  <CommandGroup heading="Actions">
-                    <CommandItem>
-                      <Plus />
-                      New conversation
+                    <CommandItem onSelect={() => setPaletteOpen(false)}>
+                      <MessageSquare />
+                      Halvorsen lane costs
                     </CommandItem>
                   </CommandGroup>
                 </CommandList>
-              </Command>
+              </CommandDialog>
+              <div className="border-border w-full max-w-md overflow-hidden rounded-lg border">
+                <Command variant="palette">
+                  <CommandInput placeholder="Search agents, sources, settings…" />
+                  <CommandList>
+                    <CommandEmpty>No results.</CommandEmpty>
+                    <CommandGroup heading="Agents">
+                      <CommandItem>
+                        <Settings />
+                        Contracts & Policy Assistant
+                        <CommandShortcut>⌘1</CommandShortcut>
+                      </CommandItem>
+                      <CommandItem>
+                        <Settings />
+                        Customer Renewal Desk
+                        <CommandShortcut>⌘2</CommandShortcut>
+                      </CommandItem>
+                    </CommandGroup>
+                    <CommandGroup heading="Actions">
+                      <CommandItem>
+                        <Plus />
+                        New conversation
+                      </CommandItem>
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </div>
             </div>
           </Example>
           <Example
@@ -2156,7 +2922,8 @@ export default function DesignSystem() {
                 <TimePicker value={time} onChange={setTime} minuteStep={5} />
                 <p className="text-muted-foreground flex items-center gap-1 text-xs">
                   <Clock className="size-3" />
-                  {date ? date.toLocaleDateString() : 'No date'} at {time}
+                  {date ? date.toLocaleDateString('en-GB') : 'No date'} at{' '}
+                  {time}
                 </p>
               </div>
             </div>

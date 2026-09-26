@@ -55,7 +55,7 @@ describe('Button variants', () => {
     expect(classes).toContain('text-muted-foreground');
     expect(classes).toContain('hover:text-destructive');
     expect(classes).toContain('hover:bg-accent');
-    expect(classes).toContain('dark:hover:bg-accent/50');
+    expect(classes).not.toContain('dark:hover:bg-accent/50');
   });
 
   it('size="inline" adds no height or padding, so a link sits mid-sentence', () => {
@@ -124,11 +124,11 @@ describe('Button variants', () => {
     expect(classes).toContain('pb-1');
   });
 
-  it('size="field" is the 42px form-row height shared with Input and SelectTrigger lg', () => {
+  it('size="field" is the 38px form-row height shared with Input and SelectTrigger field', () => {
     const classes = renderedClasses(<Button size="field">Add</Button>).split(
       ' ',
     );
-    expect(classes).toContain('h-10.5');
+    expect(classes).toContain('h-9.5');
     expect(classes).toContain('px-4');
     expect(classes).not.toContain('h-9');
   });
@@ -139,7 +139,7 @@ describe('Button variants', () => {
         Select sources
       </Button>,
     ).split(' ');
-    expect(classes).toContain('h-10.5');
+    expect(classes).toContain('h-9.5');
     expect(classes).toContain('rounded-full');
     expect(classes).toContain('px-5');
     expect(classes).not.toContain('px-4');
@@ -182,7 +182,7 @@ describe('Button variants', () => {
     expect(classes).toContain('text-muted-foreground');
     expect(classes).toContain('hover:text-destructive');
     expect(classes).toContain('hover:bg-destructive/15');
-    expect(classes).toContain('dark:hover:bg-destructive/25');
+    expect(classes).toContain('dark:hover:bg-destructive/20');
     expect(classes).not.toContain('hover:bg-accent');
   });
 });
@@ -218,6 +218,7 @@ describe('Button loading', () => {
     const overlay = button.querySelector('span.absolute')!;
     expect(overlay.className).toContain('inset-0');
     const spinner = overlay.querySelector('[data-slot="spinner"]')!;
+    expect(spinner.getAttribute('data-size')).toBe('xs');
     expect(spinner.className).toContain('size-4');
     expect(spinner.className).not.toContain('size-5');
   });
@@ -253,5 +254,47 @@ describe('Button loading with an icon', () => {
     for (const rule of iconRules) {
       expect(rule).toContain('>[data-slot=button-label]>svg');
     }
+  });
+});
+
+describe('Button dark hover', () => {
+  it.each(['ghost', 'ghost-muted', 'ghost-destructive'] as const)(
+    '%s hovers to solid accent in both themes',
+    (variant) => {
+      const classes = buttonVariants({ variant }).split(' ');
+      expect(classes).toContain('hover:bg-accent');
+      expect(classes).not.toContain('dark:hover:bg-accent/50');
+    },
+  );
+});
+
+describe('Button combobox text size', () => {
+  it.each(['default', 'field', 'lg'] as const)(
+    'combobox %s is 16px on phones, 14px from md',
+    (size) => {
+      const classes = buttonVariants({ variant: 'combobox', size }).split(' ');
+      expect(classes).toEqual(
+        expect.arrayContaining(['text-base', 'md:text-sm']),
+      );
+    },
+  );
+
+  it('combobox sm stays 14px', () => {
+    const classes = buttonVariants({ variant: 'combobox', size: 'sm' }).split(
+      ' ',
+    );
+    expect(classes).not.toContain('text-base');
+  });
+});
+
+describe('Button size="icon"', () => {
+  it('draws an unsized glyph at 20px in its 36px square', () => {
+    const classes = buttonVariants({ size: 'icon' });
+    expect(classes).toContain('size-9');
+    expect(classes).toContain("[&_svg:not([class*='size-'])]:size-5");
+    const html = renderToStaticMarkup(<Button size="icon">x</Button>);
+    expect(html).not.toContain(
+      '[&amp;_svg:not([class*=&#x27;size-&#x27;])]:size-4',
+    );
   });
 });

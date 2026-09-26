@@ -14,6 +14,106 @@ function render(element: React.ReactElement): HTMLElement {
   return host;
 }
 
+describe('FormField floating label', () => {
+  it('floats the label on the field border, after the field', () => {
+    const host = render(
+      <FormField label="Server name">
+        <Input />
+      </FormField>,
+    );
+    const box = host.querySelector('input')!.parentElement!;
+    expect(box.className).toContain('relative');
+    const label = box.querySelector('label')!;
+    expect(box.lastElementChild).toBe(label);
+    for (const cls of [
+      'absolute',
+      '-top-2.5',
+      'left-3',
+      'text-xs',
+      'bg-card',
+    ]) {
+      expect(label.className.split(' ')).toContain(cls);
+    }
+    expect(label.className).toContain('text-muted-foreground');
+  });
+
+  it('rests the label inside an empty, unfocused Input or Textarea', () => {
+    const label = render(
+      <FormField label="Server name">
+        <Input />
+      </FormField>,
+    ).querySelector('label')!;
+    expect(label.className).toContain(
+      'group-has-[>input:placeholder-shown:not(:focus),>*>input:placeholder-shown:not(:focus)]/float:top-2',
+    );
+    expect(label.className).toContain(
+      'group-has-[>textarea:placeholder-shown:not(:focus),>*>textarea:placeholder-shown:not(:focus)]/float:top-2',
+    );
+  });
+
+  it('gives Input and Textarea a blank placeholder and shows a real one only on focus', () => {
+    const blank = render(
+      <FormField label="Server name">
+        <Input />
+      </FormField>,
+    ).querySelector('input')!;
+    expect(blank.getAttribute('placeholder')).toBe(' ');
+    const input = render(
+      <FormField label="Member email">
+        <Input placeholder="name@example.com" />
+      </FormField>,
+    ).querySelector('input')!;
+    expect(input.getAttribute('placeholder')).toBe('name@example.com');
+    expect(input.className).toContain('placeholder:text-transparent');
+    expect(input.className).toContain(
+      'focus:placeholder:text-muted-foreground',
+    );
+    const textarea = render(
+      <FormField label="Description">
+        <Textarea />
+      </FormField>,
+    ).querySelector('textarea')!;
+    expect(textarea.getAttribute('placeholder')).toBe(' ');
+    expect(textarea.className).toContain(
+      'focus:placeholder:text-muted-foreground',
+    );
+  });
+
+  it('turns the label red with an error', () => {
+    const label = render(
+      <FormField label="Server URL" error="Please enter a valid URL">
+        <Input />
+      </FormField>,
+    ).querySelector('label')!;
+    expect(label.className).toContain('text-destructive');
+    expect(label.className).not.toContain('text-muted-foreground');
+  });
+
+  it('matches the notch to labelSurface', () => {
+    const label = render(
+      <FormField label="Policy" labelSurface="muted">
+        <Textarea />
+      </FormField>,
+    ).querySelector('label')!;
+    expect(label.className.split(' ')).toContain('bg-muted');
+    expect(label.className.split(' ')).not.toContain('bg-card');
+  });
+
+  it('puts the label above the field with float={false}', () => {
+    const host = render(
+      <FormField label="Resources" float={false}>
+        <Input />
+      </FormField>,
+    );
+    const wrapper = host.firstElementChild as HTMLElement;
+    expect(wrapper.firstElementChild?.tagName).toBe('LABEL');
+    expect(wrapper.firstElementChild?.className).not.toContain('absolute');
+    const input = host.querySelector('input')!;
+    expect(input.hasAttribute('placeholder')).toBe(false);
+    expect(input.className).not.toContain('placeholder:text-transparent');
+  });
+});
+
 describe('FormField', () => {
   it('stacks label, field, hint and error 6px apart', () => {
     const host = render(
@@ -80,7 +180,6 @@ describe('FormField', () => {
       </FormField>,
     );
     const label = host.querySelector('label')!;
-    expect(label.className).toContain('gap-1');
     const star = label.querySelector('span')!;
     expect(star.getAttribute('aria-hidden')).toBe('true');
     expect(star.className).toContain('text-destructive');

@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next';
 
 import { baseURL } from '../api/client';
 import CopyButton from '../components/CopyButton';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import { Modal } from '../components/ui/modal';
+import { SectionHeader } from '../components/ui/section-header';
 import { NO_ESCAPE } from '../settings/accessTokenUtils';
 
 interface AccessTokenCreatedModalProps {
@@ -53,50 +56,56 @@ export default function AccessTokenCreatedModal({
         </Button>
       }
     >
-      <div className="flex flex-col gap-5 px-1">
-        <div
-          role="alert"
-          className="bg-warning/10 text-foreground flex items-start gap-3 rounded-lg px-4 py-3 text-sm"
-        >
-          <TriangleAlert
-            className="text-warning mt-0.5 size-4 shrink-0"
-            aria-hidden="true"
-          />
-          <p>{t('settings.accessTokens.created.warning')}</p>
-        </div>
+      <div className="flex flex-col gap-5">
+        <Alert variant="warning">
+          <TriangleAlert className="size-4" aria-hidden="true" />
+          <AlertDescription>
+            <p>{t('settings.accessTokens.created.warning')}</p>
+          </AlertDescription>
+        </Alert>
 
         <div className="flex flex-col gap-1.5">
-          <p className="text-foreground text-sm font-semibold">
-            {t('settings.accessTokens.created.tokenLabel')}
-          </p>
-          <div className="bg-muted flex items-center gap-2 rounded-xl py-2 pr-2 pl-4">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('settings.accessTokens.created.tokenLabel')}
+          />
+          <Card
+            variant="filled"
+            padding="sm"
+            className="flex-row items-start gap-2"
+          >
             <code
               data-testid="pat-plaintext"
-              className="text-foreground min-w-0 flex-1 font-mono text-xs break-all select-all sm:text-sm"
+              className="text-foreground min-w-0 flex-1 font-mono text-xs wrap-break-word select-all"
             >
               {token}
             </code>
             {token && <CopyButton textToCopy={token} showText />}
-          </div>
+          </Card>
         </div>
 
         <div className="flex flex-col gap-2">
-          <p className="text-foreground text-sm font-semibold">
-            {t('settings.accessTokens.created.usageTitle')}
-          </p>
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('settings.accessTokens.created.usageTitle')}
+          />
           <p className="text-muted-foreground text-xs">
             {t('settings.accessTokens.created.usageHint')}
           </p>
           {[exportSnippet, curlSnippet].map((snippet, index) => (
-            <div
+            <Card
               key={index}
-              className="bg-muted flex items-start gap-2 rounded-xl py-2 pr-2 pl-4"
+              variant="filled"
+              padding="sm"
+              className="flex-row items-start gap-2"
             >
-              <pre className="text-foreground min-w-0 flex-1 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
+              <pre className="text-foreground min-w-0 flex-1 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
                 {snippet}
               </pre>
               <CopyButton textToCopy={snippet} />
-            </div>
+            </Card>
           ))}
         </div>
       </div>

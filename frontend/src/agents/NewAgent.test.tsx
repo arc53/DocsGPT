@@ -182,6 +182,31 @@ describe('NewAgent form', () => {
     }
   });
 
+  it('titles each form panel with a SectionHeader spaced by the panel gap', async () => {
+    await render();
+    const titles = Array.from(
+      container.querySelectorAll('[data-slot="section-header"] > h2'),
+    ).map((h) => h.textContent);
+    expect(titles).toEqual(
+      expect.arrayContaining([
+        'agents.form.sections.meta',
+        'agents.form.sections.source',
+        'agents.form.sections.tools',
+        'agents.form.sections.agentType',
+        'agents.form.sections.models',
+      ]),
+    );
+    const meta = Array.from(
+      container.querySelectorAll('[data-slot="section-header"]'),
+    ).find((h) => h.textContent === 'agents.form.sections.meta')!;
+    expect(meta.parentElement!.className.split(' ')).toEqual(
+      expect.arrayContaining(['flex', 'flex-col', 'gap-5']),
+    );
+    expect((meta.nextElementSibling as HTMLElement).className).not.toContain(
+      'mt-5',
+    );
+  });
+
   // Decision 64: the Advanced header is a section-toggle with a leading
   // lucide chevron; the panel draws the focus ring.
   it('renders the Advanced header as a section-toggle', async () => {
@@ -247,6 +272,18 @@ describe('NewAgent form', () => {
     expect(publish.getAttribute('data-variant')).toBe('default');
     expect(publish.getAttribute('data-shape')).toBe('pill');
     expect(publish.disabled).toBe(true);
+  });
+
+  // Item 42: the header's Cancel (shown once the form is dirty) is ghost.
+  it('renders the header Cancel as a ghost pill once the form changes', async () => {
+    await render();
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, 'Support bot'));
+    const cancel = buttonByText('agents.form.buttons.cancel');
+    expect(cancel.getAttribute('data-variant')).toBe('ghost');
+    expect(cancel.getAttribute('data-shape')).toBe('pill');
   });
 
   it('shows a failed save as a destructive alert with an icon', async () => {

@@ -19,7 +19,7 @@ export default function AttachFileButton({ onChange }: AttachFileButtonProps) {
           they reloaded. Keep the composer's controls out of the translator. */}
       <label translate="no" className="cursor-pointer justify-start">
         <Paperclip />
-        <span className="dark:text-foreground text-muted-foreground text-xs sm:text-sm">
+        <span className="text-foreground text-xs sm:text-sm">
           {t('conversation.attachments.attach')}
         </span>
         <input

@@ -23,12 +23,20 @@ const events = [
   created_at: '2026-09-01T00:00:00Z',
 }));
 
+// Flipped by the Retry test to make the next events fetch fail.
+const fetchState = vi.hoisted(() => ({ failNext: false }));
+
 vi.mock('../../api/services/userService', () => ({
   default: {
-    getGuardrailEvents: () =>
-      Promise.resolve({
+    getGuardrailEvents: () => {
+      if (fetchState.failNext) {
+        fetchState.failNext = false;
+        return Promise.reject(new Error('network'));
+      }
+      return Promise.resolve({
         json: () => Promise.resolve({ success: true, events }),
-      }),
+      });
+    },
     getGuardrailSummary: () =>
       Promise.resolve({
         json: () =>
@@ -88,5 +96,91 @@ describe('GuardrailEvents tones', () => {
     expect(tone('guardrail-stat-not-evaluated')).toContain(
       'text-muted-foreground',
     );
+  });
+
+  it('renders the stat tiles as StatCards', () => {
+    for (const id of [
+      'guardrail-stat-blocked',
+      'guardrail-stat-redacted',
+      'guardrail-stat-flagged',
+      'guardrail-stat-not-evaluated',
+    ]) {
+      const tile = container.querySelector(`[data-testid="${id}"]`);
+      expect(tile?.getAttribute('data-slot')).toBe('card');
+      expect(tile?.getAttribute('data-variant')).toBe('subtle');
+    }
+    expect(
+      container
+        .querySelector('[data-testid="guardrail-stat-not-evaluated"]')
+        ?.getAttribute('title'),
+    ).toBe('agents.guardrailEvents.notEvaluatedHint');
+  });
+
+  it('puts the window Select in the section header actions', () => {
+    const header = container.querySelector('[data-slot="section-header"]');
+    expect(
+      header?.querySelector('[data-testid="guardrail-events-window"]'),
+    ).not.toBeNull();
+  });
+
+  it('renders ui/table named by the Guardrail decisions sub-heading', () => {
+    const table = container.querySelector('table[data-slot="table"]');
+    expect(table).not.toBeNull();
+    const labelId = table!.getAttribute('aria-labelledby');
+    expect(labelId).toBeTruthy();
+    // SectionHeader puts the id on its root; with no actions or description
+    // the root holds only the h3, so the name is the heading's text.
+    const label = document.getElementById(labelId!);
+    expect(label?.querySelector('h3')?.textContent).toBe(
+      'agents.guardrailEvents.tableHeader',
+    );
+    expect(label?.textContent).toBe('agents.guardrailEvents.tableHeader');
+    expect(table!.querySelector('[data-slot="table-head"]')).not.toBeNull();
+    expect(
+      table!.querySelector(
+        '[data-slot="table-body"][data-testid="guardrail-events-rows"]',
+      ),
+    ).not.toBeNull();
+  });
+});
+
+describe('GuardrailEvents load error', () => {
+  it('shows a destructive empty state whose Retry re-runs the fetch', async () => {
+    fetchState.failNext = true;
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <Provider store={makeStore()}>
+          <GuardrailEvents agentId="a1" />
+        </Provider>,
+      );
+    });
+
+    const errorState = container.querySelector(
+      '[data-slot="empty-state"][data-tone="destructive"]',
+    );
+    expect(errorState?.textContent).toContain(
+      'agents.guardrailEvents.loadError',
+    );
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    );
+    expect(retry).toBeDefined();
+
+    await act(async () => retry!.click());
+
+    expect(
+      container.querySelector(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      ),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="guardrail-events-rows"]'),
+    ).not.toBeNull();
+
+    await act(async () => root.unmount());
+    container.remove();
   });
 });

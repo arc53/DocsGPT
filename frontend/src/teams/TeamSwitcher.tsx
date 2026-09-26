@@ -6,7 +6,7 @@ import {
   Check,
   ChevronsUpDown,
   Plus,
-  Settings as SettingsIcon,
+  Settings,
   User,
   Users,
 } from 'lucide-react';
@@ -90,14 +90,14 @@ export default function TeamSwitcher({
   const triggerIcon = currentTeam ? (
     // A solid square reads heavier than the dino, so keep the team avatar a
     // touch smaller (with a little margin to align with the wordmark).
-    <span className="bg-muted dark:bg-accent text-foreground mx-1 flex size-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold">
+    <span className="bg-muted text-foreground mx-1 flex size-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold">
       {teamInitial}
     </span>
   ) : (
     <img
       className="h-8 w-auto shrink-0"
       src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
-      alt="DocsGPT Logo"
+      alt={t('teams.switcher.logoAlt')}
     />
   );
 
@@ -111,7 +111,7 @@ export default function TeamSwitcher({
   const expandedBrand = currentTeam ? (
     <>
       {triggerIcon}
-      <span className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold dark:text-white">
+      <span className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold">
         {currentTeam.name}
       </span>
     </>
@@ -150,7 +150,7 @@ export default function TeamSwitcher({
           <button
             type="button"
             aria-label={t('teams.switcher.ariaLabel')}
-            className="hover:bg-muted dark:hover:bg-accent flex items-center justify-center rounded-lg p-1 transition-colors"
+            className="hover:bg-accent flex items-center justify-center rounded-lg p-1 transition-colors"
           >
             {triggerIcon}
           </button>
@@ -158,7 +158,7 @@ export default function TeamSwitcher({
           <button
             type="button"
             aria-label={t('teams.switcher.ariaLabel')}
-            className="hover:bg-muted dark:hover:bg-accent text-foreground flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors"
+            className="hover:bg-accent text-foreground flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors"
           >
             {expandedBrand}
             <ChevronsUpDown className="text-muted-foreground size-4 shrink-0" />
@@ -168,7 +168,7 @@ export default function TeamSwitcher({
       <DropdownMenuContent align="start" className="w-62">
         <DropdownMenuLabel>
           <div className="flex items-center gap-2">
-            <span className="bg-muted dark:bg-accent flex size-7 shrink-0 items-center justify-center rounded-md">
+            <span className="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
               {currentTeam ? (
                 <Users className="size-4" />
               ) : (
@@ -188,7 +188,7 @@ export default function TeamSwitcher({
 
         {currentTeam && (
           <DropdownMenuItem onSelect={goToManage}>
-            <SettingsIcon className="size-4" />
+            <Settings className="size-4" />
             <span>{t('teams.switcher.manageTeam')}</span>
           </DropdownMenuItem>
         )}

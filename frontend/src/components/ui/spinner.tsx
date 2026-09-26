@@ -3,12 +3,14 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 type SpinnerProps = React.ComponentProps<'div'> & {
-  size?: 'sm' | 'default' | 'lg';
+  size?: 'xs' | 'sm' | 'default' | 'lg';
   /** Announced to screen readers. */
   label?: string;
 };
 
 const SIZE_CLASSES: Record<NonNullable<SpinnerProps['size']>, string> = {
+  // Icon-sized spots: a busy Button, a step's status in a 12-16px row.
+  xs: 'size-4',
   sm: 'size-5',
   default: 'size-7',
   lg: 'size-10',

@@ -17,7 +17,7 @@ import DocsGPTMarkWhite from './assets/logo-w.svg';
 import ActionButtons from './components/ActionButtons';
 import AdminRoute from './components/AdminRoute';
 import ErrorBoundary from './components/ErrorBoundary';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState } from '@/components/ui/loading-state';
 import { Button } from './components/ui/button';
 import { ToastViewport } from './components/ui/toast';
 import UploadToast from './components/UploadToast';
@@ -70,7 +70,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
           alt="DocsGPT"
           className="h-14 w-auto"
         />
-        <p className="text-foreground max-w-md px-6 text-center text-sm dark:text-white">
+        <p className="text-foreground max-w-md px-6 text-center text-sm">
           {message}
         </p>
         <Button
@@ -85,18 +85,14 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     );
   }
   if (isAuthLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner />
-      </div>
-    );
+    return <LoadingState fill="screen" />;
   }
   return <EventStreamProvider>{children}</EventStreamProvider>;
 }
 
 function MainLayout() {
-  const { isMobile, isTablet } = useMediaQuery();
-  const [navOpen, setNavOpen] = useState(!(isMobile || isTablet));
+  const { isMobile } = useMediaQuery();
+  const [navOpen, setNavOpen] = useState(!isMobile);
   const location = useLocation();
   // Settings and admin pages keep the profile menu but drop the chat actions:
   // the conversation now survives the trip, so "share" would target a chat
@@ -113,11 +109,10 @@ function MainLayout() {
         <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
         <ActionButtons showNewChat={!inSection} showShare={!inSection} />
         <div
-          className={`h-[calc(100dvh-64px)] overflow-auto transition-all duration-300 ease-in-out lg:h-screen ${
-            !(isMobile || isTablet)
-              ? `${navOpen ? 'lg:ml-72' : 'lg:ml-14'}`
-              : 'ml-0 lg:ml-16'
-          }`}
+          className={cn(
+            'h-[calc(100dvh-64px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-screen',
+            !isMobile ? (navOpen ? 'lg:ml-72' : 'lg:ml-14') : 'ml-0 lg:ml-16',
+          )}
         >
           {/* Contain route render crashes so navigation stays usable;
             keyed by path so the boundary resets when the user leaves. */}

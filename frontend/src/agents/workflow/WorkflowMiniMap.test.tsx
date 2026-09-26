@@ -74,6 +74,9 @@ describe('WorkflowMiniMap', () => {
     return byName;
   };
 
+  // No i18n instance in this test: t() renders the key.
+  const START = 'agents.workflow.nodes.start';
+
   const tokens = (el: HTMLElement) => el.className.split(/\s+/);
 
   it('pins the success fill on hover for a completed row', () => {
@@ -105,15 +108,15 @@ describe('WorkflowMiniMap', () => {
         'animate-pulse',
       ]),
     );
-    expect(tokens(r.Start)).toEqual(
+    expect(tokens(r[START])).toEqual(
       expect.arrayContaining([
         'bg-muted',
         'hover:bg-muted',
         'dark:hover:bg-muted',
       ]),
     );
-    expect(r.Start.disabled).toBe(true);
-    expect(tokens(r.Start)).not.toContain('hover:opacity-80');
+    expect(r[START].disabled).toBe(true);
+    expect(tokens(r[START])).not.toContain('hover:opacity-80');
   });
 
   it('pins the active fill on hover and keeps the ring', () => {

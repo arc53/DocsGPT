@@ -121,3 +121,28 @@ describe('CommandDialog', () => {
     expect(classes).toContain('data-[selected=true]:bg-accent');
   });
 });
+
+describe('CommandInput', () => {
+  it('is 16px on phones, fills its wrapper and selects in brand', async () => {
+    await render(
+      <Command>
+        <CommandInput placeholder="Search" />
+        <CommandList>
+          <CommandItem>One</CommandItem>
+        </CommandList>
+      </Command>,
+    );
+    const classes = document
+      .querySelector('[data-slot="command-input"]')!
+      .className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'text-base',
+        'md:text-sm',
+        'h-full',
+        'selection:bg-primary',
+      ]),
+    );
+    expect(classes).not.toContain('h-10');
+  });
+});

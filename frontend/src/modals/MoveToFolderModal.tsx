@@ -14,6 +14,7 @@ import {
   BreadcrumbSeparator,
 } from '../components/ui/breadcrumb';
 import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
 import {
   Command,
   CommandGroup,
@@ -21,7 +22,7 @@ import {
   CommandList,
 } from '../components/ui/command';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 import { selectToken, setAgentFolders } from '../preferences/preferenceSlice';
 
@@ -144,6 +145,29 @@ export default function MoveToFolderModal({
     }
   };
 
+  const createNewFolder = () => {
+    handleCreateFolder(newFolderName.trim());
+    setNewFolderName('');
+    setIsCreatingFolder(false);
+  };
+
+  const cancelFooter = () => {
+    if (isCreatingFolder) {
+      setNewFolderName('');
+      setIsCreatingFolder(false);
+    } else {
+      setModalState('INACTIVE');
+    }
+  };
+
+  const submitFooter = () => {
+    if (isCreatingFolder) {
+      if (newFolderName.trim()) createNewFolder();
+    } else {
+      handleMove();
+    }
+  };
+
   const handleMove = async () => {
     try {
       const response = await userService.moveAgentToFolder(
@@ -163,18 +187,67 @@ export default function MoveToFolderModal({
     <Modal
       open={modalState === 'ACTIVE'}
       onOpenChange={(o) => !o && setModalState('INACTIVE')}
-      size="md"
-      className="w-[800px] max-w-[90vw] p-0 sm:max-w-[90vw]"
+      size="lg"
       contentClassName="overflow-visible"
-      hideTitle
-      title={`${t('agents.folders.move')} "${agentName}" to`}
+      title={t('agents.folders.moveTitle', { name: agentName })}
+      footer={
+        <ModalActions
+          cancelLabel={t('cancel')}
+          onCancel={cancelFooter}
+          submitLabel={
+            isCreatingFolder
+              ? t('agents.folders.createFolder')
+              : t('agents.folders.move')
+          }
+          onSubmit={submitFooter}
+          disabled={isCreatingFolder && !newFolderName.trim()}
+          footerStart={
+            isCreatingFolder ? (
+              <Input
+                ref={newFolderInputRef}
+                type="text"
+                label={t('agents.folders.folderName')}
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newFolderName.trim()) {
+                    createNewFolder();
+                  } else if (e.key === 'Escape') {
+                    setNewFolderName('');
+                    setIsCreatingFolder(false);
+                  }
+                }}
+                onBlur={() => {
+                  if (!newFolderName.trim()) {
+                    setIsCreatingFolder(false);
+                  }
+                }}
+                placeholder={t('agents.folders.newFolder')}
+                shape="pill"
+                autoFocus
+              />
+            ) : (
+              <Button
+                type="button"
+                variant="outline-primary"
+                size="field"
+                shape="pill"
+                onClick={() => {
+                  setIsCreatingFolder(true);
+                  setTimeout(() => newFolderInputRef.current?.focus(), 0);
+                }}
+              >
+                {t('agents.folders.newFolder')}
+              </Button>
+            )
+          }
+        />
+      }
     >
-      <div>
-        <div className="px-6 pt-4">
-          <h2 className="text-foreground mb-2 text-2xl leading-7 font-semibold">
-            {t('agents.folders.move')} &quot;{agentName}&quot; to
-          </h2>
-        </div>
+      {/* The Modal keeps its p-8 for the title and footer; the breadcrumb band
+          and the folder list bleed to the dialog's edges (-mx-9 = the 32px
+          padding plus the content area's 4px). */}
+      <div className="-mx-9">
         <div className="bg-muted px-8 py-2">
           <Breadcrumb className="min-w-0">
             <BreadcrumbList className="flex-nowrap">
@@ -228,7 +301,7 @@ export default function MoveToFolderModal({
             </BreadcrumbList>
           </Breadcrumb>
         </div>
-        <div className="border-border border-t px-5 py-1">
+        <div className="border-border border-y px-5 py-1">
           {isLoading ? (
             <div className="flex h-[200px] items-center justify-center">
               <span className="text-muted-foreground text-sm">
@@ -283,11 +356,10 @@ export default function MoveToFolderModal({
                       </span>
                       {/* Check if folder has subfolders */}
                       {folders.some((f) => f.parent_id === folder.id) && (
-                        <Button
-                          type="button"
+                        <IconButton
                           variant="ghost-on-accent"
                           size="icon-xs"
-                          aria-label={t('agents.folders.openFolder')}
+                          label={t('agents.folders.openFolder')}
                           onClick={(e) => {
                             // Keep cmdk's row click from choosing the folder.
                             e.stopPropagation();
@@ -302,8 +374,11 @@ export default function MoveToFolderModal({
                         >
                           {/* text-current keeps the Button's colour: the
                               CommandItem mutes every uncoloured svg in it. */}
-                          <ChevronRight className="text-current" />
-                        </Button>
+                          <ChevronRight
+                            className="text-current"
+                            aria-hidden="true"
+                          />
+                        </IconButton>
                       )}
                     </CommandItem>
                   ))}
@@ -326,96 +401,6 @@ export default function MoveToFolderModal({
                 )}
             </>
           )}
-        </div>
-
-        <div className="border-border flex items-center justify-between border-t px-8 py-4">
-          {isCreatingFolder ? (
-            <Input
-              ref={newFolderInputRef}
-              type="text"
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newFolderName.trim()) {
-                  handleCreateFolder(newFolderName.trim());
-                  setNewFolderName('');
-                  setIsCreatingFolder(false);
-                } else if (e.key === 'Escape') {
-                  setNewFolderName('');
-                  setIsCreatingFolder(false);
-                }
-              }}
-              onBlur={() => {
-                if (!newFolderName.trim()) {
-                  setIsCreatingFolder(false);
-                }
-              }}
-              placeholder={t('agents.folders.newFolder')}
-              shape="pill"
-              autoFocus
-            />
-          ) : (
-            <Button
-              type="button"
-              variant="outline-primary"
-              size="field"
-              shape="pill"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsCreatingFolder(true);
-                setTimeout(() => newFolderInputRef.current?.focus(), 0);
-              }}
-            >
-              {t('agents.folders.newFolder')}
-            </Button>
-          )}
-
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (isCreatingFolder) {
-                  setNewFolderName('');
-                  setIsCreatingFolder(false);
-                } else {
-                  setModalState('INACTIVE');
-                }
-              }}
-              shape="pill"
-            >
-              {t('cancel')}
-            </Button>
-            {isCreatingFolder ? (
-              <Button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (newFolderName.trim()) {
-                    handleCreateFolder(newFolderName.trim());
-                    setNewFolderName('');
-                    setIsCreatingFolder(false);
-                  }
-                }}
-                disabled={!newFolderName.trim()}
-                shape="pill"
-              >
-                {t('agents.folders.createFolder')}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleMove();
-                }}
-                shape="pill"
-              >
-                {t('agents.folders.move')}
-              </Button>
-            )}
-          </div>
         </div>
       </div>
     </Modal>

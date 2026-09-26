@@ -2,19 +2,21 @@ import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
-import Robot from '../../assets/robot.svg';
+import Robot from '@/assets/robot.svg';
 import { cn } from '@/lib/utils';
 
 const avatarVariants = cva('shrink-0', {
   variants: {
     // `none` keeps the historical behaviour where the image sets the size.
+    // The rest share Button's names at Button's heights (xs 28, sm 32,
+    // default 36, lg 40), so an avatar beside a button reads one scale.
     size: {
       none: '',
-      sm: 'flex size-7 items-center justify-center overflow-hidden text-xs',
+      xs: 'flex size-7 items-center justify-center overflow-hidden text-xs',
+      sm: 'flex size-8 items-center justify-center overflow-hidden text-sm',
       default:
-        'flex size-8 items-center justify-center overflow-hidden text-sm',
-      lg: 'flex size-9 items-center justify-center overflow-hidden text-sm',
-      xl: 'flex size-10 items-center justify-center overflow-hidden text-base',
+        'flex size-9 items-center justify-center overflow-hidden text-sm',
+      lg: 'flex size-10 items-center justify-center overflow-hidden text-base',
     },
     shape: {
       none: '',
@@ -24,7 +26,7 @@ const avatarVariants = cva('shrink-0', {
     // Background for initials or icon fallbacks rendered via `children`.
     variant: {
       default: '',
-      primary: 'bg-primary/10 text-primary font-medium dark:bg-primary/20',
+      primary: 'bg-secondary text-secondary-foreground font-medium',
       muted: 'bg-muted-foreground/15 text-foreground font-medium',
     },
   },
@@ -35,14 +37,13 @@ const avatarVariants = cva('shrink-0', {
   },
 });
 
-type AvatarProps = VariantProps<typeof avatarVariants> & {
-  src?: string | null;
-  alt?: string;
-  fallbackSrc?: string;
-  className?: string;
-  imgClassName?: string;
-  children?: React.ReactNode;
-};
+type AvatarProps = React.ComponentProps<'div'> &
+  VariantProps<typeof avatarVariants> & {
+    src?: string | null;
+    alt?: string;
+    fallbackSrc?: string;
+    imgClassName?: string;
+  };
 
 function Avatar({
   src,
@@ -54,6 +55,7 @@ function Avatar({
   size = 'none',
   shape = 'none',
   variant = 'default',
+  ...props
 }: AvatarProps) {
   const resolvedSrc = src && src.trim() !== '' ? src : fallbackSrc;
   const [currentSrc, setCurrentSrc] = useState(resolvedSrc);
@@ -72,6 +74,7 @@ function Avatar({
       data-shape={shape}
       data-variant={variant}
       className={cn(avatarVariants({ size, shape, variant }), className)}
+      {...props}
     >
       {children ?? (
         <img

@@ -71,7 +71,7 @@ describe('AnswerFlow', () => {
       toolCalls: [search()],
       segments: [{ kind: 'tool', call_id: 'c1' }],
     });
-    expect(html.split('fade-in-bubble').length - 1).toBe(1);
+    expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(1);
     expect(html.indexOf('Searched the web')).toBeLessThan(
       html.indexOf('part one part two'),
     );
@@ -139,7 +139,7 @@ describe('AnswerFlow', () => {
       isStreaming: true,
     });
     expect(html).toContain('Searching the web');
-    expect(html).not.toContain('fade-in-bubble');
+    expect(html).not.toContain('slide-in-from-bottom-1.5');
   });
 });
 

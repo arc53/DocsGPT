@@ -85,10 +85,9 @@ export default [
         },
       ],
       // Design-system rules (@shadcn/lint). Tokens, variants and the
-      // approved exceptions are documented in DESIGN.md. Every rule starts
-      // at `warn`; promote a rule to `error` once its count reaches zero.
+      // approved exceptions are documented in DESIGN.md.
       'shadcn/no-restyle': [
-        'warn',
+        'error',
         {
           allow: ['layout'],
           contracts: [
@@ -120,7 +119,7 @@ export default [
               ],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <Input>: use size (default, sm, lg) and shape (default, pill); alignment classes are allowed. Add a variant in {{file}} only if the design explicitly calls for one.',
+                  '"{{className}}" is not allowed on <Input>: use size (default, sm, lg, field), shape (default, pill) and variant (default, bare, filled); alignment classes and font-mono are allowed. Add a variant in {{file}} only if the design explicitly calls for one.',
               },
             },
             {
@@ -128,7 +127,7 @@ export default [
               allow: ['layout'],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <SelectTrigger>: use size (sm, default, lg), variant (default, ghost) and shape (default, pill) from {{file}}.',
+                  '"{{className}}" is not allowed on <SelectTrigger>: use size (sm, default, field), variant (default, ghost) and shape (default, pill) from {{file}}.',
               },
             },
             {
@@ -136,7 +135,7 @@ export default [
               allow: ['layout'],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <Avatar>: use size (sm, default, lg, xl), shape (circle, square) and variant (primary, muted) from {{file}}.',
+                  '"{{className}}" is not allowed on <Avatar>: use size (xs, sm, default, lg), shape (circle, square) and variant (primary, muted) from {{file}}.',
               },
             },
             {
@@ -144,7 +143,7 @@ export default [
               allow: ['layout', 'gap-*'],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <Card>: use variant (outline, filled, subtle), padding (none, sm, default, lg) and interactive/selected from {{file}}.',
+                  '"{{className}}" is not allowed on <Card>: use variant (outline, filled, subtle), tone (destructive), padding (none, sm, default, lg) and interactive/selected from {{file}}.',
               },
             },
             {
@@ -160,7 +159,55 @@ export default [
               ],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <Textarea>: use size (sm, default, lg) and resize (none, vertical, both) from {{file}}; min-height and width are layout and allowed.',
+                  '"{{className}}" is not allowed on <Textarea>: use size (sm, default, lg), resize (none, vertical, both) and variant (default, filled) from {{file}}; min-height and width are layout and allowed.',
+              },
+            },
+            {
+              pattern: '^Badge$',
+              allow: ['layout'],
+              message: {
+                default:
+                  '"{{className}}" is not allowed on <Badge>: use a variant ({{variants}}) from {{file}}.',
+              },
+            },
+            {
+              pattern: '^(Alert|AlertTitle|AlertDescription)$',
+              allow: ['layout'],
+              message: {
+                default:
+                  '"{{className}}" is not allowed on <{{component}}>: use Alert variant (default, destructive, success, warning, info) from {{file}}.',
+              },
+            },
+            {
+              pattern: '^Checkbox$',
+              allow: ['layout'],
+              message: {
+                default:
+                  '"{{className}}" is not allowed on <Checkbox>: use size from {{file}}.',
+              },
+            },
+            {
+              pattern: '^Dropzone$',
+              allow: ['layout'],
+              message: {
+                default:
+                  '"{{className}}" is not allowed on <Dropzone>: use size (default, compact); colours, border and radius follow the drag state in {{file}}.',
+              },
+            },
+            {
+              pattern: '^(Tabs|TabsList|TabsTrigger|TabsContent)$',
+              allow: ['layout'],
+              message: {
+                default:
+                  '"{{className}}" is not allowed on <{{component}}>: use the variants in {{file}}.',
+              },
+            },
+            {
+              pattern: '^Command(Input|List|Item|Group|Empty)?$',
+              allow: ['layout'],
+              message: {
+                default:
+                  '"{{className}}" is not allowed on <{{component}}>: use the parts and the checked prop from {{file}}.',
               },
             },
             {
@@ -218,28 +265,29 @@ export default [
             },
             {
               // Modal wraps DialogContent and merges className after its p-8.
-              pattern: '^((Dialog|Popover|Sheet|DropdownMenu)Content|Modal)$',
+              pattern:
+                '^((Dialog|Popover|Sheet|DropdownMenu|DropdownMenuSub|Select|Tooltip)Content|Sheet(Header|Footer)|Modal)$',
               allow: ['layout', 'p-0'],
             },
           ],
         },
       ],
       'shadcn/no-raw-colors': [
-        'warn',
+        'error',
         {
           message:
             '"{{className}}" uses the raw Tailwind palette. Map it to a token from {{file}}: grey text -> text-foreground or text-muted-foreground; grey borders -> border-border; grey fills -> bg-muted, bg-accent or bg-card; red -> destructive; green -> success; amber, yellow and orange -> warning; blue -> info; purple -> primary. Soft badge or alert fills use bg-<token>/10 and a single class replaces the light+dark pair. Status pills should be <Badge variant="...">.',
         },
       ],
       'shadcn/no-arbitrary-values': [
-        'warn',
+        'error',
         // Motion values (`transition-[color,box-shadow]`, custom easings)
         // have no token scale; everything else must come from the theme.
         { allow: ['layout', 'transition-*', 'ease-*'] },
       ],
-      'shadcn/no-inline-styles': 'warn',
-      'shadcn/no-unknown-classes': 'warn',
-      'shadcn/require-static-classes': 'warn',
+      'shadcn/no-inline-styles': 'error',
+      'shadcn/no-unknown-classes': 'error',
+      'shadcn/require-static-classes': 'error',
     },
     settings: {
       react: {

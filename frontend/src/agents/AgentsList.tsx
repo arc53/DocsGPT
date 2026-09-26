@@ -1,4 +1,3 @@
-import { Search } from 'lucide-react';
 import {
   Fragment,
   useCallback,
@@ -39,7 +38,9 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '../components/ui/breadcrumb';
-import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
+import SectionShell from '../navigation/SectionShell';
+import PageToolbar from '../components/PageToolbar';
+import SearchInput from '../components/SearchInput';
 import SectionPills from '../navigation/SectionPills';
 import { useAgentSearch } from './hooks/useAgentSearch';
 import { agentsListPath, filterFromPath } from './paths';
@@ -173,69 +174,62 @@ export default function AgentsList() {
     activeFilter === 'all';
 
   return (
-    <div className="h-full overflow-auto p-4 md:p-12">
-      <div className="mx-auto w-full max-w-6xl">
-        <CurrentSectionHeader />
-        <p className="text-muted-foreground mt-5 text-sm leading-6">
-          {t('agents.description')}
-        </p>
+    <SectionShell>
+      <p className="text-muted-foreground text-sm leading-6">
+        {t('agents.description')}
+      </p>
 
-        <SectionPills className="mt-6" />
+      <SectionPills className="mt-6" />
 
-        <div className="mt-6 flex flex-col gap-4 pb-4">
-          <div className="w-full max-w-md">
-            <Input
-              type="text"
+      <div className="mt-6">
+        <PageToolbar
+          search={
+            <SearchInput
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               label={t('agents.searchPlaceholder')}
-              labelSurface="background"
-              shape="pill"
-              leftIcon={<Search className="text-muted-foreground size-4" />}
             />
-          </div>
-        </div>
-
-        {visibleSections.map((sectionConfig) => (
-          <AgentSection
-            key={sectionConfig.id}
-            config={sectionConfig}
-            filteredAgents={
-              filteredAgentsBySection[sectionConfig.id as AgentSectionId]
-            }
-            totalAgents={
-              totalAgentsBySection[sectionConfig.id as AgentSectionId]
-            }
-            searchQuery={searchQuery}
-            isFilteredView={activeFilter !== 'all'}
-            isLoading={isLoading[sectionConfig.id as AgentSectionId]}
-            folders={sectionConfig.id === 'user' ? folders : null}
-            folderPath={sectionConfig.id === 'user' ? folderPath : []}
-            onFolderPathChange={
-              sectionConfig.id === 'user' ? setFolderPath : undefined
-            }
-            onCreateFolder={handleSubmitNewFolder}
-            onDeleteFolder={handleDeleteFolder}
-            onRenameFolder={handleRenameFolder}
-            setModalFolderId={setModalFolderId}
-            setShowAgentTypeModal={setShowAgentTypeModal}
-          />
-        ))}
-
-        {showSearchEmptyState && (
-          <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-2">
-            <p className="text-lg">{t('agents.noSearchResults')}</p>
-            <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
-          </div>
-        )}
-
-        <AgentTypeModal
-          isOpen={showAgentTypeModal}
-          onClose={() => setShowAgentTypeModal(false)}
-          folderId={modalFolderId}
+          }
         />
       </div>
-    </div>
+
+      {visibleSections.map((sectionConfig) => (
+        <AgentSection
+          key={sectionConfig.id}
+          config={sectionConfig}
+          filteredAgents={
+            filteredAgentsBySection[sectionConfig.id as AgentSectionId]
+          }
+          totalAgents={totalAgentsBySection[sectionConfig.id as AgentSectionId]}
+          searchQuery={searchQuery}
+          isFilteredView={activeFilter !== 'all'}
+          isLoading={isLoading[sectionConfig.id as AgentSectionId]}
+          folders={sectionConfig.id === 'user' ? folders : null}
+          folderPath={sectionConfig.id === 'user' ? folderPath : []}
+          onFolderPathChange={
+            sectionConfig.id === 'user' ? setFolderPath : undefined
+          }
+          onCreateFolder={handleSubmitNewFolder}
+          onDeleteFolder={handleDeleteFolder}
+          onRenameFolder={handleRenameFolder}
+          setModalFolderId={setModalFolderId}
+          setShowAgentTypeModal={setShowAgentTypeModal}
+        />
+      ))}
+
+      {showSearchEmptyState && (
+        <div className="text-muted-foreground mt-12 flex flex-col items-center justify-center gap-2">
+          <p className="text-lg">{t('agents.noSearchResults')}</p>
+          <p className="text-sm">{t('agents.tryDifferentSearch')}</p>
+        </div>
+      )}
+
+      <AgentTypeModal
+        isOpen={showAgentTypeModal}
+        onClose={() => setShowAgentTypeModal(false)}
+        folderId={modalFolderId}
+      />
+    </SectionShell>
   );
 }
 
@@ -568,14 +562,14 @@ function AgentSection({
 
       <div className="flex flex-col gap-4">
         {isLoading ? (
-          <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <SkeletonLoader component="agentCards" count={4} />
           </div>
         ) : (
           <>
             {/* Show subfolders at current level */}
             {config.id === 'user' && currentLevelFolders.length > 0 && (
-              <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {currentLevelFolders.map((folder) => (
                   <FolderCard
                     key={folder.id}
@@ -583,7 +577,6 @@ function AgentSection({
                     agentCount={getAgentsForFolder(folder.id).length}
                     onDelete={onDeleteFolder}
                     onRename={onRenameFolder}
-                    isExpanded={false}
                     onToggleExpand={handleNavigateIntoFolder}
                   />
                 ))}
@@ -592,7 +585,7 @@ function AgentSection({
 
             {/* Show agents at current level */}
             {unfolderedAgents.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {unfolderedAgents.map((agent) => (
                   <AgentCard
                     key={agent.id}

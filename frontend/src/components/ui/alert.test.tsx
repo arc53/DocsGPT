@@ -68,3 +68,67 @@ describe('Alert', () => {
     ).not.toBeNull();
   });
 });
+
+describe('Alert layout', () => {
+  const classesOf = async (element: React.ReactElement) => {
+    await render(element);
+    return container.firstElementChild!.className.split(' ');
+  };
+
+  it('puts the icon in its own column, centred on the text block', async () => {
+    const classes = await classesOf(
+      <Alert variant="destructive">
+        <svg />
+        <AlertDescription>Failed</AlertDescription>
+      </Alert>,
+    );
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'grid',
+        'has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr]',
+        '[&>svg]:self-center',
+        '[&>:not(svg)]:col-start-2',
+      ]),
+    );
+    expect(classes).not.toContain('[&>svg]:absolute');
+  });
+
+  it('takes the icon colour from the text, so it always matches', async () => {
+    const classes = await classesOf(<Alert variant="destructive" />);
+    expect(classes).toContain('[&>svg]:text-current');
+    expect(classes.some((c) => c.startsWith('[&>svg]:text-destructive'))).toBe(
+      false,
+    );
+  });
+
+  it('spans the icon across a title and its description', async () => {
+    const classes = await classesOf(<Alert variant="warning" />);
+    expect(classes).toContain(
+      'has-[>[data-slot=alert-title]]:[&>svg]:row-span-2',
+    );
+  });
+});
+
+describe('Alert surface', () => {
+  it('has 14px corners, like a popover', async () => {
+    await render(
+      <Alert variant="warning">
+        <AlertDescription>Notice</AlertDescription>
+      </Alert>,
+    );
+    const classes = container.firstElementChild!.className.split(' ');
+    expect(classes).toContain('rounded-xl');
+    expect(classes).not.toContain('rounded-lg');
+  });
+
+  it('variant="neutral" is the quiet default box', async () => {
+    await render(
+      <Alert variant="neutral">
+        <AlertDescription>Not evaluated</AlertDescription>
+      </Alert>,
+    );
+    const el = container.firstElementChild as HTMLElement;
+    expect(el.dataset.variant).toBe('neutral');
+    expect(el.className).toContain('bg-background');
+  });
+});

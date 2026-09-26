@@ -14,6 +14,7 @@ import CopyButton from './CopyButton';
 import { renderMermaidDiagram } from './mermaidSecurity';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
+import { IconButton } from './ui/icon-button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -120,7 +121,9 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
           if (cancelled) return;
           console.error('Error rendering mermaid diagram:', err);
           setError(
-            `Failed to render diagram: ${err instanceof Error ? err.message : String(err)}`,
+            t('mermaid.renderFailed', {
+              message: err instanceof Error ? err.message : String(err),
+            }),
           );
         }
       }
@@ -255,9 +258,9 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
   };
 
   const downloadOptions = [
-    { label: 'Download as SVG', action: downloadSvg },
-    { label: 'Download as PNG', action: downloadPng },
-    { label: 'Download as MMD', action: downloadMmd },
+    { label: t('mermaid.downloadAs', { format: 'SVG' }), action: downloadSvg },
+    { label: t('mermaid.downloadAs', { format: 'PNG' }), action: downloadPng },
+    { label: t('mermaid.downloadAs', { format: 'MMD' }), action: downloadMmd },
   ];
 
   const showDiagramOptions = !isCurrentlyLoading && !error;
@@ -268,18 +271,16 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       <div className="bg-muted flex items-center justify-between px-2 py-1">
         <span className="text-foreground text-xs font-medium">mermaid</span>
         <div className="flex items-center gap-2">
-          <CopyButton textToCopy={String(code).replace(/\n$/, '')} />
+          <CopyButton
+            textToCopy={String(code).replace(/\n$/, '')}
+            side="bottom"
+          />
 
           {showDiagramOptions && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost-muted"
-                  size="xs"
-                  title={t('mermaid.downloadOptions')}
-                >
-                  Download <span className="ml-1">▼</span>
+                <Button type="button" variant="ghost-muted" size="xs">
+                  {t('mermaid.download')} <span className="ml-1">▼</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-40">
@@ -301,9 +302,8 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
               variant={showCode ? 'secondary' : 'ghost-muted'}
               size="xs"
               onClick={() => setShowCode(!showCode)}
-              title={t('mermaid.viewCode')}
             >
-              Code
+              {t('mermaid.code')}
             </Button>
           )}
         </div>
@@ -312,7 +312,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       {isCurrentlyLoading ? (
         <div className="bg-card flex items-center justify-center p-4">
           <div className="text-muted-foreground text-sm">
-            Loading diagram...
+            {t('mermaid.loading')}
           </div>
         </div>
       ) : errorRender ? (
@@ -343,43 +343,46 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             {isHovering && (
               <>
                 <div className="absolute top-2 right-2 z-10 flex items-center gap-2 rounded-sm bg-black/70 px-2 py-1 text-xs text-white">
-                  <Button
-                    type="button"
+                  <IconButton
+                    label={t('mermaid.decreaseZoom')}
+                    side="bottom"
                     variant="ghost"
                     size="icon-xs"
                     onClick={() =>
                       setZoomFactor((prev) => Math.max(1, prev - 0.5))
                     }
-                    title={t('mermaid.decreaseZoom')}
                     /* eslint-disable-next-line shadcn/no-restyle --
                        zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
-                    className="hover:bg-white/20 hover:text-white dark:hover:bg-white/20"
+                    className="hover:bg-white/20 hover:text-white"
                   >
                     -
-                  </Button>
-                  <span
-                    className="cursor-pointer hover:underline"
-                    onClick={() => {
-                      setZoomFactor(2);
-                    }}
-                    title={t('mermaid.resetZoom')}
-                  >
-                    {zoomFactor.toFixed(1)}x
-                  </span>
+                  </IconButton>
                   <Button
                     type="button"
+                    variant="link"
+                    size="inline"
+                    onClick={() => setZoomFactor(2)}
+                    title={t('mermaid.resetZoom')}
+                    /* eslint-disable-next-line shadcn/no-restyle --
+                       on the bg-black/70 zoom overlay, like its − / + siblings: keeps the overlay's white 12px regular */
+                    className="text-xs font-normal text-current"
+                  >
+                    {zoomFactor.toFixed(1)}x
+                  </Button>
+                  <IconButton
+                    label={t('mermaid.increaseZoom')}
+                    side="bottom"
                     variant="ghost"
                     size="icon-xs"
                     onClick={() =>
                       setZoomFactor((prev) => Math.min(6, prev + 0.5))
                     }
-                    title={t('mermaid.increaseZoom')}
                     /* eslint-disable-next-line shadcn/no-restyle --
                        zoom controls sit on the bg-black/70 overlay; ghost's accent hover would paint a light square on it */
-                    className="hover:bg-white/20 hover:text-white dark:hover:bg-white/20"
+                    className="hover:bg-white/20 hover:text-white"
                   >
                     +
-                  </Button>
+                  </IconButton>
                 </div>
               </>
             )}
@@ -404,7 +407,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
             <div className="border-border border-t">
               <div className="bg-muted p-2">
                 <span className="text-foreground text-xs font-medium">
-                  Mermaid Code
+                  {t('mermaid.codeTitle')}
                 </span>
               </div>
               <SyntaxHighlighter

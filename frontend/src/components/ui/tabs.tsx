@@ -2,7 +2,7 @@ import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 import { cn, focusRing } from '@/lib/utils';
-import * as TabsPrimitive from '@radix-ui/react-tabs';
+import { Tabs as TabsPrimitive } from 'radix-ui';
 
 function Tabs({
   className,
@@ -52,12 +52,12 @@ const tabsTriggerVariants = cva(
     variants: {
       variant: {
         default:
-          'data-[state=active]:bg-muted data-[state=active]:text-foreground dark:data-[state=active]:bg-accent snap-start rounded-3xl px-4 py-2 font-bold transition-colors',
+          'data-[state=active]:bg-muted data-[state=active]:text-foreground snap-start rounded-3xl px-4 py-2 font-bold transition-colors',
         // The same pixels as Button variant="tab": muted text on a
         // transparent 2px bottom border, foreground and a primary underline
         // when active.
         underline:
-          'focus-visible:border-ring inline-flex h-9 items-center justify-center gap-2 rounded-none border-b-2 border-transparent px-4 py-2 font-medium transition-all hover:border-border data-[state=active]:border-primary data-[state=active]:text-foreground',
+          'focus-visible:border-ring inline-flex h-9 items-center justify-center gap-2 rounded-none border-b-2 border-transparent px-4 py-2 font-medium transition-colors hover:border-border data-[state=active]:border-primary data-[state=active]:text-foreground',
       },
     },
     defaultVariants: { variant: 'default' },

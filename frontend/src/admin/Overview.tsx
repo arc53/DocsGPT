@@ -4,7 +4,10 @@ import { Link } from 'react-router-dom';
 
 import adminService from '../api/services/adminService';
 import { selectToken } from '../preferences/preferenceSlice';
-import { Loading, LoadError, StatCard, fmtNumber } from './AdminUI';
+import { Button } from '@/components/ui/button';
+import { LoadingState } from '@/components/ui/loading-state';
+import StatCard from '@/components/StatCard';
+import { LoadError, fmtNumber } from './AdminUI';
 
 function Section({
   title,
@@ -14,7 +17,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mt-8">
+    // The shell puts the first group 32px under the title.
+    <div className="mt-8 first:mt-0">
       <p className="text-muted-foreground mb-3 text-sm font-medium">{title}</p>
       {children}
     </div>
@@ -25,6 +29,7 @@ export default function Overview() {
   const token = useSelector(selectToken);
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,10 +47,16 @@ export default function Overview() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, reloadKey]);
 
-  if (loading) return <Loading />;
-  if (!data?.success) return <LoadError message="Failed to load overview." />;
+  if (loading) return <LoadingState fill="block" />;
+  if (!data?.success)
+    return (
+      <LoadError
+        message="Failed to load overview."
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
+    );
 
   const users = data.users ?? {};
   const failed = data.failed_logins_7d ?? 0;
@@ -85,34 +96,29 @@ export default function Overview() {
 
       <Section title="Security & access">
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <div
-            className={`rounded-2xl border px-6 py-5 ${
-              failed > 0
-                ? 'border-destructive/50 bg-destructive/10'
-                : 'border-border'
-            }`}
-          >
-            <p className="text-muted-foreground text-sm">Failed logins (7d)</p>
-            <p
-              className={`mt-1 text-2xl font-bold tabular-nums ${
-                failed > 0 ? 'text-destructive' : 'text-foreground'
-              }`}
-            >
-              {fmtNumber(failed)}
-            </p>
-            {failed > 0 ? (
-              <Link
-                to="/admin/audit?event=oidc_login_denied"
-                className="text-destructive mt-2 inline-block text-xs hover:underline"
-              >
-                View in Audit →
-              </Link>
-            ) : (
-              <p className="text-muted-foreground mt-2 text-xs">
-                No denied logins
-              </p>
-            )}
-          </div>
+          <StatCard
+            label="Failed logins (7d)"
+            value={fmtNumber(failed)}
+            tone={failed > 0 ? 'destructive' : 'default'}
+            valueTone={failed > 0 ? 'destructive' : undefined}
+            sub={
+              failed > 0 ? (
+                <Button
+                  variant="link"
+                  size="inline"
+                  asChild
+                  // eslint-disable-next-line shadcn/no-restyle -- keeps the tile's destructive tone at hint size
+                  className="text-destructive text-xs font-normal"
+                >
+                  <Link to="/admin/audit?event=oidc_login_denied">
+                    View in Audit →
+                  </Link>
+                </Button>
+              ) : (
+                'No denied logins'
+              )
+            }
+          />
         </div>
       </Section>
     </div>

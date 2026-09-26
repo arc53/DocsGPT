@@ -1,6 +1,6 @@
-import { AlertTriangle, CheckCircle2, CloudUpload } from 'lucide-react';
+import { TriangleAlert, CircleCheck, CircleAlert } from 'lucide-react';
 import { useState } from 'react';
-import { type FileRejection, useDropzone } from 'react-dropzone';
+import { type FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import userService from '../api/services/userService';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { Dropzone } from '../components/ui/dropzone';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
 import {
@@ -20,6 +21,11 @@ import {
 import { agentEditPath } from '../agents/paths';
 import { ActiveState } from '../models/misc';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
+
+const YAML_ACCEPT = {
+  'application/x-yaml': ['.yaml', '.yml'],
+  'text/yaml': ['.yaml', '.yml'],
+};
 
 type PlanSource = {
   name: string;
@@ -124,28 +130,20 @@ export default function ImportAgentModal({
     setYamlText(await selectedFile.text());
   };
 
-  const { getRootProps, getInputProps, isDragActive, isDragReject } =
-    useDropzone({
-      onDrop: (acceptedFiles: File[], fileRejections: FileRejection[]) => {
-        // A rejected file never reaches acceptedFiles, so without this the
-        // drop is a silent no-op and any previously picked file stays staged.
-        if (fileRejections.length > 0) {
-          setFileName('');
-          setYamlText('');
-          setError(t('modals.importAgent.invalidFileType'));
-          return;
-        }
-        if (acceptedFiles[0]) processFile(acceptedFiles[0]);
-      },
-      multiple: false,
-      // Declared here (not via getInputProps) so drag-and-drop is filtered
-      // too; processFile's extension check stays as a backstop for odd MIME
-      // reports.
-      accept: {
-        'application/x-yaml': ['.yaml', '.yml'],
-        'text/yaml': ['.yaml', '.yml'],
-      },
-    });
+  const handleDrop = (
+    acceptedFiles: File[],
+    fileRejections: FileRejection[],
+  ) => {
+    // A rejected file never reaches acceptedFiles, so without this the
+    // drop is a silent no-op and any previously picked file stays staged.
+    if (fileRejections.length > 0) {
+      setFileName('');
+      setYamlText('');
+      setError(t('modals.importAgent.invalidFileType'));
+      return;
+    }
+    if (acceptedFiles[0]) processFile(acceptedFiles[0]);
+  };
 
   const handleAnalyze = async () => {
     if (!yamlText) return;
@@ -284,13 +282,12 @@ export default function ImportAgentModal({
       onOpenChange={(o) => !o && handleClose()}
       title={t('modals.importAgent.title')}
       size="lg"
-      contentClassName="max-h-[70vh]"
       footer={renderFooter()}
     >
       <div className="flex flex-col gap-4">
         {warnings ? (
           <Alert variant="warning" role="status">
-            <AlertTriangle aria-hidden="true" />
+            <TriangleAlert aria-hidden="true" />
             <AlertTitle>
               {importedStatus === 'published'
                 ? t('modals.importAgent.warningsTitlePublished')
@@ -309,24 +306,14 @@ export default function ImportAgentModal({
             <p className="text-muted-foreground text-sm">
               {t('modals.importAgent.description')}
             </p>
-            <div
-              {...getRootProps({
-                className: `border-border hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
-                  isDragReject
-                    ? 'border-destructive'
-                    : isDragActive
-                      ? 'border-primary'
-                      : ''
-                }`,
-              })}
-            >
-              <CloudUpload className="text-muted-foreground mb-3 size-10" />
-              <p className="text-foreground text-sm font-medium">
-                {fileName || t('modals.importAgent.dropzoneText')}
-              </p>
-              <input {...getInputProps()} />
-            </div>
-            {error && <p className="text-destructive text-sm">{error}</p>}
+            <Dropzone
+              onDrop={handleDrop}
+              // The accept map filters drag-and-drop too; processFile's
+              // extension check stays as a backstop for odd MIME reports.
+              accept={YAML_ACCEPT}
+              title={fileName || t('modals.importAgent.dropzoneText')}
+              error={error}
+            />
           </div>
         ) : (
           <div className="flex flex-col gap-5">
@@ -342,15 +329,20 @@ export default function ImportAgentModal({
               (plan.workflow.action === 'delete' ? (
                 // Irreversible: the graph, its run history and its artifacts
                 // all go. Warn rather than confirming with a green check.
-                <p className="text-destructive flex items-center gap-2 text-sm">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  {t('modals.importAgent.workflowDelete', {
-                    nodes: plan.workflow.nodes,
-                  })}
-                </p>
+                <Alert variant="warning">
+                  <TriangleAlert className="size-4" aria-hidden="true" />
+                  <AlertDescription>
+                    {t('modals.importAgent.workflowDelete', {
+                      nodes: plan.workflow.nodes,
+                    })}
+                  </AlertDescription>
+                </Alert>
               ) : (
                 <p className="flex items-center gap-2 text-sm">
-                  <CheckCircle2 className="text-success h-4 w-4" />
+                  <CircleCheck
+                    className="text-success size-4"
+                    aria-hidden="true"
+                  />
                   {plan.workflow.action === 'update'
                     ? t('modals.importAgent.workflowUpdate', {
                         nodes: plan.workflow.nodes,
@@ -366,13 +358,19 @@ export default function ImportAgentModal({
                 {plan.sources.map((s) =>
                   s.status === 'matched' ? (
                     <p key={s.name} className="flex items-center gap-2 text-sm">
-                      <CheckCircle2 className="text-success h-4 w-4" />
+                      <CircleCheck
+                        className="text-success size-4"
+                        aria-hidden="true"
+                      />
                       {t('modals.importAgent.sourceMatched', { name: s.name })}
                     </p>
                   ) : (
                     <div key={s.name} className="flex flex-col gap-1">
                       <p className="flex items-center gap-2 text-sm">
-                        <AlertTriangle className="text-warning h-4 w-4" />
+                        <TriangleAlert
+                          className="text-warning size-4"
+                          aria-hidden="true"
+                        />
                         {t('modals.importAgent.sourceMissing', {
                           name: s.name,
                         })}
@@ -415,7 +413,10 @@ export default function ImportAgentModal({
                   <div key={tool.key} className="flex flex-col gap-1">
                     {tool.status === 'builtin' && (
                       <p className="flex items-center gap-2 text-sm">
-                        <CheckCircle2 className="text-success h-4 w-4" />
+                        <CircleCheck
+                          className="text-success size-4"
+                          aria-hidden="true"
+                        />
                         {t('modals.importAgent.toolBuiltin', {
                           type: tool.type,
                         })}
@@ -423,19 +424,24 @@ export default function ImportAgentModal({
                     )}
                     {tool.status === 'reuse' && (
                       <p className="flex items-center gap-2 text-sm">
-                        <CheckCircle2 className="text-success h-4 w-4" />
+                        <CircleCheck
+                          className="text-success size-4"
+                          aria-hidden="true"
+                        />
                         {t('modals.importAgent.toolReuse', {
                           name: tool.name || tool.type,
                         })}
                       </p>
                     )}
                     {tool.status === 'unavailable' && (
-                      <p className="text-destructive flex items-center gap-2 text-sm">
-                        <AlertTriangle className="h-4 w-4" />
-                        {t('modals.importAgent.toolUnavailable', {
-                          type: tool.type,
-                        })}
-                      </p>
+                      <Alert variant="warning">
+                        <TriangleAlert className="size-4" aria-hidden="true" />
+                        <AlertDescription>
+                          {t('modals.importAgent.toolUnavailable', {
+                            type: tool.type,
+                          })}
+                        </AlertDescription>
+                      </Alert>
                     )}
                     {tool.status === 'create' && (
                       <div className="flex flex-col gap-2">
@@ -492,7 +498,12 @@ export default function ImportAgentModal({
               </Section>
             )}
 
-            {error && <p className="text-destructive text-sm">{error}</p>}
+            {error && (
+              <Alert variant="destructive">
+                <CircleAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
           </div>
         )}
       </div>

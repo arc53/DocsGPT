@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 
 import Retry from '../assets/retry.svg?react';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -160,8 +160,8 @@ export default function ConversationMessages({
     // tool_calls and would otherwise fall into the answer branch.
     if (query.error) {
       const retryButton = (
-        <Button
-          type="button"
+        <IconButton
+          label={t('conversation.retry')}
           variant="ghost-muted"
           size="icon"
           shape="pill"
@@ -175,10 +175,9 @@ export default function ConversationMessages({
               index,
             });
           }}
-          aria-label={t('conversation.retry')}
         >
-          <Retry width={12} height={12} />
-        </Button>
+          <Retry aria-hidden="true" />
+        </IconButton>
       );
       return (
         <ConversationBubble
@@ -247,7 +246,10 @@ export default function ConversationMessages({
     if (status === 'loading' && index === queries.length - 1) {
       return (
         <div
-          className={`fade-in-bubble group dark:text-foreground flex flex-col flex-wrap self-start ${bubbleMargin}`}
+          className={cn(
+            'animate-in fade-in slide-in-from-bottom-1.5 group flex flex-col flex-wrap self-start duration-260 ease-out motion-reduce:animate-none',
+            bubbleMargin,
+          )}
         >
           <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
             <StreamingStatusLine className="my-2 ml-6" />
@@ -276,7 +278,7 @@ export default function ConversationMessages({
         <MessageScrollerViewport className="sm:pt-6 lg:pt-12">
           <MessageScrollerContent
             spacerClassName={spacerCollapsed ? 'max-h-0' : undefined}
-            className={`mx-auto pb-7 ${columnClass}`}
+            className={cn('mx-auto pb-7', columnClass)}
           >
             {headerContent}
             {queries.map((query, index) => {
@@ -285,9 +287,10 @@ export default function ConversationMessages({
                 <Fragment key={`${index}-query-fragment`}>
                   <MessageScrollerItem messageId={`q-${index}`} scrollAnchor>
                     <ConversationBubble
-                      className={`${QUESTION_BUBBLE_MARGIN_BOTTOM} ${
-                        index === 0 ? FIRST_QUESTION_BUBBLE_MARGIN_TOP : ''
-                      }`}
+                      className={cn(
+                        QUESTION_BUBBLE_MARGIN_BOTTOM,
+                        index === 0 ? FIRST_QUESTION_BUBBLE_MARGIN_TOP : '',
+                      )}
                       message={query.prompt}
                       type="QUESTION"
                       handleUpdatedQuestionSubmission={handleQuestionSubmission}

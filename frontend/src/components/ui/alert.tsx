@@ -4,18 +4,21 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const alertVariants = cva(
-  'relative w-full rounded-lg border px-4 py-3 text-sm [&>svg+div]:-translate-y-0.75 [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground [&>svg~*]:pl-7',
+  // The icon has its own 16px column and sits centred on the text block
+  // (spanning a title and its description); everything else goes in the
+  // text column. The icon takes the text colour, so the two always match.
+  'relative grid w-full grid-cols-[0_1fr] gap-y-1 rounded-xl border px-4 py-3 text-sm has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-[>svg]:gap-x-3 [&>svg]:size-4 [&>svg]:self-center [&>svg]:text-current has-[>[data-slot=alert-title]]:[&>svg]:row-span-2 [&>:not(svg)]:col-start-2',
   {
     variants: {
       variant: {
         default: 'bg-background text-foreground',
-        destructive:
-          'border-destructive/50 bg-destructive/10 text-destructive [&>svg]:text-destructive',
-        success:
-          'border-success/50 bg-success/10 text-success [&>svg]:text-success',
-        warning:
-          'border-warning/50 bg-warning/10 text-warning [&>svg]:text-warning',
-        info: 'border-info/50 bg-info/10 text-info [&>svg]:text-info',
+        // The grey box, by name (a guardrail "not evaluated" outcome); the
+        // same classes as default, which is the component's own base tone.
+        neutral: 'bg-background text-foreground',
+        destructive: 'border-destructive/50 bg-destructive/10 text-destructive',
+        success: 'border-success/50 bg-success/10 text-success',
+        warning: 'border-warning/50 bg-warning/10 text-warning',
+        info: 'border-info/50 bg-info/10 text-info',
       },
     },
     defaultVariants: {
@@ -45,7 +48,7 @@ function AlertTitle({ className, ...props }: React.ComponentProps<'h5'>) {
   return (
     <h5
       data-slot="alert-title"
-      className={cn('mb-1 leading-none font-medium tracking-tight', className)}
+      className={cn('leading-none font-medium tracking-tight', className)}
       {...props}
     />
   );

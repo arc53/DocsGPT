@@ -5,6 +5,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import modelService from './api/services/modelService';
 import DocsGPTLogo from './assets/full-logo-b.svg';
 import DocsGPTLogoWhite from './assets/full-logo-w.svg';
+import { Button } from './components/ui/button';
+import { cn } from './lib/utils';
 import {
   Select,
   SelectContent,
@@ -25,6 +27,7 @@ import {
 import type { Model } from './models/types';
 
 function HeroModelSelect() {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
   const selectedModel = useSelector(selectSelectedModel);
   const availableModels = useSelector(selectAvailableModels);
@@ -97,10 +100,10 @@ function HeroModelSelect() {
            The landing page's one focal control keeps its own look: a
            borderless muted pill at 16px whose menu joins it (DESIGN.md,
            Approved exceptions). */
-        className="bg-muted dark:bg-card text-foreground hover:bg-muted dark:hover:bg-card w-full justify-between rounded-4xl border-0 px-6 py-4 text-base shadow-none data-[state=open]:rounded-b-none"
-        size="lg"
+        className="bg-muted dark:bg-card text-foreground hover:bg-muted dark:hover:bg-card w-full justify-between rounded-4xl border-0 px-6 py-4 text-base shadow-none data-[state=open]:rounded-b-none md:text-base"
+        size="field"
       >
-        <SelectValue placeholder="Select Model" />
+        <SelectValue placeholder={t('conversation.selectModel')} />
       </SelectTrigger>
       <SelectContent
         /* eslint-disable-next-line shadcn/no-restyle --
@@ -121,7 +124,7 @@ function HeroModelSelect() {
           ))
         ) : (
           <div className="text-muted-foreground px-5 py-3 text-base">
-            No models available
+            {t('agents.form.modelsPopup.noOptionsMessage')}
           </div>
         )}
       </SelectContent>
@@ -171,10 +174,21 @@ export default function Hero({
             (demo: { header: string; query: string }, key: number) =>
               demo.header &&
               demo.query && (
-                <button
+                <Button
                   key={key}
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  shape="pill"
                   onClick={() => handleQuestion({ question: demo.query })}
-                  className={`border-border text-foreground hover:bg-muted dark:hover:bg-muted/50 bg-card w-full rounded-full border px-6 py-3.5 text-left transition-colors dark:bg-transparent ${key >= 2 ? 'hidden md:block' : ''}`}
+                  className={cn(
+                    /* eslint-disable-next-line shadcn/no-restyle --
+                       The demo card is a two-line pill (title over a clamped
+                       query at 12px), so it undoes lg's one-line height, the
+                       base's row layout, weight and nowrap. */
+                    'h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal',
+                    key >= 2 && 'hidden md:flex',
+                  )}
                 >
                   <p className="text-foreground mb-2 font-semibold">
                     {demo.header}
@@ -182,7 +196,7 @@ export default function Hero({
                   <span className="text-muted-foreground line-clamp-2">
                     {demo.query}
                   </span>
-                </button>
+                </Button>
               ),
           )}
         </div>

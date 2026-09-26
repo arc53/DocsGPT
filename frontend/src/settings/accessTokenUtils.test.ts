@@ -12,7 +12,6 @@ import {
   isUuid,
   NO_ESCAPE,
   NO_EXPIRY,
-  relativeTime,
   renewalExpiry,
   restrictionCounts,
   scopesToSubmit,
@@ -207,30 +206,6 @@ describe('expiryStatus', () => {
         NOW,
       ),
     ).toBe(2);
-  });
-});
-
-describe('relativeTime', () => {
-  const ago = (ms: number) => new Date(NOW - ms).toISOString();
-
-  it('buckets past timestamps', () => {
-    expect(relativeTime(null, NOW)).toBeNull();
-    expect(relativeTime('garbage', NOW)).toBeNull();
-    expect(relativeTime(ago(20_000), NOW)).toEqual({ unit: 'now' });
-    expect(relativeTime(ago(5 * 60_000), NOW)).toEqual({
-      unit: 'minutes',
-      count: 5,
-    });
-    expect(relativeTime(ago(3 * 3_600_000), NOW)).toEqual({
-      unit: 'hours',
-      count: 3,
-    });
-    expect(relativeTime(ago(2 * DAY), NOW)).toEqual({ unit: 'days', count: 2 });
-    expect(relativeTime(ago(45 * DAY), NOW)).toEqual({ unit: 'date' });
-  });
-
-  it('treats clock skew into the future as "now"', () => {
-    expect(relativeTime(ago(-30_000), NOW)).toEqual({ unit: 'now' });
   });
 });
 

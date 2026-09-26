@@ -13,7 +13,8 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { selectToken } from '../preferences/preferenceSlice';
-import { Loading, fmtDate } from './AdminUI';
+import { LoadingState } from '@/components/ui/loading-state';
+import { LoadError, fmtDate } from './AdminUI';
 
 type Admin = { user_id: string; granted_at?: string; sources?: string[] };
 
@@ -21,29 +22,45 @@ export default function Admins() {
   const token = useSelector(selectToken);
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setFailed(false);
     adminService
       .getAdmins(token)
       .then((res) => res.json())
       .then((json) => {
         if (!cancelled) {
           setAdmins(json.admins ?? []);
+          setFailed(!json.success);
           setLoading(false);
         }
       })
-      .catch(() => !cancelled && setLoading(false));
+      .catch(() => {
+        if (!cancelled) {
+          setFailed(true);
+          setLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, reloadKey]);
 
-  if (loading) return <Loading />;
+  if (loading) return <LoadingState fill="block" />;
+  if (failed)
+    return (
+      <LoadError
+        message="Failed to load admins."
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
+    );
 
   return (
-    <div className="mt-6">
+    <div>
       <p className="text-muted-foreground mb-4 text-sm">
         Admin access is the deployment super-admin role. Grant or revoke it from
         the Users tab; OIDC-group-derived grants reconcile automatically at

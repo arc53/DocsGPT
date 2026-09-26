@@ -1,4 +1,4 @@
-import { TriangleAlert } from 'lucide-react';
+import { CircleAlert, TriangleAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -112,9 +112,8 @@ export default function RegenerateAccessTokenModal({
         />
       }
     >
-      <div className="flex flex-col gap-5 px-1">
+      <div className="flex flex-col gap-5">
         <FormField
-          id="pat-regenerate-expiry"
           label={t('settings.accessTokens.regenerate.newExpiration')}
           hint={
             expiry === NO_EXPIRY
@@ -131,11 +130,7 @@ export default function RegenerateAccessTokenModal({
             value={String(expiry)}
             onValueChange={(value) => setExpiry(Number(value))}
           >
-            <SelectTrigger
-              id="pat-regenerate-expiry"
-              className="w-full"
-              size="lg"
-            >
+            <SelectTrigger className="w-full" size="field">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -157,12 +152,10 @@ export default function RegenerateAccessTokenModal({
         </FormField>
 
         {error && (
-          <p
-            role="alert"
-            className="bg-destructive/10 text-destructive rounded-lg px-4 py-2 text-sm"
-          >
-            {error}
-          </p>
+          <Alert variant="destructive">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
       </div>
     </Modal>

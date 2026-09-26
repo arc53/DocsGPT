@@ -8,7 +8,13 @@ import adminService, {
 } from '../api/services/adminService';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
+import { IconButton } from '../components/ui/icon-button';
+import SearchInput from '../components/SearchInput';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
+import { LoadingState } from '../components/ui/loading-state';
 import { MultiSelect } from '../components/ui/multi-select';
 import {
   Table,
@@ -19,9 +25,11 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import { Pagination } from '../components/ui/pagination';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
-  Loading,
+  LoadError,
   categoryTone,
   eventLabel,
   eventTone,
@@ -32,6 +40,7 @@ import {
   outcomeLabel,
   outcomeTone,
 } from './AdminUI';
+import { cn } from '@/lib/utils';
 
 type ActivityRow = {
   feed: string;
@@ -75,10 +84,9 @@ function DetailRow({ label, value }: { label: string; value: unknown }) {
       ? JSON.stringify(value)
       : String(value);
   return (
-    <div className="flex gap-2 text-xs break-all">
-      <span className="text-muted-foreground min-w-32 shrink-0">{label}</span>
-      <span className="font-mono">{text}</span>
-    </div>
+    <DescriptionItem label={label} mono>
+      {text}
+    </DescriptionItem>
   );
 }
 
@@ -91,24 +99,28 @@ function RowDetail({ row }: { row: ActivityRow }) {
   const detail = row.detail ?? {};
   const entries = Object.entries(detail);
   return (
-    <div className="bg-muted/40 space-y-1 rounded-lg px-4 py-3">
-      <DetailRow label="Event" value={row.event} />
-      <DetailRow label="Journal" value={row.feed} />
-      {row.actor_id ? <DetailRow label="Actor" value={row.actor_id} /> : null}
-      {row.target_id ? (
-        <DetailRow label="Affected user" value={row.target_id} />
-      ) : null}
-      {row.outcome ? <DetailRow label="Outcome" value={row.outcome} /> : null}
-      {row.ip ? <DetailRow label="IP" value={row.ip} /> : null}
-      {row.user_agent ? (
-        <DetailRow label="User agent" value={row.user_agent} />
-      ) : null}
-      <DetailRow label="Recorded" value={fmtDate(row.created_at)} />
+    <div className="bg-muted rounded-lg px-4 py-3">
+      <DescriptionList layout="columns" size="xs">
+        <DetailRow label="Event" value={row.event} />
+        <DetailRow label="Journal" value={row.feed} />
+        {row.actor_id ? <DetailRow label="Actor" value={row.actor_id} /> : null}
+        {row.target_id ? (
+          <DetailRow label="Affected user" value={row.target_id} />
+        ) : null}
+        {row.outcome ? <DetailRow label="Outcome" value={row.outcome} /> : null}
+        {row.ip ? <DetailRow label="IP" value={row.ip} /> : null}
+        {row.user_agent ? (
+          <DetailRow label="User agent" value={row.user_agent} />
+        ) : null}
+        <DetailRow label="Recorded" value={fmtDate(row.created_at)} />
+      </DescriptionList>
       {entries.length > 0 ? (
-        <div className="border-border mt-2 space-y-1 border-t pt-2">
-          {entries.map(([key, value]) => (
-            <DetailRow key={key} label={key} value={value} />
-          ))}
+        <div className="border-border mt-2 border-t pt-2">
+          <DescriptionList layout="columns" size="xs">
+            {entries.map(([key, value]) => (
+              <DetailRow key={key} label={key} value={value} />
+            ))}
+          </DescriptionList>
         </div>
       ) : null}
     </div>
@@ -126,6 +138,7 @@ export default function Activity() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
@@ -183,6 +196,7 @@ export default function Activity() {
   const load = useCallback(async () => {
     const id = ++requestId.current;
     setLoading(true);
+    setFailed(false);
     try {
       const res = await adminService.getActivity(
         { ...filters, page, page_size: PAGE_SIZE },
@@ -192,6 +206,9 @@ export default function Activity() {
       if (id !== requestId.current) return;
       setRows(json.activity ?? []);
       setTotal(json.total ?? 0);
+      setFailed(!res.ok || json.success === false);
+    } catch {
+      if (id === requestId.current) setFailed(true);
     } finally {
       if (id === requestId.current) setLoading(false);
     }
@@ -244,16 +261,17 @@ export default function Activity() {
   const applySearch = () => withPageReset(setSearch)(searchDraft.trim());
 
   return (
-    <div className="mt-6">
+    <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Search user, IP or detail"
-          value={searchDraft}
-          onChange={(e) => setSearchDraft(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && applySearch()}
-          onBlur={applySearch}
-          className="max-w-xs"
-        />
+        <div className="w-full max-w-xs">
+          <SearchInput
+            label="Search user, IP or detail"
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && applySearch()}
+            onBlur={applySearch}
+          />
+        </div>
         <MultiSelect
           options={categoryOptions}
           selected={categories}
@@ -269,19 +287,21 @@ export default function Activity() {
           searchPlaceholder="Find an event"
           className="w-56"
         />
-        <div className="flex items-center gap-1">
+        <ToggleGroup
+          type="single"
+          size="sm"
+          value={String(rangeDays)}
+          onValueChange={(value) =>
+            value && withPageReset(setRangeDays)(Number(value))
+          }
+          aria-label="Range"
+        >
           {RANGES.map((range) => (
-            <Button
-              key={range.label}
-              variant={range.days === rangeDays ? 'default' : 'outline'}
-              size="sm"
-              shape="pill"
-              onClick={() => withPageReset(setRangeDays)(range.days)}
-            >
+            <ToggleGroupItem key={range.label} value={String(range.days)}>
               {range.label}
-            </Button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
         {hasFilters ? (
           <Button
             variant="ghost"
@@ -304,7 +324,7 @@ export default function Activity() {
             disabled={exporting}
             onClick={() => exportAs('csv')}
           >
-            <Download className="size-4" />
+            <Download />
             CSV
           </Button>
           <Button
@@ -313,14 +333,16 @@ export default function Activity() {
             disabled={exporting}
             onClick={() => exportAs('ndjson')}
           >
-            <Download className="size-4" />
+            <Download />
             NDJSON
           </Button>
         </div>
       </div>
 
       {loading ? (
-        <Loading />
+        <LoadingState fill="block" />
+      ) : failed ? (
+        <LoadError message="Failed to load activity." onRetry={load} />
       ) : rows.length === 0 ? (
         <p className="text-muted-foreground mt-8 text-sm">No activity.</p>
       ) : (
@@ -349,23 +371,18 @@ export default function Activity() {
                   return [
                     <TableRow key={key}>
                       <TableCell>
-                        <button
-                          type="button"
+                        <IconButton
+                          variant="ghost-muted"
+                          size="icon-xs"
                           aria-expanded={isOpen}
-                          aria-label={
+                          label={
                             isOpen
                               ? `Hide details for ${eventLabel(row.event)}`
                               : `Show details for ${eventLabel(row.event)}`
                           }
-                          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring cursor-pointer rounded focus-visible:ring-2 focus-visible:outline-none"
+                          icon={isOpen ? ChevronDown : ChevronRight}
                           onClick={() => setExpanded(isOpen ? null : key)}
-                        >
-                          {isOpen ? (
-                            <ChevronDown className="size-4" />
-                          ) : (
-                            <ChevronRight className="size-4" />
-                          )}
-                        </button>
+                        />
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -385,9 +402,10 @@ export default function Activity() {
                         </Badge>
                       </TableCell>
                       <TableCell
-                        className={`font-mono text-xs ${
-                          repeat ? 'text-muted-foreground/50' : ''
-                        }`}
+                        className={cn(
+                          'font-mono text-xs',
+                          repeat ? 'text-muted-foreground/50' : '',
+                        )}
                       >
                         {repeat ? '〃' : (row.actor_id ?? '—')}
                       </TableCell>
@@ -427,29 +445,12 @@ export default function Activity() {
               </TableBody>
             </Table>
           </TableContainer>
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-muted-foreground text-sm">
-              {fmtNumber(total)} events · page {page} of {totalPages}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <Pagination
+            page={page}
+            pageCount={totalPages}
+            onPageChange={setPage}
+            summary={`${fmtNumber(total)} events`}
+          />
         </>
       )}
     </div>

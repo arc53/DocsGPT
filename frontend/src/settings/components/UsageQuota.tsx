@@ -4,8 +4,11 @@ import { useSelector } from 'react-redux';
 
 import { usagePercent } from '../../admin/quotaUtils';
 import userService from '../../api/services/userService';
+import { Card } from '../../components/ui/card';
+import { SectionHeader } from '../../components/ui/section-header';
 import { Progress } from '../../components/ui/progress';
 import { selectToken } from '../../preferences/preferenceSlice';
+import { formatDateTime } from '../../utils/dateTimeUtils';
 
 type Budget = { limit: number | null; used: number };
 type Bucket = {
@@ -85,10 +88,7 @@ export default function UsageQuota() {
   const reset = new Date(buckets[0].resets_at);
   const resetsAt = Number.isNaN(reset.getTime())
     ? ''
-    : new Intl.DateTimeFormat(i18n.language, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(reset);
+    : formatDateTime(buckets[0].resets_at);
 
   // A request must fit its own bucket and ``all``, so each limited one is shown.
   const scopeLabel = (name: string) =>
@@ -97,11 +97,13 @@ export default function UsageQuota() {
       : null;
 
   return (
-    <div className="border-border mb-6 rounded-2xl border px-6 py-5">
+    <Card variant="subtle" padding="lg" className="mb-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-foreground font-bold">
-          {t('settings.analytics.quota.title')}
-        </p>
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.analytics.quota.title')}
+        />
         {resetsAt ? (
           <p className="text-muted-foreground text-xs">
             {t('settings.analytics.quota.resets', { resetsAt })}
@@ -109,7 +111,7 @@ export default function UsageQuota() {
         ) : null}
       </div>
       {buckets.map((bucket) => (
-        <div key={bucket.bucket} className="mt-3">
+        <div key={bucket.bucket}>
           {scopeLabel(bucket.bucket) ? (
             <p className="text-muted-foreground mb-1 text-xs">
               {scopeLabel(bucket.bucket)}
@@ -129,6 +131,6 @@ export default function UsageQuota() {
           </div>
         </div>
       ))}
-    </div>
+    </Card>
   );
 }

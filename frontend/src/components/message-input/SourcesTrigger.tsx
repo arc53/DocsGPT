@@ -60,7 +60,7 @@ export default function SourcesTrigger({
           }
         >
           <Database />
-          <span className="dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs sm:text-sm">
+          <span className="text-foreground truncate overflow-hidden text-xs sm:text-sm">
             {selectedDocs && selectedDocs.length > 0
               ? selectedDocs.length === 1
                 ? selectedDocs[0].name

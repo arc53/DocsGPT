@@ -1,26 +1,30 @@
 import {
   Bot,
-  CheckCircle2,
   ChevronDown,
   Circle,
   CircleAlert,
-  Code2,
+  CircleCheck,
+  CircleX,
+  CodeXml,
   Database,
   FileBox,
   Flag,
   GitBranch,
-  Loader2,
+  type LucideIcon,
   MessageSquare,
   Play,
   StickyNote,
   Workflow,
-  XCircle,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { SectionHeader } from '@/components/ui/section-header';
+import { SheetTitle } from '@/components/ui/sheet';
+import { Spinner } from '@/components/ui/spinner';
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -68,14 +72,16 @@ interface WorkflowPreviewProps {
   workflowId?: string | null;
 }
 
-const NODE_ICONS: Record<string, React.ReactNode> = {
-  start: <Play className="h-3 w-3" />,
-  agent: <Bot className="h-3 w-3" />,
-  end: <Flag className="h-3 w-3" />,
-  note: <StickyNote className="h-3 w-3" />,
-  state: <Database className="h-3 w-3" />,
-  condition: <GitBranch className="h-3 w-3" />,
-  code: <Code2 className="h-3 w-3" />,
+// Components, not elements: the step list draws them at 12px, the minimap
+// rows at 14px.
+const NODE_ICONS: Record<string, LucideIcon> = {
+  start: Play,
+  agent: Bot,
+  end: Flag,
+  note: StickyNote,
+  state: Database,
+  condition: GitBranch,
+  code: CodeXml,
 };
 
 const NODE_COLORS: Record<string, string> = {
@@ -101,6 +107,7 @@ function ExecutionDetails({
   onToggle: () => void;
   stepRefs?: React.RefObject<Map<string, HTMLDivElement>>;
 }) {
+  const { t } = useTranslation();
   const completedSteps = steps.filter(
     (s) => s.status === 'completed' || s.status === 'failed',
   );
@@ -118,7 +125,7 @@ function ExecutionDetails({
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       <div className="my-2 flex flex-row items-center justify-center gap-3">
         <div className="flex h-[26px] w-[30px] items-center justify-center">
-          <Workflow className="text-muted-foreground h-5 w-5" />
+          <Workflow className="text-muted-foreground size-5" />
         </div>
         <Button
           type="button"
@@ -128,10 +135,11 @@ function ExecutionDetails({
           className="-ml-2.5"
         >
           <p className="text-base font-semibold">
-            Execution Details
+            {t('agents.workflow.preview.executionDetails')}
             <span className="text-muted-foreground ml-1.5 text-sm font-normal">
-              ({completedSteps.length}{' '}
-              {completedSteps.length === 1 ? 'step' : 'steps'})
+              {t('agents.workflow.preview.stepCount', {
+                count: completedSteps.length,
+              })}
             </span>
           </p>
           <ChevronDown
@@ -144,16 +152,17 @@ function ExecutionDetails({
       </div>
       <div
         className={cn(
-          'ml-3 grid w-full transition-all duration-300 ease-in-out',
+          'ml-3 grid w-full transition-[grid-template-rows,opacity] duration-300 ease-out',
           isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
         )}
       >
         <div className="overflow-hidden">
-          <div className="space-y-2 pr-2">
+          <div className="flex flex-col gap-2 pr-2">
             {completedSteps.map((step, stepIndex) => {
               const node = nodes.find((n) => n.id === step.nodeId);
               const displayName =
                 node?.title || node?.data?.title || step.nodeTitle;
+              const StepIcon = NODE_ICONS[step.nodeType] || Circle;
               const stateVars = step.stateDelta
                 ? Object.entries(step.stateDelta).filter(
                     ([key]) => !['query', 'chat_history'].includes(key),
@@ -176,10 +185,10 @@ function ExecutionDetails({
                   ref={(el) => {
                     if (el && stepRefs) stepRefs.current.set(step.nodeId, el);
                   }}
-                  className="bg-muted dark:bg-accent rounded-xl p-3"
+                  className="bg-muted rounded-xl p-3"
                 >
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground flex h-5 w-5 shrink-0 items-center justify-center text-xs font-medium">
+                    <span className="text-muted-foreground flex size-5 shrink-0 items-center justify-center text-xs font-medium">
                       {stepIndex + 1}.
                     </span>
                     <div
@@ -188,28 +197,26 @@ function ExecutionDetails({
                         NODE_COLORS[step.nodeType] || NODE_COLORS.state,
                       )}
                     >
-                      {NODE_ICONS[step.nodeType] || (
-                        <Circle className="h-3 w-3" />
-                      )}
+                      <StepIcon className="size-3" />
                     </div>
                     <span className="text-foreground min-w-0 truncate font-medium">
                       {displayName}
                     </span>
                     <div className="ml-auto shrink-0">
                       {step.status === 'completed' && (
-                        <CheckCircle2 className="text-success h-4 w-4" />
+                        <CircleCheck className="text-success size-4" />
                       )}
                       {step.status === 'failed' && (
-                        <XCircle className="text-destructive h-4 w-4" />
+                        <CircleX className="text-destructive size-4" />
                       )}
                     </div>
                   </div>
                   {(hasOutput || step.error || stateVars.length > 0) && (
-                    <div className="mt-3 space-y-2 text-sm">
+                    <div className="mt-3 flex flex-col gap-2 text-sm">
                       {hasOutput && (
                         <div className="bg-muted rounded-lg p-2">
                           <span className="text-muted-foreground font-medium">
-                            Output:{' '}
+                            {t('agents.workflow.preview.outputLabel')}{' '}
                           </span>
                           <span className="text-foreground wrap-break-word whitespace-pre-wrap">
                             {truncateText(formattedOutput, 300)}
@@ -220,7 +227,9 @@ function ExecutionDetails({
                         <Alert variant="destructive" role="status">
                           <CircleAlert />
                           <AlertDescription>
-                            <span className="font-medium">Error: </span>
+                            <span className="font-medium">
+                              {t('agents.workflow.preview.errorLabel')}{' '}
+                            </span>
                             <span className="wrap-break-word whitespace-pre-wrap">
                               {step.error}
                             </span>
@@ -270,11 +279,12 @@ function RunArtifactsSection({
   onToggle: () => void;
   runInProgress?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
       <div className="my-2 flex flex-row items-center justify-center gap-3">
         <div className="flex h-[26px] w-[30px] items-center justify-center">
-          <FileBox className="text-muted-foreground h-5 w-5" />
+          <FileBox className="text-muted-foreground size-5" />
         </div>
         <Button
           type="button"
@@ -283,7 +293,9 @@ function RunArtifactsSection({
           onClick={onToggle}
           className="-ml-2.5"
         >
-          <p className="text-base font-semibold">Artifacts</p>
+          <p className="text-base font-semibold">
+            {t('agents.workflow.preview.artifacts')}
+          </p>
           <ChevronDown
             className={cn(
               'transition-transform duration-200',
@@ -294,7 +306,7 @@ function RunArtifactsSection({
       </div>
       <div
         className={cn(
-          'ml-3 grid w-full transition-all duration-300 ease-in-out',
+          'ml-3 grid w-full transition-[grid-template-rows,opacity] duration-300 ease-out',
           isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
         )}
       >
@@ -324,9 +336,10 @@ export function WorkflowMiniMap({
   executionSteps: WorkflowExecutionStep[];
   onNodeClick?: (nodeId: string) => void;
 }) {
+  const { t } = useTranslation();
   const getNodeDisplayName = (node: WorkflowNode) => {
-    if (node.type === 'start') return 'Start';
-    if (node.type === 'end') return 'End';
+    if (node.type === 'start') return t('agents.workflow.nodes.start');
+    if (node.type === 'end') return t('agents.workflow.nodes.end');
     return node.title || node.data?.title || node.type;
   };
 
@@ -372,9 +385,10 @@ export function WorkflowMiniMap({
   };
 
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       {sortedNodes.map((node, index) => {
         const status = getNodeStatus(node.id);
+        const NodeIcon = NODE_ICONS[node.type] || Circle;
         const isActive = node.id === activeNodeId;
         return (
           <div key={node.id} className="relative">
@@ -409,11 +423,11 @@ export function WorkflowMiniMap({
             >
               <div
                 className={cn(
-                  'flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
+                  'flex size-5 shrink-0 items-center justify-center rounded-full',
                   NODE_COLORS[node.type] || NODE_COLORS.state,
                 )}
               >
-                {NODE_ICONS[node.type] || <Circle className="h-3 w-3" />}
+                <NodeIcon className="size-3.5" />
               </div>
               <div className="min-w-0 flex-1 text-left">
                 <div className="text-foreground truncate font-medium">
@@ -427,13 +441,13 @@ export function WorkflowMiniMap({
               </div>
               <div className="shrink-0">
                 {status === 'running' && (
-                  <Loader2 className="text-primary h-3 w-3 animate-spin" />
+                  <Spinner size="xs" className="text-primary" />
                 )}
                 {status === 'completed' && (
-                  <CheckCircle2 className="text-success h-3 w-3" />
+                  <CircleCheck className="text-success size-3.5" />
                 )}
                 {status === 'failed' && (
-                  <XCircle className="text-destructive h-3 w-3" />
+                  <CircleX className="text-destructive size-3.5" />
                 )}
               </div>
             </Button>
@@ -448,6 +462,7 @@ export default function WorkflowPreview({
   workflowData,
   workflowId,
 }: WorkflowPreviewProps) {
+  const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
 
   const queries = useSelector(selectWorkflowPreviewQueries) as WorkflowQuery[];
@@ -605,10 +620,10 @@ export default function WorkflowPreview({
       <div className="border-border flex h-[77px] items-center justify-between border-b px-6">
         <div className="flex items-center gap-3">
           <div className="bg-muted text-muted-foreground flex items-center justify-center rounded-full p-3">
-            <Play className="h-4 w-4" />
+            <Play className="size-4" />
           </div>
           <div>
-            <h2 className="text-foreground text-xl font-bold">Preview</h2>
+            <SheetTitle>{t('agents.form.sections.preview')}</SheetTitle>
             <p className="text-muted-foreground max-w-md truncate text-xs">
               {workflowData.name}
               {workflowData.description && ` - ${workflowData.description}`}
@@ -617,8 +632,8 @@ export default function WorkflowPreview({
         </div>
         {status === 'loading' && (
           <span className="text-primary flex items-center gap-1 text-xs">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Running
+            <Spinner size="xs" />
+            {t('agents.schedules.status.running')}
           </span>
         )}
       </div>
@@ -626,11 +641,13 @@ export default function WorkflowPreview({
       <div className="flex min-h-0 flex-1">
         <div className="border-border flex w-64 shrink-0 flex-col border-r">
           <div className="flex items-center justify-between px-4 py-3">
-            <h3 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
-              Workflow
-            </h3>
+            <SectionHeader
+              as="h3"
+              size="sm"
+              title={t('agents.workflow.preview.minimapHeading')}
+            />
           </div>
-          <div className="flex-1 scrollbar-thin overflow-y-auto p-3">
+          <div className="flex-1 overflow-y-auto p-3">
             <WorkflowMiniMap
               nodes={workflowData.nodes}
               activeNodeId={activeNodeId}
@@ -650,13 +667,13 @@ export default function WorkflowPreview({
                   <MessageSquare className="text-muted-foreground size-6" />
                 </div>
                 <p className="text-foreground text-xl font-semibold">
-                  Test the workflow
+                  {t('agents.workflow.preview.emptyTitle')}
                 </p>
               </div>
             ) : (
               <MessageScrollerProvider autoScroll>
                 <MessageScroller>
-                  <MessageScrollerViewport className="scrollbar-thin px-4 pt-4">
+                  <MessageScrollerViewport className="px-4 pt-4">
                     <MessageScrollerContent className="w-full">
                       {queries.map((query, index) => {
                         const querySteps = query.executionSteps || [];
@@ -774,7 +791,7 @@ export default function WorkflowPreview({
           <div className="bg-card flex w-full flex-col gap-2 px-4 pt-2 pb-4">
             {sendBlockedMessage && (
               <p className="text-destructive text-xs" role="alert">
-                {sendBlockedMessage}
+                {t(sendBlockedMessage)}
               </p>
             )}
             <MessageInput

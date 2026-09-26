@@ -101,4 +101,23 @@ describe('RemoteDeviceConfig', () => {
     expect(warning?.className).toContain('text-destructive');
     expect(warning?.querySelector('svg')).not.toBeNull();
   });
+
+  it('draws Revoke as an outlined destructive pill', async () => {
+    await render(device({}));
+    const revoke = Array.from(
+      container.querySelectorAll<HTMLElement>('button'),
+    ).find((el) => el.textContent === 'settings.devices.revoke');
+    expect(revoke?.dataset.variant).toBe('destructive-outline');
+    expect(revoke?.dataset.shape).toBe('pill');
+  });
+
+  it('boxes the danger zone in a destructive Card', async () => {
+    await render(device({}));
+    const revoke = Array.from(
+      container.querySelectorAll<HTMLElement>('button'),
+    ).find((el) => el.textContent === 'settings.devices.revoke');
+    const box = revoke?.closest<HTMLElement>('[data-slot="card"]');
+    expect(box?.dataset.tone).toBe('destructive');
+    expect(box?.dataset.padding).toBe('default');
+  });
 });

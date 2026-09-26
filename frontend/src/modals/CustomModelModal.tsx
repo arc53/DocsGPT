@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -262,10 +262,6 @@ export default function CustomModelModal({
   const canTest = isEditMode
     ? !!(trimmedBaseUrl && trimmedUpstreamId)
     : !!(trimmedBaseUrl && trimmedApiKey && trimmedUpstreamId);
-  const testDisabledHint = canTest
-    ? undefined
-    : t('settings.customModels.testHintNew');
-
   const handleTest = async () => {
     if (!canTest) return;
     setTesting(true);
@@ -328,7 +324,6 @@ export default function CustomModelModal({
       description={t('settings.customModels.modalSubtitle')}
       size="lg"
       mobileVariant="sheet"
-      className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
       footer={
         <ModalActions
           footerStart={
@@ -338,7 +333,6 @@ export default function CustomModelModal({
               onClick={handleTest}
               disabled={!canTest || saving}
               loading={testing}
-              title={testDisabledHint}
               size="lg"
               shape="pill"
             >
@@ -354,16 +348,15 @@ export default function CustomModelModal({
         />
       }
     >
-      <div className="flex flex-col gap-4 px-0.5 py-4">
+      <div className="flex flex-col gap-5">
         {/* Row 1: Display name + Model ID side-by-side */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
           <FormField
             label={t('settings.customModels.fields.displayName')}
             required
             error={errors.display_name}
           >
             <Input
-              id="cm-display-name"
               type="text"
               value={formData.display_name}
               onChange={(e) => handleChange('display_name', e.target.value)}
@@ -377,7 +370,6 @@ export default function CustomModelModal({
             error={errors.upstream_model_id}
           >
             <Input
-              id="cm-model-id"
               type="text"
               value={formData.upstream_model_id}
               onChange={(e) =>
@@ -389,7 +381,7 @@ export default function CustomModelModal({
         </div>
 
         {/* Row 2: Base URL + API key side-by-side */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
           <FormField
             label={t('settings.customModels.fields.baseUrl')}
             required
@@ -400,7 +392,6 @@ export default function CustomModelModal({
             }
           >
             <Input
-              id="cm-base-url"
               type="url"
               autoComplete="off"
               autoCorrect="off"
@@ -423,7 +414,6 @@ export default function CustomModelModal({
             error={errors.api_key}
           >
             <Input
-              id="cm-api-key"
               type="text"
               autoComplete="off"
               autoCorrect="off"
@@ -443,7 +433,6 @@ export default function CustomModelModal({
         {/* Row 3: Description (full width, optional) */}
         <FormField label={t('settings.customModels.fields.description')}>
           <Input
-            id="cm-description"
             type="text"
             value={formData.description}
             onChange={(e) => handleChange('description', e.target.value)}
@@ -452,12 +441,15 @@ export default function CustomModelModal({
         </FormField>
 
         {/* Row 4: Capabilities — flat (no border), fields grid then chips */}
-        <div className="flex flex-col gap-2">
-          <Label>{t('settings.customModels.capabilities.title')}</Label>
-          <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-5">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('settings.customModels.capabilities.title')}
+          />
+          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
             <FormField
               label={t('settings.customModels.capabilities.apiFlavor')}
-              id="cm-api-flavor"
             >
               <Select
                 value={formData.api_flavor}
@@ -484,7 +476,6 @@ export default function CustomModelModal({
             </FormField>
             <FormField
               label={t('settings.customModels.capabilities.reasoningEffort')}
-              id="cm-reasoning-effort"
             >
               <Select
                 value={formData.reasoning_effort}
@@ -526,7 +517,6 @@ export default function CustomModelModal({
               error={errors.context_window}
             >
               <Input
-                id="cm-context-window"
                 type="number"
                 value={formData.context_window}
                 min={MIN_CONTEXT_WINDOW}
@@ -619,7 +609,7 @@ export function CapabilityChip({
       aria-checked={active}
       onClick={onClick}
     >
-      {active && <Check size={14} strokeWidth={2.5} />}
+      {active && <Check className="size-3.5" strokeWidth={2.5} />}
       {label}
     </Button>
   );

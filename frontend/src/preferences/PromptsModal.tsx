@@ -1,24 +1,25 @@
-import { Book, ChevronDown } from 'lucide-react';
+import { Book } from 'lucide-react';
 import { ActiveState } from '../models/misc';
+import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
+import { FormField } from '../components/ui/form-field';
 import { Link } from 'react-router-dom';
 
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { Modal, ModalActions } from '../components/ui/modal';
-import { Button } from '../components/ui/button';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
 import { UserToolType } from '../settings/types';
-import { cn } from '@/lib/utils';
 
 const variablePattern = /(\{\{\s*[^{}]+\s*\}\}|\{(?!\{)[^{}]+\})/g;
 
@@ -145,35 +146,29 @@ function VariableMenu({
     }, 0);
   };
 
+  // An insert menu on a Select that never keeps a value: the placeholder
+  // stands in for the label, and every pick inserts and resets to "".
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="combobox"
-          shape="pill"
-          className={cn(
-            'justify-between',
-            kind === 'system'
-              ? 'w-[140px] sm:w-[185px]'
-              : 'w-[140px] sm:w-[171px]',
-          )}
-        >
-          <span className="truncate">{label}</span>
-          <ChevronDown className="text-muted-foreground ml-2 h-4 w-4 shrink-0" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
+    <Select value="" onValueChange={handleSelect}>
+      <SelectTrigger
+        size="field"
+        shape="pill"
+        className={
+          kind === 'system'
+            ? 'w-[140px] sm:w-[185px]'
+            : 'w-[140px] sm:w-[171px]'
+        }
+      >
+        <SelectValue placeholder={label} />
+      </SelectTrigger>
+      <SelectContent align="start">
         {options.map((opt) => (
-          <DropdownMenuItem
-            key={opt.value}
-            onSelect={() => handleSelect(opt.value)}
-          >
+          <SelectItem key={opt.value} value={opt.value}>
             {opt.label}
-          </DropdownMenuItem>
+          </SelectItem>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -181,7 +176,6 @@ type PromptTextareaProps = {
   id: string;
   value: string;
   onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  ariaLabel: string;
   readOnly?: boolean;
 };
 
@@ -189,7 +183,6 @@ function PromptTextarea({
   id,
   value,
   onChange,
-  ariaLabel,
   readOnly = false,
 }: PromptTextareaProps) {
   const [scrollOffsets, setScrollOffsets] = React.useState({ top: 0, left: 0 });
@@ -206,8 +199,11 @@ function PromptTextarea({
     });
   };
 
+  // One relative box holding the highlight overlay and the Textarea, so it
+  // can be a FormField's single child; the FormField label comes later in
+  // the DOM, so at the Textarea's z-10 it still paints on top.
   return (
-    <>
+    <div className="relative w-full">
       <div
         className="bg-card pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-2xl border border-transparent px-4 py-3"
         aria-hidden="true"
@@ -228,15 +224,13 @@ function PromptTextarea({
         id={id}
         size="lg"
         resize="none"
-        className="peer relative z-10 h-48 md:h-64 lg:h-80"
+        className="relative z-10 h-48 md:h-64 lg:h-80"
         value={value}
         onChange={onChange}
         onScroll={handleScroll}
-        placeholder=" "
-        aria-label={ariaLabel}
         readOnly={readOnly}
       />
-    </>
+    </div>
   );
 }
 
@@ -325,32 +319,22 @@ function AddPrompt({
 
   return (
     <div>
-      <div>
-        <Input
-          label={t('modals.prompts.promptName')}
-          type="text"
-          className="mb-5"
-          value={newPromptName}
-          onChange={(e) => setNewPromptName(e.target.value)}
-        />
+      <div className="flex flex-col gap-5">
+        <FormField label={t('modals.prompts.promptName')}>
+          <Input
+            type="text"
+            value={newPromptName}
+            onChange={(e) => setNewPromptName(e.target.value)}
+          />
+        </FormField>
 
-        <div className="relative w-full">
+        <FormField label={t('modals.prompts.promptText')}>
           <PromptTextarea
             id="new-prompt-content"
             value={newPromptContent}
             onChange={(e) => setNewPromptContent(e.target.value)}
-            ariaLabel={t('prompts.textAriaLabel')}
           />
-          <label
-            htmlFor="new-prompt-content"
-            className={cn(
-              'text-muted-foreground bg-card pointer-events-none absolute z-20 max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-ellipsis whitespace-nowrap transition-all select-none peer-placeholder-shown:top-3 peer-placeholder-shown:left-2 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs',
-              newPromptContent && '-top-2.5 left-3 text-xs',
-            )}
-          >
-            {t('modals.prompts.promptText')}
-          </label>
-        </div>
+        </FormField>
       </div>
 
       <div className="mt-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center sm:gap-4">
@@ -410,34 +394,24 @@ function EditPrompt({
 
   return (
     <div>
-      <div>
-        <Input
-          label={t('modals.prompts.promptName')}
-          type="text"
-          className="mb-5"
-          value={editPromptName}
-          onChange={(e) => setEditPromptName(e.target.value)}
-          disabled={isReadOnly}
-        />
+      <div className="flex flex-col gap-5">
+        <FormField label={t('modals.prompts.promptName')}>
+          <Input
+            type="text"
+            value={editPromptName}
+            onChange={(e) => setEditPromptName(e.target.value)}
+            disabled={isReadOnly}
+          />
+        </FormField>
 
-        <div className="relative w-full">
+        <FormField label={t('modals.prompts.promptText')}>
           <PromptTextarea
             id="edit-prompt-content"
             value={editPromptContent}
             onChange={(e) => setEditPromptContent(e.target.value)}
-            ariaLabel={t('prompts.textAriaLabel')}
             readOnly={isReadOnly}
           />
-          <label
-            htmlFor="edit-prompt-content"
-            className={cn(
-              'text-muted-foreground bg-card pointer-events-none absolute z-20 max-w-[calc(100%-24px)] cursor-none overflow-hidden px-2 text-ellipsis whitespace-nowrap transition-all select-none peer-placeholder-shown:top-3 peer-placeholder-shown:left-2 peer-placeholder-shown:text-base peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs',
-              editPromptContent && '-top-2.5 left-3 text-xs',
-            )}
-          >
-            {t('modals.prompts.promptText')}
-          </label>
-        </div>
+        </FormField>
       </div>
 
       {!isReadOnly && (
@@ -586,17 +560,18 @@ export default function PromptsModal({
   }
 
   const learnLink = (
-    <Link
-      to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-primary flex items-center gap-2 text-sm font-medium hover:underline"
-    >
-      <Book className="size-4 shrink-0" />
-      <span className="text-sm font-bold">
-        {t('modals.prompts.learnAboutPrompts')}
-      </span>
-    </Link>
+    <Button variant="link" size="inline" asChild>
+      <Link
+        to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <Book />
+        <span className="font-bold">
+          {t('modals.prompts.learnAboutPrompts')}
+        </span>
+      </Link>
+    </Button>
   );
 
   let footer: React.ReactNode;
@@ -640,20 +615,13 @@ export default function PromptsModal({
     );
   } else {
     // A public prompt with nothing to do but close: the link and a lone
-    // Cancel, laid out like ModalActions' footerStart.
+    // Cancel.
     footer = (
-      <>
-        <div className="flex flex-col sm:mr-auto">{learnLink}</div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="lg"
-          shape="pill"
-          onClick={closeModal}
-        >
-          {t('modals.prompts.cancel')}
-        </Button>
-      </>
+      <ModalActions
+        footerStart={learnLink}
+        cancelLabel={t('modals.prompts.cancel')}
+        onCancel={closeModal}
+      />
     );
   }
 
@@ -672,9 +640,8 @@ export default function PromptsModal({
       title={title}
       description={description}
       footer={footer}
-      size="lg"
+      size="xl"
       mobileVariant="sheet"
-      className="w-[95vw] max-w-[650px] md:max-w-[860px] lg:max-w-[980px]"
       contentClassName="!overflow-visible"
     >
       {view}

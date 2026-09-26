@@ -57,7 +57,7 @@ describe('FilePicker', () => {
       );
     });
     const alert = container.querySelector('[role="alert"]');
-    expect(alert?.textContent).toContain('Session expired');
+    expect(alert?.textContent).toContain('filePicker.sessionExpiredFor');
     expect(alert?.querySelector('svg')).not.toBeNull();
   });
 
@@ -108,8 +108,8 @@ describe('FilePicker', () => {
     const trail = container.querySelector('nav[aria-label="breadcrumb"]');
     expect(trail).not.toBeNull();
     const page = trail?.querySelector('[data-slot="breadcrumb-page"]');
-    expect(page?.textContent).toBe('My Files');
-    expect(page?.getAttribute('title')).toBe('My Files');
+    expect(page?.textContent).toBe('filePicker.myFiles');
+    expect(page?.getAttribute('title')).toBe('filePicker.myFiles');
     expect(trail?.querySelector('button[disabled]')).toBeNull();
   });
 });

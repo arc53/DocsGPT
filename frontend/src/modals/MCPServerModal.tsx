@@ -7,8 +7,10 @@ import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { FormField } from '../components/ui/form-field';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -453,14 +455,13 @@ export default function MCPServerModal({
     switch (formData.auth_type) {
       case 'api_key':
         return (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-5">
             <FormField
               label={t('settings.tools.mcp.authTypes.apiKey')}
               required
               error={errors.api_key}
             >
               <Input
-                id="api_key"
                 type="text"
                 value={formData.api_key}
                 onChange={(e) => handleInputChange('api_key', e.target.value)}
@@ -469,7 +470,6 @@ export default function MCPServerModal({
             </FormField>
             <FormField label={t('settings.tools.mcp.headerName')}>
               <Input
-                id="header_name"
                 type="text"
                 value={formData.header_name}
                 onChange={(e) =>
@@ -488,7 +488,6 @@ export default function MCPServerModal({
             error={errors.bearer_token}
           >
             <Input
-              id="bearer_token"
               type="text"
               value={formData.bearer_token}
               onChange={(e) =>
@@ -500,14 +499,13 @@ export default function MCPServerModal({
         );
       case 'basic':
         return (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-5">
             <FormField
               label={t('settings.tools.mcp.username')}
               required
               error={errors.username}
             >
               <Input
-                id="username"
                 type="text"
                 value={formData.username}
                 onChange={(e) => handleInputChange('username', e.target.value)}
@@ -520,7 +518,6 @@ export default function MCPServerModal({
               error={errors.password}
             >
               <Input
-                id="password"
                 type="password"
                 value={formData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
@@ -533,7 +530,6 @@ export default function MCPServerModal({
         return (
           <FormField label={t('settings.tools.mcp.placeholders.oauthScopes')}>
             <Input
-              id="oauth_scopes"
               type="text"
               value={formData.oauth_scopes}
               onChange={(e) =>
@@ -566,7 +562,6 @@ export default function MCPServerModal({
       }
       size="lg"
       mobileVariant="sheet"
-      className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
       footer={
         <ModalActions
           footerStart={
@@ -593,7 +588,7 @@ export default function MCPServerModal({
         />
       }
     >
-      <div className="flex flex-col gap-4 px-0.5 py-4">
+      <div className="flex flex-col gap-5">
         {server?.has_encrypted_credentials &&
           formData.auth_type !== 'oauth' && (
             <Alert variant="warning">
@@ -612,7 +607,6 @@ export default function MCPServerModal({
           error={errors.name}
         >
           <Input
-            id="mcp-name"
             type="text"
             value={formData.name}
             onChange={(e) => handleInputChange('name', e.target.value)}
@@ -626,7 +620,6 @@ export default function MCPServerModal({
           error={errors.server_url}
         >
           <Input
-            id="mcp-url"
             type="text"
             value={formData.server_url}
             onChange={(e) => handleInputChange('server_url', e.target.value)}
@@ -634,12 +627,12 @@ export default function MCPServerModal({
           />
         </FormField>
 
-        <FormField label={t('settings.tools.mcp.authType')} id="mcp-auth-type">
+        <FormField label={t('settings.tools.mcp.authType')}>
           <Select
             value={formData.auth_type}
             onValueChange={(v) => handleInputChange('auth_type', v)}
           >
-            <SelectTrigger variant="ghost" size="lg" className="w-full">
+            <SelectTrigger size="field" className="w-full">
               <SelectValue placeholder={t('settings.tools.mcp.authType')} />
             </SelectTrigger>
             <SelectContent>
@@ -659,7 +652,6 @@ export default function MCPServerModal({
           error={errors.timeout}
         >
           <Input
-            id="mcp-timeout"
             type="number"
             value={formData.timeout}
             onChange={(e) => {
@@ -689,38 +681,47 @@ export default function MCPServerModal({
             <AlertDescription>
               <p>{testResult.message}</p>
               {testResult.authorization_url && (
-                <a
-                  href={testResult.authorization_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const popup = window.open(
-                      testResult.authorization_url,
-                      'oauthPopup',
-                      'width=600,height=700',
-                    );
-                    if (popup) oauthPopupRef.current = popup;
-                  }}
-                  className="mt-1.5 inline-block font-medium underline"
+                <Button
+                  variant="link"
+                  size="inline"
+                  asChild
+                  // eslint-disable-next-line shadcn/no-restyle -- the link inherits its Alert's status colour
+                  className="mt-1.5 text-current"
                 >
-                  {t('settings.tools.mcp.openAuthPage', {
-                    defaultValue: 'Open authorization page',
-                  })}
-                </a>
+                  <a
+                    href={testResult.authorization_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const popup = window.open(
+                        testResult.authorization_url,
+                        'oauthPopup',
+                        'width=600,height=700',
+                      );
+                      if (popup) oauthPopupRef.current = popup;
+                    }}
+                  >
+                    {t('settings.tools.mcp.openAuthPage', {
+                      defaultValue: 'Open authorization page',
+                    })}
+                  </a>
+                </Button>
               )}
             </AlertDescription>
           </Alert>
         )}
 
         {discoveredTools.length > 0 && testResult?.success && (
-          <div className="border-border rounded-xl border p-4">
-            <h4 className="text-foreground mb-2 text-sm font-medium">
-              {t('settings.tools.mcp.discoveredTools', {
+          <Card padding="sm" className="gap-2">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('settings.tools.mcp.discoveredTools', {
                 count: discoveredTools.length,
                 defaultValue: `Discovered Actions (${discoveredTools.length})`,
               })}
-            </h4>
+            />
             <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
               {discoveredTools.map((tool) => (
                 <li
@@ -741,7 +742,7 @@ export default function MCPServerModal({
                 </li>
               ))}
             </ul>
-          </div>
+          </Card>
         )}
         {errors.general && (
           <Alert variant="destructive">

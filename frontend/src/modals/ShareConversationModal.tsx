@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
+import CopyButton from '../components/CopyButton';
 import { Button } from '../components/ui/button';
+import { FormField } from '../components/ui/form-field';
 import { Modal } from '../components/ui/modal';
 import {
   Select,
@@ -38,7 +40,6 @@ export const ShareConversationModal = ({
   const domain = window.location.origin;
 
   const [identifier, setIdentifier] = useState<null | string>(null);
-  const [isCopied, setIsCopied] = useState(false);
   const [status, setStatus] = useState<StatusType>('idle');
   const [allowPrompt, setAllowPrompt] = useState<boolean>(false);
   const promptSwitchId = useId();
@@ -60,11 +61,6 @@ export const ShareConversationModal = ({
     label: string;
     value: string;
   } | null>(preSelectedDoc ? extractDocPaths(preSelectedDoc)[0] : null);
-
-  const handleCopyKey = (url: string) => {
-    navigator.clipboard.writeText(url);
-    setIsCopied(true);
-  };
 
   const togglePromptPermission = () => {
     setAllowPrompt(!allowPrompt);
@@ -111,6 +107,28 @@ export const ShareConversationModal = ({
       title={t('modals.shareConv.label')}
       description={t('modals.shareConv.note')}
       contentClassName="!overflow-visible"
+      footer={
+        status === 'fetched' ? (
+          <CopyButton
+            size="lg"
+            textToCopy={`${domain}/share/${identifier}`}
+            copyLabel={t('modals.saveKey.copy')}
+            copiedLabel={t('modals.saveKey.copied')}
+          />
+        ) : (
+          <Button
+            type="button"
+            size="lg"
+            shape="pill"
+            loading={status === 'loading'}
+            onClick={() => {
+              shareCoversationPublicly(allowPrompt);
+            }}
+          >
+            {t('modals.shareConv.create')}
+          </Button>
+        )
+      }
     >
       <div className="flex flex-col gap-2">
         <SettingRow
@@ -124,7 +142,10 @@ export const ShareConversationModal = ({
           />
         </SettingRow>
         {allowPrompt && (
-          <div className="my-4">
+          <FormField
+            label={t('modals.createAPIKey.sourceDoc')}
+            className="my-4"
+          >
             <Select
               value={sourcePath?.value}
               onValueChange={(value) => {
@@ -134,7 +155,7 @@ export const ShareConversationModal = ({
                 if (opt) setSourcePath(opt);
               }}
             >
-              <SelectTrigger className="w-full" size="lg">
+              <SelectTrigger className="w-full" size="field">
                 <SelectValue placeholder={t('modals.createAPIKey.sourceDoc')} />
               </SelectTrigger>
               <SelectContent>
@@ -145,37 +166,11 @@ export const ShareConversationModal = ({
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </FormField>
         )}
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="no-scrollbar border-border text-foreground dark:border-border w-full overflow-x-auto rounded-full border-2 px-4 py-3 whitespace-nowrap dark:text-white">
-            {`${domain}/share/${identifier ?? '....'}`}
-          </span>
-          {status === 'fetched' ? (
-            <Button
-              type="button"
-              size="lg"
-              shape="pill"
-              className="my-1 w-28"
-              onClick={() => handleCopyKey(`${domain}/share/${identifier}`)}
-            >
-              {isCopied ? t('modals.saveKey.copied') : t('modals.saveKey.copy')}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size="lg"
-              shape="pill"
-              className="my-1 w-28"
-              loading={status === 'loading'}
-              onClick={() => {
-                shareCoversationPublicly(allowPrompt);
-              }}
-            >
-              {t('modals.shareConv.create')}
-            </Button>
-          )}
-        </div>
+        <span className="no-scrollbar border-border text-foreground w-full overflow-x-auto rounded-full border-2 px-4 py-3 whitespace-nowrap">
+          {`${domain}/share/${identifier ?? '....'}`}
+        </span>
       </div>
     </Modal>
   );

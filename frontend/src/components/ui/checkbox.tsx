@@ -42,7 +42,13 @@ function Checkbox(checkboxProps: CheckboxProps) {
         data-slot="checkbox-indicator"
         className="grid place-content-center text-current transition-none"
       >
-        <CheckIcon className={size === 'sm' ? 'size-3' : 'size-3.5'} />
+        {/* text-current: a parent that greys un-coloured svgs (CommandItem,
+            SelectItem) must not grey the tick. */}
+        <CheckIcon
+          className={
+            size === 'sm' ? 'size-3 text-current' : 'size-3.5 text-current'
+          }
+        />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

@@ -53,15 +53,17 @@ export default function ConfigToolModal({
         if (!visible) return;
       }
       if (spec.required && !configValues[key]?.toString().trim()) {
-        newErrors[key] = `${spec.label || key} is required`;
+        newErrors[key] = t('modals.configTool.fieldRequired', {
+          field: spec.label || key,
+        });
       }
       if (spec.type === 'number' && configValues[key] !== undefined) {
         const num = Number(configValues[key]);
         if (isNaN(num) || num < 1) {
-          newErrors[key] = 'Must be a positive number';
+          newErrors[key] = t('modals.configTool.positiveNumber');
         }
         if (key === 'timeout' && num > 300) {
-          newErrors[key] = 'Maximum timeout is 300 seconds';
+          newErrors[key] = t('modals.configTool.maxTimeout');
         }
       }
     });
@@ -136,10 +138,9 @@ export default function ConfigToolModal({
           </span>
         </p>
 
-        <div className="mt-6 flex flex-col gap-4 px-1">
+        <div className="mt-6 flex flex-col gap-5">
           <FormField label={t('modals.configTool.customNamePlaceholder')}>
             <Input
-              id="customName"
               type="text"
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}

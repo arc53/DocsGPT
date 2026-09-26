@@ -23,14 +23,14 @@ function render(selected: string[]): HTMLElement {
 }
 
 describe('MultiSelect', () => {
-  it('uses the combobox trigger at the 42px form-row height', () => {
+  it('uses the combobox trigger at the 38px form-row height', () => {
     const trigger = render([]).querySelector<HTMLElement>('[role="combobox"]')!;
     expect(trigger.dataset.slot).toBe('multi-select-trigger');
     expect(trigger.dataset.variant).toBe('combobox');
     expect(trigger.dataset.size).toBe('field');
     const classes = trigger.className.split(' ');
     expect(classes).toEqual(
-      expect.arrayContaining(['h-auto', 'min-h-10.5', 'py-1.5']),
+      expect.arrayContaining(['h-auto', 'min-h-9.5', 'py-1.5']),
     );
     // No restyle of another variant's surface.
     expect(classes).not.toContain('min-h-10');
@@ -59,5 +59,22 @@ describe('MultiSelect', () => {
       expect(chip.className.split(' ')).not.toContain('bg-primary/20');
     });
     expect(host.textContent).toContain('+1 more');
+  });
+});
+
+describe('MultiSelect trigger chevron', () => {
+  it("rotates SelectTrigger's ChevronDown when open", () => {
+    const trigger = render([]).querySelector<HTMLElement>('[role="combobox"]')!;
+    expect(trigger.className.split(' ')).toContain('group');
+    const icon = trigger.querySelector('svg:last-child')!;
+    const classes = icon.getAttribute('class')!.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'size-4',
+        'opacity-50',
+        'group-data-[state=open]:rotate-180',
+      ]),
+    );
+    expect(icon.getAttribute('class')).toContain('lucide-chevron-down');
   });
 });

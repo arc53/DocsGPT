@@ -68,6 +68,34 @@ describe('buildUsageChart', () => {
     expect(chart.datasets[0].label).toBe('unknown');
   });
 
+  it('folds more than five groups into four plus Other in chart-5', () => {
+    const keys = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    const chart = buildUsageChart(
+      keys.map((key, i) =>
+        // 'a' is the smallest; b..e are the four largest.
+        bucket({ group_key: key, prompt_tokens: i === 0 ? 1 : 100 - i * 10 }),
+      ),
+      'model',
+      'tokens',
+    );
+    expect(chart.datasets.map((d) => d.label)).toEqual([
+      'b',
+      'c',
+      'd',
+      'e',
+      'Other',
+    ]);
+    expect(chart.datasets.map((d) => d.backgroundColor)).toEqual([
+      'color-0',
+      'color-1',
+      'color-2',
+      'color-3',
+      'color-4',
+    ]);
+    // Other sums a, f and g (prompt 1, 50, 40, plus 20 generated each).
+    expect(chart.datasets[4].data).toEqual([1 + 50 + 40 + 60]);
+  });
+
   it('handles an empty series', () => {
     const chart = buildUsageChart([], 'model', 'cost');
     expect(chart.labels).toEqual([]);

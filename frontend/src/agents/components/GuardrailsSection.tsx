@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import {
@@ -14,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SectionHeader } from '@/components/ui/section-header';
 import { SettingRow } from '@/components/ui/setting-row';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -115,6 +118,8 @@ export default function GuardrailsSection({
   const [catalog, setCatalog] = React.useState<GuardrailCatalog | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [openSettings, setOpenSettings] = React.useState<string | null>(null);
+  // Bumped by Retry to re-run the catalog fetch below.
+  const [reloadKey, setReloadKey] = React.useState(0);
   const enabledId = React.useId();
   const failOpenId = React.useId();
 
@@ -122,6 +127,7 @@ export default function GuardrailsSection({
 
   React.useEffect(() => {
     let cancelled = false;
+    setLoadError(null);
     userService
       .getGuardrailCatalog(token)
       .then((res) => res.json())
@@ -136,7 +142,7 @@ export default function GuardrailsSection({
     return () => {
       cancelled = true;
     };
-  }, [token, t]);
+  }, [token, t, reloadKey]);
 
   /** Floor-imposed controls, so the UI can show them as active and locked. */
   const floorControls = React.useMemo(() => {
@@ -229,7 +235,10 @@ export default function GuardrailsSection({
           >
             <ChevronRight
               aria-hidden="true"
-              className={cn('transition-transform', expanded && 'rotate-90')}
+              className={cn(
+                'transition-transform duration-200',
+                expanded && 'rotate-90',
+              )}
             />
             <span className="text-lg font-semibold">
               {t('agents.form.sections.guardrails')}
@@ -258,7 +267,22 @@ export default function GuardrailsSection({
       {expanded && (
         <div className="mt-3 pb-3">
           {loadError && (
-            <p className="text-destructive mt-3 text-xs">{loadError}</p>
+            <EmptyState
+              tone="destructive"
+              size="sm"
+              illustration="none"
+              title={loadError}
+              action={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setReloadKey((k) => k + 1)}
+                >
+                  {t('retry')}
+                </Button>
+              }
+            />
           )}
 
           {disabled && disabledNotice && (
@@ -314,7 +338,15 @@ export default function GuardrailsSection({
           {config.enabled && (
             <>
               <div className="mt-5">
-                <FormField label={t('agents.form.guardrails.mode')}>
+                <FormField
+                  label={t('agents.form.guardrails.mode')}
+                  hint={
+                    config.mode === 'monitor_only'
+                      ? t('agents.form.guardrails.monitorHint')
+                      : undefined
+                  }
+                  disabled={disabled}
+                >
                   <Select
                     value={config.mode}
                     onValueChange={(mode) =>
@@ -324,7 +356,7 @@ export default function GuardrailsSection({
                   >
                     <SelectTrigger
                       className="w-full"
-                      size="lg"
+                      size="field"
                       shape="pill"
                       data-testid="guardrails-mode"
                     >
@@ -341,11 +373,6 @@ export default function GuardrailsSection({
                     </SelectContent>
                   </Select>
                 </FormField>
-                {config.mode === 'monitor_only' && (
-                  <p className="text-warning mt-2 text-xs">
-                    {t('agents.form.guardrails.monitorHint')}
-                  </p>
-                )}
               </div>
 
               <div className="mt-5">
@@ -370,9 +397,11 @@ export default function GuardrailsSection({
                     />
                   ))}
                   {orphanControls.map((control) => (
-                    <div
+                    <Card
                       key={key(control.check, control.stage)}
-                      className="border-destructive/40 flex items-center justify-between gap-3 rounded-xl border px-4 py-3"
+                      tone="destructive"
+                      padding="sm"
+                      className="flex-row items-center justify-between"
                       data-testid={`guardrail-orphan-${control.check}`}
                     >
                       <p className="text-xs">
@@ -382,7 +411,7 @@ export default function GuardrailsSection({
                       </p>
                       <Button
                         type="button"
-                        variant="ghost-destructive"
+                        variant="ghost-destructive-on-accent"
                         size="xs"
                         disabled={disabled}
                         onClick={() =>
@@ -391,7 +420,7 @@ export default function GuardrailsSection({
                       >
                         {t('agents.form.guardrails.remove')}
                       </Button>
-                    </div>
+                    </Card>
                   ))}
                 </div>
               </div>
@@ -400,12 +429,12 @@ export default function GuardrailsSection({
                 className="mt-6"
                 label={t('agents.form.guardrails.blockMessage')}
                 hint={t('agents.form.guardrails.blockMessageDescription')}
+                disabled={disabled}
               >
                 <Input
                   type="text"
                   value={config.block_message}
                   maxLength={500}
-                  disabled={disabled}
                   data-testid="guardrails-block-message"
                   onChange={(e) => patch({ block_message: e.target.value })}
                   shape="pill"
@@ -428,8 +457,9 @@ export default function GuardrailsSection({
               </SettingRow>
 
               <FormField
-                className="mt-4"
+                className="mt-5"
                 label={t('agents.form.guardrails.timeout')}
+                disabled={disabled}
               >
                 <NumberField
                   value={config.timeout_ms}
@@ -567,13 +597,10 @@ function CheckCard({
   );
 
   return (
-    <div
-      className="border-border rounded-xl border px-4 py-3"
-      data-testid={`guardrail-check-${info.name}`}
-    >
+    <Card padding="sm" data-testid={`guardrail-check-${info.name}`}>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h4 className="text-sm font-medium">{info.label}</h4>
+          <SectionHeader as="h4" size="xs" title={info.label} />
           <Badge
             variant="neutral"
             title={t('agents.form.guardrails.latencyHint')}
@@ -590,7 +617,7 @@ function CheckCard({
         <p className="text-muted-foreground mt-1 text-xs">{info.description}</p>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         {info.stages.map((stage) => {
           const control = controlFor(info.name, stage);
           const floorAction = floorControls.get(key(info.name, stage));
@@ -612,9 +639,6 @@ function CheckCard({
               disabled={!canToggle}
               data-testid={`guardrail-stage-${info.name}-${stage}`}
               onClick={() => toggleControl(info, stage, !control)}
-              title={
-                locked ? t('agents.form.guardrails.lockedByFloor') : undefined
-              }
             >
               {t(STAGE_KEYS[stage] ?? stage)}
               {locked ? ' 🔒' : ''}
@@ -637,16 +661,20 @@ function CheckCard({
       </div>
 
       {floorForCheck.map(([k, action]) => (
-        <div
+        <Alert
           key={`floor-${k}`}
-          className="bg-info/10 text-info mt-3 rounded-lg px-3 py-2 text-xs"
+          variant="info"
+          role="note"
           data-testid={`guardrail-floor-${k}`}
         >
-          {t('agents.form.guardrails.floorControl', {
-            stage: t(STAGE_KEYS[k.split(':')[1] as GuardrailStage] ?? ''),
-            action: t(ACTION_KEYS[action] ?? action),
-          })}
-        </div>
+          <Info aria-hidden="true" className="size-4" />
+          <AlertDescription>
+            {t('agents.form.guardrails.floorControl', {
+              stage: t(STAGE_KEYS[k.split(':')[1] as GuardrailStage] ?? ''),
+              action: t(ACTION_KEYS[action] ?? action),
+            })}
+          </AlertDescription>
+        </Alert>
       ))}
 
       {active.map((control) => {
@@ -656,9 +684,9 @@ function CheckCard({
           <div
             key={panelKey}
             className={cn(
-              'mt-3 rounded-lg px-3 py-2',
+              'rounded-lg px-3 py-2',
               needsSetup
-                ? 'border-destructive/50 bg-destructive/5 border'
+                ? 'border-destructive/50 bg-destructive/10 border'
                 : 'bg-muted',
             )}
           >
@@ -725,6 +753,7 @@ function CheckCard({
             </div>
             {needsSetup && (
               <p
+                role="alert"
                 className="text-destructive mt-1 text-xs"
                 data-testid={`guardrail-needs-setup-${control.check}-${control.stage}`}
               >
@@ -744,7 +773,7 @@ function CheckCard({
           </div>
         );
       })}
-    </div>
+    </Card>
   );
 }
 
@@ -768,11 +797,10 @@ function CheckSettings({
   const set = (next: Record<string, any>) => onChange({ ...s, ...next });
 
   const listField = (fieldKey: string, label: string, placeholder: string) => (
-    <FormField className="mt-2" label={label}>
+    <FormField label={label} labelSurface="muted" disabled={disabled}>
       <Textarea
         rows={2}
         size="sm"
-        disabled={disabled}
         data-testid={`guardrail-setting-${control.check}-${fieldKey}`}
         value={(s[fieldKey] ?? []).join('\n')}
         placeholder={placeholder}
@@ -790,7 +818,7 @@ function CheckSettings({
   );
 
   return (
-    <div className="border-border mt-3 border-t pt-3">
+    <div className="border-border mt-3 flex flex-col gap-5 border-t pt-5">
       {control.check === 'pii' && (
         <div className="flex flex-wrap gap-2">
           {(catalog?.pii_entities ?? []).map((entity) => {
@@ -817,7 +845,7 @@ function CheckSettings({
             );
           })}
           {(s.entities ?? []).length === 0 && (
-            <p className="text-destructive text-xs">
+            <p role="alert" className="text-destructive text-xs">
               {t('agents.form.guardrails.pickAtLeastOne')}
             </p>
           )}
@@ -848,14 +876,14 @@ function CheckSettings({
 
       {control.check === 'policy' && (
         <FormField
-          className="mt-2"
           label={t('agents.form.guardrails.policyText')}
+          labelSurface="muted"
+          disabled={disabled}
         >
           <Textarea
             rows={4}
             size="sm"
             value={s.policy ?? ''}
-            disabled={disabled}
             data-testid="guardrail-policy-text"
             onChange={(e) => set({ policy: e.target.value })}
             variant="filled"
@@ -864,8 +892,12 @@ function CheckSettings({
       )}
 
       {control.check === 'groundedness' && (
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <FormField label={t('agents.form.guardrails.minOverlap')}>
+        <div className="grid grid-cols-2 gap-2">
+          <FormField
+            label={t('agents.form.guardrails.minOverlap')}
+            labelSurface="muted"
+            disabled={disabled}
+          >
             <NumberField
               value={s.min_overlap ?? 0.3}
               min={0}
@@ -876,7 +908,11 @@ function CheckSettings({
               onCommit={(min_overlap) => set({ min_overlap })}
             />
           </FormField>
-          <FormField label={t('agents.form.guardrails.minWords')}>
+          <FormField
+            label={t('agents.form.guardrails.minWords')}
+            labelSurface="muted"
+            disabled={disabled}
+          >
             <NumberField
               value={s.min_words ?? 25}
               min={1}
@@ -892,9 +928,10 @@ function CheckSettings({
 
       {control.check === 'policy' && (
         <FormField
-          className="mt-2"
           label={t('agents.form.guardrails.confidence')}
           hint={t('agents.form.guardrails.confidenceHint')}
+          labelSurface="muted"
+          disabled={disabled}
         >
           <NumberField
             value={s.confidence_threshold ?? 0.7}

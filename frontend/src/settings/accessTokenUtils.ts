@@ -189,29 +189,6 @@ export function countLiveTokens(
     .length;
 }
 
-export type RelativeTime =
-  | { unit: 'now' }
-  | { unit: 'minutes' | 'hours' | 'days'; count: number }
-  | { unit: 'date' };
-
-/** Bucket a past timestamp for display; older than 30 days falls back to a date. */
-export function relativeTime(
-  value: string | null | undefined,
-  now: number = Date.now(),
-): RelativeTime | null {
-  if (!value) return null;
-  const at = Date.parse(value);
-  if (Number.isNaN(at)) return null;
-  const minutes = Math.floor(Math.max(0, now - at) / 60_000);
-  if (minutes < 1) return { unit: 'now' };
-  if (minutes < 60) return { unit: 'minutes', count: minutes };
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return { unit: 'hours', count: hours };
-  const days = Math.floor(hours / 24);
-  if (days <= 30) return { unit: 'days', count: days };
-  return { unit: 'date' };
-}
-
 export interface ResourceOption {
   value: string;
   label: string;

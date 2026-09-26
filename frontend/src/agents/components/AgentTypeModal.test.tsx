@@ -44,8 +44,8 @@ describe('AgentTypeModal', () => {
     await render();
     const found = tiles();
     expect(found).toHaveLength(2);
-    expect(found[0].textContent).toContain('Classic Agent');
-    expect(found[1].textContent).toContain('Workflow Agent');
+    expect(found[0].textContent).toContain('agents.typeModal.classicTitle');
+    expect(found[1].textContent).toContain('agents.typeModal.workflowTitle');
     expect(found[0].querySelector('[data-slot="option-card-icon"]')).not.toBe(
       null,
     );

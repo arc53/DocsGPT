@@ -8,8 +8,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import Analytics from '../settings/Analytics';
 import Logs from '../settings/Logs';
 import { formatDateTime } from '../utils/dateTimeUtils';
-import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
-import SectionPills from '../navigation/SectionPills';
+import SectionShell from '../navigation/SectionShell';
 import GuardrailEvents from './components/GuardrailEvents';
 import { Agent } from './types';
 
@@ -40,35 +39,35 @@ export default function AgentLogs() {
   }, [agentId, token]);
 
   return (
-    <div className="h-full overflow-auto p-4 md:p-12">
-      <div className="mx-auto w-full max-w-6xl">
-        <CurrentSectionHeader />
-        <SectionPills className="mt-4" />
-        <div className="mt-6 flex flex-col gap-3">
-          {agent && (
-            <div className="flex flex-col gap-1">
-              <p className="text-foreground">{agent.name}</p>
-              <p className="text-muted-foreground text-xs">
-                {agent.last_used_at
-                  ? t('agents.logs.lastUsedAt') +
-                    ' ' +
-                    formatDateTime(agent.last_used_at)
-                  : t('agents.logs.noUsageHistory')}
-              </p>
-            </div>
-          )}
-        </div>
-        {agentId && (
-          <>
+    <SectionShell pills>
+      <div className="flex flex-col gap-3">
+        {agent && (
+          <div className="flex flex-col gap-1">
+            <p className="text-foreground">{agent.name}</p>
+            <p className="text-muted-foreground text-xs">
+              {agent.last_used_at
+                ? t('agents.logs.lastUsedAt') +
+                  ' ' +
+                  formatDateTime(agent.last_used_at)
+                : t('agents.logs.noUsageHistory')}
+            </p>
+          </div>
+        )}
+      </div>
+      {agentId && (
+        <>
+          <div className="mt-8">
             <Analytics agentId={agentId} />
-            <GuardrailEvents agentId={agentId} />
+          </div>
+          <GuardrailEvents agentId={agentId} />
+          <div className="mt-8">
             <Logs
               agentId={agentId}
               tableHeader={t('agents.logs.tableHeader')}
             />
-          </>
-        )}
-      </div>
-    </div>
+          </div>
+        </>
+      )}
+    </SectionShell>
   );
 }

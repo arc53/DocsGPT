@@ -1,5 +1,6 @@
 import { ChevronLeft } from 'lucide-react';
 import { envVar } from '@/env';
+import { cn } from '@/lib/utils';
 import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useDropzone } from 'react-dropzone';
@@ -13,6 +14,7 @@ import type { Model } from '../models/types';
 import { getSessionToken } from '../utils/providerUtils';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { FormField as UiFormField } from '../components/ui/form-field';
 import { Label } from '../components/ui/label';
 import {
   Select,
@@ -24,6 +26,7 @@ import {
 import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
 import { Modal } from '../components/ui/modal';
+import { Separator } from '../components/ui/separator';
 import { OptionCard } from '../components/ui/option-card';
 import { ActiveState, Doc } from '../models/misc';
 
@@ -138,22 +141,23 @@ function Upload({
     const advancedFields = schema.filter((field: FormField) => field.advanced);
 
     return (
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-5">
           {generalFields.map((field: FormField) => renderField(field))}
         </div>
 
         {advancedFields.length > 0 && (
           <div
-            className={`grid transition-all duration-300 ease-in-out ${
+            className={cn(
+              'grid transition-[grid-template-rows,opacity] duration-300 ease-out',
               showAdvancedOptions
                 ? 'grid-rows-[1fr] opacity-100'
-                : 'grid-rows-[0fr] opacity-0'
-            }`}
+                : 'grid-rows-[0fr] opacity-0',
+            )}
           >
             <div className="flex flex-col gap-4 overflow-hidden">
-              <hr className="border-border my-4 border" />
-              <div className="flex flex-col gap-4">
+              <Separator className="my-4" />
+              <div className="flex flex-col gap-5">
                 {advancedFields.map((field: FormField) => renderField(field))}
               </div>
             </div>
@@ -165,12 +169,13 @@ function Upload({
 
   const renderField = (field: FormField) => {
     const isRequired = field.required ?? false;
+    const fieldLabel = field.labelKey ? t(field.labelKey) : field.label;
     switch (field.type) {
       case 'string':
         return (
           <Input
             key={field.name}
-            label={field.label}
+            label={fieldLabel}
             type="text"
             name={field.name}
             value={String(
@@ -189,7 +194,7 @@ function Upload({
         return (
           <Input
             key={field.name}
-            label={field.label}
+            label={fieldLabel}
             type="number"
             name={field.name}
             value={String(
@@ -209,27 +214,32 @@ function Upload({
           ingestor.config[field.name as keyof typeof ingestor.config] ?? '',
         );
         return (
-          <Select
+          <UiFormField
             key={field.name}
-            value={currentValue || undefined}
-            onValueChange={(value) => {
-              handleIngestorChange(
-                field.name as keyof IngestorConfig['config'],
-                value,
-              );
-            }}
+            label={fieldLabel}
+            required={isRequired}
           >
-            <SelectTrigger className="w-full" size="lg" shape="pill">
-              <SelectValue placeholder={field.label} />
-            </SelectTrigger>
-            <SelectContent>
-              {(field.options || []).map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <Select
+              value={currentValue || undefined}
+              onValueChange={(value) => {
+                handleIngestorChange(
+                  field.name as keyof IngestorConfig['config'],
+                  value,
+                );
+              }}
+            >
+              <SelectTrigger className="w-full" size="field" shape="pill">
+                <SelectValue placeholder={fieldLabel} />
+              </SelectTrigger>
+              <SelectContent>
+                {(field.options || []).map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </UiFormField>
         );
       }
       case 'boolean':
@@ -239,7 +249,7 @@ function Upload({
             className="mt-2 flex flex-row items-center gap-3 text-base"
           >
             <Label htmlFor={`field-${field.name}`} className="text-foreground">
-              {field.label}
+              {fieldLabel}
             </Label>
             <Switch
               id={`field-${field.name}`}
@@ -257,15 +267,12 @@ function Upload({
         );
       case 'textarea':
         return (
-          <div key={field.name} className="flex flex-col gap-2">
-            <Label
-              htmlFor={`field-${field.name}`}
-              className="text-foreground text-sm"
-            >
-              {field.label}
-            </Label>
+          <UiFormField
+            key={field.name}
+            label={fieldLabel}
+            required={isRequired}
+          >
             <Textarea
-              id={`field-${field.name}`}
               name={field.name}
               value={String(
                 ingestor.config[field.name as keyof typeof ingestor.config] ??
@@ -282,7 +289,7 @@ function Upload({
               size="lg"
               variant="filled"
             />
-          </div>
+          </UiFormField>
         );
       case 'local_file_picker':
         return (
@@ -301,7 +308,7 @@ function Upload({
                 {files.map((file) => (
                   <p
                     key={file.name}
-                    className="text-muted-foreground truncate overflow-hidden text-ellipsis"
+                    className="text-muted-foreground truncate"
                     title={file.name}
                   >
                     {file.name}
@@ -1064,12 +1071,10 @@ function Upload({
       }
       size="lg"
       mobileVariant="sheet"
-      className="max-h-[90vh] w-11/12 sm:w-auto sm:min-w-[600px] md:min-w-[700px]"
-      contentClassName="max-h-[80vh]"
     >
       <div className="flex w-full flex-col gap-6">
         {!ingestor.type && (
-          <p className="text-foreground text-left text-xl leading-7 font-semibold">
+          <p className="text-foreground text-left text-xl leading-tight font-semibold">
             {t('modals.uploadDoc.selectSource')}
           </p>
         )}
@@ -1078,7 +1083,7 @@ function Upload({
           <>
             {!ingestor.type && renderIngestorSelection()}
             {ingestor.type && (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-5">
                 <Button
                   type="button"
                   variant="ghost-muted"
@@ -1090,7 +1095,7 @@ function Upload({
                   <span>{t('modals.uploadDoc.back')}</span>
                 </Button>
 
-                <h2 className="text-foreground text-2xl leading-7 font-semibold">
+                <h2 className="text-foreground text-xl leading-tight font-semibold">
                   {ingestor.type &&
                     t(`modals.uploadDoc.ingestors.${ingestor.type}.heading`)}
                 </h2>

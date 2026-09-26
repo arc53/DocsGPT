@@ -35,7 +35,8 @@ describe('Textarea variants', () => {
 describe('Textarea', () => {
   it('shares the Input field styling and resizes vertically by default', () => {
     const classes = textareaVariants();
-    expect(classes).toContain('border-border');
+    expect(classes).toContain('border-input');
+    expect(classes).not.toContain('border-border');
     expect(classes).toContain('focus-visible:ring-3');
     expect(classes).toContain('resize-y');
     expect(classes).toContain('min-h-16');

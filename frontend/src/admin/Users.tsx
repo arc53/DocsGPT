@@ -22,7 +22,6 @@ import {
   DropdownMenuTrigger,
   type MenuOption,
 } from '../components/ui/dropdown-menu';
-import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import {
   Table,
@@ -33,12 +32,19 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import SearchInput from '../components/SearchInput';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
+import { LoadingState } from '../components/ui/loading-state';
+import { Pagination } from '../components/ui/pagination';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
-  Loading,
+  LoadError,
   eventLabel,
   fmtDateShort,
   fmtNumber,
@@ -74,6 +80,7 @@ export default function Users() {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [menuUserId, setMenuUserId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
@@ -88,6 +95,7 @@ export default function Users() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setFailed(false);
     try {
       const [usersRes, adminsRes] = await Promise.all([
         adminService.getUsers(
@@ -103,6 +111,9 @@ export default function Users() {
       setAdminIds(
         new Set((adminsJson.admins ?? []).map((a: any) => a.user_id)),
       );
+      setFailed(!usersRes.ok || usersJson.success === false);
+    } catch {
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -251,17 +262,18 @@ export default function Users() {
   };
 
   return (
-    <div className="mt-6">
+    <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Filter by user id"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') applySearch();
-          }}
-          className="max-w-xs"
-        />
+        <div className="w-full max-w-xs">
+          <SearchInput
+            label="Filter by user id"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') applySearch();
+            }}
+          />
+        </div>
         <Button variant="outline" size="sm" onClick={applySearch}>
           Search
         </Button>
@@ -281,7 +293,9 @@ export default function Users() {
       </div>
 
       {loading ? (
-        <Loading />
+        <LoadingState fill="block" />
+      ) : failed ? (
+        <LoadError message="Failed to load users." onRetry={load} />
       ) : users.length === 0 ? (
         <p className="text-muted-foreground mt-8 text-sm">No users found.</p>
       ) : (
@@ -372,29 +386,12 @@ export default function Users() {
               </TableBody>
             </Table>
           </TableContainer>
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-muted-foreground text-sm">
-              {fmtNumber(total)} users · page {page} of {totalPages}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <Pagination
+            page={page}
+            pageCount={totalPages}
+            onPageChange={setPage}
+            summary={`${fmtNumber(total)} users`}
+          />
         </>
       )}
 
@@ -404,7 +401,7 @@ export default function Users() {
           modalState={confirmState}
           setModalState={setConfirmState}
           submitLabel={confirm.submitLabel}
-          variant="danger"
+          variant="destructive"
           handleSubmit={() => {
             confirm.run();
             setConfirm(null);
@@ -460,7 +457,7 @@ export default function Users() {
         }
       >
         {detail ? (
-          <div className="space-y-4 text-sm">
+          <div className="flex flex-col gap-4 text-sm">
             <div>
               <p className="text-muted-foreground mb-1 text-xs">
                 Roles & status
@@ -481,35 +478,24 @@ export default function Users() {
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Agents</span>
-                <span className="tabular-nums">
-                  {fmtNumber(detail.counts?.agents)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Sources</span>
-                <span className="tabular-nums">
-                  {fmtNumber(detail.counts?.sources)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Conversations</span>
-                <span className="tabular-nums">
-                  {fmtNumber(detail.counts?.conversations)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Tokens (30d)</span>
-                <span className="tabular-nums">
-                  {fmtNumber(detail.counts?.tokens_30d)}
-                </span>
-              </div>
-            </div>
+            <DescriptionList layout="justified" size="sm" columns={2}>
+              <DescriptionItem label="Agents">
+                {fmtNumber(detail.counts?.agents)}
+              </DescriptionItem>
+              <DescriptionItem label="Sources">
+                {fmtNumber(detail.counts?.sources)}
+              </DescriptionItem>
+              <DescriptionItem label="Conversations">
+                {fmtNumber(detail.counts?.conversations)}
+              </DescriptionItem>
+              <DescriptionItem label="Tokens (30d)">
+                {fmtNumber(detail.counts?.tokens_30d)}
+              </DescriptionItem>
+            </DescriptionList>
             <Button
               variant="outline"
               size="sm"
+              className="self-start"
               onClick={() => {
                 // Close the detail dialog before the usage dialog opens, so
                 // the two never stack.
@@ -524,7 +510,7 @@ export default function Users() {
               <p className="text-muted-foreground mb-1 text-xs">
                 Recent auth events
               </p>
-              <div className="max-h-64 space-y-1 overflow-auto">
+              <div className="flex max-h-64 flex-col gap-1 overflow-auto">
                 {(detail.recent_events ?? []).length === 0 ? (
                   <p className="text-muted-foreground">None</p>
                 ) : (

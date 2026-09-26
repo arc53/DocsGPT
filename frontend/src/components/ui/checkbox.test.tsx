@@ -52,3 +52,12 @@ describe('Checkbox', () => {
     expect(box.getAttribute('aria-invalid')).toBe('true');
   });
 });
+
+describe('Checkbox tick colour', () => {
+  it('keeps its own tick colour inside a parent that greys svgs', () => {
+    const host = render(<Checkbox size="sm" checked aria-label="Picked" />);
+    expect(host.querySelector('svg')?.getAttribute('class')).toContain(
+      'text-current',
+    );
+  });
+});

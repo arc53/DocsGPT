@@ -9,6 +9,7 @@ import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
+import { SectionHeader } from '../components/ui/section-header';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ConfirmationModal from './ConfirmationModal';
@@ -113,9 +114,11 @@ export default function AgentDetailsModal({
           <div className="mt-8 flex flex-col gap-6">
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
-                <h2 className="text-foreground text-base font-semibold">
-                  {t('modals.agentDetails.publicLink')}
-                </h2>
+                <SectionHeader
+                  as="h3"
+                  size="xs"
+                  title={t('modals.agentDetails.publicLink')}
+                />
               </div>
               {sharedToken ? (
                 <div className="flex flex-col gap-2">
@@ -133,17 +136,21 @@ export default function AgentDetailsModal({
                       className="absolute -mt-0.5 ml-1 inline-flex"
                     />
                   </p>
-                  <a
-                    href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
-                    className="text-primary flex w-fit items-center gap-1 hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <Button
+                    variant="link"
+                    size="inline"
+                    asChild
+                    className="w-fit"
                   >
-                    <span className="text-sm">
+                    <a
+                      href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       {t('modals.agentDetails.learnMore')}
-                    </span>
-                    <ExternalLink className="size-3" />
-                  </a>
+                      <ExternalLink className="size-3" />
+                    </a>
+                  </Button>
                 </div>
               ) : (
                 <Button
@@ -158,9 +165,11 @@ export default function AgentDetailsModal({
               )}
             </div>
             <div className="flex flex-col gap-3">
-              <h2 className="text-foreground text-base font-semibold">
-                {t('modals.agentDetails.apiKey')}
-              </h2>
+              <SectionHeader
+                as="h3"
+                size="xs"
+                title={t('modals.agentDetails.apiKey')}
+              />
               {apiKey ? (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2">
@@ -215,9 +224,11 @@ export default function AgentDetailsModal({
             </div>
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
-                <h2 className="text-foreground text-base font-semibold">
-                  {t('modals.agentDetails.webhookUrl')}
-                </h2>
+                <SectionHeader
+                  as="h3"
+                  size="xs"
+                  title={t('modals.agentDetails.webhookUrl')}
+                />
               </div>
               {webhookUrl ? (
                 <div className="flex flex-col gap-2">
@@ -231,17 +242,21 @@ export default function AgentDetailsModal({
                       className="absolute -mt-0.5 ml-1 inline-flex"
                     />
                   </p>
-                  <a
-                    href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
-                    className="text-primary flex w-fit items-center gap-1 hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <Button
+                    variant="link"
+                    size="inline"
+                    asChild
+                    className="w-fit"
                   >
-                    <span className="text-sm">
+                    <a
+                      href="https://docs.docsgpt.cloud/Agents/basics#core-components-of-an-agent"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       {t('modals.agentDetails.learnMore')}
-                    </span>
-                    <ExternalLink className="size-3" />
-                  </a>
+                      <ExternalLink className="size-3" />
+                    </a>
+                  </Button>
                 </div>
               ) : (
                 <Button
@@ -264,7 +279,7 @@ export default function AgentDetailsModal({
         setModalState={setResetKeyConfirmState}
         submitLabel={t('modals.agentDetails.resetKey')}
         handleSubmit={handleRegenerateKey}
-        variant="danger"
+        variant="destructive"
       />
     </>
   );

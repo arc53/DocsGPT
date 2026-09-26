@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 import { Check, RefreshCw } from 'lucide-react';
 
 import userService from '../api/services/userService';
+import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
@@ -106,14 +107,12 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   const topRightAction = (
     <>
       {headerAction}
-      <button
+      <Button
+        type="button"
+        size="field"
+        shape="pill"
         onClick={() => setSyncConfirmationModal('ACTIVE')}
         disabled={isSyncing}
-        className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors ${
-          isSyncing
-            ? 'bg-muted text-muted-foreground cursor-not-allowed'
-            : 'bg-primary hover:bg-primary/90 text-primary-foreground'
-        }`}
         title={
           isSyncing
             ? `${t('settings.sources.syncing')} ${syncProgress}%`
@@ -123,24 +122,20 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         }
       >
         {syncDone ? (
-          <Check className="mr-2 size-4" />
+          <Check />
         ) : isSyncing ? (
           // The busy state shows its percentage, so it keeps the label and
           // draws the app's ring spinner at icon size (DESIGN.md, Button).
-          <Spinner
-            size="sm"
-            className="mr-2 size-4"
-            label={t('settings.sources.syncing')}
-          />
+          <Spinner size="xs" label={t('settings.sources.syncing')} />
         ) : (
-          <RefreshCw className="mr-2 size-4" />
+          <RefreshCw />
         )}
         {isSyncing
           ? `${syncProgress}%`
           : syncDone
             ? 'Done'
             : t('settings.sources.sync')}
-      </button>
+      </Button>
     </>
   );
 

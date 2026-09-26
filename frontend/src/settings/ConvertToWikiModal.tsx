@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState } from '@/components/ui/loading-state';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Modal, ModalActions } from '../components/ui/modal';
@@ -173,10 +173,9 @@ export default function ConvertToWikiModal({
       footer={footer}
       size="md"
       mobileVariant="sheet"
-      className="max-w-[480px]"
       isPerformingTask={phase === 'converting'}
     >
-      <div className="flex flex-col gap-5 px-1 py-1">
+      <div className="flex flex-col gap-5">
         {phase === 'confirm' && (
           <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
             <li>{t('settings.sources.wiki.convert.costReparse')}</li>
@@ -186,12 +185,10 @@ export default function ConvertToWikiModal({
         )}
 
         {phase === 'converting' && (
-          <div className="flex flex-col items-center gap-3 py-6">
-            <Spinner />
-            <p className="text-muted-foreground text-sm">
-              {t('settings.sources.wiki.convert.inProgress')}
-            </p>
-          </div>
+          <LoadingState
+            fill="block"
+            label={t('settings.sources.wiki.convert.inProgress')}
+          />
         )}
 
         {phase === 'summary' && summary && (

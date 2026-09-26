@@ -1,7 +1,8 @@
 import { Square, Volume2 } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import userService from '../api/services/userService';
-import { Button } from './ui/button';
+import { IconButton } from './ui/icon-button';
 
 let currentlyPlayingAudio: {
   audio: HTMLAudioElement;
@@ -41,6 +42,7 @@ function setCachedAudio(text: string, audioBase64: string) {
 }
 
 export default function SpeakButton({ text }: { text: string }) {
+  const { t } = useTranslation();
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -170,23 +172,21 @@ export default function SpeakButton({ text }: { text: string }) {
   };
 
   return (
-    <Button
-      type="button"
-      variant={isSpeaking || isLoading ? 'secondary' : 'ghost'}
-      size="icon"
+    <IconButton
+      label={
+        isLoading
+          ? t('conversation.loadingAudio', 'Loading audio')
+          : isSpeaking
+            ? t('conversation.stopSpeaking', 'Stop speaking')
+            : t('conversation.speak')
+      }
+      variant={isSpeaking || isLoading ? 'secondary' : 'ghost-muted'}
+      size="icon-sm"
       shape="pill"
       className="cursor-pointer"
       onClick={handleSpeakClick}
-      aria-label={
-        isLoading
-          ? 'Loading audio'
-          : isSpeaking
-            ? 'Stop speaking'
-            : 'Speak text'
-      }
+      icon={isSpeaking ? Square : Volume2}
       loading={isLoading}
-    >
-      {isSpeaking ? <Square /> : <Volume2 />}
-    </Button>
+    />
   );
 }

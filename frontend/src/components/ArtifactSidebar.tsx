@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import ReactMarkdown from 'react-markdown';
 import { useSelector } from 'react-redux';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -9,6 +11,7 @@ import {
 } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import remarkGfm from 'remark-gfm';
 
+import { markdownHeadings } from '@/lib/markdown';
 import { cn } from '@/lib/utils';
 
 import userService from '../api/services/userService';
@@ -17,9 +20,12 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { isDocumentArtifact, type DocumentArtifact } from './artifactViewUtils';
 import CopyButton from './CopyButton';
 import DocumentArtifactView from './DocumentArtifactView';
-import { Spinner } from '@/components/ui/spinner';
+import { EmptyState } from '@/components/ui/empty-state';
+import { LoadingState } from '@/components/ui/loading-state';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { Card } from './ui/card';
+import { IconButton } from './ui/icon-button';
 import { Sheet, SheetContent } from './ui/sheet';
 
 type TodoItem = {
@@ -61,15 +67,24 @@ type ArtifactSidebarProps = {
   variant?: 'overlay' | 'split';
 };
 
-const ARTIFACT_TITLE_BY_TYPE: Record<ArtifactData['artifact_type'], string> = {
-  todo_list: 'Todo List',
-  note: 'Note',
-  memory: 'Memory',
+const ARTIFACT_TITLE_KEY_BY_TYPE: Record<
+  ArtifactData['artifact_type'],
+  string
+> = {
+  todo_list: 'components.artifact.types.todoList',
+  note: 'components.artifact.types.note',
+  memory: 'components.artifact.types.memory',
 };
 
-function getArtifactTitle(artifact: ArtifactData | null, toolName?: string) {
-  if (artifact)
-    return ARTIFACT_TITLE_BY_TYPE[artifact.artifact_type] ?? 'Artifact';
+function getArtifactTitle(
+  t: TFunction,
+  artifact: ArtifactData | null,
+  toolName?: string,
+) {
+  if (artifact) {
+    const key = ARTIFACT_TITLE_KEY_BY_TYPE[artifact.artifact_type];
+    return key ? t(key) : t('components.artifact.fallbackTitle');
+  }
 
   const formattedToolName = (toolName ?? '')
     .replace(/_/g, ' ')
@@ -77,22 +92,29 @@ function getArtifactTitle(artifact: ArtifactData | null, toolName?: string) {
     .trim()
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
-  return formattedToolName || 'Artifact';
+  return formattedToolName || t('components.artifact.fallbackTitle');
 }
 
 function TodoListView({ data }: { data: TodoArtifactData }) {
+  const { t } = useTranslation();
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="mb-4 flex items-center justify-end">
         <div className="flex gap-2 text-xs">
-          <Badge variant="success">{data.completed_count} done</Badge>
-          <Badge variant="info">{data.open_count} open</Badge>
+          <Badge variant="success">
+            {t('components.artifact.todo.done', {
+              count: data.completed_count,
+            })}
+          </Badge>
+          <Badge variant="info">
+            {t('components.artifact.todo.open', { count: data.open_count })}
+          </Badge>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
         {data.items.length === 0 ? (
           <p className="text-muted-foreground text-center text-sm">
-            No todos yet
+            {t('components.artifact.todo.empty')}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -108,7 +130,7 @@ function TodoListView({ data }: { data: TodoArtifactData }) {
               >
                 <span
                   className={cn(
-                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2',
+                    'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2',
                     item.status === 'completed'
                       ? 'border-success bg-success text-success-foreground'
                       : 'border-input',
@@ -116,7 +138,7 @@ function TodoListView({ data }: { data: TodoArtifactData }) {
                 >
                   {item.status === 'completed' && (
                     <svg
-                      className="h-3 w-3"
+                      className="size-3"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -155,6 +177,7 @@ function TodoListView({ data }: { data: TodoArtifactData }) {
 }
 
 function NoteView({ data }: { data: NoteArtifactData }) {
+  const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
 
   return (
@@ -162,9 +185,9 @@ function NoteView({ data }: { data: NoteArtifactData }) {
       <div className="mb-4 flex items-center justify-end">
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground text-xs">
-            {data.line_count} lines
+            {t('components.artifact.note.lines', { count: data.line_count })}
           </span>
-          <CopyButton textToCopy={data.content || ''} />
+          <CopyButton textToCopy={data.content || ''} side="bottom" />
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4">
@@ -173,6 +196,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={{
+                ...markdownHeadings,
                 code(props) {
                   const {
                     children,
@@ -194,6 +218,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                         </span>
                         <CopyButton
                           textToCopy={String(children).replace(/\n$/, '')}
+                          side="bottom"
                         />
                       </div>
                       <SyntaxHighlighter
@@ -236,27 +261,15 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                 },
                 a({ children, href }) {
                   return (
-                    <a
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      {children}
-                    </a>
+                    <Button variant="link" size="inline" asChild>
+                      <a href={href} target="_blank" rel="noopener noreferrer">
+                        {children}
+                      </a>
+                    </Button>
                   );
                 },
                 p({ children }) {
                   return <p className="whitespace-pre-wrap">{children}</p>;
-                },
-                h1({ children }) {
-                  return <h1 className="text-xl font-bold">{children}</h1>;
-                },
-                h2({ children }) {
-                  return <h2 className="text-lg font-bold">{children}</h2>;
-                },
-                h3({ children }) {
-                  return <h3 className="text-base font-bold">{children}</h3>;
                 },
                 blockquote({ children }) {
                   return (
@@ -271,7 +284,9 @@ function NoteView({ data }: { data: NoteArtifactData }) {
             </ReactMarkdown>
           </div>
         ) : (
-          <p className="text-muted-foreground text-sm">Empty note</p>
+          <p className="text-muted-foreground text-sm">
+            {t('components.artifact.note.empty')}
+          </p>
         )}
       </div>
     </div>
@@ -288,6 +303,7 @@ export default function ArtifactSidebar({
 }: ArtifactSidebarProps) {
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
   const currentFetchIdRef = React.useRef<string | null>(null);
+  const { t } = useTranslation();
   const token = useSelector(selectToken);
   const [artifact, setArtifact] = useState<ArtifactData | null>(null);
   const [documentArtifact, setDocumentArtifact] =
@@ -299,7 +315,8 @@ export default function ArtifactSidebar({
     artifactId,
   );
 
-  const title = documentArtifact?.title || getArtifactTitle(artifact, toolName);
+  const title =
+    documentArtifact?.title || getArtifactTitle(t, artifact, toolName);
 
   // Reset last successful todo artifact ID when conversation changes
   useEffect(() => {
@@ -419,15 +436,15 @@ export default function ArtifactSidebar({
           // Ensure we show a visible error state instead of rendering nothing.
           const message =
             data?.message ||
-            (status === 404 ? 'Artifact not found' : null) ||
-            'Failed to load artifact';
+            (status === 404 ? t('components.artifact.notFound') : null) ||
+            t('components.artifact.loadFailed');
           setError(message);
           setLoading(false);
         })
         .catch(() => {
           // Ignore if this is not the current fetch
           if (currentFetchIdRef.current !== fetchId) return;
-          setError('Failed to fetch artifact');
+          setError(t('components.artifact.fetchFailed'));
           setLoading(false);
         });
     }
@@ -442,17 +459,26 @@ export default function ArtifactSidebar({
 
   const renderContent = () => {
     if (loading) {
-      return (
-        <div className="flex h-full items-center justify-center">
-          <Spinner />
-        </div>
-      );
+      return <LoadingState fill="parent" />;
     }
     if (error) {
       return (
-        <div className="flex h-full items-center justify-center">
-          <p className="text-destructive text-sm">{error}</p>
-        </div>
+        <EmptyState
+          tone="destructive"
+          size="sm"
+          illustration="none"
+          title={error}
+          className="h-full"
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRefreshNonce((n) => n + 1)}
+            >
+              {t('retry')}
+            </Button>
+          }
+        />
       );
     }
     if (documentArtifact) {
@@ -467,7 +493,9 @@ export default function ArtifactSidebar({
     if (!artifact) {
       return (
         <div className="flex h-full items-center justify-center">
-          <p className="text-muted-foreground text-sm">Artifact not found</p>
+          <p className="text-muted-foreground text-sm">
+            {t('components.artifact.notFound')}
+          </p>
         </div>
       );
     }
@@ -478,9 +506,15 @@ export default function ArtifactSidebar({
         return <NoteView data={artifact.data} />;
       default:
         return (
-          <pre className="text-muted-foreground text-xs">
-            {JSON.stringify(artifact, null, 2)}
-          </pre>
+          <Card
+            variant="filled"
+            padding="sm"
+            className="max-h-full overflow-auto"
+          >
+            <pre className="text-muted-foreground font-mono text-xs wrap-break-word whitespace-pre-wrap">
+              {JSON.stringify(artifact, null, 2)}
+            </pre>
+          </Card>
         );
     }
   };
@@ -498,16 +532,16 @@ export default function ArtifactSidebar({
             <span className="text-muted-foreground text-sm font-medium">
               {title}
             </span>
-            <Button
-              type="button"
+            <IconButton
+              label={t('agents.close')}
+              side="bottom"
               variant="ghost"
               size="icon-sm"
               shape="pill"
               onClick={onClose}
-              aria-label="Close"
             >
-              <X className="h-3 w-3" />
-            </Button>
+              <X aria-hidden="true" className="size-4" />
+            </IconButton>
           </div>
           <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
         </div>
@@ -525,7 +559,7 @@ export default function ArtifactSidebar({
       <SheetContent
         side="right"
         showCloseButton={false}
-        title={title || 'Artifact preview'}
+        title={title || t('components.artifact.preview')}
         className="h-full w-80 p-0 sm:w-96 sm:max-w-none"
       >
         <div className="flex min-h-0 flex-1 flex-col">
@@ -533,16 +567,16 @@ export default function ArtifactSidebar({
             <span className="text-muted-foreground text-sm font-medium">
               {title}
             </span>
-            <Button
-              type="button"
+            <IconButton
+              label={t('agents.close')}
+              side="bottom"
               variant="ghost"
               size="icon"
               shape="pill"
               onClick={onClose}
-              aria-label="Close"
             >
-              <X className="h-4 w-4" />
-            </Button>
+              <X aria-hidden="true" className="size-4" />
+            </IconButton>
           </div>
           <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
         </div>

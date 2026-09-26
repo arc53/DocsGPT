@@ -8,7 +8,35 @@ import {
 } from 'react-dropzone';
 
 import { useFormFieldControl } from '@/components/ui/form-field';
+import { cva } from 'class-variance-authority';
+
 import { cn, focusRing } from '@/lib/utils';
+
+const dropzoneVariants = cva(
+  `${focusRing} border-input bg-card text-foreground hover:bg-accent flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed text-center transition-colors outline-none data-[drag-active]:border-primary data-[drag-active]:bg-primary/5 data-[drag-reject]:border-destructive data-[drag-reject]:bg-destructive/5 data-[disabled]:pointer-events-none data-[disabled]:opacity-50`,
+  {
+    variants: {
+      size: {
+        default: 'px-6 py-10',
+        compact: 'flex-row justify-start px-4 py-3 text-left',
+      },
+    },
+    defaultVariants: { size: 'default' },
+  },
+);
+
+const dropzoneIconVariants = cva(
+  'bg-muted text-muted-foreground flex shrink-0 items-center justify-center rounded-full',
+  {
+    variants: {
+      size: {
+        default: 'size-12 [&>svg]:size-6',
+        compact: 'size-8 [&>svg]:size-4',
+      },
+    },
+    defaultVariants: { size: 'default' },
+  },
+);
 
 type DropzoneProps = {
   /** Receives accepted files and, when `accept`/`maxSize` reject some, the rejections. */
@@ -83,26 +111,12 @@ function Dropzone({
         data-disabled={disabled || undefined}
         data-drag-active={isDragActive || undefined}
         data-drag-reject={isDragReject || undefined}
-        className={cn(
-          `${focusRing} border-border bg-card text-foreground hover:bg-accent/40 flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed text-center transition-colors outline-none`,
-          'data-[drag-active]:border-primary data-[drag-active]:bg-primary/5',
-          'data-[drag-reject]:border-destructive data-[drag-reject]:bg-destructive/5',
-          'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-          size === 'default' && 'px-6 py-10',
-          size === 'compact' && 'flex-row justify-start px-4 py-3 text-left',
-        )}
+        className={dropzoneVariants({ size })}
       >
         <input {...getInputProps({ id: field.id })} />
         {children ?? (
           <>
-            <span
-              className={cn(
-                'bg-muted text-muted-foreground flex shrink-0 items-center justify-center rounded-full',
-                size === 'default'
-                  ? 'size-12 [&>svg]:size-6'
-                  : 'size-8 [&>svg]:size-4',
-              )}
-            >
+            <span className={dropzoneIconVariants({ size })}>
               {icon ?? <CloudUpload />}
             </span>
             <span className="flex min-w-0 flex-col gap-0.5">

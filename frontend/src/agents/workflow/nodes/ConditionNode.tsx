@@ -1,6 +1,9 @@
 import { GitBranch } from 'lucide-react';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Handle, NodeProps, Position } from 'reactflow';
+
+import { cn } from '@/lib/utils';
 
 import { ConditionCase } from '../../types/workflow';
 
@@ -29,18 +32,21 @@ function getHandleTop(index: number, total: number): string {
 }
 
 const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
-  const title = data.title || data.label || 'If / Else';
+  const { t } = useTranslation();
+  const title =
+    data.title || data.label || t('agents.workflow.nodes.condition');
   const cases = data.config?.cases || [];
   const totalOutputs = cases.length + 1;
   const height = getNodeHeight(cases.length);
 
   return (
     <div
-      className={`bg-card relative rounded-2xl border shadow-md transition-all ${
+      className={cn(
+        'bg-card relative rounded-2xl border shadow-md transition',
         selected
           ? 'border-primary ring-primary scale-105 ring-2'
-          : 'border-border hover:shadow-lg'
-      }`}
+          : 'border-border hover:shadow-lg',
+      )}
       style={{ minWidth: 180, maxWidth: 220, height }}
     >
       <Handle
@@ -51,8 +57,8 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
       />
 
       <div className="flex items-center gap-3 px-3 py-2">
-        <div className="bg-warning/10 text-warning flex h-9 w-9 shrink-0 items-center justify-center rounded-full">
-          <GitBranch size={14} />
+        <div className="bg-warning/10 text-warning flex size-9 shrink-0 items-center justify-center rounded-full">
+          <GitBranch className="size-3.5" />
         </div>
         <div className="min-w-0 flex-1 pr-2">
           <div
@@ -61,8 +67,10 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
           >
             {title}
           </div>
-          <div className="text-muted-foreground text-xs uppercase">
-            {data.config?.mode || 'simple'}
+          <div className="text-muted-foreground text-xs">
+            {data.config?.mode === 'advanced'
+              ? t('agents.workflow.nodes.modeAdvanced')
+              : t('agents.workflow.nodes.modeSimple')}
           </div>
         </div>
       </div>
@@ -75,7 +83,9 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
             style={{ height: ROW_HEIGHT }}
           >
             <span className="text-warning shrink-0 text-xs font-medium">
-              {i === 0 ? 'If' : 'Else if'}
+              {i === 0
+                ? t('agents.workflow.nodes.if')
+                : t('agents.workflow.nodes.elseIf')}
             </span>
             {c.name && (
               <span
@@ -89,7 +99,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
         ))}
         <div className="flex items-center gap-1" style={{ height: ROW_HEIGHT }}>
           <span className="text-muted-foreground text-xs font-medium">
-            Else
+            {t('agents.workflow.nodes.else')}
           </span>
         </div>
       </div>

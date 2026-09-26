@@ -10,12 +10,20 @@ import { useSelector } from 'react-redux';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatBytes } from '../../utils/stringUtils';
 import userService from '../../api/services/userService';
-import { ArrowLeft, Eye, File, Folder } from 'lucide-react';
+import { Eye, File, Folder } from 'lucide-react';
 import { useLoaderState, useOutsideAlerter } from '../../hooks';
 import Chunks from '../Chunks';
+import PathHeader from './PathHeader';
 import SkeletonLoader from '../SkeletonLoader';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
+import { cn, fieldFrame } from '@/lib/utils';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../ui/command';
 import {
   Table,
   TableBody,
@@ -79,6 +87,14 @@ export interface TreeBrowserProps {
    */
   onCurrentPathChange?: (path: string[]) => void;
 }
+
+// The search field's frame: the pill Input look around a CommandInput
+// (38px, focus ring while the input has keyboard focus). CommandInput's row
+// is 36px with a bottom rule; pt-px + overflow-hidden clips that rule.
+const SEARCH_FRAME = cn(
+  fieldFrame,
+  'border-border has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-ring/50 h-9.5 overflow-hidden rounded-full px-2 pt-px has-[input:focus-visible]:ring-3',
+);
 
 function calculateDirectoryStats(structure: DirectoryStructure): {
   totalSize: number;
@@ -485,8 +501,8 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
         ? [
             <TableRow key="parent-dir" onClick={navigateUp}>
               <TableCell width="40%" align="left">
-                <div className="flex items-center">
-                  <Folder className="text-primary mr-2 size-4 shrink-0" />
+                <div className="flex items-center gap-2">
+                  <Folder className="text-primary size-4 shrink-0" />
                   <span className="truncate">..</span>
                 </div>
               </TableCell>
@@ -511,8 +527,8 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
       return (
         <TableRow key={itemId} onClick={() => navigateToDirectory(name)}>
           <TableCell width="40%" align="left">
-            <div className="flex min-w-0 items-center">
-              <Folder className="text-primary mr-2 size-4 shrink-0" />
+            <div className="flex min-w-0 items-center gap-2">
+              <Folder className="text-primary size-4 shrink-0" />
               <span className="truncate">{name}</span>
             </div>
           </TableCell>
@@ -538,8 +554,8 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           onClick={() => handleFileClick(name, displayName)}
         >
           <TableCell width="40%" align="left">
-            <div className="flex min-w-0 items-center">
-              <File className="text-muted-foreground mr-2 size-4 shrink-0" />
+            <div className="flex min-w-0 items-center gap-2">
+              <File className="text-muted-foreground size-4 shrink-0" />
               <span className="truncate">{displayName}</span>
             </div>
           </TableCell>
@@ -559,107 +575,86 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
 
   const renderFileSearch = () => (
     <div className="relative w-52" ref={searchDropdownRef}>
-      <Input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => {
-          setSearchQuery(e.target.value);
-          if (directoryStructure) {
-            setSearchResults(searchFiles(e.target.value, directoryStructure));
-          }
-        }}
-        placeholder={t('settings.sources.searchFiles')}
-        shape="pill"
-        className="h-[38px]"
-      />
-
-      {searchQuery && (
-        <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 left-0 z-20 mt-1 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-xl border shadow-md transition-all duration-200">
-          <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto overscroll-contain">
-            {searchResults.length === 0 ? (
-              <div className="text-muted-foreground py-2 text-center text-sm">
-                {t('settings.sources.noResults')}
-              </div>
-            ) : (
-              searchResults.map((result, index) => (
-                <div
-                  key={index}
-                  onClick={() => handleSearchSelect(result)}
-                  title={result.path}
-                  className={`hover:bg-muted flex min-w-0 cursor-pointer items-center px-3 py-2 ${
-                    index !== searchResults.length - 1
-                      ? 'border-border border-b'
-                      : ''
-                  }`}
-                >
-                  {result.isFile ? (
-                    <File className="text-muted-foreground mr-2 size-4 shrink-0" />
-                  ) : (
-                    <Folder className="text-primary mr-2 size-4 shrink-0" />
-                  )}
-                  <span className="flex-1 truncate text-sm">{result.name}</span>
-                </div>
-              ))
-            )}
-          </div>
+      {/* `contents`: the Command only scopes cmdk (the arrow keys move from
+          the input to the rows); the frame and the dropdown draw the look. */}
+      <Command shouldFilter={false} className="contents">
+        <div className={SEARCH_FRAME}>
+          <CommandInput
+            value={searchQuery}
+            onValueChange={(value) => {
+              setSearchQuery(value);
+              if (directoryStructure) {
+                setSearchResults(searchFiles(value, directoryStructure));
+              }
+            }}
+            placeholder={t('settings.sources.searchFiles')}
+          />
         </div>
-      )}
+
+        {searchQuery && (
+          <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 left-0 z-20 mt-1 w-full overflow-hidden rounded-xl border shadow-md">
+            <CommandList className="max-h-[calc(100vh-200px)] overscroll-contain">
+              {searchResults.length === 0 ? (
+                <CommandEmpty>{t('settings.sources.noResults')}</CommandEmpty>
+              ) : (
+                <CommandGroup>
+                  {searchResults.map((result) => (
+                    <CommandItem
+                      key={result.path}
+                      value={result.path}
+                      title={result.path}
+                      onSelect={() => handleSearchSelect(result)}
+                    >
+                      {result.isFile ? (
+                        <File />
+                      ) : (
+                        <Folder className="text-primary" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">
+                        {result.name}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </div>
+        )}
+      </Command>
     </div>
   );
 
+  // Crumb n opens the folder made of the first n path segments (0 = root).
+  const openPathDepth = useCallback((depth: number) => {
+    setSelectedFile(null);
+    setCurrentPath((prev) => prev.slice(0, depth));
+  }, []);
+
   const renderPathNavigation = () => (
-    <div className="mb-0 flex min-h-[38px] flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex w-full items-center sm:w-auto">
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-xs"
-          shape="pill"
-          className="mr-3"
-          onClick={handleBackNavigation}
-          aria-label={t('settings.sources.back')}
-        >
-          <ArrowLeft />
-        </Button>
-
-        <div className="flex flex-wrap items-center">
-          <span className="text-primary font-semibold wrap-break-word">
-            {sourceName}
-          </span>
-          {currentPath.length > 0 && (
-            <>
-              <span className="text-muted-foreground mx-1 shrink-0">/</span>
-              {currentPath.map((dir, index) => (
-                <React.Fragment key={index}>
-                  <span className="text-foreground wrap-break-word">{dir}</span>
-                  {index < currentPath.length - 1 && (
-                    <span className="text-muted-foreground mx-1 shrink-0">
-                      /
-                    </span>
-                  )}
-                </React.Fragment>
-              ))}
-            </>
+    <PathHeader
+      root={{
+        label: sourceName,
+        onSelect: currentPath.length > 0 ? () => openPathDepth(0) : undefined,
+      }}
+      segments={currentPath.map((dir, index) => ({
+        label: dir,
+        onSelect:
+          index < currentPath.length - 1
+            ? () => openPathDepth(index + 1)
+            : undefined,
+      }))}
+      onBack={handleBackNavigation}
+      backLabel={t('settings.sources.back')}
+      actions={
+        <>
+          {statusLabel && (
+            <div className="text-muted-foreground text-sm">{statusLabel}</div>
           )}
-          {selectedFile && (
-            <>
-              <span className="text-muted-foreground mx-1 shrink-0">/</span>
-              <span className="text-foreground wrap-break-word">
-                {selectedFile.name}
-              </span>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="relative mt-2 flex w-full flex-row flex-nowrap items-center justify-end gap-2 sm:mt-0 sm:w-auto">
-        {statusLabel && (
-          <div className="text-muted-foreground text-sm">{statusLabel}</div>
-        )}
-        {renderFileSearch()}
-        {topRightAction}
-      </div>
-    </div>
+          {renderFileSearch()}
+          {topRightAction}
+        </>
+      }
+    />
   );
 
   const currentDirectory = getCurrentDirectory();
@@ -677,6 +672,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
               displayPath={[...currentPath, selectedFile.name].join('/')}
               onFileSearch={handleFileSearch}
               onFileSelect={handleFileSelect}
+              onPathSelect={openPathDepth}
             />
           </div>
         </div>

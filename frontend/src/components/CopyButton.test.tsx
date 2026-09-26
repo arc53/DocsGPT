@@ -50,6 +50,9 @@ describe('CopyButton', () => {
     expect(button().dataset.variant).toBe('ghost-muted');
     expect(button().dataset.size).toBe('icon-sm');
     expect(button().dataset.shape).toBe('pill');
+    // IconButton: a tooltip trigger, never a native title.
+    expect(button().hasAttribute('title')).toBe(false);
+    expect(button().dataset.state).toBe('closed');
   });
 
   it('uses icon-xs when size is xs and xs with text', () => {
@@ -58,6 +61,7 @@ describe('CopyButton', () => {
     act(() => root.render(<CopyButton textToCopy="hello" showText />));
     expect(button().dataset.size).toBe('xs');
     expect(button().textContent).toContain('conversation.copy');
+    expect(button().hasAttribute('title')).toBe(false);
   });
 
   it('copies the text and shows the copied state without disabling', async () => {
@@ -84,5 +88,33 @@ describe('CopyButton', () => {
     });
     expect(button().getAttribute('aria-label')).toBe('conversation.copy');
     expect(button().dataset.variant).toBe('ghost-muted');
+  });
+
+  it('renders a text-only lg pill with custom labels that resets', async () => {
+    act(() =>
+      root.render(
+        <CopyButton
+          textToCopy="https://x/share/1"
+          size="lg"
+          copyLabel="Copy link"
+          copiedLabel="Link copied"
+          copiedDuration={1000}
+        />,
+      ),
+    );
+    expect(button().dataset.size).toBe('lg');
+    expect(button().dataset.shape).toBe('pill');
+    expect(button().dataset.variant).toBe('default');
+    expect(button().querySelector('svg')).toBeNull();
+    expect(button().textContent).toBe('Copy link');
+
+    await click();
+    expect(copyMock).toHaveBeenCalledWith('https://x/share/1');
+    expect(button().textContent).toContain('Link copied');
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(button().textContent).toBe('Copy link');
   });
 });

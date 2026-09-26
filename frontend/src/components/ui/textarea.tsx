@@ -1,11 +1,14 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 
-import { useFormFieldControl } from '@/components/ui/form-field';
+import {
+  useFormFieldControl,
+  useFormFieldFloating,
+} from '@/components/ui/form-field';
 import { cn, focusRing, invalidState, fieldFrame } from '@/lib/utils';
 
 const textareaVariants = cva(
-  `${focusRing} ${invalidState} ${fieldFrame} text-foreground placeholder:text-muted-foreground border-border selection:bg-primary selection:text-primary-foreground focus-visible:border-ring flex w-full min-w-0 bg-transparent disabled:cursor-not-allowed disabled:opacity-50`,
+  `${focusRing} ${invalidState} ${fieldFrame} text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground focus-visible:border-ring flex w-full min-w-0 bg-transparent disabled:cursor-not-allowed disabled:opacity-50`,
   {
     variants: {
       size: {
@@ -44,14 +47,24 @@ function Textarea(textareaProps: TextareaProps) {
     size = 'default',
     resize = 'vertical',
     variant = 'default',
+    placeholder,
     ...props
   } = useFormFieldControl(textareaProps);
+  const floating = useFormFieldFloating();
   return (
     <textarea
       data-slot="textarea"
       data-size={size}
       data-variant={variant}
-      className={cn(textareaVariants({ size, resize, variant }), className)}
+      // Under a FormField's floating label a blank placeholder drives the
+      // resting position; a real one stays hidden until focus.
+      placeholder={placeholder ?? (floating ? ' ' : undefined)}
+      className={cn(
+        textareaVariants({ size, resize, variant }),
+        floating &&
+          'focus:placeholder:text-muted-foreground placeholder:text-transparent',
+        className,
+      )}
       {...props}
     />
   );

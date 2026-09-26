@@ -1,9 +1,11 @@
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, CircleAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
+import { Card } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import {
@@ -20,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { TimePicker } from '@/components/ui/time-picker';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 import { Modal } from '../../components/ui/modal';
 import { formatDateOnly } from '../../utils/dateTimeUtils';
@@ -140,14 +143,24 @@ export default function ScheduleFormModal({
     // the engine's supported list (e.g. an exotic tz saved on the schedule).
     return list.includes(timezone) ? list : [timezone, ...list];
   }, [timezone]);
-  const [error, setError] = useState<string | null>(null);
+  // A missing instruction is the Instructions field's error; a run time in
+  // the past spans the date, time and timezone, so it is an Alert.
+  const [instructionError, setInstructionError] = useState<string | null>(null);
+  const [runAtError, setRunAtError] = useState<string | null>(null);
+  const setError = (field: 'instruction' | 'runAt', message: string) => {
+    setInstructionError(field === 'instruction' ? message : null);
+    setRunAtError(field === 'runAt' ? message : null);
+  };
 
   const setFrequency = (frequency: ScheduleFrequency) =>
     setValues((current) => ({ ...current, frequency }));
 
   const submit = async () => {
     if (!instruction.trim()) {
-      setError(t('agents.schedules.modal.errors.instructionRequired'));
+      setError(
+        'instruction',
+        t('agents.schedules.modal.errors.instructionRequired'),
+      );
       return;
     }
     const payload: ScheduleCreatePayload = {
@@ -161,11 +174,11 @@ export default function ScheduleFormModal({
       try {
         runAt = buildRunAtUtc(values.date, values.time, timezone);
       } catch {
-        setError(t('agents.schedules.modal.errors.runAtInPast'));
+        setError('runAt', t('agents.schedules.modal.errors.runAtInPast'));
         return;
       }
       if (new Date(runAt).getTime() <= Date.now()) {
-        setError(t('agents.schedules.modal.errors.runAtInPast'));
+        setError('runAt', t('agents.schedules.modal.errors.runAtInPast'));
         return;
       }
       payload.trigger_type = 'once';
@@ -173,13 +186,17 @@ export default function ScheduleFormModal({
     } else {
       const cron = buildCron(values.frequency, values);
       if (!cron) {
-        setError(t('agents.schedules.modal.errors.instructionRequired'));
+        setError(
+          'instruction',
+          t('agents.schedules.modal.errors.instructionRequired'),
+        );
         return;
       }
       payload.trigger_type = 'recurring';
       payload.cron = cron;
     }
-    setError(null);
+    setInstructionError(null);
+    setRunAtError(null);
     await onSubmit(payload);
   };
 
@@ -197,8 +214,6 @@ export default function ScheduleFormModal({
       }
       size="md"
       mobileVariant="sheet"
-      className="w-[min(560px,92vw)]"
-      contentClassName="max-h-[80vh]"
       footer={
         <Button
           type="button"
@@ -239,6 +254,7 @@ export default function ScheduleFormModal({
             monthly: t('agents.schedules.modal.frequency.monthly'),
             yearly: t('agents.schedules.modal.frequency.yearly'),
           }}
+          ariaLabel={t('agents.schedules.modal.frequencyLabel')}
         />
 
         <OnPicker
@@ -250,10 +266,14 @@ export default function ScheduleFormModal({
             on: t('agents.schedules.modal.on'),
             at: t('agents.schedules.modal.at'),
             pickDate: t('agents.schedules.modal.pickDate'),
+            days: t('agents.schedules.modal.dayOfWeek'),
           }}
         />
 
-        <div className="border-border flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
+        <Card
+          padding="sm"
+          className="flex-row flex-wrap items-center justify-between gap-2"
+        >
           <span className="text-foreground text-sm font-medium">
             {t('agents.schedules.modal.timezone')}
           </span>
@@ -270,9 +290,12 @@ export default function ScheduleFormModal({
               ariaLabel={t('agents.schedules.modal.timezone')}
             />
           </div>
-        </div>
+        </Card>
 
-        <FormField label={t('agents.schedules.modal.instructionsLabel')}>
+        <FormField
+          label={t('agents.schedules.modal.instructionsLabel')}
+          error={instructionError}
+        >
           <Textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
@@ -281,7 +304,12 @@ export default function ScheduleFormModal({
           />
         </FormField>
 
-        {error && <p className="text-destructive text-sm">{error}</p>}
+        {runAtError && (
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" className="size-4" />
+            <AlertDescription>{runAtError}</AlertDescription>
+          </Alert>
+        )}
       </div>
     </Modal>
   );
@@ -291,28 +319,32 @@ type FrequencyTabsProps = {
   frequency: ScheduleFrequency;
   onChange: (f: ScheduleFrequency) => void;
   labels: Record<ScheduleFrequency, string>;
+  ariaLabel: string;
 };
 
-function FrequencyTabs({ frequency, onChange, labels }: FrequencyTabsProps) {
+function FrequencyTabs({
+  frequency,
+  onChange,
+  labels,
+  ariaLabel,
+}: FrequencyTabsProps) {
   return (
-    <div className="bg-muted/60 dark:bg-muted/40 inline-flex w-full gap-1 rounded-full p-1">
-      {FREQUENCIES.map((f) => {
-        const active = f === frequency;
-        return (
-          <Button
-            key={f}
-            type="button"
-            variant={active ? 'outline' : 'ghost-muted'}
-            size="xs"
-            shape="pill"
-            onClick={() => onChange(f)}
-            className="flex-1"
-            aria-pressed={active}
-          >
+    // The muted track is a plain wrapper: ToggleGroup takes layout only.
+    <div className="bg-muted w-full rounded-full p-1">
+      <ToggleGroup
+        type="single"
+        size="xs"
+        value={frequency}
+        onValueChange={(f) => f && onChange(f as ScheduleFrequency)}
+        aria-label={ariaLabel}
+        className="flex-nowrap"
+      >
+        {FREQUENCIES.map((f) => (
+          <ToggleGroupItem key={f} value={f} className="flex-1">
             {labels[f]}
-          </Button>
-        );
-      })}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
     </div>
   );
 }
@@ -322,7 +354,7 @@ type OnPickerProps = {
   onChange: (next: ScheduleFormValues) => void;
   tDay: (key: string) => string;
   tMonth: (key: string) => string;
-  labels: { on: string; at: string; pickDate: string };
+  labels: { on: string; at: string; pickDate: string; days: string };
 };
 
 function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
@@ -330,7 +362,7 @@ function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
     onChange({ ...values, ...patch });
 
   return (
-    <div className="border-border flex flex-col gap-3 rounded-md border p-3">
+    <Card padding="sm">
       {values.frequency === 'once' && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-foreground text-sm font-medium">
@@ -366,24 +398,19 @@ function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
 
       {values.frequency === 'weekly' && (
         <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap gap-1">
-            {DAY_OPTIONS.map((d) => {
-              const active = d.value === values.dayOfWeek;
-              return (
-                <Button
-                  key={d.key}
-                  type="button"
-                  size="sm"
-                  variant={active ? 'default' : 'outline'}
-                  onClick={() => set({ dayOfWeek: d.value })}
-                  shape="pill"
-                  aria-pressed={active}
-                >
-                  {tDay(d.key)}
-                </Button>
-              );
-            })}
-          </div>
+          {/* A weekly schedule runs on one day: a radio group. */}
+          <ToggleGroup
+            type="single"
+            value={String(values.dayOfWeek)}
+            onValueChange={(day) => day && set({ dayOfWeek: Number(day) })}
+            aria-label={labels.days}
+          >
+            {DAY_OPTIONS.map((d) => (
+              <ToggleGroupItem key={d.key} value={String(d.value)}>
+                {tDay(d.key)}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
           <div className="flex items-center justify-between gap-2">
             <span className="text-foreground text-sm font-medium">
               {labels.at}
@@ -442,7 +469,7 @@ function OnPicker({ values, onChange, tDay, tMonth, labels }: OnPickerProps) {
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -461,17 +488,15 @@ function DatePicker({ value, onChange, placeholder }: DatePickerProps) {
         <Button
           type="button"
           variant="combobox"
-          size="sm"
           aria-label={placeholder}
           data-placeholder={value ? undefined : ''}
-          className="h-9 justify-start"
+          className="justify-start"
         >
-          <CalendarIcon className="size-4 opacity-70" />
+          <CalendarIcon className="opacity-70" />
           {value ? formatDateLabel(value) : placeholder}
         </Button>
       </PopoverTrigger>
-      {/* z-200 keeps the popover above Modal (z-50); matches SelectContent. */}
-      <PopoverContent className="z-200 w-auto p-0" align="start">
+      <PopoverContent className="w-auto p-0" align="start">
         <Calendar
           mode="single"
           selected={selected}
@@ -511,7 +536,7 @@ function DayOfMonthSelect({
 }: DayOfMonthSelectProps) {
   return (
     <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
-      <SelectTrigger size="sm" aria-label={ariaLabel} className="h-9 w-[5rem]">
+      <SelectTrigger aria-label={ariaLabel} className="w-[5rem]">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -535,11 +560,7 @@ type MonthSelectProps = {
 function MonthSelect({ value, onChange, tMonth, ariaLabel }: MonthSelectProps) {
   return (
     <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
-      <SelectTrigger
-        size="sm"
-        aria-label={ariaLabel}
-        className="h-9 w-[6.5rem]"
-      >
+      <SelectTrigger aria-label={ariaLabel} className="w-[6.5rem]">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

@@ -238,7 +238,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
         </Alert>
       ) : (
         <Button type="button" onClick={handleAuth} className="w-full">
-          <svg className="h-5 w-5" viewBox="0 0 24 24">
+          <svg className="size-5" viewBox="0 0 24 24">
             <path
               fill="currentColor"
               d="M6.28 3l5.72 10H24l-5.72-10H6.28zm11.44 0L12 13l5.72 10H24L18.28 3h-.56zM0 13l5.72 10h5.72L5.72 13H0z"

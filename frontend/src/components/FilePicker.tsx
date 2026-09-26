@@ -1,10 +1,4 @@
-import {
-  Check,
-  File,
-  Folder,
-  Search as SearchIcon,
-  TriangleAlert,
-} from 'lucide-react';
+import { File, Folder, TriangleAlert } from 'lucide-react';
 import React, {
   Fragment,
   useState,
@@ -22,6 +16,7 @@ import {
   removeSessionToken,
 } from '../utils/providerUtils';
 import ConnectorAuth from '../components/ConnectorAuth';
+import SearchInput from './SearchInput';
 import { Alert, AlertDescription } from './ui/alert';
 import {
   Breadcrumb,
@@ -31,7 +26,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from './ui/breadcrumb';
-import { Input } from './ui/input';
+import { Checkbox } from './ui/checkbox';
+import { Skeleton } from './ui/skeleton';
 import {
   Table,
   TableContainer,
@@ -92,31 +88,31 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   token,
   initialSelectedFiles = [],
 }) => {
+  const { t } = useTranslation();
   const PROVIDER_CONFIG = {
     google_drive: {
       displayName: 'Drive',
-      rootName: 'My Drive',
+      rootName: t('filePicker.myDrive'),
     },
     share_point: {
       displayName: 'SharePoint',
-      rootName: 'My Files',
+      rootName: t('filePicker.myFiles'),
     },
     confluence: {
       displayName: 'Confluence',
-      rootName: 'Spaces',
+      rootName: t('filePicker.spaces'),
     },
-  } as const;
+  };
 
   const getProviderConfig = (provider: string) => {
     return (
       PROVIDER_CONFIG[provider as keyof typeof PROVIDER_CONFIG] || {
         displayName: provider,
-        rootName: 'Root',
+        rootName: t('filePicker.root'),
       }
     );
   };
 
-  const { t } = useTranslation();
   const [files, setFiles] = useState<CloudFile[]>([]);
   const [selectedFiles, setSelectedFiles] =
     useState<string[]>(initialSelectedFiles);
@@ -231,14 +227,19 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         removeSessionToken(provider);
         setIsConnected(false);
         setAuthError(
-          `Session expired. Please reconnect to ${getProviderConfig(provider).displayName}.`,
+          t('filePicker.sessionExpiredFor', {
+            provider: getProviderConfig(provider).displayName,
+          }),
         );
         return;
       }
 
       const validateData = await validateResponse.json();
       if (validateData.success) {
-        setUserEmail(validateData.user_email || 'Connected User');
+        setUserEmail(
+          validateData.user_email ||
+            t('modals.uploadDoc.connectors.auth.connectedUser'),
+        );
         setIsConnected(true);
         setAuthError('');
         if (provider === 'share_point') {
@@ -262,12 +263,12 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         setIsConnected(false);
         setAuthError(
           validateData.error ||
-            'Session expired. Please reconnect your account.',
+            t('modals.uploadDoc.connectors.googleDrive.sessionExpiredGeneric'),
         );
       }
     } catch (error) {
       console.error('Error validating session:', error);
-      setAuthError('Failed to validate session. Please reconnect.');
+      setAuthError(t('modals.uploadDoc.connectors.googleDrive.validateFailed'));
       setIsConnected(false);
     }
   }, [provider, token, loadCloudFiles]);
@@ -391,7 +392,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       {
         id: null,
         name:
-          tab === 'shared' ? 'Shared' : getProviderConfig(provider).rootName,
+          tab === 'shared'
+            ? t('filePicker.shared')
+            : getProviderConfig(provider).rootName,
       },
     ]);
     const sessionToken = getSessionToken(provider);
@@ -427,9 +430,14 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
       <ConnectorAuth
         provider={provider}
-        label={`Connect to ${getProviderConfig(provider).displayName}`}
+        label={t('filePicker.connectTo', {
+          provider: getProviderConfig(provider).displayName,
+        })}
         onSuccess={(data) => {
-          setUserEmail(data.user_email || 'Connected User');
+          setUserEmail(
+            data.user_email ||
+              t('modals.uploadDoc.connectors.auth.connectedUser'),
+          );
           setIsConnected(true);
           setAuthError('');
 
@@ -523,19 +531,17 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                 </Breadcrumb>
 
                 <div className="text-muted-foreground mb-3 text-sm">
-                  Select Files from {getProviderConfig(provider).displayName}
+                  {t('filePicker.selectFilesFrom', {
+                    provider: getProviderConfig(provider).displayName,
+                  })}
                 </div>
 
                 <div className="mb-3 max-w-md">
-                  <Input
-                    type="text"
+                  <SearchInput
                     label={t('filePicker.searchPlaceholder')}
                     value={searchQuery}
                     onChange={(e) => handleSearchChange(e.target.value)}
                     labelSurface="muted"
-                    leftIcon={
-                      <SearchIcon className="text-muted-foreground size-4" />
-                    }
                   />
                 </div>
 
@@ -576,16 +582,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                             ? Array.from({ length: 5 }).map((_, i) => (
                                 <TableRow key={`skeleton-${i}`}>
                                   <TableCell width="40px" align="center">
-                                    <div className="bg-muted mx-auto h-5 w-5 animate-pulse rounded" />
+                                    <Skeleton className="mx-auto size-5" />
                                   </TableCell>
                                   <TableCell>
-                                    <div className="bg-muted h-4 w-48 animate-pulse rounded" />
+                                    <Skeleton className="h-4 w-48" />
                                   </TableCell>
                                   <TableCell>
-                                    <div className="bg-muted h-4 w-24 animate-pulse rounded" />
+                                    <Skeleton className="h-4 w-24" />
                                   </TableCell>
                                   <TableCell>
-                                    <div className="bg-muted h-4 w-16 animate-pulse rounded" />
+                                    <Skeleton className="h-4 w-16" />
                                   </TableCell>
                                 </TableRow>
                               ))
@@ -601,27 +607,22 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                                   }}
                                 >
                                   <TableCell width="40px" align="center">
-                                    <div
-                                      className="border-border mx-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border text-sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
+                                    <Checkbox
+                                      size="sm"
+                                      className="align-middle"
+                                      aria-label={file.name}
+                                      checked={(isFolder(file)
+                                        ? selectedFolders
+                                        : selectedFiles
+                                      ).includes(file.id)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onCheckedChange={() =>
                                         handleFileSelect(
                                           file.id,
                                           isFolder(file),
-                                        );
-                                      }}
-                                    >
-                                      {(isFolder(file)
-                                        ? selectedFolders
-                                        : selectedFiles
-                                      ).includes(file.id) && (
-                                        <Check
-                                          role="img"
-                                          aria-label="Selected"
-                                          className="text-success size-4"
-                                        />
-                                      )}
-                                    </div>
+                                        )
+                                      }
+                                    />
                                   </TableCell>
                                   <TableCell>
                                     <div className="flex min-w-0 items-center gap-3">
@@ -650,16 +651,16 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                             Array.from({ length: 3 }).map((_, i) => (
                               <TableRow key={`load-more-skeleton-${i}`}>
                                 <TableCell width="40px" align="center">
-                                  <div className="bg-muted mx-auto h-5 w-5 animate-pulse rounded" />
+                                  <Skeleton className="mx-auto size-5" />
                                 </TableCell>
                                 <TableCell>
-                                  <div className="bg-muted h-4 w-48 animate-pulse rounded" />
+                                  <Skeleton className="h-4 w-48" />
                                 </TableCell>
                                 <TableCell>
-                                  <div className="bg-muted h-4 w-24 animate-pulse rounded" />
+                                  <Skeleton className="h-4 w-24" />
                                 </TableCell>
                                 <TableCell>
-                                  <div className="bg-muted h-4 w-16 animate-pulse rounded" />
+                                  <Skeleton className="h-4 w-16" />
                                 </TableCell>
                               </TableRow>
                             ))}

@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('../hooks', () => ({
-  useMediaQuery: () => ({ isMobile: false, isTablet: false, isDesktop: true }),
+  useMediaQuery: () => ({ isMobile: false, isDesktop: true }),
 }));
 
 vi.mock('react-redux', () => ({
@@ -65,8 +65,8 @@ describe('TestRetrievalModal notices', () => {
     ).find((b) => b.textContent === 'settings.sources.testRetrieval.run');
     expect(run?.getAttribute('data-size')).toBe('field');
     expect(run?.getAttribute('data-shape')).toBe('pill');
-    // 42px, the height of the Input beside it.
-    expect(run?.className).toContain('h-10.5');
+    // 38px, the height of the Input beside it.
+    expect(run?.className).toContain('h-9.5');
   });
 
   it('shows an invalid prescreen config as a warning Alert with an icon', () => {

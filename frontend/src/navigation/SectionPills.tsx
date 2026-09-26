@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { selectIsAdmin } from '@/preferences/preferenceSlice';
 
@@ -39,19 +40,17 @@ export default function SectionPills({ className }: { className?: string }) {
       {items.map((entry) => {
         const isActive = entry.key === item?.key;
         return (
-          <Link
+          <Button
             key={entry.key}
-            to={entry.path}
-            aria-current={isActive ? 'page' : undefined}
-            className={cn(
-              'rounded-full px-4 py-2 text-sm whitespace-nowrap transition-colors',
-              isActive
-                ? 'bg-border text-foreground dark:bg-accent'
-                : 'text-muted-foreground hover:bg-accent/50',
-            )}
+            asChild
+            variant={isActive ? 'outline' : 'ghost-muted'}
+            size="sm"
+            shape="pill"
           >
-            {t(entry.labelKey)}
-          </Link>
+            <Link to={entry.path} aria-current={isActive ? 'page' : undefined}>
+              {t(entry.labelKey)}
+            </Link>
+          </Button>
         );
       })}
     </div>

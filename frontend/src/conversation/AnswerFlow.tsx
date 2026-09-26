@@ -17,6 +17,7 @@ import { type SandboxArtifact } from './sandboxLinks';
 import StreamingStatusLine from './StreamingStatusLine';
 import { ToolCallsType } from './types';
 import { isWikiWriteCall } from './wikiToolCall';
+import { cn } from '@/lib/utils';
 
 type AnswerFlowProps = {
   message?: string;
@@ -128,7 +129,7 @@ export default function AnswerFlow({
         <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
           {/* ``ml-6`` is the answer's text column: step labels sit at the same
               offset, with their icons in the gutter to its left. */}
-          <div className="fade-in-bubble my-2 mr-5 ml-6 flex max-w-full flex-col">
+          <div className="animate-in fade-in slide-in-from-bottom-1.5 my-2 mr-5 ml-6 flex max-w-full flex-col duration-260 ease-out motion-reduce:animate-none">
             <MarkdownAnswer
               content={message}
               isStreaming={isStreaming}
@@ -186,17 +187,19 @@ function InlineThoughtChip({
       >
         <Cloud aria-hidden />
         <span
-          className={`min-w-0 truncate text-left ${
-            isActive ? 'shimmer-text' : 'text-muted-foreground'
-          }`}
+          className={cn(
+            'min-w-0 truncate text-left',
+            isActive ? 'shimmer-text' : 'text-muted-foreground',
+          )}
         >
           {t('conversation.reasoning')}
         </span>
         <ChevronDown
           aria-hidden
-          className={`text-muted-foreground h-4 w-4 shrink-0 transform transition-transform duration-200 ${
-            isOpen ? 'rotate-180' : ''
-          }`}
+          className={cn(
+            'text-muted-foreground shrink-0 transition-transform duration-200',
+            isOpen ? 'rotate-180' : '',
+          )}
         />
       </Button>
       {showLiveWindow && (
@@ -215,7 +218,7 @@ function InlineThoughtChip({
         </p>
       )}
       {isOpen && (
-        <p className="fade-in text-muted-foreground mt-0.5 ml-6 text-sm leading-normal wrap-break-word whitespace-pre-wrap">
+        <p className="animate-in fade-in text-muted-foreground mt-0.5 ml-6 text-sm leading-normal wrap-break-word whitespace-pre-wrap duration-160 ease-out motion-reduce:animate-none">
           {thought}
         </p>
       )}
@@ -252,20 +255,22 @@ function InlineToolCallChip({
         {/* ToolIcon renders nothing for a tool with no bundled icon, so the
             dot below stands in via ``only:block`` to keep the row aligned. */}
         <span
-          className={`flex h-4 w-4 shrink-0 items-center justify-center ${
-            isLive ? 'animate-pulse' : ''
-          }`}
+          className={cn(
+            'flex size-4 shrink-0 items-center justify-center',
+            isLive ? 'animate-pulse' : '',
+          )}
         >
           <ToolIcon
             name={toolCall.tool_name}
-            className="text-muted-foreground h-4 w-4"
+            className="text-muted-foreground size-4"
           />
-          <span className="bg-muted-foreground/50 hidden h-1.5 w-1.5 rounded-full only:block" />
+          <span className="bg-muted-foreground/50 hidden size-1.5 rounded-full only:block" />
         </span>
         <span
-          className={`min-w-0 truncate text-left ${
-            isLive ? 'shimmer-text' : 'text-muted-foreground'
-          }`}
+          className={cn(
+            'min-w-0 truncate text-left',
+            isLive ? 'shimmer-text' : 'text-muted-foreground',
+          )}
         >
           {label}
         </span>
@@ -276,13 +281,14 @@ function InlineToolCallChip({
         )}
         <ChevronDown
           aria-hidden
-          className={`text-muted-foreground h-4 w-4 shrink-0 transform transition-transform duration-200 ${
-            isOpen ? 'rotate-180' : ''
-          }`}
+          className={cn(
+            'text-muted-foreground shrink-0 transition-transform duration-200',
+            isOpen ? 'rotate-180' : '',
+          )}
         />
       </Button>
       {isOpen && (
-        <div className="fade-in mt-2 mr-5 ml-6 flex flex-col gap-2">
+        <div className="animate-in fade-in mt-2 mr-5 ml-6 flex flex-col gap-2 duration-160 ease-out motion-reduce:animate-none">
           <ToolCallPanel
             title={t('conversation.inlineSteps.arguments')}
             copyText={JSON.stringify(toolCall.arguments ?? {}, null, 2)}
@@ -301,7 +307,10 @@ function InlineToolCallChip({
           >
             {isRunning && (
               <p
-                className={`text-xs ${isLive ? 'shimmer-text' : 'text-muted-foreground'}`}
+                className={cn(
+                  'text-xs',
+                  isLive ? 'shimmer-text' : 'text-muted-foreground',
+                )}
               >
                 {t('conversation.inlineSteps.running')}
               </p>
@@ -340,7 +349,7 @@ export function ToolCallPanel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-muted/50 dark:bg-answer-bubble overflow-hidden rounded-xl">
+    <div className="bg-answer-bubble overflow-hidden rounded-xl">
       <div className="flex items-center justify-between px-3 py-1.5">
         <span className="text-muted-foreground text-xs font-medium">
           {title}

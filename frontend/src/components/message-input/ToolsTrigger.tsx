@@ -38,13 +38,12 @@ export default function ToolsTrigger({
       emptyMessage={t('settings.tools.noToolsFound')}
       loading={loading}
       footer={
-        <a
-          href="/settings/tools"
-          className="text-primary inline-flex items-center text-base font-medium"
-        >
-          {t('settings.tools.manageTools')}
-          <ArrowRight className="ml-2 size-3" />
-        </a>
+        <Button variant="link" size="inline" asChild>
+          <a href="/settings/tools">
+            {t('settings.tools.manageTools')}
+            <ArrowRight aria-hidden="true" className="size-3" />
+          </a>
+        </Button>
       }
       trigger={
         <Button
@@ -55,7 +54,7 @@ export default function ToolsTrigger({
           className="max-w-[130px] justify-start"
         >
           <Wrench />
-          <span className="dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs sm:text-sm">
+          <span className="text-foreground truncate overflow-hidden text-xs sm:text-sm">
             {t('settings.tools.label')}
           </span>
         </Button>

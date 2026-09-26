@@ -6,7 +6,10 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const renderMermaidDiagramMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { format?: string }) =>
+      opts?.format ? `${key} ${opts.format}` : key,
+  }),
 }));
 vi.mock('react-redux', () => ({ useSelector: () => 'idle' }));
 vi.mock('../hooks', () => ({ useDarkTheme: () => [false] }));
@@ -64,9 +67,11 @@ describe('MermaidRenderer', () => {
     });
 
     const trigger = container.querySelector<HTMLButtonElement>(
-      'button[title="mermaid.downloadOptions"]',
+      'button[aria-haspopup="menu"]',
     );
     expect(trigger).not.toBeNull();
+    expect(trigger?.textContent).toContain('mermaid.download');
+    expect(trigger?.hasAttribute('title')).toBe(false);
     expect(trigger?.getAttribute('aria-haspopup')).toBe('menu');
     expect(document.querySelector('[role="menu"]')).toBeNull();
 
@@ -81,9 +86,9 @@ describe('MermaidRenderer', () => {
       document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
     ).map((item) => item.textContent);
     expect(items).toEqual([
-      'Download as SVG',
-      'Download as PNG',
-      'Download as MMD',
+      'mermaid.downloadAs SVG',
+      'mermaid.downloadAs PNG',
+      'mermaid.downloadAs MMD',
     ]);
   });
 });

@@ -1,5 +1,3 @@
-'use client';
-
 import { XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive, VisuallyHidden } from 'radix-ui';
 import * as React from 'react';
@@ -14,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SheetHandle, sheetBottomShape } from '@/components/ui/sheet';
-import { useMediaQuery } from '../../hooks';
+import { useMediaQuery } from '@/hooks';
 import { cn } from '@/lib/utils';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
@@ -89,13 +87,11 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
     </VisuallyHidden.Root>
   );
 
-  // A visible title and its description share one grid cell, so the
-  // description sits 8px under the title rather than the grid's 16px.
+  // A visible title and its description share one flex item, so the
+  // description sits 8px under the title rather than the column's 16px.
   const headerNode = showTitle ? (
-    <div data-slot="modal-header">
-      <DialogTitle className="text-xl leading-tight font-semibold">
-        {title}
-      </DialogTitle>
+    <div data-slot="modal-header" className="shrink-0">
+      <DialogTitle>{title}</DialogTitle>
       {descriptionNode}
     </div>
   ) : (
@@ -133,7 +129,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
                 // home indicator and keeps 1rem under the footer elsewhere.
                 `${sheetBottomShape} pb-safe flex w-full flex-col gap-3 px-4`
               : cn(
-                  'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 top-1/2 left-1/2 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl p-8',
+                  'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 top-1/2 left-1/2 flex max-h-[85dvh] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-2xl p-8',
                   SIZE_CLASSES[size],
                   className,
                 ),
@@ -147,7 +143,8 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
               // box. pt-3 reserves room so a floating Input label (which sits
               // ~10px above its field) at the top of the scroll area isn't
               'no-scrollbar text-foreground overflow-y-auto px-1 pt-3 pb-0.5',
-              isMobileSheet && 'min-h-0 grow',
+              // The body is the one scroller; header and footer stay put.
+              'min-h-0 grow',
               contentClassName,
             )}
           >
@@ -184,7 +181,8 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
 type ModalActionsProps = {
   cancelLabel: React.ReactNode;
   onCancel: () => void;
-  submitLabel: React.ReactNode;
+  /** Leave out for a footer with only the cancel button (a read-only view). */
+  submitLabel?: React.ReactNode;
   onSubmit?: () => void;
   /** Spinner on the submit button (it is also disabled). */
   pending?: boolean;
@@ -202,7 +200,8 @@ type ModalActionsProps = {
 
 /**
  * The standard modal footer: a ghost Cancel and a primary (or destructive)
- * submit, both large pills. Pass it as Modal's `footer`.
+ * submit, both large pills. Pass it as Modal's `footer`. Without
+ * `submitLabel` only Cancel renders.
  */
 function ModalActions({
   cancelLabel,
@@ -236,18 +235,20 @@ function ModalActions({
       >
         {cancelLabel}
       </Button>
-      <Button
-        type="button"
-        variant={destructive ? 'destructive' : 'default'}
-        size="lg"
-        shape="pill"
-        onClick={onSubmit}
-        disabled={disabled}
-        loading={pending}
-        {...submitProps}
-      >
-        {submitLabel}
-      </Button>
+      {submitLabel ? (
+        <Button
+          type="button"
+          variant={destructive ? 'destructive' : 'default'}
+          size="lg"
+          shape="pill"
+          onClick={onSubmit}
+          disabled={disabled}
+          loading={pending}
+          {...submitProps}
+        >
+          {submitLabel}
+        </Button>
+      ) : null}
     </>
   );
 }

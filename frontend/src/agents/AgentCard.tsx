@@ -19,6 +19,7 @@ import userService from '../api/services/userService';
 import { Avatar } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card, CardDescription, CardTitle } from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { Modal } from '../components/ui/modal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -277,11 +278,14 @@ export default function AgentCard({
     updateAgents?.(updatedAgents);
   };
   return (
-    <div
+    <Card
+      variant="filled"
+      interactive={agent.status === 'published'}
+      padding="lg"
       role={agent.status === 'published' ? 'button' : undefined}
       tabIndex={agent.status === 'published' ? 0 : undefined}
       aria-label={agent.status === 'published' ? agent.name : undefined}
-      className={`bg-muted hover:bg-accent focus-visible:ring-ring/50 focus-visible:border-ring relative flex h-44 flex-col justify-between rounded-2xl px-4 py-5 outline-none focus-visible:ring-3 sm:w-48 sm:px-6 ${agent.status === 'published' && 'cursor-pointer'}`}
+      className="relative h-44 justify-between"
       onClick={(e) => {
         e.stopPropagation();
         handleClick();
@@ -306,7 +310,7 @@ export default function AgentCard({
           (right-11 clears the 28px trigger at right-3) so the two align. */}
       {agent.ownership === 'team' && (
         <Badge variant="neutral" className="absolute top-4 right-11 z-10">
-          <Users size={11} aria-hidden="true" />
+          <Users aria-hidden="true" />
           {agent.team_access === 'editor'
             ? t('agents.teamBadge.editor')
             : t('agents.teamBadge.viewer')}
@@ -317,9 +321,9 @@ export default function AgentCard({
           <Avatar
             src={agent.image}
             alt={`${agent.name}`}
-            size="sm"
+            size="xs"
             shape="circle"
-            imgClassName="h-7 w-7 object-contain"
+            imgClassName="size-7 object-contain"
           />
           {agent.status === 'draft' && (
             <p className="text-foreground text-xs opacity-50">
@@ -327,16 +331,13 @@ export default function AgentCard({
             </p>
           )}
         </div>
-        <div className="mt-2">
-          <p
-            title={agent.name}
-            className="text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
-          >
+        <div className="mt-2 px-1">
+          <CardTitle title={agent.name} className="truncate capitalize">
             {agent.name}
-          </p>
-          <p className="dark:text-muted-foreground text-muted-foreground mt-1 h-20 overflow-auto px-1 text-xs leading-relaxed">
+          </CardTitle>
+          <CardDescription size="xs" className="mt-1 line-clamp-3">
             {agent.description}
-          </p>
+          </CardDescription>
         </div>
       </div>
       <ConfirmationModal
@@ -349,7 +350,7 @@ export default function AgentCard({
           setDeleteConfirmation('INACTIVE');
         }}
         cancelLabel={t('cancel')}
-        variant="danger"
+        variant="destructive"
       />
       <Modal
         open={exportError !== null}
@@ -387,6 +388,6 @@ export default function AgentCard({
           onClose={() => setShareModalOpen(false)}
         />
       )}
-    </div>
+    </Card>
   );
 }

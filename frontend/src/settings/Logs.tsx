@@ -5,9 +5,15 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
+import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
+import { Card } from '../components/ui/card';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
+import { EmptyState } from '../components/ui/empty-state';
 import {
   Select,
   SelectContent,
@@ -138,13 +144,13 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
   ];
 
   return (
-    <div className="mt-8">
+    <div>
       <p className="text-muted-foreground mb-5 text-sm leading-6">
         {t('settings.logs.subtitle')}
       </p>
       <div className="mb-3 flex flex-row flex-wrap items-center gap-3">
         <Select value={levelFilter} onValueChange={setLevelFilter}>
-          <SelectTrigger className="w-[125px]" size="lg" shape="pill">
+          <SelectTrigger className="w-[125px]" size="field" shape="pill">
             <SelectValue placeholder={t('settings.logs.levels.all')} />
           </SelectTrigger>
           <SelectContent>
@@ -156,7 +162,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           </SelectContent>
         </Select>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-[140px]" size="lg" shape="pill">
+          <SelectTrigger className="w-[140px]" size="field" shape="pill">
             <SelectValue placeholder={t('settings.logs.types.all')} />
           </SelectTrigger>
           <SelectContent>
@@ -167,13 +173,13 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
             ))}
           </SelectContent>
         </Select>
-        <Input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder={t('settings.logs.searchPlaceholder')}
-          shape="pill"
-          className="w-56"
-        />
+        <div className="w-56">
+          <SearchInput
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            label={t('settings.logs.searchPlaceholder')}
+          />
+        </div>
       </div>
       <div>
         <LogsTable
@@ -244,17 +250,20 @@ function LogsTable({
   }, []);
 
   return (
-    <div className="logs-table border-border bg-card h-[55vh] w-full overflow-hidden rounded-xl border dark:bg-black">
-      <div className="flex h-8 flex-col items-start justify-center bg-black/10 dark:bg-white/5">
+    <div className="border-border bg-card h-[55vh] w-full overflow-hidden rounded-xl border font-mono">
+      <div className="bg-muted flex h-8 flex-col items-start justify-center">
         <p className="text-muted-foreground px-3 text-xs">
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
       <div className="relative flex h-[51vh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
         {!loading && logs.length === 0 && (
-          <p className="text-muted-foreground w-full py-4 text-center text-xs">
-            {t('settings.logs.noLogs')}
-          </p>
+          <EmptyState
+            size="xs"
+            illustration="none"
+            title={t('settings.logs.noLogs')}
+            className="w-full"
+          />
         )}
         {logs?.map((log, index) => {
           if (index === logs.length - 1) {
@@ -423,7 +432,7 @@ function Log({
     });
 
   return (
-    <div className="group dark:hover:bg-accent hover:bg-muted w-full rounded-xl bg-transparent">
+    <div className="group hover:bg-accent w-full rounded-xl bg-transparent">
       <div
         role="button"
         tabIndex={0}
@@ -441,7 +450,10 @@ function Log({
         )}
       >
         <ChevronRight
-          className={`text-muted-foreground mt-[3px] size-3 transition duration-300 ${isOpen ? 'rotate-90' : ''}`}
+          className={cn(
+            'text-muted-foreground mt-[3px] size-3 transition-transform duration-200',
+            isOpen && 'rotate-90',
+          )}
         />
         <span className="flex flex-row flex-wrap gap-2">
           <h2 className="text-muted-foreground text-xs">{`${log.timestamp}`}</h2>
@@ -491,40 +503,39 @@ function Log({
             </div>
           )}
           {detailRows.length > 0 && (
-            <div className="flex flex-col gap-1 px-2 pb-2">
+            <DescriptionList size="xs" className="mx-2 mb-2">
               {detailRows.map(([label, value]) => (
-                <div key={label} className="flex flex-row gap-2 text-xs">
-                  <span className="text-muted-foreground w-28 shrink-0">
-                    {label}
-                  </span>
-                  <span className="text-foreground wrap-break-word">
-                    {value}
-                  </span>
-                </div>
+                <DescriptionItem key={label} label={label}>
+                  {value}
+                </DescriptionItem>
               ))}
-            </div>
+            </DescriptionList>
           )}
           {textBlocks.map((block) => (
-            <div key={block.label} className="px-2 pb-2">
+            <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
               <p className="text-muted-foreground text-xs">{block.label}</p>
-              <pre
-                className={cn(
-                  'font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap',
-                  block.isError ? 'text-destructive' : 'text-foreground',
-                )}
-              >
-                {block.text}
-              </pre>
+              <Card variant="subtle" padding="sm">
+                <pre
+                  className={cn(
+                    'font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap',
+                    block.isError ? 'text-destructive' : 'text-foreground',
+                  )}
+                >
+                  {block.text}
+                </pre>
+              </Card>
             </div>
           ))}
           {jsonBlocks.map((block) => (
-            <div key={block.label} className="px-2 pb-2">
+            <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
               <p className="text-muted-foreground text-xs">{block.label}</p>
-              <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-                <pre className="text-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
-                  {JSON.stringify(block.value, null, 2)}
-                </pre>
-              </div>
+              <Card variant="subtle" padding="sm">
+                <div className="scrollbar-overlay max-h-60 overflow-y-auto">
+                  <pre className="text-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
+                    {JSON.stringify(block.value, null, 2)}
+                  </pre>
+                </div>
+              </Card>
             </div>
           ))}
           <div className="my-px w-fit">

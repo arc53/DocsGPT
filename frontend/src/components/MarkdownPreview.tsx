@@ -1,6 +1,10 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { markdownHeadings } from '@/lib/markdown';
+
+import { Button } from './ui/button';
+
 /**
  * Minimal GFM markdown renderer for artifact text previews. ReactMarkdown
  * parses to React elements (no `dangerouslySetInnerHTML`), so untrusted
@@ -13,16 +17,14 @@ export default function MarkdownPreview({ content }: { content: string }) {
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
+            ...markdownHeadings,
             a({ children, href }) {
               return (
-                <a
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  {children}
-                </a>
+                <Button variant="link" size="inline" asChild>
+                  <a href={href} target="_blank" rel="noopener noreferrer">
+                    {children}
+                  </a>
+                </Button>
               );
             },
             ul({ children }) {
@@ -38,15 +40,6 @@ export default function MarkdownPreview({ content }: { content: string }) {
                   {children}
                 </ol>
               );
-            },
-            h1({ children }) {
-              return <h1 className="text-xl font-bold">{children}</h1>;
-            },
-            h2({ children }) {
-              return <h2 className="text-lg font-bold">{children}</h2>;
-            },
-            h3({ children }) {
-              return <h3 className="text-base font-bold">{children}</h3>;
             },
             code({ children, ...rest }) {
               return (

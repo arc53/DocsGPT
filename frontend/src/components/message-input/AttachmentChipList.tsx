@@ -1,9 +1,9 @@
-import { TriangleAlert, X } from 'lucide-react';
+import { Paperclip, TriangleAlert, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import DocumentationDark from '../../assets/documentation-dark.svg';
 import type { Attachment } from '../../upload/uploadSlice';
-import { Button } from '../ui/button';
+import { IconButton } from '../ui/icon-button';
+import { cn } from '@/lib/utils';
 
 type AttachmentChipListProps = {
   attachments: Attachment[];
@@ -53,39 +53,40 @@ export default function AttachmentChipList({
               onDragStart={(e) => onDragStart(e, attachment.id)}
               onDragOver={onDragOver}
               onDrop={(e) => onDropOn(e, attachment.id)}
-              className={`group dark:text-foreground bg-muted text-muted-foreground dark:bg-accent relative flex items-center rounded-xl px-2 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm ${
-                attachment.status !== 'completed' ? 'opacity-70' : 'opacity-100'
-              } ${
-                draggingId === attachment.id
-                  ? 'ring-primary/30 opacity-60 ring-2'
-                  : ''
-              }`}
+              // opacity-60 while dragging never applied (opacity-70 / -100
+              // come later in the stylesheet), so only the ring shows the drag.
+              className={cn(
+                'group bg-muted text-foreground relative flex items-center rounded-xl px-2 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm',
+                attachment.status !== 'completed'
+                  ? 'opacity-70'
+                  : 'opacity-100',
+                draggingId === attachment.id && 'ring-primary/30 ring-2',
+              )}
               title={
                 attachment.status === 'failed' && attachment.errorMessage
                   ? `${attachment.fileName}: ${attachment.errorMessage}`
                   : attachment.fileName
               }
             >
-              <div className="bg-primary mr-2 flex h-8 w-8 items-center justify-center rounded-md p-1">
+              <div className="bg-primary mr-2 flex size-8 items-center justify-center rounded-md p-1">
                 {attachment.status === 'completed' && (
-                  <img
-                    src={DocumentationDark}
-                    alt="Attachment"
-                    className="h-[15px] w-[15px] object-fill"
+                  <Paperclip
+                    aria-label={t('conversation.attachments.attached')}
+                    className="text-primary-foreground size-3.75"
                   />
                 )}
 
                 {attachment.status === 'failed' && (
                   <TriangleAlert
-                    aria-label="Failed"
+                    aria-label={t('conversation.attachments.failed')}
                     className="text-primary-foreground size-4"
                   />
                 )}
 
                 {(attachment.status === 'uploading' ||
                   attachment.status === 'processing') && (
-                  <div className="flex h-[15px] w-[15px] items-center justify-center">
-                    <svg className="h-[15px] w-[15px]" viewBox="0 0 24 24">
+                  <div className="flex size-3.75 items-center justify-center">
+                    <svg className="size-3.75" viewBox="0 0 24 24">
                       <circle
                         className="opacity-0"
                         cx="12"
@@ -118,8 +119,8 @@ export default function AttachmentChipList({
                 {attachment.fileName}
               </span>
 
-              <Button
-                type="button"
+              <IconButton
+                label={t('conversation.attachments.remove')}
                 variant="ghost"
                 size="icon-xs"
                 shape="pill"
@@ -127,13 +128,9 @@ export default function AttachmentChipList({
                 onClick={() => {
                   onRemove(attachment.id);
                 }}
-                aria-label={t('conversation.attachments.remove')}
               >
-                <X
-                  aria-label={t('conversation.attachments.remove')}
-                  className="h-2.5 w-2.5"
-                />
-              </Button>
+                <X aria-hidden="true" className="size-4" />
+              </IconButton>
             </div>
           );
         })}

@@ -10,24 +10,10 @@
     monospace;
   --shadow-modal: 0px 4px 40px -3px #0000001a;
   --shadow-toast: 0px 24px 48px 0px #00000029;
-}
-
-/*
-  The default border color has changed to `currentcolor` in Tailwind CSS v4,
-  so we've added these compatibility styles to make sure everything still
-  looks the same as it did with Tailwind CSS v3.
-
-  If we ever want to remove these styles, we need to add an explicit border
-  color utility to any element that depends on these defaults.
-*/
-@layer base {
-  *,
-  ::after,
-  ::before,
-  ::backdrop,
-  ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
-  }
+  --font-sans: 'Inter', sans-serif;
+  /* tw-animate's slide-in-from-* takes integers of the spacing scale only;
+     this lets the answer bubble rise 6px as slide-in-from-bottom-1.5. */
+  --translate-1\.5: 0.375rem;
 }
 
 /* Bottom padding that clears the iPhone home indicator (about 34px, since
@@ -51,44 +37,6 @@
   scrollbar-width: none; /* Firefox */
 }
 
-@utility scrollbar-thin {
-  &::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  /* Light theme scrollbar */
-  &::-webkit-scrollbar-thumb {
-    background: #e2e8f0;
-    border-radius: 9999px;
-  }
-
-  &::-webkit-scrollbar-thumb:hover {
-    background: #8c9198;
-  }
-
-  /* Dark theme scrollbar */
-  .dark &::-webkit-scrollbar-thumb {
-    background: #949494;
-    border-radius: 9999px;
-  }
-
-  .dark &::-webkit-scrollbar-thumb:hover {
-    background: #f0f0f0;
-  }
-
-  scrollbar-width: thin;
-  scrollbar-color: #e2e8f0 transparent;
-
-  .dark & {
-    scrollbar-color: #949494 transparent;
-  }
-}
-
 @utility scrollbar-overlay {
   &::-webkit-scrollbar {
     width: 6px;
@@ -105,24 +53,11 @@
   }
 
   &:hover::-webkit-scrollbar-thumb {
-    background: #e2e8f0;
+    background: var(--scrollbar-thumb);
   }
 
   &:hover::-webkit-scrollbar-thumb:hover {
-    background: #8c9198;
-  }
-
-  .dark &::-webkit-scrollbar-thumb {
-    background: transparent;
-    border-radius: 9999px;
-  }
-
-  .dark &:hover::-webkit-scrollbar-thumb {
-    background: #949494;
-  }
-
-  .dark &:hover::-webkit-scrollbar-thumb:hover {
-    background: #f0f0f0;
+    background: var(--scrollbar-thumb-hover);
   }
 
   /* Standard scrollbar properties (Chrome 121+, Firefox) */
@@ -130,15 +65,7 @@
   scrollbar-color: transparent transparent;
 
   &:hover {
-    scrollbar-color: #e2e8f0 transparent;
-  }
-
-  .dark & {
-    scrollbar-color: transparent transparent;
-  }
-
-  .dark &:hover {
-    scrollbar-color: #949494 transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 }
 
@@ -162,60 +89,14 @@
     #000 0
   );
   animation: spinner-rotate 1s infinite linear;
+  &[data-size='xs'] {
+    --spinner-thickness: 2px;
+  }
   &[data-size='sm'] {
     --spinner-thickness: 3px;
   }
   &[data-size='lg'] {
     --spinner-thickness: 5px;
-  }
-}
-
-@utility table-default {
-  @apply border-border text-foreground block w-full table-auto justify-center overflow-auto rounded-xl border text-center;
-
-  & th {
-    @apply p-4 font-normal text-nowrap text-gray-400;
-  }
-
-  & th {
-    flex: 1;
-  }
-
-  & th:last-child {
-    flex: 0;
-  }
-
-  & td {
-    @apply border-border w-full border-t px-4 py-2;
-  }
-
-  & td:last-child {
-    @apply border-r-0;
-  }
-
-  & th {
-    min-width: 150px;
-    max-width: 320px;
-    overflow: auto;
-  }
-
-  & td {
-    min-width: 150px;
-    max-width: 320px;
-    overflow: auto;
-  }
-
-  @supports (-moz-appearance: none) {
-    & th,
-    & td {
-      scrollbar-width: thin;
-      scrollbar-color: #e2e8f0 transparent;
-    }
-
-    .dark & th,
-    .dark & td {
-      scrollbar-color: #949494 transparent;
-    }
   }
 }
 
@@ -254,7 +135,7 @@
   }
 }
 
-@layer utilities {
+@layer base {
   :root {
     --viewport-height: 100vh;
     font-synthesis: none !important;
@@ -266,89 +147,22 @@
     }
   }
 
+  /* Tailwind's preflight does the reset; these are the app's own additions.
+     1.15 is the line-height the app was built against (preflight says 1.5):
+     every text-* utility and ui/ control sets its own, so only unsized text
+     reads this. */
   html {
-    background-color: var(--background);
-  }
-  body.dark {
-    background-color: var(--background);
-  }
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: #e2e8f0;
-    border-radius: 9999px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #8c9198;
-  }
-  .dark ::-webkit-scrollbar-thumb {
-    background: #949494;
-  }
-  .dark ::-webkit-scrollbar-thumb:hover {
-    background: #f0f0f0;
-  }
-
-  /* Firefox: base scrollbar styles (Firefox ignores ::-webkit-scrollbar) */
-  @supports (-moz-appearance: none) {
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: #e2e8f0 transparent;
-    }
-    .dark * {
-      scrollbar-color: #949494 transparent;
-    }
-  }
-}
-
-@layer base {
-  .prompt-variable-highlight {
-    background-color: rgba(106, 77, 244, 0.18);
-    border-radius: 0.375rem;
-    padding: 0 0.25rem;
-  }
-
-  .dark .prompt-variable-highlight {
-    background-color: rgba(106, 77, 244, 0.32);
-  }
-
-  /*! normalize.css v8.0.1 | MIT License | github.com/necolas/normalize.css */
-
-  /* Document
-   ========================================================================== */
-
-  /**
- * 1. Correct the line height in all browsers.
- * 2. Prevent adjustments of font size after orientation changes in iOS.
- */
-
-  html {
-    line-height: 1.15; /* 1 */
-    -webkit-text-size-adjust: 100%; /* 2 */
+    line-height: 1.15;
     min-height: 100vh;
     overflow-x: hidden;
   }
 
-  /* Sections
-   ========================================================================== */
-
-  /**
- * Remove the margin in all browsers.
- */
-
   body {
-    margin: 0;
     min-height: var(--viewport-height);
     overflow-x: hidden;
-    font-family: 'Inter', sans-serif;
   }
-  /*
-Avoid over-scrolling in mobile browsers
-*/
+
+  /* Avoid over-scrolling in mobile browsers */
   @media only screen and (max-width: 500px) {
     body,
     html {
@@ -357,351 +171,46 @@ Avoid over-scrolling in mobile browsers
       width: 100%;
     }
   }
-  /**
- * Render the `main` element consistently in IE.
- */
 
-  main {
-    display: block;
-  }
-
-  /**
- * Correct the font size and margin on `h1` elements within `section` and
- * `article` contexts in Chrome, Firefox, and Safari.
- */
-
-  h1 {
-    font-size: 2em;
-    margin: 0.67em 0;
-  }
-
-  /* Grouping content
-   ========================================================================== */
-
-  /**
- * 1. Add the correct box sizing in Firefox.
- * 2. Show the overflow in Edge and IE.
- */
-
-  hr {
-    box-sizing: content-box; /* 1 */
-    height: 0; /* 1 */
-    overflow: visible; /* 2 */
-  }
-
-  /**
- * 1. Correct the inheritance and scaling of font size in all browsers.
- * 2. Correct the odd `em` font sizing in all browsers.
- */
-
-  pre {
-    font-family: monospace, monospace; /* 1 */
-    font-size: 1em; /* 2 */
-  }
-
-  /* Text-level semantics
-   ========================================================================== */
-
-  /**
- * Remove the gray background on active links in IE 10.
- */
-
-  a {
-    background-color: transparent;
-  }
-
-  /**
- * 1. Remove the bottom border in Chrome 57-
- * 2. Add the correct text decoration in Chrome, Edge, IE, Opera, and Safari.
- */
-
-  abbr[title] {
-    border-bottom: none; /* 1 */
-    text-decoration: underline; /* 2 */
-    text-decoration: underline dotted; /* 2 */
-  }
-
-  /**
- * Add the correct font weight in Chrome, Edge, and Safari.
- */
-
-  b,
-  strong {
-    font-weight: bolder;
-  }
-
-  /**
- * 1. Correct the inheritance and scaling of font size in all browsers.
- * 2. Correct the odd `em` font sizing in all browsers.
- */
-
-  code,
-  kbd,
-  samp {
-    font-family: monospace, monospace; /* 1 */
-    font-size: 1em; /* 2 */
-  }
-
-  /**
- * Add the correct font size in all browsers.
- */
-
-  small {
-    font-size: 80%;
-  }
-
-  /**
- * Prevent `sub` and `sup` elements from affecting the line height in
- * all browsers.
- */
-
-  sub,
-  sup {
-    font-size: 75%;
-    line-height: 0;
-    position: relative;
-    vertical-align: baseline;
-  }
-
-  sub {
-    bottom: -0.25em;
-  }
-
-  sup {
-    top: -0.5em;
-  }
-
-  /* Embedded content
-   ========================================================================== */
-
-  /**
- * Remove the border on images inside links in IE 10.
- */
-
-  img {
-    border-style: none;
-  }
-
-  /* Forms
-   ========================================================================== */
-
-  /**
- * 1. Change the font styles in all browsers.
- * 2. Remove the margin in Firefox and Safari.
- */
-
-  button,
-  input,
-  optgroup,
-  select,
-  textarea {
-    font-family: inherit; /* 1 */
-    font-size: 100%; /* 1 */
-    line-height: 1.15; /* 1 */
-    margin: 0; /* 2 */
-  }
-
-  /**
- * Show the overflow in IE.
- * 1. Show the overflow in Edge.
- */
-
-  button,
-  input {
-    /* 1 */
-    overflow: visible;
-  }
-
-  /**
- * Remove the inheritance of text transform in Edge, Firefox, and IE.
- * 1. Remove the inheritance of text transform in Firefox.
- */
-
-  button,
-  select {
-    /* 1 */
-    text-transform: none;
-  }
-
-  /**
- * Correct the inability to style clickable types in iOS and Safari.
- */
-
+  /* Preflight leaves buttons on the arrow cursor. */
   button,
   [type='button'],
   [type='reset'],
   [type='submit'] {
-    -webkit-appearance: button;
     cursor: pointer;
   }
 
-  /**
- * Remove the inner border and padding in Firefox.
- */
-
-  button::-moz-focus-inner,
-  [type='button']::-moz-focus-inner,
-  [type='reset']::-moz-focus-inner,
-  [type='submit']::-moz-focus-inner {
-    border-style: none;
-    padding: 0;
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
   }
 
-  /**
- * Restore the focus styles unset by the previous rule.
- */
-
-  button:-moz-focusring,
-  [type='button']:-moz-focusring,
-  [type='reset']:-moz-focusring,
-  [type='submit']:-moz-focusring {
-    outline: 1px dotted ButtonText;
-  }
-
-  /**
- * Correct the padding in Firefox.
- */
-
-  fieldset {
-    padding: 0.35em 0.75em 0.625em;
-  }
-
-  /**
- * 1. Correct the text wrapping in Edge and IE.
- * 2. Correct the color inheritance from `fieldset` elements in IE.
- * 3. Remove the padding so developers are not caught out when they zero out
- *    `fieldset` elements in all browsers.
- */
-
-  legend {
-    box-sizing: border-box; /* 1 */
-    color: inherit; /* 2 */
-    display: table; /* 1 */
-    max-width: 100%; /* 1 */
-    padding: 0; /* 3 */
-    white-space: normal; /* 1 */
-  }
-
-  /**
- * Add the correct vertical alignment in Chrome, Firefox, and Opera.
- */
-
-  progress {
-    vertical-align: baseline;
-  }
-
-  /**
- * Remove the default vertical scrollbar in IE 10+.
- */
-
-  textarea {
-    overflow: auto;
-  }
-
-  /**
- * 1. Add the correct box sizing in IE 10.
- * 2. Remove the padding in IE 10.
- */
-
-  [type='checkbox'],
-  [type='radio'] {
-    box-sizing: border-box; /* 1 */
-    padding: 0; /* 2 */
-  }
-
-  /**
- * Correct the cursor style of increment and decrement buttons in Chrome.
- */
-
-  [type='number']::-webkit-inner-spin-button,
-  [type='number']::-webkit-outer-spin-button {
-    height: auto;
-  }
-
-  /**
- * 1. Correct the odd appearance in Chrome and Safari.
- * 2. Correct the outline style in Safari.
- */
-
-  [type='search'] {
-    -webkit-appearance: textfield; /* 1 */
-    outline-offset: -2px; /* 2 */
-  }
-
-  /**
- * Remove the inner padding in Chrome and Safari on macOS.
- */
-
-  [type='search']::-webkit-search-decoration {
-    -webkit-appearance: none;
-  }
-
-  /**
- * 1. Correct the inability to style clickable types in iOS and Safari.
- * 2. Change font properties to `inherit` in Safari.
- */
-
-  ::-webkit-file-upload-button {
-    -webkit-appearance: button; /* 1 */
-    font: inherit; /* 2 */
-  }
-
-  /* Interactive
-   ========================================================================== */
-
-  /*
- * Add the correct display in Edge, IE 10+, and Firefox.
- */
-
-  details {
-    display: block;
-  }
-
-  /*
- * Add the correct display in all browsers.
- */
-
-  summary {
-    display: list-item;
-  }
-
-  /* Misc
-   ========================================================================== */
-
-  /**
- * Add the correct display in IE 10+.
- */
-
-  template {
-    display: none;
-  }
-
-  /**
- * Add the correct display in IE 10.
- */
-
-  [hidden] {
-    display: none;
-  }
-
-  [contentEditable]:empty:before {
-    content: attr(placeholder);
-    color: #9ca3af;
-    opacity: 1;
-  }
-
-  /* third container laylout for Firefox */
-  @-moz-document url-prefix() {
-    .firefox {
-      padding: 32px;
+  /* Firefox: base scrollbar styles (Firefox ignores ::-webkit-scrollbar) */
+  @supports (-moz-appearance: none) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar-thumb) transparent;
     }
   }
 
-  /* For screens with a maximum width of 768px (mobile) */
-  @media (max-width: 768px) {
-    .firefox {
-      padding: 16px;
-    }
+  .prompt-variable-highlight {
+    background-color: color-mix(in oklch, var(--primary) 18%, transparent);
+    border-radius: 0.375rem;
+    padding: 0 0.25rem;
+  }
+
+  .dark .prompt-variable-highlight {
+    background-color: color-mix(in oklch, var(--primary) 32%, transparent);
   }
 
   @font-face {
@@ -716,88 +225,28 @@ Avoid over-scrolling in mobile browsers
     src: url('/fonts/IBMPlexMono-Medium.ttf');
   }
 
-  /* Light mode specific autofill styles */
+  /* Keep autofilled text on the theme instead of the browser's own colours. */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
   input:-webkit-autofill:active {
-    -webkit-text-fill-color: #343541 !important;
+    -webkit-text-fill-color: var(--foreground) !important;
     -webkit-box-shadow: 0 0 0 30px transparent inset !important;
     transition: background-color 5000s ease-in-out 0s;
-    caret-color: #343541;
+    caret-color: var(--foreground);
   }
 
-  /* Dark mode specific autofill styles */
-  .dark input:-webkit-autofill,
-  .dark input:-webkit-autofill:hover,
-  .dark input:-webkit-autofill:focus,
-  .dark input:-webkit-autofill:active {
-    -webkit-text-fill-color: #e5e7eb !important;
-    -webkit-box-shadow: 0 0 0 30px transparent inset !important;
-    background-color: transparent !important;
-    caret-color: #e5e7eb;
-  }
-
-  /* Additional autocomplete dropdown styles for dark mode */
-  .dark input:-webkit-autofill::first-line {
-    color: #e5e7eb;
-  }
-
-  .inputbox-style {
-    resize: none;
-    padding-left: 36px;
-    padding-right: 36px;
-  }
-
-  .bottom-safe {
-    bottom: env(safe-area-inset-bottom, 0);
-  }
-
-  .ellipsis-text {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    text-overflow: ellipsis;
-  }
-
-  .logs-table {
-    font-family: var(--font-mono);
-  }
-
-  /* Disclosure content, e.g. an expanded tool call. Short on purpose: the
-     panel's height appears at once, so a long fade reads as the content
-     lagging behind the layout rather than as a reveal. */
-  .fade-in {
-    animation: fadeIn 0.16s ease-out;
-  }
-
-  @keyframes fadeIn {
-    0% {
-      opacity: 0;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  /* The start state lives in the keyframes, not here: with `opacity: 0` on
-     the element itself the content was only ever visible *because* an
-     animation had run to completion, so anything that stopped it running —
-     a cancelled animation, a reduced-motion reset — left the answer blank.
-     The element now rests visible and the animation is purely additive. */
-  .fade-in-bubble {
-    animation: fadeInUp 0.26s ease-out;
-  }
-
+  /* The sweep on a streaming status line. The peak is a light grey in light
+     mode (the foreground would sweep a dark bar through the line) and the
+     foreground in dark. */
   .shimmer-text {
     background: linear-gradient(
       90deg,
-      #6b7280 0%,
-      #6b7280 40%,
-      #d1d5db 50%,
-      #6b7280 60%,
-      #6b7280 100%
+      var(--muted-foreground) 0%,
+      var(--muted-foreground) 40%,
+      var(--border) 50%,
+      var(--muted-foreground) 60%,
+      var(--muted-foreground) 100%
     );
     background-size: 200% 100%;
     -webkit-background-clip: text;
@@ -809,11 +258,11 @@ Avoid over-scrolling in mobile browsers
   .dark .shimmer-text {
     background-image: linear-gradient(
       90deg,
-      #9ca3af 0%,
-      #9ca3af 40%,
-      #f9fafb 50%,
-      #9ca3af 60%,
-      #9ca3af 100%
+      var(--muted-foreground) 0%,
+      var(--muted-foreground) 40%,
+      var(--foreground) 50%,
+      var(--muted-foreground) 60%,
+      var(--muted-foreground) 100%
     );
   }
 
@@ -834,23 +283,6 @@ Avoid over-scrolling in mobile browsers
        outrank the reset and paint the sweep as a solid bar behind the text. */
     .dark .shimmer-text {
       background-image: none;
-    }
-
-    /* Safe to drop outright now that both rest in their final state. */
-    .fade-in,
-    .fade-in-bubble {
-      animation: none;
-    }
-  }
-
-  @keyframes fadeInUp {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
     }
   }
 
@@ -977,6 +409,8 @@ Avoid over-scrolling in mobile browsers
   --sidebar-border: #d9d9d9;
   --sidebar-ring: #7d54d1;
   --answer-bubble: #f6f6f6;
+  --scrollbar-thumb: #e2e8f0;
+  --scrollbar-thumb-hover: #8c9198;
 }
 
 /*
@@ -990,9 +424,9 @@ Avoid over-scrolling in mobile browsers
   --card-foreground: #fafafa;
   --popover: #2b2c31;
   --popover-foreground: #fafafa;
-  --primary: #976af3;
+  --primary: #8855f1; /* white text on it is 4.55:1 */
   --primary-foreground: #ffffff;
-  --secondary: #976af326; /* primary at 15% */
+  --secondary: #976af326; /* #976af3 (the lighter dark purple) at 15% */
   /* A lighter primary: #976af3 on the tint is about 3:1, this is 4.4-5.6:1. */
   --secondary-foreground: #b89cf8;
   --muted: #35363b;
@@ -1025,6 +459,8 @@ Avoid over-scrolling in mobile browsers
   --sidebar-border: #2b2c31;
   --sidebar-ring: #976af3;
   --answer-bubble: #2e303e;
+  --scrollbar-thumb: #949494;
+  --scrollbar-thumb-hover: #f0f0f0;
 }
 
 /*

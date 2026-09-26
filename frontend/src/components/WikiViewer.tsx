@@ -5,18 +5,18 @@ import { useSelector } from 'react-redux';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { markdownHeadings } from '@/lib/markdown';
+import { cn } from '@/lib/utils';
+
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
+import { formatRelative } from '../utils/dateTimeUtils';
 import { decodeJwtPayload } from '../utils/jwtUtils';
 import { Button } from './ui/button';
+import { IconButton } from './ui/icon-button';
 import { Textarea } from './ui/textarea';
 import SkeletonLoader from './SkeletonLoader';
-import {
-  WikiPageNode,
-  formatRelativeTime,
-  provenanceKey,
-  saveWikiPage,
-} from './wikiViewerUtils';
+import { WikiPageNode, provenanceKey, saveWikiPage } from './wikiViewerUtils';
 
 interface WikiViewerProps {
   docId: string;
@@ -28,15 +28,7 @@ interface WikiViewerProps {
 }
 
 const markdownComponents = {
-  h1: ({ children }: { children?: React.ReactNode }) => (
-    <h1 className="mt-4 mb-2 text-xl font-semibold">{children}</h1>
-  ),
-  h2: ({ children }: { children?: React.ReactNode }) => (
-    <h2 className="mt-4 mb-2 text-lg font-semibold">{children}</h2>
-  ),
-  h3: ({ children }: { children?: React.ReactNode }) => (
-    <h3 className="mt-3 mb-2 text-base font-semibold">{children}</h3>
-  ),
+  ...markdownHeadings,
   p: ({ children }: { children?: React.ReactNode }) => (
     <p className="mb-3">{children}</p>
   ),
@@ -47,14 +39,11 @@ const markdownComponents = {
     <ol className="mb-3 list-inside list-decimal pl-4">{children}</ol>
   ),
   a: ({ children, href }: { children?: React.ReactNode; href?: string }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="text-primary underline"
-    >
-      {children}
-    </a>
+    <Button variant="link" size="inline" asChild>
+      <a href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    </Button>
   ),
   code: ({ children }: { children?: React.ReactNode }) => (
     <code className="bg-accent rounded-md px-1.5 py-0.5 text-xs">
@@ -194,7 +183,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
   const renderStamp = () => {
     if (!page) return null;
     const who = provenanceLabel(page.updated_via, page.updated_by);
-    const when = formatRelativeTime(page.updated_at);
+    const when = formatRelative(page.updated_at);
     const parts = [t('settings.sources.wiki.stamp.editedBy', { who })];
     if (when) parts.push(when);
     if (page.version != null) {
@@ -210,25 +199,24 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
   return (
     <div className="flex flex-col">
       <div className="mb-4 flex items-center">
-        <Button
-          type="button"
+        <IconButton
           variant="outline"
           size="icon-xs"
           shape="pill"
           className="mr-3"
           onClick={onBackToDocuments}
-          aria-label={t('settings.sources.backToAll')}
-        >
-          <ArrowLeft />
-        </Button>
+          label={t('settings.sources.backToAll')}
+          icon={ArrowLeft}
+          side="bottom"
+        />
         <span className="text-primary font-semibold wrap-break-word">
           {sourceName}
         </span>
         {headerAction ? <div className="ml-auto">{headerAction}</div> : null}
       </div>
 
-      <div className="bg-muted/60 text-muted-foreground dark:bg-accent/40 mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-xs">
-        <BookOpen size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <div className="bg-muted text-muted-foreground mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-xs">
+        <BookOpen className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <p>
           <span className="text-foreground font-medium">
             {t('settings.sources.wiki.livingTitle')}
@@ -255,11 +243,12 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
                   <button
                     type="button"
                     onClick={() => setSelectedPath(p.path)}
-                    className={`w-full truncate rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                    className={cn(
+                      'w-full truncate rounded-lg px-3 py-2 text-left text-sm transition-colors',
                       selectedPath === p.path
-                        ? 'bg-muted text-foreground dark:bg-accent'
-                        : 'text-muted-foreground hover:bg-muted dark:hover:bg-accent'
-                    }`}
+                        ? 'bg-accent text-foreground'
+                        : 'text-muted-foreground hover:bg-accent',
+                    )}
                     title={p.path}
                   >
                     {p.title || p.path}
@@ -319,7 +308,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
                     </Button>
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={cancelEditing}
                       disabled={saving}

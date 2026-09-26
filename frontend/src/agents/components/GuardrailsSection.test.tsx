@@ -221,13 +221,54 @@ describe('GuardrailsSection', () => {
     expect(floor?.className).toContain('text-info');
   });
 
+  // Item 38: the instance-policy line is an info Alert announced as a note.
+  it('renders an instance-enforced control as an info note', async () => {
+    await render();
+    const note = q('guardrail-floor-pii:output')!;
+    expect(note.dataset.slot).toBe('alert');
+    expect(note.getAttribute('role')).toBe('note');
+    expect(note.className).toContain('text-info');
+    expect(note.querySelector('svg.lucide-info')).not.toBeNull();
+    expect(note.textContent).toContain('agents.form.guardrails.floorControl');
+  });
+
+  // Item 38: a control's setup error is its FormField error, tied to the
+  // action select.
+  it('announces the setup error under the control row', async () => {
+    await render();
+    const error = q('guardrail-needs-setup-policy-input')!;
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(error.textContent).toBe('agents.form.guardrails.setupRequired');
+    expect(q('guardrail-needs-setup-pii-input')).toBeNull();
+  });
+
+  it('announces an empty PII entity list', async () => {
+    await render({
+      value: {
+        ...config,
+        controls: [{ ...config.controls[0], settings: { entities: [] } }],
+      },
+    });
+    await act(async () => {
+      q('guardrail-configure-pii-input')?.click();
+    });
+    const errors = Array.from(container.querySelectorAll('[role="alert"]')).map(
+      (el) => el.textContent,
+    );
+    expect(errors).toContain('agents.form.guardrails.pickAtLeastOne');
+  });
+
   it('uses the pressed-toggle variants for stage chips', async () => {
     await render();
     expect(q('guardrail-stage-pii-input')?.dataset.variant).toBe('secondary');
     const locked = q('guardrail-stage-pii-output');
     expect(locked?.dataset.variant).toBe('secondary');
     expect((locked as HTMLButtonElement).disabled).toBe(true);
-    expect(locked?.title).toBe('agents.form.guardrails.lockedByFloor');
+    // The hint lives on the hoverable wrapper; the named button has no title.
+    expect(locked?.hasAttribute('title')).toBe(false);
+    expect(locked?.parentElement?.title).toBe(
+      'agents.form.guardrails.lockedByFloor',
+    );
     expect(q('guardrail-stage-policy-input')?.dataset.variant).toBe(
       'secondary',
     );
@@ -239,8 +280,17 @@ describe('GuardrailsSection', () => {
     expect(remove?.dataset.variant).toBe('ghost-destructive');
     expect(remove?.dataset.size).toBe('xs');
     const orphan = q('guardrail-orphan-gone')?.querySelector('button');
-    expect(orphan?.dataset.variant).toBe('ghost-destructive');
+    // On the tinted orphan row the hover is a destructive tint, not grey.
+    expect(orphan?.dataset.variant).toBe('ghost-destructive-on-accent');
     expect(orphan?.dataset.size).toBe('xs');
+  });
+
+  it('draws the orphan-guardrail row as a small destructive Card', async () => {
+    await render();
+    const row = q('guardrail-orphan-gone');
+    expect(row?.dataset.slot).toBe('card');
+    expect(row?.dataset.tone).toBe('destructive');
+    expect(row?.dataset.padding).toBe('sm');
   });
 
   // Decision 63 (3): the form's fields and selects are all 42px.
@@ -255,13 +305,45 @@ describe('GuardrailsSection', () => {
     expect(timeout?.dataset.size).toBe('default');
     expect(timeout?.dataset.shape).toBe('pill');
     const mode = q('guardrails-mode');
-    expect(mode?.dataset.size).toBe('lg');
+    expect(mode?.dataset.size).toBe('field');
     expect(mode?.dataset.shape).toBe('pill');
 
     await act(async () => {
       q('guardrail-configure-policy-input')?.click();
     });
     expect(q('guardrail-policy-text')?.dataset.slot).toBe('textarea');
+  });
+
+  // Decision 63e-b: the monitor-only line is advice, so the field's muted hint.
+  it('explains monitor-only mode in the mode field hint', async () => {
+    await render();
+    const hint = Array.from(container.querySelectorAll('p')).find(
+      (p) => p.textContent === 'agents.form.guardrails.monitorHint',
+    )!;
+    expect(hint.className.split(' ')).toEqual(
+      expect.arrayContaining(['text-muted-foreground', 'text-xs']),
+    );
+    expect(hint.className).not.toContain('text-warning');
+    expect(q('guardrails-mode')?.getAttribute('aria-describedby')).toContain(
+      hint.id,
+    );
+  });
+
+  // Decision 63a: each control's name is a 14px semibold sub-heading.
+  it('titles each check card with an xs section header', async () => {
+    await render();
+    const title = q('guardrail-check-pii')?.querySelector('h4');
+    expect(title?.textContent).toBe('PII');
+    expect(title?.className.split(' ')).toEqual(
+      expect.arrayContaining(['text-foreground', 'text-sm', 'font-semibold']),
+    );
+  });
+
+  it('renders each check as a small-padded Card', async () => {
+    await render();
+    const card = q('guardrail-check-pii');
+    expect(card?.dataset.slot).toBe('card');
+    expect(card?.dataset.padding).toBe('sm');
   });
 
   it('shows PII entities as toggle chips', async () => {
@@ -271,5 +353,31 @@ describe('GuardrailsSection', () => {
     });
     expect(q('guardrail-pii-EMAIL')?.dataset.variant).toBe('secondary');
     expect(q('guardrail-pii-PHONE')?.dataset.variant).toBe('ghost-muted');
+  });
+
+  it('shows a failed catalog load as a destructive empty state with Retry', async () => {
+    getGuardrailCatalog.mockReset();
+    getGuardrailCatalog.mockRejectedValueOnce(new Error('network'));
+    getGuardrailCatalog.mockResolvedValue({
+      json: async () => ({ success: true, ...catalog }),
+    });
+    await render();
+
+    const errorState = () =>
+      container.querySelector<HTMLElement>(
+        '[data-slot="empty-state"][data-tone="destructive"]',
+      );
+    expect(errorState()?.textContent).toContain(
+      'agents.form.guardrails.loadError',
+    );
+    expect(errorState()?.dataset.size).toBe('sm');
+    const retry = Array.from(errorState()!.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    );
+
+    await act(async () => retry!.click());
+
+    expect(getGuardrailCatalog).toHaveBeenCalledTimes(2);
+    expect(errorState()).toBeNull();
   });
 });

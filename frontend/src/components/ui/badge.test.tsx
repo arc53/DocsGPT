@@ -7,7 +7,9 @@ describe('Badge', () => {
   it('is a soft brand pill by default', () => {
     const html = renderToStaticMarkup(<Badge>Beta</Badge>);
     expect(html).toContain('rounded-full');
-    expect(html).toContain('bg-primary/10');
+    expect(html).toContain('bg-secondary');
+    expect(html).toContain('text-secondary-foreground');
+    expect(html).not.toContain('dark:bg-primary/20');
     expect(html).toContain('data-variant="default"');
   });
 
@@ -36,4 +38,15 @@ describe('Badge', () => {
       );
     }
   });
+});
+
+describe('Badge status fills', () => {
+  it.each(['success', 'warning', 'destructive', 'info'] as const)(
+    '%s is /10 in both themes, like Alert',
+    (variant) => {
+      const classes = badgeVariants({ variant }).split(' ');
+      expect(classes).toContain(`bg-${variant}/10`);
+      expect(classes.some((c) => c.startsWith('dark:bg-'))).toBe(false);
+    },
+  );
 });

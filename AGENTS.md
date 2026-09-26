@@ -207,6 +207,10 @@ vale .
 - If shared state must be added, use Redux rather than introducing a new global state library.
 - Avoid broad UI refactors unless the task explicitly asks for them.
 - Do not re-create components if we already have some in the app.
+- Follow `frontend/DESIGN.md`: compose `components/ui/` parts and pick their look with props, use theme tokens, and
+  keep typography, spacing, radius and motion on its roles.
+- Every user-visible string, attributes included (`aria-label`, `label`, `placeholder`, `title`, `alt`), is a `t()`
+  key in all seven locales under `frontend/src/locale/` (`de en es jp ru zh zh-TW`). Admin pages stay English.
 
 #### Icons
 

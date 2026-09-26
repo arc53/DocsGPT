@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 
 import useTokenAuth from '../hooks/useTokenAuth';
 import { Avatar } from './ui/avatar';
+import { Button } from './ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Separator } from './ui/separator';
 
 /**
  * Top-right account menu for OIDC sessions: an avatar that opens a popover
@@ -17,40 +19,42 @@ export default function ProfileButton() {
   if (authType !== 'oidc' || (!userName && !userEmail)) return null;
 
   const initial = (userName || userEmail || '?').charAt(0).toUpperCase();
-  // `default` is size-8/text-sm, `xl` is size-10/text-base; the size variant
+  // `sm` is size-8/text-sm, `lg` is size-10/text-base; the size variant
   // also brings the flex centring and the overflow-hidden that clips both the
   // photo and the initials to the circle.
-  const renderAvatar = (size: 'default' | 'xl') =>
+  const renderAvatar = (size: 'sm' | 'lg') =>
     userPicture ? (
       <Avatar
         size={size}
         shape="circle"
         src={userPicture}
-        alt={userName || userEmail || 'User avatar'}
+        alt={userName || userEmail || t('components.profile.avatarAlt')}
         imgClassName="size-full object-cover"
       />
     ) : (
-      <Avatar size={size} shape="circle">
-        <span className="bg-primary text-primary-foreground flex size-full items-center justify-center font-medium">
-          {initial}
-        </span>
+      <Avatar size={size} shape="circle" variant="primary">
+        {initial}
       </Avatar>
     );
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
+        {/* inline + pill: the avatar sets the size and the Button brings
+            only the round focus ring; ghost's hover fill sits under it. */}
+        <Button
           type="button"
+          variant="ghost"
+          size="inline"
+          shape="pill"
           aria-label={t('auth.account')}
-          className="ring-offset-background focus-visible:ring-ring hover:ring-primary/40 rounded-full transition outline-none hover:ring-2 hover:ring-offset-2 focus-visible:ring-2 focus-visible:ring-offset-2"
         >
-          {renderAvatar('default')}
-        </button>
+          {renderAvatar('sm')}
+        </Button>
       </PopoverTrigger>
       <PopoverContent align="end" sideOffset={8} className="w-64 p-0">
         <div className="flex items-center gap-3 p-4">
-          {renderAvatar('xl')}
+          {renderAvatar('lg')}
           <span className="flex min-w-0 flex-col">
             {userName && (
               <p className="text-foreground truncate text-sm font-medium">
@@ -64,17 +68,18 @@ export default function ProfileButton() {
             )}
           </span>
         </div>
-        <div className="dark:border-sidebar-border border-t" />
+        <Separator />
         <div className="p-1">
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={logout}
             data-testid="oidc-signout"
-            className="text-foreground hover:bg-sidebar-accent flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm"
+            className="w-full justify-start"
           >
-            <LogOut className="text-muted-foreground size-4 shrink-0" />
+            <LogOut className="text-muted-foreground" aria-hidden />
             {t('auth.signOut')}
-          </button>
+          </Button>
         </div>
       </PopoverContent>
     </Popover>

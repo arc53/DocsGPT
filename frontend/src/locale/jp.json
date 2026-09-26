@@ -8,6 +8,7 @@
   "sourceDocs": "ソース",
   "none": "なし",
   "loading": "読み込み中...",
+  "retry": "再試行",
   "cancel": "キャンセル",
   "help": "ヘルプ",
   "emailUs": "メールを送る",
@@ -75,7 +76,14 @@
       "high": "高",
       "unlimited": "無制限",
       "default": "デフォルト",
-      "add": "追加"
+      "add": "追加",
+      "promptActions": {
+        "select": "プロンプトを選択",
+        "edit": "プロンプトを編集",
+        "view": "プロンプトを表示",
+        "duplicate": "プロンプトを複製",
+        "delete": "プロンプトを削除"
+      }
     },
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",
@@ -671,6 +679,14 @@
       "description": "説明",
       "descriptionPlaceholder": "説明を入力",
       "bodyContentType": "ボディのコンテンツタイプ",
+      "bodyTypeHint": {
+        "json": "最も一般的な形式です。最新の REST API に使用します。",
+        "formUrlencoded": "標準的なフォーム送信形式です。従来の API やログインフォームに最適です。",
+        "multipart": "multipart 形式を必要とする API 向けです。LLM 経由のファイルアップロードには対応していません。",
+        "text": "プレーンテキストデータです。各フィールドを改行で区切ります。",
+        "xml": "構造化された XML 形式です。SOAP やエンタープライズ API に使用します。",
+        "octetStream": "生のバイナリデータで、送信時に base64 エンコードされます。"
+      },
       "headers": "ヘッダー",
       "queryParameters": "クエリパラメータ",
       "body": "ボディ",
@@ -739,7 +755,14 @@
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
-      }
+      },
+      "configErrors": {
+        "required": "{{field}}は必須です",
+        "positiveNumber": "正の数を入力してください",
+        "maxTimeout": "タイムアウトの上限は300秒です"
+      },
+      "headerValuePlaceholder": "例: application/json",
+      "toolIconTitle": "{{name}}のアイコン"
     },
     "devices": {
       "label": "デバイス",
@@ -792,7 +815,9 @@
         "start": "コードを生成",
         "waitingForCli": "CLIがコードを使用するのを待機中…",
         "cancel": "キャンセル"
-      }
+      },
+      "auditDurationValue": "{{value}} ミリ秒",
+      "fallbackName": "デバイス"
     },
     "customModels": {
       "label": "カスタムモデル",
@@ -905,15 +930,6 @@
         "workflows_one": "ワークフロー{{count}}件",
         "workflows_other": "ワークフロー{{count}}件"
       },
-      "relative": {
-        "now": "たった今",
-        "minutes_one": "{{count}}分前",
-        "minutes_other": "{{count}}分前",
-        "hours_one": "{{count}}時間前",
-        "hours_other": "{{count}}時間前",
-        "days_one": "{{count}}日前",
-        "days_other": "{{count}}日前"
-      },
       "families": {
         "agents": "エージェント",
         "sources": "ソース",
@@ -1025,7 +1041,8 @@
         "collapseDetails": "アップロードの詳細を折りたたむ",
         "dismiss": "アップロード通知を閉じる",
         "uploadProgress": "アップロード進行状況 {{progress}}%",
-        "clear": "クリア"
+        "clear": "クリア",
+        "ingestionFailed": "取り込みに失敗しました。"
       },
       "showAdvanced": "詳細オプションを表示",
       "hideAdvanced": "詳細オプションを非表示",
@@ -1116,6 +1133,16 @@
           "folderAlt": "フォルダ",
           "fileAlt": "ファイル"
         }
+      },
+      "fields": {
+        "url": "URL",
+        "awsAccessKeyId": "AWS アクセスキー ID",
+        "awsSecretAccessKey": "AWS シークレットアクセスキー",
+        "bucket": "バケット名",
+        "prefix": "パスプレフィックス（任意）",
+        "region": "AWS リージョン",
+        "endpointUrl": "カスタムエンドポイント URL（任意）",
+        "initialContent": "初期コンテンツ（任意）"
       }
     },
     "createAPIKey": {
@@ -1156,7 +1183,10 @@
       "apiKeyPlaceholder": "APIキー / OAuthを入力してください",
       "addButton": "ツールを追加",
       "closeButton": "閉じる",
-      "customNamePlaceholder": "Enter custom name (optional)"
+      "customNamePlaceholder": "Enter custom name (optional)",
+      "fieldRequired": "{{field}} は必須です",
+      "positiveNumber": "正の数を入力してください",
+      "maxTimeout": "タイムアウトの上限は 300 秒です"
     },
     "prompts": {
       "addPrompt": "プロンプトを追加",
@@ -1277,12 +1307,18 @@
       "review": "Review",
       "import": "Import",
       "continueToAgent": "Continue to agent"
+    },
+    "jwt": {
+      "title": "JWT トークンを追加",
+      "label": "JWT トークン",
+      "save": "トークンを保存"
     }
   },
   "sharedConv": {
     "subtitle": "作成者",
     "button": "DocsGPT を始める",
-    "meta": "DocsGPT は GenAI を使用しています、情報源を使用して重要情報を確認してください。"
+    "meta": "DocsGPT は GenAI を使用しています、情報源を使用して重要情報を確認してください。",
+    "metaDescription": "DocsGPT で共有された会話"
   },
   "convTile": {
     "share": "共有",
@@ -1308,7 +1344,8 @@
     "edit": {
       "update": "更新",
       "cancel": "キャンセル",
-      "placeholder": "更新されたクエリを入力..."
+      "placeholder": "更新されたクエリを入力...",
+      "label": "編集"
     },
     "sources": {
       "title": "ソース",
@@ -1322,7 +1359,10 @@
     },
     "attachments": {
       "attach": "添付",
-      "remove": "添付ファイルを削除"
+      "remove": "添付ファイルを削除",
+      "attached": "添付ファイル",
+      "failed": "失敗",
+      "attachment": "添付ファイル"
     },
     "retry": "再試行",
     "reasoning": "推論",
@@ -1377,7 +1417,55 @@
     "quotaExceeded": {
       "tokens": "トークンクォータ {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。",
       "cost": "利用予算 {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。"
-    }
+    },
+    "voice": {
+      "start": "音声入力",
+      "stopRecording": "録音を停止",
+      "transcribingAudio": "音声を文字起こし中",
+      "voice": "音声",
+      "stop": "停止",
+      "transcribing": "文字起こし中",
+      "unavailable": "現在、音声入力は利用できません。",
+      "insecure": "音声入力には安全な接続（HTTPS または localhost）が必要です。",
+      "unsupported": "このブラウザでは音声入力を利用できません。",
+      "noWebAudio": "音声入力には、このブラウザでの Web Audio サポートが必要です。",
+      "micBlocked": "マイクへのアクセスがブロックされました。マイクの使用を許可して、もう一度お試しください。",
+      "micNotFound": "このデバイスにマイクが見つかりません。",
+      "micBusy": "マイクが利用できないか、すでに使用中です。",
+      "micInterrupted": "録音開始前にマイクへのアクセスが中断されました。",
+      "micDenied": "マイクへのアクセスが拒否されました。",
+      "transcribeFailed": "音声を文字起こしできませんでした。",
+      "finalizeFailed": "ライブ文字起こしを完了できませんでした。",
+      "startFailed": "ライブ文字起こしを開始できませんでした。"
+    },
+    "selectModel": "モデルを選択",
+    "question": {
+      "expand": "メッセージ全体を表示",
+      "collapse": "折りたたむ"
+    },
+    "exportMarkdown": "Markdown としてエクスポート",
+    "feedback": {
+      "like": "高評価",
+      "removeLike": "高評価を取り消す",
+      "dislike": "低評価",
+      "removeDislike": "低評価を取り消す"
+    },
+    "toolApproval": {
+      "approve": "承認",
+      "approveAlways": "承認し、今後は確認しない",
+      "deny": "拒否",
+      "details": "詳細",
+      "denyReasonPlaceholder": "拒否の理由（任意）…"
+    },
+    "research": {
+      "title": "リサーチ",
+      "planning": "リサーチを計画中…",
+      "researching": "リサーチ中…",
+      "synthesizing": "レポートを作成中…",
+      "complete": "完了",
+      "researched": "{{count}} 件のトピックを調査しました"
+    },
+    "openFile": "ファイルを開く"
   },
   "agents": {
     "title": "エージェント",
@@ -1514,7 +1602,8 @@
       },
       "agentTypes": {
         "classic": "クラシック",
-        "react": "ReAct"
+        "react": "ReAct",
+        "research": "リサーチ"
       },
       "labels": {
         "defaultModel": "デフォルトモデル"
@@ -1669,13 +1758,95 @@
           "nov": "11月",
           "dec": "12月"
         }
+      },
+      "status": {
+        "active": "有効",
+        "paused": "一時停止",
+        "completed": "完了",
+        "cancelled": "キャンセル済み",
+        "success": "成功",
+        "failed": "失敗",
+        "skipped": "スキップ",
+        "running": "実行中",
+        "pending": "保留中",
+        "timeout": "タイムアウト"
+      },
+      "trigger": {
+        "cron": "スケジュール",
+        "manual": "手動"
+      },
+      "runDetails": {
+        "title": "実行の詳細",
+        "status": "ステータス",
+        "scheduledFor": "予定日時",
+        "started": "開始",
+        "finished": "終了",
+        "tokens": "トークン",
+        "tokensValue": "プロンプト {{prompt}} · 生成 {{generated}}",
+        "trigger": "トリガー",
+        "error": "エラー",
+        "errorWithType": "エラー（{{type}}）",
+        "output": "出力",
+        "truncated": "（切り詰め）"
+      },
+      "timezoneMeta": "タイムゾーン: {{timezone}}",
+      "nextRunMeta": "次回: {{time}}",
+      "toolCard": {
+        "cancelFailed": "キャンセルに失敗しました",
+        "taskCancelled": "予約タスクをキャンセルしました。",
+        "pendingCount_other": "保留中の予約タスク {{count}} 件",
+        "schedulingFailed": "スケジュール設定に失敗しました",
+        "scheduling": "スケジュール設定中…",
+        "scheduled": "予約タスク",
+        "pendingCount_one": "保留中の予約タスク {{count}} 件"
+      },
+      "cron": {
+        "daily": "毎日 {{time}}",
+        "weekly": "毎週{{day}} {{time}}",
+        "monthly": "毎月 {{day}} 日 {{time}}",
+        "yearly": "毎年 {{month}}{{day}}日 {{time}}",
+        "custom": "カスタム: {{expression}}",
+        "dayNames": {
+          "sun": "日曜日",
+          "mon": "月曜日",
+          "tue": "火曜日",
+          "wed": "水曜日",
+          "thu": "木曜日",
+          "fri": "金曜日",
+          "sat": "土曜日"
+        },
+        "monthNames": {
+          "jan": "1月",
+          "feb": "2月",
+          "mar": "3月",
+          "apr": "4月",
+          "may": "5月",
+          "jun": "6月",
+          "jul": "7月",
+          "aug": "8月",
+          "sep": "9月",
+          "oct": "10月",
+          "nov": "11月",
+          "dec": "12月"
+        }
+      },
+      "runLog": {
+        "when": "日時",
+        "details": "詳細",
+        "empty": "このスケジュールの実行記録はまだありません。"
       }
     },
     "shared": {
-      "notFound": "エージェントが見つかりません。エージェントが共有されていることを確認してください。"
+      "notFound": "エージェントが見つかりません。エージェントが共有されていることを確認してください。",
+      "logoAlt": "エージェントのロゴ",
+      "sharedBy": "共有者: {{name}}",
+      "sharedOn": "共有日: {{date}}",
+      "connectedTools": "接続済みツール",
+      "toolIconTitle": "{{name}} のアイコン"
     },
     "preview": {
-      "testMessage": "ここでエージェントをテストできます。公開されたエージェントは会話で使用できます。"
+      "testMessage": "ここでエージェントをテストできます。公開されたエージェントは会話で使用できます。",
+      "emptyTitle": "エージェントをテスト"
     },
     "deleteConfirmation": "このエージェントを削除してもよろしいですか？",
     "folders": {
@@ -1694,7 +1865,8 @@
       "currentFolder": "このフォルダ",
       "noSubfolders": "サブフォルダなし",
       "openFolder": "フォルダーを開く",
-      "noFolders": "フォルダがありません"
+      "noFolders": "フォルダがありません",
+      "menuAriaLabel": "{{folderName}} の操作"
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -1718,6 +1890,198 @@
       "emptyForFilter": "No decisions match this filter.",
       "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
+    },
+    "workflow": {
+      "artifacts": {
+        "previewUnsupported": "このアーティファクトはプレビューできません",
+        "loadListFailed": "アーティファクトを読み込めませんでした",
+        "loadFailed": "アーティファクトを読み込めませんでした",
+        "loading": "アーティファクトを読み込み中...",
+        "inProgress": "実行中です。ノードが生成したアーティファクトがここに表示されます。",
+        "empty": "この実行ではアーティファクトは生成されませんでした。",
+        "back": "アーティファクト一覧に戻る",
+        "untitled": "アーティファクト {{id}}",
+        "fileKind": "ファイル"
+      },
+      "builder": {
+        "deleteFailed": "ワークフローエージェントを削除できませんでした",
+        "updateWorkflowFailed": "ワークフローを更新できませんでした",
+        "updateAgentFailed": "エージェントを更新できませんでした",
+        "createWorkflowFailed": "ワークフローを作成できませんでした",
+        "createAgentFailed": "エージェントを作成できませんでした",
+        "saveFailed": "ワークフローを保存できませんでした",
+        "defaultDescription": "ワークフローエージェント: {{name}}",
+        "newWorkflow": "新しいワークフロー",
+        "editDetails": "ワークフローの詳細を編集",
+        "workflowName": "ワークフロー名",
+        "workflowNamePlaceholder": "ワークフロー名を入力",
+        "workflowDescriptionPlaceholder": "このワークフローの内容を説明してください",
+        "agentImageAlt": "エージェント画像",
+        "currentImage": "現在の画像",
+        "agentImage": "エージェント画像",
+        "agentImageHint": "画像の変更は次回の保存時に反映されます。",
+        "done": "完了",
+        "unablePreview": "ワークフローをプレビューできません",
+        "unableSave": "ワークフローを保存できません",
+        "unablePublish": "ワークフローを公開できません",
+        "coreNodes": "基本ノード",
+        "logicNodes": "ロジックとデータ",
+        "aiAgent": "AI エージェント",
+        "setStateHint": "ワークフロー変数を変更",
+        "conditionHint": "条件分岐",
+        "codeHint": "サンドボックスでコードを実行",
+        "startNode": "開始ノード",
+        "endNode": "終了ノード",
+        "stateTitle": "グローバル変数を設定",
+        "nodeId": "ノード ID",
+        "title": "タイトル",
+        "titlePlaceholder": "ノードのタイトルを入力",
+        "agentType": "エージェントの種類",
+        "agentTypePlaceholder": "エージェントの種類を選択",
+        "model": "モデル",
+        "modelPlaceholder": "モデルを選択",
+        "systemPrompt": "システムプロンプト",
+        "systemPromptPlaceholder": "エージェントのシステムプロンプト",
+        "promptTemplate": "プロンプトテンプレート",
+        "promptTemplatePlaceholder": "動的な内容には {{example}} を使用します",
+        "outputVariable": "出力変数",
+        "outputVariablePlaceholder": "出力の変数名",
+        "streamToUser": "出力をユーザーにストリーミング",
+        "sources": "ソース",
+        "documents": "ドキュメント",
+        "documentsHint": "アップロードまたは上流ノードからこのエージェントに渡されるドキュメント。",
+        "filePassing": "ファイルの受け渡し",
+        "filePassingHint": "自動: モデルが対応していればネイティブで送信し、そうでなければテキストを抽出します。",
+        "structuredOutput": "構造化出力（JSON スキーマ）",
+        "modelNoStructuredOutput": "選択したモデルは構造化出力に対応していません。",
+        "validSchema": "有効な JSON スキーマ",
+        "invalidSchema": "無効な JSON スキーマ: {{error}}",
+        "noteContent": "メモの内容",
+        "noteContentPlaceholder": "メモの内容を入力",
+        "stateIntro": "ワークフローの状態変数に値を割り当てます",
+        "assignValue": "値を割り当て",
+        "celHint": "Common Expression Language でカスタム式を作成します。状態は名前だけで参照します（<code>query</code>）。<code>{{braced}}</code> ではありません。",
+        "learnMore": "詳細",
+        "toVariable": "代入先の変数",
+        "conditionIntro": "条件を作成してワークフローを分岐させます",
+        "modeSimple": "シンプル",
+        "modeAdvanced": "詳細",
+        "caseNamePlaceholder": "ケース名（任意）",
+        "variablePlaceholder": "変数",
+        "valuePlaceholder": "値",
+        "opContains": "含む",
+        "opStartsWith": "で始まる",
+        "conditionPlaceholder": "条件を入力（例: query.contains(\"refund\")）",
+        "codeIntro": "ワークフローのサンドボックスでコードを実行します。生成されたファイルはアーティファクトとして保存されます。",
+        "inputFiles": "入力ファイル",
+        "inputFilesHint": "サンドボックスにファイルとして配置されるアーティファクト/上流の参照（それぞれ inputs/<name> になります）。",
+        "timeout": "タイムアウト（秒）",
+        "optional": "任意",
+        "cannotDeleteStart": "開始ノードは削除できません",
+        "deleteNode": "ノードを削除",
+        "deleteConfirm": "「{{name}}」を削除してもよろしいですか？",
+        "deleteConfirmUnnamed": "このワークフローエージェントを削除してもよろしいですか？"
+      },
+      "validation": {
+        "nameRequired": "ワークフロー名は必須です",
+        "oneStart": "ワークフローには開始ノードがちょうど 1 つ必要です",
+        "needEnd": "ワークフローには終了ノードが 1 つ以上必要です",
+        "needAgent": "ワークフローには AI エージェントノードが 1 つ以上必要です",
+        "agentModel": "エージェント「{{name}}」のモデルを選択してください",
+        "agentStructuredOutput": "エージェント「{{name}}」で選択したモデルは構造化出力に対応していません",
+        "agentSchema": "エージェント「{{name}}」の JSON スキーマ: {{error}}",
+        "startConnected": "開始ノードを別のノードに接続してください",
+        "endIncoming": "終了ノード「{{name}}」には入力接続が必要です",
+        "edgeSource": "接続が存在しない接続元ノードを参照しています",
+        "edgeTarget": "接続が存在しない接続先ノードを参照しています",
+        "conditionNeedsCase": "条件「{{name}}」には式を持つケースが 1 つ以上必要です",
+        "conditionCaseNoHandle": "条件「{{name}}」に分岐ハンドルのないケースがあります",
+        "conditionDuplicateHandle": "条件「{{name}}」のケースハンドル「{{handle}}」が重複しています",
+        "conditionTwoOutgoing": "条件「{{name}}」には出力接続が 2 つ以上必要です",
+        "conditionEdgeNoHandle": "条件「{{name}}」に分岐ハンドルのない接続があります",
+        "conditionUnknownBranch": "条件「{{name}}」に不明な分岐「{{handle}}」からの接続があります",
+        "conditionMultipleEdges": "条件「{{name}}」の分岐「{{handle}}」から複数の接続があります",
+        "conditionNeedsElse": "条件「{{name}}」には Else 分岐が必要です",
+        "caseNoConnection": "条件「{{name}}」のケース「{{handle}}」には式がありますが、分岐の接続がありません",
+        "caseNoExpression": "条件「{{name}}」のケース「{{handle}}」には分岐の接続がありますが、式がありません",
+        "caseNoVariable": "条件「{{name}}」のケース「{{handle}}」では、シンプルモードで変数を指定する必要があります",
+        "branchReachEnd": "条件「{{name}}」の分岐「{{handle}}」は最終的に終了ノードに到達する必要があります",
+        "codeRequired": "コードノード「{{name}}」には実行するコードが必要です",
+        "codeSchema": "コードノード「{{name}}」の JSON スキーマ: {{error}}"
+      },
+      "schema": {
+        "notObject": "有効な JSON オブジェクトである必要があります",
+        "missingType": "\"type\" または \"schema\" フィールドが必要です",
+        "invalidJson": "有効な JSON である必要があります"
+      },
+      "filePassing": {
+        "auto": "自動",
+        "native": "ネイティブ",
+        "extract": "抽出"
+      },
+      "mobileBlocker": {
+        "title": "デスクトップが必要です",
+        "body": "ワークフロービルダーを快適に使うには、より大きな画面が必要です。このページはデスクトップまたはノートパソコンで開いてください。"
+      },
+      "nodes": {
+        "start": "開始",
+        "startHint": "ワークフローの開始点",
+        "end": "終了",
+        "endHint": "ワークフローの完了",
+        "agent": "エージェント",
+        "note": "メモ",
+        "condition": "If / Else",
+        "code": "コード",
+        "setState": "状態を設定",
+        "output": "出力: {{variable}}",
+        "noCode": "コードはまだありません",
+        "modeSimple": "シンプル",
+        "modeAdvanced": "詳細",
+        "if": "If",
+        "elseIf": "Else if",
+        "else": "Else",
+        "operationCount_other": "{{count}} 件の操作",
+        "variableCount_other": "{{count}} 個の変数",
+        "variableTitle": "変数: {{name}}",
+        "valueTitle": "値: {{value}}",
+        "operationCount_one": "{{count}} 件の操作",
+        "variableCount_one": "{{count}} 個の変数"
+      },
+      "preview": {
+        "executionDetails": "実行の詳細",
+        "stepCount_other": "（{{count}} ステップ）",
+        "outputLabel": "出力:",
+        "errorLabel": "エラー:",
+        "artifacts": "アーティファクト",
+        "minimapHeading": "ワークフロー",
+        "emptyTitle": "ワークフローをテスト",
+        "unsavedDraftAttachments": "プレビューでドキュメントを添付する前にワークフローを保存してください。",
+        "stepCount_one": "（{{count}} ステップ）"
+      },
+      "documents": {
+        "modeAll": "すべての入力ドキュメント",
+        "modeNone": "なし",
+        "modeChoose": "選択…",
+        "selectPlaceholder": "ドキュメントを選択...",
+        "searchPlaceholder": "変数を検索...",
+        "empty": "上流のドキュメントはありません",
+        "refPlaceholder": "参照を追加（例: A1）"
+      },
+      "variables": {
+        "globalContext": "グローバルコンテキスト",
+        "workflowInput": "ワークフロー入力",
+        "searchPlaceholder": "変数を検索...",
+        "empty": "変数が見つかりません",
+        "addContext": "コンテキストを追加"
+      }
+    },
+    "typeModal": {
+      "title": "新しいエージェントを作成",
+      "description": "作成するエージェントの種類を選択してください",
+      "classicTitle": "クラシックエージェント",
+      "classicDescription": "単一のモデル、ツール、ナレッジソースを持つ標準的な AI エージェントを作成します",
+      "workflowTitle": "ワークフローエージェント",
+      "workflowDescription": "複数のモデル、条件ロジック、状態管理を使った複雑なマルチステップのワークフローを設計します"
     }
   },
   "components": {
@@ -1726,7 +2090,39 @@
       "dropFiles": "Drop the files here",
       "fileTypes": "PNG, JPG, JPEG up to",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit"
+      "fileSizeError": "File exceeds {{size}}MB limit",
+      "preview": "画像のプレビュー",
+      "remove": "ファイルを削除"
+    },
+    "artifact": {
+      "types": {
+        "todoList": "ToDo リスト",
+        "note": "メモ",
+        "memory": "メモリー"
+      },
+      "fallbackTitle": "アーティファクト",
+      "todo": {
+        "done": "{{count}} 件完了",
+        "open": "{{count}} 件未完了",
+        "empty": "ToDo はまだありません"
+      },
+      "note": {
+        "lines_other": "{{count}} 行",
+        "empty": "空のメモ"
+      },
+      "notFound": "アーティファクトが見つかりません",
+      "loadFailed": "アーティファクトを読み込めませんでした",
+      "fetchFailed": "アーティファクトを取得できませんでした",
+      "preview": "アーティファクトのプレビュー",
+      "download": "ダウンロード",
+      "restore": "復元",
+      "version": "バージョン {{version}}",
+      "versionCurrent": "バージョン {{version}}（現在）",
+      "downloadFailed": "ダウンロードに失敗しました",
+      "restoreFailed": "復元に失敗しました"
+    },
+    "profile": {
+      "avatarAlt": "ユーザーのアバター"
     }
   },
   "pageNotFound": {
@@ -1742,7 +2138,14 @@
     "size": "サイズ",
     "myFiles": "マイファイル",
     "sharedWithMe": "共有アイテム",
-    "loadingMore": "さらに読み込み中..."
+    "loadingMore": "さらに読み込み中...",
+    "myDrive": "マイドライブ",
+    "spaces": "スペース",
+    "root": "ルート",
+    "shared": "共有",
+    "connectTo": "{{provider}}に接続",
+    "sessionExpiredFor": "セッションが期限切れです。{{provider}}に再接続してください。",
+    "selectFilesFrom": "{{provider}}からファイルを選択"
   },
   "actionButtons": {
     "openNewChat": "新しいチャットを開く",
@@ -1753,7 +2156,13 @@
     "viewCode": "コードを表示",
     "decreaseZoom": "ズームアウト",
     "resetZoom": "ズームをリセット",
-    "increaseZoom": "ズームイン"
+    "increaseZoom": "ズームイン",
+    "download": "ダウンロード",
+    "downloadAs": "{{format}} でダウンロード",
+    "code": "コード",
+    "loading": "図を読み込み中...",
+    "codeTitle": "Mermaid コード",
+    "renderFailed": "図を描画できませんでした: {{message}}"
   },
   "navigation": {
     "agents": "エージェント",
@@ -1766,6 +2175,13 @@
         "insights": "インサイト",
         "administration": "管理"
       }
+    },
+    "openSidebar": "サイドバーを開く",
+    "closeSidebar": "サイドバーを閉じる",
+    "social": {
+      "discord": "Discord コミュニティに参加",
+      "x": "X でフォロー",
+      "github": "GitHub で見る"
     }
   },
   "teams": {
@@ -1776,7 +2192,8 @@
       "roleAdmin": "管理者",
       "roleMember": "メンバー",
       "manageTeam": "チームを管理",
-      "createTeam": "チームを作成"
+      "createTeam": "チームを作成",
+      "logoAlt": "DocsGPT ロゴ"
     }
   },
   "notification": {

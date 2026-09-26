@@ -119,8 +119,8 @@ function TableRow({
     <tr
       data-slot="table-row"
       className={cn(
-        'border-border hover:bg-muted border-b',
-        onClick && 'cursor-pointer',
+        'border-border border-b',
+        onClick && 'hover:bg-accent cursor-pointer transition-colors',
         className,
       )}
       onClick={onClick}
@@ -140,7 +140,7 @@ function TableHeader({
     <th
       data-slot="table-header"
       className={cn(
-        'border-border text-muted-foreground relative box-border border-b px-2 py-3 text-sm font-medium lg:px-3',
+        'border-border text-foreground relative box-border border-b px-2 py-1 text-sm font-normal lg:px-3',
         ALIGN_CLASSES[align],
         minWidth,
         width && 'w-(--cell-width) max-w-(--cell-width) min-w-(--cell-width)',
@@ -188,5 +188,3 @@ export {
   TableHeader,
   TableCell,
 };
-
-export default Table;

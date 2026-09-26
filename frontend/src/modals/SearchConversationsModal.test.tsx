@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-const media = { isMobile: false, isTablet: false, isDesktop: true };
+const media = { isMobile: false, isDesktop: true };
 vi.mock('../hooks', () => ({
   useMediaQuery: () => media,
 }));

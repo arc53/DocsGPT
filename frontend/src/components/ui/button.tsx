@@ -1,42 +1,39 @@
 import * as React from 'react';
-import { Slot } from '@radix-ui/react-slot';
+import { Slot } from 'radix-ui';
 import { cva, type VariantProps } from 'class-variance-authority';
 
 import { Spinner } from '@/components/ui/spinner';
-import { cn, focusRing, invalidState } from '@/lib/utils';
+import { cn, destructiveRing, focusRing, invalidState } from '@/lib/utils';
 
 const buttonVariants = cva(
-  `${focusRing} ${invalidState} inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring`,
+  `${focusRing} ${invalidState} inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring`,
   // Icon padding (has-[>svg]) also matches an svg inside the invisible label
   // wrapper that `loading` adds, so a busy icon button keeps its width.
   {
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:bg-primary/90',
-        destructive:
-          'bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
-        'destructive-outline':
-          'border border-destructive text-destructive bg-transparent hover:bg-destructive hover:text-destructive-foreground focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
+        destructive: `bg-destructive text-destructive-foreground hover:bg-destructive/90 ${destructiveRing} dark:bg-destructive/60`,
+        'destructive-outline': `border border-destructive text-destructive bg-transparent hover:bg-destructive hover:text-destructive-foreground ${destructiveRing}`,
         outline:
-          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
+          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50',
         'outline-primary':
           'border border-primary text-primary bg-transparent hover:bg-primary hover:text-primary-foreground',
         secondary:
           'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost:
-          'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
+        ghost: 'hover:bg-accent hover:text-accent-foreground',
         'ghost-muted':
-          'text-muted-foreground hover:bg-accent hover:text-foreground dark:hover:bg-accent/50',
+          'text-muted-foreground hover:bg-accent hover:text-foreground',
         // Icon actions that remove something: muted at rest, red on hover.
         'ghost-destructive':
-          'text-muted-foreground hover:bg-accent hover:text-destructive dark:hover:bg-accent/50',
+          'text-muted-foreground hover:bg-accent hover:text-destructive',
         // The same two on a row that is already bg-accent or
         // bg-sidebar-accent (a highlighted Command item, a hovered card or
         // sidebar row), where an accent hover would be invisible.
         'ghost-on-accent':
           'text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20',
         'ghost-destructive-on-accent':
-          'text-muted-foreground hover:bg-destructive/15 hover:text-destructive dark:hover:bg-destructive/25',
+          'text-muted-foreground hover:bg-destructive/15 hover:text-destructive dark:hover:bg-destructive/20',
         link: 'text-primary underline-offset-4 hover:underline',
         // Popover combobox triggers: mirrors SelectTrigger so the two sit
         // side by side. Set data-placeholder while empty to mute the text.
@@ -46,7 +43,7 @@ const buttonVariants = cva(
         'sidebar-item':
           'text-foreground hover:bg-sidebar-accent aria-[current=page]:bg-sidebar-accent',
         combobox:
-          'border border-border bg-card font-normal shadow-xs hover:bg-accent data-placeholder:text-muted-foreground',
+          'border border-input bg-card font-normal shadow-xs hover:bg-accent data-placeholder:text-muted-foreground',
         // Underline tabs (FilePicker's drives, the agent page sub-nav). Mark the
         // current tab with data-active; the 2px border is always there so the
         // row height doesn't move. The compound variant squares the corners.
@@ -63,10 +60,10 @@ const buttonVariants = cva(
         xs: "h-7 gap-1 px-2 text-xs has-[>svg,>[data-slot=button-label]>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         sm: 'h-8 gap-1.5 px-3 has-[>svg,>[data-slot=button-label]>svg]:px-2.5',
         lg: 'h-10 px-6 has-[>svg,>[data-slot=button-label]>svg]:px-4',
-        // The form-row height (42px), shared with Input default and
-        // SelectTrigger lg, for pickers and buttons that sit among fields.
-        field: 'h-10.5 px-4 has-[>svg,>[data-slot=button-label]>svg]:px-3',
-        icon: 'size-9',
+        // The form-row height (38px), shared with Input default/field and
+        // SelectTrigger field, for pickers and buttons that sit among fields.
+        field: 'h-9.5 px-4 has-[>svg,>[data-slot=button-label]>svg]:px-3',
+        icon: "size-9 [&_svg:not([class*='size-'])]:size-5",
         'icon-xs': 'size-7',
         'icon-sm': 'size-8',
         'icon-lg': 'size-10',
@@ -95,6 +92,13 @@ const buttonVariants = cva(
         shape: 'pill',
         size: 'field',
         class: 'px-5 has-[>svg,>[data-slot=button-label]>svg]:px-4',
+      },
+      // A combobox is a field: 16px text on phones (like Input, so the row
+      // reads one size), 14px from md. The small sizes stay 14px.
+      {
+        variant: 'combobox',
+        size: ['default', 'field', 'lg'],
+        class: 'text-base md:text-sm',
       },
       // Tabs sit on a baseline rule, so they never round off.
       { variant: 'tab', class: 'rounded-none' },
@@ -134,7 +138,7 @@ function Button({
      */
     loading?: boolean;
   }) {
-  const Comp = asChild ? Slot : 'button';
+  const Comp = asChild ? Slot.Root : 'button';
 
   return (
     <Comp
@@ -158,7 +162,7 @@ function Button({
             {children}
           </span>
           <span className="absolute inset-0 flex items-center justify-center">
-            <Spinner size="sm" className="size-4" />
+            <Spinner size="xs" />
           </span>
         </>
       ) : (

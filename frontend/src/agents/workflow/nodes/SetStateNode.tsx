@@ -1,9 +1,13 @@
 import { Database } from 'lucide-react';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { NodeProps } from 'reactflow';
 
 import { StateOperationConfig } from '../../types/workflow';
 import { BaseNode } from './BaseNode';
+
+// Variable names are the user's own text: React escapes on render.
+const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
 
 type SetStateNodeData = {
   label?: string;
@@ -16,7 +20,8 @@ type SetStateNodeData = {
 };
 
 const SetStateNode = ({ data, selected }: NodeProps<SetStateNodeData>) => {
-  const title = data.title || data.label || 'Set State';
+  const { t } = useTranslation();
+  const title = data.title || data.label || t('agents.workflow.nodes.setState');
   const operations = data.config?.operations || [];
   const hasLegacy = !operations.length && data.variable;
 
@@ -25,29 +30,39 @@ const SetStateNode = ({ data, selected }: NodeProps<SetStateNodeData>) => {
       title={title}
       type="state"
       selected={selected}
-      icon={<Database size={16} />}
+      icon={<Database className="size-4" />}
       handles={{ source: true, target: true }}
     >
       <div className="flex flex-col gap-1">
         {operations.length > 0 ? (
           <div
             className="text-muted-foreground truncate text-xs"
-            title={`${operations.length} operation(s)`}
+            title={t('agents.workflow.nodes.operationCount', {
+              count: operations.length,
+            })}
           >
-            {operations.length} variable{operations.length !== 1 ? 's' : ''}
+            {t('agents.workflow.nodes.variableCount', {
+              count: operations.length,
+            })}
           </div>
         ) : hasLegacy ? (
           <>
             <div
-              className="text-muted-foreground truncate text-xs uppercase"
-              title={`Variable: ${data.variable}`}
+              className="text-muted-foreground truncate text-xs"
+              title={t('agents.workflow.nodes.variableTitle', {
+                ...NO_ESCAPE,
+                name: data.variable,
+              })}
             >
               {data.variable}
             </div>
             {data.value && (
               <div
                 className="text-info truncate text-xs"
-                title={`Value: ${data.value}`}
+                title={t('agents.workflow.nodes.valueTitle', {
+                  ...NO_ESCAPE,
+                  value: data.value,
+                })}
               >
                 {data.value}
               </div>

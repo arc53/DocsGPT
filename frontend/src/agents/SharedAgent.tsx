@@ -4,11 +4,10 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
 import MessageInput from '../components/MessageInput';
 import { Avatar } from '../components/ui/avatar';
-import { Spinner } from '@/components/ui/spinner';
+import { EmptyState } from '@/components/ui/empty-state';
+import { LoadingState } from '@/components/ui/loading-state';
 import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
 import {
@@ -18,7 +17,6 @@ import {
   selectQueries,
   selectStatus,
 } from '../conversation/conversationSlice';
-import { useDarkTheme } from '../hooks';
 import { selectToken, setSelectedAgent } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import SharedAgentCard from './SharedAgentCard';
@@ -28,7 +26,6 @@ export default function SharedAgent() {
   const { t } = useTranslation();
   const { agentId } = useParams();
   const dispatch = useDispatch<AppDispatch>();
-  const [isDarkTheme] = useDarkTheme();
 
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
@@ -128,36 +125,20 @@ export default function SharedAgent() {
     if (sharedAgent) dispatch(setSelectedAgent(sharedAgent));
   }, [sharedAgent, dispatch]);
 
-  if (isLoading)
-    return (
-      <div className="flex h-full w-full items-center justify-center">
-        <Spinner />
-      </div>
-    );
+  if (isLoading) return <LoadingState fill="parent" />;
   if (!sharedAgent)
     return (
-      <div className="flex h-full w-full items-center justify-center">
-        <div className="flex w-full flex-col items-center justify-center gap-4">
-          <img
-            src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-            alt="No agent found"
-            className="mx-auto mb-6 h-32 w-32"
-          />
-          <p className="text-muted-foreground text-center text-lg">
-            {t('agents.shared.notFound')}
-          </p>
-        </div>
-      </div>
+      <EmptyState className="h-full" title={t('agents.shared.notFound')} />
     );
   return (
     <div className="relative h-full w-full">
       <div className="absolute top-5 left-4 hidden items-center gap-3 sm:flex">
         <Avatar
           src={sharedAgent.image}
-          alt="agent-logo"
+          alt={t('agents.shared.logoAlt')}
           shape="circle"
           className="overflow-hidden"
-          imgClassName="h-6 w-6 object-contain"
+          imgClassName="size-6 object-contain"
         />
         <h2 className="text-foreground text-lg font-semibold">
           {sharedAgent.name}

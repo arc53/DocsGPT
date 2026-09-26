@@ -1,42 +1,34 @@
 import type { VariantProps } from 'class-variance-authority';
 
-import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import type { badgeVariants } from '../components/ui/badge';
-import { formatDateOnly, formatDateTime } from '../utils/dateTimeUtils';
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatRelative,
+} from '../utils/dateTimeUtils';
 
-export function Loading() {
-  return (
-    <div className="flex h-40 items-center justify-center">
-      <Spinner />
-    </div>
-  );
-}
-
+/** A failed admin fetch: a red message with a Retry that re-runs the fetch. */
 export function LoadError({
   message = 'Failed to load.',
+  onRetry,
 }: {
   message?: string;
-}) {
-  return <p className="text-muted-foreground mt-8 text-sm">{message}</p>;
-}
-
-export function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: React.ReactNode;
-  sub?: string;
+  onRetry: () => void;
 }) {
   return (
-    <div className="border-border rounded-2xl border px-6 py-5">
-      <p className="text-muted-foreground text-sm">{label}</p>
-      <p className="text-foreground mt-1 text-2xl font-bold tabular-nums">
-        {value}
-      </p>
-      {sub ? <p className="text-muted-foreground mt-1 text-xs">{sub}</p> : null}
-    </div>
+    <EmptyState
+      tone="destructive"
+      size="sm"
+      illustration="none"
+      title={message}
+      action={
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      }
+    />
   );
 }
 
@@ -51,21 +43,10 @@ export function fmtDateShort(value?: string | null): string {
   return value ? formatDateOnly(value) : '—';
 }
 
+/** "3 minutes ago" in the UI language; `never` when there is no value. */
 export function fmtRelative(value?: string | null): string {
   if (!value) return 'never';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  const sec = Math.round((Date.now() - date.getTime()) / 1000);
-  if (sec < 60) return 'just now';
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  if (day < 30) return `${Math.round(day / 7)}w ago`;
-  if (day < 365) return `${Math.round(day / 30)}mo ago`;
-  return `${Math.round(day / 365)}y ago`;
+  return formatRelative(value) ?? String(value);
 }
 
 export function fmtNumber(n?: number | null): string {

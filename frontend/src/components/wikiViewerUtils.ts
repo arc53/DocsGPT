@@ -10,31 +10,6 @@ export interface WikiPageNode {
   content?: string;
 }
 
-const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ['year', 31536000000],
-  ['month', 2592000000],
-  ['day', 86400000],
-  ['hour', 3600000],
-  ['minute', 60000],
-];
-
-export function formatRelativeTime(
-  value: string | null | undefined,
-  now: number = Date.now(),
-): string | null {
-  if (!value) return null;
-  const then = new Date(value).getTime();
-  if (Number.isNaN(then)) return null;
-  const diffMs = now - then;
-  const formatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-  for (const [unit, ms] of RELATIVE_UNITS) {
-    if (Math.abs(diffMs) >= ms) {
-      return formatter.format(-Math.round(diffMs / ms), unit);
-    }
-  }
-  return formatter.format(0, 'second');
-}
-
 export function provenanceKey(
   via?: string | null,
   by?: string | null,

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -14,6 +15,7 @@ export default function JWTModal({
   modalState,
   handleTokenSubmit,
 }: JWTModalProps) {
+  const { t } = useTranslation();
   const [jwtToken, setJwtToken] = useState<string>('');
 
   return (
@@ -23,28 +25,29 @@ export default function JWTModal({
         /* uncloseable by design; P1.7 revisits */
       }}
       isPerformingTask={true}
-      title="Add JWT Token"
-    >
-      <div data-testid="jwt-modal">
-        <div className="relative mt-5 mb-4">
-          <Input
-            name="JWT Token"
-            type="text"
-            value={jwtToken}
-            onChange={(e) => setJwtToken(e.target.value)}
-            data-testid="jwt-token-input"
-          />
-        </div>
+      title={t('modals.jwt.title')}
+      footer={
         <Button
           type="button"
+          size="lg"
+          shape="pill"
           disabled={jwtToken.length === 0}
           onClick={handleTokenSubmit.bind(null, jwtToken)}
-          shape="pill"
-          className="float-right mt-4"
           data-testid="jwt-token-submit"
         >
-          Save Token
+          {t('modals.jwt.save')}
         </Button>
+      }
+    >
+      <div data-testid="jwt-modal">
+        <Input
+          name="JWT Token"
+          label={t('modals.jwt.label')}
+          type="text"
+          value={jwtToken}
+          onChange={(e) => setJwtToken(e.target.value)}
+          data-testid="jwt-token-input"
+        />
       </div>
     </Modal>
   );

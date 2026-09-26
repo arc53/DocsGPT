@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { Badge } from '@/components/ui/badge';
 
 import type { ScheduleRunStatus, ScheduleStatus } from '../types/schedule';
@@ -42,13 +44,16 @@ export default function ScheduleStatusBadge({
   status,
   className,
 }: ScheduleStatusBadgeProps) {
+  const { t } = useTranslation();
   return (
     <Badge
       variant={getStatusVariant(status)}
       className={className}
       data-status={status}
     >
-      {formatStatusLabel(status)}
+      {t(`agents.schedules.status.${status}`, {
+        defaultValue: formatStatusLabel(status),
+      })}
     </Badge>
   );
 }

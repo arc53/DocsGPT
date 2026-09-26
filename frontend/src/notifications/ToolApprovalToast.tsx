@@ -127,7 +127,7 @@ export default function ToolApprovalToast() {
                   onClick={() => dispatch(dismissToolApproval(eventId))}
                   aria-label={t('notifications.dismiss')}
                 >
-                  <X className="h-4 w-4" />
+                  <X />
                 </Button>
               </ToastActions>
             </ToastHeader>

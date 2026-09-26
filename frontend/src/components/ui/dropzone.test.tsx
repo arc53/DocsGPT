@@ -57,3 +57,11 @@ describe('Dropzone', () => {
     );
   });
 });
+
+describe('Dropzone hover', () => {
+  it('hovers to solid accent like Card and combobox', () => {
+    const html = renderToStaticMarkup(<Dropzone onDrop={vi.fn()} />);
+    expect(html).toContain('hover:bg-accent ');
+    expect(html).not.toContain('hover:bg-accent/40');
+  });
+});

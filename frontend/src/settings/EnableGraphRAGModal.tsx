@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { Spinner } from '@/components/ui/spinner';
+import { LoadingState } from '@/components/ui/loading-state';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Modal, ModalActions } from '../components/ui/modal';
@@ -246,10 +246,9 @@ export default function EnableGraphRAGModal({
       footer={footer}
       size="md"
       mobileVariant="sheet"
-      className="max-w-[480px]"
       isPerformingTask={phase === 'building'}
     >
-      <div className="flex flex-col gap-5 px-1 py-1">
+      <div className="flex flex-col gap-5">
         {phase === 'confirm' && (
           <>
             <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
@@ -265,21 +264,24 @@ export default function EnableGraphRAGModal({
           </>
         )}
 
-        {phase === 'building' && (
-          <div className="flex flex-col items-center gap-3 py-6">
-            <Spinner />
-            <p className="text-muted-foreground text-sm">
-              {progressPct !== null
-                ? t('settings.sources.graphrag.enable.inProgressPct', {
-                    pct: progressPct,
-                  })
-                : t('settings.sources.graphrag.enable.inProgress')}
-            </p>
-            {progressPct !== null && (
+        {phase === 'building' &&
+          (progressPct === null ? (
+            <LoadingState
+              fill="block"
+              label={t('settings.sources.graphrag.enable.inProgress')}
+            />
+          ) : (
+            // The bar sits under the caption, so the block's py-10 moves to
+            // this wrapper and the ring only centres itself.
+            <div className="flex flex-col items-center gap-3 py-10">
+              <LoadingState
+                label={t('settings.sources.graphrag.enable.inProgressPct', {
+                  pct: progressPct,
+                })}
+              />
               <Progress size="sm" value={progressPct} className="w-48" />
-            )}
-          </div>
-        )}
+            </div>
+          ))}
 
         {phase === 'summary' && summary && (
           <Alert variant="success">

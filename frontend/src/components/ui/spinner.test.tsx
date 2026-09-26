@@ -12,4 +12,10 @@ describe('Spinner', () => {
     expect(html).toContain('size-5');
     expect(html).toContain('data-size="sm"');
   });
+
+  it('xs is the 16px step for icon-sized spots', () => {
+    const html = renderToStaticMarkup(<Spinner size="xs" />);
+    expect(html).toContain('size-4');
+    expect(html).toContain('data-size="xs"');
+  });
 });

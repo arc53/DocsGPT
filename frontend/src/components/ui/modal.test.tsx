@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const media = { isMobile: false, isTablet: false, isDesktop: true };
+const media = { isMobile: false, isDesktop: true };
 vi.mock('../../hooks', () => ({
   useMediaQuery: () => media,
 }));
@@ -53,7 +53,7 @@ describe('Modal header', () => {
       '[data-slot="dialog-description"]',
     )!;
     expect(description.className).toContain('mt-2');
-    // One grid cell for both, so the grid's gap-4 doesn't add to mt-2.
+    // One flex item for both, so the column's gap-4 doesn't add to mt-2.
     expect(title.parentElement).toBe(description.parentElement);
     expect(title.parentElement).not.toBe(content());
   });
@@ -126,6 +126,13 @@ describe('ModalActions', () => {
       expect(button.dataset.shape).toBe('pill');
       expect(button.type).toBe('button');
     }
+  });
+
+  it('renders only Cancel without a submitLabel', async () => {
+    await renderActions({ submitLabel: undefined });
+    const buttons = footerButtons();
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].textContent).toBe('Cancel');
   });
 
   it('turns the submit red when destructive', async () => {
@@ -202,6 +209,30 @@ describe('Modal mobile sheet', () => {
     expect(sheet.firstElementChild!.getAttribute('data-slot')).toBe(
       'sheet-handle',
     );
+  });
+
+  it('caps the desktop dialog at 85dvh and scrolls only its body', async () => {
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Add tool" size="xl">
+        Body
+      </Modal>,
+    );
+    const classes = content().className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'flex',
+        'flex-col',
+        'max-h-[85dvh]',
+        'sm:max-w-4xl',
+      ]),
+    );
+    expect(classes).not.toContain('grid');
+    const body = [...content().children].find(
+      (el) => el.textContent === 'Body',
+    )!;
+    expect(body.className).toContain('overflow-y-auto');
+    expect(body.className).toContain('min-h-0');
+    expect(body.className).toContain('grow');
   });
 
   it('keeps the centred dialog on desktop', async () => {

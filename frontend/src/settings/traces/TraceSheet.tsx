@@ -3,7 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
-import { Spinner } from '@/components/ui/spinner';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { LoadingState } from '@/components/ui/loading-state';
 import { Sheet, SheetContent } from '../../components/ui/sheet';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatDateTime } from '../../utils/dateTimeUtils';
@@ -17,12 +20,15 @@ type TraceSheetProps = {
   onClose: () => void;
 };
 
-/** Status pill tones. The theme has no success or warning token yet. */
-const STATUS_TONE: Record<string, string> = {
-  ok: 'bg-muted text-foreground',
-  error: 'bg-destructive/10 text-destructive',
-  paused: 'bg-primary/10 text-primary',
-  cancelled: 'bg-muted text-muted-foreground',
+/** Status → Badge variant. Unknown statuses (pending, denied, skipped) fall back to `neutral`. */
+const STATUS_VARIANT: Record<
+  string,
+  React.ComponentProps<typeof Badge>['variant']
+> = {
+  ok: 'neutral',
+  error: 'destructive',
+  paused: 'default',
+  cancelled: 'neutral',
 };
 
 /**
@@ -39,6 +45,8 @@ export default function TraceSheet({
   const [traces, setTraces] = useState<Trace[]>([]);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Bumped by Retry to re-run the fetch for the same trace.
+  const [reloadKey, setReloadKey] = useState(0);
   // The sheet is opened from a Logs row, not a SheetTrigger, so Radix has no
   // trigger to return focus to on close; remember what had focus instead.
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -69,7 +77,7 @@ export default function TraceSheet({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [traceRef?.field, traceRef?.value, agentId, token]);
+  }, [traceRef?.field, traceRef?.value, agentId, token, reloadKey]);
 
   return (
     <Sheet open={traceRef !== null} onOpenChange={(open) => !open && onClose()}>
@@ -95,16 +103,24 @@ export default function TraceSheet({
         }}
         className="w-full overflow-y-auto sm:max-w-3xl"
       >
-        <div className="flex flex-col gap-8 px-4 pt-4 pb-6">
-          {loading && (
-            <div className="flex justify-center py-10">
-              <Spinner />
-            </div>
-          )}
+        <div className="flex flex-col gap-6 px-4 pt-4 pb-6">
+          {loading && <LoadingState fill="block" />}
           {!loading && failed && (
-            <p className="text-destructive text-sm">
-              {t('settings.logs.trace.failed')}
-            </p>
+            <EmptyState
+              tone="destructive"
+              size="sm"
+              illustration="none"
+              title={t('settings.logs.trace.failed')}
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setReloadKey((key) => key + 1)}
+                >
+                  {t('retry')}
+                </Button>
+              }
+            />
           )}
           {!loading && !failed && traces.length === 0 && (
             <p className="text-muted-foreground text-sm">
@@ -129,16 +145,12 @@ export default function TraceSheet({
                 <span className="text-muted-foreground text-xs">
                   {formatDateTime(trace.started_at)}
                 </span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    STATUS_TONE[trace.status] ?? STATUS_TONE.cancelled
-                  }`}
-                >
+                <Badge variant={STATUS_VARIANT[trace.status] ?? 'neutral'}>
                   {t(
                     `settings.logs.trace.status.${trace.status}`,
                     trace.status,
                   )}
-                </span>
+                </Badge>
               </div>
               <TraceChips
                 durationMs={trace.duration_ms}

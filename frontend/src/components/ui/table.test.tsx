@@ -53,6 +53,43 @@ describe('Table parts', () => {
     expect(td.className).toContain('text-right');
   });
 
+  it('draws a dense foreground header row', () => {
+    const th = render(
+      <table>
+        <thead>
+          <tr>
+            <TableHeader>When</TableHeader>
+          </tr>
+        </thead>
+      </table>,
+    ).querySelector('th')!;
+    const classes = th.className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['py-1', 'font-normal', 'text-foreground']),
+    );
+    expect(classes).not.toContain('py-3');
+    expect(classes).not.toContain('text-muted-foreground');
+  });
+
+  it('hovers only rows that have an onClick', () => {
+    const host = render(
+      <table>
+        <tbody>
+          <TableRow data-testid="plain" />
+          <TableRow data-testid="clickable" onClick={() => undefined} />
+        </tbody>
+      </table>,
+    );
+    const plain = host.querySelector('[data-testid="plain"]')!.className;
+    const clickable = host.querySelector(
+      '[data-testid="clickable"]',
+    )!.className;
+    expect(plain).not.toContain('hover:');
+    expect(plain).not.toContain('cursor-pointer');
+    expect(clickable).toContain('hover:bg-accent');
+    expect(clickable).toContain('cursor-pointer');
+  });
+
   it('keeps the default minimum width on the table', () => {
     const table = render(<Table>{null}</Table>).querySelector('table')!;
     expect(table.className.split(' ')).toContain('min-w-[600px]');

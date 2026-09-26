@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('../hooks', () => ({
-  useMediaQuery: () => ({ isMobile: false, isTablet: false, isDesktop: true }),
+  useMediaQuery: () => ({ isMobile: false, isDesktop: true }),
 }));
 
 vi.mock('react-redux', () => ({
@@ -43,7 +43,7 @@ describe('PromptsModal', () => {
     container.remove();
   });
 
-  const render = async () => {
+  const render = async (setContent: (c: string) => void = () => undefined) => {
     await act(async () => {
       root.render(
         <PromptsModal
@@ -54,7 +54,7 @@ describe('PromptsModal', () => {
           newPromptName=""
           setNewPromptName={() => undefined}
           newPromptContent="Hello {{ source.content }}"
-          setNewPromptContent={() => undefined}
+          setNewPromptContent={setContent}
           editPromptName=""
           setEditPromptName={() => undefined}
           editPromptContent=""
@@ -83,5 +83,52 @@ describe('PromptsModal', () => {
     expect(layer?.style.transform).toBe('');
     expect(layer?.style.getPropertyValue('--scroll-x')).toBe('0px');
     expect(layer?.style.getPropertyValue('--scroll-y')).toBe('0px');
+  });
+  it('inserts a variable from a Select that never keeps a value', async () => {
+    const setContent = vi.fn();
+    await render(setContent);
+    const triggers = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="select-trigger"]',
+      ),
+    );
+    expect(triggers.map((b) => b.textContent)).toEqual([
+      'modals.prompts.systemVariablesDropdownLabel',
+      'modals.prompts.toolVariables',
+    ]);
+    const [system] = triggers;
+    expect(system.dataset.size).toBe('field');
+    expect(system.dataset.shape).toBe('pill');
+    expect(system.hasAttribute('data-placeholder')).toBe(true);
+
+    const textarea = document.body.querySelector<HTMLTextAreaElement>(
+      '#new-prompt-content',
+    )!;
+    textarea.setSelectionRange(5, 5);
+    await act(async () => {
+      system.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    const option = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    ).find((o) =>
+      o.textContent?.includes(
+        'modals.prompts.systemVariableOptions.systemDate',
+      ),
+    );
+    expect(option).toBeDefined();
+    await act(async () => {
+      option!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+    expect(setContent).toHaveBeenCalledWith(
+      'Hello {{ system.date }} {{ source.content }}',
+    );
+    // The trigger falls back to its label: nothing stays selected.
+    expect(system.textContent).toBe(
+      'modals.prompts.systemVariablesDropdownLabel',
+    );
   });
 });

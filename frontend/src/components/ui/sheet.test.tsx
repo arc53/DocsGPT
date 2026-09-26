@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { Sheet, SheetContent } from './sheet';
+import { Sheet, SheetContent, SheetTitle } from './sheet';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -100,5 +100,56 @@ describe('SheetContent side="bottom"', () => {
       expect.arrayContaining(['bg-background', 'border-l']),
     );
     expect(classes).not.toContain('rounded-t-2xl');
+  });
+});
+
+describe('SheetOverlay', () => {
+  it('uses the blurred scrim every Modal uses', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent side="right" title="Trace" aria-describedby={undefined} />
+      </Sheet>,
+    );
+    const classes = document
+      .querySelector('[data-slot="sheet-overlay"]')!
+      .className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'bg-black/25',
+        'backdrop-blur-xs',
+        'dark:bg-black/50',
+      ]),
+    );
+    expect(classes).not.toContain('bg-black/50');
+  });
+
+  it('hides the X on a handled bottom sheet by default', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent
+          side="bottom"
+          handle
+          title="Tools"
+          aria-describedby={undefined}
+        />
+      </Sheet>,
+    );
+    expect(
+      document.querySelector(
+        '[data-slot="sheet-content"] [aria-label="Close"]',
+      ),
+    ).toBeNull();
+  });
+
+  it('SheetTitle defaults to the 20px title', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent>
+          <SheetTitle>Run details</SheetTitle>
+        </SheetContent>
+      </Sheet>,
+    );
+    const title = document.querySelector('[data-slot="sheet-title"]');
+    expect(title?.className).toContain('text-xl leading-tight font-semibold');
   });
 });

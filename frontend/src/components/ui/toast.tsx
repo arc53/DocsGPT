@@ -50,7 +50,7 @@ const toastHeaderVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-accent/50 dark:bg-muted',
+        default: 'bg-muted',
         success: 'bg-success/10',
         warning: 'bg-warning/10',
         destructive: 'bg-destructive/10',

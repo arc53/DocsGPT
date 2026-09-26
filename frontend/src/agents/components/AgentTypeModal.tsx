@@ -1,5 +1,6 @@
 import { Bot, Workflow } from 'lucide-react';
 import { agentNewPath } from '../paths';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { Modal } from '../../components/ui/modal';
@@ -16,6 +17,7 @@ export default function AgentTypeModal({
   onClose,
   folderId,
 }: AgentTypeModalProps) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const handleSelect = (type: 'normal' | 'workflow') => {
@@ -31,21 +33,21 @@ export default function AgentTypeModal({
     <Modal
       open={isOpen}
       onOpenChange={(o) => !o && onClose()}
-      title="Create New Agent"
-      description="Choose the type of agent you want to create"
+      title={t('agents.typeModal.title')}
+      description={t('agents.typeModal.description')}
       size="md"
     >
       <div className="flex flex-col gap-4">
         <OptionCard
           icon={<Bot />}
-          title="Classic Agent"
-          description="Create a standard AI agent with a single model, tools, and knowledge sources"
+          title={t('agents.typeModal.classicTitle')}
+          description={t('agents.typeModal.classicDescription')}
           onClick={() => handleSelect('normal')}
         />
         <OptionCard
           icon={<Workflow />}
-          title="Workflow Agent"
-          description="Design complex multi-step workflows with different models, conditional logic, and state management"
+          title={t('agents.typeModal.workflowTitle')}
+          description={t('agents.typeModal.workflowDescription')}
           onClick={() => handleSelect('workflow')}
         />
       </div>

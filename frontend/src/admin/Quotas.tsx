@@ -1,11 +1,15 @@
+import { TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import adminService, { type QuotaScope } from '../api/services/adminService';
 import teamsService from '../api/services/teamsService';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -23,7 +27,8 @@ import {
   TableRow,
 } from '../components/ui/table';
 import { selectToken } from '../preferences/preferenceSlice';
-import { LoadError, Loading, fmtDate, fmtNumber, fmtRelative } from './AdminUI';
+import { LoadingState } from '@/components/ui/loading-state';
+import { LoadError, fmtDate, fmtNumber, fmtRelative } from './AdminUI';
 import QuotaEditor from './QuotaEditor';
 import { describeBudget, type QuotaPolicy } from './quotaUtils';
 
@@ -47,6 +52,10 @@ const HINTS: Record<QuotaScope, string> = {
   user: 'Overrides team allowances and the instance default for this user.',
 };
 
+// React escapes on render; i18next's own escaping would mangle model ids
+// such as `org/model` into `org&#x2F;model`.
+const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
+
 function PolicyCells({ policy }: { policy: QuotaPolicy }) {
   return (
     <>
@@ -67,6 +76,7 @@ function PolicyCells({ policy }: { policy: QuotaPolicy }) {
 }
 
 export default function Quotas() {
+  const { t } = useTranslation();
   const token = useSelector(selectToken);
   const [data, setData] = useState<any | null>(null);
   const [teams, setTeams] = useState<any[]>([]);
@@ -107,8 +117,9 @@ export default function Quotas() {
     return teams.filter((team) => !covered.has(String(team.id)));
   }, [teams, teamPolicies]);
 
-  if (data === null && loading) return <Loading />;
-  if (!data?.success) return <LoadError message="Failed to load quotas." />;
+  if (data === null && loading) return <LoadingState fill="block" />;
+  if (!data?.success)
+    return <LoadError message="Failed to load quotas." onRetry={load} />;
 
   const bucketPill = (policy: QuotaPolicy) => (
     <>
@@ -120,7 +131,7 @@ export default function Quotas() {
   );
 
   return (
-    <div className="mt-6 space-y-8">
+    <div className="flex flex-col gap-8">
       <p className="text-muted-foreground text-sm">
         Usage is counted per user over each calendar {data.period} (UTC). The
         current window resets {fmtDate(data.resets_at)}. A request is refused
@@ -128,39 +139,49 @@ export default function Quotas() {
       </p>
 
       {(data.unpriced_models ?? []).length > 0 ? (
-        <div className="border-warning/50 bg-warning/10 rounded-2xl border px-5 py-4 text-sm">
-          <p className="text-foreground font-medium">
-            Models without a price are invisible to cost limits
-          </p>
-          <p className="text-muted-foreground mt-1">
-            These were used this {data.period} and recorded at $0:{' '}
-            {(data.unpriced_models as any[])
-              .map((m) => `${m.model_id} (${fmtNumber(m.tokens)} tokens)`)
-              .join(', ')}
-            . Use a token limit for them, or declare their rates in the model
-            catalog.
-          </p>
-        </div>
+        <Alert variant="warning" role="note">
+          <TriangleAlert className="size-4" aria-hidden="true" />
+          <AlertTitle>{t('admin.quotas.unpriced.title')}</AlertTitle>
+          <AlertDescription>
+            <p>
+              {t('admin.quotas.unpriced.body', {
+                period: data.period,
+                models: (data.unpriced_models as any[])
+                  .map((m) =>
+                    t('admin.quotas.unpriced.model', {
+                      model: m.model_id,
+                      tokens: fmtNumber(m.tokens),
+                      ...NO_ESCAPE,
+                    }),
+                  )
+                  .join(', '),
+                ...NO_ESCAPE,
+              })}
+            </p>
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       <section>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-foreground font-bold">Instance default</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              setEditing({
-                scope: 'instance',
-                subjectId: null,
-                title: 'Instance default',
-                policy: instancePolicy,
-              })
-            }
-          >
-            {instancePolicy ? 'Edit' : 'Set default'}
-          </Button>
-        </div>
+        <SectionHeader
+          title="Instance default"
+          actions={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setEditing({
+                  scope: 'instance',
+                  subjectId: null,
+                  title: 'Instance default',
+                  policy: instancePolicy,
+                })
+              }
+            >
+              {instancePolicy ? 'Edit' : 'Set default'}
+            </Button>
+          }
+        />
         <p className="text-muted-foreground mt-1 text-sm">
           {instancePolicy
             ? `${instancePolicy.enabled ? '' : 'Disabled · '}Tokens: ${describeBudget(instancePolicy.token_limit, instancePolicy.token_unlimited, 'tokens')} · Cost: ${describeBudget(instancePolicy.cost_limit_usd, instancePolicy.cost_unlimited, 'cost')}`
@@ -169,41 +190,43 @@ export default function Quotas() {
       </section>
 
       <section>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-foreground font-bold">Team allowances</p>
-          {teamsWithoutPolicy.length > 0 ? (
-            <div className="flex items-center gap-2">
-              <Select value={teamPick} onValueChange={setTeamPick}>
-                <SelectTrigger className="w-52" aria-label="Team">
-                  <SelectValue placeholder="Choose a team" />
-                </SelectTrigger>
-                <SelectContent>
-                  {teamsWithoutPolicy.map((team) => (
-                    <SelectItem key={team.id} value={String(team.id)}>
-                      {team.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!teamPick}
-                onClick={() => {
-                  const team = teams.find((tm) => String(tm.id) === teamPick);
-                  setEditing({
-                    scope: 'team',
-                    subjectId: teamPick,
-                    title: team?.name ?? 'Team',
-                    policy: null,
-                  });
-                }}
-              >
-                Add allowance
-              </Button>
-            </div>
-          ) : null}
-        </div>
+        <SectionHeader
+          title="Team allowances"
+          actions={
+            teamsWithoutPolicy.length > 0 ? (
+              <>
+                <Select value={teamPick} onValueChange={setTeamPick}>
+                  <SelectTrigger className="w-52" aria-label="Team">
+                    <SelectValue placeholder="Choose a team" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamsWithoutPolicy.map((team) => (
+                      <SelectItem key={team.id} value={String(team.id)}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!teamPick}
+                  onClick={() => {
+                    const team = teams.find((tm) => String(tm.id) === teamPick);
+                    setEditing({
+                      scope: 'team',
+                      subjectId: teamPick,
+                      title: team?.name ?? 'Team',
+                      policy: null,
+                    });
+                  }}
+                >
+                  Add allowance
+                </Button>
+              </>
+            ) : null
+          }
+        />
         {teamPolicies.length === 0 ? (
           <p className="text-muted-foreground mt-1 text-sm">
             No team has an allowance.
@@ -262,7 +285,7 @@ export default function Quotas() {
       </section>
 
       <section>
-        <p className="text-foreground font-bold">User overrides</p>
+        <SectionHeader title="User overrides" />
         {userPolicies.length === 0 ? (
           <p className="text-muted-foreground mt-1 text-sm">
             No user has an override. Add one from a user&apos;s menu on the

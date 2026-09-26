@@ -36,7 +36,5 @@ export default function ToolIcon({ name, className, title }: ToolIconProps) {
   const a11y = title
     ? { role: 'img' as const, 'aria-label': title }
     : { 'aria-hidden': true as const };
-  return (
-    <Icon className={cn('text-foreground h-6 w-6', className)} {...a11y} />
-  );
+  return <Icon className={cn('text-foreground size-6', className)} {...a11y} />;
 }

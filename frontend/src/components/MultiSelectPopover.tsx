@@ -2,11 +2,10 @@ import { Check } from 'lucide-react';
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
-import { useDarkTheme, useMediaQuery } from '../hooks';
+import { useMediaQuery } from '../hooks';
 import { cn } from '@/lib/utils';
-import { Spinner } from '@/components/ui/spinner';
+import { EmptyState } from '@/components/ui/empty-state';
+import { LoadingState } from '@/components/ui/loading-state';
 import {
   Command,
   CommandEmpty,
@@ -16,6 +15,7 @@ import {
   CommandList,
 } from './ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { SectionHeader } from './ui/section-header';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from './ui/sheet';
 
 export type MultiSelectPopoverItem = {
@@ -53,16 +53,11 @@ function renderIcon(icon: MultiSelectPopoverItem['icon']) {
   if (!icon) return null;
   if (typeof icon === 'string') {
     return (
-      <img
-        src={icon}
-        alt=""
-        aria-hidden="true"
-        className="mr-3 h-5 w-5 shrink-0"
-      />
+      <img src={icon} alt="" aria-hidden="true" className="size-5 shrink-0" />
     );
   }
   return (
-    <span className="mr-3 flex h-5 w-5 shrink-0 items-center justify-center">
+    <span className="flex size-5 shrink-0 items-center justify-center">
       {icon}
     </span>
   );
@@ -87,7 +82,6 @@ export function MultiSelectPopover({
   title,
 }: MultiSelectPopoverProps) {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
   const { isMobile } = useMediaQuery();
   const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -133,7 +127,7 @@ export function MultiSelectPopover({
         className="cursor-pointer justify-between"
         aria-selected={isSelected}
       >
-        <div className="mr-3 flex grow items-center overflow-hidden">
+        <div className="mr-3 flex grow items-center gap-3 overflow-hidden">
           {renderIcon(item.icon)}
           <div className="overflow-hidden">
             <p
@@ -152,7 +146,7 @@ export function MultiSelectPopover({
           </div>
         </div>
         <div
-          className="border-border bg-card flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2"
+          className="border-border bg-card flex size-4 shrink-0 items-center justify-center rounded-xs border-2"
           aria-hidden="true"
         >
           {isSelected && (
@@ -164,24 +158,19 @@ export function MultiSelectPopover({
   };
 
   const renderEmptyState = () => (
-    <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-      <img
-        src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-        alt=""
-        aria-hidden="true"
-        className="mb-3 h-16 w-16"
-      />
-      <p className="text-muted-foreground text-sm">
-        {emptyMessage || t('settings.tools.noToolsFound', 'No results found')}
-      </p>
-    </div>
+    <EmptyState
+      size="xs"
+      title={
+        emptyMessage || t('settings.tools.noToolsFound', 'No results found')
+      }
+    />
   );
 
   const commandBody = (
     <Command shouldFilter={searchable}>
       {title && (
         <div className="shrink-0 px-4 pt-4">
-          <h3 className="text-foreground text-lg font-medium">{title}</h3>
+          <SectionHeader as="h3" size="xs" title={title} />
         </div>
       )}
       {searchable && (
@@ -191,9 +180,7 @@ export function MultiSelectPopover({
       )}
 
       {loading ? (
-        <div className="text-foreground flex items-center justify-center py-8">
-          <Spinner size="sm" />
-        </div>
+        <LoadingState fill="block" size="sm" />
       ) : (
         <div className="border-border mx-4 my-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border">
           <CommandList className="max-h-none min-h-0 flex-1 overflow-y-auto">

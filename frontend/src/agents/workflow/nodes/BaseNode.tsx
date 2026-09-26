@@ -1,6 +1,8 @@
 import React, { ReactNode } from 'react';
 import { Handle, Position } from 'reactflow';
 
+import { cn } from '@/lib/utils';
+
 interface BaseNodeProps {
   title: string;
   children?: ReactNode;
@@ -49,9 +51,13 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
 
   return (
     <div
-      className={`rounded-full border ${bgColor} ${borderColor} shadow-md transition-all hover:shadow-lg ${
-        selected ? 'scale-105' : ''
-      } max-w-[250px] min-w-[180px]`}
+      className={cn(
+        'rounded-full border shadow-md transition hover:shadow-lg',
+        bgColor,
+        borderColor,
+        selected && 'scale-105',
+        'max-w-[250px] min-w-[180px]',
+      )}
     >
       {handles.target && (
         <Handle
@@ -64,7 +70,11 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
 
       <div className="flex items-center gap-3 px-4 py-3">
         <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${iconBg} ${iconColor}`}
+          className={cn(
+            'flex size-10 shrink-0 items-center justify-center rounded-full',
+            iconBg,
+            iconColor,
+          )}
         >
           {icon}
         </div>

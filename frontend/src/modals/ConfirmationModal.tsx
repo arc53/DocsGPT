@@ -20,7 +20,7 @@ export default function ConfirmationModal({
   handleSubmit: () => void;
   cancelLabel?: string;
   handleCancel?: () => void;
-  variant?: 'default' | 'danger';
+  variant?: 'default' | 'destructive';
 }) {
   const { t } = useTranslation();
 
@@ -47,7 +47,7 @@ export default function ConfirmationModal({
           onCancel={handleCancelClick}
           submitLabel={submitLabel}
           onSubmit={handleSubmitClick}
-          destructive={variant === 'danger'}
+          destructive={variant === 'destructive'}
         />
       }
     >

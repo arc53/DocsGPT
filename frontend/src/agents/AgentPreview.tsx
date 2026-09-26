@@ -120,7 +120,7 @@ export default function AgentPreview() {
               <MessageSquare className="text-muted-foreground size-6" />
             </div>
             <p className="text-foreground text-sm font-medium">
-              Test your agent
+              {t('agents.preview.emptyTitle')}
             </p>
           </section>
         ) : (

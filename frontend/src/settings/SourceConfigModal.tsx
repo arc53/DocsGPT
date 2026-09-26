@@ -175,13 +175,11 @@ export default function SourceConfigModal({
       footer={footer}
       size="lg"
       mobileVariant="sheet"
-      className="max-h-[90vh] max-w-[600px] md:w-[80vw] lg:w-[60vw]"
-      contentClassName="max-h-[80vh]"
       isPerformingTask={saving}
     >
       <div>
         {reingestPrompt ? (
-          <div className="flex flex-col gap-4 px-0.5 py-4">
+          <div className="flex flex-col gap-4">
             <Alert variant="warning">
               <TriangleAlert className="size-4" aria-hidden="true" />
               <AlertDescription>
@@ -190,7 +188,7 @@ export default function SourceConfigModal({
             </Alert>
           </div>
         ) : (
-          <div className="flex flex-col gap-4 px-0.5 py-4">
+          <div className="flex flex-col gap-4">
             {isReadOnly && (
               <div className="bg-muted text-muted-foreground rounded-xl p-3 text-sm">
                 {t('settings.sources.configModal.readOnly')}

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 
 import { ConfigRequirements } from '../modals/types';
-import { FormField } from './ui/form-field';
+import { FormField, type FormFieldProps } from './ui/form-field';
 import { Input } from './ui/input';
 import {
   Select,
@@ -20,6 +20,8 @@ interface ConfigFieldsProps {
   errors?: { [key: string]: string };
   isEditing?: boolean;
   hasEncryptedCredentials?: boolean;
+  /** Surface behind the fields, for the floating labels' notch. */
+  labelSurface?: FormFieldProps['labelSurface'];
 }
 
 function shouldShowField(
@@ -39,6 +41,7 @@ export default function ConfigFields({
   errors = {},
   isEditing = false,
   hasEncryptedCredentials = false,
+  labelSurface,
 }: ConfigFieldsProps) {
   const sortedFields = useMemo(
     () =>
@@ -51,7 +54,7 @@ export default function ConfigFields({
   if (sortedFields.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {sortedFields.map(([key, spec]) => {
         if (!shouldShowField(spec, values)) return null;
 
@@ -65,16 +68,16 @@ export default function ConfigFields({
           return (
             <FormField
               key={key}
-              id={key}
               label={spec.label || key}
               required={!!spec.required}
               error={error}
+              labelSurface={labelSurface}
             >
               <Select
                 value={value || spec.default || ''}
                 onValueChange={(v) => onChange(key, v)}
               >
-                <SelectTrigger variant="ghost" size="lg" className="w-full">
+                <SelectTrigger size="field" className="w-full">
                   <SelectValue placeholder={spec.label || key} />
                 </SelectTrigger>
                 <SelectContent>
@@ -96,9 +99,9 @@ export default function ConfigFields({
             label={spec.label || key}
             required={!!spec.required}
             error={error}
+            labelSurface={labelSurface}
           >
             <Input
-              id={key}
               type={
                 spec.secret
                   ? 'password'

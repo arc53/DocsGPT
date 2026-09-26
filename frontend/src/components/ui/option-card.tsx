@@ -47,7 +47,7 @@ function OptionCard({
           <span
             data-slot="option-card-icon"
             className={cn(
-              'bg-primary/10 text-primary flex size-12 shrink-0 items-center justify-center rounded-xl transition-colors [&>svg]:size-6',
+              'bg-secondary text-secondary-foreground flex size-12 shrink-0 items-center justify-center rounded-xl transition-colors [&>svg]:size-6',
               selected && 'bg-primary text-primary-foreground',
             )}
           >

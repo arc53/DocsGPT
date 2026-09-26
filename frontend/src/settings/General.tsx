@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { Button } from '../components/ui/button';
+import { FormField } from '../components/ui/form-field';
 import {
   Select,
   SelectContent,
@@ -10,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { Separator } from '../components/ui/separator';
 import { useDarkTheme } from '../hooks';
 import {
   selectPrompt,
@@ -62,7 +64,7 @@ export default function General() {
     changeLanguage(selectedLanguage.value);
   }, [selectedLanguage, changeLanguage]);
   return (
-    <div className="mt-8 flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4">
         <Prompts
           prompts={prompts}
@@ -73,10 +75,10 @@ export default function General() {
           setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
         />
       </div>
-      <div className="flex flex-col gap-4">
-        <label className="text-foreground text-base font-medium">
-          {t('settings.general.selectTheme')}
-        </label>
+      <FormField
+        label={t('settings.general.selectTheme')}
+        labelSurface="background"
+      >
         <Select
           value={selectedTheme}
           onValueChange={(value) => {
@@ -84,7 +86,7 @@ export default function General() {
             value !== selectedTheme && toggleTheme();
           }}
         >
-          <SelectTrigger className="w-56" size="lg" shape="pill">
+          <SelectTrigger className="w-56" size="field" shape="pill">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -95,11 +97,11 @@ export default function General() {
             ))}
           </SelectContent>
         </Select>
-      </div>
-      <div className="flex flex-col gap-4">
-        <label className="text-foreground text-base font-medium">
-          {t('settings.general.selectLanguage')}
-        </label>
+      </FormField>
+      <FormField
+        label={t('settings.general.selectLanguage')}
+        labelSurface="background"
+      >
         <Select
           value={selectedLanguage?.value}
           onValueChange={(value) => {
@@ -107,7 +109,7 @@ export default function General() {
             if (opt) setSelectedLanguage(opt);
           }}
         >
-          <SelectTrigger className="w-56" size="lg" shape="pill">
+          <SelectTrigger className="w-56" size="field" shape="pill">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -118,8 +120,8 @@ export default function General() {
             ))}
           </SelectContent>
         </Select>
-      </div>
-      <hr className="border-border my-4 w-[calc(min(665px,100%))] border-t" />
+      </FormField>
+      <Separator className="my-4 w-[calc(min(665px,100%))]" />
       <div className="flex flex-col gap-2">
         <Button
           type="button"

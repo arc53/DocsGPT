@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   GraphNode,
@@ -8,6 +8,7 @@ import {
   nodeAtPoint,
   nodeLabelEl,
   nodeRadius,
+  readGraphPalette,
   toForceGraphData,
 } from './graphViewUtils';
 
@@ -127,5 +128,36 @@ describe('nodeAtPoint', () => {
     const r = nodeRadius(1, 1);
     expect(nodeAtPoint(nodes, r + 1, 0, 1, 2)?.id).toBe('a');
     expect(nodeAtPoint(nodes, r + 3, 0, 1, 2)).toBeNull();
+  });
+});
+
+describe('readGraphPalette', () => {
+  const tokens = ['--primary', '--foreground', '--border', '--card'];
+  afterEach(() =>
+    tokens.forEach((name) => document.body.style.removeProperty(name)),
+  );
+
+  it('maps nodes, hover ring, links, labels and halo onto the theme tokens', () => {
+    document.body.style.setProperty('--primary', '#976af3');
+    document.body.style.setProperty('--foreground', '#fafafa');
+    document.body.style.setProperty('--border', '#44454c');
+    document.body.style.setProperty('--card', '#2b2c31');
+    expect(readGraphPalette()).toEqual({
+      node: '#976af3',
+      hoverStroke: '#fafafa',
+      link: '#44454c',
+      label: '#fafafa',
+      halo: '#2b2c31',
+    });
+  });
+
+  it('falls back to the light tokens', () => {
+    expect(readGraphPalette()).toEqual({
+      node: '#7d54d1',
+      hoverStroke: '#171717',
+      link: '#d9d9d9',
+      label: '#171717',
+      halo: '#ffffff',
+    });
   });
 });

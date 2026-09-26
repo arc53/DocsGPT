@@ -1,11 +1,12 @@
 import {
   BookOpen,
   CalendarIcon,
+  Check,
   Eye,
   HardDrive,
   Network,
   RefreshCw,
-  Search as SearchIcon,
+  Search,
   SlidersHorizontal,
   Trash2,
   Users,
@@ -17,23 +18,16 @@ import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
 
-import NoFilesIcon from '../assets/no-files.svg';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import Pagination from '../components/DocumentPagination';
+import PageToolbar from '../components/PageToolbar';
+import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import {
-  ActionMenu,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  type MenuOption,
-} from '../components/ui/dropdown-menu';
-import { Input } from '../components/ui/input';
-import { useDarkTheme, useDebouncedValue, useLoaderState } from '../hooks';
-import { cn } from '../lib/utils';
+import { Card, CardFooter, CardTitle } from '../components/ui/card';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
+import { EmptyState } from '../components/ui/empty-state';
+import { Pagination } from '../components/ui/pagination';
+import { useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import type { Model } from '../models/types';
@@ -84,7 +78,6 @@ export default function Sources({
   handleDeleteDocument,
 }: DocumentsProps) {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const uploadTasks = useSelector(selectUploadTasks);
@@ -134,15 +127,6 @@ export default function Sources({
   // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
   // badge survives closing the modal and reflects the real backend state.
   const graphBuilds = useSelector(selectGraphBuilds);
-  const [syncMenuState, setSyncMenuState] = useState<{
-    isOpen: boolean;
-    docId: string | null;
-    document: Doc | null;
-  }>({
-    isOpen: false,
-    docId: null,
-    document: null,
-  });
 
   const refreshDocs = useCallback(
     (
@@ -380,17 +364,18 @@ export default function Sources({
     }
 
     if (document.syncFrequency) {
-      actions.push({
-        icon: RefreshCw,
-        label: t('settings.sources.sync'),
-        onClick: () => {
-          setSyncMenuState({
-            isOpen: true,
-            docId: document.id ?? null,
-            document: document,
-          });
-        },
-        variant: 'default',
+      // One row per sync frequency; the current one carries the check.
+      syncOptions.forEach((opt) => {
+        actions.push({
+          icon: document.syncFrequency === opt.value ? Check : RefreshCw,
+          label: t('settings.sources.syncFrequency.option', {
+            frequency: opt.label,
+          }),
+          onClick: () => {
+            handleManageSync(document, opt.value);
+          },
+          variant: 'default',
+        });
       });
       actions.push({
         icon: RefreshCw,
@@ -416,7 +401,7 @@ export default function Sources({
 
     if (document.id) {
       actions.push({
-        icon: SearchIcon,
+        icon: Search,
         label: t('settings.sources.testRetrieval.action'),
         onClick: () => {
           setDocumentToTest(document);
@@ -526,7 +511,7 @@ export default function Sources({
       type="button"
       variant="outline"
       shape="pill"
-      className="h-[38px]"
+      size="field"
       onClick={() => {
         setDocumentToTest(documentToView);
         setTestRetrievalState('ACTIVE');
@@ -537,7 +522,7 @@ export default function Sources({
   ) : null;
 
   return documentToView ? (
-    <div className="mt-8 flex flex-col">
+    <div className="flex flex-col">
       {documentToView.config?.kind === 'wiki' ||
       documentToView.type === 'wiki' ? (
         <WikiViewer
@@ -591,66 +576,57 @@ export default function Sources({
       />
     </div>
   ) : (
-    <div className="mt-8 flex w-full max-w-full flex-col">
+    <div className="flex w-full max-w-full flex-col">
       <div className="relative flex grow flex-col">
-        <p className="text-muted-foreground mb-5 text-sm leading-6">
-          {t('settings.sources.subtitle')}
-        </p>
-        <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="w-full max-w-md sm:w-auto">
-            <Input
+        <PageToolbar
+          intro={t('settings.sources.subtitle')}
+          search={
+            <SearchInput
               maxLength={256}
               label={t('settings.sources.searchPlaceholder')}
               name="Document-search-input"
-              type="text"
               id="document-search-input"
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              labelSurface="background"
-              shape="pill"
-              leftIcon={<SearchIcon className="text-muted-foreground size-4" />}
             />
-          </div>
-          <Button
-            type="button"
-            shape="pill"
-            className="h-11 min-w-[108px] whitespace-normal"
-            title={t('settings.sources.addSource')}
-            onClick={() => {
-              setIsOnboarding(false);
-              setModalState('ACTIVE');
-            }}
-          >
-            {t('settings.sources.addSource')}
-          </Button>
-        </div>
+          }
+          action={
+            <Button
+              type="button"
+              size="field"
+              shape="pill"
+              title={t('settings.sources.addSource')}
+              onClick={() => {
+                setIsOnboarding(false);
+                setModalState('ACTIVE');
+              }}
+            >
+              {t('settings.sources.addSource')}
+            </Button>
+          }
+          divider
+        />
         <div className="relative w-full">
           {loading ? (
-            <div className="grid w-full grid-cols-1 gap-6 px-2 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
           ) : !currentDocuments?.length ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <img
-                src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                alt={t('settings.sources.noData')}
-                className="mx-auto mb-6 h-32 w-32"
-              />
-              <p className="text-muted-foreground text-center text-lg">
-                {t('settings.sources.noData')}
-              </p>
-            </div>
+            <EmptyState title={t('settings.sources.noData')} />
           ) : (
-            <div className="grid w-full grid-cols-1 gap-6 px-2 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {currentDocuments.map((document, index) => {
                 const docId = document.id ? document.id.toString() : '';
 
                 return (
                   <div key={docId} className="relative">
-                    <div
+                    <Card
+                      variant="filled"
+                      interactive
+                      padding="lg"
                       role="button"
                       tabIndex={0}
                       aria-label={document.name}
@@ -661,62 +637,17 @@ export default function Sources({
                           setDocumentToView(document);
                         }
                       }}
-                      className={cn(
-                        'bg-muted dark:bg-accent focus-visible:ring-ring/50 flex min-h-[130px] w-full cursor-pointer flex-col rounded-2xl p-5 transition-all duration-200 outline-none focus-visible:ring-3',
-                        actionMenuDocId === docId ||
-                          syncMenuState.docId === docId
-                          ? 'scale-[1.05]'
-                          : 'hover:scale-[1.05]',
-                      )}
+                      className="min-h-[130px]"
                     >
                       <div className="w-full flex-1">
                         <div className="flex w-full items-center justify-between gap-2">
-                          <h3
-                            className="text-foreground line-clamp-2 min-w-0 flex-1 text-sm leading-4.5 font-semibold wrap-anywhere"
+                          <CardTitle
+                            className="line-clamp-2 min-w-0 flex-1 wrap-anywhere"
                             title={document.name}
                           >
                             {document.name}
-                          </h3>
+                          </CardTitle>
                           <div className="relative flex shrink-0 items-center justify-end">
-                            {document.syncFrequency && (
-                              <DropdownMenu
-                                open={
-                                  syncMenuState.docId === docId &&
-                                  syncMenuState.isOpen
-                                }
-                                onOpenChange={(isOpen) => {
-                                  setSyncMenuState((prev) => ({
-                                    ...prev,
-                                    isOpen,
-                                    docId: isOpen ? docId : null,
-                                    document: isOpen ? document : null,
-                                  }));
-                                }}
-                              >
-                                <DropdownMenuTrigger asChild>
-                                  <span
-                                    aria-hidden
-                                    className="pointer-events-none absolute inset-0 opacity-0"
-                                  />
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                  align="end"
-                                  className="min-w-[120px]"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {syncOptions.map((opt) => (
-                                    <DropdownMenuItem
-                                      key={opt.value}
-                                      onSelect={() =>
-                                        handleManageSync(document, opt.value)
-                                      }
-                                    >
-                                      {opt.label}
-                                    </DropdownMenuItem>
-                                  ))}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
                             <ActionMenu
                               options={getActionOptions(index, document)}
                               triggerLabel={t('settings.sources.menuAlt')}
@@ -733,7 +664,7 @@ export default function Sources({
                       <div className="flex flex-col items-start justify-start gap-1">
                         {document.ownership === 'team' && (
                           <Badge variant="neutral">
-                            <Users size={11} aria-hidden="true" />
+                            <Users className="size-3" aria-hidden="true" />
                             {document.team_access === 'editor'
                               ? t('teamAccess.editor')
                               : t('teamAccess.viewer')}
@@ -766,7 +697,10 @@ export default function Sources({
                                 : null;
                             return (
                               <Badge variant="neutral">
-                                <Network size={11} aria-hidden="true" />
+                                <Network
+                                  className="size-3"
+                                  aria-hidden="true"
+                                />
                                 {isBuilding
                                   ? pct !== null
                                     ? t(
@@ -778,22 +712,20 @@ export default function Sources({
                               </Badge>
                             );
                           })()}
-                        <div className="flex items-center gap-2">
-                          <CalendarIcon className="text-muted-foreground size-3.5" />
-                          <span className="text-muted-foreground text-xs leading-4.5 font-medium">
+                        <CardFooter className="flex-col items-start gap-1">
+                          <span className="flex items-center gap-2">
+                            <CalendarIcon className="size-3.5" />
                             {document.date ? formatDate(document.date) : ''}
                           </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <HardDrive className="text-muted-foreground size-3.5" />
-                          <span className="text-muted-foreground text-xs leading-4.5 font-medium">
+                          <span className="flex items-center gap-2">
+                            <HardDrive className="size-3.5" />
                             {document.tokens
                               ? formatTokens(+document.tokens)
                               : ''}
                           </span>
-                        </div>
+                        </CardFooter>
                       </div>
-                    </div>
+                    </Card>
                   </div>
                 );
               })}
@@ -805,14 +737,14 @@ export default function Sources({
       {currentDocuments.length > 0 && totalPages > 1 && (
         <div className="mt-auto pt-4">
           <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            rowsPerPage={rowsPerPage}
+            page={currentPage}
+            pageCount={totalPages}
+            pageSize={rowsPerPage}
             onPageChange={(page) => {
               setCurrentPage(page);
               refreshDocs(undefined, page, rowsPerPage);
             }}
-            onRowsPerPageChange={(rows) => {
+            onPageSizeChange={(rows) => {
               setRowsPerPage(rows);
               setCurrentPage(1);
               refreshDocs(undefined, 1, rows);
@@ -847,7 +779,7 @@ export default function Sources({
             setDocumentToDelete(null);
           }}
           submitLabel={t('convTile.delete')}
-          variant="danger"
+          variant="destructive"
         />
       )}
 

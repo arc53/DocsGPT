@@ -19,6 +19,7 @@ import {
 } from '../utils/providerUtils';
 import SkeletonLoader from './SkeletonLoader';
 import { Button } from './ui/button';
+import { SectionHeader } from './ui/section-header';
 
 interface PickerFile {
   id: string;
@@ -267,9 +268,13 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
             <div className="border-border rounded-lg border">
               <div className="p-4">
                 <div className="mb-4 flex items-center justify-between">
-                  <h3 className="text-sm font-medium">
-                    {t('modals.uploadDoc.connectors.googleDrive.selectedFiles')}
-                  </h3>
+                  <SectionHeader
+                    as="h3"
+                    size="xs"
+                    title={t(
+                      'modals.uploadDoc.connectors.googleDrive.selectedFiles',
+                    )}
+                  />
                   <Button
                     type="button"
                     size="sm"
@@ -289,21 +294,25 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                 ) : (
                   <div className="max-h-60 overflow-y-auto">
                     {selectedFolders.length > 0 && (
-                      <div className="mb-2">
-                        <h4 className="text-muted-foreground mb-1 text-xs font-medium">
-                          {t('modals.uploadDoc.connectors.googleDrive.folders')}
-                        </h4>
+                      <div className="mb-2 flex flex-col gap-1">
+                        <SectionHeader
+                          as="h4"
+                          size="xs"
+                          title={t(
+                            'modals.uploadDoc.connectors.googleDrive.folders',
+                          )}
+                        />
                         {selectedFolders.map((folder) => (
                           <div
                             key={folder.id}
-                            className="border-border flex items-center border-b p-2"
+                            className="border-border flex items-center gap-2 border-b p-2"
                           >
                             <img
                               src={folder.iconUrl}
                               alt={t(
                                 'modals.uploadDoc.connectors.googleDrive.folderAlt',
                               )}
-                              className="mr-2 h-5 w-5"
+                              className="size-5"
                             />
                             <span className="flex-1 truncate text-sm">
                               {folder.name}
@@ -323,7 +332,6 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                                   newSelectedFolders.map((f) => f.id),
                                 );
                               }}
-                              className="ml-2"
                             >
                               {t(
                                 'modals.uploadDoc.connectors.googleDrive.remove',
@@ -335,21 +343,25 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                     )}
 
                     {selectedFiles.length > 0 && (
-                      <div>
-                        <h4 className="text-muted-foreground mb-1 text-xs font-medium">
-                          {t('modals.uploadDoc.connectors.googleDrive.files')}
-                        </h4>
+                      <div className="flex flex-col gap-1">
+                        <SectionHeader
+                          as="h4"
+                          size="xs"
+                          title={t(
+                            'modals.uploadDoc.connectors.googleDrive.files',
+                          )}
+                        />
                         {selectedFiles.map((file) => (
                           <div
                             key={file.id}
-                            className="border-border flex items-center border-b p-2"
+                            className="border-border flex items-center gap-2 border-b p-2"
                           >
                             <img
                               src={file.iconUrl}
                               alt={t(
                                 'modals.uploadDoc.connectors.googleDrive.fileAlt',
                               )}
-                              className="mr-2 h-5 w-5"
+                              className="size-5"
                             />
                             <span className="flex-1 truncate text-sm">
                               {file.name}
@@ -368,7 +380,6 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                                   selectedFolders.map((f) => f.id),
                                 );
                               }}
-                              className="ml-2"
                             >
                               {t(
                                 'modals.uploadDoc.connectors.googleDrive.remove',

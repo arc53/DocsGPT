@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
-import { Button } from './ui/button';
+import { IconButton } from './ui/icon-button';
 
 interface NotificationProps {
   notificationText: string;
@@ -93,21 +93,19 @@ export default function Notification({
         </svg>
       </span>
 
-      <Button
-        type="button"
+      <IconButton
+        label={t('notification.closeAriaLabel')}
+        icon={X}
         variant="ghost"
         size="icon-xs"
         /* eslint-disable-next-line shadcn/no-restyle -- the close X on the promo gradient: any fill would be a grey square on the purple, so hover dims it instead; primary-foreground keeps it white because the button inherits the page colour */
-        className="text-primary-foreground absolute top-1 right-1 z-30 hover:bg-transparent hover:opacity-70 dark:hover:bg-transparent"
-        aria-label={t('notification.closeAriaLabel')}
+        className="text-primary-foreground absolute top-1 right-1 z-20 hover:bg-transparent hover:opacity-70"
         onClick={(e) => {
           e.stopPropagation();
           e.preventDefault();
           handleCloseNotification();
         }}
-      >
-        <X />
-      </Button>
+      />
     </a>
   );
 }

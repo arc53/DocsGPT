@@ -146,7 +146,7 @@ export const FileUpload = ({
     >
       <img
         src={preview ?? undefined}
-        alt="preview"
+        alt={t('components.fileUpload.preview')}
         className="h-full w-full rounded-md object-cover"
       />
       <button
@@ -156,7 +156,7 @@ export const FileUpload = ({
           handleRemove();
         }}
         className="bg-primary hover:bg-primary/90 absolute -top-2 -right-2 rounded-full p-1 transition-colors"
-        aria-label="remove"
+        aria-label={t('components.fileUpload.remove')}
       >
         <X className="text-primary-foreground size-3" />
       </button>

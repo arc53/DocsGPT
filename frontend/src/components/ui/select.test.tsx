@@ -36,7 +36,11 @@ describe('SelectItem', () => {
     const item = document.querySelector('[data-slot="select-item"]');
     expect(item).not.toBeNull();
     // Radix sets data-highlighted on pointer hover and on arrow-key focus alike.
-    expect(item!.className).toContain('data-highlighted:bg-muted');
+    expect(item!.className).toContain('data-highlighted:bg-accent');
+    expect(item!.className).toContain(
+      'data-highlighted:text-accent-foreground',
+    );
+    expect(item!.className).not.toContain('data-highlighted:bg-muted');
   });
 });
 
@@ -61,13 +65,13 @@ describe('SelectTrigger sizes', () => {
     expect(trigger({}).dataset.variant).toBe('default');
   });
 
-  it('size="field" is the 42px form-row height, like SelectTrigger lg', () => {
+  it('size="field" is the 38px form-row height, like SelectTrigger field', () => {
     const el = trigger({ size: 'field' });
     expect(el.dataset.size).toBe('field');
-    expect(el.className.split(' ')).toContain('h-10.5');
+    expect(el.className.split(' ')).toContain('h-9.5');
   });
 
-  it.each(['default', 'lg', 'field'] as const)(
+  it.each(['default', 'field'] as const)(
     'a %s pill starts its text 21px in (px-5)',
     (size) => {
       const classes = trigger({ size, shape: 'pill' }).className.split(' ');
@@ -82,6 +86,22 @@ describe('SelectTrigger sizes', () => {
     const classes = trigger({ size: 'sm', shape: 'pill' }).className.split(' ');
     expect(classes).toContain('px-3');
     expect(classes).not.toContain('px-5');
+  });
+
+  it.each(['default', 'field'] as const)(
+    '%s text is 16px on phones, 14px from md',
+    (size) => {
+      const classes = trigger({ size }).className.split(' ');
+      expect(classes).toEqual(
+        expect.arrayContaining(['text-base', 'md:text-sm']),
+      );
+    },
+  );
+
+  it('sm text stays 14px', () => {
+    const classes = trigger({ size: 'sm' }).className.split(' ');
+    expect(classes).not.toContain('text-base');
+    expect(classes).toContain('text-sm');
   });
 
   it('shows the not-allowed cursor while disabled', () => {

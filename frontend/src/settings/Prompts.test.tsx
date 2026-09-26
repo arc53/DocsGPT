@@ -40,7 +40,9 @@ describe('Prompts', () => {
     document.body.innerHTML = '';
   });
 
-  const renderPrompts = () =>
+  const renderPrompts = (
+    extra: Partial<React.ComponentProps<typeof Prompts>> = {},
+  ) =>
     act(() => {
       root.render(
         <Prompts
@@ -48,22 +50,74 @@ describe('Prompts', () => {
           selectedPrompt={prompts[1]}
           onSelectPrompt={() => undefined}
           setPrompts={() => undefined}
+          {...extra}
         />,
       );
     });
 
-  it('gives the prompt pill the 42px form-row height', () => {
+  it('renders the prompt picker as a 38px combobox field pill', () => {
     renderPrompts();
     const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Toggle prompt list"]',
+      'button[role="combobox"]',
     );
-    expect(trigger?.className).toMatch(/(^|\s)h-10\.5(\s|$)/);
-    expect(trigger?.className).toMatch(/(^|\s)items-stretch(\s|$)/);
-    // The label no longer pads itself to height; it centres in the fixed pill.
-    const label = trigger?.firstElementChild as HTMLElement | null;
-    expect(label?.className).not.toMatch(/(^|\s)py-3(\s|$)/);
-    expect(label?.className).toMatch(/(^|\s)pl-5(\s|$)/);
-    expect(label?.className).toMatch(/(^|\s)items-center(\s|$)/);
+    expect(trigger?.getAttribute('data-variant')).toBe('combobox');
+    expect(trigger?.getAttribute('data-size')).toBe('field');
+    expect(trigger?.getAttribute('data-shape')).toBe('pill');
+    expect(trigger?.className).toMatch(/(^|\s)h-9\.5(\s|$)/);
+    expect(trigger?.className).not.toMatch(/(^|\s)h-10\.5(\s|$)/);
+  });
+
+  it('puts the edit pencil beside the picker, not inside it', () => {
+    renderPrompts();
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[role="combobox"]',
+    );
+    expect(trigger?.querySelector('[role="button"], button')).toBeNull();
+    const edit = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="settings.general.promptActions.edit"]',
+    );
+    expect(edit).not.toBeNull();
+    expect(edit?.getAttribute('data-variant')).toBe('ghost-muted');
+    expect(edit?.getAttribute('data-size')).toBe('icon-xs');
+    expect(edit?.parentElement).toBe(
+      trigger?.closest('[data-slot="form-field"]')?.parentElement,
+    );
+  });
+
+  it('labels the picker with a floating label on Settings, named by it', () => {
+    renderPrompts();
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[role="combobox"]',
+    )!;
+    const label = container.querySelector<HTMLLabelElement>(
+      '[data-slot="form-field-label"]',
+    )!;
+    expect(label.textContent).toBe('settings.general.prompt');
+    expect(label.htmlFor).toBe(trigger.id);
+    expect(label.className).toContain('bg-background');
+    expect(trigger.hasAttribute('aria-label')).toBe(false);
+  });
+
+  it('keeps a section heading above the picker with titleAs="heading"', () => {
+    renderPrompts({
+      titleAs: 'heading',
+      title: 'Prompt',
+    });
+    expect(
+      container.querySelector('[data-slot="form-field-label"]'),
+    ).toBeNull();
+    const heading = container.querySelector(
+      '[data-slot="section-header"] > h2',
+    )!;
+    expect(heading.textContent).toBe('Prompt');
+    expect(heading.className.split(' ')).toEqual(
+      expect.arrayContaining(['text-lg', 'font-semibold']),
+    );
+    expect(
+      container
+        .querySelector('button[role="combobox"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Prompt');
   });
 
   it('sizes the Add button to the field row', () => {
@@ -90,7 +144,7 @@ describe('Prompts', () => {
     });
 
     const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Toggle prompt list"]',
+      'button[role="combobox"]',
     );
     expect(trigger).not.toBeNull();
     act(() => {
@@ -114,5 +168,15 @@ describe('Prompts', () => {
     expect(byName('Vendor due diligence')?.className).not.toMatch(
       /(^|\s)(bg-accent|font-medium)(\s|$)/,
     );
+    // Row actions are IconButtons: named, with a tooltip instead of `title`.
+    const actions = Array.from(
+      byName('Vendor due diligence')!.querySelectorAll('button'),
+    );
+    expect(actions.length).toBeGreaterThan(0);
+    for (const action of actions) {
+      expect(action.getAttribute('aria-label')).toBeTruthy();
+      expect(action.hasAttribute('title')).toBe(false);
+      expect(action.dataset.slot).toBe('tooltip-trigger');
+    }
   });
 });

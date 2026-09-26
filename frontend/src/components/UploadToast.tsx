@@ -92,7 +92,7 @@ export default function UploadToast() {
           >
             <ChevronDown
               className={cn(
-                'h-4 w-4 transition-transform duration-200',
+                'transition-transform duration-200',
                 collapsed && 'rotate-180',
               )}
             />
@@ -104,7 +104,7 @@ export default function UploadToast() {
             onClick={dismissAll}
             aria-label={t('modals.uploadDoc.progress.dismiss')}
           >
-            <X className="h-4 w-4" />
+            <X />
           </Button>
         </ToastActions>
       </ToastHeader>
@@ -161,7 +161,7 @@ function UploadRow({
             width="24"
             height="24"
             viewBox="0 0 24 24"
-            className="text-primary h-6 w-6 shrink-0"
+            className="text-primary size-6 shrink-0"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={100}
