@@ -50,6 +50,10 @@ IMAGE_TOKEN_ESTIMATE = 1500
 NATIVE_PDF_PAGE_TOKENS = 500
 # Pages rendered for a PDF on an image-only model (``_convert_pdf_to_images``).
 SYNTHETIC_PDF_MAX_PAGES = 20
+# One such page, rendered at 150 dpi. Vision models price a full A4 page far
+# above a small image (Qwen-VL ~2.8k tokens, Claude ~1.6k), so this is
+# priced on its own and errs high.
+SYNTHETIC_PAGE_TOKEN_ESTIMATE = 3000
 # Label, fence and guard around one inlined file.
 FILE_OVERHEAD_TOKENS = 60
 # Share of the window kept free when working out the space left.
@@ -152,6 +156,12 @@ class PlannedFile:
         return pages if isinstance(pages, int) and pages > 0 else None
 
     @property
+    def synthetic_pages(self) -> int:
+        """Page images a PDF becomes on an image-only model."""
+        pages = self.pages
+        return min(pages if pages is not None else SYNTHETIC_PDF_MAX_PAGES, SYNTHETIC_PDF_MAX_PAGES)
+
+    @property
     def has_text(self) -> bool:
         """Whether there is extracted text to inline or read through the tool."""
         status = self.extraction.get("status")
@@ -173,9 +183,7 @@ class PlannedFile:
             return IMAGE_TOKEN_ESTIMATE
         pages = self.pages
         if mode == MODE_IMAGES:
-            if pages is None:
-                pages = SYNTHETIC_PDF_MAX_PAGES
-            return min(pages, SYNTHETIC_PDF_MAX_PAGES) * IMAGE_TOKEN_ESTIMATE
+            return self.synthetic_pages * SYNTHETIC_PAGE_TOKEN_ESTIMATE
         if pages is None:
             # Rows parsed before page counts were recorded: assume a dense
             # page (~600 text tokens) to back out a page count.
@@ -231,7 +239,7 @@ class AttachmentPlan:
             if f.mode == MODE_NATIVE:
                 count += 1
             elif f.mode == MODE_IMAGES:
-                count += max(1, f.cost // IMAGE_TOKEN_ESTIMATE)
+                count += f.synthetic_pages
         return count
 
     @property
@@ -296,7 +304,14 @@ def _native_mode(f: PlannedFile, native_types: set) -> Optional[str]:
     mime = f.mime_type
     if mime in native_types:
         return MODE_NATIVE
-    if mime == PDF_MIME and any(t.startswith("image/") for t in native_types) and f.attachment.get("path"):
+    # Page images only for a PDF with no text layer (a scan): for one that
+    # has text they cost several times as much and show nothing more.
+    if (
+        mime == PDF_MIME
+        and not f.has_text
+        and any(t.startswith("image/") for t in native_types)
+        and f.attachment.get("path")
+    ):
         return MODE_IMAGES
     return None
 
@@ -497,6 +512,43 @@ def render_manifest(plan: AttachmentPlan) -> str:
         lines.append(f"  <file {' '.join(attrs)}/>")
     lines.append("</attached_files>")
     return "\n".join(lines)
+
+
+def _ref_ranges(refs: List[str]) -> str:
+    """``["F3", "F4", "F5", "F9"]`` -> ``"F3-F5, F9"``."""
+    numbers = sorted(int(r[1:]) for r in refs if r[1:].isdigit())
+    spans: List[str] = []
+    start = prev = None
+    for n in numbers + [None]:
+        if start is None:
+            start = prev = n
+        elif n is not None and n == prev + 1:
+            prev = n
+        else:
+            spans.append(f"F{start}" if start == prev else f"F{start}-F{prev}")
+            start = prev = n
+    return ", ".join(spans)
+
+
+def render_reminder(plan: AttachmentPlan) -> str:
+    """A closing instruction, placed right before the question.
+
+    The manifest's note sits at the top of a long message; models (smaller
+    ones especially) answered from the files they could see and never
+    called the tool for the rest. Restating it next to the question, with
+    the refs spelled out, is what gets the tool used.
+    """
+    if not plan.supports_tools:
+        return ""
+    missing = [f.ref for f in plan.files if f.status in (STATUS_TOOL, STATUS_PARTIAL)]
+    if not missing:
+        return ""
+    return (
+        f"{len(missing)} of the {len(plan.files)} attached files ({_ref_ranges(missing)}) are not "
+        "fully in your context. If the question concerns any of them, or all of the files, call "
+        f"{TOOL_SEARCH} or {TOOL_READ} for them before you answer. Do not answer from the other "
+        "files alone and do not guess their contents."
+    )
 
 
 def _fence(text: str) -> str:

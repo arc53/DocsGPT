@@ -15,6 +15,7 @@ from docsgpt.agents.attachment_budget import (
     plan_attachments,
     render_inline_blocks,
     render_manifest,
+    render_reminder,
 )
 
 PDF = "application/pdf"
@@ -228,6 +229,20 @@ class TestNative:
         assert plan.files[0].mode == MODE_IMAGES
         assert plan.files[0].status == STATUS_INLINE
 
+    def test_text_pdf_on_image_only_model_goes_as_text(self):
+        # Page images of a PDF that has a text layer cost several times its
+        # text (Qwen-VL ~2.8k tokens per A4 page) and add nothing a scan
+        # would need; images are for PDFs without text only.
+        pdf = _att(0, 3_000, mime=PDF, pages=5)
+        plan = _plan([pdf], budget=50_000, native=[PNG])
+        assert plan.files[0].mode == MODE_TEXT
+
+    def test_synthetic_page_images_are_priced_conservatively(self):
+        scan = _att(0, 0, mime=PDF, status="no_text", pages=5)
+        plan = _plan([scan], budget=50_000, native=[PNG])
+        assert plan.files[0].cost == 5 * 3000
+        assert plan.native_part_count == 5
+
     def test_failed_extraction_is_unreadable(self):
         bad = _att(0, 0, status="failed", content="")
         bad["content"] = None
@@ -360,3 +375,22 @@ class TestEdgeCases:
 
     def test_zero_window_has_no_budget(self):
         assert attachment_budget(0, used_tokens=0, share=0.6) == 0
+
+
+class TestReminder:
+    def test_names_the_files_left_out(self):
+        files = [_att(i, 3_000) for i in range(8)] + [_att(8, 10)]
+        plan = _plan(files, budget=9_300)
+        text = render_reminder(plan)
+        assert "F4-F8" in text
+        assert "attachments_search" in text
+
+    def test_nothing_to_say_when_everything_fits_or_without_tools(self):
+        assert render_reminder(_plan([_att(0, 10)], budget=1_000)) == ""
+        assert render_reminder(_plan([_att(0, 10_000)], budget=100, tools=False)) == ""
+
+    def test_ranges(self):
+        from docsgpt.agents.attachment_budget import _ref_ranges
+
+        assert _ref_ranges(["F3", "F4", "F5", "F9", "F11", "F12"]) == "F3-F5, F9, F11-F12"
+        assert _ref_ranges(["F2"]) == "F2"

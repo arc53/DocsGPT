@@ -367,3 +367,22 @@ class TestAgentsThatBuildTheirOwnMessages:
         assert agent._attachment_excerpts(left_out, "word", 100) == ""
         # With room, the same file does contribute an excerpt.
         assert "<file_excerpts>" in agent._attachment_excerpts(left_out, "word", 2_000)
+
+
+@pytest.mark.unit
+def test_tool_schemas_are_reserved_before_attachments_are_planned(
+    agent_base_params, mock_llm_creator, mock_llm_handler_creator, window
+):
+    window(12_000)
+    files = [_att(i, 3_000) for i in range(4)]
+    without_tools = _agent(agent_base_params, files)
+    without_tools._build_messages("SYSTEM", "Q?")
+
+    with_tools = _agent(agent_base_params, files)
+    with_tools.tools = [
+        {"type": "function", "function": {"name": f"t{i}", "description": "word " * 1000}}
+        for i in range(6)
+    ]
+    with_tools._build_messages("SYSTEM", "Q?")
+
+    assert with_tools.attachment_plan.budget < without_tools.attachment_plan.budget

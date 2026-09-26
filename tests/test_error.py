@@ -92,6 +92,8 @@ class TestUserFacingError:
             "Your input exceeds the context window of this model",
             "prompt is too long: 300000 tokens > 200000 maximum",
             "Conversation context (300,000 tokens) exceeds the model's context window",
+            "Error code: 400 - {'error': {'message': 'request (21478 tokens) exceeds the available "
+            "context size (20992 tokens)', 'type': 'exceed_context_size_error'}}",
         ):
             curated = user_facing_error(RuntimeError(raw))
             assert curated is not None

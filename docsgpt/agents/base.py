@@ -839,6 +839,21 @@ class BaseAgent(ABC):
         )
         return truncated
 
+    # Share of the window the pre-send gate keeps free for tokenizer drift.
+    _CONTEXT_GATE_MARGIN = 0.05
+
+    def _tool_schema_tokens(self) -> int:
+        """Tokens of the tool schemas sent with each call, 0 when none are sent."""
+        from docsgpt.utils import num_tokens_from_string
+
+        tools = getattr(self, "tools", None)
+        if not tools or not self._llm_supports_tools():
+            return 0
+        try:
+            return num_tokens_from_string(json.dumps(tools))
+        except (TypeError, ValueError):
+            return 0
+
     def _enforce_context_window(self, messages: List[Dict]) -> List[Dict]:
         """Hard pre-send gate: never dispatch a payload that cannot fit.
 
@@ -856,8 +871,17 @@ class BaseAgent(ABC):
         context_limit = get_token_limit(
             self.model_id, user_id=self.model_user_id or self.user
         )
+        # The tool schemas travel with every call, and the count below is a
+        # cl100k estimate that the provider's own tokenizer can exceed by a few
+        # percent; comparing messages alone against the full window let a
+        # 21,478-token request through to a 20,992-token model.
+        budget = (
+            context_limit
+            - self._tool_schema_tokens()
+            - int(context_limit * self._CONTEXT_GATE_MARGIN)
+        )
         current_tokens = self._calculate_current_context_tokens(messages)
-        if current_tokens < context_limit:
+        if current_tokens < budget:
             return messages
 
         logger.warning(
@@ -876,7 +900,7 @@ class BaseAgent(ABC):
                         content, per_message_cap
                     )
             current_tokens = self._calculate_current_context_tokens(messages)
-            if current_tokens < context_limit:
+            if current_tokens < budget:
                 return messages
 
         raise ValueError(
@@ -1128,7 +1152,9 @@ class BaseAgent(ABC):
         context_limit = get_token_limit(
             self.model_id, user_id=self.model_user_id or self.user
         )
-        system_tokens = num_tokens_from_string(system_prompt)
+        # The tool schemas go out with every call; they are as fixed a cost
+        # as the system prompt, so everything else is budgeted after them.
+        system_tokens = num_tokens_from_string(system_prompt) + self._tool_schema_tokens()
 
         safety_buffer = int(context_limit * 0.1)
         available_after_system = context_limit - system_tokens - safety_buffer
@@ -1361,6 +1387,7 @@ class BaseAgent(ABC):
             attachment_budget,
             render_inline_blocks,
             render_manifest,
+            render_reminder,
         )
         from docsgpt.utils import num_tokens_from_string
 
@@ -1376,6 +1403,7 @@ class BaseAgent(ABC):
         parts = [render_manifest(plan), render_inline_blocks(plan)]
         if not plan.supports_tools and query:
             parts.append(self._attachment_excerpts(plan, query, budget - plan.inline_tokens))
+        parts.append(render_reminder(plan))
         block = "\n\n".join(part for part in parts if part)
         tokens = num_tokens_from_string(block) + plan.native_tokens
         if plan.has_overflow:

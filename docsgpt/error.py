@@ -33,6 +33,9 @@ _CONTEXT_WINDOW_MARKERS = (
     "input is too long",
     "too many input tokens",
     "exceeds the maximum number of tokens",
+    # llama.cpp: "request (N tokens) exceeds the available context size"
+    "context size",
+    "exceed_context_size",
 )
 
 

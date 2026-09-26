@@ -268,6 +268,8 @@ class BaseLLM(ABC):
                 "input is too long",
                 "too many input tokens",
                 "exceeds the maximum number of tokens",
+                "context size",
+                "exceed_context_size",
             )
         )
 
