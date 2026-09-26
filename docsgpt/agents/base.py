@@ -924,13 +924,14 @@ class BaseAgent(ABC):
     )
 
     # When the budget, not the search, left no documents: the passages exist
-    # but did not fit next to the question and its attachments. Saying the
-    # search found nothing would be false.
+    # but did not fit in the context window. Saying the search found nothing
+    # would be false.
     DOCUMENTS_SHED_NOTE = (
-        "The attached sources were searched and passages were found, but they "
-        "could not be included here because the attached files already fill "
-        "the context. Do not assume the sources are empty or say nothing was "
-        "found: tell the user the source passages had to be left out."
+        "The attached sources were searched and relevant passages were found, "
+        "but none of them fit in this model's context window alongside the "
+        "rest of the request, so they were left out. Do not assume the sources "
+        "are empty or say nothing was found: tell the user the source passages "
+        "could not be included."
     )
 
     DOCUMENT_GUARD = (

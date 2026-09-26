@@ -181,8 +181,16 @@ class TestAttachmentIds:
         used = self._attachment(pg_conn, "user-1", "used.txt")
         unused = self._attachment(pg_conn, "user-1", "unused.txt")
         repo.append_message(conv["id"], {"prompt": "1", "response": "r", "attachments": [used]})
-        assert repo.referenced_attachment_ids([used, unused, "not-a-uuid"]) == {used}
-        assert repo.referenced_attachment_ids([]) == set()
+        assert repo.referenced_attachment_ids([used, unused, "not-a-uuid"], "user-1") == {used}
+        assert repo.referenced_attachment_ids([], "user-1") == set()
+
+    def test_referenced_attachment_ids_counts_only_the_owners_conversations(self, pg_conn):
+        repo = _repo(pg_conn)
+        att = self._attachment(pg_conn, "user-1", "a.txt")
+        other = repo.create("user-2", "someone else's chat")
+        repo.append_message(other["id"], {"prompt": "1", "response": "r", "attachments": [att]})
+        assert repo.referenced_attachment_ids([att], "user-1") == set()
+        assert repo.referenced_attachment_ids([att], "user-2") == {att}
 
 
 # ------------------------------------------------------------------

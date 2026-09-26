@@ -576,17 +576,26 @@ class ConversationsRepository:
         )
         return [str(row[0]) for row in result.fetchall()]
 
-    def referenced_attachment_ids(self, attachment_ids: list[str]) -> set[str]:
-        """Which of ``attachment_ids`` some conversation message still references."""
+    def referenced_attachment_ids(self, attachment_ids: list[str], user_id: str) -> set[str]:
+        """Which of ``attachment_ids`` the user's own conversations still reference.
+
+        Scoped to the owner: attachments are read owner-scoped, so only their
+        conversations can use one, and the scope keeps the lookup on the
+        ``(user_id, timestamp)`` index instead of every message. The array
+        overlap filters messages before anything is unnested.
+        """
         wanted = [str(a) for a in attachment_ids or [] if looks_like_uuid(str(a))]
         if not wanted:
             return set()
         result = self._conn.execute(
             text(
                 "SELECT DISTINCT a::text FROM conversation_messages m, "
-                "unnest(m.attachments) AS a WHERE a::text = ANY(:ids)"
+                "unnest(m.attachments) AS a "
+                "WHERE m.user_id = :user_id "
+                "AND m.attachments && CAST(:ids AS uuid[]) "
+                "AND a = ANY(CAST(:ids AS uuid[]))"
             ),
-            {"ids": wanted},
+            {"ids": wanted, "user_id": user_id},
         )
         return {str(row[0]) for row in result.fetchall()}
 

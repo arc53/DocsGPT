@@ -428,3 +428,12 @@ def test_an_empty_search_still_says_nothing_matched(
     agent = _agent(agent_base_params, [])
     user = agent._build_messages("SYSTEM", "Q?")[-1]["content"]
     assert agent.EMPTY_RETRIEVAL_NOTE in user
+
+
+@pytest.mark.unit
+def test_shed_note_does_not_blame_attachments():
+    from docsgpt.agents.base import BaseAgent
+
+    note = BaseAgent.DOCUMENTS_SHED_NOTE.lower()
+    assert "attach" not in note.replace("attached sources", "")
+    assert "context window" in note

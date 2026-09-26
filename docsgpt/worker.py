@@ -2823,7 +2823,7 @@ def purge_attachment_indexes_worker(self, attachment_ids, user):
         # between. A reference added after this check costs that file its
         # semantic ranking, never its content: search falls back to keywords.
         with db_readonly() as conn:
-            if ConversationsRepository(conn).referenced_attachment_ids([str(row["id"])]):
+            if ConversationsRepository(conn).referenced_attachment_ids([str(row["id"])], user):
                 continue
         index = (row.get("metadata") or {}).get("index") or {}
         source_id = index.get("source_id")
