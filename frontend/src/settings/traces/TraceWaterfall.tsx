@@ -14,6 +14,9 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '../../components/ui/button';
+import { EmptyState } from '../../components/ui/empty-state';
+import { IconButton } from '../../components/ui/icon-button';
+import { cn } from '../../lib/utils';
 import { Trace, TraceSpan } from '../types';
 import TraceSpanDetails from './TraceSpanDetails';
 import {
@@ -97,9 +100,11 @@ export default function TraceWaterfall({ trace }: { trace: Trace }) {
 
   if (!rows.length) {
     return (
-      <p className="text-muted-foreground py-4 text-center text-xs">
-        {t('settings.logs.trace.noSpans')}
-      </p>
+      <EmptyState
+        size="xs"
+        illustration="none"
+        title={t('settings.logs.trace.noSpans')}
+      />
     );
   }
 
@@ -111,7 +116,10 @@ export default function TraceWaterfall({ trace }: { trace: Trace }) {
           {SCALE_TICKS.map((tick) => (
             <span
               key={tick.at}
-              className={`absolute top-0 whitespace-nowrap tabular-nums ${tick.className}`}
+              className={cn(
+                'absolute top-0 whitespace-nowrap tabular-nums',
+                tick.className,
+              )}
             >
               {tick.at === 0 ? '0' : formatDurationMs(totalMs * tick.at)}
             </span>
@@ -139,21 +147,28 @@ export default function TraceWaterfall({ trace }: { trace: Trace }) {
             style={geometry}
           >
             <div
-              className={`grid grid-cols-9 items-center gap-3 rounded-md ${selected ? 'bg-accent' : ''}`}
+              className={cn(
+                'grid grid-cols-9 items-center gap-3 rounded-md',
+                selected && 'bg-accent',
+              )}
             >
               <div className="col-span-5 flex min-w-0 items-center pl-(--trace-indent)">
                 {hasChildren ? (
-                  <Button
+                  <IconButton
+                    label={t('settings.logs.trace.toggleChildren')}
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={t('settings.logs.trace.toggleChildren')}
                     aria-expanded={!isCollapsed}
                     onClick={() => toggleCollapsed(span.id)}
                   >
                     <ChevronRight
-                      className={`text-muted-foreground transition-transform ${isCollapsed ? '' : 'rotate-90'}`}
+                      aria-hidden
+                      className={cn(
+                        'text-muted-foreground transition-transform duration-200',
+                        !isCollapsed && 'rotate-90',
+                      )}
                     />
-                  </Button>
+                  </IconButton>
                 ) : (
                   <span className="size-8 shrink-0" />
                 )}
@@ -165,7 +180,12 @@ export default function TraceWaterfall({ trace }: { trace: Trace }) {
                   onClick={() => toggleSelected(span.id)}
                 >
                   <Icon
-                    className={`size-3.5 ${span.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}
+                    className={cn(
+                      'size-3.5',
+                      span.status === 'error'
+                        ? 'text-destructive'
+                        : 'text-muted-foreground',
+                    )}
                     aria-label={t(
                       `settings.logs.trace.kinds.${span.kind}`,
                       span.kind,
@@ -191,7 +211,10 @@ export default function TraceWaterfall({ trace }: { trace: Trace }) {
                 className="bg-muted relative col-span-4 h-3 cursor-pointer rounded-sm"
               >
                 <span
-                  className={`absolute inset-y-0 left-(--trace-bar-left) w-(--trace-bar-width) rounded-sm ${barClass(span)}`}
+                  className={cn(
+                    'absolute inset-y-0 left-(--trace-bar-left) w-(--trace-bar-width) rounded-sm',
+                    barClass(span),
+                  )}
                 />
               </div>
             </div>

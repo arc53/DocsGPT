@@ -41,3 +41,43 @@ describe('dateTimeUtils', () => {
     expect(formatDateTime('still not a date')).toBe('still not a date');
   });
 });
+
+describe('formatRelative', () => {
+  const NOW = Date.parse('2026-09-25T12:00:00Z');
+  const ago = (ms: number) => new Date(NOW - ms).toISOString();
+
+  it('returns null for empty or unparseable values', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    expect(formatRelative(null, { now: NOW })).toBeNull();
+    expect(formatRelative('garbage', { now: NOW })).toBeNull();
+  });
+
+  it('words the gap with Intl in the given language', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    expect(formatRelative(ago(20_000), { now: NOW, locale: 'en' })).toBe('now');
+    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'en' })).toBe(
+      '3 minutes ago',
+    );
+    expect(
+      formatRelative(ago(26 * 3_600_000), { now: NOW, locale: 'en' }),
+    ).toBe('yesterday');
+    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'de' })).toBe(
+      'vor 3 Minuten',
+    );
+  });
+
+  it("maps the app's language codes to BCP 47", async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    expect(formatRelative(ago(3 * 60_000), { now: NOW, locale: 'jp' })).toBe(
+      '3 分前',
+    );
+  });
+
+  it('falls back to a date past dateAfterDays', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    const old = ago(45 * 86_400_000);
+    expect(
+      formatRelative(old, { now: NOW, locale: 'en', dateAfterDays: 30 }),
+    ).toBe(formatDateOnly(old));
+  });
+});

@@ -15,6 +15,7 @@ import reducer, {
   addQuery,
   applyMessageTail,
   fetchAnswer,
+  mapServerQueryToClient,
   raiseNotice,
   resendQuery,
   setConversation,
@@ -326,5 +327,36 @@ describe('resendQuery', () => {
     ]);
     expect(state.queries[0].response).toBeUndefined();
     expect(state.queries[0].error).toBeUndefined();
+  });
+});
+
+describe('mapServerQueryToClient feedback', () => {
+  // The API stores feedback lowercase (analytics counts 'like'/'dislike'),
+  // while the thumbs compare against the FEEDBACK union.
+  it.each([
+    ['like', 'LIKE'],
+    ['dislike', 'DISLIKE'],
+    ['LIKE', 'LIKE'],
+    ['Dislike', 'DISLIKE'],
+  ])('maps stored %s to %s', (stored, expected) => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      response: 'a',
+      status: 'complete',
+      feedback: stored,
+    });
+    expect(query.feedback).toBe(expected);
+  });
+
+  it('drops missing or unknown feedback', () => {
+    for (const feedback of [undefined, null, '', 'meh']) {
+      const query = mapServerQueryToClient({
+        prompt: 'q',
+        response: 'a',
+        status: 'complete',
+        feedback,
+      });
+      expect(query.feedback).toBeUndefined();
+    }
   });
 });

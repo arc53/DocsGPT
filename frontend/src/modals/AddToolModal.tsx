@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
+import { Card, CardDescription, CardTitle } from '../components/ui/card';
 import { Modal } from '../components/ui/modal';
 import { useLoaderState } from '../hooks';
 import PairDeviceModal from '../settings/PairDeviceModal';
@@ -120,11 +121,10 @@ export default function AddToolModal({
         onOpenChange={(o) => !o && setModalState('INACTIVE')}
         title={t('settings.tools.selectToolSetup')}
         size="xl"
-        className="h-[85vh] w-[90vw] sm:max-w-[950px] md:w-[85vw] lg:w-[75vw]"
       >
         <div className="flex h-full flex-col">
           <div>
-            <div className="mt-5 h-[73vh] overflow-auto px-3 py-px">
+            <div className="mt-5 px-3 py-px">
               {loading ? (
                 <div className="grid auto-rows-fr grid-cols-1 gap-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
                   <SkeletonLoader component="addToolCards" count={6} />
@@ -132,43 +132,48 @@ export default function AddToolModal({
               ) : (
                 <div className="grid auto-rows-fr grid-cols-1 gap-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
                   {availableTools.map((tool, index) => (
-                    <div
-                      role="button"
-                      tabIndex={0}
+                    <Card
+                      asChild
                       key={index}
-                      className="border-border bg-card hover:bg-accent hover:border-border/80 flex h-52 w-full cursor-pointer flex-col justify-between rounded-2xl border p-6"
-                      onClick={() => {
-                        setSelectedTool(tool);
-                        handleAddTool(tool);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
+                      variant="outline"
+                      padding="lg"
+                      interactive
+                      className="h-52 w-full justify-between"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
                           setSelectedTool(tool);
                           handleAddTool(tool);
-                        }
-                      }}
-                    >
-                      <div className="w-full">
-                        <div className="flex w-full items-center justify-between px-1">
-                          <ToolIcon
-                            name={tool.name}
-                            className="h-6 w-6"
-                            title={`${tool.name} icon`}
-                          />
+                        }}
+                      >
+                        <div className="w-full">
+                          <div className="flex w-full items-center justify-between px-1">
+                            <ToolIcon
+                              name={tool.name}
+                              className="size-6"
+                              title={t('settings.tools.toolIconTitle', {
+                                name: tool.name,
+                              })}
+                            />
+                          </div>
+                          <div className="mt-[9px] px-1">
+                            <CardTitle
+                              title={tool.displayName}
+                              className="truncate capitalize"
+                            >
+                              {tool.displayName}
+                            </CardTitle>
+                            <CardDescription
+                              size="xs"
+                              className="mt-1 h-24 overflow-auto"
+                            >
+                              {tool.description}
+                            </CardDescription>
+                          </div>
                         </div>
-                        <div className="mt-[9px]">
-                          <p
-                            title={tool.displayName}
-                            className="text-foreground dark:text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
-                          >
-                            {tool.displayName}
-                          </p>
-                          <p className="text-muted-foreground mt-1 h-24 overflow-auto px-1 text-xs leading-relaxed">
-                            {tool.description}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                      </button>
+                    </Card>
                   ))}
                 </div>
               )}

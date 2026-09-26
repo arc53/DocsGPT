@@ -1,8 +1,16 @@
 import * as React from 'react';
-import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react';
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CircleIcon,
+  EllipsisVertical,
+  type LucideIcon,
+} from 'lucide-react';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from './tooltip';
 
 function DropdownMenu({
   ...props
@@ -40,7 +48,7 @@ function DropdownMenuContent({
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         className={cn(
-          'bg-popover text-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border p-1 shadow-md',
+          'bg-popover text-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 z-200 max-h-(--radix-dropdown-menu-content-available-height) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border p-1 shadow-md',
           className,
         )}
         {...props}
@@ -72,7 +80,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 [&_svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:*:[svg]:text-destructive! relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/15 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 [&_svg:not([class*='text-'])]:text-muted-foreground data-[variant=destructive]:*:[svg]:text-destructive! relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
@@ -228,7 +236,7 @@ function DropdownMenuSubContent({
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
       className={cn(
-        'bg-popover text-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 z-50 min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-md border p-1 shadow-lg',
+        'bg-popover text-popover-foreground data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 z-200 min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-md border p-1 shadow-md',
         className,
       )}
       {...props}
@@ -236,7 +244,99 @@ function DropdownMenuSubContent({
   );
 }
 
+/** One row of an ActionMenu. */
+type MenuOption = {
+  label: string;
+  onClick: (event: Event) => void;
+  icon?: LucideIcon;
+  variant?: 'default' | 'destructive';
+  disabled?: boolean;
+};
+
+const stopPropagation = (event: React.SyntheticEvent) =>
+  event.stopPropagation();
+
+/**
+ * The three-dots menu on a card, tile or row: an EllipsisVertical icon
+ * trigger and one item per option, icon first.
+ *
+ * Clicks and keys on the trigger and the menu stop propagating, because the
+ * menu usually sits inside a clickable card and a portal still bubbles
+ * through the React tree. The trigger is `ghost-on-accent`: most hosts turn
+ * bg-accent while the pointer is on them.
+ *
+ * @param options The menu rows.
+ * @param triggerLabel The trigger's accessible name.
+ * @param className Layout classes for the trigger (position, margin).
+ * @param triggerTestId A `data-testid` for the trigger.
+ */
+function ActionMenu({
+  options,
+  triggerLabel,
+  align = 'end',
+  open,
+  onOpenChange,
+  disabled,
+  className,
+  triggerTestId,
+}: {
+  options: MenuOption[];
+  triggerLabel: string;
+  align?: 'start' | 'center' | 'end';
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+  triggerTestId?: string;
+}) {
+  return (
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
+      <Tooltip>
+        {/* Menu trigger outermost, so the button keeps its data-slot. */}
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost-on-accent"
+              size="icon-xs"
+              aria-label={triggerLabel}
+              disabled={disabled}
+              data-testid={triggerTestId}
+              className={className}
+              onClick={stopPropagation}
+              onKeyDown={stopPropagation}
+            >
+              <EllipsisVertical aria-hidden="true" />
+            </Button>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent>{triggerLabel}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent
+        align={align}
+        className="min-w-36"
+        onClick={stopPropagation}
+        onKeyDown={stopPropagation}
+      >
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option.label}
+            variant={option.variant}
+            disabled={option.disabled}
+            onSelect={(event) => option.onClick(event)}
+          >
+            {option.icon && <option.icon aria-hidden="true" />}
+            <span>{option.label}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export {
+  ActionMenu,
+  type MenuOption,
   DropdownMenu,
   DropdownMenuPortal,
   DropdownMenuTrigger,

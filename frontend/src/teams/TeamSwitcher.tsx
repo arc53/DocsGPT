@@ -6,7 +6,7 @@ import {
   Check,
   ChevronsUpDown,
   Plus,
-  Settings as SettingsIcon,
+  Settings,
   User,
   Users,
 } from 'lucide-react';
@@ -32,6 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
+import { Button } from '../components/ui/button';
 
 type TeamSwitcherProps = {
   // Called after a navigation/selection so callers (e.g. the mobile nav) can
@@ -90,34 +91,34 @@ export default function TeamSwitcher({
   const triggerIcon = currentTeam ? (
     // A solid square reads heavier than the dino, so keep the team avatar a
     // touch smaller (with a little margin to align with the wordmark).
-    <span className="bg-muted dark:bg-accent text-foreground mx-1 flex size-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold">
+    <span className="bg-muted text-foreground mx-1 flex size-7 shrink-0 items-center justify-center rounded-md text-sm font-semibold">
       {teamInitial}
     </span>
   ) : (
     <img
       className="h-8 w-auto shrink-0"
       src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
-      alt="DocsGPT Logo"
+      alt={t('teams.switcher.logoAlt')}
     />
   );
 
   // Expanded brand row. In a personal context the full lockup replaces the
   // mark-plus-label pair outright — the wordmark is part of the artwork, so a
   // separate "DocsGPT" text label would repeat it. `mr-auto` keeps the chevron
-  // pinned right, the job the label's `flex-1` used to do, and `ml-4` lines the
+  // pinned right, the job the label's `flex-1` used to do, and `ml-3` lines the
   // logo's left edge up with the "Agents"/"Chats" section headings below it
   // (those sit 32px in: `mx-4` on their row plus `ml-4` on the label; the
-  // header strip and this button contribute 8px of padding each).
+  // header strip adds 8px and the sidebar-item row's `pl-3` 12px).
   const expandedBrand = currentTeam ? (
     <>
       {triggerIcon}
-      <span className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold dark:text-white">
+      <span className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold">
         {currentTeam.name}
       </span>
     </>
   ) : (
     <img
-      className="mr-auto ml-4 h-4 w-auto shrink-0"
+      className="mr-auto ml-3 h-4 w-auto shrink-0"
       src={isDarkTheme ? DocsGPTLogoWhite : DocsGPTLogo}
       alt="DocsGPT"
     />
@@ -150,46 +151,48 @@ export default function TeamSwitcher({
           <button
             type="button"
             aria-label={t('teams.switcher.ariaLabel')}
-            className="hover:bg-muted dark:hover:bg-accent flex items-center justify-center rounded-lg p-1 transition-colors"
+            className="hover:bg-sidebar-accent flex items-center justify-center rounded-full p-1 transition-colors"
           >
             {triggerIcon}
           </button>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="sidebar-item"
             aria-label={t('teams.switcher.ariaLabel')}
-            className="hover:bg-muted dark:hover:bg-accent text-foreground flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors"
+            className="w-full"
           >
             {expandedBrand}
-            <ChevronsUpDown
-              className="text-muted-foreground size-4 shrink-0"
-              strokeWidth={1.75}
-            />
-          </button>
+            {/* sidebar-item rows carry no right padding, so the chevron's
+                margin keeps it clear of the pill's end. */}
+            <ChevronsUpDown className="text-muted-foreground mr-3 size-4" />
+          </Button>
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-62">
-        <DropdownMenuLabel className="flex items-center gap-2">
-          <span className="bg-muted dark:bg-accent flex size-7 shrink-0 items-center justify-center rounded-md">
-            {currentTeam ? (
-              <Users className="size-4" strokeWidth={1.75} />
-            ) : (
-              <User className="size-4" strokeWidth={1.75} />
-            )}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="text-foreground block truncate text-sm font-semibold">
-              {currentName}
+        <DropdownMenuLabel>
+          <div className="flex items-center gap-2">
+            <span className="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md">
+              {currentTeam ? (
+                <Users className="size-4" />
+              ) : (
+                <User className="size-4" />
+              )}
             </span>
-            <span className="text-muted-foreground block truncate text-xs font-normal">
-              {currentRoleLabel}
+            <span className="min-w-0 flex-1">
+              <span className="text-foreground block truncate text-sm font-semibold">
+                {currentName}
+              </span>
+              <span className="text-muted-foreground block truncate text-xs font-normal">
+                {currentRoleLabel}
+              </span>
             </span>
-          </span>
+          </div>
         </DropdownMenuLabel>
 
         {currentTeam && (
           <DropdownMenuItem onSelect={goToManage}>
-            <SettingsIcon className="size-4" strokeWidth={1.75} />
+            <Settings className="size-4" />
             <span>{t('teams.switcher.manageTeam')}</span>
           </DropdownMenuItem>
         )}
@@ -199,7 +202,7 @@ export default function TeamSwitcher({
         {/* Personal account entry */}
         {currentTeam && (
           <DropdownMenuItem onSelect={() => selectTeam(null)}>
-            <User className="size-4" strokeWidth={1.75} />
+            <User className="size-4" />
             <span className="min-w-0 flex-1 truncate">
               {t('teams.switcher.personal')}
             </span>
@@ -210,7 +213,7 @@ export default function TeamSwitcher({
         {/* Other teams to switch to */}
         {otherTeams.map((team) => (
           <DropdownMenuItem key={team.id} onSelect={() => selectTeam(team.id)}>
-            <Users className="size-4" strokeWidth={1.75} />
+            <Users className="size-4" />
             <span className="min-w-0 flex-1 truncate" title={team.name}>
               {team.name}
             </span>
@@ -220,7 +223,7 @@ export default function TeamSwitcher({
         <DropdownMenuSeparator />
 
         <DropdownMenuItem onSelect={goToCreate}>
-          <Plus className="size-4" strokeWidth={1.75} />
+          <Plus className="size-4" />
           <span>{t('teams.switcher.createTeam')}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

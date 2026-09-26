@@ -1,6 +1,8 @@
-import { LoaderCircle, Mic, Square } from 'lucide-react';
+import { Mic, Square } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { Button } from '../ui/button';
+import { Spinner } from '../ui/spinner';
 
 export type RecordingState = 'idle' | 'recording' | 'transcribing' | 'error';
 
@@ -10,16 +12,18 @@ type MicButtonProps = {
   onClick: () => void;
 };
 
-const getVoiceButtonLabel = (recordingState: RecordingState): string => {
-  if (recordingState === 'recording') return 'Stop recording';
-  if (recordingState === 'transcribing') return 'Transcribing audio';
-  return 'Voice input';
+const VOICE_LABEL_KEY: Record<RecordingState, string> = {
+  idle: 'conversation.voice.start',
+  error: 'conversation.voice.start',
+  recording: 'conversation.voice.stopRecording',
+  transcribing: 'conversation.voice.transcribingAudio',
 };
 
-const getVoiceButtonText = (recordingState: RecordingState): string => {
-  if (recordingState === 'recording') return 'Stop';
-  if (recordingState === 'transcribing') return 'Transcribing';
-  return 'Voice';
+const VOICE_TEXT_KEY: Record<RecordingState, string> = {
+  idle: 'conversation.voice.voice',
+  error: 'conversation.voice.voice',
+  recording: 'conversation.voice.stop',
+  transcribing: 'conversation.voice.transcribing',
 };
 
 export default function MicButton({
@@ -27,41 +31,36 @@ export default function MicButton({
   loading,
   onClick,
 }: MicButtonProps) {
-  const voiceButtonLabel = getVoiceButtonLabel(recordingState);
-  const voiceButtonText = getVoiceButtonText(recordingState);
+  const { t } = useTranslation();
+  const voiceButtonLabel = t(VOICE_LABEL_KEY[recordingState]);
+  const voiceButtonText = t(VOICE_TEXT_KEY[recordingState]);
+  const isRecording = recordingState === 'recording';
 
   return (
     <Button
       type="button"
-      variant="outline"
+      variant={isRecording ? 'destructive-outline' : 'outline'}
       size="sm"
+      shape="pill"
       onClick={onClick}
       aria-label={voiceButtonLabel}
       title={voiceButtonLabel}
       disabled={loading || recordingState === 'transcribing'}
-      className={`xs:px-3 xs:py-1.5 dark:border-border flex h-auto items-center justify-start rounded-full border bg-transparent px-2 py-1 shadow-none transition-colors ${
-        recordingState === 'recording'
-          ? 'border-[#B42318] bg-[#FEE4E2] text-[#B42318] dark:bg-[#4A2323]'
-          : 'border-border dark:hover:bg-accent hover:bg-gray-100'
-      } ${
-        loading || recordingState === 'transcribing'
-          ? 'cursor-not-allowed opacity-60'
-          : ''
-      }`}
+      className="justify-start"
     >
       {recordingState === 'transcribing' ? (
-        <LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin sm:mr-1.5 sm:h-4 sm:w-4" />
-      ) : recordingState === 'recording' ? (
-        <Square className="mr-1 h-3.5 w-3.5 fill-current sm:mr-1.5 sm:h-4 sm:w-4" />
+        <Spinner size="xs" label={t('conversation.voice.transcribingAudio')} />
+      ) : isRecording ? (
+        <Square className="size-3.5 fill-current sm:size-4" />
       ) : (
-        <Mic className="mr-1 h-3.5 w-3.5 sm:mr-1.5 sm:h-4 sm:w-4" />
+        <Mic className="size-3.5 sm:size-4" />
       )}
       <span
-        className={`xs:text-xs dark:text-foreground text-xs font-medium sm:text-sm ${
-          recordingState === 'recording'
-            ? 'text-[#B42318]'
-            : 'text-muted-foreground'
-        }`}
+        className={
+          isRecording
+            ? 'text-xs sm:text-sm'
+            : 'text-foreground text-xs sm:text-sm'
+        }
       >
         {voiceButtonText}
       </span>

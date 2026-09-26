@@ -12,11 +12,14 @@ import {
   CommandList,
 } from '../components/ui/command';
 import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '../components/ui/popover';
+import { SectionHeader } from '../components/ui/section-header';
+import { SettingRow } from '../components/ui/setting-row';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, PromptProps } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -26,12 +29,17 @@ import { cn } from '@/lib/utils';
 
 type PromptsDropdownProps = {
   className?: string;
-  contentClassName?: string;
 };
 
 type ExtendedPromptProps = PromptProps & {
   title?: string;
-  titleClassName?: string;
+  /**
+   * `row` (Settings → General): a SettingRow whose label names the picker.
+   * `heading` (the agent form): the title is a section heading above it.
+   */
+  titleAs?: 'row' | 'heading';
+  /** The row's muted description, for `titleAs="row"`. */
+  description?: string;
   dropdownProps?: PromptsDropdownProps;
   showAddButton?: boolean;
 };
@@ -42,12 +50,15 @@ export default function Prompts({
   onSelectPrompt,
   setPrompts,
   title,
-  titleClassName = 'dark:text-foreground font-medium',
+  titleAs = 'row',
+  description,
   dropdownProps = {},
   showAddButton = true,
 }: ExtendedPromptProps) {
   const token = useSelector(selectToken);
   const { t } = useTranslation();
+  const pickerId = React.useId();
+  const titleText = title ? title : t('settings.general.prompt');
   const [newPromptName, setNewPromptName] = React.useState('');
   const [newPromptContent, setNewPromptContent] = React.useState('');
   const [editPromptName, setEditPromptName] = React.useState('');
@@ -261,203 +272,199 @@ export default function Prompts({
       });
   };
 
-  const pillClassName = cn(
-    'border-border bg-card text-foreground hover:bg-accent flex w-56 items-stretch rounded-3xl border text-sm transition-colors',
-    dropdownProps.className,
+  const picker = (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="combobox"
+          size="field"
+          shape="pill"
+          id={pickerId}
+          role="combobox"
+          aria-expanded={open}
+          aria-label={titleAs === 'heading' ? titleText : undefined}
+          data-placeholder={selectedPrompt?.name ? undefined : ''}
+          className={cn(
+            'w-full min-w-0 justify-between',
+            titleAs === 'row' && 'sm:w-56',
+          )}
+        >
+          <span className="truncate">
+            {selectedPrompt?.name || t('settings.general.promptActions.select')}
+          </span>
+          <span className="text-muted-foreground">
+            <ChevronDown
+              className={cn(
+                'transition-transform duration-200',
+                open && 'rotate-180',
+              )}
+            />
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-(--radix-popover-trigger-width) p-0"
+      >
+        <Command>
+          <CommandInput
+            placeholder={t('settings.sources.searchPlaceholder')}
+            className="h-9"
+          />
+          <CommandList>
+            <CommandEmpty>{t('settings.sources.noResults')}</CommandEmpty>
+            {prompts.map((prompt) => {
+              const isActive = selectedPrompt?.id === prompt.id;
+              const canModify = prompt.type !== 'public';
+              // Sharing is an owner-only action: hide it for public
+              // prompts and prompts shared into the workspace by a
+              // team.
+              const canShare =
+                prompt.type !== 'public' && prompt.type !== 'team';
+              return (
+                <CommandItem
+                  key={prompt.id}
+                  value={prompt.name}
+                  checked={isActive}
+                  onSelect={() => handleSelectPrompt(prompt)}
+                  className="flex items-center justify-between"
+                >
+                  <span className="truncate">{prompt.name}</span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <IconButton
+                      variant="ghost-on-accent"
+                      size="icon-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditModal(prompt);
+                      }}
+                      label={
+                        canModify
+                          ? t('settings.general.promptActions.edit')
+                          : t('settings.general.promptActions.view')
+                      }
+                    >
+                      {canModify ? (
+                        <Pencil className="text-current" aria-hidden="true" />
+                      ) : (
+                        <Eye className="text-current" aria-hidden="true" />
+                      )}
+                    </IconButton>
+                    <IconButton
+                      variant="ghost-on-accent"
+                      size="icon-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDuplicatePrompt(prompt);
+                      }}
+                      label={t('settings.general.promptActions.duplicate')}
+                    >
+                      <Copy className="text-current" aria-hidden="true" />
+                    </IconButton>
+                    {canShare && (
+                      <IconButton
+                        variant="ghost-on-accent"
+                        size="icon-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpen(false);
+                          setPromptToShare({
+                            id: prompt.id,
+                            name: prompt.name,
+                          });
+                        }}
+                        label={t('agents.shareWithTeam')}
+                      >
+                        <Users className="text-current" aria-hidden="true" />
+                      </IconButton>
+                    )}
+                    {canModify && (
+                      <IconButton
+                        variant="ghost-destructive-on-accent"
+                        size="icon-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeletePrompt(prompt.id);
+                        }}
+                        label={t('settings.general.promptActions.delete')}
+                      >
+                        <Trash2 className="text-current" aria-hidden="true" />
+                      </IconButton>
+                    )}
+                  </div>
+                </CommandItem>
+              );
+            })}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+
+  const editButton = selectedPrompt?.id && selectedPrompt.type !== 'public' && (
+    <IconButton
+      variant="ghost-muted"
+      size="icon-xs"
+      shape="pill"
+      onClick={() => openEditModal(selectedPrompt)}
+      label={t('settings.general.promptActions.edit')}
+      icon={Pencil}
+    />
+  );
+
+  // A prompt that belongs to this field, so a neutral pill rather than the
+  // primary one reserved for a page's own action.
+  const addButton = showAddButton && (
+    <Button
+      type="button"
+      variant="outline"
+      size="field"
+      shape="pill"
+      onClick={() => {
+        setModalType('ADD');
+        setDuplicateSource(null);
+        setModalState('ACTIVE');
+      }}
+    >
+      {t('settings.general.add')}
+    </Button>
   );
 
   return (
     <>
-      <div>
+      {titleAs === 'row' ? (
+        <SettingRow
+          label={titleText}
+          description={description}
+          htmlFor={pickerId}
+          stack
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-none">
+              {picker}
+              {editButton}
+            </div>
+            {addButton}
+          </div>
+        </SettingRow>
+      ) : (
         <div className="flex flex-col gap-3">
-          <p className={titleClassName}>
-            {title ? title : t('settings.general.prompt')}
-          </p>
+          <SectionHeader as="h2" title={titleText} />
           <div className="flex flex-row flex-wrap items-end justify-start gap-6">
-            <Popover open={open} onOpenChange={setOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Toggle prompt list"
-                  className={cn(
-                    pillClassName,
-                    'focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex min-w-0 flex-1 items-center py-3 pl-5 text-left',
-                      !selectedPrompt?.name && 'text-muted-foreground',
-                    )}
-                  >
-                    <span className="truncate">
-                      {selectedPrompt?.name || 'Select a prompt'}
-                    </span>
-                  </span>
-                  {selectedPrompt?.id && selectedPrompt.type !== 'public' && (
-                    <>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditModal(selectedPrompt);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openEditModal(selectedPrompt);
-                          }
-                        }}
-                        className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 focus-visible:ring-ring/50 mx-1 my-auto shrink-0 rounded-full p-1.5 transition-colors outline-none focus-visible:ring-[3px]"
-                        aria-label="Edit prompt"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </span>
-                      <span
-                        className="bg-border my-2.5 w-px shrink-0"
-                        aria-hidden="true"
-                      />
-                    </>
-                  )}
-                  <span className="text-muted-foreground hover:bg-foreground/15 hover:text-foreground dark:hover:bg-foreground/20 my-auto mr-2.5 ml-1 shrink-0 rounded-full p-1.5 transition-colors">
-                    <ChevronDown
-                      className={cn(
-                        'h-4 w-4 transition-transform',
-                        open && 'rotate-180',
-                      )}
-                    />
-                  </span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="start"
-                className={cn(
-                  'w-(--radix-popover-trigger-width) p-0',
-                  dropdownProps.contentClassName,
-                )}
-              >
-                <Command>
-                  <CommandInput
-                    placeholder={t('settings.sources.searchPlaceholder')}
-                    className="h-9"
-                  />
-                  <CommandList>
-                    <CommandEmpty>
-                      {t('settings.sources.noResults')}
-                    </CommandEmpty>
-                    {prompts.map((prompt) => {
-                      const isActive = selectedPrompt?.id === prompt.id;
-                      const canModify = prompt.type !== 'public';
-                      // Sharing is an owner-only action: hide it for public
-                      // prompts and prompts shared into the workspace by a
-                      // team.
-                      const canShare =
-                        prompt.type !== 'public' && prompt.type !== 'team';
-                      return (
-                        <CommandItem
-                          key={prompt.id}
-                          value={prompt.name}
-                          onSelect={() => handleSelectPrompt(prompt)}
-                          className={cn(
-                            'flex items-center justify-between gap-2',
-                            isActive && 'bg-accent font-medium',
-                          )}
-                        >
-                          <span className="truncate">{prompt.name}</span>
-                          <div className="flex shrink-0 items-center gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEditModal(prompt);
-                              }}
-                              className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
-                              aria-label={
-                                canModify ? 'Edit prompt' : 'View prompt'
-                              }
-                            >
-                              {canModify ? (
-                                <Pencil className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                              ) : (
-                                <Eye className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                              )}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDuplicatePrompt(prompt);
-                              }}
-                              className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
-                              aria-label="Duplicate prompt"
-                            >
-                              <Copy className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                            </Button>
-                            {canShare && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpen(false);
-                                  setPromptToShare({
-                                    id: prompt.id,
-                                    name: prompt.name,
-                                  });
-                                }}
-                                className="group/btn hover:bg-foreground/15 dark:hover:bg-foreground/20 h-auto w-auto rounded p-1"
-                                aria-label={t('agents.shareWithTeam')}
-                                title={t('agents.shareWithTeam')}
-                              >
-                                <Users className="text-muted-foreground group-hover/btn:text-foreground h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                            {canModify && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeletePrompt(prompt.id);
-                                }}
-                                className="group/btn hover:bg-destructive/15 dark:hover:bg-destructive/25 h-auto w-auto rounded p-1"
-                                aria-label="Delete prompt"
-                              >
-                                <Trash2 className="text-muted-foreground group-hover/btn:text-destructive h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                          </div>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-            {showAddButton && (
-              <Button
-                type="button"
-                className="h-auto w-20 rounded-3xl border border-transparent py-3"
-                onClick={() => {
-                  setModalType('ADD');
-                  setDuplicateSource(null);
-                  setModalState('ACTIVE');
-                }}
-              >
-                {t('settings.general.add')}
-              </Button>
-            )}
+            <div
+              className={cn(
+                'flex w-56 items-center gap-1',
+                dropdownProps.className,
+              )}
+            >
+              {picker}
+              {editButton}
+            </div>
+            {addButton}
           </div>
         </div>
-      </div>
+      )}
       <PromptsModal
         existingPrompts={prompts}
         type={modalType}
@@ -487,7 +494,7 @@ export default function Prompts({
           submitLabel={t('modals.deleteConv.delete')}
           handleSubmit={confirmDeletePrompt}
           handleCancel={() => setPromptToDelete(null)}
-          variant="danger"
+          variant="destructive"
         />
       )}
       {promptToShare && (

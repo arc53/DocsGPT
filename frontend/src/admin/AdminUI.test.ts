@@ -23,8 +23,8 @@ describe('eventLabel', () => {
 
 describe('eventTone', () => {
   it('flags removals and refusals', () => {
-    expect(eventTone('oidc_login_denied')).toBe('danger');
-    expect(eventTone('agent.deleted')).toBe('danger');
+    expect(eventTone('oidc_login_denied')).toBe('destructive');
+    expect(eventTone('agent.deleted')).toBe('destructive');
   });
 
   it('flags revocations as a warning, not a failure', () => {
@@ -32,18 +32,22 @@ describe('eventTone', () => {
     expect(eventTone('agent.key_regenerated')).toBe('warning');
   });
 
-  it('marks an admin grant with the brand tone', () => {
-    expect(eventTone('role_granted')).toBe('brand');
+  it('marks an admin grant with the brand (default) variant', () => {
+    expect(eventTone('role_granted')).toBe('default');
   });
 
   it('leaves routine events muted', () => {
-    expect(eventTone('oidc_login')).toBe('muted');
-    expect(eventTone('anything_else')).toBe('muted');
+    expect(eventTone('oidc_login')).toBe('neutral');
+    expect(eventTone('anything_else')).toBe('neutral');
   });
 });
 
 describe('categoryTone', () => {
-  it('has a tone for every category the API declares', () => {
+  it('has a variant for every category the API declares', () => {
+    expect(categoryTone('identity')).toBe('outline');
+    expect(categoryTone('access')).toBe('default');
+    expect(categoryTone('safety')).toBe('destructive');
+    expect(categoryTone('other')).toBe('neutral');
     for (const category of [
       'identity',
       'access',
@@ -58,7 +62,7 @@ describe('categoryTone', () => {
   });
 
   it('falls back for an unknown category', () => {
-    expect(categoryTone('invented')).toBe('muted');
+    expect(categoryTone('invented')).toBe('neutral');
   });
 });
 
@@ -66,11 +70,11 @@ describe('outcomeTone', () => {
   // The values below are the only ones the writers produce: guardrails emit
   // triggered/not_evaluated, the device feed emits dispatched.
   it('flags a guardrail that fired', () => {
-    expect(outcomeTone('triggered')).toBe('danger');
+    expect(outcomeTone('triggered')).toBe('destructive');
   });
 
   it('leaves a check that never ran neutral', () => {
-    expect(outcomeTone('not_evaluated')).toBe('muted');
+    expect(outcomeTone('not_evaluated')).toBe('neutral');
   });
 
   it('reads a dispatched device command as a success', () => {
@@ -78,7 +82,7 @@ describe('outcomeTone', () => {
   });
 
   it('leaves an unfamiliar outcome muted', () => {
-    expect(outcomeTone('something-new')).toBe('muted');
+    expect(outcomeTone('something-new')).toBe('neutral');
   });
 });
 

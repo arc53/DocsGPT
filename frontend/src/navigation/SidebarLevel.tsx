@@ -58,6 +58,10 @@ export default function SidebarLevel({
         // the container clips once it comes to rest — so the layering only
         // shows while there is layering to show.
         offset === 0 &&
+          /* eslint-disable-next-line shadcn/no-arbitrary-values -- the
+             incoming panel's leading-edge shadow is horizontal; no scale
+             shadow is, and the container clips it at rest (DESIGN.md
+             Approved exceptions). */
           'visible translate-x-0 opacity-100 shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]',
         // Dimmed rather than faded out: at rest the panel in front covers it
         // completely, so there is nothing to hide, and keeping it legible

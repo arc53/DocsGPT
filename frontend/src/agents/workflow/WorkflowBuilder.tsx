@@ -1,14 +1,13 @@
 import 'reactflow/dist/style.css';
 
 import {
-  AlertCircle,
   Bot,
-  Code2,
+  CircleAlert,
+  CodeXml,
   Database,
   Flag,
   GitBranch,
   Link,
-  Loader2,
   Pencil,
   Play,
   Plus,
@@ -17,9 +16,18 @@ import {
   Trash2,
   Undo2,
   X,
+  type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import {
+  type DragEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { type TFunction } from 'i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ReactFlow, {
@@ -40,9 +48,19 @@ import ReactFlow, {
 } from 'reactflow';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { IconButton } from '@/components/ui/icon-button';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { MultiSelect } from '@/components/ui/multi-select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -52,7 +70,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SectionHeader } from '@/components/ui/section-header';
+import { SettingRow } from '@/components/ui/setting-row';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
@@ -101,9 +124,127 @@ import {
 import WorkflowPreview from './WorkflowPreview';
 
 import type { Model } from '../../models/types';
-import { useOutsideAlerter } from '@/hooks';
 
 const PRIMARY_ACTION_SPINNER_DELAY_MS = 180;
+
+type PaletteTone = 'primary' | 'success' | 'warning' | 'info';
+
+// Whole class strings per tone so Tailwind sees them.
+const PALETTE_TONE_CLASSES: Record<PaletteTone, string> = {
+  primary:
+    'bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground',
+  success:
+    'bg-success/10 text-success group-hover:bg-success group-hover:text-success-foreground',
+  warning:
+    'bg-warning/10 text-warning group-hover:bg-warning group-hover:text-warning-foreground',
+  info: 'bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground',
+};
+
+interface PaletteEntry {
+  type: string;
+  group: 'core' | 'logic';
+  icon: LucideIcon;
+  tone: PaletteTone;
+  labelKey: string;
+  hintKey?: string;
+}
+
+const PALETTE: PaletteEntry[] = [
+  {
+    type: 'agent',
+    group: 'core',
+    icon: Bot,
+    tone: 'primary',
+    labelKey: 'agents.workflow.builder.aiAgent',
+  },
+  {
+    type: 'end',
+    group: 'core',
+    icon: Flag,
+    tone: 'success',
+    labelKey: 'agents.workflow.nodes.end',
+  },
+  {
+    type: 'note',
+    group: 'core',
+    icon: StickyNote,
+    tone: 'warning',
+    labelKey: 'agents.workflow.nodes.note',
+  },
+  {
+    type: 'state',
+    group: 'logic',
+    icon: Database,
+    tone: 'info',
+    labelKey: 'agents.workflow.nodes.setState',
+    hintKey: 'agents.workflow.builder.setStateHint',
+  },
+  {
+    type: 'condition',
+    group: 'logic',
+    icon: GitBranch,
+    tone: 'warning',
+    labelKey: 'agents.workflow.nodes.condition',
+    hintKey: 'agents.workflow.builder.conditionHint',
+  },
+  {
+    type: 'code',
+    group: 'logic',
+    icon: CodeXml,
+    tone: 'info',
+    labelKey: 'agents.workflow.nodes.code',
+    hintKey: 'agents.workflow.builder.codeHint',
+  },
+];
+
+/**
+ * A draggable pill in the builder's node palette.
+ *
+ * Args:
+ *   entry: The palette entry to render.
+ *   onDragStart: Starts dragging a node of the entry's type onto the canvas.
+ */
+function NodePaletteItem({
+  entry,
+  onDragStart,
+}: {
+  entry: PaletteEntry;
+  onDragStart: (e: DragEvent, nodeType: string) => void;
+}) {
+  const { t } = useTranslation();
+  const Icon = entry.icon;
+  const label = (
+    <span className="text-foreground text-sm font-medium">
+      {t(entry.labelKey)}
+    </span>
+  );
+  return (
+    <div
+      className="group border-border bg-card hover:border-primary/40 flex cursor-move items-center gap-3 rounded-full border px-4 py-3 transition-colors"
+      draggable
+      onDragStart={(e) => onDragStart(e, entry.type)}
+    >
+      <div
+        className={cn(
+          'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors',
+          PALETTE_TONE_CLASSES[entry.tone],
+        )}
+      >
+        <Icon className="size-4.5" />
+      </div>
+      {entry.hintKey ? (
+        <div className="flex flex-col">
+          {label}
+          <span className="text-muted-foreground text-xs">
+            {t(entry.hintKey)}
+          </span>
+        </div>
+      ) : (
+        label
+      )}
+    </div>
+  );
+}
 
 interface AgentNodeConfig {
   agent_type: 'classic' | 'research';
@@ -144,6 +285,34 @@ function validateJsonSchemaConfig(schema: unknown): string | null {
   }
 
   return null;
+}
+
+// The schema validators return short English fragments (tests and the
+// validation list key off them); these map each to its locale key.
+// Names and handles are the user's own text: React escapes on render, so
+// i18next must not escape them first.
+const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
+
+const SCHEMA_ERROR_KEYS: Record<string, string> = {
+  'must be a valid JSON object': 'agents.workflow.schema.notObject',
+  'must include either a "type" or "schema" field':
+    'agents.workflow.schema.missingType',
+  'must be valid JSON': 'agents.workflow.schema.invalidJson',
+};
+
+/**
+ * Translate a JSON schema validation fragment.
+ *
+ * Args:
+ *   t: The i18next translate function.
+ *   fragment: The fragment a schema validator returned.
+ *
+ * Returns:
+ *   The translated fragment, or the fragment itself when it is unknown.
+ */
+function schemaErrorText(t: TFunction, fragment: string): string {
+  const key = SCHEMA_ERROR_KEYS[fragment];
+  return key ? t(key) : fragment;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -316,7 +485,6 @@ function WorkflowBuilderInner() {
   const [savedWorkflowSignature, setSavedWorkflowSignature] = useState<
     string | null
   >(null);
-  const workflowSettingsRef = useRef<HTMLDivElement>(null);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [defaultAgentModelId, setDefaultAgentModelId] = useState('');
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
@@ -681,29 +849,22 @@ function WorkflowBuilderInner() {
       const response = await userService.deleteAgent(agentToDelete, token);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to delete workflow agent');
+        throw new Error(
+          errorData.message || t('agents.workflow.builder.deleteFailed'),
+        );
       }
       navigateBackToAgents();
     } catch (error) {
       setPublishErrors([
         error instanceof Error
           ? error.message
-          : 'Failed to delete workflow agent',
+          : t('agents.workflow.builder.deleteFailed'),
       ]);
       setErrorContext('publish');
     } finally {
       setIsDeletingAgent(false);
     }
-  }, [currentAgentId, currentAgent.id, token, navigateBackToAgents]);
-
-  useEffect(() => {
-    if (publishErrors.length > 0) {
-      const timer = setTimeout(() => {
-        setPublishErrors([]);
-      }, 6000);
-      return () => clearTimeout(timer);
-    }
-  }, [publishErrors.length]);
+  }, [currentAgentId, currentAgent.id, token, navigateBackToAgents, t]);
 
   useEffect(() => {
     if (!isPublishing) {
@@ -774,17 +935,6 @@ function WorkflowBuilderInner() {
     setSelectedNode(null);
     setShowWorkflowSettings(false);
   }, []);
-
-  const handleCloseWorkflowSettings = useCallback(() => {
-    setShowWorkflowSettings(false);
-  }, []);
-
-  useOutsideAlerter(
-    workflowSettingsRef,
-    handleCloseWorkflowSettings,
-    [],
-    false,
-  );
 
   useEffect(() => {
     const loadModelsAndTools = async () => {
@@ -1005,30 +1155,33 @@ function WorkflowBuilderInner() {
     const errors: string[] = [];
 
     if (!workflowName.trim()) {
-      errors.push('Workflow name is required');
+      errors.push(t('agents.workflow.validation.nameRequired'));
     }
 
     const startNodes = nodes.filter((n) => n.type === 'start');
     if (startNodes.length !== 1) {
-      errors.push('Workflow must have exactly one start node');
+      errors.push(t('agents.workflow.validation.oneStart'));
     }
 
     const endNodes = nodes.filter((n) => n.type === 'end');
     const endNodeIds = new Set(endNodes.map((n) => n.id));
     if (endNodes.length === 0) {
-      errors.push('Workflow must have at least one end node');
+      errors.push(t('agents.workflow.validation.needEnd'));
     }
 
     const agentNodes = nodes.filter((n) => n.type === 'agent');
     if (agentNodes.length === 0) {
-      errors.push('Workflow must have at least one AI agent node');
+      errors.push(t('agents.workflow.validation.needAgent'));
     }
 
     agentNodes.forEach((node) => {
       const config = node.data?.config;
       if (!config?.llm_name && !config?.model_id) {
         errors.push(
-          `Agent "${node.data?.title || node.id}" must have a model selected`,
+          t('agents.workflow.validation.agentModel', {
+            ...NO_ESCAPE,
+            name: node.data?.title || node.id,
+          }),
         );
       }
 
@@ -1040,7 +1193,10 @@ function WorkflowBuilderInner() {
         );
         if (selectedModel && !selectedModel.supports_structured_output) {
           errors.push(
-            `Agent "${node.data?.title || node.id}" selected model does not support structured output`,
+            t('agents.workflow.validation.agentStructuredOutput', {
+              ...NO_ESCAPE,
+              name: node.data?.title || node.id,
+            }),
           );
         }
       }
@@ -1055,7 +1211,11 @@ function WorkflowBuilderInner() {
           : schemaValidationError;
       if (effectiveSchemaError) {
         errors.push(
-          `Agent "${node.data?.title || node.id}" JSON schema ${effectiveSchemaError}`,
+          t('agents.workflow.validation.agentSchema', {
+            ...NO_ESCAPE,
+            name: node.data?.title || node.id,
+            error: schemaErrorText(t, effectiveSchemaError),
+          }),
         );
       }
     });
@@ -1064,7 +1224,7 @@ function WorkflowBuilderInner() {
       const startId = startNodes[0].id;
       const hasOutgoing = edges.some((e) => e.source === startId);
       if (!hasOutgoing) {
-        errors.push('Start node must be connected to another node');
+        errors.push(t('agents.workflow.validation.startConnected'));
       }
     }
 
@@ -1072,7 +1232,10 @@ function WorkflowBuilderInner() {
       const hasIncoming = edges.some((e) => e.target === endNode.id);
       if (!hasIncoming) {
         errors.push(
-          `End node "${endNode.id}" must have an incoming connection`,
+          t('agents.workflow.validation.endIncoming', {
+            ...NO_ESCAPE,
+            name: endNode.id,
+          }),
         );
       }
     });
@@ -1080,10 +1243,10 @@ function WorkflowBuilderInner() {
     const nodeIds = new Set(nodes.map((n) => n.id));
     edges.forEach((edge) => {
       if (!nodeIds.has(edge.source)) {
-        errors.push(`Edge references non-existent source node`);
+        errors.push(t('agents.workflow.validation.edgeSource'));
       }
       if (!nodeIds.has(edge.target)) {
-        errors.push(`Edge references non-existent target node`);
+        errors.push(t('agents.workflow.validation.edgeTarget'));
       }
     });
 
@@ -1097,7 +1260,10 @@ function WorkflowBuilderInner() {
         !cases.some((c: ConditionCase) => Boolean((c.expression || '').trim()))
       ) {
         errors.push(
-          `Condition "${conditionTitle}" must have at least one case with an expression`,
+          t('agents.workflow.validation.conditionNeedsCase', {
+            ...NO_ESCAPE,
+            name: conditionTitle,
+          }),
         );
       }
 
@@ -1107,7 +1273,10 @@ function WorkflowBuilderInner() {
         const handle = (conditionCase.sourceHandle || '').trim();
         if (!handle) {
           errors.push(
-            `Condition "${conditionTitle}" has a case without a branch handle`,
+            t('agents.workflow.validation.conditionCaseNoHandle', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+            }),
           );
           return;
         }
@@ -1118,14 +1287,21 @@ function WorkflowBuilderInner() {
       });
       duplicateCaseHandles.forEach((handle) => {
         errors.push(
-          `Condition "${conditionTitle}" has duplicate case handle "${handle}"`,
+          t('agents.workflow.validation.conditionDuplicateHandle', {
+            ...NO_ESCAPE,
+            name: conditionTitle,
+            handle,
+          }),
         );
       });
 
       const outgoing = edges.filter((e) => e.source === node.id);
       if (outgoing.length < 2) {
         errors.push(
-          `Condition "${conditionTitle}" must have at least 2 outgoing connections`,
+          t('agents.workflow.validation.conditionTwoOutgoing', {
+            ...NO_ESCAPE,
+            name: conditionTitle,
+          }),
         );
       }
 
@@ -1143,24 +1319,40 @@ function WorkflowBuilderInner() {
       for (const [handle, handleEdges] of outgoingByHandle.entries()) {
         if (!handle) {
           errors.push(
-            `Condition "${conditionTitle}" has a connection without a branch handle`,
+            t('agents.workflow.validation.conditionEdgeNoHandle', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+            }),
           );
           continue;
         }
         if (handle !== 'else' && !caseHandles.has(handle)) {
           errors.push(
-            `Condition "${conditionTitle}" has a connection from unknown branch "${handle}"`,
+            t('agents.workflow.validation.conditionUnknownBranch', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
         if (handleEdges.length > 1) {
           errors.push(
-            `Condition "${conditionTitle}" has multiple connections from branch "${handle}"`,
+            t('agents.workflow.validation.conditionMultipleEdges', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
       }
 
       if (!outgoingByHandle.has('else')) {
-        errors.push(`Condition "${conditionTitle}" must have an Else branch`);
+        errors.push(
+          t('agents.workflow.validation.conditionNeedsElse', {
+            ...NO_ESCAPE,
+            name: conditionTitle,
+          }),
+        );
       }
 
       cases.forEach((conditionCase: ConditionCase) => {
@@ -1171,12 +1363,20 @@ function WorkflowBuilderInner() {
         const hasOutgoing = Boolean(outgoingByHandle.get(handle)?.length);
         if (hasExpression && !hasOutgoing) {
           errors.push(
-            `Condition "${conditionTitle}" case "${handle}" has an expression but no branch connection`,
+            t('agents.workflow.validation.caseNoConnection', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
         if (!hasExpression && hasOutgoing) {
           errors.push(
-            `Condition "${conditionTitle}" case "${handle}" has a branch connection but no expression`,
+            t('agents.workflow.validation.caseNoExpression', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
         if (conditionMode === 'simple' && hasExpression) {
@@ -1185,7 +1385,11 @@ function WorkflowBuilderInner() {
           );
           if (!parsedCondition.variable.trim()) {
             errors.push(
-              `Condition "${conditionTitle}" case "${handle}" must specify a variable in Simple mode`,
+              t('agents.workflow.validation.caseNoVariable', {
+                ...NO_ESCAPE,
+                name: conditionTitle,
+                handle,
+              }),
             );
           }
         }
@@ -1195,7 +1399,11 @@ function WorkflowBuilderInner() {
         if (!canReachEnd(edge.target, edges, nodeIds, endNodeIds)) {
           const handle = edge.sourceHandle || 'branch';
           errors.push(
-            `Branch "${handle}" of condition "${conditionTitle}" must eventually reach an end node`,
+            t('agents.workflow.validation.branchReachEnd', {
+              ...NO_ESCAPE,
+              name: conditionTitle,
+              handle,
+            }),
           );
         }
       });
@@ -1206,7 +1414,12 @@ function WorkflowBuilderInner() {
       const codeTitle = node.data?.title || node.id;
       const config = node.data?.config;
       if (!(config?.code || '').trim()) {
-        errors.push(`Code node "${codeTitle}" must have code to run`);
+        errors.push(
+          t('agents.workflow.validation.codeRequired', {
+            ...NO_ESCAPE,
+            name: codeTitle,
+          }),
+        );
       }
 
       const schemaValidationError = validateCodeJsonSchema(config?.json_schema);
@@ -1217,13 +1430,17 @@ function WorkflowBuilderInner() {
           : schemaValidationError;
       if (effectiveSchemaError) {
         errors.push(
-          `Code node "${codeTitle}" JSON schema ${effectiveSchemaError}`,
+          t('agents.workflow.validation.codeSchema', {
+            ...NO_ESCAPE,
+            name: codeTitle,
+            error: schemaErrorText(t, effectiveSchemaError),
+          }),
         );
       }
     });
 
     return errors;
-  }, [workflowName, nodes, edges, agentJsonSchemaErrors, availableModels]);
+  }, [workflowName, nodes, edges, agentJsonSchemaErrors, availableModels, t]);
 
   const canManageAgent = Boolean(currentAgentId || currentAgent.id);
   const effectiveAgentId = currentAgentId || currentAgent.id || '';
@@ -1271,7 +1488,10 @@ function WorkflowBuilderInner() {
           );
           if (!updateResponse.ok) {
             const errorData = await updateResponse.json().catch(() => ({}));
-            throw new Error(errorData.message || 'Failed to update workflow');
+            throw new Error(
+              errorData.message ||
+                t('agents.workflow.builder.updateWorkflowFailed'),
+            );
           }
 
           if (effectiveAgentId) {
@@ -1295,7 +1515,7 @@ function WorkflowBuilderInner() {
               token,
             );
             if (!agentUpdateResponse.ok) {
-              throw new Error('Failed to update agent');
+              throw new Error(t('agents.workflow.builder.updateAgentFailed'));
             }
             const updatedAgent = await agentUpdateResponse
               .json()
@@ -1329,7 +1549,10 @@ function WorkflowBuilderInner() {
             setPublishErrors(backendErrors);
             return false;
           }
-          throw new Error(errorData.message || 'Failed to create workflow');
+          throw new Error(
+            errorData.message ||
+              t('agents.workflow.builder.createWorkflowFailed'),
+          );
         }
         const responseData = await createResponse.json();
         savedWorkflowId = responseData?.data?.id ?? responseData?.id;
@@ -1362,7 +1585,9 @@ function WorkflowBuilderInner() {
         );
         if (!agentResponse.ok) {
           const errorData = await agentResponse.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Failed to create agent');
+          throw new Error(
+            errorData.message || t('agents.workflow.builder.createAgentFailed'),
+          );
         }
         const agentData = await agentResponse.json().catch(() => ({}));
         if (agentData?.id) {
@@ -1406,7 +1631,9 @@ function WorkflowBuilderInner() {
         }
         console.error('Failed to save workflow:', error);
         setPublishErrors([
-          error instanceof Error ? error.message : 'Failed to save workflow',
+          error instanceof Error
+            ? error.message
+            : t('agents.workflow.builder.saveFailed'),
         ]);
         return false;
       } finally {
@@ -1424,6 +1651,7 @@ function WorkflowBuilderInner() {
       imageFile,
       folderId,
       navigateBackToAgents,
+      t,
     ],
   );
 
@@ -1435,7 +1663,9 @@ function WorkflowBuilderInner() {
 
   const isPrimaryActionDisabled =
     isPublishing || (canManageAgent && !hasSavableChanges);
-  const primaryActionLabel = canManageAgent ? 'Save' : 'Publish';
+  const primaryActionLabel = canManageAgent
+    ? t('agents.form.buttons.save')
+    : t('agents.form.buttons.publish');
 
   const handlePrimaryAction = useCallback(() => {
     if (isPrimaryActionDisabled) return;
@@ -1448,7 +1678,12 @@ function WorkflowBuilderInner() {
       ...currentAgent,
       id: effectiveAgentId,
       name: workflowName,
-      description: workflowDescription || `Workflow agent: ${workflowName}`,
+      description:
+        workflowDescription ||
+        t('agents.workflow.builder.defaultDescription', {
+          ...NO_ESCAPE,
+          name: workflowName,
+        }),
       image: currentAgentImage,
       agent_type: 'workflow',
       status: currentAgent.status || 'published',
@@ -1461,6 +1696,7 @@ function WorkflowBuilderInner() {
       workflowDescription,
       currentAgentImage,
       workflowId,
+      t,
     ],
   );
 
@@ -1542,8 +1778,8 @@ function WorkflowBuilderInner() {
   return (
     <>
       <MobileBlocker />
-      <div className="bg-background fixed inset-0 z-50 hidden h-screen w-full flex-col md:flex">
-        <div className="border-border bg-card dark:bg-background flex items-center justify-between border-b px-6 py-4">
+      <div className="bg-background fixed inset-0 z-50 hidden h-screen w-full flex-col lg:flex">
+        <div className="border-border bg-card flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-4">
             {canManageAgent ? (
               <AgentPageHeader
@@ -1557,8 +1793,8 @@ function WorkflowBuilderInner() {
               <Button
                 type="button"
                 variant="outline"
+                shape="pill"
                 onClick={navigateBackToAgents}
-                className="text-muted-foreground rounded-full px-4 py-2 text-sm font-normal shadow-none"
               >
                 {t('agents.backToAll')}
               </Button>
@@ -1566,10 +1802,12 @@ function WorkflowBuilderInner() {
             {!canManageAgent && (
               <div className="min-w-0">
                 <div
-                  className="max-w-xs truncate text-xl font-bold text-gray-900 dark:text-white"
-                  title={workflowName || 'New Workflow'}
+                  className="text-foreground max-w-xs truncate text-xl leading-tight font-semibold"
+                  title={
+                    workflowName || t('agents.workflow.builder.newWorkflow')
+                  }
                 >
-                  {workflowName || 'New Workflow'}
+                  {workflowName || t('agents.workflow.builder.newWorkflow')}
                 </div>
                 {workflowDescription && (
                   <div
@@ -1581,164 +1819,143 @@ function WorkflowBuilderInner() {
                 )}
               </div>
             )}
-            <div className="relative flex items-center">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setShowWorkflowSettings(!showWorkflowSettings)}
-                className="text-muted-foreground hover:bg-accent hover:text-foreground size-auto p-1"
-                aria-label="Edit workflow details"
-                title={
-                  workflowDescription
-                    ? `${workflowName || 'New Workflow'} — ${workflowDescription}`
-                    : 'Edit workflow details'
-                }
-              >
-                <Pencil size={14} />
-              </Button>
-              {showWorkflowSettings && (
-                <div
-                  ref={workflowSettingsRef}
-                  className="border-border bg-card absolute top-full left-0 z-50 mt-2 w-80 rounded-xl border p-4 shadow-lg"
-                >
-                  <div className="mb-3">
-                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Workflow Name
-                    </label>
+            <Popover
+              open={showWorkflowSettings}
+              onOpenChange={setShowWorkflowSettings}
+            >
+              <PopoverTrigger asChild>
+                <IconButton
+                  variant="ghost-muted"
+                  size="icon-xs"
+                  side="bottom"
+                  label={t('agents.workflow.builder.editDetails')}
+                  hint={
+                    workflowDescription
+                      ? `${workflowName || t('agents.workflow.builder.newWorkflow')} — ${workflowDescription}`
+                      : undefined
+                  }
+                  icon={Pencil}
+                />
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-80">
+                <div className="flex flex-col gap-5">
+                  <FormField label={t('agents.workflow.builder.workflowName')}>
                     <Input
                       type="text"
                       value={workflowName}
                       onChange={(e) => setWorkflowName(e.target.value)}
-                      className="bg-card h-auto rounded-lg px-3 py-2 text-sm shadow-none"
-                      placeholder="Enter workflow name"
+                      placeholder={t(
+                        'agents.workflow.builder.workflowNamePlaceholder',
+                      )}
                     />
-                  </div>
-                  <div className="mb-3">
-                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Description
-                    </label>
-                    <textarea
+                  </FormField>
+                  <FormField label={t('agents.form.labels.description')}>
+                    <Textarea
                       value={workflowDescription}
                       onChange={(e) => setWorkflowDescription(e.target.value)}
-                      className="focus-visible:ring-ring/50 focus-visible:border-ring border-border bg-card w-full rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2 dark:text-white"
                       rows={3}
-                      placeholder="Describe what this workflow does"
+                      placeholder={t(
+                        'agents.workflow.builder.workflowDescriptionPlaceholder',
+                      )}
                     />
-                  </div>
-                  <div className="mb-3">
-                    <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Agent Image
-                    </label>
-                    {currentAgentImage && !imageFile && (
-                      <div className="mb-2 flex items-center gap-2">
-                        <img
-                          src={currentAgentImage}
-                          alt="Agent image"
-                          className="h-10 w-10 rounded-full object-cover"
-                        />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Current image
-                        </span>
-                      </div>
-                    )}
+                  </FormField>
+                  {currentAgentImage && !imageFile && (
+                    <div className="flex items-center gap-2">
+                      <Avatar
+                        src={currentAgentImage}
+                        alt={t('agents.workflow.builder.agentImageAlt')}
+                        size="lg"
+                        shape="circle"
+                        imgClassName="size-full object-cover"
+                      />
+                      <span className="text-muted-foreground text-xs">
+                        {t('agents.workflow.builder.currentImage')}
+                      </span>
+                    </div>
+                  )}
+                  <FormField
+                    label={t('agents.workflow.builder.agentImage')}
+                    hint={t('agents.workflow.builder.agentImageHint')}
+                  >
                     <FileUpload
                       showPreview
                       maxFiles={1}
                       previewSize={56}
+                      size="compact"
                       onUpload={handleUpload}
                       onRemove={() => setImageFile(null)}
                       uploadText={[
                         {
-                          text: 'Click to upload',
-                          colorClass: 'text-primary',
+                          text: t('agents.form.upload.clickToUpload'),
+                          highlight: true,
                         },
                         {
-                          text: ' or drag and drop',
-                          colorClass: 'text-muted-foreground',
+                          text: t('agents.form.upload.dragAndDrop'),
                         },
                       ]}
-                      className="border-border rounded-lg border-2 border-dashed p-3 text-center transition-colors"
                     />
-                    <p className="text-muted-foreground mt-1 text-xs">
-                      Image updates are included the next time you save.
-                    </p>
-                  </div>
-                  <div className="mb-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                          {t('agents.form.advanced.systemPromptOverride')}
-                        </label>
-                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          {t(
-                            'agents.form.advanced.systemPromptOverrideDescription',
-                          )}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() =>
-                          setCurrentAgent((prev) => ({
-                            ...prev,
-                            allow_system_prompt_override:
-                              !prev.allow_system_prompt_override,
-                          }))
-                        }
-                        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-                          currentAgent.allow_system_prompt_override
-                            ? 'bg-primary'
-                            : 'bg-gray-300 dark:bg-gray-600'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 h-5 w-5 transform rounded-full bg-white transition-transform ${
-                            currentAgent.allow_system_prompt_override
-                              ? ''
-                              : '-translate-x-5'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
+                  </FormField>
+                  <SettingRow
+                    label={t('agents.form.advanced.systemPromptOverride')}
+                    description={t(
+                      'agents.form.advanced.systemPromptOverrideDescription',
+                    )}
+                    htmlFor="workflow-system-prompt-override"
+                  >
+                    <Switch
+                      id="workflow-system-prompt-override"
+                      checked={Boolean(
+                        currentAgent.allow_system_prompt_override,
+                      )}
+                      onCheckedChange={() =>
+                        setCurrentAgent((prev) => ({
+                          ...prev,
+                          allow_system_prompt_override:
+                            !prev.allow_system_prompt_override,
+                        }))
+                      }
+                    />
+                  </SettingRow>
                   <Button
                     type="button"
                     onClick={handleWorkflowSettingsDone}
                     disabled={isPublishing}
-                    className="w-full rounded-lg text-white"
+                    className="w-full"
                   >
-                    Done
+                    {t('agents.workflow.builder.done')}
                   </Button>
                 </div>
-              )}
-            </div>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="flex items-center gap-2">
             {canManageAgent && (
               <Button
                 type="button"
                 variant="outline"
+                shape="pill"
                 onClick={() => setAgentDetails('ACTIVE')}
-                className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
               >
-                <Link size={16} />
-                Access Details
+                <Link />
+                {t('agents.form.buttons.accessDetails')}
               </Button>
             )}
             {canManageAgent && (
               <Button
                 type="button"
                 variant="destructive-outline"
+                shape="pill"
                 onClick={() => setDeleteConfirmation('ACTIVE')}
-                disabled={isDeletingAgent}
-                className="bg-card rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
+                loading={isDeletingAgent}
               >
-                <Trash2 size={16} />
-                {isDeletingAgent ? 'Deleting...' : 'Delete'}
+                <Trash2 />
+                {t('agents.form.buttons.delete')}
               </Button>
             )}
             <Button
               type="button"
               variant="outline"
+              shape="pill"
               onClick={() => {
                 const validationErrors = validateWorkflow();
                 if (validationErrors.length > 0) {
@@ -1748,179 +1965,102 @@ function WorkflowBuilderInner() {
                 }
                 setShowPreview(true);
               }}
-              className="rounded-full px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200"
             >
-              <Play size={16} />
-              Preview
+              <Play />
+              {t('agents.form.sections.preview')}
             </Button>
             <Button
               type="button"
               onClick={handlePrimaryAction}
               disabled={isPrimaryActionDisabled}
-              className={`relative rounded-full px-6 py-2 text-sm font-medium shadow-sm ${
-                canManageAgent && !hasSavableChanges
-                  ? 'dark:bg-accent bg-gray-200 text-gray-500 hover:bg-gray-200 dark:text-gray-400'
-                  : 'text-white'
-              }`}
+              loading={showPrimaryActionSpinner}
+              size="lg"
+              shape="pill"
             >
-              <span
-                className={
-                  showPrimaryActionSpinner ? 'opacity-0' : 'opacity-100'
-                }
-              >
-                {primaryActionLabel}
-              </span>
-              {showPrimaryActionSpinner ? (
-                <Loader2 size={16} className="absolute animate-spin" />
-              ) : null}
+              {primaryActionLabel}
             </Button>
           </div>
         </div>
 
         {publishErrors.length > 0 && (
-          <div className="pointer-events-none absolute top-20 right-0 left-0 z-50 flex justify-center px-4">
-            <Alert
-              variant="destructive"
-              className="pointer-events-auto w-full max-w-md bg-red-50 shadow-lg dark:bg-red-950/20"
-            >
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>
-                {errorContext === 'preview'
-                  ? 'Unable to preview workflow'
-                  : canManageAgent
-                    ? 'Unable to save workflow'
-                    : 'Unable to publish workflow'}
-              </AlertTitle>
-              <AlertDescription>
-                <ul className="mt-2 list-inside list-disc space-y-1 wrap-break-word">
-                  {publishErrors.map((error, index) => (
-                    <li key={index}>{error}</li>
-                  ))}
-                </ul>
-              </AlertDescription>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setPublishErrors([])}
-                className="absolute top-4 right-4 size-auto p-0 text-red-700 hover:bg-transparent hover:text-red-900 dark:text-red-300 dark:hover:bg-transparent dark:hover:text-red-100"
+          <div className="pointer-events-none absolute top-20 right-0 left-0 z-20 flex justify-center px-4">
+            <div className="bg-card pointer-events-auto w-full max-w-md rounded-xl shadow-md">
+              <Alert
+                variant="destructive"
+                // eslint-disable-next-line shadcn/no-restyle -- the close button sits in the top-right corner, so a long title wraps clear of it
+                className="pr-10"
               >
-                <X size={16} />
-              </Button>
-            </Alert>
+                <CircleAlert className="size-4" />
+                <AlertTitle>
+                  {errorContext === 'preview'
+                    ? t('agents.workflow.builder.unablePreview')
+                    : canManageAgent
+                      ? t('agents.workflow.builder.unableSave')
+                      : t('agents.workflow.builder.unablePublish')}
+                </AlertTitle>
+                <AlertDescription>
+                  <ul className="mt-2 list-inside list-disc space-y-1 wrap-break-word">
+                    {publishErrors.map((error, index) => (
+                      <li key={index}>{error}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+                <div className="absolute top-2.5 right-2.5">
+                  <IconButton
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => setPublishErrors([])}
+                    label={t('agents.close')}
+                    icon={X}
+                  />
+                </div>
+              </Alert>
+            </div>
           </div>
         )}
 
         <div className="flex flex-1 overflow-hidden">
-          <div className="border-border bg-muted dark:bg-background flex w-64 flex-col gap-6 border-r p-4">
-            <div>
-              <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-                Core Nodes
-              </h3>
+          <div className="border-border bg-muted flex w-64 flex-col gap-6 border-r p-4">
+            <div className="flex flex-col gap-3">
+              <SectionHeader
+                as="h3"
+                size="sm"
+                title={t('agents.workflow.builder.coreNodes')}
+              />
               <div className="flex flex-col gap-2">
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'agent')}
-                >
-                  <div className="text-primary group-hover:bg-primary flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 transition-colors group-hover:text-white dark:bg-purple-900/40">
-                    <Bot size={18} />
-                  </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                    AI Agent
-                  </span>
-                </div>
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'end')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 transition-colors group-hover:bg-green-600 group-hover:text-white dark:bg-green-900/40 dark:text-green-300">
-                    <Flag size={18} />
-                  </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                    End
-                  </span>
-                </div>
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'note')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 transition-colors group-hover:bg-yellow-500 group-hover:text-white dark:bg-yellow-900/40 dark:text-yellow-300">
-                    <StickyNote size={18} />
-                  </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                    Note
-                  </span>
-                </div>
+                {PALETTE.filter((entry) => entry.group === 'core').map(
+                  (entry) => (
+                    <NodePaletteItem
+                      key={entry.type}
+                      entry={entry}
+                      onDragStart={handleNodeDragStart}
+                    />
+                  ),
+                )}
               </div>
             </div>
 
-            <div>
-              <h3 className="mb-3 text-xs font-semibold tracking-wider text-gray-500 uppercase dark:text-gray-400">
-                Logic & Data
-              </h3>
+            <div className="flex flex-col gap-3">
+              <SectionHeader
+                as="h3"
+                size="sm"
+                title={t('agents.workflow.builder.logicNodes')}
+              />
               <div className="flex flex-col gap-2">
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'state')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 transition-colors group-hover:bg-blue-600 group-hover:text-white dark:bg-blue-900/40 dark:text-blue-300">
-                    <Database size={18} />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-foreground text-sm font-medium">
-                      Set State
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      Modify workflow variables
-                    </span>
-                  </div>
-                </div>
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'condition')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 transition-colors group-hover:bg-orange-600 group-hover:text-white dark:bg-orange-900/40 dark:text-orange-300">
-                    <GitBranch size={18} />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-foreground text-sm font-medium">
-                      If / Else
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      Conditional branching
-                    </span>
-                  </div>
-                </div>
-                <div
-                  className="group border-border bg-card flex cursor-move items-center gap-3 rounded-full border px-4 py-3 shadow-sm transition-all hover:shadow-md"
-                  draggable
-                  onDragStart={(e) => handleNodeDragStart(e, 'code')}
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 transition-colors group-hover:bg-indigo-600 group-hover:text-white dark:bg-indigo-900/40 dark:text-indigo-300">
-                    <Code2 size={18} />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-foreground text-sm font-medium">
-                      Code
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      Run code in a sandbox
-                    </span>
-                  </div>
-                </div>
+                {PALETTE.filter((entry) => entry.group === 'logic').map(
+                  (entry) => (
+                    <NodePaletteItem
+                      key={entry.type}
+                      entry={entry}
+                      onDragStart={handleNodeDragStart}
+                    />
+                  ),
+                )}
               </div>
             </div>
           </div>
 
-          <div
-            ref={reactFlowWrapper}
-            className="bg-muted dark:bg-background/10 relative flex-1"
-          >
+          <div ref={reactFlowWrapper} className="bg-muted relative flex-1">
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -1942,64 +2082,67 @@ function WorkflowBuilderInner() {
               <Background />
               <Controls />
               <Panel position="top-left" className="flex gap-1.5">
-                <Button
-                  type="button"
+                <IconButton
                   variant="outline"
                   size="icon-sm"
+                  side="bottom"
                   onClick={undo}
                   disabled={!canUndo}
-                  title="Undo (Ctrl+Z)"
-                  aria-label="Undo"
-                  className="bg-card"
-                >
-                  <Undo2 size={16} />
-                </Button>
-                <Button
-                  type="button"
+                  label={t('agents.workflow.undo')}
+                  hint={t('agents.workflow.undoHint')}
+                  icon={Undo2}
+                />
+                <IconButton
                   variant="outline"
                   size="icon-sm"
+                  side="bottom"
                   onClick={redo}
                   disabled={!canRedo}
-                  title="Redo (Ctrl+Shift+Z)"
-                  aria-label="Redo"
-                  className="bg-card"
-                >
-                  <Redo2 size={16} />
-                </Button>
+                  label={t('agents.workflow.redo')}
+                  hint={t('agents.workflow.redoHint')}
+                  icon={Redo2}
+                />
               </Panel>
             </ReactFlow>
 
             {showNodeConfig && selectedNode && (
               <>
-                <div className="border-border bg-card shadow-modal absolute top-4 right-4 z-20 w-96 rounded-2xl border">
+                <div className="border-border bg-card absolute top-4 right-4 z-20 w-96 rounded-2xl border shadow-md">
                   <div className="border-border flex items-center justify-between border-b p-4">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">
-                      {selectedNode.type === 'start' && 'Start Node'}
-                      {selectedNode.type === 'end' && 'End Node'}
-                      {selectedNode.type === 'agent' && 'AI Agent'}
-                      {selectedNode.type === 'note' && 'Note'}
-                      {selectedNode.type === 'state' && 'Set global variables'}
-                      {selectedNode.type === 'condition' && 'If / Else'}
-                      {selectedNode.type === 'code' && 'Code'}
+                    <h3 className="text-foreground text-sm font-semibold">
+                      {selectedNode.type === 'start' &&
+                        t('agents.workflow.builder.startNode')}
+                      {selectedNode.type === 'end' &&
+                        t('agents.workflow.builder.endNode')}
+                      {selectedNode.type === 'agent' &&
+                        t('agents.workflow.builder.aiAgent')}
+                      {selectedNode.type === 'note' &&
+                        t('agents.workflow.nodes.note')}
+                      {selectedNode.type === 'state' &&
+                        t('agents.workflow.builder.stateTitle')}
+                      {selectedNode.type === 'condition' &&
+                        t('agents.workflow.nodes.condition')}
+                      {selectedNode.type === 'code' &&
+                        t('agents.workflow.nodes.code')}
                     </h3>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
+                    <IconButton
+                      variant="ghost-muted"
+                      size="icon-xs"
+                      side="bottom"
                       onClick={() => setShowNodeConfig(false)}
-                      className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-gray-600 dark:hover:bg-transparent dark:hover:text-gray-200 [&_svg:not([class*='size-'])]:size-5"
+                      label={t('agents.close')}
                     >
-                      <X size={20} />
-                    </Button>
+                      <X className="size-5" aria-hidden />
+                    </IconButton>
                   </div>
 
                   <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4">
-                    <div className="mb-4 flex flex-col gap-2">
+                    <div className="mb-4 flex flex-col gap-5">
                       <div className="bg-muted rounded-lg p-3">
-                        <div className="mb-1 text-xs text-gray-500 dark:text-gray-400">
-                          Node ID
+                        <div className="text-muted-foreground mb-1 text-xs">
+                          {t('agents.workflow.builder.nodeId')}
                         </div>
-                        <div className="truncate font-mono text-xs text-gray-700 dark:text-gray-300">
+                        <div className="text-foreground truncate font-mono text-xs">
                           {selectedNode.id}
                         </div>
                       </div>
@@ -2007,10 +2150,9 @@ function WorkflowBuilderInner() {
                       {selectedNode.type !== 'start' &&
                         selectedNode.type !== 'end' && (
                           <>
-                            <div>
-                              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                Title
-                              </label>
+                            <FormField
+                              label={t('agents.workflow.builder.title')}
+                            >
                               <Input
                                 type="text"
                                 value={
@@ -2024,17 +2166,17 @@ function WorkflowBuilderInner() {
                                     label: e.target.value,
                                   })
                                 }
-                                className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                placeholder="Enter node title"
+                                placeholder={t(
+                                  'agents.workflow.builder.titlePlaceholder',
+                                )}
                               />
-                            </div>
+                            </FormField>
 
                             {selectedNode.type === 'agent' && (
                               <>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Agent Type
-                                  </label>
+                                <FormField
+                                  label={t('agents.workflow.builder.agentType')}
+                                >
                                   <Select
                                     value={
                                       selectedNode.data.config?.agent_type ||
@@ -2049,23 +2191,29 @@ function WorkflowBuilderInner() {
                                       })
                                     }
                                   >
-                                    <SelectTrigger className="w-full">
-                                      <SelectValue placeholder="Select agent type" />
+                                    <SelectTrigger
+                                      size="field"
+                                      className="w-full"
+                                    >
+                                      <SelectValue
+                                        placeholder={t(
+                                          'agents.workflow.builder.agentTypePlaceholder',
+                                        )}
+                                      />
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="classic">
-                                        Classic
+                                        {t('agents.form.agentTypes.classic')}
                                       </SelectItem>
                                       <SelectItem value="research">
-                                        Research
+                                        {t('agents.form.agentTypes.research')}
                                       </SelectItem>
                                     </SelectContent>
                                   </Select>
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Model
-                                  </label>
+                                </FormField>
+                                <FormField
+                                  label={t('agents.workflow.builder.model')}
+                                >
                                   <Select
                                     value={
                                       selectedNode.data.config?.model_id || ''
@@ -2085,8 +2233,15 @@ function WorkflowBuilderInner() {
                                       });
                                     }}
                                   >
-                                    <SelectTrigger className="w-full">
-                                      <SelectValue placeholder="Select a model" />
+                                    <SelectTrigger
+                                      size="field"
+                                      className="w-full"
+                                    >
+                                      <SelectValue
+                                        placeholder={t(
+                                          'agents.workflow.builder.modelPlaceholder',
+                                        )}
+                                      />
                                     </SelectTrigger>
                                     <SelectContent>
                                       {(() => {
@@ -2139,12 +2294,13 @@ function WorkflowBuilderInner() {
                                       })()}
                                     </SelectContent>
                                   </Select>
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    System Prompt
-                                  </label>
-                                  <textarea
+                                </FormField>
+                                <FormField
+                                  label={t(
+                                    'agents.workflow.builder.systemPrompt',
+                                  )}
+                                >
+                                  <Textarea
                                     value={
                                       selectedNode.data.config?.system_prompt ??
                                       ''
@@ -2157,13 +2313,16 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                     rows={3}
-                                    placeholder="System prompt for the agent"
+                                    placeholder={t(
+                                      'agents.workflow.builder.systemPromptPlaceholder',
+                                    )}
                                   />
-                                </div>
+                                </FormField>
                                 <PromptTextArea
-                                  label="Prompt Template"
+                                  label={t(
+                                    'agents.workflow.builder.promptTemplate',
+                                  )}
                                   value={
                                     selectedNode.data.config?.prompt_template ||
                                     ''
@@ -2179,12 +2338,19 @@ function WorkflowBuilderInner() {
                                   nodes={nodes}
                                   edges={edges}
                                   selectedNodeId={selectedNode.id}
-                                  placeholder="Use {{ agent.variable }} for dynamic content"
+                                  placeholder={t(
+                                    'agents.workflow.builder.promptTemplatePlaceholder',
+                                    {
+                                      ...NO_ESCAPE,
+                                      example: '{{ agent.variable }}',
+                                    },
+                                  )}
                                 />
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Output Variable
-                                  </label>
+                                <FormField
+                                  label={t(
+                                    'agents.workflow.builder.outputVariable',
+                                  )}
+                                >
                                   <Input
                                     type="text"
                                     value={
@@ -2200,39 +2366,37 @@ function WorkflowBuilderInner() {
                                         },
                                       });
                                     }}
-                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                    placeholder="Variable name for output"
+                                    placeholder={t(
+                                      'agents.workflow.builder.outputVariablePlaceholder',
+                                    )}
                                   />
-                                </div>
+                                </FormField>
                                 <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
+                                  <Checkbox
                                     id="stream_to_user"
                                     checked={
                                       selectedNode.data.config
                                         ?.stream_to_user ?? true
                                     }
-                                    onChange={(e) =>
+                                    onCheckedChange={(checked) =>
                                       handleUpdateNodeData({
                                         config: {
                                           ...(selectedNode.data.config || {}),
-                                          stream_to_user: e.target.checked,
+                                          stream_to_user: checked === true,
                                         },
                                       })
                                     }
-                                    className="h-4 w-4"
                                   />
                                   <label
                                     htmlFor="stream_to_user"
-                                    className="text-sm text-gray-700 dark:text-gray-300"
+                                    className="text-foreground text-sm"
                                   >
-                                    Stream output to user
+                                    {t('agents.workflow.builder.streamToUser')}
                                   </label>
                                 </div>{' '}
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Tools
-                                  </label>
+                                <FormField
+                                  label={t('agents.form.sections.tools')}
+                                >
                                   <MultiSelect
                                     options={availableTools.map((tool) => ({
                                       value: tool.id,
@@ -2249,15 +2413,20 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    placeholder="Select tools..."
-                                    searchPlaceholder="Search tools..."
-                                    emptyText="No tools available"
+                                    placeholder={t(
+                                      'agents.form.placeholders.selectTools',
+                                    )}
+                                    searchPlaceholder={t(
+                                      'agents.form.toolsPopup.searchPlaceholder',
+                                    )}
+                                    emptyText={t(
+                                      'agents.form.toolsPopup.noOptionsMessage',
+                                    )}
                                   />
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Sources
-                                  </label>
+                                </FormField>
+                                <FormField
+                                  label={t('agents.workflow.builder.sources')}
+                                >
                                   <MultiSelect
                                     options={sourceOptions}
                                     selected={
@@ -2271,11 +2440,17 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    placeholder="Select sources..."
-                                    searchPlaceholder="Search sources..."
-                                    emptyText="No sources available"
+                                    placeholder={t(
+                                      'agents.form.placeholders.selectSources',
+                                    )}
+                                    searchPlaceholder={t(
+                                      'agents.form.sourcePopup.searchPlaceholder',
+                                    )}
+                                    emptyText={t(
+                                      'agents.form.sourcePopup.noOptionsMessage',
+                                    )}
                                   />
-                                </div>
+                                </FormField>
                                 <NodeDocumentsControl
                                   key={selectedNode.id}
                                   value={
@@ -2291,13 +2466,19 @@ function WorkflowBuilderInner() {
                                     })
                                   }
                                   options={selectedAgentDocumentOptions}
-                                  label="Documents"
-                                  helpText="Documents passed to this agent from uploads or upstream nodes."
+                                  label={t('agents.workflow.builder.documents')}
+                                  helpText={t(
+                                    'agents.workflow.builder.documentsHint',
+                                  )}
                                 />
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    File passing
-                                  </label>
+                                <FormField
+                                  label={t(
+                                    'agents.workflow.builder.filePassing',
+                                  )}
+                                  hint={t(
+                                    'agents.workflow.builder.filePassingHint',
+                                  )}
+                                >
                                   <Select
                                     value={normalizeFilePassing(
                                       selectedNode.data.config?.file_passing,
@@ -2311,7 +2492,10 @@ function WorkflowBuilderInner() {
                                       })
                                     }
                                   >
-                                    <SelectTrigger className="w-full">
+                                    <SelectTrigger
+                                      size="field"
+                                      className="w-full"
+                                    >
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -2320,34 +2504,60 @@ function WorkflowBuilderInner() {
                                           key={option.value}
                                           value={option.value}
                                         >
-                                          {option.label}
+                                          {t(
+                                            `agents.workflow.filePassing.${option.value}`,
+                                            { defaultValue: option.label },
+                                          )}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  <p className="text-muted-foreground mt-1 text-xs">
-                                    Auto: send native when the model supports
-                                    it, otherwise extract text.
-                                  </p>
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Structured Output (JSON Schema)
-                                  </label>
-                                  {!selectedAgentModelSupportsStructuredOutput && (
-                                    <p className="mb-2 text-xs text-red-600 dark:text-red-400">
-                                      Selected model does not support structured
-                                      output.
-                                    </p>
+                                </FormField>
+                                <FormField
+                                  label={t(
+                                    'agents.workflow.builder.structuredOutput',
                                   )}
-                                  <textarea
+                                  hint={
+                                    [
+                                      !selectedAgentModelSupportsStructuredOutput
+                                        ? t(
+                                            'agents.workflow.builder.modelNoStructuredOutput',
+                                          )
+                                        : null,
+                                      selectedAgentJsonSchemaText.trim() !==
+                                        '' && !selectedAgentJsonSchemaError
+                                        ? t(
+                                            'agents.workflow.builder.validSchema',
+                                          )
+                                        : null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(' ') || undefined
+                                  }
+                                  error={
+                                    selectedAgentJsonSchemaText.trim() !== '' &&
+                                    selectedAgentJsonSchemaError
+                                      ? t(
+                                          'agents.workflow.builder.invalidSchema',
+                                          {
+                                            ...NO_ESCAPE,
+                                            error: schemaErrorText(
+                                              t,
+                                              selectedAgentJsonSchemaError,
+                                            ),
+                                          },
+                                        )
+                                      : undefined
+                                  }
+                                >
+                                  <Textarea
                                     value={selectedAgentJsonSchemaText}
                                     onChange={(e) =>
                                       handleAgentJsonSchemaChange(
                                         e.target.value,
                                       )
                                     }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    className="font-mono"
                                     rows={8}
                                     placeholder={`{
   "type": "object",
@@ -2357,48 +2567,33 @@ function WorkflowBuilderInner() {
   "required": ["summary"]
 }`}
                                   />
-                                  {selectedAgentJsonSchemaText.trim() !==
-                                    '' && (
-                                    <p
-                                      className={`mt-2 text-xs ${
-                                        selectedAgentJsonSchemaError
-                                          ? 'text-red-600 dark:text-red-400'
-                                          : 'text-green-600 dark:text-green-400'
-                                      }`}
-                                    >
-                                      {selectedAgentJsonSchemaError
-                                        ? `Invalid JSON schema: ${selectedAgentJsonSchemaError}`
-                                        : 'Valid JSON schema'}
-                                    </p>
-                                  )}
-                                </div>
+                                </FormField>
                               </>
                             )}
 
                             {selectedNode.type === 'note' && (
-                              <div>
-                                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                  Note Content
-                                </label>
-                                <textarea
+                              <FormField
+                                label={t('agents.workflow.builder.noteContent')}
+                              >
+                                <Textarea
                                   value={selectedNode.data.content || ''}
                                   onChange={(e) =>
                                     handleUpdateNodeData({
                                       content: e.target.value,
                                     })
                                   }
-                                  className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                   rows={4}
-                                  placeholder="Enter note content"
+                                  placeholder={t(
+                                    'agents.workflow.builder.noteContentPlaceholder',
+                                  )}
                                 />
-                              </div>
+                              </FormField>
                             )}
 
                             {selectedNode.type === 'state' && (
                               <>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                  Assign values to workflow&apos;s state
-                                  variables
+                                <p className="text-muted-foreground text-xs">
+                                  {t('agents.workflow.builder.stateIntro')}
                                 </p>
                                 {(
                                   selectedNode.data.config?.operations || []
@@ -2410,22 +2605,29 @@ function WorkflowBuilderInner() {
                                     },
                                     idx: number,
                                   ) => (
-                                    <div
+                                    <Card
                                       key={idx}
-                                      className="border-border rounded-xl border p-3"
+                                      padding="sm"
+                                      className="gap-2"
                                     >
-                                      <div className="mb-2 flex items-center justify-between">
-                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                          Assign value
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-foreground text-sm font-medium">
+                                          {t(
+                                            'agents.workflow.builder.assignValue',
+                                          )}
                                         </span>
                                         {(
                                           selectedNode.data.config
                                             ?.operations || []
                                         ).length > 1 && (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
+                                          <IconButton
+                                            variant="ghost-destructive"
+                                            size="icon-xs"
+                                            label={t(
+                                              'agents.workflow.removeAssignment',
+                                              { index: idx + 1 },
+                                            )}
+                                            icon={Trash2}
                                             onClick={() => {
                                               const ops = [
                                                 ...(selectedNode.data.config
@@ -2440,83 +2642,97 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
-                                          >
-                                            <Trash2 size={14} />
-                                          </Button>
+                                          />
                                         )}
                                       </div>
-                                      <textarea
-                                        value={op.expression}
-                                        onChange={(e) => {
-                                          const ops = [
-                                            ...(selectedNode.data.config
-                                              ?.operations || []),
-                                          ];
-                                          ops[idx] = {
-                                            ...ops[idx],
-                                            expression: e.target.value,
-                                          };
-                                          handleUpdateNodeData({
-                                            config: {
-                                              ...(selectedNode.data.config ||
-                                                {}),
-                                              operations: ops,
-                                            },
-                                          });
-                                        }}
-                                        className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent mb-1 w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
-                                        rows={2}
-                                        placeholder="query"
-                                      />
-                                      <p className="text-muted-foreground mb-3 text-xs">
-                                        Use Common Expression Language to create
-                                        a custom expression. Reference state by
-                                        bare name (<code>query</code>), not{' '}
-                                        <code>{'{{query}}'}</code>.{' '}
-                                        <a
-                                          href="https://cel.dev/"
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-primary underline"
+                                      <div className="flex flex-col gap-5">
+                                        <div className="flex flex-col gap-1">
+                                          <Textarea
+                                            value={op.expression}
+                                            onChange={(e) => {
+                                              const ops = [
+                                                ...(selectedNode.data.config
+                                                  ?.operations || []),
+                                              ];
+                                              ops[idx] = {
+                                                ...ops[idx],
+                                                expression: e.target.value,
+                                              };
+                                              handleUpdateNodeData({
+                                                config: {
+                                                  ...(selectedNode.data
+                                                    .config || {}),
+                                                  operations: ops,
+                                                },
+                                              });
+                                            }}
+                                            rows={2}
+                                            placeholder="query"
+                                            aria-label={t(
+                                              'agents.workflow.expressionRow',
+                                              { index: idx + 1 },
+                                            )}
+                                          />
+                                          <p className="text-muted-foreground text-xs">
+                                            <Trans
+                                              i18nKey="agents.workflow.builder.celHint"
+                                              components={{ code: <code /> }}
+                                              values={{ braced: '{{query}}' }}
+                                            />{' '}
+                                            <Button
+                                              variant="link"
+                                              size="inline"
+                                              asChild
+                                              // eslint-disable-next-line shadcn/no-restyle -- a link in a 12px hint keeps the sentence's size and weight
+                                              className="text-xs font-normal"
+                                            >
+                                              <a
+                                                href="https://cel.dev/"
+                                                target="_blank"
+                                                rel="noreferrer"
+                                              >
+                                                {t(
+                                                  'agents.workflow.builder.learnMore',
+                                                )}
+                                              </a>
+                                            </Button>
+                                          </p>
+                                        </div>
+                                        <FormField
+                                          label={t(
+                                            'agents.workflow.builder.toVariable',
+                                          )}
                                         >
-                                          Learn more
-                                        </a>
-                                      </p>
-                                      <div>
-                                        <span className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                          To variable
-                                        </span>
-                                        <Input
-                                          type="text"
-                                          value={op.target_variable}
-                                          onChange={(e) => {
-                                            const ops = [
-                                              ...(selectedNode.data.config
-                                                ?.operations || []),
-                                            ];
-                                            ops[idx] = {
-                                              ...ops[idx],
-                                              target_variable: e.target.value,
-                                            };
-                                            handleUpdateNodeData({
-                                              config: {
-                                                ...(selectedNode.data.config ||
-                                                  {}),
-                                                operations: ops,
-                                              },
-                                            });
-                                          }}
-                                          className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                          placeholder="variable_name"
-                                        />
+                                          <Input
+                                            type="text"
+                                            value={op.target_variable}
+                                            onChange={(e) => {
+                                              const ops = [
+                                                ...(selectedNode.data.config
+                                                  ?.operations || []),
+                                              ];
+                                              ops[idx] = {
+                                                ...ops[idx],
+                                                target_variable: e.target.value,
+                                              };
+                                              handleUpdateNodeData({
+                                                config: {
+                                                  ...(selectedNode.data
+                                                    .config || {}),
+                                                  operations: ops,
+                                                },
+                                              });
+                                            }}
+                                            placeholder="variable_name"
+                                          />
+                                        </FormField>
                                       </div>
-                                    </div>
+                                    </Card>
                                   ),
                                 )}
                                 <Button
                                   type="button"
-                                  variant="ghost"
+                                  variant="ghost-muted"
                                   size="sm"
                                   onClick={() => {
                                     const ops = [
@@ -2531,23 +2747,29 @@ function WorkflowBuilderInner() {
                                       },
                                     });
                                   }}
-                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
+                                  className="self-start"
                                 >
-                                  <Plus size={14} />
-                                  Add
+                                  <Plus className="size-3.5" />
+                                  {t('agents.form.buttons.add')}
                                 </Button>
                               </>
                             )}
 
                             {selectedNode.type === 'condition' && (
                               <>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                  Create conditions to branch your workflow
+                                <p className="text-muted-foreground text-xs">
+                                  {t('agents.workflow.builder.conditionIntro')}
                                 </p>
-                                <div className="border-border flex overflow-hidden rounded-lg border">
+                                <div className="border-border bg-card flex gap-1 rounded-xl border p-1">
                                   <Button
                                     type="button"
-                                    variant="ghost"
+                                    variant={
+                                      (selectedNode.data.config?.mode ||
+                                        'simple') === 'simple'
+                                        ? 'outline'
+                                        : 'ghost-muted'
+                                    }
+                                    size="xs"
                                     onClick={() =>
                                       handleUpdateNodeData({
                                         config: {
@@ -2556,18 +2778,19 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
-                                      (selectedNode.data.config?.mode ||
-                                        'simple') === 'simple'
-                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
-                                        : 'text-gray-600 dark:text-gray-400'
-                                    }`}
+                                    className="flex-1"
                                   >
-                                    Simple
+                                    {t('agents.workflow.builder.modeSimple')}
                                   </Button>
                                   <Button
                                     type="button"
-                                    variant="ghost"
+                                    variant={
+                                      selectedNode.data.config?.mode ===
+                                      'advanced'
+                                        ? 'outline'
+                                        : 'ghost-muted'
+                                    }
+                                    size="xs"
                                     onClick={() =>
                                       handleUpdateNodeData({
                                         config: {
@@ -2576,33 +2799,35 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className={`h-auto flex-1 rounded-none px-3 py-1.5 text-xs font-medium ${
-                                      selectedNode.data.config?.mode ===
-                                      'advanced'
-                                        ? 'bg-primary hover:bg-primary text-white hover:text-white'
-                                        : 'text-gray-600 dark:text-gray-400'
-                                    }`}
+                                    className="flex-1"
                                   >
-                                    Advanced
+                                    {t('agents.workflow.builder.modeAdvanced')}
                                   </Button>
                                 </div>
 
                                 {(selectedNode.data.config?.cases || []).map(
                                   (c: ConditionCase, idx: number) => (
-                                    <div
+                                    <Card
                                       key={c.sourceHandle}
-                                      className="border-border rounded-xl border p-3"
+                                      padding="sm"
+                                      className="gap-2"
                                     >
-                                      <div className="mb-2 flex items-center justify-between">
-                                        <span className="text-sm font-semibold text-orange-600 dark:text-orange-400">
-                                          {idx === 0 ? 'If' : 'Else if'}
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-warning text-sm font-semibold">
+                                          {idx === 0
+                                            ? t('agents.workflow.nodes.if')
+                                            : t('agents.workflow.nodes.elseIf')}
                                         </span>
                                         {(selectedNode.data.config?.cases || [])
                                           .length > 1 && (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
+                                          <IconButton
+                                            variant="ghost-destructive"
+                                            size="icon-xs"
+                                            label={t(
+                                              'agents.workflow.removeCondition',
+                                              { index: idx + 1 },
+                                            )}
+                                            icon={Trash2}
                                             onClick={() => {
                                               const cases =
                                                 normalizeConditionCases([
@@ -2633,10 +2858,7 @@ function WorkflowBuilderInner() {
                                                 );
                                               }
                                             }}
-                                            className="size-auto p-0 text-gray-400 hover:bg-transparent hover:text-red-500 dark:hover:bg-transparent"
-                                          >
-                                            <Trash2 size={14} />
-                                          </Button>
+                                          />
                                         )}
                                       </div>
                                       <Input
@@ -2659,8 +2881,13 @@ function WorkflowBuilderInner() {
                                             },
                                           });
                                         }}
-                                        className="bg-card dark:bg-accent mb-2 h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                        placeholder="Case name (optional)"
+                                        placeholder={t(
+                                          'agents.workflow.builder.caseNamePlaceholder',
+                                        )}
+                                        aria-label={t(
+                                          'agents.workflow.conditionNameRow',
+                                          { index: idx + 1 },
+                                        )}
                                       />
                                       {(selectedNode.data.config?.mode ||
                                         'simple') === 'simple' ? (
@@ -2695,8 +2922,13 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                            placeholder="Variable"
+                                            placeholder={t(
+                                              'agents.workflow.builder.variablePlaceholder',
+                                            )}
+                                            aria-label={t(
+                                              'agents.workflow.conditionVariableRow',
+                                              { index: idx + 1 },
+                                            )}
                                           />
                                           <Select
                                             value={
@@ -2728,7 +2960,14 @@ function WorkflowBuilderInner() {
                                               });
                                             }}
                                           >
-                                            <SelectTrigger className="w-24 shrink-0">
+                                            <SelectTrigger
+                                              size="field"
+                                              className="w-24 shrink-0"
+                                              aria-label={t(
+                                                'agents.workflow.conditionOperatorRow',
+                                                { index: idx + 1 },
+                                              )}
+                                            >
                                               <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -2751,10 +2990,14 @@ function WorkflowBuilderInner() {
                                                 &lt;=
                                               </SelectItem>
                                               <SelectItem value="contains">
-                                                contains
+                                                {t(
+                                                  'agents.workflow.builder.opContains',
+                                                )}
                                               </SelectItem>
                                               <SelectItem value="startsWith">
-                                                starts
+                                                {t(
+                                                  'agents.workflow.builder.opStartsWith',
+                                                )}
                                               </SelectItem>
                                             </SelectContent>
                                           </Select>
@@ -2787,13 +3030,49 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="bg-card dark:bg-accent h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                            placeholder="Value"
+                                            placeholder={t(
+                                              'agents.workflow.builder.valuePlaceholder',
+                                            )}
+                                            aria-label={t(
+                                              'agents.workflow.conditionValueRow',
+                                              { index: idx + 1 },
+                                            )}
                                           />
                                         </div>
                                       ) : (
-                                        <>
-                                          <textarea
+                                        <FormField
+                                          label={t(
+                                            'agents.workflow.conditionRow',
+                                            { index: idx + 1 },
+                                          )}
+                                          hint={
+                                            <>
+                                              <Trans
+                                                i18nKey="agents.workflow.builder.celHint"
+                                                components={{ code: <code /> }}
+                                                values={{ braced: '{{query}}' }}
+                                              />{' '}
+                                              <Button
+                                                variant="link"
+                                                size="inline"
+                                                asChild
+                                                // eslint-disable-next-line shadcn/no-restyle -- a link in a 12px hint keeps the sentence's size and weight
+                                                className="text-xs font-normal"
+                                              >
+                                                <a
+                                                  href="https://cel.dev/"
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                >
+                                                  {t(
+                                                    'agents.workflow.builder.learnMore',
+                                                  )}
+                                                </a>
+                                              </Button>
+                                            </>
+                                          }
+                                        >
+                                          <Textarea
                                             value={c.expression}
                                             onChange={(e) => {
                                               const cases = [
@@ -2812,34 +3091,20 @@ function WorkflowBuilderInner() {
                                                 },
                                               });
                                             }}
-                                            className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card dark:bg-accent w-full rounded-xl border px-3 py-2 text-sm transition-all outline-none focus-visible:ring-2 dark:text-white"
                                             rows={2}
-                                            placeholder='Enter condition, e.g. query.contains("refund")'
+                                            placeholder={t(
+                                              'agents.workflow.builder.conditionPlaceholder',
+                                            )}
                                           />
-                                          <p className="text-muted-foreground mt-1 text-xs">
-                                            Use Common Expression Language to
-                                            create a custom expression.
-                                            Reference state by bare name (
-                                            <code>query</code>), not{' '}
-                                            <code>{'{{query}}'}</code>.{' '}
-                                            <a
-                                              href="https://cel.dev/"
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="text-primary underline"
-                                            >
-                                              Learn more
-                                            </a>
-                                          </p>
-                                        </>
+                                        </FormField>
                                       )}
-                                    </div>
+                                    </Card>
                                   ),
                                 )}
 
                                 <Button
                                   type="button"
-                                  variant="ghost"
+                                  variant="ghost-muted"
                                   size="sm"
                                   onClick={() => {
                                     const cases = normalizeConditionCases([
@@ -2860,25 +3125,23 @@ function WorkflowBuilderInner() {
                                       },
                                     });
                                   }}
-                                  className="h-auto gap-1 self-start rounded-lg px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400"
+                                  className="self-start"
                                 >
-                                  <Plus size={14} />
-                                  Add
+                                  <Plus className="size-3.5" />
+                                  {t('agents.form.buttons.add')}
                                 </Button>
                               </>
                             )}
 
                             {selectedNode.type === 'code' && (
                               <>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                  Run code in the workflow sandbox. Produced
-                                  files are saved as artifacts.
+                                <p className="text-muted-foreground text-xs">
+                                  {t('agents.workflow.builder.codeIntro')}
                                 </p>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Code
-                                  </label>
-                                  <textarea
+                                <FormField
+                                  label={t('agents.workflow.nodes.code')}
+                                >
+                                  <Textarea
                                     value={selectedNode.data.config?.code ?? ''}
                                     onChange={(e) =>
                                       handleUpdateNodeData({
@@ -2888,12 +3151,12 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    className="font-mono"
                                     rows={10}
                                     spellCheck={false}
                                     placeholder={'print("hello world")'}
                                   />
-                                </div>
+                                </FormField>
                                 <NodeDocumentsControl
                                   key={selectedNode.id}
                                   value={selectedNode.data.config?.inputs ?? []}
@@ -2906,13 +3169,18 @@ function WorkflowBuilderInner() {
                                     })
                                   }
                                   options={selectedCodeDocumentOptions}
-                                  label="Input files"
-                                  helpText="Artifacts/upstream refs staged as files in the sandbox (one becomes inputs/<name>)."
+                                  label={t(
+                                    'agents.workflow.builder.inputFiles',
+                                  )}
+                                  helpText={t(
+                                    'agents.workflow.builder.inputFilesHint',
+                                  )}
                                 />
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Output Variable
-                                  </label>
+                                <FormField
+                                  label={t(
+                                    'agents.workflow.builder.outputVariable',
+                                  )}
+                                >
                                   <Input
                                     type="text"
                                     value={
@@ -2927,14 +3195,14 @@ function WorkflowBuilderInner() {
                                         },
                                       })
                                     }
-                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                    placeholder="Variable name for output"
+                                    placeholder={t(
+                                      'agents.workflow.builder.outputVariablePlaceholder',
+                                    )}
                                   />
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Timeout (seconds)
-                                  </label>
+                                </FormField>
+                                <FormField
+                                  label={t('agents.workflow.builder.timeout')}
+                                >
                                   <Input
                                     type="number"
                                     min={1}
@@ -2958,20 +3226,43 @@ function WorkflowBuilderInner() {
                                         },
                                       });
                                     }}
-                                    className="bg-card h-auto rounded-xl px-3 py-2 text-sm shadow-none"
-                                    placeholder="Optional"
+                                    placeholder={t(
+                                      'agents.workflow.builder.optional',
+                                    )}
                                   />
-                                </div>
-                                <div>
-                                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Structured Output (JSON Schema)
-                                  </label>
-                                  <textarea
+                                </FormField>
+                                <FormField
+                                  label={t(
+                                    'agents.workflow.builder.structuredOutput',
+                                  )}
+                                  hint={
+                                    selectedCodeJsonSchemaText.trim() !== '' &&
+                                    !selectedCodeJsonSchemaError
+                                      ? t('agents.workflow.builder.validSchema')
+                                      : undefined
+                                  }
+                                  error={
+                                    selectedCodeJsonSchemaText.trim() !== '' &&
+                                    selectedCodeJsonSchemaError
+                                      ? t(
+                                          'agents.workflow.builder.invalidSchema',
+                                          {
+                                            ...NO_ESCAPE,
+                                            error: schemaErrorText(
+                                              t,
+                                              selectedCodeJsonSchemaError,
+                                            ),
+                                          },
+                                        )
+                                      : undefined
+                                  }
+                                >
+                                  <Textarea
                                     value={selectedCodeJsonSchemaText}
                                     onChange={(e) =>
                                       handleCodeJsonSchemaChange(e.target.value)
                                     }
-                                    className="border-border focus-visible:ring-ring/50 focus-visible:border-ring bg-card w-full rounded-xl border px-3 py-2 font-mono text-xs transition-all outline-none focus-visible:ring-2 dark:text-white"
+                                    className="font-mono"
                                     rows={6}
                                     placeholder={`{
   "type": "object",
@@ -2981,20 +3272,7 @@ function WorkflowBuilderInner() {
   "required": ["result"]
 }`}
                                   />
-                                  {selectedCodeJsonSchemaText.trim() !== '' && (
-                                    <p
-                                      className={`mt-2 text-xs ${
-                                        selectedCodeJsonSchemaError
-                                          ? 'text-red-600 dark:text-red-400'
-                                          : 'text-green-600 dark:text-green-400'
-                                      }`}
-                                    >
-                                      {selectedCodeJsonSchemaError
-                                        ? `Invalid JSON schema: ${selectedCodeJsonSchemaError}`
-                                        : 'Valid JSON schema'}
-                                    </p>
-                                  )}
-                                </div>
+                                </FormField>
                               </>
                             )}
                           </>
@@ -3006,12 +3284,13 @@ function WorkflowBuilderInner() {
                       variant="destructive-outline"
                       onClick={handleDeleteNode}
                       disabled={selectedNode?.type === 'start'}
-                      className="w-full rounded-full border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-600 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/10 dark:hover:text-red-400"
+                      shape="pill"
+                      className="w-full"
                     >
-                      <Trash2 size={16} />
+                      <Trash2 />
                       {selectedNode?.type === 'start'
-                        ? 'Cannot Delete Start Node'
-                        : 'Delete Node'}
+                        ? t('agents.workflow.builder.cannotDeleteStart')
+                        : t('agents.workflow.builder.deleteNode')}
                     </Button>
                   </div>
                 </div>
@@ -3023,8 +3302,7 @@ function WorkflowBuilderInner() {
         <Sheet open={showPreview} onOpenChange={setShowPreview}>
           <SheetContent
             side="right"
-            title="Workflow preview"
-            className="bg-card w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
+            className="w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
           >
             <WorkflowPreview
               workflowId={workflowId}
@@ -3058,13 +3336,20 @@ function WorkflowBuilderInner() {
           </SheetContent>
         </Sheet>
         <ConfirmationModal
-          message={`Are you sure you want to delete "${workflowName || 'this workflow agent'}"?`}
+          message={
+            workflowName
+              ? t('agents.workflow.builder.deleteConfirm', {
+                  ...NO_ESCAPE,
+                  name: workflowName,
+                })
+              : t('agents.workflow.builder.deleteConfirmUnnamed')
+          }
           modalState={deleteConfirmation}
           setModalState={setDeleteConfirmation}
-          submitLabel="Delete"
+          submitLabel={t('agents.form.buttons.delete')}
           handleSubmit={handleDeleteAgent}
-          cancelLabel="Cancel"
-          variant="danger"
+          cancelLabel={t('agents.form.buttons.cancel')}
+          variant="destructive"
         />
         {canManageAgent && (
           <AgentDetailsModal

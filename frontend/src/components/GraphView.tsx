@@ -1,14 +1,16 @@
 import { forceCollide, type SimulationNodeDatum } from 'd3-force';
-import { Network, X } from 'lucide-react';
+import { ArrowLeft, Network, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
 
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
 import { selectToken } from '../preferences/preferenceSlice';
-import { Button } from './ui/button';
+import { useThemeVersion } from '../utils/chartUtils';
+import { Badge } from './ui/badge';
+import { IconButton } from './ui/icon-button';
+import { SectionHeader } from './ui/section-header';
 import SkeletonLoader from './SkeletonLoader';
 import {
   ForceGraphData,
@@ -19,6 +21,7 @@ import {
   maxDegree,
   nodeAtPoint,
   nodeRadius,
+  readGraphPalette,
   toForceGraphData,
 } from './graphViewUtils';
 
@@ -53,6 +56,11 @@ const GraphView: React.FC<GraphViewProps> = ({
   const hoveredNodeIdRef = useRef<string | null>(null);
   const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
   const [size, setSize] = useState({ width: 0, height: 480 });
+  // The canvas can't read CSS variables: resolve the tokens, and re-read them
+  // whenever the theme changes.
+  const themeVersion = useThemeVersion();
+  // themeVersion is not used inside the factory: it only signals a change.
+  const palette = useMemo(() => readGraphPalette(), [themeVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,6 +137,11 @@ const GraphView: React.FC<GraphViewProps> = ({
     if (fg) fg.zoom(fg.zoom());
   };
 
+  // A settled simulation stops drawing, so paint the new colours once.
+  useEffect(() => {
+    repaint();
+  }, [palette]);
+
   const handlePointerMove = (event: React.MouseEvent<HTMLDivElement>) => {
     const node = pickNodeAt(event.clientX, event.clientY);
     if (containerRef.current) {
@@ -159,29 +172,24 @@ const GraphView: React.FC<GraphViewProps> = ({
   return (
     <div className="flex flex-col">
       <div className="mb-4 flex items-center">
-        <Button
-          type="button"
+        <IconButton
           variant="outline"
-          size="icon-sm"
-          className="text-muted-foreground mr-3 h-[29px] w-[29px] rounded-full p-2 dark:border-0"
+          size="icon-xs"
+          shape="pill"
+          className="mr-3"
           onClick={onBackToDocuments}
-          aria-label={t('settings.sources.backToAll')}
-        >
-          <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-        </Button>
+          label={t('settings.sources.backToAll')}
+          icon={ArrowLeft}
+          side="bottom"
+        />
         <span className="text-primary font-semibold wrap-break-word">
           {sourceName}
         </span>
         {headerAction ? <div className="ml-auto">{headerAction}</div> : null}
       </div>
 
-      <div className="bg-muted/60 text-muted-foreground dark:bg-accent/40 mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-xs">
-        <Network
-          size={16}
-          strokeWidth={1.75}
-          className="mt-0.5 shrink-0"
-          aria-hidden="true"
-        />
+      <div className="bg-muted text-muted-foreground mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-xs">
+        <Network className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <p>
           <span className="text-foreground font-medium">
             {t('settings.sources.graphrag.view.title')}
@@ -194,7 +202,7 @@ const GraphView: React.FC<GraphViewProps> = ({
         <SkeletonLoader count={4} />
       ) : isEmpty ? (
         <div className="border-border text-muted-foreground flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-12 text-center text-sm">
-          <Network size={28} strokeWidth={1.5} aria-hidden="true" />
+          <Network className="size-7" aria-hidden="true" />
           <p>{t('settings.sources.graphrag.view.empty')}</p>
         </div>
       ) : (
@@ -225,7 +233,7 @@ const GraphView: React.FC<GraphViewProps> = ({
                   nodeVal={(node) =>
                     nodeRadius((node as GraphNode).degree, maxNodeDegree)
                   }
-                  linkColor={() => 'rgba(150,150,150,0.35)'}
+                  linkColor={() => palette.link}
                   cooldownTicks={80}
                   nodeCanvasObject={(node, ctx, globalScale) => {
                     const graphNode = node as GraphNode & {
@@ -237,8 +245,13 @@ const GraphView: React.FC<GraphViewProps> = ({
                     const hovered = hoveredNodeIdRef.current === graphNode.id;
                     ctx.beginPath();
                     ctx.arc(graphNode.x, graphNode.y ?? 0, r, 0, 2 * Math.PI);
-                    ctx.fillStyle = hovered ? '#7aa7d9' : '#4a7fb5';
+                    ctx.fillStyle = palette.node;
                     ctx.fill();
+                    if (hovered) {
+                      ctx.lineWidth = 2 / globalScale;
+                      ctx.strokeStyle = palette.hoverStroke;
+                      ctx.stroke();
+                    }
                     if (globalScale >= 1.2) {
                       const label = graphNode.name ?? '';
                       const x = graphNode.x;
@@ -248,11 +261,9 @@ const GraphView: React.FC<GraphViewProps> = ({
                       ctx.textBaseline = 'top';
                       ctx.lineWidth = 3 / globalScale;
                       ctx.lineJoin = 'round';
-                      ctx.strokeStyle = 'rgba(10,10,10,0.85)';
+                      ctx.strokeStyle = palette.halo;
                       ctx.strokeText(label, x, y);
-                      ctx.fillStyle = hovered
-                        ? 'rgba(255,255,255,0.98)'
-                        : 'rgba(210,210,210,0.95)';
+                      ctx.fillStyle = palette.label;
                       ctx.fillText(label, x, y);
                     }
                   }}
@@ -267,23 +278,27 @@ const GraphView: React.FC<GraphViewProps> = ({
                 <div className="flex flex-col">
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <h3 className="text-foreground text-sm font-semibold wrap-break-word">
-                        {selectedNode.name}
-                      </h3>
+                      <SectionHeader
+                        as="h3"
+                        size="xs"
+                        className="wrap-break-word"
+                        title={selectedNode.name}
+                      />
                       {selectedNode.type && (
-                        <span className="bg-muted-foreground/10 text-muted-foreground mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium">
+                        <Badge variant="neutral" className="mt-1">
                           {selectedNode.type}
-                        </span>
+                        </Badge>
                       )}
                     </div>
-                    <button
-                      type="button"
+                    <IconButton
+                      variant="ghost-muted"
+                      size="icon-xs"
+                      className="shrink-0"
                       onClick={() => setSelectedNode(null)}
-                      aria-label={t('settings.sources.graphrag.view.close')}
-                      className="text-muted-foreground hover:text-foreground shrink-0"
-                    >
-                      <X size={16} aria-hidden="true" />
-                    </button>
+                      label={t('settings.sources.graphrag.view.close')}
+                      icon={X}
+                      side="bottom"
+                    />
                   </div>
 
                   {selectedNode.description && (
@@ -292,25 +307,29 @@ const GraphView: React.FC<GraphViewProps> = ({
                     </p>
                   )}
 
-                  <h4 className="text-foreground mb-2 text-xs font-semibold">
-                    {t('settings.sources.graphrag.view.linkedChunks')}
-                  </h4>
-                  {selectedNode.chunks.length === 0 ? (
-                    <p className="text-muted-foreground text-xs">
-                      {t('settings.sources.graphrag.view.noChunks')}
-                    </p>
-                  ) : (
-                    <ul className="flex flex-col gap-2">
-                      {selectedNode.chunks.map((chunk) => (
-                        <li
-                          key={chunk.chunk_id}
-                          className="border-border text-muted-foreground rounded-md border px-3 py-2 text-xs leading-relaxed wrap-break-word"
-                        >
-                          {chunk.text}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <div className="flex flex-col gap-2">
+                    <SectionHeader
+                      as="h4"
+                      size="xs"
+                      title={t('settings.sources.graphrag.view.linkedChunks')}
+                    />
+                    {selectedNode.chunks.length === 0 ? (
+                      <p className="text-muted-foreground text-xs">
+                        {t('settings.sources.graphrag.view.noChunks')}
+                      </p>
+                    ) : (
+                      <ul className="flex flex-col gap-2">
+                        {selectedNode.chunks.map((chunk) => (
+                          <li
+                            key={chunk.chunk_id}
+                            className="border-border text-muted-foreground rounded-md border px-3 py-2 text-xs leading-relaxed wrap-break-word"
+                          >
+                            {chunk.text}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <p className="text-muted-foreground py-2 text-sm">

@@ -2,7 +2,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { useMediaQuery } from '../hooks';
 import SectionIndexPage from '../navigation/SectionIndexPage';
-import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
+import SectionShell from '../navigation/SectionShell';
 import { ADMIN_SECTION } from '../navigation/sections';
 import Admins from './Admins';
 import Activity from './Activity';
@@ -18,32 +18,30 @@ import Users from './Users';
  */
 export default function Admin() {
   const location = useLocation();
-  const { isMobile, isTablet } = useMediaQuery();
+  const { isMobile } = useMediaQuery();
 
-  const showIndex =
-    (isMobile || isTablet) && location.pathname === ADMIN_SECTION.rootPath;
+  const showIndex = isMobile && location.pathname === ADMIN_SECTION.rootPath;
+
+  if (showIndex) {
+    return (
+      <SectionShell width="wide" header={false}>
+        <SectionIndexPage section={ADMIN_SECTION} />
+      </SectionShell>
+    );
+  }
 
   return (
-    <div className="h-full overflow-auto p-4 md:p-12">
-      <div className="mx-auto w-full max-w-7xl">
-        {showIndex ? (
-          <SectionIndexPage section={ADMIN_SECTION} />
-        ) : (
-          <>
-            <CurrentSectionHeader />
-            <Routes>
-              <Route index element={<Overview />} />
-              <Route path="overview" element={<Overview />} />
-              <Route path="users" element={<Users />} />
-              <Route path="roles" element={<Admins />} />
-              <Route path="usage" element={<Usage />} />
-              <Route path="quotas" element={<Quotas />} />
-              <Route path="audit" element={<Activity />} />
-              <Route path="*" element={<Navigate to="/admin" replace />} />
-            </Routes>
-          </>
-        )}
-      </div>
-    </div>
+    <SectionShell width="wide">
+      <Routes>
+        <Route index element={<Overview />} />
+        <Route path="overview" element={<Overview />} />
+        <Route path="users" element={<Users />} />
+        <Route path="roles" element={<Admins />} />
+        <Route path="usage" element={<Usage />} />
+        <Route path="quotas" element={<Quotas />} />
+        <Route path="audit" element={<Activity />} />
+        <Route path="*" element={<Navigate to="/admin" replace />} />
+      </Routes>
+    </SectionShell>
   );
 }

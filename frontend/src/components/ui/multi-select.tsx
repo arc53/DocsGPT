@@ -1,9 +1,10 @@
-'use client';
-
-import { Check, ChevronsUpDown, X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import * as React from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useFormFieldControl } from '@/components/ui/form-field';
 import {
   Command,
   CommandEmpty,
@@ -41,6 +42,8 @@ interface MultiSelectProps {
    * pointerdown instead.
    */
   modal?: boolean;
+  /** The trigger's id; inside a FormField it defaults to the field's. */
+  id?: string;
 }
 
 export function MultiSelect({
@@ -52,8 +55,16 @@ export function MultiSelect({
   searchPlaceholder = 'Search...',
   className,
   modal = false,
+  id,
 }: MultiSelectProps) {
   const [open, setOpen] = React.useState(false);
+  const control = useFormFieldControl<{
+    id?: string;
+    disabled?: boolean;
+    'aria-invalid'?: React.AriaAttributes['aria-invalid'];
+    'aria-describedby'?: string;
+    'aria-required'?: React.AriaAttributes['aria-required'];
+  }>({ id });
 
   const handleSelect = (value: string) => {
     const newSelected = selected.includes(value)
@@ -76,12 +87,17 @@ export function MultiSelect({
     <Popover open={open} onOpenChange={setOpen} modal={modal}>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant="combobox"
+          size="field"
           role="combobox"
           aria-expanded={open}
+          data-slot="multi-select-trigger"
+          data-placeholder={selected.length ? undefined : ''}
+          {...control}
           className={cn(
-            'border-border bg-card hover:bg-accent h-auto min-h-10 w-full justify-between py-1.5',
-            !selected.length && 'text-gray-500 dark:text-gray-400',
+            // Grows past the 38px row when the chips wrap; `group` lets the
+            // chevron turn while open, like SelectTrigger's.
+            'group h-auto min-h-9.5 w-full justify-between py-1.5',
             className,
           )}
         >
@@ -97,15 +113,17 @@ export function MultiSelect({
                 {selectedLabels.slice(0, 2).map((label) => {
                   const option = options.find((o) => o.label === label);
                   return (
-                    <span
+                    <Badge
                       key={option?.value || label}
-                      className="bg-primary/20 dark:bg-primary/30 inline-flex max-w-[calc(100%-1rem)] min-w-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-300"
+                      className="max-w-[calc(100%-1rem)] min-w-0"
                     >
                       <span className="truncate">{label}</span>
+                      {/* A span, not a button: the trigger is already a
+                          <button>, and buttons can't nest. */}
                       <span
                         role="button"
                         tabIndex={0}
-                        className="flex h-3 w-3 cursor-pointer items-center justify-center hover:text-purple-900 dark:hover:text-purple-200"
+                        className="hover:text-primary/70 flex size-3 cursor-pointer items-center justify-center"
                         onMouseDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -121,33 +139,33 @@ export function MultiSelect({
                           }
                         }}
                       >
-                        <X className="h-3 w-3" />
+                        <X className="size-3" />
                       </span>
-                    </span>
+                    </Badge>
                   );
                 })}
                 {selected.length > 2 && (
-                  <span className="text-xs text-gray-600 dark:text-gray-400">
+                  <span className="text-muted-foreground text-xs">
                     +{selected.length - 2} more
                   </span>
                 )}
               </>
             )}
           </div>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <ChevronDown className="size-4 shrink-0 opacity-50 transition-transform duration-200 group-data-[state=open]:rotate-180" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="border-border bg-card w-(--radix-popover-trigger-width) p-0"
+        className="w-(--radix-popover-trigger-width) p-0"
         align="start"
       >
-        <Command className="bg-transparent">
-          <CommandInput placeholder={searchPlaceholder} className="h-9" />
+        <Command>
+          <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
             <CommandEmpty className="py-2 text-center text-sm">
               {emptyText}
             </CommandEmpty>
-            <CommandGroup className="p-1">
+            <CommandGroup>
               {options.map((option) => {
                 const isSelected = selected.includes(option.value);
                 return (
@@ -157,16 +175,15 @@ export function MultiSelect({
                     onSelect={() => handleSelect(option.value)}
                     className="cursor-pointer"
                   >
-                    <div
-                      className={cn(
-                        'mr-2 flex h-4 w-4 items-center justify-center rounded-sm border-2',
-                        isSelected
-                          ? 'border-primary bg-primary text-white'
-                          : 'border-gray-400 dark:border-gray-500',
-                      )}
-                    >
-                      {isSelected && <Check className="h-3 w-3 stroke-white" />}
-                    </div>
+                    {/* Visual only: the row is the control (cmdk handles the
+                        click and Enter), so the box takes no focus or events. */}
+                    <Checkbox
+                      size="sm"
+                      checked={isSelected}
+                      tabIndex={-1}
+                      aria-hidden
+                      className="pointer-events-none"
+                    />
                     {option.label}
                   </CommandItem>
                 );

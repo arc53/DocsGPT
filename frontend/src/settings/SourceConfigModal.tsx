@@ -1,11 +1,11 @@
+import { CircleAlert, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
-import { Button } from '../components/ui/button';
-import { Modal } from '../components/ui/modal';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -141,126 +141,92 @@ export default function SourceConfigModal({
   // The backend rejects an incoherent prescreen config; block save up-front.
   const prescreenValid = isPrescreenConfigValid(options);
 
+  const footer = reingestPrompt ? (
+    <ModalActions
+      cancelLabel={t('settings.sources.configModal.reingestLater')}
+      onCancel={closeModal}
+      submitLabel={t('settings.sources.reingest')}
+      onSubmit={handleConfirmReingest}
+    />
+  ) : (
+    <ModalActions
+      cancelLabel={t('cancel')}
+      onCancel={closeModal}
+      cancelProps={{ disabled: saving }}
+      submitLabel={t('settings.sources.configModal.save')}
+      onSubmit={handleSave}
+      pending={saving}
+      disabled={isReadOnly || !hasChanges || !prescreenValid}
+    />
+  );
+
   return (
     <Modal
       open={modalState === 'ACTIVE'}
       onOpenChange={(o) => !o && closeModal()}
-      hideTitle
       title={t('settings.sources.configModal.title')}
+      description={
+        document?.name
+          ? t('settings.sources.configModal.subtitle', {
+              name: document.name,
+            })
+          : t('settings.sources.configModal.subtitleGeneric')
+      }
+      footer={footer}
       size="lg"
       mobileVariant="sheet"
-      className="max-h-[90vh] max-w-[600px] md:w-[80vw] lg:w-[60vw]"
-      contentClassName="max-h-[80vh]"
       isPerformingTask={saving}
     >
-      <div className="flex h-full flex-col">
-        <div className="px-2 py-2">
-          <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-            {t('settings.sources.configModal.title')}
-          </h2>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {document?.name
-              ? t('settings.sources.configModal.subtitle', {
-                  name: document.name,
-                })
-              : t('settings.sources.configModal.subtitleGeneric')}
-          </p>
-        </div>
-
-        <div className="flex-1 px-2">
-          {reingestPrompt ? (
-            <div className="flex flex-col gap-4 px-0.5 py-4">
-              <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+      <div>
+        {reingestPrompt ? (
+          <div className="flex flex-col gap-4">
+            <Alert variant="warning">
+              <TriangleAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>
                 {t('settings.sources.configModal.reingestRequired')}
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {isReadOnly && (
+              <div className="bg-muted text-muted-foreground rounded-xl p-3 text-sm">
+                {t('settings.sources.configModal.readOnly')}
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4 px-0.5 py-4">
-              {isReadOnly && (
-                <div className="bg-muted text-muted-foreground rounded-xl p-3 text-sm">
-                  {t('settings.sources.configModal.readOnly')}
-                </div>
-              )}
-              <RetrievalOptions
-                value={options}
-                onChange={setOptions}
-                alwaysOpen
-                disabled={isReadOnly}
-                hybridAvailable={hybridAvailable}
-                graphRAGAvailable={graphRAGAvailable}
-                availableModels={availableModels}
-              />
-              {willRequireReingest && !isReadOnly && (
-                <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+            )}
+            <RetrievalOptions
+              value={options}
+              onChange={setOptions}
+              alwaysOpen
+              disabled={isReadOnly}
+              hybridAvailable={hybridAvailable}
+              graphRAGAvailable={graphRAGAvailable}
+              availableModels={availableModels}
+            />
+            {willRequireReingest && !isReadOnly && (
+              <Alert variant="warning">
+                <TriangleAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>
                   {t('settings.sources.configModal.chunkingChangeHint')}
-                </div>
-              )}
-              {!prescreenValid && !isReadOnly && (
-                <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                </AlertDescription>
+              </Alert>
+            )}
+            {!prescreenValid && !isReadOnly && (
+              <Alert variant="warning">
+                <TriangleAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>
                   {t('settings.sources.configModal.prescreenInvalidHint')}
-                </div>
-              )}
-              {error && (
-                <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                  {error}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="px-2 py-4">
-          {reingestPrompt ? (
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {t('settings.sources.configModal.reingestLater')}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleConfirmReingest}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {t('settings.sources.reingest')}
-              </Button>
-            </div>
-          ) : (
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={closeModal}
-                disabled={saving}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {t('cancel')}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSave}
-                disabled={
-                  saving || isReadOnly || !hasChanges || !prescreenValid
-                }
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {saving ? (
-                  <div className="flex items-center justify-center">
-                    <Spinner size="small" />
-                    <span className="ml-2">
-                      {t('settings.sources.configModal.saving')}
-                    </span>
-                  </div>
-                ) : (
-                  t('settings.sources.configModal.save')
-                )}
-              </Button>
-            </div>
-          )}
-        </div>
+                </AlertDescription>
+              </Alert>
+            )}
+            {error && (
+              <Alert variant="destructive">
+                <CircleAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
       </div>
     </Modal>
   );

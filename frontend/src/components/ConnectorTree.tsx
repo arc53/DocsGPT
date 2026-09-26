@@ -1,10 +1,11 @@
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { Check, RefreshCw } from 'lucide-react';
 
 import userService from '../api/services/userService';
-import CheckmarkIcon from '../assets/checkMark2.svg';
-import SyncIcon from '../assets/sync.svg';
+import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -106,14 +107,12 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   const topRightAction = (
     <>
       {headerAction}
-      <button
+      <Button
+        type="button"
+        size="field"
+        shape="pill"
         onClick={() => setSyncConfirmationModal('ACTIVE')}
         disabled={isSyncing}
-        className={`flex h-[38px] min-w-[108px] items-center justify-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors ${
-          isSyncing
-            ? 'dark:bg-muted dark:text-muted-foreground cursor-not-allowed bg-gray-300 text-gray-600'
-            : 'bg-primary hover:bg-primary/90 text-white'
-        }`}
         title={
           isSyncing
             ? `${t('settings.sources.syncing')} ${syncProgress}%`
@@ -122,17 +121,21 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
               : t('settings.sources.sync')
         }
       >
-        <img
-          src={syncDone ? CheckmarkIcon : SyncIcon}
-          alt={t('settings.sources.sync')}
-          className={`mr-2 h-4 w-4 brightness-0 invert filter ${isSyncing ? 'animate-spin' : ''}`}
-        />
+        {syncDone ? (
+          <Check />
+        ) : isSyncing ? (
+          // The busy state shows its percentage, so it keeps the label and
+          // draws the app's ring spinner at icon size (DESIGN.md, Button).
+          <Spinner size="xs" label={t('settings.sources.syncing')} />
+        ) : (
+          <RefreshCw />
+        )}
         {isSyncing
           ? `${syncProgress}%`
           : syncDone
             ? 'Done'
             : t('settings.sources.sync')}
-      </button>
+      </Button>
     </>
   );
 

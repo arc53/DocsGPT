@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { CalendarClock, CalendarX2, CircleAlert } from 'lucide-react';
+
 import { Button } from '../../components/ui/button';
+import { Card } from '../../components/ui/card';
+import { Spinner } from '../../components/ui/spinner';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../store';
 import { formatDateTime } from '../../utils/dateTimeUtils';
 import { deleteSchedule, loadSchedulesForAgent } from './schedulesSlice';
+import ScheduleStatusBadge from './StatusBadge';
 
 export type SchedulerToolCallCardProps = {
   /** Outcome JSON the scheduler tool returned (action result). */
@@ -53,6 +59,7 @@ export default function SchedulerToolCallCard({
   status,
   agentId,
 }: SchedulerToolCallCardProps) {
+  const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const [cancelled, setCancelled] = useState<boolean>(false);
@@ -93,17 +100,30 @@ export default function SchedulerToolCallCard({
     const cancelError = extractToolError(result);
     if (cancelError) {
       return (
-        <div className="border-border bg-card rounded-2xl border p-4 text-sm">
-          <p className="text-destructive font-semibold">
-            Cancel failed: {cancelError}
-          </p>
-        </div>
+        <Card>
+          <div className="flex items-start gap-3">
+            <CircleAlert className="text-destructive mt-0.5 size-4 shrink-0" />
+            <div className="flex min-w-0 flex-1 flex-col">
+              <p className="text-destructive font-semibold">
+                {t('agents.schedules.toolCard.cancelFailed')}
+              </p>
+              <p className="text-muted-foreground">{cancelError}</p>
+            </div>
+          </div>
+        </Card>
       );
     }
     return (
-      <div className="border-border bg-card rounded-2xl border p-4 text-sm">
-        <p className="font-semibold">Scheduled task cancelled.</p>
-      </div>
+      <Card>
+        <div className="flex items-start gap-3">
+          <CalendarX2 className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className="font-semibold">
+              {t('agents.schedules.toolCard.taskCancelled')}
+            </p>
+          </div>
+        </div>
+      </Card>
     );
   }
 
@@ -112,19 +132,28 @@ export default function SchedulerToolCallCard({
       ? (parsed?.tasks as Array<Record<string, unknown>>)
       : [];
     return (
-      <div className="border-border bg-card rounded-2xl border p-4 text-sm">
-        <p className="font-semibold">
-          {tasks.length} pending scheduled task{tasks.length === 1 ? '' : 's'}
-        </p>
-        <ul className="mt-2 flex flex-col gap-1">
-          {tasks.map((task) => (
-            <li key={String(task.task_id)}>
-              {formatTimestamp(task.resolved_run_at as string)} —{' '}
-              {String(task.instruction || task.name || task.task_id)}
-            </li>
-          ))}
-        </ul>
-      </div>
+      <Card>
+        <div className="flex items-start gap-3">
+          <CalendarClock className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className="font-semibold">
+              {t('agents.schedules.toolCard.pendingCount', {
+                count: tasks.length,
+              })}
+            </p>
+          </div>
+        </div>
+        {tasks.length > 0 && (
+          <ul className="flex flex-col gap-1 pl-7">
+            {tasks.map((task) => (
+              <li key={String(task.task_id)}>
+                {formatTimestamp(task.resolved_run_at as string)} —{' '}
+                {String(task.instruction || task.name || task.task_id)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     );
   }
 
@@ -133,45 +162,59 @@ export default function SchedulerToolCallCard({
   const schedulingError = error || extractToolError(result);
   if (schedulingError) {
     return (
-      <div className="border-border bg-card rounded-2xl border p-4 text-sm">
-        <p className="text-destructive font-semibold">
-          Scheduling failed: {schedulingError}
-        </p>
-      </div>
+      <Card>
+        <div className="flex items-start gap-3">
+          <CircleAlert className="text-destructive mt-0.5 size-4 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className="text-destructive font-semibold">
+              {t('agents.schedules.toolCard.schedulingFailed')}
+            </p>
+            <p className="text-muted-foreground">{schedulingError}</p>
+          </div>
+        </div>
+      </Card>
     );
   }
 
+  const iconClass = 'text-muted-foreground mt-0.5 size-4 shrink-0';
   return (
-    <div className="border-border bg-card rounded-2xl border p-4 text-sm">
-      <div className="flex items-center justify-between">
-        <p className="font-semibold">
-          {status === 'pending' ? '⏰ Scheduling…' : '⏰ Scheduled task'}
-        </p>
-        {runAt && (
-          <span className="text-muted-foreground text-xs">
-            {formatTimestamp(runAt)}
-          </span>
+    <Card>
+      <div className="flex items-start gap-3">
+        {status === 'pending' ? (
+          <Spinner size="xs" className="text-muted-foreground mt-0.5" />
+        ) : cancelled ? (
+          <CalendarX2 className={iconClass} />
+        ) : (
+          <CalendarClock className={iconClass} />
         )}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <p className="font-semibold">
+            {status === 'pending'
+              ? t('agents.schedules.toolCard.scheduling')
+              : t('agents.schedules.toolCard.scheduled')}
+          </p>
+          {runAt && (
+            <span className="text-muted-foreground text-xs">
+              {formatTimestamp(runAt)}
+            </span>
+          )}
+        </div>
+        {taskId && !cancelled && (
+          <Button
+            type="button"
+            variant="destructive-outline"
+            size="xs"
+            shape="pill"
+            onClick={cancel}
+          >
+            {t('agents.schedules.cancel')}
+          </Button>
+        )}
+        {cancelled && <ScheduleStatusBadge status="cancelled" />}
       </div>
       {instruction && (
-        <p className="text-muted-foreground mt-2 text-sm italic">
-          “{instruction}”
-        </p>
+        <p className="text-muted-foreground pl-7">{instruction}</p>
       )}
-      {taskId && !cancelled && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={cancel}
-          className="text-destructive mt-2 text-xs"
-        >
-          Cancel
-        </Button>
-      )}
-      {cancelled && (
-        <p className="text-muted-foreground mt-2 text-xs">Cancelled.</p>
-      )}
-    </div>
+    </Card>
   );
 }

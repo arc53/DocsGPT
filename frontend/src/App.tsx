@@ -1,20 +1,25 @@
 import { envVar } from '@/env';
 import './locale/i18n';
 
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
+
+import { cn } from '@/lib/utils';
 
 import Admin from './admin';
 import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
+import { selectWorkflowPreviewOpen } from './agents/workflow/workflowPreviewSlice';
 import DocsGPTMark from './assets/logo-b.svg';
 import DocsGPTMarkWhite from './assets/logo-w.svg';
 import ActionButtons from './components/ActionButtons';
 import AdminRoute from './components/AdminRoute';
 import ErrorBoundary from './components/ErrorBoundary';
-import Spinner from './components/Spinner';
+import { LoadingState } from '@/components/ui/loading-state';
 import { Button } from './components/ui/button';
+import { ToastViewport } from './components/ui/toast';
 import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
@@ -26,11 +31,18 @@ import Navigation from './Navigation';
 import { getSectionForPath } from './navigation/sections';
 import { SidebarLevelProvider } from './navigation/SidebarLevelProvider';
 import PageNotFound from './PageNotFound';
+
+// Dev-only style guide (see frontend/DESIGN.md). The DEV guard around the
+// import lets the bundler drop the chunk from production builds entirely.
+const DesignSystem = import.meta.env.DEV
+  ? lazy(() => import('./design/DesignSystem'))
+  : null;
 import Setting from './settings';
 import Teams from './settings/Teams';
 import Notification from './components/Notification';
 import ToolApprovalToast from './notifications/ToolApprovalToast';
 import TeamNotificationToast from './notifications/TeamNotificationToast';
+import ActionToast from './notifications/ActionToast';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -58,13 +70,13 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
           alt="DocsGPT"
           className="h-14 w-auto"
         />
-        <p className="text-foreground max-w-md px-6 text-center text-sm dark:text-white">
+        <p className="text-foreground max-w-md px-6 text-center text-sm">
           {message}
         </p>
         <Button
           type="button"
           onClick={retryOidcLogin}
-          className="rounded-3xl px-5"
+          shape="pill"
           data-testid="oidc-signin"
         >
           {t('auth.signInWith', { provider: oidcProviderName || 'SSO' })}
@@ -73,23 +85,23 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
     );
   }
   if (isAuthLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Spinner />
-      </div>
-    );
+    return <LoadingState fill="screen" />;
   }
   return <EventStreamProvider>{children}</EventStreamProvider>;
 }
 
 function MainLayout() {
-  const { isMobile, isTablet } = useMediaQuery();
-  const [navOpen, setNavOpen] = useState(!(isMobile || isTablet));
+  const { isMobile } = useMediaQuery();
+  const [navOpen, setNavOpen] = useState(!isMobile);
   const location = useLocation();
   // Settings and admin pages keep the profile menu but drop the chat actions:
   // the conversation now survives the trip, so "share" would target a chat
   // that isn't on screen.
   const inSection = Boolean(getSectionForPath(location.pathname));
+  // The workflow Preview drawer occupies the right edge; move the toast
+  // stack to the bottom-left while it's open so it stays visible without
+  // covering the drawer's attach/send controls.
+  const previewOpen = useSelector(selectWorkflowPreviewOpen);
 
   return (
     <SidebarLevelProvider>
@@ -97,11 +109,10 @@ function MainLayout() {
         <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
         <ActionButtons showNewChat={!inSection} showShare={!inSection} />
         <div
-          className={`h-[calc(100dvh-64px)] overflow-auto transition-all duration-300 ease-in-out lg:h-screen ${
-            !(isMobile || isTablet)
-              ? `${navOpen ? 'lg:ml-72' : 'lg:ml-14'}`
-              : 'ml-0 lg:ml-16'
-          }`}
+          className={cn(
+            'h-[calc(100dvh-64px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-screen',
+            !isMobile ? (navOpen ? 'lg:ml-72' : 'lg:ml-14') : 'ml-0 lg:ml-16',
+          )}
         >
           {/* Contain route render crashes so navigation stays usable;
             keyed by path so the boundary resets when the user leaves. */}
@@ -109,9 +120,18 @@ function MainLayout() {
             <Outlet />
           </ErrorBoundary>
         </div>
-        <UploadToast />
-        <ToolApprovalToast />
-        <TeamNotificationToast />
+        {/* The one toast stack (and live region) for the app. Each toast
+          renders only its cards, top to bottom: team notifications, tool
+          approvals, uploads, action results. */}
+        <ToastViewport
+          className={cn(previewOpen && 'right-auto left-4')}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <TeamNotificationToast />
+          <ToolApprovalToast />
+          <UploadToast />
+          <ActionToast />
+        </ToastViewport>
       </div>
     </SidebarLevelProvider>
   );
@@ -178,6 +198,16 @@ export default function App() {
         </Route>
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/shared/agent/:agentId" element={<SharedAgentGate />} />
+        {DesignSystem && (
+          <Route
+            path="/design"
+            element={
+              <Suspense fallback={null}>
+                <DesignSystem />
+              </Suspense>
+            }
+          />
+        )}
         <Route path="/*" element={<PageNotFound />} />
       </Routes>
     </div>

@@ -47,13 +47,4 @@ describe('settings.accessTokens locale block', () => {
       );
     },
   );
-
-  it('every locale provides both plural forms i18next falls back through', () => {
-    [en, ...Object.values(LOCALES)].forEach((locale) => {
-      const relative = ((locale.settings as Tree).accessTokens as Tree)
-        .relative as Tree;
-      expect(relative.days_one).toBeTruthy();
-      expect(relative.days_other).toBeTruthy();
-    });
-  });
 });

@@ -9,6 +9,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Progress } from '@/components/ui/progress';
+import { SectionHeader } from '@/components/ui/section-header';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import StatCard from '@/components/StatCard';
 
 import userService from '../../api/services/userService';
 import SkeletonLoader from '../../components/SkeletonLoader';
@@ -32,15 +46,18 @@ const ACTION_KEYS: Record<string, string> = {
   block: 'agents.form.guardrails.actions.block',
 };
 
-/** Colour by consequence, so "we refused" reads differently from "we noticed". */
-function actionTone(action: string, outcome: string): string {
-  if (outcome === 'not_evaluated')
-    return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
-  if (action === 'block')
-    return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300';
-  if (action === 'redact')
-    return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300';
-  return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300';
+/**
+ * Colour by meaning, matching the status tokens used across the app: a block
+ * is a refusal, a flag needs review, a redaction is informational.
+ */
+function actionTone(
+  action: string,
+  outcome: string,
+): 'neutral' | 'destructive' | 'warning' | 'info' {
+  if (outcome === 'not_evaluated') return 'neutral';
+  if (action === 'block') return 'destructive';
+  if (action === 'redact') return 'info';
+  return 'warning';
 }
 
 type Props = { agentId?: string };
@@ -56,6 +73,8 @@ export default function GuardrailEvents({ agentId }: Props) {
   const [days, setDays] = React.useState(30);
   const [checkFilter, setCheckFilter] = React.useState('all');
   const [outcomeFilter, setOutcomeFilter] = React.useState('all');
+  // Bumped by Retry to re-run the fetch below.
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
     if (!agentId) return;
@@ -88,7 +107,7 @@ export default function GuardrailEvents({ agentId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [agentId, token, days, t]);
+  }, [agentId, token, days, t, reloadKey]);
 
   const checkNames = React.useMemo(
     () => Array.from(new Set(events.map((e) => e.check_name))).sort(),
@@ -105,82 +124,88 @@ export default function GuardrailEvents({ agentId }: Props) {
   );
 
   const totals = summary?.totals;
+  const tableHeadingId = React.useId();
 
   return (
     <div className="mt-8 px-4" data-testid="guardrail-events">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">
-            {t('agents.guardrailEvents.heading')}
-          </h2>
-          <p className="text-muted-foreground mt-1 text-xs">
-            {t('agents.guardrailEvents.description')}
-          </p>
-        </div>
-        <Select
-          value={String(days)}
-          onValueChange={(value) => setDays(Number(value))}
-        >
-          <SelectTrigger
-            className="w-[150px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
-            data-testid="guardrail-events-window"
+      <SectionHeader
+        title={t('agents.guardrailEvents.heading')}
+        description={t('agents.guardrailEvents.description')}
+        actions={
+          <Select
+            value={String(days)}
+            onValueChange={(value) => setDays(Number(value))}
           >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {WINDOWS.map((window) => (
-              <SelectItem key={window} value={String(window)}>
-                {t('agents.guardrailEvents.lastDays', { count: window })}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+            <SelectTrigger
+              className="w-[150px]"
+              size="field"
+              shape="pill"
+              data-testid="guardrail-events-window"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WINDOWS.map((window) => (
+                <SelectItem key={window} value={String(window)}>
+                  {t('agents.guardrailEvents.lastDays', { count: window })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+      />
 
       {/* Blocked / flagged / redacted / not-evaluated are four different
           product problems; a single "violations" number hides which one you
           have. Not-evaluated in particular means a check silently stopped
           working. */}
-      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile
+      <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <StatCard
           label={t('agents.guardrailEvents.blocked')}
-          value={totals?.blocked}
+          value={totals?.blocked ?? 0}
           loading={loading}
-          testId="guardrail-stat-blocked"
-          tone="text-red-700 dark:text-red-400"
+          data-testid="guardrail-stat-blocked"
+          valueTone="destructive"
         />
-        <StatTile
+        <StatCard
           label={t('agents.guardrailEvents.redacted')}
-          value={totals?.redacted}
+          value={totals?.redacted ?? 0}
           loading={loading}
-          testId="guardrail-stat-redacted"
-          tone="text-amber-700 dark:text-amber-400"
+          data-testid="guardrail-stat-redacted"
+          valueTone="info"
         />
-        <StatTile
+        <StatCard
           label={t('agents.guardrailEvents.flagged')}
-          value={totals?.flagged}
+          value={totals?.flagged ?? 0}
           loading={loading}
-          testId="guardrail-stat-flagged"
-          tone="text-emerald-700 dark:text-emerald-400"
+          data-testid="guardrail-stat-flagged"
+          valueTone="warning"
         />
-        <StatTile
+        <StatCard
           label={t('agents.guardrailEvents.notEvaluated')}
-          value={totals?.not_evaluated}
+          value={totals?.not_evaluated ?? 0}
           loading={loading}
-          testId="guardrail-stat-not-evaluated"
-          tone="text-muted-foreground"
+          data-testid="guardrail-stat-not-evaluated"
+          valueTone="muted"
           hint={t('agents.guardrailEvents.notEvaluatedHint')}
         />
       </div>
 
       {summary && summary.breakdown.length > 0 && <ByCheck summary={summary} />}
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+      <SectionHeader
+        as="h3"
+        size="xs"
+        id={tableHeadingId}
+        title={t('agents.guardrailEvents.tableHeader')}
+        className="mt-6"
+      />
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <Select value={checkFilter} onValueChange={setCheckFilter}>
           <SelectTrigger
-            className="w-[170px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
+            className="w-[170px]"
+            size="field"
+            shape="pill"
             data-testid="guardrail-events-check-filter"
           >
             <SelectValue />
@@ -198,8 +223,9 @@ export default function GuardrailEvents({ agentId }: Props) {
         </Select>
         <Select value={outcomeFilter} onValueChange={setOutcomeFilter}>
           <SelectTrigger
-            className="w-[170px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
+            className="w-[170px]"
+            size="field"
+            shape="pill"
             data-testid="guardrail-events-outcome-filter"
           >
             <SelectValue />
@@ -224,19 +250,28 @@ export default function GuardrailEvents({ agentId }: Props) {
         </Select>
       </div>
 
-      <div className="border-border bg-card mt-3 w-full overflow-hidden rounded-xl border dark:bg-black">
-        <div className="flex h-8 flex-col items-start justify-center bg-black/10 dark:bg-white/5">
-          <p className="text-muted-foreground px-3 text-xs">
-            {t('agents.guardrailEvents.tableHeader')}
-          </p>
-        </div>
+      <div className="border-border bg-card mt-3 w-full overflow-hidden rounded-xl border">
         <div className="max-h-[45vh] overflow-y-auto">
           {loading ? (
             <div className="p-3">
               <SkeletonLoader count={3} />
             </div>
           ) : error ? (
-            <p className="text-destructive p-4 text-sm">{error}</p>
+            <EmptyState
+              tone="destructive"
+              size="sm"
+              illustration="none"
+              title={error}
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setReloadKey((key) => key + 1)}
+                >
+                  {t('retry')}
+                </Button>
+              }
+            />
           ) : visible.length === 0 ? (
             <p
               className="text-muted-foreground p-4 text-sm"
@@ -247,65 +282,51 @@ export default function GuardrailEvents({ agentId }: Props) {
                 : t('agents.guardrailEvents.emptyForFilter')}
             </p>
           ) : (
-            <table className="w-full text-left text-xs">
-              <thead className="text-muted-foreground">
-                <tr className="border-border border-b">
-                  <th className="px-3 py-2 font-medium">
-                    {t('agents.guardrailEvents.when')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
-                    {t('agents.guardrailEvents.check')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
-                    {t('agents.guardrailEvents.stage')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
+            <Table aria-labelledby={tableHeadingId}>
+              <TableHead>
+                <TableRow>
+                  <TableHeader>{t('agents.guardrailEvents.when')}</TableHeader>
+                  <TableHeader>{t('agents.guardrailEvents.check')}</TableHeader>
+                  <TableHeader>{t('agents.guardrailEvents.stage')}</TableHeader>
+                  <TableHeader>
                     {t('agents.guardrailEvents.outcome')}
-                  </th>
-                  <th className="px-3 py-2 font-medium">
+                  </TableHeader>
+                  <TableHeader>
                     {t('agents.guardrailEvents.detail')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody data-testid="guardrail-events-rows">
+                  </TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody data-testid="guardrail-events-rows">
                 {visible.map((event) => (
-                  <tr
-                    key={event.id}
-                    className="border-border/60 border-b last:border-0"
-                  >
-                    <td className="text-muted-foreground px-3 py-2 whitespace-nowrap">
+                  <TableRow key={event.id}>
+                    <TableCell className="text-muted-foreground whitespace-nowrap">
                       {formatDateTime(event.created_at)}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <span className="font-medium">{event.check_name}</span>
                       {event.category && (
                         <span className="text-muted-foreground ml-1">
                           · {event.category}
                         </span>
                       )}
-                    </td>
-                    <td className="text-muted-foreground px-3 py-2">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {t(STAGE_KEYS[event.stage] ?? event.stage)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${actionTone(
-                          event.action,
-                          event.outcome,
-                        )}`}
-                      >
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={actionTone(event.action, event.outcome)}>
                         {event.outcome === 'not_evaluated'
                           ? t('agents.guardrailEvents.notEvaluated')
                           : t(ACTION_KEYS[event.action] ?? event.action)}
-                      </span>
-                    </td>
-                    <td className="text-muted-foreground max-w-[28rem] px-3 py-2">
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
                       {event.detail || '—'}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
         </div>
       </div>
@@ -313,39 +334,6 @@ export default function GuardrailEvents({ agentId }: Props) {
         <p className="text-muted-foreground mt-2 text-xs">
           {t('agents.guardrailEvents.truncated', { count: PAGE_SIZE })}
         </p>
-      )}
-    </div>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  loading,
-  tone,
-  testId,
-  hint,
-}: {
-  label: string;
-  value?: number;
-  loading: boolean;
-  tone: string;
-  testId: string;
-  hint?: string;
-}) {
-  return (
-    <div
-      className="border-border bg-card rounded-xl border px-4 py-3"
-      data-testid={testId}
-      title={hint}
-    >
-      <p className="text-muted-foreground text-xs">{label}</p>
-      {loading ? (
-        <div className="mt-1 h-6 w-10">
-          <SkeletonLoader count={1} />
-        </div>
-      ) : (
-        <p className={`mt-1 text-xl font-semibold ${tone}`}>{value ?? 0}</p>
       )}
     </div>
   );
@@ -381,12 +369,10 @@ function ByCheck({ summary }: { summary: GuardrailSummary }) {
         {rows.map(([check, total]) => (
           <div key={check} className="flex items-center gap-3">
             <span className="w-32 shrink-0 truncate text-xs">{check}</span>
-            <div className="bg-border/60 h-2 flex-1 overflow-hidden rounded-full">
-              <div
-                className="bg-violets-are-blue h-full rounded-full"
-                style={{ width: `${max ? (total / max) * 100 : 0}%` }}
-              />
-            </div>
+            <Progress
+              className="flex-1"
+              value={max ? (total / max) * 100 : 0}
+            />
             <span className="text-muted-foreground w-10 shrink-0 text-right text-xs">
               {total}
             </span>

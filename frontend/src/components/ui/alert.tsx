@@ -4,13 +4,21 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const alertVariants = cva(
-  'relative w-full rounded-lg border px-4 py-3 text-sm [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground [&>svg~*]:pl-7',
+  // The icon has its own 16px column and sits centred on the text block
+  // (spanning a title and its description); everything else goes in the
+  // text column. The icon takes the text colour, so the two always match.
+  'relative grid w-full grid-cols-[0_1fr] gap-y-1 rounded-xl border px-4 py-3 text-sm has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-[>svg]:gap-x-3 [&>svg]:size-4 [&>svg]:self-center [&>svg]:text-current has-[>[data-slot=alert-title]]:[&>svg]:row-span-2 [&>:not(svg)]:col-start-2',
   {
     variants: {
       variant: {
         default: 'bg-background text-foreground',
-        destructive:
-          'border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive',
+        // The grey box, by name (a guardrail "not evaluated" outcome); the
+        // same classes as default, which is the component's own base tone.
+        neutral: 'bg-background text-foreground',
+        destructive: 'border-destructive/50 bg-destructive/10 text-destructive',
+        success: 'border-success/50 bg-success/10 text-success',
+        warning: 'border-warning/50 bg-warning/10 text-warning',
+        info: 'border-info/50 bg-info/10 text-info',
       },
     },
     defaultVariants: {
@@ -19,41 +27,44 @@ const alertVariants = cva(
   },
 );
 
-const Alert = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & VariantProps<typeof alertVariants>
->(({ className, variant, ...props }, ref) => (
-  <div
-    ref={ref}
-    role="alert"
-    className={cn(alertVariants({ variant }), className)}
-    {...props}
-  />
-));
-Alert.displayName = 'Alert';
+function Alert({
+  className,
+  variant = 'default',
+  ...props
+}: React.ComponentProps<'div'> & VariantProps<typeof alertVariants>) {
+  return (
+    <div
+      data-slot="alert"
+      data-variant={variant}
+      // A success notice confirms rather than interrupts, so it is polite.
+      role={variant === 'success' ? 'status' : 'alert'}
+      className={cn(alertVariants({ variant }), className)}
+      {...props}
+    />
+  );
+}
 
-const AlertTitle = React.forwardRef<
-  HTMLParagraphElement,
-  React.HTMLAttributes<HTMLHeadingElement>
->(({ className, ...props }, ref) => (
-  <h5
-    ref={ref}
-    className={cn('mb-1 leading-none font-medium tracking-tight', className)}
-    {...props}
-  />
-));
-AlertTitle.displayName = 'AlertTitle';
+function AlertTitle({ className, ...props }: React.ComponentProps<'h5'>) {
+  return (
+    <h5
+      data-slot="alert-title"
+      className={cn('leading-none font-medium tracking-tight', className)}
+      {...props}
+    />
+  );
+}
 
-const AlertDescription = React.forwardRef<
-  HTMLParagraphElement,
-  React.HTMLAttributes<HTMLParagraphElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn('text-sm [&_p]:leading-relaxed', className)}
-    {...props}
-  />
-));
-AlertDescription.displayName = 'AlertDescription';
+function AlertDescription({
+  className,
+  ...props
+}: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="alert-description"
+      className={cn('text-sm [&_p]:leading-relaxed', className)}
+      {...props}
+    />
+  );
+}
 
 export { Alert, AlertTitle, AlertDescription };

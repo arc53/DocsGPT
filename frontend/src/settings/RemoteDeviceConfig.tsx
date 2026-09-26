@@ -1,3 +1,4 @@
+import { ShieldAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -8,7 +9,6 @@ import devicesService, {
   Device,
 } from '../api/services/devicesService';
 import CopyButton from '../components/CopyButton';
-import Spinner from '../components/Spinner';
 import ToolIcon from '../components/ToolIcon';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import {
@@ -18,8 +18,17 @@ import {
   AccordionTrigger,
 } from '../components/ui/accordion';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
+import { LoadingState } from '../components/ui/loading-state';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -185,15 +194,11 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       : '');
 
   if (loading && !device) {
-    return (
-      <div className="mt-8 flex items-center justify-center py-16">
-        <Spinner size="large" />
-      </div>
-    );
+    return <LoadingState fill="block" size="lg" />;
   }
 
   return (
-    <div className="scrollbar-overlay mt-8 flex flex-col gap-6">
+    <div className="scrollbar-overlay flex flex-col gap-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <DetailBreadcrumb
           parentLabel={t('settings.tools.label')}
@@ -204,11 +209,13 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
         />
         <Button
           type="button"
-          className="rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
+          size="sm"
+          shape="pill"
           onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges || saving || loading}
+          disabled={!hasUnsavedChanges || loading}
+          loading={saving}
         >
-          {saving ? t('settings.tools.saving') : t('settings.tools.save')}
+          {t('settings.tools.save')}
         </Button>
       </div>
 
@@ -221,78 +228,73 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
       <div className="flex flex-wrap items-center gap-3">
         <ToolIcon
           name={tool.name}
-          title={`${tool.displayName} icon`}
-          className="h-7 w-7"
+          title={t('settings.tools.toolIconTitle', { name: tool.displayName })}
+          className="size-7"
         />
-        <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-          {device?.name || tool.customName || tool.displayName || 'device'}
+        <h2 className="text-foreground text-xl leading-tight font-semibold">
+          {device?.name ||
+            tool.customName ||
+            tool.displayName ||
+            t('settings.devices.fallbackName')}
         </h2>
-        <span
-          className={`rounded-full px-3 py-0.5 text-xs font-medium ${
-            online
-              ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-300'
-              : 'bg-gray-200 text-gray-700 dark:bg-gray-700/40 dark:text-gray-300'
-          }`}
-        >
-          {pillText}
-        </span>
+        <Badge variant={online ? 'success' : 'neutral'}>{pillText}</Badge>
         {approvalMode === 'full' && (
-          <span className="rounded-full bg-red-200 px-3 py-0.5 text-xs font-medium text-red-900 dark:bg-red-900/40 dark:text-red-300">
+          <Badge variant="destructive">
             {t('settings.devices.approvalFull')}
-          </span>
+          </Badge>
         )}
       </div>
 
       {/* Identity */}
-      <section className="flex flex-col gap-4">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.devices.identity')}
-        </h3>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <label className="text-muted-foreground w-32 shrink-0 pt-2 text-sm">
-            {t('settings.devices.nameLabel')}
-          </label>
-          <div className="w-full max-w-[340px]">
-            <Input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t('settings.devices.nameLabel')}
-              className="rounded-xl"
-            />
-          </div>
-        </div>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <label className="text-muted-foreground w-32 shrink-0 pt-2 text-sm">
-            {t('settings.devices.descriptionLabel')}
-          </label>
-          <div className="w-full max-w-[340px]">
-            <Input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t('settings.devices.descriptionPlaceholder')}
-              className="rounded-xl"
-            />
-          </div>
-        </div>
+      <section className="flex flex-col gap-5">
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.devices.identity')}
+        />
+        <FormField
+          label={t('settings.devices.nameLabel')}
+          labelSurface="background"
+          className="w-full max-w-[340px]"
+        >
+          <Input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </FormField>
+        <FormField
+          label={t('settings.devices.descriptionLabel')}
+          labelSurface="background"
+          className="w-full max-w-[340px]"
+        >
+          <Input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder={t('settings.devices.descriptionPlaceholder')}
+          />
+        </FormField>
       </section>
 
       {/* Access */}
-      <section className="flex flex-col gap-4">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.devices.access')}
-        </h3>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <label className="text-muted-foreground w-32 shrink-0 pt-2 text-sm">
-            {t('settings.devices.approvalMode')}
-          </label>
-          <div className="flex w-full max-w-[340px] flex-col gap-2">
+      <section className="flex flex-col gap-5">
+        <SectionHeader as="h3" size="xs" title={t('settings.devices.access')} />
+        <div className="flex w-full max-w-[340px] flex-col gap-2">
+          <FormField
+            label={t('settings.devices.approvalMode')}
+            labelSurface="background"
+            hint={
+              approvalMode === 'full'
+                ? t('settings.devices.approvalFullDescription')
+                : t('settings.devices.approvalAskDescription')
+            }
+          >
             <Select
               value={approvalMode}
               onValueChange={(value) => setApprovalMode(value as ApprovalMode)}
             >
-              <SelectTrigger className="w-full rounded-xl px-4 py-2" size="lg">
+              <SelectTrigger className="w-full" size="field">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -304,57 +306,46 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-muted-foreground text-xs">
-              {approvalMode === 'full'
-                ? t('settings.devices.approvalFullDescription')
-                : t('settings.devices.approvalAskDescription')}
-            </p>
-            {approvalMode === 'full' && (
-              <div className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+          </FormField>
+          {approvalMode === 'full' && (
+            <Alert variant="destructive">
+              <ShieldAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>
                 {t('settings.devices.fullAccessWarning')}
-              </div>
-            )}
-          </div>
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
       </section>
 
       {/* Connection */}
       <section className="flex flex-col gap-4">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.devices.connection')}
-        </h3>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <span className="text-muted-foreground w-32 shrink-0 pt-px text-sm">
-            {t('settings.devices.hostLabel')}
-          </span>
-          <div className="text-muted-foreground w-full max-w-md text-sm">
-            <span className="font-mono">
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.devices.connection')}
+        />
+        <DescriptionList layout="columns" size="sm">
+          <DescriptionItem label={t('settings.devices.hostLabel')}>
+            <span className="font-mono text-xs">
               {device?.hostname || 'unknown host'}
             </span>
             {device?.os ? ` · ${device.os}` : ''}
             {device?.arch ? ` · ${device.arch}` : ''}
             {device?.cli_version ? ` · cli ${device.cli_version}` : ''}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <span className="text-muted-foreground w-32 shrink-0 pt-1 text-sm">
-            {t('settings.devices.deviceIdLabel')}
-          </span>
-          <div className="flex w-full max-w-md flex-wrap items-center gap-2">
-            <code className="text-foreground dark:text-foreground bg-muted max-w-full truncate rounded px-2 py-0.5 font-mono text-xs">
-              {deviceId || '-'}
-            </code>
-            {deviceId && <CopyButton textToCopy={deviceId} />}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-4">
-          <span className="text-muted-foreground w-32 shrink-0 pt-px text-sm">
-            {t('settings.devices.lastSeenLabel')}
-          </span>
-          <div className="text-muted-foreground w-full max-w-md text-sm">
+          </DescriptionItem>
+          <DescriptionItem label={t('settings.devices.deviceIdLabel')}>
+            <div className="flex flex-wrap items-center gap-2">
+              <code className="text-foreground bg-muted max-w-full truncate rounded px-2 py-0.5 font-mono text-xs">
+                {deviceId || '-'}
+              </code>
+              {deviceId && <CopyButton textToCopy={deviceId} />}
+            </div>
+          </DescriptionItem>
+          <DescriptionItem label={t('settings.devices.lastSeenLabel')}>
             {formatTimestamp(device?.last_seen_at)}
-          </div>
-        </div>
+          </DescriptionItem>
+        </DescriptionList>
         {!online && (
           <p className="text-muted-foreground text-xs">
             {t('settings.devices.offlineHint')}
@@ -364,81 +355,93 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
 
       {/* Recent activity */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.devices.auditTitle')}
-        </h3>
-        <Accordion
-          type="single"
-          collapsible
-          onValueChange={handleAuditToggle}
-          className="border-border dark:border-border w-full rounded-xl border"
-        >
-          <AccordionItem value="audit" className="border-b-0">
-            <AccordionTrigger className="px-4 py-3 text-sm font-semibold">
-              {t('settings.devices.auditTitle')}
-              {audit !== null ? ` (${audit.length})` : ''}
-            </AccordionTrigger>
-            <AccordionContent className="px-4 pb-4">
-              {auditLoading ? (
-                <p className="text-muted-foreground py-2 text-sm">
-                  {t('settings.devices.auditLoading')}
-                </p>
-              ) : !audit || audit.length === 0 ? (
-                <p className="text-muted-foreground py-2 text-sm">
-                  {t('settings.devices.auditEmpty')}
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {audit.map((entry) => (
-                    <li
-                      key={entry.id}
-                      className="bg-muted/40 flex flex-col gap-1 rounded-md px-3 py-2 text-xs"
-                    >
-                      <code className="text-foreground dark:text-foreground block font-mono break-all whitespace-pre-wrap">
-                        {entry.command}
-                      </code>
-                      <div className="text-muted-foreground flex flex-wrap gap-3">
-                        <span>
-                          {t('settings.devices.auditDecision')}:{' '}
-                          {entry.decision}
-                        </span>
-                        <span>
-                          {t('settings.devices.auditExit')}:{' '}
-                          {entry.exit_code ?? '-'}
-                        </span>
-                        <span>
-                          {t('settings.devices.auditDuration')}:{' '}
-                          {entry.duration_ms ?? '-'} ms
-                        </span>
-                        <span>{formatTimestamp(entry.created_at)}</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.devices.auditTitle')}
+        />
+        <div className="border-border w-full rounded-xl border">
+          <Accordion
+            type="single"
+            collapsible
+            onValueChange={handleAuditToggle}
+          >
+            <AccordionItem value="audit">
+              <AccordionTrigger>
+                {t('settings.devices.auditTitle')}
+                {audit !== null ? ` (${audit.length})` : ''}
+              </AccordionTrigger>
+              <AccordionContent>
+                {auditLoading ? (
+                  <p className="text-muted-foreground py-2 text-sm">
+                    {t('settings.devices.auditLoading')}
+                  </p>
+                ) : !audit || audit.length === 0 ? (
+                  <p className="text-muted-foreground py-2 text-sm">
+                    {t('settings.devices.auditEmpty')}
+                  </p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {audit.map((entry) => (
+                      <li
+                        key={entry.id}
+                        className="bg-muted flex flex-col gap-1 rounded-md px-3 py-2 text-xs"
+                      >
+                        <code className="text-foreground block font-mono break-all whitespace-pre-wrap">
+                          {entry.command}
+                        </code>
+                        <div className="text-muted-foreground flex flex-wrap gap-3">
+                          <span>
+                            {t('settings.devices.auditDecision')}:{' '}
+                            {entry.decision}
+                          </span>
+                          <span>
+                            {t('settings.devices.auditExit')}:{' '}
+                            {entry.exit_code ?? '-'}
+                          </span>
+                          <span>
+                            {t('settings.devices.auditDuration')}:{' '}
+                            {t('settings.devices.auditDurationValue', {
+                              value: entry.duration_ms ?? '-',
+                            })}
+                          </span>
+                          <span>{formatTimestamp(entry.created_at)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </div>
       </section>
 
       {/* Danger zone */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-destructive text-sm font-semibold">
-          {t('settings.devices.dangerZone')}
-        </h3>
-        <div className="border-destructive/40 flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
+        <SectionHeader
+          as="h3"
+          size="xs"
+          tone="destructive"
+          title={t('settings.devices.dangerZone')}
+        />
+        <Card
+          tone="destructive"
+          className="sm:flex-row sm:items-center sm:justify-between"
+        >
           <p className="text-muted-foreground text-sm">
             {t('settings.devices.dangerZoneDescription')}
           </p>
           <Button
             type="button"
-            variant="destructive"
-            className="shrink-0 rounded-full px-5 text-white"
+            variant="destructive-outline"
+            shape="pill"
+            className="shrink-0"
             onClick={() => setRevokeState('ACTIVE')}
           >
             {t('settings.devices.revoke')}
           </Button>
-        </div>
+        </Card>
       </section>
 
       <ConfirmationModal
@@ -451,7 +454,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
         setModalState={setRevokeState}
         handleSubmit={handleRevoke}
         submitLabel={t('settings.devices.revoke')}
-        variant="danger"
+        variant="destructive"
       />
     </div>
   );

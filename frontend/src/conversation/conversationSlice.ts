@@ -29,6 +29,7 @@ import {
 import {
   Answer,
   ConversationState,
+  FEEDBACK,
   MessageStatus,
   Query,
   ResearchStep,
@@ -40,6 +41,14 @@ import { ToolCallsType } from './types';
 // terminal ``complete`` rows expose ``response``; non-terminal rows
 // would carry the WAL placeholder text, which must never render.
 // ``failed`` rows surface as ``error`` so they pick up Retry.
+// The API stores feedback lowercase ('like' / 'dislike') so analytics can
+// count it; the thumbs compare against the uppercase FEEDBACK union.
+function toClientFeedback(value: unknown): FEEDBACK | undefined {
+  if (typeof value !== 'string') return undefined;
+  const upper = value.toUpperCase();
+  return upper === 'LIKE' || upper === 'DISLIKE' ? upper : undefined;
+}
+
 export function mapServerQueryToClient(raw: any): Query {
   const status = raw?.status as MessageStatus | undefined;
   const isTerminalComplete = status === 'complete';
@@ -53,7 +62,7 @@ export function mapServerQueryToClient(raw: any): Query {
   const sources = Array.isArray(raw?.sources) ? raw.sources : undefined;
   const query: Query = {
     prompt: raw?.prompt ?? '',
-    feedback: raw?.feedback ?? undefined,
+    feedback: toClientFeedback(raw?.feedback),
     thought: raw?.thought ?? undefined,
     sources: sources && sources.length > 0 ? sources : undefined,
     tool_calls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,

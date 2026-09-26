@@ -1,18 +1,21 @@
 import { useState } from 'react';
-import { type FileRejection, useDropzone } from 'react-dropzone';
+import { type FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Upload from '../assets/upload.svg';
-import Spinner from '../components/Spinner';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
+import { Dropzone } from '../components/ui/dropzone';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
+import { SectionHeader } from '../components/ui/section-header';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { APIActionType } from '../settings/types';
-import { getMethodColorClass } from '../utils/httpMethodColors';
+import { getMethodBadgeVariant } from '../utils/httpMethodColors';
 
 interface ImportSpecModalProps {
   modalState: ActiveState;
@@ -73,28 +76,20 @@ export default function ImportSpecModal({
     setParsedResult(null);
   };
 
-  const { getRootProps, getInputProps, isDragActive, isDragReject } =
-    useDropzone({
-      onDrop: (acceptedFiles: File[], fileRejections: FileRejection[]) => {
-        // A rejected file never reaches acceptedFiles, so without this the
-        // drop is a silent no-op and any previously picked file stays staged.
-        if (fileRejections.length > 0) {
-          setFile(null);
-          setParsedResult(null);
-          setError(t('modals.importSpec.invalidFileType'));
-          return;
-        }
-        if (acceptedFiles[0]) processFile(acceptedFiles[0]);
-      },
-      multiple: false,
-      // Declared here (not via getInputProps) so drag-and-drop is filtered
-      // too; processFile's extension check stays as a backstop.
-      accept: {
-        'application/json': ['.json'],
-        'application/x-yaml': ['.yaml', '.yml'],
-        'text/yaml': ['.yaml', '.yml'],
-      },
-    });
+  const handleDrop = (
+    acceptedFiles: File[],
+    fileRejections: FileRejection[],
+  ) => {
+    // A rejected file never reaches acceptedFiles, so without this the
+    // drop is a silent no-op and any previously picked file stays staged.
+    if (fileRejections.length > 0) {
+      setFile(null);
+      setParsedResult(null);
+      setError(t('modals.importSpec.invalidFileType'));
+      return;
+    }
+    if (acceptedFiles[0]) processFile(acceptedFiles[0]);
+  };
 
   const handleParse = async () => {
     if (!file) return;
@@ -174,84 +169,60 @@ export default function ImportSpecModal({
       onOpenChange={(o) => !o && handleClose()}
       title={t('modals.importSpec.title')}
       size="lg"
-      contentClassName="max-h-[70vh]"
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleClose}
-            className="rounded-3xl px-5"
-          >
-            {t('modals.importSpec.cancel')}
-          </Button>
-          {!parsedResult ? (
-            <Button
-              type="button"
-              onClick={handleParse}
-              disabled={!file || loading}
-              className="w-20 rounded-3xl px-5 disabled:cursor-not-allowed"
-            >
-              {loading && <Spinner size="small" />}
-              {!loading && t('modals.importSpec.parse')}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleImport}
-              disabled={selectedActions.size === 0}
-              className="rounded-3xl px-5 disabled:cursor-not-allowed"
-            >
-              {t('modals.importSpec.import', { count: selectedActions.size })}
-            </Button>
-          )}
-        </>
+        !parsedResult ? (
+          <ModalActions
+            cancelLabel={t('modals.importSpec.cancel')}
+            onCancel={handleClose}
+            submitLabel={t('modals.importSpec.parse')}
+            onSubmit={handleParse}
+            pending={loading}
+            disabled={!file}
+          />
+        ) : (
+          <ModalActions
+            cancelLabel={t('modals.importSpec.cancel')}
+            onCancel={handleClose}
+            submitLabel={t('modals.importSpec.import', {
+              count: selectedActions.size,
+            })}
+            onSubmit={handleImport}
+            disabled={selectedActions.size === 0}
+          />
+        )
       }
     >
       <div className="flex flex-col gap-4">
         {!parsedResult ? (
           <div className="flex flex-col gap-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
+            <p className="text-muted-foreground text-sm">
               {t('modals.importSpec.description')}
             </p>
 
-            <div
-              {...getRootProps({
-                className: `border-border dark:border-border hover:border-primary dark:hover:border-primary flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 transition-colors ${
-                  isDragReject
-                    ? 'border-destructive'
-                    : isDragActive
-                      ? 'border-primary'
-                      : ''
-                }`,
-              })}
-            >
-              <img
-                src={Upload}
-                alt="Upload"
-                className="mb-3 h-10 w-10 opacity-60 dark:invert"
-              />
-              <p className="text-foreground dark:text-foreground text-sm font-medium">
-                {file ? file.name : t('modals.importSpec.dropzoneText')}
-              </p>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {t('modals.importSpec.supportedFormats')}
-              </p>
-              <input {...getInputProps()} />
-            </div>
-
-            {error && (
-              <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
-            )}
+            <Dropzone
+              onDrop={handleDrop}
+              // Declared here so drag-and-drop is filtered too; processFile's
+              // extension check stays as a backstop.
+              accept={{
+                'application/json': ['.json'],
+                'application/x-yaml': ['.yaml', '.yml'],
+                'text/yaml': ['.yaml', '.yml'],
+              }}
+              title={file ? file.name : t('modals.importSpec.dropzoneText')}
+              description={t('modals.importSpec.supportedFormats')}
+              error={error}
+            />
           </div>
         ) : (
           <div className="flex flex-col gap-4">
             <div className="bg-muted rounded-xl p-4">
-              <h3 className="text-foreground dark:text-foreground font-medium">
-                {parsedResult.metadata.title}
-              </h3>
+              <SectionHeader
+                as="h3"
+                size="xs"
+                title={parsedResult.metadata.title}
+              />
               {parsedResult.metadata.description && (
-                <p className="mt-1 line-clamp-2 text-sm text-gray-600 dark:text-gray-400">
+                <p className="text-muted-foreground mt-1 line-clamp-2 text-sm">
                   {parsedResult.metadata.description}
                 </p>
               )}
@@ -259,24 +230,25 @@ export default function ImportSpecModal({
                 {t('modals.importSpec.version')}:{' '}
                 {parsedResult.metadata.version}
               </p>
-              <div className="mt-3">
-                <label className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">
-                  {t('modals.importSpec.baseUrl')}
-                </label>
+              <FormField
+                label={t('modals.importSpec.baseUrl')}
+                labelSurface="muted"
+                className="mt-5"
+              >
                 <Input
                   type="text"
+                  variant="filled"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  className="bg-card h-auto rounded-lg px-3 py-2 text-sm md:text-sm"
                   placeholder={
                     parsedResult.metadata.base_url || 'https://api.example.com'
                   }
                 />
-              </div>
+              </FormField>
             </div>
 
             <div className="flex items-center justify-between px-1">
-              <p className="text-foreground dark:text-foreground text-sm font-medium">
+              <p className="text-foreground text-sm font-medium">
                 {t('modals.importSpec.actionsFound', {
                   count: parsedResult.actions.length,
                 })}
@@ -286,7 +258,7 @@ export default function ImportSpecModal({
                 variant="link"
                 size="sm"
                 onClick={toggleAll}
-                className="h-auto p-0"
+                className="-my-1.5 -mr-3"
               >
                 {selectedActions.size === parsedResult.actions.length
                   ? t('modals.importSpec.deselectAll')
@@ -294,34 +266,33 @@ export default function ImportSpecModal({
               </Button>
             </div>
 
-            <div className="max-h-72 space-y-2 overflow-y-auto px-1">
+            <div className="flex max-h-72 flex-col gap-2 overflow-y-auto px-1">
               {parsedResult.actions.map((action, index) => (
                 <label
                   key={index}
-                  className="border-border dark:border-border hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
+                  htmlFor={`import-spec-action-${index}`}
+                  className="border-border hover:bg-muted flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors"
                 >
-                  <input
-                    type="checkbox"
+                  <Checkbox
+                    id={`import-spec-action-${index}`}
                     checked={selectedActions.has(index)}
-                    onChange={() => toggleAction(index)}
-                    className="text-primary focus:ring-ring mt-1 h-4 w-4 rounded border-gray-300"
+                    onCheckedChange={() => toggleAction(index)}
+                    className="mt-1"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${getMethodColorClass(action.method)}`}
-                      >
+                      <Badge variant={getMethodBadgeVariant(action.method)}>
                         {action.method.toUpperCase()}
-                      </span>
-                      <span className="text-foreground dark:text-foreground truncate font-medium">
+                      </Badge>
+                      <span className="text-foreground truncate font-medium">
                         {action.name}
                       </span>
                     </div>
-                    <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
+                    <p className="text-muted-foreground mt-1 truncate text-sm">
                       {action.url}
                     </p>
                     {action.description && (
-                      <p className="mt-1 line-clamp-1 text-xs text-gray-400 dark:text-gray-500">
+                      <p className="text-muted-foreground/70 mt-1 line-clamp-1 text-xs">
                         {action.description}
                       </p>
                     )}

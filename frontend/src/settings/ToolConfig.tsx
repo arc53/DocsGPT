@@ -1,15 +1,12 @@
+import { ChevronRight, CircleCheck, CircleX, Trash2 } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import ChevronRight from '../assets/chevron-right.svg';
-import CircleCheck from '../assets/circle-check.svg';
-import CircleX from '../assets/circle-x.svg';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
-import Trash from '../assets/trash.svg';
 import ConfigFields from '../components/ConfigFields';
+import SearchInput from '../components/SearchInput';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -17,25 +14,48 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
+import { EmptyState } from '../components/ui/empty-state';
+import { FormField } from '../components/ui/form-field';
+import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
+import { SectionHeader } from '../components/ui/section-header';
 import { Switch } from '../components/ui/switch';
-import { useDarkTheme } from '../hooks';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../components/ui/table';
 import AddActionModal from '../modals/AddActionModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import ImportSpecModal from '../modals/ImportSpecModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
-import { getMethodColorClass } from '../utils/httpMethodColors';
+import { getMethodBadgeVariant } from '../utils/httpMethodColors';
 import { areObjectsEqual } from '../utils/objectUtils';
+import { cn, focusRing } from '@/lib/utils';
 import { APIActionType, APIToolType, UserToolType } from './types';
 
-// The `!` suffix is required because the surrounding `@utility table-default`
-// rules in index.css (min-w 150px, max-w 320px, p-4 / px-4 py-2) out-specify
-// plain Tailwind utility classes. Inline style={{...}} used to win on
-// specificity; the `!` keeps that behaviour without resorting to inline styles.
-const NARROW_CELL = 'w-[50px]! min-w-[50px]! max-w-[50px]! p-0!';
+const BODY_TYPE_HINT_KEYS: Record<string, string> = {
+  'application/json': 'json',
+  'application/x-www-form-urlencoded': 'formUrlencoded',
+  'multipart/form-data': 'multipart',
+  'text/plain': 'text',
+  'application/xml': 'xml',
+  'application/octet-stream': 'octetStream',
+};
+
+/** Maps a body content type to its hint's locale key suffix (JSON by default). */
+function bodyTypeHintKey(contentType?: string): string {
+  return BODY_TYPE_HINT_KEYS[contentType || 'application/json'] ?? 'json';
+}
 
 export default function ToolConfig({
   tool,
@@ -88,7 +108,6 @@ export default function ToolConfig({
     Set<number>
   >(new Set());
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
 
   const toggleUserActionExpand = (index: number) => {
     setExpandedUserActions((prev) => {
@@ -141,7 +160,9 @@ export default function ToolConfig({
       if (spec.required && !configValues[key]?.toString().trim()) {
         const hasEncCreds = !!(tool as any).config?.has_encrypted_credentials;
         if (!(spec.secret && hasEncCreds)) {
-          newErrors[key] = `${spec.label || key} is required`;
+          newErrors[key] = t('settings.tools.configErrors.required', {
+            field: spec.label || key,
+          });
         }
       }
       if (
@@ -151,10 +172,10 @@ export default function ToolConfig({
       ) {
         const num = Number(configValues[key]);
         if (isNaN(num) || num < 1) {
-          newErrors[key] = 'Must be a positive number';
+          newErrors[key] = t('settings.tools.configErrors.positiveNumber');
         }
         if (key === 'timeout' && num > 300) {
-          newErrors[key] = 'Maximum timeout is 300 seconds';
+          newErrors[key] = t('settings.tools.configErrors.maxTimeout');
         }
       }
     });
@@ -329,7 +350,7 @@ export default function ToolConfig({
     });
   };
   return (
-    <div className="scrollbar-overlay mt-8 flex flex-col gap-4">
+    <div className="scrollbar-overlay flex flex-col gap-4">
       <div className="mb-4 flex items-center justify-between gap-3">
         <DetailBreadcrumb
           parentLabel={t('settings.tools.label')}
@@ -338,41 +359,44 @@ export default function ToolConfig({
         />
         <Button
           type="button"
-          className="rounded-full px-3 py-2 text-xs text-nowrap text-white sm:px-4 sm:py-2"
+          size="sm"
+          shape="pill"
           onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges || saving}
+          disabled={!hasUnsavedChanges}
+          loading={saving}
         >
-          {saving ? t('settings.tools.saving') : t('settings.tools.save')}
+          {t('settings.tools.save')}
         </Button>
       </div>
       {saveError && (
-        <div className="mb-2 rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-          {saveError}
-        </div>
+        <Alert variant="destructive" className="mb-2">
+          <AlertDescription>{saveError}</AlertDescription>
+        </Alert>
       )}
-      <div className="mt-1">
-        <p className="text-foreground dark:text-foreground text-sm font-semibold">
-          {t('settings.tools.customName')}
-        </p>
-        <div className="relative mt-4 w-full max-w-96">
-          <Input
-            type="text"
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-            placeholder={t('settings.tools.customNamePlaceholder')}
-            className="rounded-xl"
-          />
-        </div>
-      </div>
+      <FormField
+        label={t('settings.tools.customName')}
+        labelSurface="background"
+        className="mt-4 w-full max-w-96"
+      >
+        <Input
+          type="text"
+          value={customName}
+          onChange={(e) => setCustomName(e.target.value)}
+          placeholder={t('settings.tools.customNamePlaceholder')}
+        />
+      </FormField>
       <div className="mt-1">
         {tool.name !== 'api_tool' &&
           Object.keys(configRequirements).length > 0 && (
-            <div>
-              <p className="text-foreground dark:text-foreground mb-4 text-sm font-semibold">
-                {t('settings.tools.authentication')}
-              </p>
+            <div className="flex flex-col gap-4">
+              <SectionHeader
+                as="h3"
+                size="xs"
+                title={t('settings.tools.authentication')}
+              />
               <div className="max-w-96">
                 <ConfigFields
+                  labelSurface="background"
                   configRequirements={configRequirements}
                   values={configValues}
                   onChange={handleFieldChange}
@@ -387,79 +411,60 @@ export default function ToolConfig({
           )}
       </div>
       <div className="flex flex-col gap-4">
-        <div className="mx-0 my-2 h-[0.8px] w-full rounded-full bg-[#C4C4C4]/40"></div>
-        <div className="flex w-full flex-row items-center justify-between gap-2">
-          <p className="text-foreground dark:text-foreground text-base font-semibold">
-            {t('settings.tools.actions')}
-          </p>
-          {tool.name === 'api_tool' && (
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setImportModalState('ACTIVE')}
-                className="border-primary text-primary hover:bg-primary hover:text-primary-foreground rounded-full px-5 py-1"
-              >
-                {t('settings.tools.importSpec')}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setActionModalState('ACTIVE')}
-                className="border-primary text-primary hover:bg-primary hover:text-primary-foreground rounded-full px-5 py-1"
-              >
-                {t('settings.tools.addAction')}
-              </Button>
-            </div>
-          )}
-        </div>
+        <div className="bg-border mx-0 my-2 h-[0.8px] w-full rounded-full"></div>
+        <SectionHeader
+          title={t('settings.tools.actions')}
+          actions={
+            tool.name === 'api_tool' ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  onClick={() => setImportModalState('ACTIVE')}
+                >
+                  {t('settings.tools.importSpec')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  onClick={() => setActionModalState('ACTIVE')}
+                >
+                  {t('settings.tools.addAction')}
+                </Button>
+              </>
+            ) : null
+          }
+        />
         {tool.name === 'api_tool' ? (
           <>
             {tool.config.actions &&
             Object.keys(tool.config.actions).length > 0 ? (
               <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
             ) : (
-              <div className="flex flex-col items-center justify-center py-8">
-                <img
-                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                  alt="No actions found"
-                  className="mx-auto mb-4 h-24 w-24"
-                />
-                <p className="text-center text-gray-500 dark:text-gray-400">
-                  {t('settings.tools.noActionsFound')}
-                </p>
-              </div>
+              <EmptyState
+                size="sm"
+                title={t('settings.tools.noActionsFound')}
+              />
             )}
           </>
         ) : (
           <div className="flex flex-col gap-4">
             {'actions' in tool && tool.actions && tool.actions.length > 0 ? (
               <>
-                <div className="relative">
-                  <svg
-                    className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    stroke="currentColor"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <path strokeLinecap="round" d="m21 21-4.35-4.35" />
-                  </svg>
-                  <Input
-                    type="text"
-                    value={userActionsSearch}
-                    onChange={(e) => setUserActionsSearch(e.target.value)}
-                    placeholder={t('settings.tools.searchActions')}
-                    className="h-10 rounded-full pr-4 pl-10 text-sm md:text-sm"
-                  />
-                </div>
+                <SearchInput
+                  value={userActionsSearch}
+                  onChange={(e) => setUserActionsSearch(e.target.value)}
+                  label={t('settings.tools.searchActions')}
+                />
 
                 {filteredUserActions.length === 0 && userActionsSearch && (
-                  <p className="py-4 text-center text-gray-500 dark:text-gray-400">
-                    {t('settings.tools.noActionsMatch')}
-                  </p>
+                  <EmptyState
+                    size="xs"
+                    illustration="none"
+                    title={t('settings.tools.noActionsMatch')}
+                  />
                 )}
 
                 {filteredUserActions.map(({ action, originalIndex }) => {
@@ -467,23 +472,38 @@ export default function ToolConfig({
                   return (
                     <div
                       key={originalIndex}
-                      className="border-border dark:border-border w-full rounded-xl border"
+                      className="border-border w-full rounded-xl border"
                     >
                       <div
-                        className={`border-border dark:border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
+                        className={cn(
+                          'border-border bg-muted flex cursor-pointer flex-wrap items-center justify-between px-4 py-3 outline-none',
+                          isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl',
+                          focusRing,
+                        )}
                         onClick={() => toggleUserActionExpand(originalIndex)}
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isExpanded}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleUserActionExpand(originalIndex);
+                          }
+                        }}
                       >
                         <div className="flex items-center gap-3">
-                          <img
-                            src={ChevronRight}
-                            alt="expand"
-                            className={`h-4 w-4 opacity-60 transition-transform duration-200 dark:invert ${isExpanded ? 'rotate-90' : ''}`}
+                          <ChevronRight
+                            className={cn(
+                              'text-muted-foreground size-4 transition-transform duration-200',
+                              isExpanded && 'rotate-90',
+                            )}
                           />
-                          <p className="text-foreground dark:text-foreground font-semibold">
+                          <p className="text-foreground font-semibold">
                             {action.name}
                           </p>
                           {action.description && (
-                            <p className="hidden truncate text-sm text-gray-500 md:block md:max-w-xs lg:max-w-md dark:text-gray-400">
+                            <p className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md">
                               {action.description}
                             </p>
                           )}
@@ -493,9 +513,12 @@ export default function ToolConfig({
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center gap-1">
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                            <label
+                              htmlFor={`approvalToggle-${originalIndex}`}
+                              className="text-muted-foreground text-xs"
+                            >
                               {t('settings.tools.requireApproval', 'Approval')}
-                            </span>
+                            </label>
                             <Switch
                               checked={action.require_approval ?? false}
                               onCheckedChange={(checked) => {
@@ -529,6 +552,9 @@ export default function ToolConfig({
                               });
                             }}
                             id={`actionToggle-${originalIndex}`}
+                            aria-label={t('settings.tools.toggleToolAria', {
+                              toolName: action.name,
+                            })}
                           />
                         </div>
                       </div>
@@ -539,6 +565,7 @@ export default function ToolConfig({
                               type="text"
                               className="w-full"
                               label={t('settings.tools.descriptionPlaceholder')}
+                              labelSurface="background"
                               value={action.description}
                               onChange={(e) => {
                                 setTool({
@@ -557,132 +584,149 @@ export default function ToolConfig({
                             />
                           </div>
                           <div className="px-5 py-4">
-                            <table className="table-default">
-                              <thead>
-                                <tr>
-                                  <th>{t('settings.tools.fieldName')}</th>
-                                  <th>{t('settings.tools.fieldType')}</th>
-                                  <th>{t('settings.tools.filledByLLM')}</th>
-                                  <th>
-                                    {t('settings.tools.fieldDescription')}
-                                  </th>
-                                  <th>{t('settings.tools.value')}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {Object.entries(
-                                  action.parameters?.properties,
-                                ).map((param, paramIndex) => {
-                                  const uniqueKey = `${originalIndex}-${param[0]}`;
-                                  return (
-                                    <tr
-                                      key={paramIndex}
-                                      className="font-normal text-nowrap"
-                                    >
-                                      <td>{param[0]}</td>
-                                      <td>{param[1].type}</td>
-                                      <td>
-                                        <label
-                                          htmlFor={uniqueKey}
-                                          className="ml-2.5 flex cursor-pointer items-start gap-4"
-                                        >
-                                          <div className="flex items-center">
-                                            &#8203;
-                                            <input
-                                              checked={param[1].filled_by_llm}
-                                              id={uniqueKey}
-                                              type="checkbox"
-                                              className="size-4 rounded-sm border-gray-300 bg-transparent"
-                                              onChange={() =>
-                                                handleCheckboxChange(
-                                                  originalIndex,
-                                                  param[0],
-                                                )
-                                              }
-                                            />
-                                          </div>
-                                        </label>
-                                      </td>
-                                      <td className="w-10">
-                                        <Input
-                                          key={uniqueKey}
-                                          value={param[1].description}
-                                          className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
-                                          onChange={(e) => {
-                                            setTool({
-                                              ...tool,
-                                              actions: tool.actions.map(
-                                                (act, index) => {
-                                                  if (index === originalIndex) {
-                                                    return {
-                                                      ...act,
-                                                      parameters: {
-                                                        ...act.parameters,
-                                                        properties: {
-                                                          ...act.parameters
-                                                            .properties,
-                                                          [param[0]]: {
+                            <TableContainer>
+                              <Table>
+                                <TableHead>
+                                  <TableRow>
+                                    <TableHeader>
+                                      {t('settings.tools.fieldName')}
+                                    </TableHeader>
+                                    <TableHeader>
+                                      {t('settings.tools.fieldType')}
+                                    </TableHeader>
+                                    <TableHeader>
+                                      {t('settings.tools.filledByLLM')}
+                                    </TableHeader>
+                                    <TableHeader>
+                                      {t('settings.tools.fieldDescription')}
+                                    </TableHeader>
+                                    <TableHeader>
+                                      {t('settings.tools.value')}
+                                    </TableHeader>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {Object.entries(
+                                    action.parameters?.properties,
+                                  ).map((param, paramIndex) => {
+                                    const uniqueKey = `${originalIndex}-${param[0]}`;
+                                    return (
+                                      <TableRow key={paramIndex}>
+                                        <TableCell className="text-nowrap">
+                                          {param[0]}
+                                        </TableCell>
+                                        <TableCell className="text-nowrap">
+                                          {param[1].type}
+                                        </TableCell>
+                                        <TableCell>
+                                          <label
+                                            htmlFor={uniqueKey}
+                                            className="ml-2.5 flex cursor-pointer items-start gap-4"
+                                          >
+                                            <div className="flex items-center">
+                                              &#8203;
+                                              <Checkbox
+                                                size="sm"
+                                                checked={param[1].filled_by_llm}
+                                                id={uniqueKey}
+                                                aria-label={t(
+                                                  'settings.tools.filledByLLM',
+                                                )}
+                                                onCheckedChange={() =>
+                                                  handleCheckboxChange(
+                                                    originalIndex,
+                                                    param[0],
+                                                  )
+                                                }
+                                              />
+                                            </div>
+                                          </label>
+                                        </TableCell>
+                                        <TableCell>
+                                          <Input
+                                            key={uniqueKey}
+                                            value={param[1].description}
+                                            size="sm"
+                                            onChange={(e) => {
+                                              setTool({
+                                                ...tool,
+                                                actions: tool.actions.map(
+                                                  (act, index) => {
+                                                    if (
+                                                      index === originalIndex
+                                                    ) {
+                                                      return {
+                                                        ...act,
+                                                        parameters: {
+                                                          ...act.parameters,
+                                                          properties: {
                                                             ...act.parameters
-                                                              .properties[
-                                                              param[0]
-                                                            ],
-                                                            description:
-                                                              e.target.value,
+                                                              .properties,
+                                                            [param[0]]: {
+                                                              ...act.parameters
+                                                                .properties[
+                                                                param[0]
+                                                              ],
+                                                              description:
+                                                                e.target.value,
+                                                            },
                                                           },
                                                         },
-                                                      },
-                                                    };
-                                                  }
-                                                  return act;
-                                                },
-                                              ),
-                                            });
-                                          }}
-                                        />
-                                      </td>
-                                      <td>
-                                        <Input
-                                          value={param[1].value}
-                                          key={uniqueKey}
-                                          disabled={param[1].filled_by_llm}
-                                          className={`h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm ${param[1].filled_by_llm ? 'opacity-50' : ''}`}
-                                          onChange={(e) => {
-                                            setTool({
-                                              ...tool,
-                                              actions: tool.actions.map(
-                                                (act, index) => {
-                                                  if (index === originalIndex) {
-                                                    return {
-                                                      ...act,
-                                                      parameters: {
-                                                        ...act.parameters,
-                                                        properties: {
-                                                          ...act.parameters
-                                                            .properties,
-                                                          [param[0]]: {
+                                                      };
+                                                    }
+                                                    return act;
+                                                  },
+                                                ),
+                                              });
+                                            }}
+                                          />
+                                        </TableCell>
+                                        <TableCell>
+                                          <Input
+                                            value={param[1].value}
+                                            key={uniqueKey}
+                                            disabled={param[1].filled_by_llm}
+                                            size="sm"
+                                            onChange={(e) => {
+                                              setTool({
+                                                ...tool,
+                                                actions: tool.actions.map(
+                                                  (act, index) => {
+                                                    if (
+                                                      index === originalIndex
+                                                    ) {
+                                                      return {
+                                                        ...act,
+                                                        parameters: {
+                                                          ...act.parameters,
+                                                          properties: {
                                                             ...act.parameters
-                                                              .properties[
-                                                              param[0]
-                                                            ],
-                                                            value:
-                                                              e.target.value,
+                                                              .properties,
+                                                            [param[0]]: {
+                                                              ...act.parameters
+                                                                .properties[
+                                                                param[0]
+                                                              ],
+                                                              value:
+                                                                e.target.value,
+                                                            },
                                                           },
                                                         },
-                                                      },
-                                                    };
-                                                  }
-                                                  return act;
-                                                },
-                                              ),
-                                            });
-                                          }}
-                                        />
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+                                                      };
+                                                    }
+                                                    return act;
+                                                  },
+                                                ),
+                                              });
+                                            }}
+                                          />
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </TableContainer>
                           </div>
                         </>
                       )}
@@ -691,16 +735,10 @@ export default function ToolConfig({
                 })}
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center py-8">
-                <img
-                  src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                  alt="No actions found"
-                  className="mx-auto mb-4 h-24 w-24"
-                />
-                <p className="text-center text-gray-500 dark:text-gray-400">
-                  {t('settings.tools.noActionsFound')}
-                </p>
-              </div>
+              <EmptyState
+                size="sm"
+                title={t('settings.tools.noActionsFound')}
+              />
             )}
           </div>
         )}
@@ -869,31 +907,18 @@ function APIToolConfig({
 
   return (
     <div className="scrollbar-overlay flex flex-col gap-4">
-      <div className="relative">
-        <svg
-          className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          strokeWidth={2}
-          stroke="currentColor"
-        >
-          <circle cx="11" cy="11" r="8" />
-          <path strokeLinecap="round" d="m21 21-4.35-4.35" />
-        </svg>
-        <Input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={t('settings.tools.searchActions')}
-          className="h-10 rounded-full pr-4 pl-10 text-sm md:text-sm"
-        />
-      </div>
+      <SearchInput
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        label={t('settings.tools.searchActions')}
+      />
 
       {filteredActions.length === 0 && searchQuery && (
-        <p className="py-4 text-center text-gray-500 dark:text-gray-400">
-          {t('settings.tools.noActionsMatch')}
-        </p>
+        <EmptyState
+          size="xs"
+          illustration="none"
+          title={t('settings.tools.noActionsMatch')}
+        />
       )}
 
       <div className="flex flex-col gap-4">
@@ -902,28 +927,39 @@ function APIToolConfig({
           return (
             <div
               key={actionIndex}
-              className="border-border dark:border-border w-full rounded-xl border"
+              className="border-border w-full rounded-xl border"
             >
               <div
-                className={`border-border dark:border-border flex cursor-pointer flex-wrap items-center justify-between ${isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl'} bg-muted px-4 py-3`}
+                className={cn(
+                  'border-border bg-muted flex cursor-pointer flex-wrap items-center justify-between px-4 py-3 outline-none',
+                  isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl',
+                  focusRing,
+                )}
                 onClick={() => toggleActionExpand(actionName)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={isExpanded}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleActionExpand(actionName);
+                  }
+                }}
               >
                 <div className="flex items-center gap-3">
-                  <img
-                    src={ChevronRight}
-                    alt="expand"
-                    className={`h-4 w-4 opacity-60 transition-transform duration-200 dark:invert ${isExpanded ? 'rotate-90' : ''}`}
+                  <ChevronRight
+                    className={cn(
+                      'text-muted-foreground size-4 transition-transform duration-200',
+                      isExpanded && 'rotate-90',
+                    )}
                   />
-                  <span
-                    className={`rounded px-2 py-0.5 text-xs font-medium ${getMethodColorClass(action.method)}`}
-                  >
+                  <Badge variant={getMethodBadgeVariant(action.method)}>
                     {action.method}
-                  </span>
-                  <p className="text-foreground dark:text-foreground font-semibold">
-                    {action.name}
-                  </p>
+                  </Badge>
+                  <p className="text-foreground font-semibold">{action.name}</p>
                   {action.description && (
-                    <p className="hidden truncate text-sm text-gray-500 md:block md:max-w-xs lg:max-w-md dark:text-gray-400">
+                    <p className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md">
                       {action.description}
                     </p>
                   )}
@@ -932,24 +968,22 @@ function APIToolConfig({
                   className="flex items-center gap-2"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
+                  <IconButton
+                    label={t('convTile.delete')}
+                    icon={Trash2}
+                    variant="ghost-destructive"
+                    size="icon-xs"
+                    shape="pill"
                     onClick={() => handleDeleteActionClick(actionName)}
-                    className="mr-2 h-6 w-6 rounded-full"
-                    title={t('convTile.delete')}
-                  >
-                    <img
-                      src={Trash}
-                      alt="delete"
-                      className="h-4 w-4 opacity-40 transition-opacity hover:opacity-100"
-                    />
-                  </Button>
+                    className="mr-2"
+                  />
                   <div className="flex items-center gap-1">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                    <label
+                      htmlFor={`approvalToggle-${actionIndex}`}
+                      className="text-muted-foreground text-xs"
+                    >
                       {t('settings.tools.requireApproval', 'Approval')}
-                    </span>
+                    </label>
                     <Switch
                       checked={action.require_approval ?? false}
                       onCheckedChange={() => {
@@ -978,6 +1012,9 @@ function APIToolConfig({
                     checked={action.active}
                     onCheckedChange={() => handleActionToggle(actionName)}
                     id={`actionToggle-${actionIndex}`}
+                    aria-label={t('settings.tools.toggleToolAria', {
+                      toolName: actionName,
+                    })}
                   />
                 </div>
               </div>
@@ -1007,13 +1044,16 @@ function APIToolConfig({
                         });
                       }}
                       label={t('settings.tools.urlPlaceholder')}
+                      labelSurface="background"
+                      shape="pill"
                     />
                   </div>
                   <div className="mt-4 px-5 py-2">
-                    <div className="relative w-full">
-                      <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
-                        {t('settings.tools.method')}
-                      </span>
+                    <FormField
+                      label={t('settings.tools.method')}
+                      labelSurface="background"
+                      className="w-full max-w-80"
+                    >
                       <Select
                         value={action.method}
                         onValueChange={(value) => {
@@ -1044,8 +1084,9 @@ function APIToolConfig({
                         }}
                       >
                         <SelectTrigger
-                          className="w-56 rounded-3xl px-5 py-3"
-                          size="lg"
+                          className="w-full"
+                          size="field"
+                          shape="pill"
                         >
                           <SelectValue />
                         </SelectTrigger>
@@ -1065,7 +1106,7 @@ function APIToolConfig({
                           ))}
                         </SelectContent>
                       </Select>
-                    </div>
+                    </FormField>
                   </div>
                   <div className="mt-4 px-5 py-2">
                     <Input
@@ -1091,6 +1132,8 @@ function APIToolConfig({
                         });
                       }}
                       label={t('settings.tools.descriptionPlaceholder')}
+                      labelSurface="background"
+                      shape="pill"
                     />
                   </div>
                   {(action.method === 'POST' ||
@@ -1099,10 +1142,16 @@ function APIToolConfig({
                     action.method === 'HEAD' ||
                     action.method === 'OPTIONS') && (
                     <div className="mt-4 px-5 py-2">
-                      <div className="relative w-full">
-                        <span className="text-muted-foreground bg-card absolute -top-2 left-5 z-10 px-2 text-xs">
-                          {t('settings.tools.bodyContentType')}
-                        </span>
+                      <FormField
+                        label={t('settings.tools.bodyContentType')}
+                        hint={t(
+                          `settings.tools.bodyTypeHint.${bodyTypeHintKey(
+                            action.body_content_type,
+                          )}`,
+                        )}
+                        labelSurface="background"
+                        className="w-full max-w-80"
+                      >
                         <Select
                           value={action.body_content_type || 'application/json'}
                           onValueChange={(value) => {
@@ -1132,8 +1181,9 @@ function APIToolConfig({
                           }}
                         >
                           <SelectTrigger
-                            className="w-56 rounded-3xl px-5 py-3"
-                            size="lg"
+                            className="w-full"
+                            size="field"
+                            shape="pill"
                           >
                             <SelectValue />
                           </SelectTrigger>
@@ -1152,24 +1202,7 @@ function APIToolConfig({
                             ))}
                           </SelectContent>
                         </Select>
-                      </div>
-                      <p className="text-foreground dark:text-foreground mt-2 text-xs opacity-60">
-                        {action.body_content_type === 'multipart/form-data' &&
-                          'For APIs requiring multipart format. File uploads not supported through LLM.'}
-                        {action.body_content_type ===
-                          'application/octet-stream' &&
-                          'Raw binary data, base64-encoded for transmission.'}
-                        {action.body_content_type ===
-                          'application/x-www-form-urlencoded' &&
-                          'Standard form submission format. Best for legacy APIs and login forms.'}
-                        {action.body_content_type === 'application/xml' &&
-                          'Structured XML format. Use for SOAP and enterprise APIs.'}
-                        {action.body_content_type === 'text/plain' &&
-                          'Raw text data. Each field on a new line.'}
-                        {(!action.body_content_type ||
-                          action.body_content_type === 'application/json') &&
-                          'Most common format. Use for modern REST APIs.'}
-                      </p>
+                      </FormField>
                     </div>
                   )}
                   <div className="mt-4 px-5 py-2">
@@ -1198,7 +1231,7 @@ function APIToolConfig({
             setActionToDelete(null);
           }}
           submitLabel={t('convTile.delete')}
-          variant="danger"
+          variant="destructive"
         />
       )}
     </div>
@@ -1216,6 +1249,7 @@ function APIActionTable({
   ) => void;
 }) {
   const { t } = useTranslation();
+  const idPrefix = React.useId();
 
   const [action, setAction] = React.useState<APIActionType>(apiAction);
   const [newPropertyKey, setNewPropertyKey] = React.useState('');
@@ -1398,14 +1432,15 @@ function APIActionTable({
       <>
         {Object.entries(action[section].properties).map(
           ([key, param], index) => (
-            <tr key={index} className="font-normal text-nowrap">
-              <td className="relative">
+            <TableRow key={index}>
+              <TableCell className="relative">
                 {editingPropertyKey.section === section &&
                 editingPropertyKey.oldKey === key ? (
                   <div className="flex flex-row items-center justify-between gap-2">
                     <Input
                       value={newPropertyKey}
-                      className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                      size="sm"
+                      className="min-w-[130.5px]"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1414,78 +1449,85 @@ function APIActionTable({
                       }}
                     />
                     <div className="mt-1">
-                      <Button
-                        type="button"
+                      <IconButton
+                        label={t('settings.tools.save')}
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon-xs"
                         onClick={handleRenameProperty}
-                        className="mr-1 h-5 w-5"
+                        className="mr-1"
                       >
-                        <img
-                          src={CircleCheck}
-                          alt="check"
-                          className="h-5 w-5"
-                        />
-                      </Button>
-                      <Button
-                        type="button"
+                        <CircleCheck className="text-success" aria-hidden />
+                      </IconButton>
+                      <IconButton
+                        label={t('settings.tools.cancel')}
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon-xs"
                         onClick={handleRenamePropertyCancel}
-                        className="h-5 w-5"
                       >
-                        <img src={CircleX} alt="cancel" className="h-5 w-5" />
-                      </Button>
+                        <CircleX className="text-destructive" aria-hidden />
+                      </IconButton>
                     </div>
                   </div>
                 ) : (
                   <Input
                     value={key}
-                    className="h-auto min-w-[175.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                    size="sm"
+                    className="min-w-[175.5px]"
                     onFocus={() => handleRenamePropertyStart(section, key)}
                     readOnly
                   />
                 )}
-              </td>
-              <td>
-                <select
+              </TableCell>
+              <TableCell>
+                <Select
                   value={param.type}
-                  onChange={(e) =>
+                  onValueChange={(value) =>
                     handlePropertyTypeChange(
                       section,
                       key,
-                      e.target.value as 'string' | 'integer',
+                      value as 'string' | 'integer',
                     )
                   }
-                  className="border-border dark:border-border focus-visible:ring-ring/50 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden focus-visible:ring-2"
                 >
-                  <option value="string">string</option>
-                  <option value="integer">integer</option>
-                </select>
-              </td>
-              <td>
-                <label className="ml-2.5 flex cursor-pointer items-start gap-4">
+                  <SelectTrigger
+                    size="sm"
+                    aria-label={t('settings.tools.type')}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="string">string</SelectItem>
+                    <SelectItem value="integer">integer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </TableCell>
+              <TableCell>
+                <label
+                  htmlFor={`${idPrefix}-${section}-${index}-filled-by-llm`}
+                  className="ml-2.5 flex cursor-pointer items-start gap-4"
+                >
                   <div className="flex items-center">
-                    <input
+                    <Checkbox
+                      size="sm"
+                      id={`${idPrefix}-${section}-${index}-filled-by-llm`}
+                      aria-label={t('settings.tools.filledByLLM')}
                       checked={param.filled_by_llm}
-                      type="checkbox"
-                      className="size-4 rounded-sm border-gray-300 bg-transparent"
-                      onChange={(e) =>
+                      onCheckedChange={(checked) =>
                         handlePropertyChange(
                           section,
                           key,
                           'filled_by_llm',
-                          e.target.checked,
+                          checked === true,
                         )
                       }
                     />
                   </div>
                 </label>
-              </td>
-              <td className="w-10">
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.description}
-                  className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                  size="sm"
                   onChange={(e) =>
                     handlePropertyChange(
                       section,
@@ -1495,36 +1537,32 @@ function APIActionTable({
                     )
                   }
                 />
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.value}
                   disabled={param.filled_by_llm}
                   onChange={(e) =>
                     handlePropertyChange(section, key, 'value', e.target.value)
                   }
-                  className={`h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm ${param.filled_by_llm ? 'opacity-50' : ''}`}
+                  size="sm"
                 />
-              </td>
-              <td
-                className={`border-border dark:border-border border-b ${NARROW_CELL}`}
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
+              </TableCell>
+              <TableCell width="50px" align="center">
+                <IconButton
+                  label={t('convTile.delete')}
+                  icon={Trash2}
+                  variant="ghost-destructive"
+                  size="icon-xs"
                   onClick={() => handlePorpertyDelete(section, key)}
-                  className="h-4 w-4 opacity-60 hover:opacity-100"
-                >
-                  <img src={Trash} alt="delete" className="h-4 w-4"></img>
-                </Button>
-              </td>
-            </tr>
+                />
+              </TableCell>
+            </TableRow>
           ),
         )}
         {addingPropertySection === section ? (
-          <tr>
-            <td>
+          <TableRow>
+            <TableCell>
               <Input
                 value={newPropertyKey}
                 onChange={(e) => setNewPropertyKey(e.target.value)}
@@ -1534,58 +1572,64 @@ function APIActionTable({
                   }
                 }}
                 placeholder={t('settings.tools.propertyName')}
-                className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                size="sm"
+                className="min-w-[130.5px]"
               />
-            </td>
-            <td>
-              <select
+            </TableCell>
+            <TableCell>
+              <Select
                 value={newPropertyType}
-                onChange={(e) =>
-                  setNewPropertyType(e.target.value as 'string' | 'integer')
+                onValueChange={(value) =>
+                  setNewPropertyType(value as 'string' | 'integer')
                 }
-                className="border-border dark:border-border focus-visible:ring-ring/50 rounded-lg border bg-transparent px-2 py-1 text-sm outline-hidden focus-visible:ring-2"
               >
-                <option value="string">string</option>
-                <option value="integer">integer</option>
-              </select>
-            </td>
-            <td colSpan={3} className="text-right">
+                <SelectTrigger size="sm" aria-label={t('settings.tools.type')}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="string">string</SelectItem>
+                  <SelectItem value="integer">integer</SelectItem>
+                </SelectContent>
+              </Select>
+            </TableCell>
+            <TableCell colSpan={3} className="text-right">
               <Button
                 type="button"
                 variant="default"
                 size="sm"
+                shape="pill"
                 onClick={handleAddProperty}
-                className="mr-1 rounded-full px-5 text-white"
+                className="mr-1"
               >
                 {t('settings.tools.add')}
               </Button>
               <Button
                 type="button"
-                variant="destructive-outline"
+                variant="ghost"
                 size="sm"
+                shape="pill"
                 onClick={handleAddPropertyCancel}
-                className="rounded-full px-5"
               >
                 {t('settings.tools.cancel')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="50px" align="center"></TableCell>
+          </TableRow>
         ) : (
-          <tr>
-            <td colSpan={5}>
+          <TableRow>
+            <TableCell colSpan={5}>
               <Button
                 type="button"
-                variant="outline"
+                variant="outline-primary"
                 size="sm"
+                shape="pill"
                 onClick={() => handleAddPropertyStart(section)}
-                className="border-primary text-primary hover:bg-primary/90 rounded-full px-5 text-nowrap hover:text-white"
               >
                 {t('settings.tools.addNew')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="50px" align="center"></TableCell>
+          </TableRow>
         )}
       </>
     );
@@ -1596,14 +1640,15 @@ function APIActionTable({
       <>
         {Object.entries(action.headers.properties).map(
           ([key, param], index) => (
-            <tr key={index} className="font-normal text-nowrap">
-              <td className="relative">
+            <TableRow key={index}>
+              <TableCell className="relative">
                 {editingPropertyKey.section === 'headers' &&
                 editingPropertyKey.oldKey === key ? (
                   <div className="flex flex-row items-center justify-between gap-2">
                     <Input
                       value={newPropertyKey}
-                      className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                      size="sm"
+                      className="min-w-[130.5px]"
                       onChange={(e) => setNewPropertyKey(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1612,40 +1657,36 @@ function APIActionTable({
                       }}
                     />
                     <div className="mt-1">
-                      <Button
-                        type="button"
+                      <IconButton
+                        label={t('settings.tools.save')}
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon-xs"
                         onClick={handleRenameProperty}
-                        className="mr-1 h-5 w-5"
+                        className="mr-1"
                       >
-                        <img
-                          src={CircleCheck}
-                          alt="check"
-                          className="h-5 w-5"
-                        />
-                      </Button>
-                      <Button
-                        type="button"
+                        <CircleCheck className="text-success" aria-hidden />
+                      </IconButton>
+                      <IconButton
+                        label={t('settings.tools.cancel')}
                         variant="ghost"
-                        size="icon-sm"
+                        size="icon-xs"
                         onClick={handleRenamePropertyCancel}
-                        className="h-5 w-5"
                       >
-                        <img src={CircleX} alt="cancel" className="h-5 w-5" />
-                      </Button>
+                        <CircleX className="text-destructive" aria-hidden />
+                      </IconButton>
                     </div>
                   </div>
                 ) : (
                   <Input
                     value={key}
-                    className="h-auto min-w-[175.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                    size="sm"
+                    className="min-w-[175.5px]"
                     onFocus={() => handleRenamePropertyStart('headers', key)}
                     readOnly
                   />
                 )}
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.value}
                   onChange={(e) =>
@@ -1656,14 +1697,14 @@ function APIActionTable({
                       e.target.value,
                     )
                   }
-                  placeholder="e.g., application/json"
-                  className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                  placeholder={t('settings.tools.headerValuePlaceholder')}
+                  size="sm"
                 />
-              </td>
-              <td>
+              </TableCell>
+              <TableCell>
                 <Input
                   value={param.description}
-                  className="h-auto rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                  size="sm"
                   onChange={(e) =>
                     handlePropertyChange(
                       'headers',
@@ -1673,26 +1714,22 @@ function APIActionTable({
                     )
                   }
                 />
-              </td>
-              <td
-                className={`border-border dark:border-border border-b ${NARROW_CELL}`}
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
+              </TableCell>
+              <TableCell width="50px" align="center">
+                <IconButton
+                  label={t('convTile.delete')}
+                  icon={Trash2}
+                  variant="ghost-destructive"
+                  size="icon-xs"
                   onClick={() => handlePorpertyDelete('headers', key)}
-                  className="h-4 w-4 opacity-60 hover:opacity-100"
-                >
-                  <img src={Trash} alt="delete" className="h-4 w-4"></img>
-                </Button>
-              </td>
-            </tr>
+                />
+              </TableCell>
+            </TableRow>
           ),
         )}
         {addingPropertySection === 'headers' ? (
-          <tr>
-            <td>
+          <TableRow>
+            <TableCell>
               <Input
                 value={newPropertyKey}
                 onChange={(e) => setNewPropertyKey(e.target.value)}
@@ -1702,46 +1739,48 @@ function APIActionTable({
                   }
                 }}
                 placeholder={t('settings.tools.propertyName')}
-                className="h-auto min-w-[130.5px] rounded-lg px-2 py-1 text-sm shadow-none md:text-sm"
+                size="sm"
+                className="min-w-[130.5px]"
               />
-            </td>
-            <td colSpan={2} className="text-right">
+            </TableCell>
+            <TableCell colSpan={2} className="text-right">
               <Button
                 type="button"
                 variant="default"
                 size="sm"
+                shape="pill"
                 onClick={handleAddProperty}
-                className="mr-1 rounded-full px-5 text-white"
+                className="mr-1"
               >
                 {t('settings.tools.add')}
               </Button>
               <Button
                 type="button"
-                variant="destructive-outline"
+                variant="ghost"
                 size="sm"
+                shape="pill"
                 onClick={handleAddPropertyCancel}
-                className="rounded-full px-5"
               >
                 {t('settings.tools.cancel')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="50px" align="center"></TableCell>
+          </TableRow>
         ) : (
-          <tr>
-            <td colSpan={3}>
+          <TableRow>
+            <TableCell colSpan={3}>
               <Button
                 type="button"
-                variant="outline"
+                variant="outline-primary"
                 size="sm"
+                shape="pill"
                 onClick={() => handleAddPropertyStart('headers')}
-                className="border-primary text-primary hover:bg-primary/90 rounded-full px-5 text-nowrap hover:text-white"
               >
                 {t('settings.tools.addNew')}
               </Button>
-            </td>
-            <td className={NARROW_CELL}></td>
-          </tr>
+            </TableCell>
+            <TableCell width="50px" align="center"></TableCell>
+          </TableRow>
         )}
       </>
     );
@@ -1749,83 +1788,61 @@ function APIActionTable({
 
   return (
     <div className="scrollbar-overlay flex flex-col gap-6">
-      <div>
-        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
-          {t('settings.tools.headers')}
-        </h3>
-        <table className="table-default">
-          <thead>
-            <tr>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.name')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.description')}
-              </th>
-              <th className={NARROW_CELL}></th>
-            </tr>
-          </thead>
-          <tbody>{renderHeadersTable()}</tbody>
-        </table>
+      <div className="flex flex-col gap-1">
+        <SectionHeader as="h3" size="xs" title={t('settings.tools.headers')} />
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader>{t('settings.tools.name')}</TableHeader>
+                <TableHeader>{t('settings.tools.value')}</TableHeader>
+                <TableHeader>{t('settings.tools.description')}</TableHeader>
+                <TableHeader width="50px" align="center"></TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>{renderHeadersTable()}</TableBody>
+          </Table>
+        </TableContainer>
       </div>
-      <div>
-        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
-          {t('settings.tools.queryParameters')}
-        </h3>
-        <table className="table-default">
-          <thead>
-            <tr>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.name')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.type')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.filledByLLM')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.description')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
-              </th>
-              <th className={NARROW_CELL}></th>
-            </tr>
-          </thead>
-          <tbody>{renderPropertiesTable('query_params')}</tbody>
-        </table>
+      <div className="flex flex-col gap-1">
+        <SectionHeader
+          as="h3"
+          size="xs"
+          title={t('settings.tools.queryParameters')}
+        />
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader>{t('settings.tools.name')}</TableHeader>
+                <TableHeader>{t('settings.tools.type')}</TableHeader>
+                <TableHeader>{t('settings.tools.filledByLLM')}</TableHeader>
+                <TableHeader>{t('settings.tools.description')}</TableHeader>
+                <TableHeader>{t('settings.tools.value')}</TableHeader>
+                <TableHeader width="50px" align="center"></TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>{renderPropertiesTable('query_params')}</TableBody>
+          </Table>
+        </TableContainer>
       </div>
-      <div className="mb-6">
-        <h3 className="text-foreground dark:text-foreground mb-1 text-base font-normal">
-          {t('settings.tools.body')}
-        </h3>
-        <table className="table-default">
-          <thead>
-            <tr>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.name')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.type')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.filledByLLM')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.description')}
-              </th>
-              <th className="text-foreground dark:text-foreground px-2 py-1 text-left text-sm font-normal">
-                {t('settings.tools.value')}
-              </th>
-              <th className={NARROW_CELL}></th>
-            </tr>
-          </thead>
-          <tbody>{renderPropertiesTable('body')}</tbody>
-        </table>
+      <div className="mb-6 flex flex-col gap-1">
+        <SectionHeader as="h3" size="xs" title={t('settings.tools.body')} />
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableHeader>{t('settings.tools.name')}</TableHeader>
+                <TableHeader>{t('settings.tools.type')}</TableHeader>
+                <TableHeader>{t('settings.tools.filledByLLM')}</TableHeader>
+                <TableHeader>{t('settings.tools.description')}</TableHeader>
+                <TableHeader>{t('settings.tools.value')}</TableHeader>
+                <TableHeader width="50px" align="center"></TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>{renderPropertiesTable('body')}</TableBody>
+          </Table>
+        </TableContainer>
       </div>
     </div>
   );

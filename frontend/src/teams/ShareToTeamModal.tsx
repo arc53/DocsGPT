@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from 'lucide-react';
+import { CircleAlert, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -9,6 +9,7 @@ import teamsService, {
   ResourceType,
   TeamMember,
 } from '../api/services/teamsService';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import {
@@ -19,14 +20,10 @@ import {
   CommandItem,
   CommandList,
 } from '../components/ui/command';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { IconButton } from '../components/ui/icon-button';
+import { ListRow, ListRows } from '../components/ui/list-row';
 import { Modal } from '../components/ui/modal';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Popover,
   PopoverContent,
@@ -42,7 +39,6 @@ import {
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { decodeJwtPayload } from '../utils/jwtUtils';
-import { cn } from '@/lib/utils';
 import { loadTeams, selectTeams } from './teamsSlice';
 
 type Props = {
@@ -411,44 +407,36 @@ export default function ShareToTeamModal({
     const key = shareKey(share);
     const rowBusy = busyKeys.has(key);
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
+      <>
+        <Select
+          value={share.access_level}
+          disabled={rowBusy}
+          onValueChange={(value) => changeAccess(share, value as AccessLevel)}
+        >
+          <SelectTrigger
             size="sm"
-            disabled={rowBusy}
-            className="shrink-0 gap-1 px-2 font-normal"
+            className="w-28 shrink-0"
             aria-label={t('settings.teams.share.access')}
           >
-            {t(`settings.teams.share.accessLevel.${share.access_level}`)}
-            <ChevronDown className="size-4 opacity-50" />
-          </Button>
-        </DropdownMenuTrigger>
-        {/* z-200 keeps the menu above Modal (z-50), matching the combobox/access controls. */}
-        <DropdownMenuContent align="end" className="z-200 min-w-40">
-          {(['viewer', 'editor'] as AccessLevel[]).map((level) => (
-            <DropdownMenuItem
-              key={level}
-              onSelect={() => changeAccess(share, level)}
-            >
-              <Check
-                className={cn(
-                  'size-4 shrink-0',
-                  share.access_level === level ? 'opacity-100' : 'opacity-0',
-                )}
-              />
-              {t(`settings.teams.share.accessLevel.${level}`)}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            onSelect={() => removeAccess(share)}
-          >
-            {t('settings.teams.share.removeAccess')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(['viewer', 'editor'] as AccessLevel[]).map((level) => (
+              <SelectItem key={level} value={level}>
+                {t(`settings.teams.share.accessLevel.${level}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <IconButton
+          variant="ghost-destructive"
+          size="icon-sm"
+          icon={Trash2}
+          disabled={rowBusy}
+          label={t('settings.teams.share.removeAccess')}
+          onClick={() => removeAccess(share)}
+        />
+      </>
     );
   };
 
@@ -462,29 +450,22 @@ export default function ShareToTeamModal({
       ? t('settings.teams.share.teamLabel')
       : t('settings.teams.share.viaTeam', { team: name });
     return (
-      <li key={shareKey(share)} className="flex items-center gap-3 py-2">
-        <Avatar
-          alt=""
-          className={cn(
-            'bg-primary/10 text-primary dark:bg-primary/20 flex size-9 items-center justify-center text-sm font-medium',
-            isTeam ? 'rounded-md' : 'rounded-full',
-          )}
-        >
-          {initialOf(primary)}
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium" title={primary}>
-            {primary}
-          </p>
-          <p
-            className="text-muted-foreground truncate text-xs"
-            title={secondary}
+      <ListRow
+        key={shareKey(share)}
+        leading={
+          <Avatar
+            alt=""
+            variant="primary"
+            size="default"
+            shape={isTeam ? 'square' : 'circle'}
           >
-            {secondary}
-          </p>
-        </div>
-        {renderRoleControl(share)}
-      </li>
+            {initialOf(primary)}
+          </Avatar>
+        }
+        title={<span title={primary}>{primary}</span>}
+        description={<span title={secondary}>{secondary}</span>}
+        trailing={renderRoleControl(share)}
+      />
     );
   };
 
@@ -499,7 +480,7 @@ export default function ShareToTeamModal({
       title={title}
       size="md"
       footer={
-        <Button variant="outline" disabled={inFlight} onClick={onClose}>
+        <Button size="lg" shape="pill" disabled={inFlight} onClick={onClose}>
           {t('settings.teams.share.done')}
         </Button>
       }
@@ -509,14 +490,18 @@ export default function ShareToTeamModal({
       </p>
 
       {loadError && (
-        <p className="text-destructive mt-3 text-sm" role="alert">
-          {t('settings.teams.share.loadError')}
-        </p>
+        <Alert variant="destructive" className="mt-3">
+          <CircleAlert className="size-4" aria-hidden="true" />
+          <AlertDescription>
+            {t('settings.teams.share.loadError')}
+          </AlertDescription>
+        </Alert>
       )}
       {actionError && (
-        <p className="text-destructive mt-3 text-sm" role="alert">
-          {actionError}
-        </p>
+        <Alert variant="destructive" className="mt-3">
+          <CircleAlert className="size-4" aria-hidden="true" />
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
       )}
 
       {teams.length === 0 ? (
@@ -529,20 +514,20 @@ export default function ShareToTeamModal({
               <PopoverTrigger asChild>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="combobox"
                   role="combobox"
                   aria-expanded={pickerOpen}
                   disabled={committing}
-                  className="text-muted-foreground h-9 min-w-0 flex-1 justify-start gap-2 px-3 font-normal"
+                  data-placeholder=""
+                  className="min-w-0 flex-1 justify-start"
                 >
                   <span className="truncate">
                     {t('settings.teams.share.addPlaceholder')}
                   </span>
                 </Button>
               </PopoverTrigger>
-              {/* z-200 keeps the popover above Modal (z-50). */}
               <PopoverContent
-                className="z-200 w-[min(22rem,calc(100vw-2rem))] p-0"
+                className="w-[min(22rem,calc(100vw-2rem))] p-0"
                 align="start"
               >
                 <Command shouldFilter={false}>
@@ -566,11 +551,12 @@ export default function ShareToTeamModal({
                             key={suggestion.key}
                             value={suggestion.key}
                             onSelect={() => commitSuggestion(suggestion)}
-                            className="gap-3"
                           >
                             <Avatar
                               alt=""
-                              className="bg-primary/10 text-primary dark:bg-primary/20 flex size-7 items-center justify-center rounded-md text-xs font-medium"
+                              variant="primary"
+                              size="xs"
+                              shape="square"
                             >
                               {initialOf(suggestion.teamName)}
                             </Avatar>
@@ -591,11 +577,12 @@ export default function ShareToTeamModal({
                               key={suggestion.key}
                               value={`${suggestion.key} ${suggestion.label} ${suggestion.teamName}`}
                               onSelect={() => commitSuggestion(suggestion)}
-                              className="gap-3"
                             >
                               <Avatar
                                 alt=""
-                                className="bg-primary/10 text-primary dark:bg-primary/20 flex size-7 items-center justify-center rounded-full text-xs font-medium"
+                                variant="primary"
+                                size="xs"
+                                shape="circle"
                               >
                                 {initialOf(suggestion.label)}
                               </Avatar>
@@ -639,30 +626,34 @@ export default function ShareToTeamModal({
           </div>
 
           {/* People with access. */}
-          <section className="mt-6">
-            <h3 className="text-sm font-medium">
-              {t('settings.teams.share.peopleWithAccess')}
-            </h3>
-            <ul className="mt-1 max-h-72 overflow-auto">
+          <section className="mt-6 flex flex-col gap-1">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('settings.teams.share.peopleWithAccess')}
+            />
+            <ListRows className="max-h-72 overflow-auto">
               {/* Owner — pinned, non-interactive. */}
-              <li className="flex items-center gap-3 py-2">
-                <Avatar
-                  alt=""
-                  className="bg-primary/10 text-primary dark:bg-primary/20 flex size-9 items-center justify-center rounded-full text-sm font-medium"
-                >
-                  {initialOf(t('settings.teams.share.you'))}
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {t('settings.teams.share.you')}
-                  </p>
-                </div>
-                <span className="text-muted-foreground shrink-0 pr-3 text-sm">
-                  {t('settings.teams.share.owner')}
-                </span>
-              </li>
+              <ListRow
+                leading={
+                  <Avatar
+                    alt=""
+                    variant="primary"
+                    size="default"
+                    shape="circle"
+                  >
+                    {initialOf(t('settings.teams.share.you'))}
+                  </Avatar>
+                }
+                title={t('settings.teams.share.you')}
+                trailing={
+                  <span className="text-muted-foreground shrink-0 pr-3 text-sm">
+                    {t('settings.teams.share.owner')}
+                  </span>
+                }
+              />
               {shares.map(renderShareRow)}
-            </ul>
+            </ListRows>
           </section>
         </>
       )}

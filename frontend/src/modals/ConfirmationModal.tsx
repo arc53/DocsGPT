@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '../components/ui/button';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 
 export default function ConfirmationModal({
@@ -21,20 +20,16 @@ export default function ConfirmationModal({
   handleSubmit: () => void;
   cancelLabel?: string;
   handleCancel?: () => void;
-  variant?: 'default' | 'danger';
+  variant?: 'default' | 'destructive';
 }) {
   const { t } = useTranslation();
 
-  const handleSubmitClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleSubmitClick = () => {
     handleSubmit();
     setModalState('INACTIVE');
   };
 
-  const handleCancelClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleCancelClick = () => {
     setModalState('INACTIVE');
     handleCancel?.();
   };
@@ -47,24 +42,13 @@ export default function ConfirmationModal({
       }}
       title={message}
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleCancelClick}
-            className="rounded-3xl px-5"
-          >
-            {cancelLabel ? cancelLabel : t('cancel')}
-          </Button>
-          <Button
-            type="button"
-            variant={variant === 'danger' ? 'destructive' : 'default'}
-            onClick={handleSubmitClick}
-            className="rounded-3xl px-5"
-          >
-            {submitLabel}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={cancelLabel ? cancelLabel : t('cancel')}
+          onCancel={handleCancelClick}
+          submitLabel={submitLabel}
+          onSubmit={handleSubmitClick}
+          destructive={variant === 'destructive'}
+        />
       }
     >
       {null}

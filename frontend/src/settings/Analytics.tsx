@@ -7,13 +7,17 @@ import {
   Title,
   Tooltip,
 } from 'chart.js';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+import { foldSeries, OTHER_SERIES_KEY } from './foldSeries';
 
 import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
+import StatCard from '../components/StatCard';
+import { Card } from '../components/ui/card';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -22,26 +26,15 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
-import { useDarkTheme, useLoaderState } from '../hooks';
+import { useLoaderState } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
-import { htmlLegendPlugin } from '../utils/chartUtils';
+import {
+  hoverColor,
+  htmlLegendPlugin,
+  useChartPalette,
+} from '../utils/chartUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import UsageQuota from './components/UsageQuota';
-
-/**
- * Resolve a CSS custom property on `:root` to a concrete color string.
- *
- * Chart.js renders to a canvas, so it can't consume Tailwind classes or CSS
- * variables directly. Read the resolved value at render time and pass that
- * concrete string. Falls back when running outside a browser (SSR / tests).
- */
-function readCssVar(name: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback;
-  // The `.dark` class lives on document.body (see useDarkTheme), so query
-  // body — querying documentElement would always resolve the :root value.
-  const value = getComputedStyle(document.body).getPropertyValue(name).trim();
-  return value || fallback;
-}
 
 import type { ChartData } from 'chart.js';
 ChartJS.register(
@@ -52,18 +45,6 @@ ChartJS.register(
   Tooltip,
   Legend,
 );
-
-// Extra series colors for grouped/stacked charts. The first dataset always
-// uses the resolved `--primary` color; these follow for datasets 2..n.
-const SERIES_COLORS = [
-  '#FF6384',
-  '#36A2EB',
-  '#FFCE56',
-  '#4BC0C0',
-  '#9966FF',
-  '#FF9F40',
-  '#2BC596',
-];
 
 type TokenGroupBy = 'none' | 'model' | 'agent' | 'source';
 
@@ -151,17 +132,11 @@ export default function Analytics({ agentId }: AnalyticsProps) {
   const [loadingFeedback, setLoadingFeedback] = useLoaderState(true);
   const [loadingTools, setLoadingTools] = useLoaderState(true);
   const [loadingSchedules, setLoadingSchedules] = useLoaderState(true);
-  const [isDarkTheme] = useDarkTheme();
-  const primaryColor = useMemo(
-    () => readCssVar('--primary', '#7d54d1'),
-    // isDarkTheme drives the `.dark` class on document.body and changes the
-    // resolved value of `--primary`; re-read whenever it flips.
-    [isDarkTheme],
-  );
+  // Re-read on every theme change; Chart.js can't read CSS variables.
+  const palette = useChartPalette();
+  const primaryColor = palette.primary;
   const seriesColor = (index: number) =>
-    index === 0
-      ? primaryColor
-      : SERIES_COLORS[(index - 1) % SERIES_COLORS.length];
+    palette.series[index % palette.series.length];
 
   // Monotonic request ids, one per chart: a response only lands if no
   // newer request for that chart was issued meanwhile, so an
@@ -361,7 +336,9 @@ export default function Analytics({ agentId }: AnalyticsProps) {
     },
   ];
 
-  const tokenSeriesEntries = Object.entries(tokenSeries || {});
+  // Grouped series have no meaning of their own, so past five they fold into
+  // "Other" instead of repeating a colour (DESIGN.md, chart colours).
+  const tokenSeriesEntries = foldSeries(Object.entries(tokenSeries || {}));
   const tokenLabels = Object.keys(
     tokenSeriesEntries[0]?.[1] || tokenUsageData || {},
   ).map((item) => formatDate(item));
@@ -371,13 +348,15 @@ export default function Analytics({ agentId }: AnalyticsProps) {
         ? key === 'prompt'
           ? t('settings.analytics.promptTokens')
           : t('settings.analytics.generatedTokens')
-        : key,
+        : key === OTHER_SERIES_KEY
+          ? t('settings.analytics.otherSeries')
+          : key,
     data: Object.values(series),
     backgroundColor: seriesColor(index),
   }));
 
   return (
-    <div className="mt-8">
+    <div>
       {agentId ? null : <UsageQuota />}
       <div className="mb-5 flex flex-row flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground text-sm leading-6">
@@ -390,10 +369,7 @@ export default function Analytics({ agentId }: AnalyticsProps) {
             if (opt) setTimeFilter(opt);
           }}
         >
-          <SelectTrigger
-            className="w-[125px] rounded-3xl px-5 py-3 text-sm"
-            size="lg"
-          >
+          <SelectTrigger className="w-[125px]" size="field" shape="pill">
             <SelectValue
               placeholder={t('settings.analytics.filterPlaceholder')}
             />
@@ -409,30 +385,30 @@ export default function Analytics({ agentId }: AnalyticsProps) {
       </div>
 
       {/* Summary stat cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
         {statCards.map((card) => (
-          <div
+          <StatCard
             key={card.label}
-            title={card.hint}
-            className={`border-border dark:border-border rounded-2xl border px-6 py-5${card.hint ? ' cursor-help' : ''}`}
-          >
-            <p className="text-muted-foreground text-sm">{card.label}</p>
-            <p className="text-foreground dark:text-foreground mt-1 text-2xl font-bold">
-              {card.value}
-            </p>
-          </div>
+            label={card.label}
+            value={card.value}
+            hint={card.hint}
+          />
         ))}
       </div>
 
       {/* Messages Analytics */}
-      <div className="mt-4 flex w-full flex-col gap-3 [@media(min-width:1080px)]:flex-row">
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
-          <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
-              {t('settings.analytics.messages')}
-            </p>
-          </div>
-          <div className="relative mt-px h-[245px] w-full">
+      <div className="mt-4 flex w-full flex-col gap-3 xl:flex-row">
+        <Card
+          variant="subtle"
+          padding="lg"
+          className="h-[345px] w-full overflow-hidden xl:w-1/2"
+        >
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('settings.analytics.messages')}
+          />
+          <div className="relative h-[245px] w-full">
             <div
               id="legend-container-1"
               className="flex flex-row items-center justify-end"
@@ -455,26 +431,31 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                 }}
                 legendID="legend-container-1"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={false}
               />
             )}
           </div>
-        </div>
+        </Card>
 
         {/* Token Usage Analytics */}
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
+        <Card
+          variant="subtle"
+          padding="lg"
+          className="h-[345px] w-full overflow-hidden xl:w-1/2"
+        >
           <div className="flex flex-row flex-wrap items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
-              {t('settings.analytics.tokenUsage')}
-            </p>
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('settings.analytics.tokenUsage')}
+            />
             <Select
               value={tokenGroupBy}
               onValueChange={(value) => setTokenGroupBy(value as TokenGroupBy)}
             >
-              <SelectTrigger
-                className="w-[110px] rounded-3xl px-5 py-3 text-sm"
-                size="lg"
-              >
+              <SelectTrigger className="w-[110px]" size="field" shape="pill">
                 <SelectValue placeholder={t('settings.analytics.groupBy')} />
               </SelectTrigger>
               <SelectContent>
@@ -490,12 +471,13 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                 {t('settings.analytics.includeSideChannel')}
               </p>
               <Switch
+                aria-label={t('settings.analytics.includeSideChannel')}
                 checked={includeSideChannel}
                 onCheckedChange={setIncludeSideChannel}
               />
             </div>
           </div>
-          <div className="relative mt-px h-[245px] w-full">
+          <div className="relative h-[245px] w-full">
             <div
               id="legend-container-2"
               className="flex flex-row items-center justify-end"
@@ -510,22 +492,28 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                 }}
                 legendID="legend-container-2"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={true}
               />
             )}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Scheduled runs + tool usage */}
-      <div className="mt-4 flex w-full flex-col gap-3 [@media(min-width:1080px)]:flex-row">
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
-          <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
-              {t('settings.analytics.scheduledRuns')}
-            </p>
-          </div>
-          <div className="relative mt-px h-[245px] w-full">
+      <div className="mt-4 flex w-full flex-col gap-3 xl:flex-row">
+        <Card
+          variant="subtle"
+          padding="lg"
+          className="h-[345px] w-full overflow-hidden xl:w-1/2"
+        >
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('settings.analytics.scheduledRuns')}
+          />
+          <div className="relative h-[245px] w-full">
             <div
               id="legend-container-4"
               className="flex flex-row items-center justify-end"
@@ -544,39 +532,45 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                       data: Object.values(scheduleData || {}).map(
                         (item) => item.completed,
                       ),
-                      backgroundColor: primaryColor,
+                      backgroundColor: palette.success,
                     },
                     {
                       label: t('settings.analytics.failed'),
                       data: Object.values(scheduleData || {}).map(
                         (item) => item.failed,
                       ),
-                      backgroundColor: '#FF6384',
+                      backgroundColor: palette.destructive,
                     },
                     {
                       label: t('settings.analytics.skipped'),
                       data: Object.values(scheduleData || {}).map(
                         (item) => item.skipped,
                       ),
-                      backgroundColor: '#FFCE56',
+                      backgroundColor: palette.warning,
                     },
                   ],
                 }}
                 legendID="legend-container-4"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={true}
               />
             )}
           </div>
-        </div>
+        </Card>
 
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5 [@media(min-width:1080px)]:w-1/2">
-          <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
-              {t('settings.analytics.toolUsage')}
-            </p>
-          </div>
-          <div className="relative mt-px h-[245px] w-full">
+        <Card
+          variant="subtle"
+          padding="lg"
+          className="h-[345px] w-full overflow-hidden xl:w-1/2"
+        >
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('settings.analytics.toolUsage')}
+          />
+          <div className="relative h-[245px] w-full">
             <div
               id="legend-container-5"
               className="flex flex-row items-center justify-end"
@@ -593,33 +587,39 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                       data: (toolsData || []).map(
                         (tool) => tool.calls - tool.failures,
                       ),
-                      backgroundColor: primaryColor,
+                      backgroundColor: palette.success,
                     },
                     {
                       label: t('settings.analytics.failed'),
                       data: (toolsData || []).map((tool) => tool.failures),
-                      backgroundColor: '#FF6384',
+                      backgroundColor: palette.destructive,
                     },
                   ],
                 }}
                 legendID="legend-container-5"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={true}
               />
             )}
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Feedback Analytics */}
       <div className="mt-4 flex w-full flex-col gap-3">
-        <div className="border-border dark:border-border h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
-          <div className="flex flex-row items-center justify-start gap-3">
-            <p className="text-foreground dark:text-foreground font-bold">
-              {t('settings.analytics.userFeedback')}
-            </p>
-          </div>
-          <div className="relative mt-px h-[245px] w-full">
+        <Card
+          variant="subtle"
+          padding="lg"
+          className="h-[345px] w-full overflow-hidden"
+        >
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('settings.analytics.userFeedback')}
+          />
+          <div className="relative h-[245px] w-full">
             <div
               id="legend-container-3"
               className="flex flex-row items-center justify-end"
@@ -638,24 +638,26 @@ export default function Analytics({ agentId }: AnalyticsProps) {
                       data: Object.values(feedbackData || {}).map(
                         (item) => item.positive,
                       ),
-                      backgroundColor: primaryColor,
+                      backgroundColor: palette.success,
                     },
                     {
                       label: t('settings.analytics.negativeFeedback'),
                       data: Object.values(feedbackData || {}).map(
                         (item) => item.negative,
                       ),
-                      backgroundColor: '#FF6384',
+                      backgroundColor: palette.destructive,
                     },
                   ],
                 }}
                 legendID="legend-container-3"
                 maxTicksLimitInX={8}
+                gridColor={palette.border}
+                tickColor={palette.mutedForeground}
                 isStacked={false}
               />
             )}
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );
@@ -666,6 +668,10 @@ type AnalyticsChartProps = {
   legendID: string;
   maxTicksLimitInX: number;
   isStacked: boolean;
+  /** Grid lines and axis borders (`--border`). */
+  gridColor: string;
+  /** Axis tick labels and legend text (`--muted-foreground`). */
+  tickColor: string;
 };
 
 function AnalyticsChart({
@@ -673,6 +679,8 @@ function AnalyticsChart({
   legendID,
   maxTicksLimitInX,
   isStacked,
+  gridColor,
+  tickColor,
 }: AnalyticsChartProps) {
   const options = {
     responsive: true,
@@ -680,6 +688,8 @@ function AnalyticsChart({
     plugins: {
       legend: {
         display: false,
+        // The HTML legend copies each item's fontColor, which is this.
+        labels: { color: tickColor },
       },
       htmlLegend: {
         containerID: legendID,
@@ -689,25 +699,29 @@ function AnalyticsChart({
       x: {
         grid: {
           lineWidth: 0.2,
-          color: '#C4C4C4',
+          color: gridColor,
         },
         border: {
           width: 0.2,
-          color: '#C4C4C4',
+          color: gridColor,
         },
         ticks: {
           maxTicksLimit: maxTicksLimitInX,
+          color: tickColor,
         },
         stacked: isStacked,
       },
       y: {
         grid: {
           lineWidth: 0.2,
-          color: '#C4C4C4',
+          color: gridColor,
         },
         border: {
           width: 0.2,
-          color: '#C4C4C4',
+          color: gridColor,
+        },
+        ticks: {
+          color: tickColor,
         },
         stacked: isStacked,
       },
@@ -721,7 +735,10 @@ function AnalyticsChart({
         ...data,
         datasets: data.datasets.map((dataset) => ({
           ...dataset,
-          hoverBackgroundColor: `${dataset.backgroundColor}CC`, // 80% opacity
+          hoverBackgroundColor:
+            typeof dataset.backgroundColor === 'string'
+              ? hoverColor(dataset.backgroundColor)
+              : dataset.backgroundColor,
         })),
       }}
     />

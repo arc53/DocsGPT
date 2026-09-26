@@ -207,6 +207,10 @@ vale .
 - If shared state must be added, use Redux rather than introducing a new global state library.
 - Avoid broad UI refactors unless the task explicitly asks for them.
 - Do not re-create components if we already have some in the app.
+- Follow `frontend/DESIGN.md`: compose `components/ui/` parts and pick their look with props, use theme tokens, and
+  keep typography, spacing, radius and motion on its roles.
+- Every user-visible string, attributes included (`aria-label`, `label`, `placeholder`, `title`, `alt`), is a `t()`
+  key in all seven locales under `frontend/src/locale/` (`de en es jp ru zh zh-TW`). Admin pages stay English.
 
 #### Icons
 
@@ -217,7 +221,7 @@ DocsGPT historically mixed three icon sources: `lucide-react`, inline SVG compon
    plus, etc.). It tokenizes via `currentColor`, ships tree-shaken icons, and the codebase
    already imports it in 30+ places. `<X className="size-4" />`, `<ChevronDown />`, etc.
 2. **Use `assets/<name>.svg?react`** when you need a brand-specific or domain illustration
-   that doesn't exist in lucide (the app logo, robot fallback, retry arrow, send arrow,
+   that doesn't exist in lucide (the app logo, robot fallback, send arrow,
    etc.). Always set `fill="currentColor"` / `stroke="currentColor"` in the SVG file so
    consumers can theme via Tailwind text classes.
 3. **Avoid `<img src={Asset}>` for new icons.** It blocks `currentColor` theming and

@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   Eye,
   Gauge,
   LogOut,
@@ -8,18 +9,19 @@ import {
   UserX,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import adminService from '../api/services/adminService';
-import ThreeDots from '../assets/three-dots.svg';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
+  ActionMenu,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  type MenuOption,
 } from '../components/ui/dropdown-menu';
-import { Input } from '../components/ui/input';
 import { Modal } from '../components/ui/modal';
 import {
   Table,
@@ -30,12 +32,19 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import SearchInput from '../components/SearchInput';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
+import { LoadingState } from '../components/ui/loading-state';
+import { Pagination } from '../components/ui/pagination';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
-  Loading,
-  Pill,
+  LoadError,
   eventLabel,
   fmtDateShort,
   fmtNumber,
@@ -62,6 +71,7 @@ type Action = {
 const PAGE_SIZE = 25;
 
 export default function Users() {
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [adminIds, setAdminIds] = useState<Set<string>>(new Set());
@@ -70,15 +80,12 @@ export default function Users() {
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [menuUserId, setMenuUserId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any | null>(null);
   const [usageFor, setUsageFor] = useState<string | null>(null);
   const [quotaUserId, setQuotaUserId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{
-    ok: boolean;
-    message: string;
-  } | null>(null);
   const [confirm, setConfirm] = useState<{
     message: string;
     submitLabel: string;
@@ -88,6 +95,7 @@ export default function Users() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setFailed(false);
     try {
       const [usersRes, adminsRes] = await Promise.all([
         adminService.getUsers(
@@ -103,6 +111,9 @@ export default function Users() {
       setAdminIds(
         new Set((adminsJson.admins ?? []).map((a: any) => a.user_id)),
       );
+      setFailed(!usersRes.ok || usersJson.success === false);
+    } catch {
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -112,12 +123,15 @@ export default function Users() {
     load();
   }, [load]);
 
-  // Auto-dismiss the inline feedback banner.
-  useEffect(() => {
-    if (!feedback) return;
-    const id = setTimeout(() => setFeedback(null), 4500);
-    return () => clearTimeout(id);
-  }, [feedback]);
+  // The result shows as a toast in the app's shared ToastViewport
+  // (ActionToast), which auto-dismisses it.
+  const setFeedback = (feedback: { ok: boolean; message: string }) =>
+    dispatch(
+      showActionToast({
+        variant: feedback.ok ? 'success' : 'destructive',
+        message: feedback.message,
+      }),
+    );
 
   const run =
     (fn: () => Promise<Response>, userId: string, successMsg: string) =>
@@ -248,29 +262,18 @@ export default function Users() {
   };
 
   return (
-    <div className="mt-6">
-      {feedback ? (
-        <div
-          className={`mb-4 rounded-xl border px-4 py-2 text-sm ${
-            feedback.ok
-              ? 'border-green-300 bg-green-50 text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-300'
-              : 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300'
-          }`}
-        >
-          {feedback.message}
-        </div>
-      ) : null}
-
+    <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Filter by user id"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') applySearch();
-          }}
-          className="max-w-xs"
-        />
+        <div className="w-full max-w-xs">
+          <SearchInput
+            label="Filter by user id"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') applySearch();
+            }}
+          />
+        </div>
         <Button variant="outline" size="sm" onClick={applySearch}>
           Search
         </Button>
@@ -290,7 +293,9 @@ export default function Users() {
       </div>
 
       {loading ? (
-        <Loading />
+        <LoadingState fill="block" />
+      ) : failed ? (
+        <LoadError message="Failed to load users." onRetry={load} />
       ) : users.length === 0 ? (
         <p className="text-muted-foreground mt-8 text-sm">No users found.</p>
       ) : (
@@ -313,12 +318,11 @@ export default function Users() {
                   return (
                     <TableRow
                       key={u.user_id}
-                      className="hover:bg-muted/40 cursor-pointer"
                       onClick={() => openDetail(u.user_id)}
                     >
                       <TableCell className="max-w-[280px]">
                         <span
-                          className="block truncate font-mono text-[13px]"
+                          className="block truncate font-mono text-xs"
                           title={u.user_id}
                         >
                           {u.user_id}
@@ -326,9 +330,11 @@ export default function Users() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {isAdmin ? <Pill tone="brand">Admin</Pill> : null}
+                          {isAdmin ? (
+                            <Badge variant="default">Admin</Badge>
+                          ) : null}
                           {!u.active ? (
-                            <Pill tone="danger">Inactive</Pill>
+                            <Badge variant="destructive">Inactive</Badge>
                           ) : null}
                         </div>
                       </TableCell>
@@ -347,56 +353,31 @@ export default function Users() {
                           className="flex items-center justify-end"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <DropdownMenu
+                          <ActionMenu
                             open={menuUserId === u.user_id}
                             onOpenChange={(open) =>
                               setMenuUserId(open ? u.user_id : null)
                             }
-                          >
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                disabled={disabled}
-                                className="text-muted-foreground hover:text-foreground h-[35px] w-7"
-                                aria-label="User actions"
-                              >
-                                <img
-                                  src={ThreeDots}
-                                  alt="User actions"
-                                  className="filter dark:invert"
-                                />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              className="min-w-[176px]"
-                            >
-                              <DropdownMenuItem
-                                onSelect={() => openDetail(u.user_id)}
-                              >
-                                <Eye size={16} />
-                                <span>View details</span>
-                              </DropdownMenuItem>
-                              {buildActions(u.user_id, isAdmin, u.active).map(
-                                (act) => (
-                                  <DropdownMenuItem
-                                    key={act.key}
-                                    variant={
-                                      act.destructive
-                                        ? 'destructive'
-                                        : 'default'
-                                    }
-                                    onSelect={act.perform}
-                                  >
-                                    <act.icon size={16} />
-                                    <span>{act.label}</span>
-                                  </DropdownMenuItem>
-                                ),
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                            disabled={disabled}
+                            triggerLabel="User actions"
+                            options={[
+                              {
+                                label: 'View details',
+                                icon: Eye,
+                                onClick: () => openDetail(u.user_id),
+                              },
+                              ...buildActions(u.user_id, isAdmin, u.active).map(
+                                (act): MenuOption => ({
+                                  label: act.label,
+                                  icon: act.icon,
+                                  variant: act.destructive
+                                    ? 'destructive'
+                                    : 'default',
+                                  onClick: act.perform,
+                                }),
+                              ),
+                            ]}
+                          />
                         </div>
                       </TableCell>
                     </TableRow>
@@ -405,29 +386,12 @@ export default function Users() {
               </TableBody>
             </Table>
           </TableContainer>
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-muted-foreground text-sm">
-              {fmtNumber(total)} users · page {page} of {totalPages}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <Pagination
+            page={page}
+            pageCount={totalPages}
+            onPageChange={setPage}
+            summary={`${fmtNumber(total)} users`}
+          />
         </>
       )}
 
@@ -437,7 +401,7 @@ export default function Users() {
           modalState={confirmState}
           setModalState={setConfirmState}
           submitLabel={confirm.submitLabel}
-          variant="danger"
+          variant="destructive"
           handleSubmit={() => {
             confirm.run();
             setConfirm(null);
@@ -460,80 +424,78 @@ export default function Users() {
         size="lg"
         footer={
           detail ? (
-            <div className="flex flex-wrap justify-end gap-2">
-              {buildActions(
-                detail.user.user_id,
-                (detail.roles ?? []).includes('admin'),
-                detail.user?.active ?? true,
-              ).map((act) => (
-                <Button
-                  key={act.key}
-                  type="button"
-                  variant={act.destructive ? 'destructive-outline' : 'outline'}
-                  size="sm"
-                  onClick={() => {
-                    // Close the detail dialog before any confirm dialog opens
-                    // (avoids stacked modals); the list + banner reflect the result.
-                    setDetail(null);
-                    act.perform();
-                  }}
-                >
-                  <act.icon size={16} />
-                  {act.label}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="lg" shape="pill">
+                  Actions
+                  <ChevronDown />
                 </Button>
-              ))}
-            </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {buildActions(
+                  detail.user.user_id,
+                  (detail.roles ?? []).includes('admin'),
+                  detail.user?.active ?? true,
+                ).map((act) => (
+                  <DropdownMenuItem
+                    key={act.key}
+                    variant={act.destructive ? 'destructive' : 'default'}
+                    onSelect={() => {
+                      // Close the detail dialog before any confirm dialog opens
+                      // (avoids stacked modals); the list + toast reflect the result.
+                      setDetail(null);
+                      act.perform();
+                    }}
+                  >
+                    <act.icon aria-hidden="true" />
+                    <span>{act.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : undefined
         }
       >
         {detail ? (
-          <div className="space-y-4 text-sm">
+          <div className="flex flex-col gap-4 text-sm">
             <div>
               <p className="text-muted-foreground mb-1 text-xs">
                 Roles & status
               </p>
               <div className="flex flex-wrap gap-2">
                 {(detail.roles ?? []).map((r: string) => (
-                  <Pill key={r} tone={r === 'admin' ? 'brand' : 'muted'}>
+                  <Badge
+                    key={r}
+                    variant={r === 'admin' ? 'default' : 'neutral'}
+                  >
                     {r}
-                  </Pill>
+                  </Badge>
                 ))}
                 {detail.user?.active ? (
-                  <Pill tone="success">Active</Pill>
+                  <Badge variant="success">Active</Badge>
                 ) : (
-                  <Pill tone="danger">Inactive</Pill>
+                  <Badge variant="destructive">Inactive</Badge>
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Agents</span>
-                <span className="tabular-nums">
-                  {fmtNumber(detail.counts?.agents)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Sources</span>
-                <span className="tabular-nums">
-                  {fmtNumber(detail.counts?.sources)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Conversations</span>
-                <span className="tabular-nums">
-                  {fmtNumber(detail.counts?.conversations)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Tokens (30d)</span>
-                <span className="tabular-nums">
-                  {fmtNumber(detail.counts?.tokens_30d)}
-                </span>
-              </div>
-            </div>
+            <DescriptionList layout="justified" size="sm" columns={2}>
+              <DescriptionItem label="Agents">
+                {fmtNumber(detail.counts?.agents)}
+              </DescriptionItem>
+              <DescriptionItem label="Sources">
+                {fmtNumber(detail.counts?.sources)}
+              </DescriptionItem>
+              <DescriptionItem label="Conversations">
+                {fmtNumber(detail.counts?.conversations)}
+              </DescriptionItem>
+              <DescriptionItem label="Tokens (30d)">
+                {fmtNumber(detail.counts?.tokens_30d)}
+              </DescriptionItem>
+            </DescriptionList>
             <Button
               variant="outline"
               size="sm"
+              className="self-start"
               onClick={() => {
                 // Close the detail dialog before the usage dialog opens, so
                 // the two never stack.
@@ -548,7 +510,7 @@ export default function Users() {
               <p className="text-muted-foreground mb-1 text-xs">
                 Recent auth events
               </p>
-              <div className="max-h-64 space-y-1 overflow-auto">
+              <div className="flex max-h-64 flex-col gap-1 overflow-auto">
                 {(detail.recent_events ?? []).length === 0 ? (
                   <p className="text-muted-foreground">None</p>
                 ) : (

@@ -1,3 +1,5 @@
+import { readCssVar } from '../utils/chartUtils';
+
 export interface GraphNode {
   id: string;
   name: string;
@@ -96,4 +98,37 @@ export function nodeLabelEl(name: string): HTMLDivElement {
   const el = document.createElement('div');
   el.textContent = name ?? '';
   return el;
+}
+
+/** Resolved canvas colours for the graph view. */
+export interface GraphPalette {
+  /** Node fill (`--primary`). */
+  node: string;
+  /** Ring around the hovered node (`--foreground`). */
+  hoverStroke: string;
+  /** Edge colour (`--border`). */
+  link: string;
+  /** Label text (`--foreground`). */
+  label: string;
+  /** Label halo (`--card`, the canvas surface, so it works in both themes). */
+  halo: string;
+}
+
+/**
+ * Resolve the graph canvas colours from the current theme tokens.
+ *
+ * The canvas can't read CSS variables, so the view re-reads this on every
+ * theme change. Fallbacks are the light-theme values from src/index.css.
+ *
+ * @returns Concrete colour strings for the canvas.
+ */
+export function readGraphPalette(): GraphPalette {
+  const foreground = readCssVar('--foreground', '#171717');
+  return {
+    node: readCssVar('--primary', '#7d54d1'),
+    hoverStroke: foreground,
+    link: readCssVar('--border', '#d9d9d9'),
+    label: foreground,
+    halo: readCssVar('--card', '#ffffff'),
+  };
 }

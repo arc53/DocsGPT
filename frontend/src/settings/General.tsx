@@ -10,6 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { SectionHeader } from '../components/ui/section-header';
+import { SettingRow, SettingRows } from '../components/ui/setting-row';
+import PageToolbar from '../components/PageToolbar';
 import { useDarkTheme } from '../hooks';
 import {
   selectPrompt,
@@ -45,6 +48,8 @@ export default function General() {
     isDarkTheme ? 'Dark' : 'Light',
   );
   const dispatch = useDispatch();
+  const themeId = React.useId();
+  const languageId = React.useId();
   const locale = localStorage.getItem('docsgpt-locale');
   // Fall back to English when the stored locale is not one we offer. Without
   // the fallback `find` returns undefined, the effect below writes the string
@@ -62,74 +67,111 @@ export default function General() {
     changeLanguage(selectedLanguage.value);
   }, [selectedLanguage, changeLanguage]);
   return (
-    <div className="mt-8 flex flex-col gap-6">
-      <div className="flex flex-col gap-4">
-        <Prompts
-          prompts={prompts}
-          selectedPrompt={selectedPrompt}
-          onSelectPrompt={(name, id, type) =>
-            dispatch(setPrompt({ name: name, id: id, type: type }))
-          }
-          setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-        />
-      </div>
-      <div className="flex flex-col gap-4">
-        <label className="text-foreground dark:text-foreground text-base font-medium">
-          {t('settings.general.selectTheme')}
-        </label>
-        <Select
-          value={selectedTheme}
-          onValueChange={(value) => {
-            setSelectedTheme(value);
-            value !== selectedTheme && toggleTheme();
-          }}
-        >
-          <SelectTrigger className="w-56 rounded-3xl px-5 py-3" size="lg">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {themes.map((theme) => (
-              <SelectItem key={theme.value} value={theme.value}>
-                {theme.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex flex-col gap-4">
-        <label className="text-foreground dark:text-foreground text-base font-medium">
-          {t('settings.general.selectLanguage')}
-        </label>
-        <Select
-          value={selectedLanguage?.value}
-          onValueChange={(value) => {
-            const opt = languageOptions.find((o) => o.value === value);
-            if (opt) setSelectedLanguage(opt);
-          }}
-        >
-          <SelectTrigger className="w-56 rounded-3xl px-5 py-3" size="lg">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {languageOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <hr className="border-border dark:border-border my-4 w-[calc(min(665px,100%))] border-t" />
-      <div className="flex flex-col gap-2">
-        <Button
-          type="button"
-          variant="destructive-outline"
-          title={t('settings.general.deleteAllLabel')}
-          className="w-fit rounded-3xl px-5 py-3 tracking-[0.015em] hover:font-bold hover:tracking-normal"
-          onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
-        >
-          {t('settings.general.deleteAllBtn')}
-        </Button>
+    <div>
+      <PageToolbar intro={t('settings.general.subtitle')} divider />
+      <div className="flex max-w-3xl flex-col gap-10">
+        <section className="flex flex-col gap-4">
+          <SectionHeader title={t('settings.general.sections.appearance')} />
+          <SettingRows>
+            <SettingRow
+              label={t('settings.general.theme')}
+              description={t('settings.general.themeDescription')}
+              htmlFor={themeId}
+              stack
+            >
+              <Select
+                value={selectedTheme}
+                onValueChange={(value) => {
+                  setSelectedTheme(value);
+                  if (value !== selectedTheme) toggleTheme();
+                }}
+              >
+                <SelectTrigger
+                  id={themeId}
+                  className="w-full sm:w-56"
+                  size="field"
+                  shape="pill"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {themes.map((theme) => (
+                    <SelectItem key={theme.value} value={theme.value}>
+                      {theme.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingRow>
+            <SettingRow
+              label={t('settings.general.language')}
+              description={t('settings.general.languageDescription')}
+              htmlFor={languageId}
+              stack
+            >
+              <Select
+                value={selectedLanguage?.value}
+                onValueChange={(value) => {
+                  const opt = languageOptions.find((o) => o.value === value);
+                  if (opt) setSelectedLanguage(opt);
+                }}
+              >
+                <SelectTrigger
+                  id={languageId}
+                  className="w-full sm:w-56"
+                  size="field"
+                  shape="pill"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {languageOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingRow>
+          </SettingRows>
+        </section>
+        <section className="flex flex-col gap-4">
+          <SectionHeader title={t('settings.general.sections.chat')} />
+          <SettingRows>
+            <Prompts
+              prompts={prompts}
+              selectedPrompt={selectedPrompt}
+              description={t('settings.general.promptDescription')}
+              onSelectPrompt={(name, id, type) =>
+                dispatch(setPrompt({ name: name, id: id, type: type }))
+              }
+              setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
+            />
+          </SettingRows>
+        </section>
+        <section className="flex flex-col gap-4">
+          <SectionHeader
+            title={t('settings.general.sections.dangerZone')}
+            tone="destructive"
+          />
+          <SettingRows>
+            <SettingRow
+              label={t('settings.general.deleteAllLabel')}
+              description={t('settings.general.deleteAllDescription')}
+              as="h3"
+            >
+              <Button
+                type="button"
+                variant="destructive-outline"
+                size="field"
+                shape="pill"
+                onClick={() => dispatch(setModalStateDeleteConv('ACTIVE'))}
+              >
+                {t('settings.general.deleteAllBtn')}
+              </Button>
+            </SettingRow>
+          </SettingRows>
+        </section>
       </div>
     </div>
   );

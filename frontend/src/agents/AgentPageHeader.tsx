@@ -10,6 +10,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 import {
@@ -100,7 +101,7 @@ export default function AgentPageHeader({
           <BreadcrumbSeparator />
           <BreadcrumbItem>
             {currentPage === 'overview' ? (
-              <BreadcrumbPage title={displayName} className="w-[16ch] truncate">
+              <BreadcrumbPage title={displayName} className="w-[16ch]">
                 {displayName}
               </BreadcrumbPage>
             ) : (
@@ -133,35 +134,31 @@ export default function AgentPageHeader({
       >
         {tabs.map((tab) => {
           const isActive = tab.id === currentPage;
-          // Always render a 2px bottom border so row height stays constant
-          // between active/inactive; only the color changes.
-          const baseClasses =
-            'whitespace-nowrap border-b-2 pb-1 text-sm font-medium transition-colors';
+          // -mb-px lays the tab's 2px underline over the nav's 1px baseline.
           if (isActive) {
             return (
-              <span
+              <Button
                 key={tab.id}
-                aria-current="page"
-                className={cn(
-                  baseClasses,
-                  'border-primary text-foreground -mb-px',
-                )}
+                asChild
+                variant="tab"
+                size="inline"
+                data-active
+                className="-mb-px"
               >
-                {tab.label}
-              </span>
+                <span aria-current="page">{tab.label}</span>
+              </Button>
             );
           }
           return (
-            <Link
+            <Button
               key={tab.id}
-              to={tab.href}
-              className={cn(
-                baseClasses,
-                'text-muted-foreground hover:text-foreground hover:border-border/60 -mb-px border-transparent',
-              )}
+              asChild
+              variant="tab"
+              size="inline"
+              className="-mb-px"
             >
-              {tab.label}
-            </Link>
+              <Link to={tab.href}>{tab.label}</Link>
+            </Button>
           );
         })}
       </nav>

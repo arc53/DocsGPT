@@ -1,13 +1,16 @@
+import { CircleAlert, CircleCheck, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import { baseURL } from '../api/client';
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
+import { FormField } from '../components/ui/form-field';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -18,7 +21,7 @@ import {
 import { ActiveState } from '../models/misc';
 import { selectRecentEvents } from '../notifications/notificationsSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 
 interface MCPServerModalProps {
   modalState: ActiveState;
@@ -452,123 +455,89 @@ export default function MCPServerModal({
     switch (formData.auth_type) {
       case 'api_key':
         return (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="api_key">
-                {t('settings.tools.mcp.authTypes.apiKey')}
-                <span className="text-red-500">*</span>
-              </Label>
+          <div className="flex flex-col gap-5">
+            <FormField
+              label={t('settings.tools.mcp.authTypes.apiKey')}
+              required
+              error={errors.api_key}
+            >
               <Input
-                id="api_key"
                 type="text"
                 value={formData.api_key}
                 onChange={(e) => handleInputChange('api_key', e.target.value)}
                 placeholder={t('settings.tools.mcp.placeholders.apiKey')}
-                aria-invalid={!!errors.api_key || undefined}
-                className="rounded-xl"
               />
-              {errors.api_key && (
-                <p className="text-destructive text-xs">{errors.api_key}</p>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="header_name">
-                {t('settings.tools.mcp.headerName')}
-              </Label>
+            </FormField>
+            <FormField label={t('settings.tools.mcp.headerName')}>
               <Input
-                id="header_name"
                 type="text"
                 value={formData.header_name}
                 onChange={(e) =>
                   handleInputChange('header_name', e.target.value)
                 }
                 placeholder="X-API-Key"
-                className="rounded-xl"
               />
-            </div>
+            </FormField>
           </div>
         );
       case 'bearer':
         return (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="bearer_token">
-              {t('settings.tools.mcp.authTypes.bearer')}
-              <span className="text-red-500">*</span>
-            </Label>
+          <FormField
+            label={t('settings.tools.mcp.authTypes.bearer')}
+            required
+            error={errors.bearer_token}
+          >
             <Input
-              id="bearer_token"
               type="text"
               value={formData.bearer_token}
               onChange={(e) =>
                 handleInputChange('bearer_token', e.target.value)
               }
               placeholder={t('settings.tools.mcp.placeholders.bearerToken')}
-              aria-invalid={!!errors.bearer_token || undefined}
-              className="rounded-xl"
             />
-            {errors.bearer_token && (
-              <p className="text-destructive text-xs">{errors.bearer_token}</p>
-            )}
-          </div>
+          </FormField>
         );
       case 'basic':
         return (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="username">
-                {t('settings.tools.mcp.username')}
-                <span className="text-red-500">*</span>
-              </Label>
+          <div className="flex flex-col gap-5">
+            <FormField
+              label={t('settings.tools.mcp.username')}
+              required
+              error={errors.username}
+            >
               <Input
-                id="username"
                 type="text"
                 value={formData.username}
                 onChange={(e) => handleInputChange('username', e.target.value)}
                 placeholder={t('settings.tools.mcp.placeholders.username')}
-                aria-invalid={!!errors.username || undefined}
-                className="rounded-xl"
               />
-              {errors.username && (
-                <p className="text-destructive text-xs">{errors.username}</p>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password">
-                {t('settings.tools.mcp.password')}
-                <span className="text-red-500">*</span>
-              </Label>
+            </FormField>
+            <FormField
+              label={t('settings.tools.mcp.password')}
+              required
+              error={errors.password}
+            >
               <Input
-                id="password"
                 type="password"
                 value={formData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
                 placeholder={t('settings.tools.mcp.placeholders.password')}
-                aria-invalid={!!errors.password || undefined}
-                className="rounded-xl"
               />
-              {errors.password && (
-                <p className="text-destructive text-xs">{errors.password}</p>
-              )}
-            </div>
+            </FormField>
           </div>
         );
       case 'oauth':
         return (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="oauth_scopes">
-              {t('settings.tools.mcp.placeholders.oauthScopes')}
-            </Label>
+          <FormField label={t('settings.tools.mcp.placeholders.oauthScopes')}>
             <Input
-              id="oauth_scopes"
               type="text"
               value={formData.oauth_scopes}
               onChange={(e) =>
                 handleInputChange('oauth_scopes', e.target.value)
               }
               placeholder="read, write"
-              className="rounded-xl"
             />
-          </div>
+          </FormField>
         );
       default:
         return null;
@@ -593,125 +562,132 @@ export default function MCPServerModal({
       }
       size="lg"
       mobileVariant="sheet"
-      className="max-w-[600px] md:w-[80vw] lg:w-[60vw]"
+      footer={
+        <ModalActions
+          footerStart={
+            <Button
+              type="button"
+              variant="outline"
+              onClick={testConnection}
+              loading={testing}
+              size="lg"
+              shape="pill"
+            >
+              {t('settings.tools.mcp.testConnection')}
+            </Button>
+          }
+          cancelLabel={t('settings.tools.mcp.cancel')}
+          onCancel={() => {
+            setModalState('INACTIVE');
+            resetForm();
+          }}
+          submitLabel={t('settings.tools.mcp.save')}
+          onSubmit={handleSave}
+          pending={loading}
+          disabled={!saveActive}
+        />
+      }
     >
-      <div className="flex h-full flex-col">
-        <div className="flex-1 px-6">
-          <div className="flex flex-col gap-4 px-0.5 py-4">
-            {server?.has_encrypted_credentials &&
-              formData.auth_type !== 'oauth' && (
-                <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                  {t('settings.tools.mcp.reenterCredentials', {
-                    defaultValue:
-                      'Re-enter your credentials to test and update the connection.',
-                  })}
-                </div>
-              )}
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="mcp-name">
-                {t('settings.tools.mcp.serverName')}
-                <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="mcp-name"
-                type="text"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                placeholder={t('settings.tools.mcp.serverName')}
-                aria-invalid={!!errors.name || undefined}
-                className="rounded-xl"
-              />
-              {errors.name && (
-                <p className="text-destructive text-xs">{errors.name}</p>
-              )}
-            </div>
+      <div className="flex flex-col gap-5">
+        {server?.has_encrypted_credentials &&
+          formData.auth_type !== 'oauth' && (
+            <Alert variant="warning">
+              <TriangleAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>
+                {t('settings.tools.mcp.reenterCredentials', {
+                  defaultValue:
+                    'Re-enter your credentials to test and update the connection.',
+                })}
+              </AlertDescription>
+            </Alert>
+          )}
+        <FormField
+          label={t('settings.tools.mcp.serverName')}
+          required
+          error={errors.name}
+        >
+          <Input
+            type="text"
+            value={formData.name}
+            onChange={(e) => handleInputChange('name', e.target.value)}
+            placeholder={t('settings.tools.mcp.serverName')}
+          />
+        </FormField>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="mcp-url">
-                {t('settings.tools.mcp.serverUrl')}
-                <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="mcp-url"
-                type="text"
-                value={formData.server_url}
-                onChange={(e) =>
-                  handleInputChange('server_url', e.target.value)
+        <FormField
+          label={t('settings.tools.mcp.serverUrl')}
+          required
+          error={errors.server_url}
+        >
+          <Input
+            type="text"
+            value={formData.server_url}
+            onChange={(e) => handleInputChange('server_url', e.target.value)}
+            placeholder="https://example.com/mcp"
+          />
+        </FormField>
+
+        <FormField label={t('settings.tools.mcp.authType')}>
+          <Select
+            value={formData.auth_type}
+            onValueChange={(v) => handleInputChange('auth_type', v)}
+          >
+            <SelectTrigger size="field" className="w-full">
+              <SelectValue placeholder={t('settings.tools.mcp.authType')} />
+            </SelectTrigger>
+            <SelectContent>
+              {authTypes.map((type) => (
+                <SelectItem key={type.value} value={type.value}>
+                  {type.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+
+        {renderAuthFields()}
+
+        <FormField
+          label={t('settings.tools.mcp.timeout')}
+          error={errors.timeout}
+        >
+          <Input
+            type="number"
+            value={formData.timeout}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === '') {
+                handleInputChange('timeout', '');
+              } else {
+                const numValue = parseInt(value);
+                if (!isNaN(numValue) && numValue >= 1) {
+                  handleInputChange('timeout', numValue);
                 }
-                placeholder="https://example.com/mcp"
-                aria-invalid={!!errors.server_url || undefined}
-                className="rounded-xl"
-              />
-              {errors.server_url && (
-                <p className="text-destructive text-xs">{errors.server_url}</p>
-              )}
-            </div>
+              }
+            }}
+            placeholder="30"
+            min={1}
+            max={300}
+          />
+        </FormField>
 
-            <div className="flex flex-col gap-1.5">
-              <Label>{t('settings.tools.mcp.authType')}</Label>
-              <Select
-                value={formData.auth_type}
-                onValueChange={(v) => handleInputChange('auth_type', v)}
-              >
-                <SelectTrigger
-                  variant="ghost"
-                  size="lg"
-                  className="w-full rounded-xl"
+        {testResult && (
+          <Alert variant={testResult.success ? 'success' : 'destructive'}>
+            {testResult.success ? (
+              <CircleCheck className="size-4" aria-hidden="true" />
+            ) : (
+              <CircleAlert className="size-4" aria-hidden="true" />
+            )}
+            <AlertDescription>
+              <p>{testResult.message}</p>
+              {testResult.authorization_url && (
+                <Button
+                  variant="link"
+                  size="inline"
+                  asChild
+                  // eslint-disable-next-line shadcn/no-restyle -- the link inherits its Alert's status colour
+                  className="mt-1.5 text-current"
                 >
-                  <SelectValue placeholder={t('settings.tools.mcp.authType')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {authTypes.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {renderAuthFields()}
-
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="mcp-timeout">
-                {t('settings.tools.mcp.timeout')}
-              </Label>
-              <Input
-                id="mcp-timeout"
-                type="number"
-                value={formData.timeout}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === '') {
-                    handleInputChange('timeout', '');
-                  } else {
-                    const numValue = parseInt(value);
-                    if (!isNaN(numValue) && numValue >= 1) {
-                      handleInputChange('timeout', numValue);
-                    }
-                  }
-                }}
-                placeholder="30"
-                min={1}
-                max={300}
-                aria-invalid={!!errors.timeout || undefined}
-                className="rounded-xl"
-              />
-              {errors.timeout && (
-                <p className="text-destructive text-xs">{errors.timeout}</p>
-              )}
-            </div>
-
-            {testResult && (
-              <div
-                className={`rounded-xl p-4 text-sm ${
-                  testResult.success
-                    ? 'bg-green-50 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                    : 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                }`}
-              >
-                <p>{testResult.message}</p>
-                {testResult.authorization_url && (
                   <a
                     href={testResult.authorization_url}
                     target="_blank"
@@ -725,107 +701,55 @@ export default function MCPServerModal({
                       );
                       if (popup) oauthPopupRef.current = popup;
                     }}
-                    className="mt-1.5 inline-block font-medium underline"
                   >
                     {t('settings.tools.mcp.openAuthPage', {
                       defaultValue: 'Open authorization page',
                     })}
                   </a>
-                )}
-              </div>
-            )}
-
-            {discoveredTools.length > 0 && testResult?.success && (
-              <div className="border-border dark:border-border rounded-xl border p-4">
-                <h4 className="mb-2 text-sm font-medium text-gray-900 dark:text-white">
-                  {t('settings.tools.mcp.discoveredTools', {
-                    count: discoveredTools.length,
-                    defaultValue: `Discovered Actions (${discoveredTools.length})`,
-                  })}
-                </h4>
-                <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
-                  {discoveredTools.map((tool) => (
-                    <li
-                      key={tool.name}
-                      className="flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-white/5"
-                    >
-                      <span className="text-primary mt-0.5">&#9679;</span>
-                      <div className="min-w-0">
-                        <span className="font-medium text-gray-900 dark:text-white">
-                          {tool.name}
-                        </span>
-                        {tool.description && (
-                          <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                            {tool.description}
-                          </p>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {errors.general && (
-              <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-                {errors.general}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="px-6 py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={testConnection}
-              disabled={testing}
-              className="w-full rounded-3xl px-6 sm:w-auto"
-            >
-              {testing ? (
-                <div className="flex items-center justify-center">
-                  <Spinner size="small" />
-                  <span className="ml-2">
-                    {t('settings.tools.mcp.testing')}
-                  </span>
-                </div>
-              ) : (
-                t('settings.tools.mcp.testConnection')
+                </Button>
               )}
-            </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:gap-3">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setModalState('INACTIVE');
-                  resetForm();
-                }}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {t('settings.tools.mcp.cancel')}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSave}
-                disabled={loading || !saveActive}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {loading ? (
-                  <div className="flex items-center justify-center">
-                    <Spinner size="small" />
-                    <span className="ml-2">
-                      {t('settings.tools.mcp.saving')}
+        {discoveredTools.length > 0 && testResult?.success && (
+          <Card padding="sm" className="gap-2">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('settings.tools.mcp.discoveredTools', {
+                count: discoveredTools.length,
+                defaultValue: `Discovered Actions (${discoveredTools.length})`,
+              })}
+            />
+            <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+              {discoveredTools.map((tool) => (
+                <li
+                  key={tool.name}
+                  className="bg-muted flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
+                >
+                  <span className="text-primary mt-0.5">&#9679;</span>
+                  <div className="min-w-0">
+                    <span className="text-foreground font-medium">
+                      {tool.name}
                     </span>
+                    {tool.description && (
+                      <p className="text-muted-foreground truncate text-xs">
+                        {tool.description}
+                      </p>
+                    )}
                   </div>
-                ) : (
-                  t('settings.tools.mcp.save')
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+        {errors.general && (
+          <Alert variant="destructive">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{errors.general}</AlertDescription>
+          </Alert>
+        )}
       </div>
     </Modal>
   );

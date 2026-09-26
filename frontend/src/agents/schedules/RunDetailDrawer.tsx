@@ -1,6 +1,12 @@
-import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { Button } from '../../components/ui/button';
+import { Card } from '@/components/ui/card';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '@/components/ui/description-list';
+import { SectionHeader } from '@/components/ui/section-header';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { formatDateTime } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
 import ScheduleStatusBadge from './StatusBadge';
@@ -14,89 +20,104 @@ const formatTimestamp = (value?: string | null): string => {
   return value ? formatDateTime(value) : '—';
 };
 
-/** Side drawer with a single run's output / error (terminal-state only). */
+/** Side sheet with a single run's output / error (terminal-state only). */
 export default function RunDetailDrawer({
   run,
   onClose,
 }: RunDetailDrawerProps) {
-  useEffect(() => {
-    if (!run) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [run, onClose]);
-
+  const { t } = useTranslation();
   if (!run) return null;
   return (
-    <>
-      <div
-        className="fixed inset-0 z-20 bg-black/40"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <aside
-        className="border-border bg-card fixed top-0 right-0 z-30 flex h-full w-full max-w-xl flex-col border-l p-6 shadow-lg"
-        role="dialog"
-        aria-label="Schedule run details"
+    <Sheet open onOpenChange={(open) => !open && onClose()}>
+      <SheetContent
+        side="right"
+        className="sm:max-w-xl"
+        aria-describedby={undefined}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Run details</h2>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onClose}
-            className="text-muted-foreground"
-          >
-            Close
-          </Button>
+        {/* The sheet owns no padding of its own; the body sets it. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
+          <SheetTitle>{t('agents.schedules.runDetails.title')}</SheetTitle>
+          <DescriptionList size="sm">
+            <DescriptionItem label={t('agents.schedules.runDetails.status')}>
+              <ScheduleStatusBadge status={run.status} />
+            </DescriptionItem>
+            <DescriptionItem
+              label={t('agents.schedules.runDetails.scheduledFor')}
+            >
+              {formatTimestamp(run.scheduled_for)}
+            </DescriptionItem>
+            <DescriptionItem label={t('agents.schedules.runDetails.started')}>
+              {formatTimestamp(run.started_at)}
+            </DescriptionItem>
+            <DescriptionItem label={t('agents.schedules.runDetails.finished')}>
+              {formatTimestamp(run.finished_at)}
+            </DescriptionItem>
+            <DescriptionItem label={t('agents.schedules.runDetails.tokens')}>
+              {t('agents.schedules.runDetails.tokensValue', {
+                prompt: run.prompt_tokens,
+                generated: run.generated_tokens,
+              })}
+            </DescriptionItem>
+            <DescriptionItem label={t('agents.schedules.runDetails.trigger')}>
+              {t(`agents.schedules.trigger.${run.trigger_source}`, {
+                defaultValue: run.trigger_source,
+              })}
+            </DescriptionItem>
+          </DescriptionList>
+          {run.error && (
+            <section className="flex flex-col gap-1">
+              <SectionHeader
+                as="h3"
+                size="xs"
+                tone="destructive"
+                title={
+                  run.error_type
+                    ? t('agents.schedules.runDetails.errorWithType', {
+                        type: run.error_type,
+                      })
+                    : t('agents.schedules.runDetails.error')
+                }
+              />
+              <Card
+                variant="filled"
+                padding="sm"
+                className="max-h-48 overflow-y-auto"
+              >
+                <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+                  {run.error}
+                </pre>
+              </Card>
+            </section>
+          )}
+          {run.output && (
+            <section className="flex min-h-0 flex-1 flex-col gap-1">
+              <SectionHeader
+                as="h3"
+                size="xs"
+                title={
+                  <>
+                    {t('agents.schedules.runDetails.output')}
+                    {run.output_truncated && (
+                      <span className="text-muted-foreground ml-1 text-xs">
+                        {t('agents.schedules.runDetails.truncated')}
+                      </span>
+                    )}
+                  </>
+                }
+              />
+              <Card
+                variant="filled"
+                padding="sm"
+                className="min-h-0 flex-1 overflow-y-auto"
+              >
+                <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+                  {run.output}
+                </pre>
+              </Card>
+            </section>
+          )}
         </div>
-        <dl className="mb-4 grid grid-cols-2 gap-2 text-sm">
-          <dt className="text-muted-foreground">Status</dt>
-          <dd>
-            <ScheduleStatusBadge status={run.status} />
-          </dd>
-          <dt className="text-muted-foreground">Scheduled for</dt>
-          <dd>{formatTimestamp(run.scheduled_for)}</dd>
-          <dt className="text-muted-foreground">Started</dt>
-          <dd>{formatTimestamp(run.started_at)}</dd>
-          <dt className="text-muted-foreground">Finished</dt>
-          <dd>{formatTimestamp(run.finished_at)}</dd>
-          <dt className="text-muted-foreground">Tokens</dt>
-          <dd>
-            {run.prompt_tokens} prompt · {run.generated_tokens} generated
-          </dd>
-          <dt className="text-muted-foreground">Trigger</dt>
-          <dd>{run.trigger_source}</dd>
-        </dl>
-        {run.error && (
-          <section className="mb-4">
-            <h3 className="text-destructive text-sm font-semibold">
-              Error{run.error_type ? ` (${run.error_type})` : ''}
-            </h3>
-            <pre className="bg-background mt-1 max-h-48 overflow-auto rounded-md p-3 font-mono text-xs">
-              {run.error}
-            </pre>
-          </section>
-        )}
-        {run.output && (
-          <section className="flex-1 overflow-hidden">
-            <h3 className="text-sm font-semibold">
-              Output
-              {run.output_truncated && (
-                <span className="text-muted-foreground ml-1 text-xs">
-                  (truncated)
-                </span>
-              )}
-            </h3>
-            <pre className="bg-background mt-1 h-full overflow-auto rounded-md p-3 font-mono text-xs whitespace-pre-wrap">
-              {run.output}
-            </pre>
-          </section>
-        )}
-      </aside>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }
