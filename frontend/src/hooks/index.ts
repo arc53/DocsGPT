@@ -95,6 +95,11 @@ export function usePacedText(text: string, enabled: boolean): string {
   return enabled ? text.slice(0, Math.min(visibleLength, text.length)) : text;
 }
 
+// Each useDarkTheme() caller holds its own state; a toggle broadcasts the new
+// value so every other caller (logo, Mermaid, code blocks) follows without a
+// reload.
+const THEME_CHANGE_EVENT = 'docsgpt:themechange';
+
 export function useDarkTheme() {
   const getSystemThemePreference = () => {
     return (
@@ -127,6 +132,15 @@ export function useDarkTheme() {
   }, []);
 
   useEffect(() => {
+    const handleThemeChange = (event: Event) => {
+      setIsDarkTheme((event as CustomEvent<boolean>).detail);
+    };
+    window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+    return () =>
+      window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem('selectedTheme', isDarkTheme ? 'Dark' : 'Light');
     const action = isDarkTheme ? 'add' : 'remove';
     document.body?.classList[action]('dark');
@@ -148,7 +162,11 @@ export function useDarkTheme() {
   }, [isDarkTheme]);
 
   const toggleTheme = () => {
-    setIsDarkTheme(!isDarkTheme);
+    const next = !isDarkTheme;
+    setIsDarkTheme(next);
+    window.dispatchEvent(
+      new CustomEvent<boolean>(THEME_CHANGE_EVENT, { detail: next }),
+    );
   };
 
   return [isDarkTheme, toggleTheme, componentMounted] as const;
