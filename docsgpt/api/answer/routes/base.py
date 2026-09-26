@@ -1834,6 +1834,7 @@ class BaseAnswerResource:
         is_structured = False
         schema_info = None
         pending_tool_calls = None
+        attachment_plan = None
 
         for line in stream:
             try:
@@ -1872,6 +1873,8 @@ class BaseAnswerResource:
                     )
                 elif event["type"] == "thought":
                     thought += event["thought"]
+                elif event["type"] == "attachment_plan":
+                    attachment_plan = event.get("attachment_plan")
                 elif event["type"] == "error":
                     logger.error(f"Error from stream: {event['error']}")
                     return {
@@ -1906,6 +1909,11 @@ class BaseAnswerResource:
             "thought": thought,
             "error": None,
         }
+
+        # Only when the turn had attachments, so callers without any keep
+        # the response shape they had.
+        if attachment_plan:
+            result["attachment_plan"] = attachment_plan
 
         if pending_tool_calls is not None:
             result["extra"] = {"pending_tool_calls": pending_tool_calls}

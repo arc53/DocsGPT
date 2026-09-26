@@ -526,6 +526,34 @@ class TestProcessResponseStream:
             assert result["sources"] == [{"title": "doc1"}]
             assert result["error"] is None
 
+    def test_keeps_the_attachment_plan(self, mock_mongo_db, flask_app):
+        import json
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        plan = [{"ref": "F1", "id": "a", "filename": "a.pdf", "status": "inline"}]
+        with flask_app.app_context():
+            stream = [
+                f'data: {json.dumps({"type": "attachment_plan", "attachment_plan": plan})}\n\n',
+                f'data: {json.dumps({"type": "answer", "answer": "hi"})}\n\n',
+                f'data: {json.dumps({"type": "end"})}\n\n',
+            ]
+            result = BaseAnswerResource().process_response_stream(iter(stream))
+        assert result["attachment_plan"] == plan
+
+    def test_no_plan_key_without_attachments(self, mock_mongo_db, flask_app):
+        import json
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            stream = [
+                f'data: {json.dumps({"type": "answer", "answer": "hi"})}\n\n',
+                f'data: {json.dumps({"type": "end"})}\n\n',
+            ]
+            result = BaseAnswerResource().process_response_stream(iter(stream))
+        assert "attachment_plan" not in result
+
     def test_handles_stream_error(self, mock_mongo_db, flask_app):
         import json
 

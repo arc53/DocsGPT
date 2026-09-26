@@ -10,7 +10,6 @@ import {
   Download,
   Eye,
   FileText,
-  Paperclip,
   Pencil,
   ThumbsDown,
   ThumbsUp,

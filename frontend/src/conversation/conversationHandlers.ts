@@ -3,7 +3,13 @@ import i18n from 'i18next';
 import { baseURL } from '../api/client';
 import conversationService from '../api/services/conversationService';
 import { Doc } from '../models/misc';
-import { Answer, FEEDBACK, RetrievalPayload } from './conversationModels';
+import { parseAttachmentPlan } from './attachmentPlan';
+import {
+  Answer,
+  AttachmentPlanEntry,
+  FEEDBACK,
+  RetrievalPayload,
+} from './conversationModels';
 import { isQuotaError, quotaErrorMessage } from './quotaError';
 import { ToolCallsType } from './types';
 
@@ -187,6 +193,7 @@ export function handleFetchAnswer(
       query: string;
       conversationId: any;
       title: any;
+      attachmentPlan?: AttachmentPlanEntry[];
     }
 > {
   const payload: RetrievalPayload = {
@@ -245,6 +252,7 @@ export function handleFetchAnswer(
         toolCalls: data.tool_calls,
         conversationId: data.conversation_id,
         title: data.title || null,
+        attachmentPlan: parseAttachmentPlan(data.attachment_plan),
       };
     });
 }

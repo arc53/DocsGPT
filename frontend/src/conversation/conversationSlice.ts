@@ -607,6 +607,9 @@ export const fetchAnswer = createAsyncThunk<
               thought: answer.thought,
               sources: sourcesPrepped,
               tool_calls: answer.toolCalls,
+              ...('attachmentPlan' in answer && answer.attachmentPlan
+                ? { attachmentPlan: answer.attachmentPlan }
+                : {}),
             },
           }),
         );
@@ -866,6 +869,8 @@ export const conversationSlice = createSlice({
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
       delete state.queries[index].research;
+      // The next attempt streams (or returns) its own plan.
+      delete state.queries[index].attachmentPlan;
       // Drop stale WAL refs; the next stream's message_id event repopulates.
       delete state.queries[index].messageId;
       delete state.queries[index].messageStatus;
