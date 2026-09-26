@@ -49,6 +49,11 @@ describe('AttachmentChips', () => {
     ]);
     expect(html).toContain('data-plan-status="inline"');
     expect(html).toContain('In context');
+    // Status is a themed Badge, never a raw palette colour.
+    expect(html).toContain('data-variant="success"');
+    expect(html).toContain('data-variant="warning"');
+    expect(html).toContain('data-variant="info"');
+    expect(html).not.toMatch(/emerald|amber-|sky-/);
     expect(html).toContain('Partly in context');
     expect(html).toContain('Searchable');
     expect(html).toContain('1 of 3 files read in full · 2 searchable');
@@ -68,6 +73,7 @@ describe('AttachmentChips', () => {
       { ref: 'F2', id: 'b', filename: 'b.pdf', status: 'omitted' },
     ]);
     expect(html).toContain('Not included');
+    expect(html).toContain('data-variant="neutral"');
     expect(html).toContain('1 of 2 files read in full · 1 not included');
   });
 });

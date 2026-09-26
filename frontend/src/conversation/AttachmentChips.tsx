@@ -1,18 +1,25 @@
 import { Paperclip } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { Badge } from '../components/ui/badge';
 import { planEntryFor, summarizePlan } from './attachmentPlan';
 import type {
   AttachmentPlanEntry,
   AttachmentPlanStatus,
 } from './conversationModels';
 
-const STATUS_TONE: Record<AttachmentPlanStatus, string> = {
-  inline: 'bg-emerald-500',
-  partial: 'bg-amber-500',
-  tool: 'bg-sky-500',
-  omitted: 'bg-muted-foreground',
-  unreadable: 'bg-destructive',
+// Where a file went, as a status Badge: read in full is healthy, read in part
+// is a partial state, searchable is informational, left out is neutral and a
+// file the model cannot read is an error.
+const STATUS_VARIANT: Record<
+  AttachmentPlanStatus,
+  'success' | 'warning' | 'info' | 'neutral' | 'destructive'
+> = {
+  inline: 'success',
+  partial: 'warning',
+  tool: 'info',
+  omitted: 'neutral',
+  unreadable: 'destructive',
 };
 
 /**
@@ -54,34 +61,29 @@ export default function AttachmentChips({
       <div className="flex flex-wrap justify-end gap-2">
         {files.map((file, index) => {
           const entry = planEntryFor(plan, file);
-          const label = entry
-            ? t(`conversation.attachments.plan.${entry.status}`)
-            : null;
           return (
             <div
               key={index}
-              title={label ? `${file.fileName} — ${label}` : file.fileName}
               data-plan-status={entry?.status}
-              className="bg-muted text-foreground flex items-center rounded-xl p-2 text-sm"
+              className="bg-muted text-foreground flex items-center gap-2 rounded-xl p-2 text-sm"
             >
-              <div className="bg-primary mr-2 items-center justify-center rounded-lg p-1.5">
+              <div className="bg-primary items-center justify-center rounded-lg p-1.5">
                 <Paperclip
                   aria-label={t('conversation.attachments.attachment')}
                   className="text-primary-foreground size-3.75"
                 />
               </div>
-              <div className="flex min-w-0 flex-col">
-                <span className="max-w-37.5 truncate font-normal">
+              <div className="flex min-w-0 flex-col items-start gap-1">
+                <span
+                  title={file.fileName}
+                  className="max-w-37.5 truncate font-normal"
+                >
                   {file.fileName}
                 </span>
-                {entry && label && (
-                  <span className="flex items-center gap-1 text-xs opacity-80">
-                    <span
-                      aria-hidden="true"
-                      className={`inline-block size-1.5 rounded-full ${STATUS_TONE[entry.status]}`}
-                    />
-                    {label}
-                  </span>
+                {entry && (
+                  <Badge variant={STATUS_VARIANT[entry.status]}>
+                    {t(`conversation.attachments.plan.${entry.status}`)}
+                  </Badge>
                 )}
               </div>
             </div>
