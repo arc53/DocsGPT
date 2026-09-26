@@ -159,6 +159,25 @@ class TestEnforceContextWindow:
             with pytest.raises(ValueError, match="exceeds the model's context window"):
                 agent._enforce_context_window(messages)
 
+    def test_tool_schemas_and_a_margin_count_against_the_window(self, agent):
+        """A payload whose messages alone fit can still overflow once the tool
+        schemas sent with it are counted, and token estimates drift from the
+        provider's tokenizer; production saw 21,478 real tokens against a
+        20,992 window after one tool round."""
+        agent.tools = [
+            {"type": "function", "function": {"name": f"tool_{i}", "description": "d " * 50}}
+            for i in range(4)
+        ]
+        agent.llm._supports_tools = True
+        messages = [
+            {"role": "user", "content": "question"},
+            {"role": "tool", "tool_call_id": "1", "content": "word " * 700},
+        ]
+        assert agent._calculate_current_context_tokens(messages) < 1000
+        with patch("docsgpt.core.model_utils.get_token_limit", return_value=1000):
+            shrunk = agent._enforce_context_window(messages)
+        assert "truncated to fit context limit" in shrunk[1]["content"]
+
     def test_streaming_loop_gates_before_next_round(self):
         """handle_streaming must run the gate before dispatching the next
         round's gen_stream."""

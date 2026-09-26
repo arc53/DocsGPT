@@ -346,6 +346,28 @@ curl -X POST http://localhost:7091/stream \
 - For providers that support images but not native PDF file attachments, DocsGPT can convert PDF pages to images (synthetic PDF support).
 - Attachments are user-scoped. Upload and query must be done under the same user context (same API key owner or same JWT user).
 
+### Many or Large Attachments
+
+There is no limit on how many files a message can carry. DocsGPT fits as many as it can into the model's context window and makes the rest available to the model through tools:
+
+- Each file of the conversation gets a ref (`F1`, `F2`, ...) in upload order. Re-uploads of the same file share one ref.
+- The files attached to the message are read in upload order. Each one that fits whole is included, natively (for example as a PDF) when the model reads that type, or as extracted text. Smaller later files fill the space a larger one could not use. The first file that did not fit gets whatever room is left, cut at a clearly marked point. Attachments may take up to `ATTACHMENT_CONTEXT_SHARE` of the window (default 60%), and at most `ATTACHMENT_NATIVE_MAX_FILES` (default 10) are sent natively.
+- The model receives a list of every file with its ref and whether its content is included, at the start of your message.
+- Files that were left out, and files from earlier messages of the conversation, stay available through the `attachments` tool: `attachments_list`, `attachments_read` (a slice of a file's text) and `attachments_search`. Search ranks by keyword straight away, and by meaning once the file has been indexed in the background (`ATTACHMENT_INDEXING_ENABLED`).
+- A model that cannot call tools gets the passages of the left-out files that best match the question instead.
+
+The stream reports where each file went in an `attachment_plan` event, which is also saved with the message:
+
+```json
+{"type": "attachment_plan", "attachment_plan": [
+  {"ref": "F1", "id": "…", "filename": "report_2012.pdf", "status": "inline"},
+  {"ref": "F7", "id": "…", "filename": "report_2018.pdf", "status": "partial"},
+  {"ref": "F8", "id": "…", "filename": "report_2019.pdf", "status": "tool"}
+]}
+```
+
+`status` is `inline` (included whole), `partial` (included in part), `tool` (left out, readable through the tool), `omitted` (left out, not reachable) or `unreadable` (no text, and the model cannot read the file natively).
+
 ## Agent Portability (Export & Import)
 
 Agents can be exported to a portable YAML file and imported into another DocsGPT instance (or back into the same one). This is how you move an agent between environments or share a reproducible definition.

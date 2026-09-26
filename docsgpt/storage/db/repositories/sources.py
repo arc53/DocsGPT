@@ -6,7 +6,7 @@ import json
 import uuid
 from typing import Any, Optional
 
-from sqlalchemy import case, Connection, func, or_, select, text
+from sqlalchemy import and_, case, Connection, func, or_, select, text
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import ingest_chunk_progress_table, sources_table
@@ -24,6 +24,13 @@ _ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
 # this set falls back to ``date`` so user-supplied sort params can't be
 # interpolated into SQL unchecked.
 _SORTABLE_COLUMNS = {"date", "name", "tokens", "type", "created_at", "updated_at"}
+
+
+# ``sources.type`` of the per-attachment sources the background indexer
+# creates for ``attachments_search``. They are real sources (a vector index
+# per attachment, resolvable by id) but belong to a chat, not to the user's
+# library, so listings leave them out.
+ATTACHMENT_SOURCE_TYPE = "chat_attachment"
 
 
 def _coerce_uuid_ids(extra_ids: Optional[list]) -> list:
@@ -48,13 +55,14 @@ def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
 
     Lets the paginated/count queries include team-shared sources (passed by id)
     alongside owned ones in a single query, so count/sort/search/pagination
-    stay correct across the union.
+    stay correct across the union. The hidden sources holding chat attachment
+    vectors never appear in a listing.
     """
     scope = sources_table.c.user_id == user_id
     ids = _coerce_uuid_ids(extra_ids)
     if ids:
         scope = or_(scope, sources_table.c.id.in_(ids))
-    return scope
+    return and_(scope, sources_table.c.type.is_distinct_from(ATTACHMENT_SOURCE_TYPE))
 
 
 def _escape_like(pattern: str) -> str:

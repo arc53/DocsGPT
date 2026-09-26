@@ -34,7 +34,10 @@ def _normalize_name(value: Any) -> str:
 def match_attachment(
     attachments: Optional[List[Dict[str, Any]]], raw_ref: str, user_id: str
 ) -> Optional[Dict[str, Any]]:
-    """Match a model-supplied id/filename against the caller's OWN request attachments; None otherwise.
+    """Match a model-supplied id/ref/filename against the caller's OWN attachments; None otherwise.
+
+    A ref (``F3``) is the conversation-level handle the manifest shows the model; rows carry it under
+    ``ref`` when the agent stamps them.
 
     Matching is confined to ``attachments`` (already user-scoped when loaded) so a forged id/name can
     never reach another user's or conversation's attachment. An id match is re-verified against
@@ -57,6 +60,9 @@ def match_attachment(
             if attachment.get(key) is not None
         }
         if ref in ids:
+            return _verify_owner(attachment, user_id)
+        conversation_ref = attachment.get("ref")
+        if conversation_ref and str(conversation_ref).upper() == ref.upper():
             return _verify_owner(attachment, user_id)
         filename = attachment.get("filename")
         if by_filename is None and filename and _normalize_name(filename) == ref_norm:

@@ -981,6 +981,52 @@ class TestCompleteStreamWalAcceptance:
             assert "RuntimeError" in msgs[0]["metadata"]["error"]
             assert "LLM upstream failed" in msgs[0]["metadata"]["error"]
 
+    def test_context_window_error_is_curated_on_the_wire_and_on_reload(
+        self, pg_conn, flask_app,
+    ):
+        import json
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.side_effect = RuntimeError(
+                "Error code: 400 - Your input exceeds the context window of this model"
+            )
+            with _patch_db_session(pg_conn):
+                stream = list(
+                    resource.complete_stream(
+                        question="do the work",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-ctx"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                    )
+                )
+            errors = [
+                json.loads(_extract_sse_data(s)) for s in stream if '"type": "error"' in s
+            ]
+            assert errors[0]["code"] == "context_window_exceeded"
+            assert "try again later" not in errors[0]["error"].lower()
+
+            from sqlalchemy import text as sql_text
+
+            conv_id = str(
+                pg_conn.execute(
+                    sql_text("SELECT id FROM conversations WHERE user_id = :u"), {"u": "u-ctx"}
+                ).fetchone()[0]
+            )
+            meta = ConversationsRepository(pg_conn).get_messages(conv_id)[0]["metadata"]
+            assert meta["error"] == errors[0]["error"]
+            assert meta["error_code"] == "context_window_exceeded"
+            assert "exceeds the context window" in meta["error_detail"]
+
     def test_workflow_node_error_persists_as_failed_not_blank_complete(
         self, pg_conn, flask_app,
     ):
@@ -1034,6 +1080,51 @@ class TestCompleteStreamWalAcceptance:
                 "failed, so history renders the error and a retry button"
             )
             assert "foundry" in msgs[0]["metadata"]["error"]
+
+    def test_yielded_context_window_error_is_curated(self, pg_conn, flask_app):
+        """A workflow node that hits the context window reports it by yielding
+        an error event; it gets the same curated copy and code as a raised one."""
+        import json
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            mock_agent = MagicMock()
+            mock_agent.gen.return_value = iter(
+                [{"type": "error", "error": "Your input exceeds the context window of this model"}]
+            )
+            with _patch_db_session(pg_conn):
+                stream = list(
+                    resource.complete_stream(
+                        question="hello",
+                        agent=mock_agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-wf-ctx"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                    )
+                )
+            errors = [
+                json.loads(_extract_sse_data(s)) for s in stream if '"type": "error"' in s
+            ]
+            assert errors[0]["code"] == "context_window_exceeded"
+
+            from sqlalchemy import text as sql_text
+
+            conv_id = str(
+                pg_conn.execute(
+                    sql_text("SELECT id FROM conversations WHERE user_id = :u"),
+                    {"u": "u-wf-ctx"},
+                ).fetchone()[0]
+            )
+            meta = ConversationsRepository(pg_conn).get_messages(conv_id)[0]["metadata"]
+            assert meta["error_code"] == "context_window_exceeded"
+            assert meta["error"] == errors[0]["error"]
 
     def test_error_after_partial_answer_keeps_the_answer(
         self, pg_conn, flask_app,

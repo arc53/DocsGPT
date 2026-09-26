@@ -1331,6 +1331,36 @@ Type `int`, default `20000`, must be `>= 0`.
 
 Cap on one tool result entering the LLM context (0 disables); journal and DB keep it whole.
 
+### `ATTACHMENT_CONTEXT_SHARE`
+
+Type `float`, default `0.6`, must be `> 0` and `<= 1`.
+
+Largest share of the model's context window a turn's attachments may take. Files are inlined in upload order until it is spent; the rest stay reachable through the attachments tool.
+
+### `ATTACHMENT_NATIVE_MAX_FILES`
+
+Type `int`, default `10`, must be `>= 0`.
+
+Most files sent to the model as native file or image parts in one turn; later ones go as text.
+
+### `ATTACHMENT_PARTIAL_MIN_TOKENS`
+
+Type `int`, default `4000`, must be `>= 0`.
+
+Smallest leftover budget worth inlining the start of a file that does not fit whole. The cut is marked so the model can read on with the attachments tool.
+
+### `ATTACHMENT_READ_MAX_TOKENS`
+
+Type `int`, default `8000`, must be `>= 500`.
+
+Most tokens one attachments_read call returns; the reply names the offset to continue from.
+
+### `ATTACHMENT_INDEXING_ENABLED`
+
+Type `bool`, default `true`.
+
+Embed each chat attachment in the background after parsing, so attachments_search can rank by meaning. Until an attachment is indexed (or with this off) search falls back to keyword ranking.
+
 ### `ENABLE_CONVERSATION_COMPRESSION`
 
 Type `bool`, default `true`.

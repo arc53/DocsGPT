@@ -249,3 +249,13 @@ def test_prepare_messages_with_attachments_image_and_pdf(openai_llm, monkeypatch
         isinstance(p, dict) and p.get("file", {}).get("file_id") == "file_xyz"
         for p in user_msg["content"]
     )
+
+
+@pytest.mark.unit
+def test_pdf_file_parts_remember_their_attachment(openai_llm, monkeypatch):
+    ids = iter(["file_a", "file_b"])
+    monkeypatch.setattr(openai_llm, "_upload_file_to_openai", lambda att: next(ids))
+    first = {"id": "a", "path": "/tmp/a.pdf", "mime_type": "application/pdf"}
+    second = {"id": "b", "path": "/tmp/b.pdf", "mime_type": "application/pdf"}
+    openai_llm.prepare_messages_with_attachments([{"role": "user", "content": "Hi"}], [first, second])
+    assert openai_llm._file_part_sources == {"file_a": first, "file_b": second}

@@ -18,6 +18,7 @@ import reducer, {
   mapServerQueryToClient,
   raiseNotice,
   resendQuery,
+  setAttachmentPlan,
   setConversation,
 } from './conversationSlice';
 
@@ -198,6 +199,44 @@ describe('raiseNotice — non-fatal notice', () => {
   });
 });
 
+describe('attachment plan', () => {
+  const plan = [
+    { ref: 'F1', id: 'a', filename: 'a.pdf', status: 'inline' as const },
+    { ref: 'F2', id: 'b', filename: 'b.pdf', status: 'tool' as const },
+  ];
+
+  it('stores the streamed plan on the query', () => {
+    const next = reducer(
+      seedSlice(),
+      setAttachmentPlan({ conversationId: null, index: 0, plan }),
+    );
+    expect(next.queries[0].attachmentPlan).toEqual(plan);
+  });
+
+  it('ignores a plan for another conversation', () => {
+    const next = reducer(
+      seedSlice(),
+      setAttachmentPlan({ conversationId: 'other', index: 0, plan }),
+    );
+    expect(next.queries[0].attachmentPlan).toBeUndefined();
+  });
+
+  it('restores the persisted plan on reload', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      status: 'complete',
+      response: 'r',
+      metadata: { attachment_plan: plan },
+    });
+    expect(query.attachmentPlan).toEqual(plan);
+  });
+
+  it('leaves the plan out when the message has none', () => {
+    const query = mapServerQueryToClient({ prompt: 'q', status: 'complete' });
+    expect(query.attachmentPlan).toBeUndefined();
+  });
+});
+
 const completedAtt = {
   id: 'srv-1',
   fileName: 'a.pdf',
@@ -276,6 +315,36 @@ describe('fetchAnswer — attachment ids on the wire', () => {
   });
 });
 
+describe('fetchAnswer — non-streaming attachment plan', () => {
+  it('stores the plan returned by /api/answer on the active query', async () => {
+    const plan = [
+      { ref: 'F1', id: 'a', filename: 'a.pdf', status: 'inline' as const },
+      { ref: 'F2', id: 'b', filename: 'b.pdf', status: 'tool' as const },
+    ];
+    vi.mocked(handleFetchAnswer)
+      .mockClear()
+      .mockResolvedValue({
+        answer: 'hi',
+        query: 'q',
+        result: 'hi',
+        thought: '',
+        sources: [],
+        toolCalls: [],
+        conversationId: 'c-1',
+        title: null,
+        attachmentPlan: plan,
+      } as never);
+    const store = makeStore();
+    store.dispatch(addQuery({ prompt: 'q' }));
+
+    await store.dispatch(fetchAnswer({ question: 'q', indx: 0 }));
+
+    expect(store.getState().conversation.queries[0].attachmentPlan).toEqual(
+      plan,
+    );
+  });
+});
+
 describe('fetchAnswer.rejected', () => {
   it('writes the error to the retried row, not the last row', () => {
     let state = reducer(
@@ -327,6 +396,24 @@ describe('resendQuery', () => {
     ]);
     expect(state.queries[0].response).toBeUndefined();
     expect(state.queries[0].error).toBeUndefined();
+  });
+
+  it("drops the previous attempt's attachment plan", () => {
+    let state = reducer(
+      undefined,
+      setConversation([
+        {
+          prompt: 'p',
+          response: 'r',
+          attachments: [{ id: 'x', fileName: 'f.pdf' }],
+          attachmentPlan: [
+            { ref: 'F1', id: 'x', filename: 'f.pdf', status: 'inline' },
+          ],
+        },
+      ]),
+    );
+    state = reducer(state, resendQuery({ index: 0, prompt: 'p2' }));
+    expect(state.queries[0].attachmentPlan).toBeUndefined();
   });
 });
 

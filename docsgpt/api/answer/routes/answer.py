@@ -180,6 +180,9 @@ class AnswerResource(Resource, BaseAnswerResource):
                 "thought": stream_result["thought"],
             }
 
+            if stream_result.get("attachment_plan"):
+                result["attachment_plan"] = stream_result["attachment_plan"]
+
             extra_info = stream_result.get("extra")
             if extra_info:
                 result.update(extra_info)

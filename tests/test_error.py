@@ -81,3 +81,47 @@ class TestSanitizeApiError:
 
     def test_short_safe_message_passed_through(self):
         assert sanitize_api_error("Something broke") == "Something broke"
+
+
+class TestUserFacingError:
+    def test_context_window_errors_are_curated(self):
+        from docsgpt.error import user_facing_error
+
+        for raw in (
+            "Error code: 400 - {'error': {'code': 'context_length_exceeded'}}",
+            "Your input exceeds the context window of this model",
+            "prompt is too long: 300000 tokens > 200000 maximum",
+            "Conversation context (300,000 tokens) exceeds the model's context window",
+            "Error code: 400 - {'error': {'message': 'request (21478 tokens) exceeds the available "
+            "context size (20992 tokens)', 'type': 'exceed_context_size_error'}}",
+        ):
+            curated = user_facing_error(RuntimeError(raw))
+            assert curated is not None
+            code, message = curated
+            assert code == "context_window_exceeded"
+            assert "attachments" in message
+
+    def test_token_rate_limit_is_curated(self):
+        from docsgpt.error import user_facing_error
+
+        code, message = user_facing_error(
+            RuntimeError("Error code: 429 - Rate limit reached: tokens_per_minute")
+        )
+        assert code == "rate_limited"
+        assert "try again" in message.lower()
+
+    def test_token_rate_limit_wins_over_context_wording(self):
+        from docsgpt.error import user_facing_error
+
+        code, _ = user_facing_error(
+            RuntimeError(
+                "Error code: 429 - Request exceeds the maximum number of tokens "
+                "(tokens_per_minute limit)"
+            )
+        )
+        assert code == "rate_limited"
+
+    def test_other_errors_are_not_classified(self):
+        from docsgpt.error import user_facing_error
+
+        assert user_facing_error(RuntimeError("something odd")) is None

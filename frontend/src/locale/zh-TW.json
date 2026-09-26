@@ -1372,7 +1372,17 @@
       "remove": "刪除附件",
       "attached": "附件",
       "failed": "失敗",
-      "attachment": "附件"
+      "attachment": "附件",
+      "plan": {
+        "inline": "已在上下文中",
+        "partial": "部分在上下文中",
+        "tool": "可搜尋",
+        "omitted": "未包含",
+        "unreadable": "無法讀取",
+        "summary": "已完整讀取 {{total}} 個檔案中的 {{inFull}} 個",
+        "summarySearchable": "{{count}} 個可搜尋",
+        "summaryNotIncluded": "{{count}} 個未包含"
+      }
     },
     "retry": "重試",
     "failedTitle": "無法產生回覆",

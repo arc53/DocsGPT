@@ -1682,6 +1682,45 @@ def _bounded_attachment_copy(local_path: str) -> tuple[str, bool]:
     return tmp.name, True
 
 
+def _attachment_identity(local_path: str, filename: str) -> Dict[str, Any]:
+    """Hash an upload's original bytes and, for a PDF, count its pages.
+
+    The hash lets the budget planner collapse re-uploads of the same file
+    onto one ref; the page count prices a natively read PDF. Both are
+    best-effort: a failure is logged and the attachment still processes.
+
+    Args:
+        local_path: The original file on local disk.
+        filename: Its upload name, for the PDF check.
+
+    Returns:
+        ``{"content_hash": ..., "page_count": ...}``, either key possibly absent.
+    """
+    import hashlib
+
+    out: Dict[str, Any] = {}
+    try:
+        digest = hashlib.sha256()
+        with open(local_path, "rb") as fh:
+            for block in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(block)
+        out["content_hash"] = digest.hexdigest()
+    except OSError:
+        logging.warning(f"Could not hash attachment {filename}", exc_info=True)
+    if (mimetypes.guess_type(filename)[0] or "") == "application/pdf":
+        try:
+            import pypdfium2 as pdfium
+
+            pdf = pdfium.PdfDocument(local_path)
+            try:
+                out["page_count"] = len(pdf)
+            finally:
+                pdf.close()
+        except Exception:
+            logging.info(f"Could not count pages of {filename}", exc_info=True)
+    return out
+
+
 def _upsert_attachment_row(
     user, filename, relative_path, *, mime_type, content, token_count, metadata, attachment_id
 ):
@@ -1820,7 +1859,13 @@ def attachment_worker(self, file_info, user):
         _parser = file_extractor.get(os.path.splitext(filename)[1].lower())
         parser_name = type(_parser).__name__ if _parser is not None else "SimpleDirectoryReader"
 
+        identity: Dict[str, Any] = {}
+
         def _parse_local_file(local_path: str, **kwargs) -> Document:
+            # Identity first, while the original bytes are on local disk: it
+            # must survive a parse that raises (a scan has no text layer but
+            # is still a usable attachment).
+            identity.update(_attachment_identity(local_path, filename))
             _reject_unparseable_attachment(local_path, filename, set(file_extractor))
             _reject_attachment_zip_bomb(local_path)
             parse_path, is_temp_copy = _bounded_attachment_copy(local_path)
@@ -1891,8 +1936,18 @@ def attachment_worker(self, file_info, user):
                 "original_tokens": original_tokens,
                 "stored_tokens": token_count,
                 **({"reason": no_text_reason} if no_text_reason else {}),
+                **({"page_count": identity["page_count"]} if identity.get("page_count") else {}),
             },
         }
+        if identity.get("content_hash"):
+            metadata["content_hash"] = identity["content_hash"]
+        if settings.ATTACHMENT_INDEXING_ENABLED and content:
+            # ``store_attachment`` enqueues the embed once this row lands; the
+            # state is set here so the model's file list says "pending" rather
+            # than nothing until the indexer picks it up.
+            metadata["index"] = {"status": "pending"}
+        else:
+            metadata.pop("index", None)
 
         self.update_state(
             state="PROGRESS", meta={"current": 80, "status": "Storing in database"}
@@ -2641,6 +2696,166 @@ def reembed_wiki_page_worker(self, source_id, path, content_hash, user):
         raise
 
     return {"status": "embedded", "added": added, "deleted": deleted}
+
+
+def index_attachment_worker(self, attachment_id, user):
+    """Embed a chat attachment's text into its own hidden source.
+
+    Runs in the background after parsing, never on the request path:
+    ``attachments_search`` ranks by keyword until the attachment's
+    ``metadata.index.status`` is ``done``, then semantically. Chunks come from
+    the same chunker the keyword ranker uses, so a hit's ``offset`` is the
+    same whichever ranker found it.
+
+    The source (``type = chat_attachment``) is derived from the attachment
+    id, so a retry or redelivery reuses it, and listings leave it out.
+
+    Args:
+        self: Celery task instance.
+        attachment_id: PG id or upload handle of the attachment.
+        user: The attachment's owner; the row is looked up scoped to them.
+
+    Returns:
+        ``{"status": "done", "chunks": n, "source_id": ...}``, or a status
+        of ``missing`` / ``skipped`` when there is nothing to index.
+    """
+    from docsgpt.agents.attachment_search import chunk_text
+    from docsgpt.storage.db.repositories.sources import ATTACHMENT_SOURCE_TYPE
+    from docsgpt.storage.db.source_ids import derive_source_id
+    from docsgpt.vectorstore.document_class import Document as VectorDocument
+
+    with db_readonly() as conn:
+        row = AttachmentsRepository(conn).get_any(str(attachment_id), user)
+    if row is None:
+        return {"status": "missing"}
+    pg_id = str(row["id"])
+    metadata = row.get("metadata") or {}
+    extraction = metadata.get("extraction") or {}
+    content = row.get("content") or ""
+    if not content.strip() or extraction.get("status") not in (None, "ok"):
+        with db_session() as conn:
+            AttachmentsRepository(conn).merge_metadata(pg_id, user, {"index": {"status": "skipped"}})
+        return {"status": "skipped"}
+
+    filename = row.get("filename") or "attachment"
+    source_id = str(derive_source_id(f"attachment-index:{pg_id}"))
+    with db_session() as conn:
+        sources = SourcesRepository(conn)
+        if sources.get(source_id, user) is None:
+            sources.create(
+                f"Attachment: {filename}",
+                source_id=source_id,
+                user_id=user,
+                type=ATTACHMENT_SOURCE_TYPE,
+                metadata={"attachment_id": pg_id},
+                retriever="classic",
+                model=settings.EMBEDDINGS_NAME,
+            )
+        AttachmentsRepository(conn).merge_metadata(
+            pg_id, user, {"index": {"status": "indexing", "source_id": source_id}}
+        )
+
+    docs = [
+        VectorDocument(
+            page_content=chunk.text,
+            metadata={
+                "offset": chunk.offset,
+                "attachment_id": pg_id,
+                "source": filename,
+                "title": filename,
+                "filename": filename,
+            },
+        )
+        for chunk in chunk_text(pg_id, content)
+    ]
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            embed_and_store_documents(
+                docs,
+                os.path.join(temp_dir, "vector_store"),
+                source_id,
+                self,
+                attempt_id=getattr(getattr(self, "request", None), "id", None),
+            )
+        assert_index_complete(source_id)
+    except Exception:
+        with db_session() as conn:
+            AttachmentsRepository(conn).merge_metadata(
+                pg_id, user, {"index": {"status": "failed", "source_id": source_id}}
+            )
+        raise
+    with db_session() as conn:
+        AttachmentsRepository(conn).merge_metadata(
+            pg_id,
+            user,
+            {"index": {"status": "done", "source_id": source_id, "chunks": len(docs)}},
+        )
+    return {"status": "done", "chunks": len(docs), "source_id": source_id}
+
+
+def purge_attachment_indexes_worker(self, attachment_ids, user):
+    """Delete the vectors and hidden sources of chat attachments.
+
+    Called when the conversation holding them is deleted. The attachment
+    rows themselves stay (they are the user's uploads); only the derived
+    index goes, and ``metadata.index`` is cleared so nothing points at it.
+
+    Args:
+        self: Celery task instance.
+        attachment_ids: PG ids of the attachments.
+        user: Their owner.
+
+    Returns:
+        ``{"purged": n}``, the number of indexes removed.
+    """
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+    # References are re-checked here, just before deleting, not only when the
+    # purge was queued: a conversation may have started using a file in
+    # between. One query for the whole batch; a reference added in the
+    # seconds after it costs that file its semantic ranking, never its
+    # content, since search falls back to keywords.
+    with db_readonly() as conn:
+        rows = AttachmentsRepository(conn).list_by_ids(
+            [str(a) for a in attachment_ids or []], user, include_content=False
+        )
+        still_used = ConversationsRepository(conn).referenced_attachment_ids(
+            [str(row["id"]) for row in rows], user
+        )
+    purged = 0
+    for row in rows:
+        if str(row["id"]) in still_used:
+            continue
+        index = (row.get("metadata") or {}).get("index") or {}
+        source_id = index.get("source_id")
+        if source_id:
+            try:
+                if settings.VECTOR_STORE == "faiss":
+                    storage = StorageCreator.get_storage()
+                    for name in ("index.faiss", "index.json", "index.pkl"):
+                        path = f"indexes/{source_id}/{name}"
+                        if storage.file_exists(path):
+                            storage.delete_file(path)
+                else:
+                    VectorCreator.create_vectorstore(
+                        settings.VECTOR_STORE, source_id=source_id
+                    ).delete_index()
+                with db_session() as conn:
+                    SourcesRepository(conn).delete(source_id, user)
+                purged += 1
+            except Exception:
+                logging.warning(
+                    f"Could not purge the index of attachment {row['id']}",
+                    exc_info=True,
+                )
+                continue
+        with db_session() as conn:
+            AttachmentsRepository(conn).merge_metadata(
+                str(row["id"]), user, {"index": {"status": "purged"}}
+            )
+    return {"purged": purged}
 
 
 def _wiki_page_path_from_rel(rel_path):

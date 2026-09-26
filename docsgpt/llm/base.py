@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import ClassVar, Dict, Optional, Tuple
+from typing import ClassVar, Dict, List, Optional, Tuple
 
 import httpx
 import httpx2
@@ -255,15 +255,44 @@ class BaseLLM(ABC):
         return True
 
     @staticmethod
-    def _fallback_attachment_texts(attachments):
-        """Extracted attachment texts, in upload order, for file-part swaps."""
-        texts = []
-        for attachment in attachments or []:
-            if not isinstance(attachment, dict):
-                continue
-            if attachment.get("content"):
-                texts.append(attachment["content"])
-        return texts
+    def _is_context_length_error(error: BaseException) -> bool:
+        """Whether a provider rejected the request for its size."""
+        text = str(error).lower()
+        return any(
+            marker in text
+            for marker in (
+                "context_length_exceeded",
+                "context window",
+                "maximum context length",
+                "prompt is too long",
+                "input is too long",
+                "too many input tokens",
+                "exceeds the maximum number of tokens",
+                "context size",
+                "exceed_context_size",
+            )
+        )
+
+    def _file_part_rows(self, attachments) -> tuple:
+        """Where the text for each swapped ``file`` part comes from.
+
+        Returns ``(by_file_id, in_order)``: file ids the provider minted
+        while preparing this request, mapped to their attachment row, and the
+        rows that can back a file part at all, in the order parts were
+        emitted, for parts whose id was never recorded. Only PDFs become
+        ``file`` parts, so a docx listed before a PDF can no longer lend the
+        PDF its text.
+        """
+        by_file_id = dict(getattr(self, "_file_part_sources", None) or {})
+        plan = getattr(self, "_attachment_plan", None)
+        if plan is not None:
+            rows = plan.native_attachments()
+        elif isinstance(attachments, (list, tuple)):
+            rows = [a for a in attachments if isinstance(a, dict)]
+        else:
+            rows = []
+        in_order = [row for row in rows if row.get("mime_type") in (None, "", "application/pdf")]
+        return by_file_id, in_order
 
     def _prepare_fallback_messages(self, fallback, messages, attachments=None):
         """Rebuild primary-prepared messages so the fallback can accept them.
@@ -275,12 +304,28 @@ class BaseLLM(ABC):
         ``image_url`` parts 4xx on non-vision models. Handing them over
         unchanged makes the fallback die exactly like the primary did
         ("Fallback LLM also failed"). Swap what the fallback can't accept
-        for text — the attachment's extracted content when available — and
-        collapse all-text parts arrays to plain string content, the one
-        shape every chat endpoint accepts.
+        for text and collapse all-text parts arrays to plain string content,
+        the one shape every chat endpoint accepts.
+
+        A file part is swapped for *its own* file's text (matched by the
+        Files-API id), re-planned against the fallback's window: a native
+        PDF can be far larger as text than the flat estimate the primary's
+        size check saw, and sending all of it is how an oversized request
+        used to reach the fallback. Text that does not fit is cut with a
+        marker, or replaced by a note naming the file.
+
+        Returns:
+            ``(messages, swapped)`` — the reshaped messages and whether any
+            file part was turned into text.
         """
         if not messages:
-            return messages
+            return messages, False
+        from docsgpt.agents.attachment_budget import (
+            FILE_OVERHEAD_TOKENS,
+            TOOL_READ,
+            attachment_budget,
+        )
+
         try:
             supported = list(fallback.get_supported_attachment_types() or [])
         except Exception:
@@ -301,35 +346,36 @@ class BaseLLM(ABC):
                 )
             except Exception:
                 keeps_files = False
-        file_texts = self._fallback_attachment_texts(attachments)
+
+        by_file_id, in_order = self._file_part_rows(attachments)
+        plan = getattr(self, "_attachment_plan", None)
+        consumed = set()
+
+        def _row_for(part) -> Optional[Dict]:
+            file_id = (part.get("file") or {}).get("file_id")
+            row = by_file_id.get(file_id) if file_id else None
+            if row is None:
+                row = next((r for r in in_order if id(r) not in consumed), None)
+            if row is not None:
+                consumed.add(id(row))
+            return row
+
+        # First pass: shape everything but the swapped file texts, so their
+        # budget is measured against what the fallback is actually sent.
         prepared = []
+        pending: List[tuple] = []
         for message in messages:
             content = message.get("content") if isinstance(message, dict) else None
             if not isinstance(content, list):
                 prepared.append(message)
                 continue
             parts = []
-            all_text = True
             for part in content:
                 part_type = part.get("type") if isinstance(part, dict) else None
                 if part_type == "file" and not keeps_files:
-                    if file_texts:
-                        parts.append(
-                            {
-                                "type": "text",
-                                "text": f"File content:\n\n{file_texts.pop(0)}",
-                            }
-                        )
-                    else:
-                        filename = (part.get("file") or {}).get(
-                            "filename"
-                        ) or "attachment"
-                        parts.append(
-                            {
-                                "type": "text",
-                                "text": f"[File '{filename}' could not be included]",
-                            }
-                        )
+                    slot = {"type": "text", "text": ""}
+                    pending.append((slot, _row_for(part), part))
+                    parts.append(slot)
                 elif part_type == "image_url" and not keeps_images:
                     parts.append(
                         {
@@ -340,16 +386,150 @@ class BaseLLM(ABC):
                     )
                 else:
                     parts.append(part)
-                    if part_type != "text":
-                        all_text = False
-            if all_text:
-                text = "\n\n".join(
-                    p.get("text", "") for p in parts if isinstance(p, dict)
+            prepared.append((message, parts))
+
+        if pending:
+            try:
+                from docsgpt.core.model_utils import get_token_limit
+                from docsgpt.usage import _count_prompt_tokens
+
+                limit = get_token_limit(
+                    fallback.model_id,
+                    user_id=getattr(fallback, "model_user_id", None),
                 )
-                prepared.append({**message, "content": text})
+                used = _count_prompt_tokens(
+                    [
+                        m if not isinstance(m, tuple) else {**m[0], "content": m[1]}
+                        for m in prepared
+                    ]
+                )
+                from docsgpt.core.settings import settings
+
+                budget = attachment_budget(limit, used, settings.ATTACHMENT_CONTEXT_SHARE)
+                partial_min = settings.ATTACHMENT_PARTIAL_MIN_TOKENS
+            except Exception:
+                logger.debug("Fallback attachment budgeting failed", exc_info=True)
+                budget, partial_min = 10**9, 0
+            tool_available = bool(plan is not None and plan.supports_tools)
+            for slot, row, part in pending:
+                slot["text"], cost = self._fallback_file_text(
+                    row, part, plan, budget, partial_min, tool_available, TOOL_READ
+                )
+                budget = max(0, budget - cost - FILE_OVERHEAD_TOKENS)
+
+        out = []
+        for item in prepared:
+            if not isinstance(item, tuple):
+                out.append(item)
+                continue
+            message, parts = item
+            if all(isinstance(p, dict) and p.get("type") == "text" for p in parts):
+                text = "\n\n".join(p.get("text", "") for p in parts if isinstance(p, dict))
+                out.append({**message, "content": text})
             else:
-                prepared.append({**message, "content": parts})
-        return prepared
+                out.append({**message, "content": parts})
+        return out, bool(pending)
+
+    @staticmethod
+    def _fallback_file_text(row, part, plan, budget, partial_min, tool_available, tool_read):
+        """Text standing in for one swapped file part, and its token cost."""
+        import html
+
+        from docsgpt.utils import get_encoding
+
+        if row is None or not row.get("content"):
+            filename = (
+                (row or {}).get("filename")
+                or (part.get("file") or {}).get("filename")
+                or "attachment"
+            )
+            note = f"[File '{filename}' could not be included]"
+            return note, 0
+        row_id = str(row.get("id") or row.get("_id") or "")
+        ref = plan.ref_for(row_id) if plan is not None else None
+        name = html.escape(str(row.get("filename") or "attachment"), quote=True)
+        label = f"{ref}: " if ref else ""
+        content = str(row["content"])
+        encoding = get_encoding()
+        tokens = encoding.encode_ordinary(content)
+        if len(tokens) <= budget:
+            body, cost = content, len(tokens)
+            marker = ""
+        elif budget >= partial_min and budget > 0:
+            body = encoding.decode(tokens[:budget])
+            cost = budget
+            if tool_available and ref:
+                marker = (
+                    f"\n[{ref}: characters 0-{len(body):,} of {len(content):,} included. "
+                    f'Call {tool_read} with ref="{ref}" and offset={len(body)} to read the rest.]'
+                )
+            else:
+                marker = (
+                    f"\n[{label}only the first {len(body):,} of {len(content):,} characters "
+                    "are included; the rest is not available.]"
+                )
+        else:
+            reach = (
+                f' Call {tool_read} with ref="{ref}" to read it.' if tool_available and ref
+                else " Its content is not available to you."
+            )
+            return (
+                f"[{label}{row.get('filename') or 'attachment'} was not included: it does not "
+                f"fit this model's context window.{reach}]",
+                0,
+            )
+        body = body.replace("</file_content", "<\\/file_content")
+        ref_attr = f' ref="{ref}"' if ref else ""
+        return (
+            f'<file_content{ref_attr} name="{name}">\n{body}{marker}\n</file_content>',
+            cost,
+        )
+
+    def _fallback_kwargs(self, fallback, kwargs: Dict, error: BaseException) -> Optional[Dict]:
+        """The kwargs to re-send on ``fallback``, or None to skip it.
+
+        Built *before* the size check: the check must see the payload the
+        fallback would actually receive, after file parts became text, not
+        the primary's (where a 300-page PDF counts as one part).
+        """
+        fallback_kwargs = {**kwargs, "model": fallback.model_id}
+        fallback_kwargs = self._adapt_structured_output_kwargs(fallback, fallback_kwargs)
+        swapped = False
+        if fallback_kwargs.get("messages"):
+            fallback_kwargs["messages"], swapped = self._prepare_fallback_messages(
+                fallback,
+                fallback_kwargs["messages"],
+                kwargs.get("_usage_attachments") or kwargs.get("attachments"),
+            )
+        if swapped:
+            # The files are now text in ``messages`` and counted there; the
+            # native-part estimate (or the legacy attachment rows) would count
+            # them a second time.
+            fallback_kwargs.pop("_usage_attachments", None)
+        if self._is_context_length_error(error) and not swapped:
+            # The same payload, unchanged, on a window no larger than the
+            # one that just rejected it can only fail again.
+            try:
+                from docsgpt.core.model_utils import get_token_limit
+
+                primary_limit = get_token_limit(
+                    self.model_id, user_id=getattr(self, "model_user_id", None)
+                )
+                fallback_limit = get_token_limit(
+                    fallback.model_id, user_id=getattr(fallback, "model_user_id", None)
+                )
+                if fallback_limit <= primary_limit:
+                    logger.warning(
+                        f"Skipping fallback to {fallback.model_id}: the primary "
+                        f"rejected the request for its size and the fallback's "
+                        f"window ({fallback_limit}) is no larger."
+                    )
+                    return None
+            except Exception:
+                logger.debug("Context-window comparison failed", exc_info=True)
+        if not self._fallback_payload_fits(fallback, fallback_kwargs):
+            return None
+        return fallback_kwargs
 
     @staticmethod
     def _fallback_enforces_structured_output(fallback) -> bool:
@@ -521,7 +701,8 @@ class BaseLLM(ABC):
                 logger.error(f"Primary LLM failed and no fallback configured: {str(e)}")
                 raise
             fallback = self.fallback_llm
-            if not self._fallback_payload_fits(fallback, kwargs):
+            fallback_kwargs = self._fallback_kwargs(fallback, kwargs, e)
+            if fallback_kwargs is None:
                 raise
             self._responding_provider = fallback.provider_name
             logger.warning(
@@ -547,16 +728,6 @@ class BaseLLM(ABC):
             fallback_method = getattr(fallback, method_name)
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
-            fallback_kwargs = {**kwargs, "model": fallback.model_id}
-            fallback_kwargs = self._adapt_structured_output_kwargs(
-                fallback, fallback_kwargs
-            )
-            if fallback_kwargs.get("messages"):
-                fallback_kwargs["messages"] = self._prepare_fallback_messages(
-                    fallback,
-                    fallback_kwargs["messages"],
-                    kwargs.get("_usage_attachments") or kwargs.get("attachments"),
-                )
             try:
                 return fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:
@@ -657,7 +828,8 @@ class BaseLLM(ABC):
                 )
                 raise
             fallback = self.fallback_llm
-            if not self._fallback_payload_fits(fallback, kwargs):
+            fallback_kwargs = self._fallback_kwargs(fallback, kwargs, e)
+            if fallback_kwargs is None:
                 raise
             self._responding_provider = fallback.provider_name
             logger.warning(
@@ -681,16 +853,6 @@ class BaseLLM(ABC):
             fallback_method = getattr(fallback, method_name)
             for decorator in decorators:
                 fallback_method = decorator(fallback_method)
-            fallback_kwargs = {**kwargs, "model": fallback.model_id}
-            fallback_kwargs = self._adapt_structured_output_kwargs(
-                fallback, fallback_kwargs
-            )
-            if fallback_kwargs.get("messages"):
-                fallback_kwargs["messages"] = self._prepare_fallback_messages(
-                    fallback,
-                    fallback_kwargs["messages"],
-                    kwargs.get("_usage_attachments") or kwargs.get("attachments"),
-                )
             try:
                 yield from fallback_method(fallback, *args, **fallback_kwargs)
             except Exception as e2:

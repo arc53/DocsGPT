@@ -10,7 +10,6 @@ import {
   Download,
   Eye,
   FileText,
-  Paperclip,
   Pencil,
   ThumbsDown,
   ThumbsUp,
@@ -42,7 +41,13 @@ import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
-import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import AttachmentChips from './AttachmentChips';
+import {
+  AttachmentPlanEntry,
+  FEEDBACK,
+  MESSAGE_TYPE,
+  ResearchState,
+} from './conversationModels';
 import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
@@ -75,6 +80,8 @@ const ConversationBubble = forwardRef<
       index?: number,
     ) => void;
     filesAttached?: { id: string; fileName: string }[];
+    /** Where each attached file went this turn (in context, searchable, ...). */
+    attachmentPlan?: AttachmentPlanEntry[];
     /**
      * Every artifact in the conversation, for resolving inline links. Refs
      * are conversation-scoped, so a link may point at an earlier turn's file.
@@ -108,6 +115,7 @@ const ConversationBubble = forwardRef<
     isStreaming,
     handleUpdatedQuestionSubmission,
     filesAttached,
+    attachmentPlan,
     conversationArtifacts,
     onOpenArtifact,
     onToolAction,
@@ -152,25 +160,7 @@ const ConversationBubble = forwardRef<
       <div className={cn('group', className)}>
         <div className="flex flex-col items-end">
           {filesAttached && filesAttached.length > 0 && (
-            <div className="mr-5 mb-4 flex flex-wrap justify-end gap-2">
-              {filesAttached.map((file, index) => (
-                <div
-                  key={index}
-                  title={file.fileName}
-                  className="bg-muted text-foreground flex items-center rounded-xl p-2 text-sm"
-                >
-                  <div className="bg-primary mr-2 items-center justify-center rounded-lg p-1.5">
-                    <Paperclip
-                      aria-label={t('conversation.attachments.attachment')}
-                      className="text-primary-foreground size-3.75"
-                    />
-                  </div>
-                  <span className="max-w-37.5 truncate font-normal">
-                    {file.fileName}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <AttachmentChips files={filesAttached} plan={attachmentPlan} />
           )}
           <div ref={ref} className="flex flex-row-reverse justify-items-start">
             {!isEditClicked && (

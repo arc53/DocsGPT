@@ -765,3 +765,28 @@ def test_persist_keeps_the_row_when_pricing_fails(monkeypatch):
     row = _persist_with_cost(monkeypatch, _CostLLM(), boom)
 
     assert row["cost"] == 0.0
+
+
+class TestNativeAttachmentEstimate:
+    """The agent passes native file parts as a token estimate, not rows."""
+
+    def test_integer_estimate_is_added_as_is(self):
+        from docsgpt.usage import _count_prompt_tokens
+
+        messages = [{"role": "user", "content": "hello"}]
+        base = _count_prompt_tokens(messages)
+        assert _count_prompt_tokens(messages, usage_attachments=12_345) == base + 12_345
+
+    def test_zero_or_negative_estimate_adds_nothing(self):
+        from docsgpt.usage import _count_prompt_tokens
+
+        messages = [{"role": "user", "content": "hello"}]
+        base = _count_prompt_tokens(messages)
+        assert _count_prompt_tokens(messages, usage_attachments=0) == base
+        assert _count_prompt_tokens(messages, usage_attachments=-5) == base
+
+    def test_bool_is_not_an_estimate(self):
+        from docsgpt.usage import _count_prompt_tokens
+
+        messages = [{"role": "user", "content": "hello"}]
+        assert _count_prompt_tokens(messages, usage_attachments=True) == _count_prompt_tokens(messages)

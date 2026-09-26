@@ -1387,7 +1387,17 @@
       "unreadableByModel": "{{model}} can't read {{name}} — switch to a model that supports images or PDFs",
       "attached": "Attachment",
       "failed": "Failed",
-      "attachment": "Attachment"
+      "attachment": "Attachment",
+      "plan": {
+        "inline": "In context",
+        "partial": "Partly in context",
+        "tool": "Searchable",
+        "omitted": "Not included",
+        "unreadable": "Can't be read",
+        "summary": "{{inFull}} of {{total}} files read in full",
+        "summarySearchable": "{{count}} searchable",
+        "summaryNotIncluded": "{{count}} not included"
+      }
     },
     "retry": "Retry",
     "failedTitle": "Couldn't generate a response",

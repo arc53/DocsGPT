@@ -40,11 +40,8 @@ Read relevant memory files with memory_view before answering questions that may 
 {% if attachments.files %}
 
 ## Attached files
-The user attached these files to this message:
-{% for f in attachments.files %}
-- {{ f.filename }} ({{ f.mime_type }}{% if f.size %}, {{ f.size }} bytes{% endif %})
-{% endfor %}
+The user has attached files to this conversation. They are listed in an `<attached_files>` block at the start of the user's message, each with a ref (F1, F2, ...) and whether its content is in your context; that block says how to reach the files that are not. Refer to files by name, and never guess what a file you have not read contains.
 {% if 'code_executor' in tools.enabled %}
-You can pass any attached file to a code or document tool by its name to read or process it.
+You can pass any attached file to a code or document tool by its ref or name to read or process it.
 {% endif %}
 {% endif %}

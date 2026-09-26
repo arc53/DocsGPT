@@ -116,6 +116,71 @@ class TestSuccessProvenance:
 
 
 @pytest.mark.usefixtures("wired_engine")
+class TestIdentityProvenance:
+    """What the budget planner needs: a content hash and, for PDFs, pages."""
+
+    def test_content_hash_of_the_original_bytes(self, storage_dir):
+        import hashlib
+
+        payload = b"hello attachment identity"
+        info = _file_info(storage_dir, content=payload)
+
+        _run_worker(info)
+
+        row = _fetch(info["attachment_id"])
+        assert row["metadata"]["content_hash"] == hashlib.sha256(payload).hexdigest()
+
+    def test_same_bytes_same_hash(self, storage_dir):
+        first = _file_info(storage_dir, filename="a.txt", content=b"same bytes")
+        second = _file_info(storage_dir, filename="b.txt", content=b"same bytes")
+
+        _run_worker(first)
+        _run_worker(second)
+
+        assert (
+            _fetch(first["attachment_id"])["metadata"]["content_hash"]
+            == _fetch(second["attachment_id"])["metadata"]["content_hash"]
+        )
+
+    def test_pdf_page_count_recorded(self, storage_dir, monkeypatch):
+        import pypdfium2 as pdfium
+
+        pdf = pdfium.PdfDocument.new()
+        for _ in range(3):
+            pdf.new_page(200, 200)
+        import io
+
+        buf = io.BytesIO()
+        pdf.save(buf)
+        info = _file_info(storage_dir, filename="three.pdf", content=buf.getvalue())
+        monkeypatch.setattr(
+            "docsgpt.worker.SimpleDirectoryReader",
+            lambda **kwargs: type("R", (), {"load_data": lambda self: [_Doc("page text")]})(),
+        )
+
+        _run_worker(info)
+
+        row = _fetch(info["attachment_id"])
+        assert row["metadata"]["extraction"]["page_count"] == 3
+
+    def test_text_attachment_is_queued_for_indexing(self, storage_dir, monkeypatch):
+        monkeypatch.setattr("docsgpt.worker.settings.ATTACHMENT_INDEXING_ENABLED", True)
+        info = _file_info(storage_dir)
+
+        _run_worker(info)
+
+        assert _fetch(info["attachment_id"])["metadata"]["index"] == {"status": "pending"}
+
+    def test_indexing_disabled_leaves_no_index_state(self, storage_dir, monkeypatch):
+        monkeypatch.setattr("docsgpt.worker.settings.ATTACHMENT_INDEXING_ENABLED", False)
+        info = _file_info(storage_dir)
+
+        _run_worker(info)
+
+        assert "index" not in _fetch(info["attachment_id"])["metadata"]
+
+
+@pytest.mark.usefixtures("wired_engine")
 class TestTruncationProvenance:
     def test_over_gate_content_truncated_in_token_units(self, storage_dir, monkeypatch):
         # Dense CJK: ~1.4 tokens/char, so a char-unit cut (the old

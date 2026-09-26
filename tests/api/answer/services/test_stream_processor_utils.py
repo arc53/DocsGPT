@@ -267,6 +267,75 @@ class TestProcessAttachments:
         assert sp.attachments[0]["content"] == "content here"
 
 
+class TestConversationAttachments:
+    """Files from earlier turns stay listed (and readable through the tool)."""
+
+    def _rows(self, pg_conn, user, *names):
+        from docsgpt.storage.db.repositories.attachments import (
+            AttachmentsRepository,
+        )
+
+        repo = AttachmentsRepository(pg_conn)
+        return [repo.create(user, n, f"/{n}", content=f"text of {n}") for n in names]
+
+    def test_earlier_turn_files_are_listed_without_text(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        user = "u-conv"
+        old, new = self._rows(pg_conn, user, "old.txt", "new.txt")
+        sp = StreamProcessor(
+            {"question": "q", "attachments": [str(new["id"])]}, {"sub": user}
+        )
+        sp._earlier_attachment_ids = sp._conversation_attachment_ids(
+            {"queries": [{"prompt": "p", "response": "r", "attachments": [old["id"]]}]}
+        )
+        with _patch_db(pg_conn):
+            sp._process_attachments()
+        assert [a["filename"] for a in sp.attachments] == ["new.txt"]
+        assert [a["filename"] for a in sp.earlier_attachments] == ["old.txt"]
+        assert "content" not in sp.earlier_attachments[0]
+
+    def test_other_users_files_never_listed(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        (theirs,) = self._rows(pg_conn, "someone-else", "secret.txt")
+        sp = StreamProcessor({"question": "q"}, {"sub": "u-conv"})
+        sp._earlier_attachment_ids = [str(theirs["id"])]
+        with _patch_db(pg_conn):
+            sp._process_attachments()
+        assert sp.earlier_attachments == []
+
+    def test_edit_at_index_ignores_later_turns(self):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        sp = StreamProcessor({"question": "q", "index": 1}, {"sub": "u"})
+        ids = sp._conversation_attachment_ids(
+            {"queries": [{"attachments": ["a"]}, {"attachments": ["b"]}, {"attachments": ["c"]}]}
+        )
+        assert ids == ["a"]
+
+    def test_ids_deduplicated_in_upload_order(self):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        sp = StreamProcessor({"question": "q"}, {"sub": "u"})
+        ids = sp._conversation_attachment_ids(
+            {"queries": [{"attachments": ["a", "b"]}, {"attachments": ["b", "c"]}, {}]}
+        )
+        assert ids == ["a", "b", "c"]
+
+    def test_repeated_request_ids_load_once(self, pg_conn):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        user = "u-conv"
+        (row,) = self._rows(pg_conn, user, "a.txt")
+        sp = StreamProcessor(
+            {"question": "q", "attachments": [str(row["id"]), str(row["id"])]}, {"sub": user}
+        )
+        with _patch_db(pg_conn):
+            sp._process_attachments()
+        assert len(sp.attachments) == 1
+
+
 class TestGetAttachmentsContent:
     def test_empty_list(self, pg_conn):
         from docsgpt.api.answer.services.stream_processor import (

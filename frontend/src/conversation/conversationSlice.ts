@@ -20,6 +20,7 @@ import {
 } from '../upload/uploadSlice';
 import { newIdempotencyKey } from '../utils/idempotency';
 import { appendThoughtText, recordToolCall } from './answerSegments';
+import { parseAttachmentPlan } from './attachmentPlan';
 import {
   handleFetchAnswer,
   handleFetchAnswerSteaming,
@@ -28,6 +29,7 @@ import {
 } from './conversationHandlers';
 import {
   Answer,
+  AttachmentPlanEntry,
   ConversationState,
   FEEDBACK,
   MessageStatus,
@@ -68,6 +70,7 @@ export function mapServerQueryToClient(raw: any): Query {
     tool_calls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
     workflow_run_id: raw?.workflow_run_id ?? undefined,
     attachments: raw?.attachments ?? undefined,
+    attachmentPlan: parseAttachmentPlan(metadata.attachment_plan),
     messageId: raw?.message_id ?? undefined,
     messageStatus: status,
     requestId: raw?.request_id ?? undefined,
@@ -318,6 +321,17 @@ export const fetchAnswer = createAsyncThunk<
               dispatch(
                 conversationSlice.actions.setStatus('awaiting_tool_actions'),
               );
+            } else if (data.type === 'attachment_plan') {
+              const plan = parseAttachmentPlan(data.attachment_plan);
+              if (plan) {
+                dispatch(
+                  conversationSlice.actions.setAttachmentPlan({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                    plan,
+                  }),
+                );
+              }
             } else if (data.type === 'notice') {
               dispatch(
                 conversationSlice.actions.raiseNotice({
@@ -487,6 +501,17 @@ export const fetchAnswer = createAsyncThunk<
                   progress: data.data,
                 }),
               );
+            } else if (data.type === 'attachment_plan') {
+              const plan = parseAttachmentPlan(data.attachment_plan);
+              if (plan) {
+                dispatch(
+                  conversationSlice.actions.setAttachmentPlan({
+                    conversationId: currentConversationId,
+                    index: targetIndex,
+                    plan,
+                  }),
+                );
+              }
             } else if (data.type === 'notice') {
               dispatch(
                 conversationSlice.actions.raiseNotice({
@@ -582,6 +607,9 @@ export const fetchAnswer = createAsyncThunk<
               thought: answer.thought,
               sources: sourcesPrepped,
               tool_calls: answer.toolCalls,
+              ...('attachmentPlan' in answer && answer.attachmentPlan
+                ? { attachmentPlan: answer.attachmentPlan }
+                : {}),
             },
           }),
         );
@@ -841,6 +869,8 @@ export const conversationSlice = createSlice({
       delete state.queries[index].schema;
       delete state.queries[index].feedback;
       delete state.queries[index].research;
+      // The next attempt streams (or returns) its own plan.
+      delete state.queries[index].attachmentPlan;
       // Drop stale WAL refs; the next stream's message_id event repopulates.
       delete state.queries[index].messageId;
       delete state.queries[index].messageStatus;
@@ -1113,6 +1143,21 @@ export const conversationSlice = createSlice({
       state.queries[index].error = message;
     },
 
+    setAttachmentPlan(
+      state,
+      action: PayloadAction<{
+        conversationId: string | null;
+        index: number;
+        plan: AttachmentPlanEntry[];
+      }>,
+    ) {
+      const { conversationId, index, plan } = action.payload;
+      if (state.conversationId !== conversationId) return;
+      if (!state.queries[index]) return;
+
+      state.queries[index].attachmentPlan = plan;
+    },
+
     // Non-fatal counterpart to ``raiseError``: records a notice on the query
     // (e.g. some workflow input documents were dropped) WITHOUT setting the
     // 'failed' status, so the turn keeps streaming and can still complete.
@@ -1200,6 +1245,7 @@ export const {
   setStatus,
   raiseError,
   raiseNotice,
+  setAttachmentPlan,
   retractResponse,
   resetConversation,
   applyMessageTail,

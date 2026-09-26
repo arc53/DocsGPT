@@ -1419,7 +1419,17 @@
       "remove": "Удалить вложение",
       "attached": "Вложение",
       "failed": "Ошибка",
-      "attachment": "Вложение"
+      "attachment": "Вложение",
+      "plan": {
+        "inline": "В контексте",
+        "partial": "Частично в контексте",
+        "tool": "Доступен для поиска",
+        "omitted": "Не включён",
+        "unreadable": "Не удаётся прочитать",
+        "summary": "Полностью прочитано файлов: {{inFull}} из {{total}}",
+        "summarySearchable": "доступно для поиска: {{count}}",
+        "summaryNotIncluded": "не включено: {{count}}"
+      }
     },
     "retry": "Повторить",
     "failedTitle": "Не удалось сгенерировать ответ",

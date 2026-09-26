@@ -24,7 +24,7 @@ from docsgpt.core.model_utils import (
 )
 
 from docsgpt.core.settings import settings
-from docsgpt.error import sanitize_api_error
+from docsgpt.error import sanitize_api_error, user_facing_error
 from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.quotas.http import quota_exceeded_response
 from docsgpt.quotas.service import QuotaService
@@ -877,8 +877,17 @@ class BaseAnswerResource:
                         # "quota" and rewrite it into a misleading rate-limit message, so
                         # emit it verbatim; sanitize only raw/technical errors.
                         error_text = line.get("error", "An error occurred")
+                        error_code = None
                         if not line.get("user_facing"):
-                            error_text = sanitize_api_error(error_text)
+                            # A failure the user can act on (a workflow node
+                            # hitting the context window) gets the same curated
+                            # copy and code as one raised out of the agent.
+                            curated = user_facing_error(error_text)
+                            if curated is not None:
+                                error_code, error_text = curated
+                                query_metadata["error_code"] = error_code
+                            else:
+                                error_text = sanitize_api_error(error_text)
                         stream_error = error_text
                         guardrail_meta = line.get("guardrail")
                         if guardrail_meta:
@@ -903,7 +912,11 @@ class BaseAnswerResource:
                                     "retract": True,
                                 }
                             )
-                        yield _emit({"type": "error", "error": error_text})
+                        yield _emit(
+                            {"type": "error", "error": error_text, "code": error_code}
+                            if error_code
+                            else {"type": "error", "error": error_text}
+                        )
                     elif line.get("type") == "notice":
                         # Non-fatal, non-terminal notice (e.g. some workflow input
                         # documents were dropped). Forwarded verbatim so the client can
@@ -1613,6 +1626,7 @@ class BaseAnswerResource:
             return
         except Exception as e:
             logger.error(f"Error in stream: {str(e)}", exc_info=True)
+            curated_error = user_facing_error(e)
             trace = tracing.current_trace()
             if trace is not None:
                 trace.outcome = tracing.STATUS_ERROR
@@ -1653,6 +1667,11 @@ class BaseAnswerResource:
                 failure_metadata = dict(query_metadata or {})
                 if claim_released:
                     failure_metadata["resume_retryable"] = True
+                if curated_error is not None:
+                    # Reload shows ``metadata.error``: store the curated copy,
+                    # keeping the raw exception alongside for operators.
+                    failure_metadata["error_code"], failure_metadata["error"] = curated_error
+                    failure_metadata["error_detail"] = f"{type(e).__name__}: {e}"
                 try:
                     self.conversation_service.finalize_message(
                         reserved_message_id,
@@ -1686,12 +1705,17 @@ class BaseAnswerResource:
                 message_id=reserved_message_id,
                 error=f"{type(e).__name__}: {e}",
             )
-            yield _emit(
-                {
-                    "type": "error",
-                    "error": "Please try again later. We apologize for any inconvenience.",
-                }
-            )
+            if curated_error is not None:
+                yield _emit(
+                    {"type": "error", "error": curated_error[1], "code": curated_error[0]}
+                )
+            else:
+                yield _emit(
+                    {
+                        "type": "error",
+                        "error": "Please try again later. We apologize for any inconvenience.",
+                    }
+                )
             # Drain the terminal ``error`` event we just yielded so a
             # reconnecting client sees it on snapshot.
             if journal_writer is not None:
@@ -1810,6 +1834,7 @@ class BaseAnswerResource:
         is_structured = False
         schema_info = None
         pending_tool_calls = None
+        attachment_plan = None
 
         for line in stream:
             try:
@@ -1848,6 +1873,8 @@ class BaseAnswerResource:
                     )
                 elif event["type"] == "thought":
                     thought += event["thought"]
+                elif event["type"] == "attachment_plan":
+                    attachment_plan = event.get("attachment_plan")
                 elif event["type"] == "error":
                     logger.error(f"Error from stream: {event['error']}")
                     return {
@@ -1882,6 +1909,11 @@ class BaseAnswerResource:
             "thought": thought,
             "error": None,
         }
+
+        # Only when the turn had attachments, so callers without any keep
+        # the response shape they had.
+        if attachment_plan:
+            result["attachment_plan"] = attachment_plan
 
         if pending_tool_calls is not None:
             result["extra"] = {"pending_tool_calls": pending_tool_calls}

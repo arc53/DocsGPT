@@ -1375,7 +1375,17 @@
       "remove": "Anhang entfernen",
       "attached": "Anhang",
       "failed": "Fehlgeschlagen",
-      "attachment": "Anhang"
+      "attachment": "Anhang",
+      "plan": {
+        "inline": "Im Kontext",
+        "partial": "Teilweise im Kontext",
+        "tool": "Durchsuchbar",
+        "omitted": "Nicht enthalten",
+        "unreadable": "Nicht lesbar",
+        "summary": "{{inFull}} von {{total}} Dateien vollständig gelesen",
+        "summarySearchable": "{{count}} durchsuchbar",
+        "summaryNotIncluded": "{{count}} nicht enthalten"
+      }
     },
     "retry": "Erneut versuchen",
     "failedTitle": "Antwort konnte nicht erstellt werden",

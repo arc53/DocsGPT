@@ -35,8 +35,9 @@
  * are non-negotiable per the migration invariant.
  */
 
-import { readFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import * as playwright from '@playwright/test';
@@ -215,6 +216,43 @@ async function streamWithAttachments(
     );
   }
   return { conversationId };
+}
+
+/**
+ * Write ``count`` text files of roughly ``tokens`` tokens each (one distinct
+ * word per file repeated, so every file is a different document) into a
+ * fresh temp dir. Returns their paths in upload order.
+ */
+async function writeLargeTextFiles(
+  count: number,
+  tokens: number,
+): Promise<string[]> {
+  const dir = await mkdtemp(join(tmpdir(), 'docsgpt-e2e-big-'));
+  const paths: string[] = [];
+  for (let i = 1; i <= count; i += 1) {
+    const path = join(dir, `report_${i}.txt`);
+    // " wordN" is ~2 tokens with cl100k; newline every 20 words keeps lines sane.
+    const words = Array.from({ length: Math.ceil(tokens / 2) }, (_, n) =>
+      n % 20 === 19 ? `word${i}\n` : `word${i}`,
+    );
+    await writeFile(path, `Report ${i}\n${words.join(' ')}\n`);
+    paths.push(path);
+  }
+  return paths;
+}
+
+/** Every JSON ``data:`` frame of an SSE body, in order. */
+function sseEvents(body: string): Array<Record<string, unknown>> {
+  const events: Array<Record<string, unknown>> = [];
+  for (const line of body.split('\n')) {
+    if (!line.startsWith('data: ')) continue;
+    try {
+      events.push(JSON.parse(line.slice(6).trim()));
+    } catch {
+      // keep-alive or partial frame
+    }
+  }
+  return events;
 }
 
 test.describe('tier-a · attachments', () => {
@@ -482,6 +520,90 @@ test.describe('tier-a · attachments', () => {
       await streamB.dispose();
       await userA.context.close();
       await userB.context.close();
+    }
+  });
+
+  test('more attachments than fit: the turn answers, the rest is listed and marked', async ({
+    browser,
+  }) => {
+    // gpt-4o-mini's 128k window gives attachments ~77k tokens (60%); six
+    // ~22k-token files cannot all fit. Before the budget planner this turn
+    // was sent whole and failed on the provider's context limit.
+    test.setTimeout(180_000);
+    const { context, token } = await newUserContext(browser);
+    const uploadApi = await multipartRequest(token);
+    const jsonApi = await authedRequest(playwright, token);
+    try {
+      const paths = await writeLargeTextFiles(6, 22_000);
+      const legacyIds: string[] = [];
+      for (const path of paths) {
+        const { legacyId } = await uploadAttachment(uploadApi, path);
+        legacyIds.push(legacyId);
+      }
+
+      const res = await jsonApi.post('/stream', {
+        data: {
+          question: 'Summarise every report.',
+          conversation_id: null,
+          prompt_id: 'default',
+          chunks: 2,
+          isNoneDoc: true,
+          attachments: legacyIds,
+        },
+        timeout: 120_000,
+      });
+      expect(res.status()).toBe(200);
+      const events = sseEvents(await res.text());
+
+      expect(events.filter((e) => e.type === 'error')).toEqual([]);
+      expect(events.some((e) => e.type === 'answer')).toBe(true);
+      const conversationId = events.find((e) => e.type === 'id')
+        ?.id as string;
+      expect(conversationId).toBeTruthy();
+
+      const planEvent = events.find((e) => e.type === 'attachment_plan') as
+        | { attachment_plan: Array<{ ref: string; status: string }> }
+        | undefined;
+      expect(planEvent).toBeTruthy();
+      const plan = planEvent!.attachment_plan;
+      expect(plan.map((f) => f.ref)).toEqual([
+        'F1',
+        'F2',
+        'F3',
+        'F4',
+        'F5',
+        'F6',
+      ]);
+      const statuses = plan.map((f) => f.status);
+      expect(statuses[0]).toBe('inline');
+      expect(statuses.filter((s) => s === 'inline').length).toBeLessThan(6);
+      expect(
+        statuses.some((s) => s === 'tool' || s === 'partial'),
+      ).toBe(true);
+
+      // Persisted with the message, so a reload shows the same thing.
+      const { rows } = await pg.query<{ plan: Array<{ ref: string }> }>(
+        `SELECT message_metadata->'attachment_plan' AS plan
+         FROM conversation_messages
+         WHERE conversation_id = CAST($1 AS uuid)`,
+        [conversationId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].plan).toHaveLength(6);
+
+      // The chips on the reloaded conversation carry each file's status and
+      // one line says how many were read in full.
+      const page = await context.newPage();
+      await page.goto(`/c/${conversationId}`);
+      await expect(page.locator('[data-plan-status="inline"]').first()).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.locator('[data-plan-status]')).toHaveCount(6);
+      await expect(page.getByText(/of 6 files read in full/)).toBeVisible();
+    } finally {
+      await uploadApi.dispose();
+      await jsonApi.dispose();
+      await context.close();
     }
   });
 

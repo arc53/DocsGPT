@@ -295,6 +295,7 @@ export default function ConversationMessages({
                       questionNumber={index}
                       sources={query.sources}
                       filesAttached={query.attachments}
+                      attachmentPlan={query.attachmentPlan}
                     />
                   </MessageScrollerItem>
                   {responseView && (

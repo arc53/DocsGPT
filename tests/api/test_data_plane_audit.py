@@ -189,6 +189,8 @@ class TestConversationAudit:
     def test_delete_records_conversation_deleted(self, client):
         repo = Mock()
         repo.get_any.return_value = {"id": "conv-1"}
+        repo.attachment_ids.return_value = []
+        repo.attachment_ids_for_user.return_value = []
         with _authed(
             _CONVERSATIONS, ConversationsRepository=Mock(return_value=repo)
         ) as recorded:
@@ -200,6 +202,7 @@ class TestConversationAudit:
     def test_delete_all_records_the_count(self, client):
         repo = Mock()
         repo.delete_all_for_user.return_value = 7
+        repo.attachment_ids_for_user.return_value = []
         with _authed(
             _CONVERSATIONS, ConversationsRepository=Mock(return_value=repo)
         ) as recorded:

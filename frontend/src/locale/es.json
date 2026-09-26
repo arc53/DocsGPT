@@ -1375,7 +1375,17 @@
       "remove": "Eliminar adjunto",
       "attached": "Adjunto",
       "failed": "Error",
-      "attachment": "Adjunto"
+      "attachment": "Adjunto",
+      "plan": {
+        "inline": "En contexto",
+        "partial": "Parcialmente en contexto",
+        "tool": "Consultable",
+        "omitted": "No incluido",
+        "unreadable": "No se puede leer",
+        "summary": "{{inFull}} de {{total}} archivos leídos por completo",
+        "summarySearchable": "{{count}} consultables",
+        "summaryNotIncluded": "{{count}} no incluidos"
+      }
     },
     "retry": "Reintentar",
     "failedTitle": "No se pudo generar una respuesta",

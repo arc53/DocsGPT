@@ -21,6 +21,21 @@ export interface Attachment {
   token_count?: number;
 }
 
+// Where the backend put one attached file for the turn (see
+// docsgpt/agents/attachment_budget.py): read in full, read in part, left
+// out but searchable through the attachments tool, left out, or unreadable.
+export type AttachmentPlanStatus =
+  'inline' | 'partial' | 'tool' | 'omitted' | 'unreadable';
+
+export interface AttachmentPlanEntry {
+  ref: string;
+  id: string;
+  filename: string;
+  status: AttachmentPlanStatus;
+  upload_id?: string;
+  aliases?: string[];
+}
+
 export interface ResearchStep {
   query: string;
   rationale?: string;
@@ -75,6 +90,9 @@ export interface Query {
   // alongside the answer; unlike ``error`` it does not fail the turn or end the stream.
   notice?: string;
   attachments?: { id: string; fileName: string }[];
+  // Where each attachment went this turn; streamed live and persisted in the
+  // message metadata so it survives a reload.
+  attachmentPlan?: AttachmentPlanEntry[];
   structured?: boolean;
   schema?: object;
   research?: ResearchState;

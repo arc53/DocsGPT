@@ -1372,7 +1372,17 @@
       "remove": "添付ファイルを削除",
       "attached": "添付ファイル",
       "failed": "失敗",
-      "attachment": "添付ファイル"
+      "attachment": "添付ファイル",
+      "plan": {
+        "inline": "コンテキスト内",
+        "partial": "一部のみコンテキスト内",
+        "tool": "検索可能",
+        "omitted": "含まれていません",
+        "unreadable": "読み取れません",
+        "summary": "{{total}} 件中 {{inFull}} 件を全文読み込み",
+        "summarySearchable": "{{count}} 件は検索可能",
+        "summaryNotIncluded": "{{count}} 件は含まれていません"
+      }
     },
     "retry": "再試行",
     "failedTitle": "応答を生成できませんでした",

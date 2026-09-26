@@ -297,6 +297,8 @@ class ResearchAgent(BaseAgent):
         if self.wiki_config:
             add_wiki_tool(tools_dict, self.wiki_config)
 
+        self._add_attachments_tool(tools_dict)
+
         think_entry = dict(THINK_TOOL_ENTRY)
         think_entry["config"] = {}
         tools_dict[THINK_TOOL_ID] = think_entry
@@ -506,9 +508,12 @@ class ResearchAgent(BaseAgent):
     ) -> str:
         """Core research loop. Works with any ToolExecutor instance."""
         system_prompt = STEP_PROMPT.replace("{step_query}", step_query)
+        # Steps inline nothing; they see the files' refs so they can read or
+        # search them with the attachments tool.
+        listing = self._attachment_listing()
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": step_query},
+            {"role": "user", "content": f"{listing}\n\n{step_query}" if listing else step_query},
         ]
 
         last_search_empty = False
@@ -681,6 +686,7 @@ class ResearchAgent(BaseAgent):
             {"role": "system", "content": synthesis_prompt},
             {"role": "user", "content": f"Please write the research report for: {question}"},
         ]
+        messages = self._apply_attachments(messages)
 
         llm_response = self.llm.gen_stream(
             model=self.upstream_model_id, messages=messages, tools=None

@@ -89,7 +89,15 @@ def _count_prompt_tokens(messages, tools=None, usage_attachments=None, **kwargs)
     prompt_tokens += _count_tokens(kwargs.get("response_schema"))
 
     # Optional usage-only attachment context (not forwarded to provider).
-    prompt_tokens += _count_tokens(usage_attachments)
+    # The agent passes an int: the planned size of native file/image parts,
+    # which the message count above cannot see (text attachments are already
+    # in ``messages``). Other callers may still pass attachment rows.
+    if isinstance(usage_attachments, bool):
+        pass
+    elif isinstance(usage_attachments, int):
+        prompt_tokens += max(0, usage_attachments)
+    else:
+        prompt_tokens += _count_tokens(usage_attachments)
 
     return prompt_tokens
 
