@@ -66,6 +66,10 @@ class DeleteConversation(Resource):
                 if conv is not None:
                     attachment_ids = repo.attachment_ids(str(conv["id"]))
                     repo.delete(str(conv["id"]), user_id)
+                    # An attachment another conversation still references
+                    # keeps its index.
+                    still_used = set(repo.attachment_ids_for_user(user_id))
+                    attachment_ids = [a for a in attachment_ids if a not in still_used]
                     record_event(
                         conn,
                         "conversation.deleted",

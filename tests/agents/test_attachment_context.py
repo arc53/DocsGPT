@@ -386,3 +386,29 @@ def test_tool_schemas_are_reserved_before_attachments_are_planned(
     with_tools._build_messages("SYSTEM", "Q?")
 
     assert with_tools.attachment_plan.budget < without_tools.attachment_plan.budget
+
+
+@pytest.mark.unit
+def test_document_shedding_stops_when_no_documents_remain(
+    agent_base_params, mock_llm_creator, mock_llm_handler_creator, window
+):
+    """With attachments taking the room, the "searched, found nothing" note
+    alone can exceed the document budget; shedding must stop at an empty
+    list rather than loop on it."""
+    window(4_000)
+    agent_base_params["retrieved_docs"] = [{"filename": "d.pdf", "text": "doc " * 300}]
+    agent_base_params["sources_were_searched"] = True
+    agent = _agent(agent_base_params, [_att(0, 2_000)])
+    real_block = agent._build_document_block
+    calls = []
+
+    def _counted():
+        calls.append(1)
+        if len(calls) > 20:
+            raise RuntimeError("document shedding did not stop")
+        return real_block()
+
+    agent._build_document_block = _counted
+    messages = agent._build_messages("SYSTEM", "question " * 800)
+    assert agent.retrieved_docs == []
+    assert messages[-1]["role"] == "user"

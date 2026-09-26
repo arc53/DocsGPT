@@ -1200,8 +1200,13 @@ class BaseAgent(ABC):
         # relevance-descending so the tail is the least useful.
         document_budget = max_query_tokens - attachment_tokens
         document_block = self._build_document_block()
+        # ``retrieved_docs`` in the condition: with every document shed, the
+        # block can still be the "searched, found nothing" note, and slicing an
+        # empty list would never shrink it. Past that point the pre-send gate
+        # handles whatever is still over.
         while (
             document_block
+            and self.retrieved_docs
             and num_tokens_from_string(self._compose_user_turn(document_block, query))
             > document_budget
         ):
