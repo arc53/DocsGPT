@@ -184,7 +184,9 @@ export default function MobileTopBar({
           className="text-foreground flex min-w-0 items-center gap-1.5 px-2 text-sm font-medium"
         >
           {agentMark}
-          <span className="truncate">{title}</span>
+          <span className="truncate" title={title}>
+            {title}
+          </span>
         </span>
       );
     }
@@ -196,10 +198,14 @@ export default function MobileTopBar({
             variant="ghost"
             size="sm"
             data-testid="mobile-title"
-            className="min-w-0"
+            // Button is shrink-0; shrink lets it narrow to its slot so the
+            // name truncates instead of running under New Chat.
+            className="min-w-0 shrink"
           >
             {agentMark}
-            <span className="truncate">{title}</span>
+            <span className="truncate" title={title}>
+              {title}
+            </span>
             <ChevronDown className="text-muted-foreground" aria-hidden />
           </Button>
         </DropdownMenuTrigger>

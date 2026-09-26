@@ -45,13 +45,13 @@ function SheetOverlay({
 }
 
 /**
- * The phone bottom-sheet shape: card fill, 16px top corners, capped at 90% of
- * the viewport. Shared with Modal's `mobileVariant="sheet"` so every bottom
+ * The phone bottom-sheet shape: card fill, 16px top corners, capped by
+ * `max-h-sheet` so the scrim above it stays tappable. Shared with Modal's `mobileVariant="sheet"` so every bottom
  * sheet looks the same; the caller adds its own bottom padding (`pb-safe` or
  * `pb-safe-0`).
  */
 const sheetBottomShape =
-  'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto max-h-[90vh] rounded-t-2xl bg-card';
+  'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto max-h-sheet rounded-t-2xl bg-card';
 
 /** The grab bar at the top of a bottom sheet, 8px below its edge. */
 function SheetHandle({ className, ...props }: React.ComponentProps<'div'>) {
@@ -91,7 +91,8 @@ function SheetContent({
   children,
   side = 'right',
   handle = false,
-  // A bottom sheet with a grab handle closes by drag or scrim, not an X.
+  // A bottom sheet with a grab handle closes by its scrim, not an X (the
+  // handle is only a cue; it doesn't drag).
   showCloseButton = !handle,
   title,
   ...props

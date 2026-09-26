@@ -90,6 +90,31 @@ describe('MobileTopBar', () => {
     expect(title?.tagName).not.toBe('BUTTON');
   });
 
+  it('lets a long title shrink and truncate instead of running under the actions', () => {
+    const long =
+      'Explain the difference between agents and workflows in detail';
+    render({ title: long, conversationId: 'c1', onNewChat: () => {} });
+
+    // Button's base is shrink-0, so min-w-0 alone never lets it narrow.
+    const trigger = container.querySelector('[data-testid="mobile-title"]')!;
+    const classes = trigger.className.split(' ');
+    expect(classes).toEqual(expect.arrayContaining(['min-w-0', 'shrink']));
+    expect(classes).not.toContain('shrink-0');
+    const name = trigger.querySelector('span.truncate')!;
+    expect(name.textContent).toBe(long);
+    expect(name.getAttribute('title')).toBe(long);
+  });
+
+  it('truncates a long plain-text title too', () => {
+    const long = 'A shared agent with a very long name that cannot fit';
+    render({ title: long, agentImage: '', onNewChat: () => {} });
+
+    const name = container.querySelector(
+      '[data-testid="mobile-title"] span.truncate',
+    )!;
+    expect(name.getAttribute('title')).toBe(long);
+  });
+
   it('opens share, rename and delete from the conversation title', () => {
     render({
       title: 'Router drops',

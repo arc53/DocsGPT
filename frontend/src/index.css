@@ -28,6 +28,16 @@
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* The bottom-sheet cap. vh is the viewport with the toolbars hidden on iOS
+   Safari, so a 90vh sheet slides under the URL bar and covers its scrim.
+   dvh follows the visible area; less the top inset (the notch in an installed
+   PWA) and a 3rem strip, so the scrim above the sheet can always be tapped.
+   svh is the fallback where dvh isn't supported. */
+@utility max-h-sheet {
+  max-height: 90svh;
+  max-height: calc(100dvh - env(safe-area-inset-top) - 3rem);
+}
+
 @utility no-scrollbar {
   /* Chrome, Safari and Opera */
   &::-webkit-scrollbar {

@@ -43,7 +43,7 @@ describe('SheetContent side="bottom"', () => {
       expect.arrayContaining([
         'bg-card',
         'rounded-t-2xl',
-        'max-h-[90vh]',
+        'max-h-sheet',
         'pb-safe-0',
       ]),
     );

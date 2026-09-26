@@ -13,6 +13,7 @@ import {
   Plus,
   Search,
   Settings,
+  SquarePen,
   Bot,
   ChevronDown,
   ChevronRight,
@@ -699,6 +700,30 @@ export default function DesignSystem() {
                 <MessageSquare className="text-muted-foreground size-5" />
                 Help
               </Button>
+            </div>
+          </Example>
+          <Example
+            title="Truncating a name in a Button"
+            code='<Button className="min-w-0 shrink"><Avatar /><span className="truncate" title={name}>{name}</span><ChevronDown /></Button>'
+          >
+            <div className="flex w-64 items-center gap-1 rounded-md border p-1">
+              <div className="flex min-w-0 flex-1">
+                <Button variant="ghost" size="sm" className="min-w-0 shrink">
+                  <span
+                    className="truncate"
+                    title="Explain the difference between agents and workflows"
+                  >
+                    Explain the difference between agents and workflows
+                  </span>
+                  <ChevronDown className="text-muted-foreground" aria-hidden />
+                </Button>
+              </div>
+              <IconButton
+                label="New chat"
+                variant="ghost-muted"
+                size="icon"
+                icon={SquarePen}
+              />
             </div>
           </Example>
           <Example
@@ -2605,7 +2630,9 @@ export default function DesignSystem() {
                     <SheetTitle>Tools</SheetTitle>
                     <SheetDescription>
                       The phone picker shape: card fill, rounded top, grab
-                      handle, clear of the home indicator.
+                      handle, clear of the home indicator. max-h-sheet caps it
+                      below the visible screen, so the scrim above can always be
+                      tapped to close it.
                     </SheetDescription>
                   </SheetHeader>
                 </SheetContent>

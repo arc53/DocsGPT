@@ -18,21 +18,20 @@ export default function SourcesPopoverFooter({
   const { t } = useTranslation();
 
   return (
-    <div className="flex flex-col gap-3">
-      <Link
-        to="/settings/sources"
-        className="text-primary inline-flex items-center gap-2 text-base font-medium"
-        onClick={onNavigate}
-      >
-        {t('settings.sources.goToSources')}
-        <ArrowRight className="size-3" />
-      </Link>
+    // One row when it fits (link left, upload right); on a narrow sheet or a
+    // long locale the button wraps under the link.
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <Button variant="link" size="inline" asChild>
+        <Link to="/settings/sources" onClick={onNavigate}>
+          {t('settings.sources.goToSources')}
+          <ArrowRight aria-hidden="true" className="size-3" />
+        </Link>
+      </Button>
       <Button
         type="button"
         variant="outline-primary"
         shape="pill"
         onClick={onUploadClick}
-        className="w-auto self-start"
       >
         {t('settings.sources.uploadNew')}
       </Button>

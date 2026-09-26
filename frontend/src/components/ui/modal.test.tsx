@@ -199,7 +199,7 @@ describe('Modal mobile sheet', () => {
       expect.arrayContaining([
         'bg-card',
         'rounded-t-2xl',
-        'max-h-[90vh]',
+        'max-h-sheet',
         'pb-safe',
         'gap-3',
         'px-4',

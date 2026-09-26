@@ -746,6 +746,15 @@ agents), Share, Rename and Delete. Rename edits the name in place, as the
 sidebar row does. A title with no actions (a shared agent's new chat) is
 plain text.
 
+A long title truncates to one line and never runs under New Chat or the
+avatar: the title slot is `flex min-w-0 flex-1`, the agent's `Avatar` and the
+chevron keep their size, and only the name gives way (a `truncate` span with
+`title=` holding the full name). This is the rule for any Button that holds a
+user-supplied name (a chat, agent or source) in a flex row: Button's base is
+`shrink-0 whitespace-nowrap`, so `min-w-0` alone does nothing. Pass `min-w-0
+shrink` (or `flex-1` / `w-full` when it should fill the row) and put the name
+in the `truncate` span; its icons stay `shrink-0`.
+
 New Chat is `SquarePen` everywhere: the phone bar, the sidebar's New Chat row
 and the collapsed rail. `Plus` means "add an item to this list", not "start
 a chat".
@@ -822,14 +831,18 @@ scroller) and the same blurred overlay. Modal, DialogContent and every Sheet sha
 dark:bg-black/50`).
 
 Every phone bottom sheet has one shape: `bg-card`, 16px top corners, no top
-border, at most 90% of the viewport, and bottom padding that clears the iPhone
-home indicator. `SheetContent side="bottom"` gives it with `pb-safe-0` (the
-bare inset); pass `handle` for the grab bar, which also hides the X (the handle and
-the overlay dismiss it; pass `showCloseButton` to keep one).
+border, `max-h-sheet` (the visible viewport less the top safe-area inset and a
+3rem strip, so the scrim above it can always be tapped to close), and bottom
+padding that clears the iPhone home indicator. Never cap a sheet with `vh`: on
+iOS Safari it is the viewport with the toolbars hidden, so a `90vh` sheet slides
+under the URL bar and covers its scrim. `SheetContent side="bottom"` gives the
+shape with `pb-safe-0` (the bare inset); pass `handle` for the grab bar, which
+also hides the X (the overlay dismisses it; the handle is only a cue and doesn't
+drag; pass `showCloseButton` to keep an X).
 `Modal mobileVariant="sheet"` shares the shape and the `SheetHandle`, with
-`pb-safe` (the inset, at least 1rem) under its footer. `pb-safe` and
-`pb-safe-0` are the `index.css` utilities for `env(safe-area-inset-bottom)`;
-never spell `env()` in a class.
+`pb-safe` (the inset, at least 1rem) under its footer. `pb-safe`, `pb-safe-0`
+and `max-h-sheet` are the `index.css` utilities for the safe-area insets; never
+spell `env()` in a class.
 
 **Open question: side panel or right sheet for chat content.** Chat has two
 ways to show something beside an answer. Notes, todos and files open in
@@ -849,6 +862,13 @@ with `bg-accent`: cmdk's own `data-selected` highlight is `bg-accent` and
 follows the pointer and arrow keys, so an accent fill would look like hover.
 While a checked item is also highlighted it keeps its tint and text and gains
 a 1px inset `primary` ring, so the chosen row never turns plain grey.
+
+A picker's footer (`MultiSelectPopover footer`) links to the page that manages
+the list, as a `link inline` Button with a 12px `ArrowRight` (Go to Sources, Go
+to Tools). A shortcut action (Upload new, an `outline-primary pill`) sits at the
+right end of the same row: `flex flex-wrap items-center justify-between gap-3`,
+so on a narrow sheet or in a long locale it wraps under the link rather than
+taking a row of its own everywhere (`SourcesPopoverFooter`).
 
 ### ActionMenu (`ui/dropdown-menu.tsx`)
 
