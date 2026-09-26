@@ -412,3 +412,19 @@ def test_document_shedding_stops_when_no_documents_remain(
     messages = agent._build_messages("SYSTEM", "question " * 800)
     assert agent.retrieved_docs == []
     assert messages[-1]["role"] == "user"
+    # The search did find passages; they were dropped for room, and the
+    # model must not be told that nothing matched.
+    user = messages[-1]["content"]
+    assert agent.EMPTY_RETRIEVAL_NOTE not in user
+    assert agent.DOCUMENTS_SHED_NOTE in user
+
+
+@pytest.mark.unit
+def test_an_empty_search_still_says_nothing_matched(
+    agent_base_params, mock_llm_creator, mock_llm_handler_creator
+):
+    agent_base_params["retrieved_docs"] = []
+    agent_base_params["sources_were_searched"] = True
+    agent = _agent(agent_base_params, [])
+    user = agent._build_messages("SYSTEM", "Q?")[-1]["content"]
+    assert agent.EMPTY_RETRIEVAL_NOTE in user

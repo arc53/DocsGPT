@@ -576,6 +576,20 @@ class ConversationsRepository:
         )
         return [str(row[0]) for row in result.fetchall()]
 
+    def referenced_attachment_ids(self, attachment_ids: list[str]) -> set[str]:
+        """Which of ``attachment_ids`` some conversation message still references."""
+        wanted = [str(a) for a in attachment_ids or [] if looks_like_uuid(str(a))]
+        if not wanted:
+            return set()
+        result = self._conn.execute(
+            text(
+                "SELECT DISTINCT a::text FROM conversation_messages m, "
+                "unnest(m.attachments) AS a WHERE a::text = ANY(:ids)"
+            ),
+            {"ids": wanted},
+        )
+        return {str(row[0]) for row in result.fetchall()}
+
     def attachment_ids_for_user(self, user_id: str) -> list[str]:
         """Every attachment id referenced by any of the user's conversations."""
         result = self._conn.execute(

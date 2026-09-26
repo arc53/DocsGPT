@@ -175,6 +175,15 @@ class TestAttachmentIds:
     def test_non_uuid_conversation(self, pg_conn):
         assert _repo(pg_conn).attachment_ids("not-a-uuid") == []
 
+    def test_referenced_attachment_ids(self, pg_conn):
+        repo = _repo(pg_conn)
+        conv = repo.create("user-1", "c")
+        used = self._attachment(pg_conn, "user-1", "used.txt")
+        unused = self._attachment(pg_conn, "user-1", "unused.txt")
+        repo.append_message(conv["id"], {"prompt": "1", "response": "r", "attachments": [used]})
+        assert repo.referenced_attachment_ids([used, unused, "not-a-uuid"]) == {used}
+        assert repo.referenced_attachment_ids([]) == set()
+
 
 # ------------------------------------------------------------------
 # Messages

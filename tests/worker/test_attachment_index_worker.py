@@ -164,6 +164,26 @@ class TestPurgeAttachmentIndexes:
             assert SourcesRepository(conn).get(source_id, USER) is None
         assert _row(row["id"])["metadata"]["index"] == {"status": "purged"}
 
+    def test_skips_an_attachment_a_conversation_still_references(self, embedded, monkeypatch):
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+        from docsgpt.worker import purge_attachment_indexes_worker
+
+        row = _attachment()
+        _run(row["id"])
+        with db_session() as conn:
+            conversations = ConversationsRepository(conn)
+            conv = conversations.create(USER, "still here")
+            conversations.append_message(
+                str(conv["id"]), {"prompt": "p", "response": "r", "attachments": [str(row["id"])]}
+            )
+        monkeypatch.setattr(
+            "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+            lambda *a, **k: pytest.fail("a referenced index must not be deleted"),
+        )
+
+        assert purge_attachment_indexes_worker(_StubTask(), [str(row["id"])], USER) == {"purged": 0}
+        assert _row(row["id"])["metadata"]["index"]["status"] == "done"
+
     def test_attachments_without_an_index(self, embedded):
         from docsgpt.worker import purge_attachment_indexes_worker
 
