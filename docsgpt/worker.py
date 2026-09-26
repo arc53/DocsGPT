@@ -2812,19 +2812,22 @@ def purge_attachment_indexes_worker(self, attachment_ids, user):
 
     from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
+    # References are re-checked here, just before deleting, not only when the
+    # purge was queued: a conversation may have started using a file in
+    # between. One query for the whole batch; a reference added in the
+    # seconds after it costs that file its semantic ranking, never its
+    # content, since search falls back to keywords.
     with db_readonly() as conn:
         rows = AttachmentsRepository(conn).list_by_ids(
             [str(a) for a in attachment_ids or []], user, include_content=False
         )
+        still_used = ConversationsRepository(conn).referenced_attachment_ids(
+            [str(row["id"]) for row in rows], user
+        )
     purged = 0
     for row in rows:
-        # Re-checked here, just before deleting, not only when the purge was
-        # queued: a conversation may have started referencing the file in
-        # between. A reference added after this check costs that file its
-        # semantic ranking, never its content: search falls back to keywords.
-        with db_readonly() as conn:
-            if ConversationsRepository(conn).referenced_attachment_ids([str(row["id"])], user):
-                continue
+        if str(row["id"]) in still_used:
+            continue
         index = (row.get("metadata") or {}).get("index") or {}
         source_id = index.get("source_id")
         if source_id:

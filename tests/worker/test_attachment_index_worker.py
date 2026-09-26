@@ -184,6 +184,32 @@ class TestPurgeAttachmentIndexes:
         assert purge_attachment_indexes_worker(_StubTask(), [str(row["id"])], USER) == {"purged": 0}
         assert _row(row["id"])["metadata"]["index"]["status"] == "done"
 
+    def test_references_are_checked_once_per_batch(self, embedded, monkeypatch):
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+        from docsgpt.worker import purge_attachment_indexes_worker
+
+        rows = [_attachment(), _attachment(), _attachment()]
+        for row in rows:
+            _run(row["id"])
+        calls = []
+        real = ConversationsRepository.referenced_attachment_ids
+
+        def _counted(self, ids, user_id):
+            calls.append(list(ids))
+            return real(self, ids, user_id)
+
+        monkeypatch.setattr(ConversationsRepository, "referenced_attachment_ids", _counted)
+        monkeypatch.setattr("docsgpt.worker.settings.VECTOR_STORE", "pgvector")
+        monkeypatch.setattr(
+            "docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore",
+            lambda *a, **k: type("S", (), {"delete_index": lambda self: None})(),
+        )
+
+        result = purge_attachment_indexes_worker(_StubTask(), [str(r["id"]) for r in rows], USER)
+
+        assert result == {"purged": 3}
+        assert len(calls) == 1 and len(calls[0]) == 3
+
     def test_attachments_without_an_index(self, embedded):
         from docsgpt.worker import purge_attachment_indexes_worker
 
