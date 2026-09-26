@@ -12,7 +12,12 @@ import { Separator } from './ui/separator';
  * showing the signed-in name/email and a sign-out action. Renders nothing for
  * other auth modes, which carry no user identity.
  */
-export default function ProfileButton() {
+export default function ProfileButton({
+  size = 'sm',
+}: {
+  /** Trigger avatar: `sm` (32px) in the desktop corner, `xs` (28px) in the mobile bar. */
+  size?: 'xs' | 'sm';
+} = {}) {
   const { t } = useTranslation();
   const { authType, userName, userEmail, userPicture, logout } = useTokenAuth();
 
@@ -22,17 +27,17 @@ export default function ProfileButton() {
   // `sm` is size-8/text-sm, `lg` is size-10/text-base; the size variant
   // also brings the flex centring and the overflow-hidden that clips both the
   // photo and the initials to the circle.
-  const renderAvatar = (size: 'sm' | 'lg') =>
+  const renderAvatar = (avatarSize: 'xs' | 'sm' | 'lg') =>
     userPicture ? (
       <Avatar
-        size={size}
+        size={avatarSize}
         shape="circle"
         src={userPicture}
         alt={userName || userEmail || t('components.profile.avatarAlt')}
         imgClassName="size-full object-cover"
       />
     ) : (
-      <Avatar size={size} shape="circle" variant="primary">
+      <Avatar size={avatarSize} shape="circle" variant="primary">
         {initial}
       </Avatar>
     );
@@ -49,7 +54,7 @@ export default function ProfileButton() {
           shape="pill"
           aria-label={t('auth.account')}
         >
-          {renderAvatar('sm')}
+          {renderAvatar(size)}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" sideOffset={8} className="w-64 p-0">

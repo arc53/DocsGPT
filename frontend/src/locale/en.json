@@ -2231,6 +2231,7 @@
     },
     "openSidebar": "Open sidebar",
     "closeSidebar": "Close sidebar",
+    "editAgent": "Edit agent",
     "social": {
       "discord": "Join Discord community",
       "x": "Follow us on X",

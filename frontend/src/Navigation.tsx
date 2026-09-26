@@ -4,19 +4,19 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutGrid,
-  Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Pin,
   PinOff,
-  Plus,
   Search,
   Settings,
+  SquarePen,
 } from 'lucide-react';
 
 import {
   AGENTS_MANAGE_ROOT,
   agentChatPath,
+  agentEditPathFor,
   sharedAgentPath,
 } from './agents/paths';
 import { Agent } from './agents/types';
@@ -46,6 +46,7 @@ import JWTModal from './modals/JWTModal';
 import SearchConversationsModal from './modals/SearchConversationsModal';
 import { ActiveState } from './models/misc';
 import { getConversations } from './preferences/preferenceApi';
+import MobileTopBar from './navigation/MobileTopBar';
 import SectionNav from './navigation/SectionNav';
 import SectionRail from './navigation/SectionRail';
 import SidebarLevel from './navigation/SidebarLevel';
@@ -384,11 +385,24 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     setNavOpen(!isMobile);
   }, [isMobile]);
 
+  // What the phone top bar names: the open chat, else the agent a new chat
+  // is with. A plain new chat and every section (settings, admin, agent
+  // pages) have none; sections carry their own page heading.
+  const currentConversation = conversationId
+    ? conversations?.data?.find((c) => c.id === conversationId)
+    : undefined;
+  const ownsSelectedAgent = Boolean(
+    selectedAgent?.id && agents?.some((a) => a.id === selectedAgent.id),
+  );
+  const mobileTitle = routeSection
+    ? undefined
+    : (currentConversation?.name ?? selectedAgent?.name);
+
   return (
     <>
       {isMobile && navOpen && (
         <div
-          className="fixed inset-0 z-10 bg-black opacity-50 transition-opacity duration-300"
+          className="fixed inset-0 z-20 bg-black opacity-50 transition-opacity duration-300"
           onClick={() => setNavOpen(false)}
         />
       )}
@@ -426,7 +440,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   size="icon"
                   onClick={() => newChat()}
                 >
-                  <Plus aria-hidden />
+                  <SquarePen aria-hidden />
                 </IconButton>
               )}
               <IconButton
@@ -528,7 +542,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 )
               }
             >
-              <Plus
+              <SquarePen
                 className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
                 aria-hidden
               />
@@ -833,20 +847,24 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           </div>
         </div>
       </div>
-      <div className="bg-sidebar sticky z-10 h-16 w-full border-b-2 lg:hidden">
-        <div className="relative flex h-full items-center">
-          <IconButton
-            label={t('navigation.openSidebar')}
-            side="bottom"
-            variant="ghost-muted"
-            size="icon"
-            className="ml-4 lg:hidden"
-            onClick={() => setNavOpen(true)}
-          >
-            <Menu aria-hidden />
-          </IconButton>
-        </div>
-      </div>
+      <MobileTopBar
+        onOpenSidebar={() => setNavOpen(true)}
+        onNewChat={routeSection ? undefined : newChat}
+        title={mobileTitle}
+        agentImage={
+          !routeSection && selectedAgent
+            ? (selectedAgent.image ?? '')
+            : undefined
+        }
+        conversationId={routeSection ? null : currentConversation?.id}
+        onRename={updateConversationName}
+        onDelete={handleDeleteConversation}
+        editAgentPath={
+          !routeSection && ownsSelectedAgent && selectedAgent
+            ? agentEditPathFor(selectedAgent)
+            : undefined
+        }
+      />
       <ConfirmationModal
         message={t('modals.deleteConv.confirm')}
         modalState={modalStateDeleteConv}

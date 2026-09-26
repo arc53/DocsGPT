@@ -727,6 +727,29 @@ shape="pill"`), then `divider` (a `Separator`). A page search is
 `label`. The chunk viewer's and file tree's searches stay `CommandInput` in
 their frame, because their results are `CommandItem`s.
 
+### App chrome: the phone top bar and New Chat
+
+Below `lg` the top of every page is `navigation/MobileTopBar` (56px, `h-14`):
+the sidebar toggle (`PanelLeft`), a title, then New Chat and the account
+avatar (`ProfileButton size="xs"`). It is on `bg-background` like the page,
+with no border and no shadow; a `from-background to-transparent` gradient under
+it lets the content fade out as it scrolls. At `lg` and up, `ActionButtons`
+holds Share and the avatar in the top-right corner instead, and it renders
+nothing on a phone.
+
+The title is for chats only: the open conversation's name, or the agent's
+name on a new agent chat, with the agent's `Avatar` in front. A plain new chat
+has no title. So do section pages (settings, admin, an agent's pages), because
+`SectionShell` already draws their title. When the chat has actions, the title
+is a `ghost sm` Button that opens a `DropdownMenu` with Edit agent (owned
+agents), Share, Rename and Delete. Rename edits the name in place, as the
+sidebar row does. A title with no actions (a shared agent's new chat) is
+plain text.
+
+New Chat is `SquarePen` everywhere: the phone bar, the sidebar's New Chat row
+and the collapsed rail. `Plus` means "add an item to this list", not "start
+a chat".
+
 ### Grids
 
 Two recipes, no component. Tiles (sources, tools, custom models, agents):
@@ -982,7 +1005,9 @@ shadow-lg` in both themes: the knob is white on any track, and a white knob
   `z-20` in-page floating chrome (banners, scroll-to-bottom, drag
   handles); `z-50` overlays, modals, sheets and toasts; `z-200` every
   portalled floating list (popover, menu, select, tooltip), so it opens above
-  a Modal without an override. Do not invent values in between.
+  a Modal without an override. Do not invent values in between. The app
+  shell uses the low layers too: the phone top bar is `z-10`, and the
+  sidebar and its phone backdrop are `z-20`, so an open sidebar dims the bar.
 
 ## Inline styles
 

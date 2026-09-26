@@ -2189,6 +2189,7 @@
     },
     "openSidebar": "サイドバーを開く",
     "closeSidebar": "サイドバーを閉じる",
+    "editAgent": "エージェントを編集",
     "social": {
       "discord": "Discord コミュニティに参加",
       "x": "X でフォロー",
