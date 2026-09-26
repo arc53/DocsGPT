@@ -98,7 +98,9 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
       <textarea
         className={cn(
           'text-foreground focus-visible:ring-ring/50 focus-visible:border-ring h-(--numbered-height) w-full resize-none overflow-hidden border-none bg-transparent pl-8 text-sm leading-5 outline-none focus-visible:ring-3 lg:pl-12',
-          isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]',
+          isMobile
+            ? 'min-h-[calc(100svh-200px)]'
+            : 'min-h-[calc(100svh-300px)]',
           !editable && 'select-none',
         )}
         value={value}
@@ -511,7 +513,7 @@ const Chunks: React.FC<ChunksProps> = ({
 
           {fileSearchQuery && (
             <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 left-0 z-20 mt-1 w-full overflow-hidden rounded-xl border shadow-md">
-              <CommandList className="max-h-[calc(100vh-200px)]">
+              <CommandList className="max-h-[calc(100dvh-200px)]">
                 {fileSearchResults.length === 0 ? (
                   <CommandEmpty>{t('settings.sources.noResults')}</CommandEmpty>
                 ) : (
@@ -603,7 +605,7 @@ const Chunks: React.FC<ChunksProps> = ({
                     <EmptyState
                       size="sm"
                       title={t('settings.sources.noChunks')}
-                      className="col-span-full min-h-[50vh] w-full"
+                      className="col-span-full min-h-[50svh] w-full"
                     />
                   ) : (
                     filteredChunks.map((chunk, index) => (

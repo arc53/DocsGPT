@@ -833,9 +833,9 @@ dark:bg-black/50`).
 Every phone bottom sheet has one shape: `bg-card`, 16px top corners, no top
 border, `max-h-sheet` (the visible viewport less the top safe-area inset and a
 3rem strip, so the scrim above it can always be tapped to close), and bottom
-padding that clears the iPhone home indicator. Never cap a sheet with `vh`: on
-iOS Safari it is the viewport with the toolbars hidden, so a `90vh` sheet slides
-under the URL bar and covers its scrim. `SheetContent side="bottom"` gives the
+padding that clears the iPhone home indicator. Never cap a sheet with `vh` (see
+Viewport heights): a `90vh` sheet slides under Safari's URL bar and covers its
+scrim. `SheetContent side="bottom"` gives the
 shape with `pb-safe-0` (the bare inset); pass `handle` for the grab bar, which
 also hides the X (the overlay dismisses it; the handle is only a cue and doesn't
 drag; pass `showCloseButton` to keep an X).
@@ -915,6 +915,28 @@ values (`h-[calc(100dvh-64px)]`, `max-w-[520px]`) and motion values
 (`transition-[color,box-shadow]`, custom easings) are allowed. Font sizes,
 padding, colours and radii in brackets are not; pick the nearest scale step
 or add a token.
+
+### Viewport heights
+
+Never size anything with `vh` or the `h-screen` family (`h-`, `min-h-`,
+`max-h-screen`, which are `100vh`). On iOS Safari `vh` is the viewport with the
+toolbars hidden, so while the URL bar and tab bar show, a `vh` height is about
+140px taller than the screen: a centred message sits low, a panel or dropdown
+runs under the tab bar, and the app shell can be dragged and bounce. ESLint
+(`no-restricted-syntax`) rejects both. Pick by what the height does:
+
+- **`dvh`** (the visible viewport, follows the toolbars): the app shell
+  (`h-dvh`), full-screen states (`min-h-dvh`: 404, MobileBlocker, the `screen`
+  `LoadingState`), and caps on things that pop up over the page (a search
+  dropdown's `max-h-[calc(100dvh-200px)]`, `Modal`'s `85dvh`).
+- **`svh`** (the smallest viewport, steady): a fixed-size panel inside a page
+  that scrolls (the Logs panel's `h-[55svh]`, a list's `max-h-[45svh]`, the
+  chunk editor's `min-h`), so it doesn't resize while Safari's bars slide in
+  and out.
+- **`max-h-sheet`**: every bottom sheet (see Modal, not Dialog).
+- A row or control has a fixed height (`h-12`), never a share of the viewport.
+
+`w-screen` is `vw`, which the toolbars don't change, so it stays allowed.
 
 ### Typography roles
 

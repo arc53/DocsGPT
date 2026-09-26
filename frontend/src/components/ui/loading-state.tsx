@@ -9,7 +9,7 @@ import { Spinner, type SpinnerProps } from './spinner';
 // section with none takes `block`.
 const FILL_CLASSES = {
   parent: 'h-full',
-  screen: 'h-screen',
+  screen: 'h-dvh',
   block: 'py-10',
 } as const;
 

@@ -84,6 +84,28 @@ export default [
           ],
         },
       ],
+      // On iOS Safari vh (and h-screen, which is 100vh) is the viewport with
+      // the toolbars hidden, so a vh height overflows the visible screen.
+      // w-screen is vw, which the toolbars don't change, so it stays allowed.
+      'no-restricted-syntax': [
+        'error',
+        ...[
+          'Literal[value=/\\dvh\\b/]',
+          'TemplateElement[value.raw=/\\dvh\\b/]',
+        ].map((selector) => ({
+          selector,
+          message:
+            'vh is the toolbar-hidden viewport on iOS Safari. Use dvh for the app shell and caps on things that pop up, svh for a fixed-size panel in a page that scrolls, or max-h-sheet for a bottom sheet. See DESIGN.md.',
+        })),
+        ...[
+          'Literal[value=/(^|[\\s:])(min-|max-)?h-screen\\b/]',
+          'TemplateElement[value.raw=/(^|[\\s:])(min-|max-)?h-screen\\b/]',
+        ].map((selector) => ({
+          selector,
+          message:
+            "Tailwind's screen heights (h-/min-h-/max-h-screen) are the toolbar-hidden viewport on iOS Safari, taller than the visible screen. Use h-dvh / min-h-dvh, or svh for a fixed panel. See DESIGN.md.",
+        })),
+      ],
       // Design-system rules (@shadcn/lint). Tokens, variants and the
       // approved exceptions are documented in DESIGN.md.
       'shadcn/no-restyle': [

@@ -64,7 +64,7 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
           ? t('auth.accountDisabled')
           : t('auth.signInToContinue');
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-6">
+      <div className="flex h-dvh flex-col items-center justify-center gap-6">
         <img
           src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
           alt="DocsGPT"
@@ -105,12 +105,12 @@ function MainLayout() {
 
   return (
     <SidebarLevelProvider>
-      <div className="bg-background relative h-screen overflow-hidden">
+      <div className="bg-background relative h-dvh overflow-hidden">
         <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
         <ActionButtons showShare={!inSection} />
         <div
           className={cn(
-            'h-[calc(100dvh-56px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-screen',
+            'h-[calc(100dvh-56px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-dvh',
             !isMobile ? (navOpen ? 'lg:ml-72' : 'lg:ml-14') : 'ml-0 lg:ml-16',
           )}
         >

@@ -15,12 +15,12 @@ describe('LoadingState', () => {
     expect(html.match(/role="status"/g)).toHaveLength(1);
   });
 
-  it('uses py-10 for block and h-screen for screen', () => {
+  it('uses py-10 for block and the visible viewport (h-dvh) for screen', () => {
     expect(renderToStaticMarkup(<LoadingState fill="block" />)).toContain(
       'py-10',
     );
     expect(renderToStaticMarkup(<LoadingState fill="screen" />)).toContain(
-      'h-screen',
+      'h-dvh',
     );
   });
 

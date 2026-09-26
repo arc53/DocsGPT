@@ -1778,7 +1778,7 @@ function WorkflowBuilderInner() {
   return (
     <>
       <MobileBlocker />
-      <div className="bg-background fixed inset-0 z-50 hidden h-screen w-full flex-col lg:flex">
+      <div className="bg-background fixed inset-0 z-50 hidden h-dvh w-full flex-col lg:flex">
         <div className="border-border bg-card flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-4">
             {canManageAgent ? (
@@ -2136,7 +2136,7 @@ function WorkflowBuilderInner() {
                     </IconButton>
                   </div>
 
-                  <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4">
+                  <div className="max-h-[calc(100dvh-200px)] overflow-y-auto p-4">
                     <div className="mb-4 flex flex-col gap-5">
                       <div className="bg-muted rounded-lg p-3">
                         <div className="text-muted-foreground mb-1 text-xs">

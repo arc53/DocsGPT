@@ -251,7 +251,7 @@ export default function GuardrailEvents({ agentId }: Props) {
       </div>
 
       <div className="border-border bg-card mt-3 w-full overflow-hidden rounded-xl border">
-        <div className="max-h-[45vh] overflow-y-auto">
+        <div className="max-h-[45svh] overflow-y-auto">
           {loading ? (
             <div className="p-3">
               <SkeletonLoader count={3} />

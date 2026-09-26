@@ -593,7 +593,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
 
         {searchQuery && (
           <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 left-0 z-20 mt-1 w-full overflow-hidden rounded-xl border shadow-md">
-            <CommandList className="max-h-[calc(100vh-200px)] overscroll-contain">
+            <CommandList className="max-h-[calc(100dvh-200px)] overscroll-contain">
               {searchResults.length === 0 ? (
                 <CommandEmpty>{t('settings.sources.noResults')}</CommandEmpty>
               ) : (

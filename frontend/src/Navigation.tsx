@@ -489,7 +489,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       >
         <div
           className={
-            'visible mt-2 flex h-[6vh] w-full items-center justify-between gap-1 px-2 md:h-12'
+            'visible mt-2 flex h-12 w-full items-center justify-between gap-1 px-2'
           }
         >
           <div className="min-w-0 flex-1">

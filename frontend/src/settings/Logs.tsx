@@ -250,13 +250,13 @@ function LogsTable({
   }, []);
 
   return (
-    <div className="border-border bg-card h-[55vh] w-full overflow-hidden rounded-xl border font-mono">
+    <div className="border-border bg-card h-[55svh] w-full overflow-hidden rounded-xl border font-mono">
       <div className="bg-muted flex h-8 flex-col items-start justify-center">
         <p className="text-muted-foreground px-3 text-xs">
           {tableHeader ? tableHeader : t('settings.logs.tableHeader')}
         </p>
       </div>
-      <div className="relative flex h-[51vh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
+      <div className="relative flex h-[51svh] grow flex-col items-start gap-2 overflow-y-auto overscroll-contain bg-transparent p-4">
         {!loading && logs.length === 0 && (
           <EmptyState
             size="xs"

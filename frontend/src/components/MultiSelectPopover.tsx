@@ -240,7 +240,7 @@ export function MultiSelectPopover({
         align={align}
         side={side}
         className={cn(
-          'flex max-h-[min(600px,80vh)] w-[min(462px,calc(100vw-20px))] flex-col overflow-hidden p-0',
+          'flex max-h-[min(600px,80dvh)] w-[min(462px,calc(100vw-20px))] flex-col overflow-hidden p-0',
           className,
         )}
       >
