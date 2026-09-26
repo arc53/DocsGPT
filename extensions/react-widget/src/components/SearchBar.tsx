@@ -4,11 +4,13 @@ import { WidgetCore } from './DocsGPTWidget';
 import { DEFAULT_AVATAR } from './defaultAvatar';
 import { radii, themes } from './tokens';
 import { MicButton, VoiceWaveform } from './ComposerControls';
+import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useDictation } from '../hooks/useDictation';
+import { useVisualViewportBounds } from '../hooks/useVisualViewportBounds';
 import { SearchBarProps } from '@/types';
 import { getSearchResults } from '../requests/searchAPI';
 import { Result } from '@/types';
-import { getOS, processMarkdownString } from '../utils/helper';
+import { getOS, isTouchPrimary, processMarkdownString } from '../utils/helper';
 import DOMPurify from 'dompurify';
 import {
   CodeIcon,
@@ -29,6 +31,9 @@ const Main = styled.div`
   all: initial;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* all: initial re-enables Safari's text auto-inflation. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 `;
 
 const SearchButton = styled.button<{ $inputWidth: string }>`
@@ -78,7 +83,8 @@ const SearchOverlay = styled.div`
 
 const SearchResults = styled.div`
   position: fixed;
-  top: 50%;
+  /* Centred on the strip left above an open keyboard, else the viewport. */
+  top: calc(var(--dgpt-vv-top, 0px) + var(--dgpt-vv-height, 100%) / 2);
   left: 50%;
   z-index: 100;
   transform: translate(-50%, -50%);
@@ -101,6 +107,9 @@ const SearchResults = styled.div`
   @media only screen and (max-width: 768px) {
     width: 90vw;
     height: 80vh;
+    /* Into the strip above an open keyboard, less a gutter at each end. With
+       no keyboard the fallback resolves against the viewport and never bites. */
+    max-height: calc(var(--dgpt-vv-height, 100%) - 32px);
   }
 `;
 
@@ -336,6 +345,7 @@ export const SearchBar = ({
   const [isWidgetOpen, setIsWidgetOpen] = React.useState<boolean>(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const containerRef = React.useRef<HTMLInputElement>(null);
+  const resultsRef = React.useRef<HTMLDivElement | null>(null);
   const [isResultVisible, setIsResultVisible] = React.useState<boolean>(false);
   const [results, setResults] = React.useState<Result[]>([]);
   const debounceTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(
@@ -358,7 +368,13 @@ export const SearchBar = ({
     onEnd: focusSearchInput,
   });
   const browserOS = getOS();
-  const isTouch = 'ontouchstart' in window;
+  // A touchscreen laptop still has Ctrl+K; this asks if touch is the only
+  // way in.
+  const [isTouch] = React.useState(isTouchPrimary);
+
+  useVisualViewportBounds(isResultVisible, resultsRef);
+  // Touch only: nothing fills the screen on desktop.
+  useBackDismiss(isResultVisible && isTouch, () => setIsResultVisible(false));
 
   const getKeyboardInstruction = () => {
     if (isResultVisible) return 'Enter';
@@ -463,7 +479,7 @@ export const SearchBar = ({
           {isResultVisible && (
             <>
               <SearchOverlay onClick={() => setIsResultVisible(false)} />
-              <SearchResults>
+              <SearchResults ref={resultsRef}>
                 <SearchHeader>
                   {dictation.isDictating && (
                     <VoiceWaveform
@@ -486,7 +502,8 @@ export const SearchBar = ({
                     }}
                     onKeyDown={(e) => handleKeyDown(e)}
                     placeholder={placeholder}
-                    autoFocus
+                    /* A keyboard would cover the results. */
+                    autoFocus={!isTouch}
                   />
                   {dictation.available && (
                     <MicButton
