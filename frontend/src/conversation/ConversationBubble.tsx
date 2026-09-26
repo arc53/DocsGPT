@@ -4,6 +4,8 @@ import 'katex/dist/katex.min.css';
 
 import {
   ChevronDown,
+  ChevronRight,
+  CircleAlert,
   Database,
   Download,
   Eye,
@@ -21,6 +23,7 @@ import { useSelector } from 'react-redux';
 import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
 import CopyButton from '../components/CopyButton';
 
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { IconButton } from '../components/ui/icon-button';
@@ -40,7 +43,6 @@ import AnswerFlow from './AnswerFlow';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
-import MarkdownAnswer from './MarkdownAnswer';
 import ResearchProgress from './ResearchProgress';
 import { ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
@@ -291,12 +293,25 @@ const ConversationBubble = forwardRef<
               // Stretched, not shrink-to-fit: the grid below sizes off this box,
               // so a fit-content parent would leave its width to the cards.
               <div className="mb-4 flex w-full flex-col flex-wrap items-start self-stretch lg:flex-nowrap">
-                <div className="my-2 ml-6 flex flex-row items-center justify-center gap-3">
-                  <Database className="size-6" />
-                  <p className="text-base font-semibold">
+                {/* A step row like Reasoning and the tool steps below it: same
+                    metrics, icon on the ml-6 column, and it opens the full list. */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-haspopup="dialog"
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="my-2 ml-3.5 w-fit"
+                >
+                  <Database className="text-muted-foreground" aria-hidden />
+                  <span className="text-muted-foreground">
                     {t('conversation.sources.title')}
-                  </p>
-                </div>
+                  </span>
+                  <span className="text-muted-foreground/70 font-normal">
+                    {sources.length}
+                  </span>
+                  <ChevronRight className="text-muted-foreground" aria-hidden />
+                </Button>
                 {/* Width comes from the stretched parent minus these margins;
                     w-full here would be the column width plus them. */}
                 <div className="animate-in fade-in mr-5 ml-6 duration-160 ease-out motion-reduce:animate-none">
@@ -410,10 +425,18 @@ const ConversationBubble = forwardRef<
         )}
         {type === 'ERROR' ? (
           message && (
-            <div className="flex max-w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-              <div className="animate-in fade-in slide-in-from-bottom-1.5 text-destructive border-destructive bg-destructive/10 relative mr-5 flex max-w-full flex-row items-center rounded-full border p-2 px-6 py-5 text-sm font-normal duration-260 ease-out motion-reduce:animate-none">
-                <MarkdownAnswer content={message} isStreaming={isStreaming} />
-              </div>
+            // On the answer's ml-6 text column. The backend's error is often a
+            // raw provider exception, so it is the detail under a readable title.
+            <div className="animate-in fade-in slide-in-from-bottom-1.5 mr-5 ml-6 self-stretch duration-260 ease-out motion-reduce:animate-none">
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertTitle>{t('conversation.failedTitle')}</AlertTitle>
+                <AlertDescription>
+                  <p className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+                    {message}
+                  </p>
+                </AlertDescription>
+              </Alert>
             </div>
           )
         ) : (
@@ -451,9 +474,14 @@ const ConversationBubble = forwardRef<
           // ml-6 text column.
           <div className="my-2 ml-4 flex flex-wrap justify-start gap-2">
             {type === 'ERROR' ? (
-              <div className="relative block items-center justify-center">
-                <div>{retryBtn}</div>
-              </div>
+              <>
+                <div className="relative block items-center justify-center">
+                  {retryBtn}
+                </div>
+                <div className="relative block items-center justify-center">
+                  <CopyButton textToCopy={message} />
+                </div>
+              </>
             ) : (
               <>
                 {onOpenArtifact &&

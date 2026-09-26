@@ -79,23 +79,27 @@ describe('Prompts', () => {
     expect(edit).not.toBeNull();
     expect(edit?.getAttribute('data-variant')).toBe('ghost-muted');
     expect(edit?.getAttribute('data-size')).toBe('icon-xs');
-    expect(edit?.parentElement).toBe(
-      trigger?.closest('[data-slot="form-field"]')?.parentElement,
-    );
+    expect(edit?.parentElement).toBe(trigger?.parentElement);
   });
 
-  it('labels the picker with a floating label on Settings, named by it', () => {
-    renderPrompts();
+  it('renders a SettingRow on Settings whose label names the picker', () => {
+    renderPrompts({ description: 'Used without an agent.' });
     const trigger = container.querySelector<HTMLButtonElement>(
       'button[role="combobox"]',
     )!;
-    const label = container.querySelector<HTMLLabelElement>(
-      '[data-slot="form-field-label"]',
-    )!;
+    expect(
+      container.querySelector('[data-slot="form-field-label"]'),
+    ).toBeNull();
+    const row = container.querySelector('[data-slot="setting-row"]')!;
+    const label = row.querySelector<HTMLLabelElement>('label')!;
     expect(label.textContent).toBe('settings.general.prompt');
     expect(label.htmlFor).toBe(trigger.id);
-    expect(label.className).toContain('bg-background');
+    expect(row.textContent).toContain('Used without an agent.');
     expect(trigger.hasAttribute('aria-label')).toBe(false);
+    // 224px from sm, full width when the row stacks on a phone.
+    expect(trigger.className.split(' ')).toEqual(
+      expect.arrayContaining(['w-full', 'sm:w-56']),
+    );
   });
 
   it('keeps a section heading above the picker with titleAs="heading"', () => {
@@ -120,14 +124,14 @@ describe('Prompts', () => {
     ).toBe('Prompt');
   });
 
-  it('sizes the Add button to the field row', () => {
+  it('makes Add a neutral outline pill sized to the field row', () => {
     renderPrompts();
     const add = Array.from(
       container.querySelectorAll<HTMLButtonElement>('[data-slot="button"]'),
     ).find((b) => b.textContent === 'settings.general.add');
     expect(add?.getAttribute('data-size')).toBe('field');
     expect(add?.getAttribute('data-shape')).toBe('pill');
-    expect(add?.getAttribute('data-variant')).toBe('default');
+    expect(add?.getAttribute('data-variant')).toBe('outline');
     expect(add?.className).not.toMatch(/(^|\s)h-11\.5(\s|$)/);
   });
 

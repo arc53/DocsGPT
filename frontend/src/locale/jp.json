@@ -60,14 +60,24 @@
     "label": "設定",
     "general": {
       "label": "一般",
-      "selectTheme": "テーマを選択",
+      "subtitle": "DocsGPTの外観、表示言語、チャットで使うプロンプトを選択します。",
+      "sections": {
+        "appearance": "外観",
+        "chat": "チャット",
+        "dangerZone": "危険な操作"
+      },
+      "theme": "テーマ",
+      "themeDescription": "ライトまたはダークのインターフェース。",
+      "language": "言語",
+      "languageDescription": "メニューとラベルの言語。",
       "light": "ライト",
       "dark": "ダーク",
-      "selectLanguage": "言語を選択",
       "chunks": "クエリごとに処理されるチャンク",
       "prompt": "アクティブプロンプト",
+      "promptDescription": "エージェントを使わないチャットのシステムプロンプト。エージェントは独自のものを使います。",
       "deleteAllLabel": "すべての会話を削除",
       "deleteAllBtn": "すべて削除",
+      "deleteAllDescription": "アカウント内のすべての会話を完全に削除します。この操作は元に戻せません。",
       "addNew": "新規追加",
       "convHistory": "会話履歴",
       "none": "なし",
@@ -1365,6 +1375,7 @@
       "attachment": "添付ファイル"
     },
     "retry": "再試行",
+    "failedTitle": "応答を生成できませんでした",
     "reasoning": "推論",
     "wikiWrite": {
       "edited": "Wikiを編集",

@@ -355,4 +355,51 @@ describe('ConversationBubble', () => {
       expect(sheet()).not.toBeNull();
     });
   });
+
+  it('shows a failed answer as a destructive Alert with the raw error as detail', async () => {
+    const raw = 'AuthenticationError: Error code: 401 - invalid_api_key';
+    await render(
+      <ConversationBubble
+        type="ERROR"
+        message={raw}
+        retryBtn={<button type="button">retry</button>}
+      />,
+    );
+    const alert = container.querySelector<HTMLElement>('[role="alert"]')!;
+    expect(alert.dataset.slot).toBe('alert');
+    expect(alert.dataset.variant).toBe('destructive');
+    expect(alert.className).not.toContain('rounded-full');
+    expect(alert.textContent).toContain(tr('conversation.failedTitle'));
+    const detail = alert.querySelector('[data-slot="alert-description"]')!;
+    expect(detail.textContent).toContain(raw);
+    expect(detail.innerHTML).toContain('font-mono');
+    // Retry sits beside a Copy button that copies the error for a report.
+    const copy = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${tr('conversation.copy')}"]`,
+    );
+    expect(copy).not.toBeNull();
+    expect(buttonByText('retry')).toBeDefined();
+  });
+
+  it('makes the Sources header a step row that opens the All sources sheet', async () => {
+    const sources = [1, 2, 3, 4].map((n) => ({
+      title: `Doc ${n}`,
+      text: `Excerpt ${n}`,
+      link: `doc-${n}.pdf`,
+    }));
+    await render(
+      <ConversationBubble type="ANSWER" message="Answer" sources={sources} />,
+    );
+    const header = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        'button[data-variant="ghost"]',
+      ),
+    ).find((b) => b.textContent?.includes(tr('conversation.sources.title')))!;
+    expect(header).toBeDefined();
+    expect(header.dataset.size).toBe('sm');
+    expect(header.textContent).toContain('4');
+    expect(header.getAttribute('aria-haspopup')).toBe('dialog');
+    await act(async () => header.click());
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+  });
 });

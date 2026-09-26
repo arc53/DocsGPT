@@ -6,7 +6,18 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('./ConversationBubble', () => ({
-  default: ({ message }: { message?: string }) => <div>{message}</div>,
+  default: ({
+    message,
+    retryBtn,
+  }: {
+    message?: string;
+    retryBtn?: React.ReactNode;
+  }) => (
+    <div>
+      {message}
+      {retryBtn}
+    </div>
+  ),
 }));
 
 vi.mock('../Hero', () => ({ default: () => null }));
@@ -76,5 +87,15 @@ describe('ConversationMessages', () => {
     });
 
     expect(spacer.className).toContain('max-h-0');
+  });
+
+  it('renders Retry like the other answer actions: 32px ghost pill, lucide glyph', () => {
+    render([{ prompt: 'hi', error: 'boom' }]);
+    const retry = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="conversation.retry"]',
+    )!;
+    expect(retry.dataset.variant).toBe('ghost-muted');
+    expect(retry.dataset.size).toBe('icon-sm');
+    expect(retry.querySelector('svg.lucide-rotate-ccw')).not.toBeNull();
   });
 });

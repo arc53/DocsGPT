@@ -89,4 +89,27 @@ describe('SettingRows / SettingRow', () => {
       .parentElement as HTMLElement;
     expect(after.className).toContain('mt-2');
   });
+
+  it('stacks a wide control under the label on phones with `stack`', () => {
+    const host = render(
+      <SettingRow label="Theme" stack>
+        <select data-testid="picker" />
+      </SettingRow>,
+    );
+    const line = host.querySelector('[data-slot="setting-row"] > div')!;
+    expect(line.className.split(' ')).toEqual(
+      expect.arrayContaining(['flex-col', 'sm:flex-row', 'sm:items-center']),
+    );
+    const slot = host.querySelector('[data-testid="picker"]')!
+      .parentElement as HTMLElement;
+    expect(slot.className.split(' ')).toEqual(
+      expect.arrayContaining(['w-full', 'sm:w-auto']),
+    );
+    const plain = render(
+      <SettingRow label="Theme">
+        <select />
+      </SettingRow>,
+    );
+    expect(plain.innerHTML).not.toContain('sm:flex-row');
+  });
 });

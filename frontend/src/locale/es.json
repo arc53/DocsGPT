@@ -60,14 +60,24 @@
     "label": "Configuración",
     "general": {
       "label": "General",
-      "selectTheme": "Seleccionar Tema",
+      "subtitle": "Elige el aspecto de DocsGPT, el idioma que usa y el prompt de tus chats.",
+      "sections": {
+        "appearance": "Apariencia",
+        "chat": "Chat",
+        "dangerZone": "Zona de peligro"
+      },
+      "theme": "Tema",
+      "themeDescription": "Interfaz clara u oscura.",
+      "language": "Idioma",
+      "languageDescription": "Idioma de los menús y las etiquetas.",
       "light": "Claro",
       "dark": "Oscuro",
-      "selectLanguage": "Seleccionar Idioma",
       "chunks": "Fragmentos procesados por consulta",
       "prompt": "Prompt Activo",
+      "promptDescription": "El prompt del sistema para los chats sin agente. Los agentes usan el suyo.",
       "deleteAllLabel": "Eliminar todas las conversaciones",
       "deleteAllBtn": "Eliminar todo",
+      "deleteAllDescription": "Elimina de forma permanente todas las conversaciones de tu cuenta. No se puede deshacer.",
       "addNew": "Añadir Nuevo",
       "convHistory": "Historial de conversaciones",
       "none": "Ninguno",
@@ -1368,6 +1378,7 @@
       "attachment": "Adjunto"
     },
     "retry": "Reintentar",
+    "failedTitle": "No se pudo generar una respuesta",
     "reasoning": "Razonamiento",
     "wikiWrite": {
       "edited": "Wiki editada",

@@ -60,14 +60,24 @@
     "label": "设置",
     "general": {
       "label": "一般",
-      "selectTheme": "选择主题",
+      "subtitle": "选择 DocsGPT 的外观、界面语言以及聊天使用的提示词。",
+      "sections": {
+        "appearance": "外观",
+        "chat": "聊天",
+        "dangerZone": "危险操作"
+      },
+      "theme": "主题",
+      "themeDescription": "浅色或深色界面。",
+      "language": "语言",
+      "languageDescription": "菜单和标签的语言。",
       "light": "浅色",
       "dark": "暗色",
-      "selectLanguage": "选择语言",
       "chunks": "每个查询处理的块",
       "prompt": "提示",
+      "promptDescription": "不使用智能体的聊天所用的系统提示词。智能体使用各自的提示词。",
       "deleteAllLabel": "删除所有对话",
       "deleteAllBtn": "删除所有",
+      "deleteAllDescription": "永久删除您账户中的所有对话。此操作无法撤销。",
       "addNew": "添加新的",
       "convHistory": "对话历史",
       "none": "无",
@@ -1365,6 +1375,7 @@
       "attachment": "附件"
     },
     "retry": "重试",
+    "failedTitle": "无法生成回复",
     "reasoning": "推理",
     "wikiWrite": {
       "edited": "已编辑 Wiki",

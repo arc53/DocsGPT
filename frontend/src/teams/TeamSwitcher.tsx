@@ -32,6 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
+import { Button } from '../components/ui/button';
 
 type TeamSwitcherProps = {
   // Called after a navigation/selection so callers (e.g. the mobile nav) can
@@ -104,10 +105,10 @@ export default function TeamSwitcher({
   // Expanded brand row. In a personal context the full lockup replaces the
   // mark-plus-label pair outright — the wordmark is part of the artwork, so a
   // separate "DocsGPT" text label would repeat it. `mr-auto` keeps the chevron
-  // pinned right, the job the label's `flex-1` used to do, and `ml-4` lines the
+  // pinned right, the job the label's `flex-1` used to do, and `ml-3` lines the
   // logo's left edge up with the "Agents"/"Chats" section headings below it
   // (those sit 32px in: `mx-4` on their row plus `ml-4` on the label; the
-  // header strip and this button contribute 8px of padding each).
+  // header strip adds 8px and the sidebar-item row's `pl-3` 12px).
   const expandedBrand = currentTeam ? (
     <>
       {triggerIcon}
@@ -117,7 +118,7 @@ export default function TeamSwitcher({
     </>
   ) : (
     <img
-      className="mr-auto ml-4 h-4 w-auto shrink-0"
+      className="mr-auto ml-3 h-4 w-auto shrink-0"
       src={isDarkTheme ? DocsGPTLogoWhite : DocsGPTLogo}
       alt="DocsGPT"
     />
@@ -150,19 +151,22 @@ export default function TeamSwitcher({
           <button
             type="button"
             aria-label={t('teams.switcher.ariaLabel')}
-            className="hover:bg-accent flex items-center justify-center rounded-lg p-1 transition-colors"
+            className="hover:bg-sidebar-accent flex items-center justify-center rounded-full p-1 transition-colors"
           >
             {triggerIcon}
           </button>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="sidebar-item"
             aria-label={t('teams.switcher.ariaLabel')}
-            className="hover:bg-accent text-foreground flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors"
+            className="w-full"
           >
             {expandedBrand}
-            <ChevronsUpDown className="text-muted-foreground size-4 shrink-0" />
-          </button>
+            {/* sidebar-item rows carry no right padding, so the chevron's
+                margin keeps it clear of the pill's end. */}
+            <ChevronsUpDown className="text-muted-foreground mr-3 size-4" />
+          </Button>
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-62">

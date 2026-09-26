@@ -64,14 +64,24 @@
     "label": "Settings",
     "general": {
       "label": "General",
-      "selectTheme": "Select Theme",
+      "subtitle": "Choose how DocsGPT looks, which language it uses, and the prompt your chats use.",
+      "sections": {
+        "appearance": "Appearance",
+        "chat": "Chat",
+        "dangerZone": "Danger zone"
+      },
+      "theme": "Theme",
+      "themeDescription": "Light or dark interface.",
+      "language": "Language",
+      "languageDescription": "Language of menus and labels.",
       "light": "Light",
       "dark": "Dark",
-      "selectLanguage": "Select Language",
       "chunks": "Chunks processed per query",
-      "prompt": "Active Prompt",
-      "deleteAllLabel": "Delete All Conversations",
-      "deleteAllBtn": "Delete All",
+      "prompt": "Active prompt",
+      "promptDescription": "The system prompt for chats without an agent. Agents use their own.",
+      "deleteAllLabel": "Delete all conversations",
+      "deleteAllBtn": "Delete all",
+      "deleteAllDescription": "Permanently deletes every conversation in your account. This can't be undone.",
       "addNew": "Add New",
       "convHistory": "Conversation History",
       "none": "None",
@@ -1380,6 +1390,7 @@
       "attachment": "Attachment"
     },
     "retry": "Retry",
+    "failedTitle": "Couldn't generate a response",
     "reasoning": "Reasoning",
     "wikiWrite": {
       "edited": "Edited wiki",

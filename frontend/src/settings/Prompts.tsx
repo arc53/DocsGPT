@@ -12,7 +12,6 @@ import {
   CommandList,
 } from '../components/ui/command';
 import { Button } from '../components/ui/button';
-import { FormField } from '../components/ui/form-field';
 import { IconButton } from '../components/ui/icon-button';
 import {
   Popover,
@@ -20,6 +19,7 @@ import {
   PopoverTrigger,
 } from '../components/ui/popover';
 import { SectionHeader } from '../components/ui/section-header';
+import { SettingRow } from '../components/ui/setting-row';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, PromptProps } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -34,10 +34,12 @@ type PromptsDropdownProps = {
 type ExtendedPromptProps = PromptProps & {
   title?: string;
   /**
-   * `label` (Settings → General): the title is the picker's floating label.
+   * `row` (Settings → General): a SettingRow whose label names the picker.
    * `heading` (the agent form): the title is a section heading above it.
    */
-  titleAs?: 'label' | 'heading';
+  titleAs?: 'row' | 'heading';
+  /** The row's muted description, for `titleAs="row"`. */
+  description?: string;
   dropdownProps?: PromptsDropdownProps;
   showAddButton?: boolean;
 };
@@ -48,7 +50,8 @@ export default function Prompts({
   onSelectPrompt,
   setPrompts,
   title,
-  titleAs = 'label',
+  titleAs = 'row',
+  description,
   dropdownProps = {},
   showAddButton = true,
 }: ExtendedPromptProps) {
@@ -282,7 +285,10 @@ export default function Prompts({
           aria-expanded={open}
           aria-label={titleAs === 'heading' ? titleText : undefined}
           data-placeholder={selectedPrompt?.name ? undefined : ''}
-          className="min-w-0 flex-1 justify-between"
+          className={cn(
+            'w-full min-w-0 justify-between',
+            titleAs === 'row' && 'sm:w-56',
+          )}
         >
           <span className="truncate">
             {selectedPrompt?.name || t('settings.general.promptActions.select')}
@@ -396,13 +402,55 @@ export default function Prompts({
     </Popover>
   );
 
+  const editButton = selectedPrompt?.id && selectedPrompt.type !== 'public' && (
+    <IconButton
+      variant="ghost-muted"
+      size="icon-xs"
+      shape="pill"
+      onClick={() => openEditModal(selectedPrompt)}
+      label={t('settings.general.promptActions.edit')}
+      icon={Pencil}
+    />
+  );
+
+  // A prompt that belongs to this field, so a neutral pill rather than the
+  // primary one reserved for a page's own action.
+  const addButton = showAddButton && (
+    <Button
+      type="button"
+      variant="outline"
+      size="field"
+      shape="pill"
+      onClick={() => {
+        setModalType('ADD');
+        setDuplicateSource(null);
+        setModalState('ACTIVE');
+      }}
+    >
+      {t('settings.general.add')}
+    </Button>
+  );
+
   return (
     <>
-      <div>
+      {titleAs === 'row' ? (
+        <SettingRow
+          label={titleText}
+          description={description}
+          htmlFor={pickerId}
+          stack
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-none">
+              {picker}
+              {editButton}
+            </div>
+            {addButton}
+          </div>
+        </SettingRow>
+      ) : (
         <div className="flex flex-col gap-3">
-          {titleAs === 'heading' ? (
-            <SectionHeader as="h2" title={titleText} />
-          ) : null}
+          <SectionHeader as="h2" title={titleText} />
           <div className="flex flex-row flex-wrap items-end justify-start gap-6">
             <div
               className={cn(
@@ -410,47 +458,13 @@ export default function Prompts({
                 dropdownProps.className,
               )}
             >
-              {titleAs === 'label' ? (
-                <FormField
-                  label={titleText}
-                  id={pickerId}
-                  labelSurface="background"
-                  className="min-w-0 flex-1"
-                >
-                  {picker}
-                </FormField>
-              ) : (
-                picker
-              )}
-              {selectedPrompt?.id && selectedPrompt.type !== 'public' && (
-                <IconButton
-                  variant="ghost-muted"
-                  size="icon-xs"
-                  shape="pill"
-                  onClick={() => openEditModal(selectedPrompt)}
-                  label={t('settings.general.promptActions.edit')}
-                  icon={Pencil}
-                />
-              )}
+              {picker}
+              {editButton}
             </div>
-            {showAddButton && (
-              <Button
-                type="button"
-                size="field"
-                shape="pill"
-                className="w-20"
-                onClick={() => {
-                  setModalType('ADD');
-                  setDuplicateSource(null);
-                  setModalState('ACTIVE');
-                }}
-              >
-                {t('settings.general.add')}
-              </Button>
-            )}
+            {addButton}
           </div>
         </div>
-      </div>
+      )}
       <PromptsModal
         existingPrompts={prompts}
         type={modalType}

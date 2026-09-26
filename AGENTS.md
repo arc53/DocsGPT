@@ -221,7 +221,7 @@ DocsGPT historically mixed three icon sources: `lucide-react`, inline SVG compon
    plus, etc.). It tokenizes via `currentColor`, ships tree-shaken icons, and the codebase
    already imports it in 30+ places. `<X className="size-4" />`, `<ChevronDown />`, etc.
 2. **Use `assets/<name>.svg?react`** when you need a brand-specific or domain illustration
-   that doesn't exist in lucide (the app logo, robot fallback, retry arrow, send arrow,
+   that doesn't exist in lucide (the app logo, robot fallback, send arrow,
    etc.). Always set `fill="currentColor"` / `stroke="currentColor"` in the SVG file so
    consumers can theme via Tailwind text classes.
 3. **Avoid `<img src={Asset}>` for new icons.** It blocks `currentColor` theming and

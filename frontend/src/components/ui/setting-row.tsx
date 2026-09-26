@@ -22,6 +22,11 @@ type SettingRowProps = {
   /** Top-align the control, for descriptions that wrap. */
   alignStart?: boolean;
   /**
+   * Put the control under the title below `sm` and let it take the row's
+   * width, for controls too wide to share a phone row (a picker).
+   */
+  stack?: boolean;
+  /**
    * The title element. `label` (default) names the control; a heading tag
    * keeps the document outline, and the control then needs its own
    * aria-label.
@@ -44,6 +49,7 @@ function SettingRow({
   description,
   htmlFor,
   alignStart = false,
+  stack = false,
   as = 'label',
   after,
   className,
@@ -57,8 +63,13 @@ function SettingRow({
     >
       <div
         className={cn(
-          'flex flex-row justify-between gap-4',
-          alignStart ? 'items-start' : 'items-center',
+          'flex justify-between gap-4',
+          stack
+            ? cn(
+                'flex-col gap-y-2 sm:flex-row',
+                alignStart ? 'sm:items-start' : 'sm:items-center',
+              )
+            : cn('flex-row', alignStart ? 'items-start' : 'items-center'),
         )}
       >
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -78,7 +89,11 @@ function SettingRow({
             <p className="text-muted-foreground text-xs">{description}</p>
           ) : null}
         </div>
-        {children ? <div className="shrink-0">{children}</div> : null}
+        {children ? (
+          <div className={cn('shrink-0', stack && 'w-full sm:w-auto')}>
+            {children}
+          </div>
+        ) : null}
       </div>
       {after ? <div className="mt-2">{after}</div> : null}
     </div>

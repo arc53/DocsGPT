@@ -458,14 +458,18 @@ hand-positioned floating label, or a `div.flex-col` + `Label` + `<p>` stack.
 ### SettingRow (`ui/setting-row.tsx`)
 
 A setting with a control on the right (a Switch, a short Input) is
-`<SettingRow label description htmlFor alignStart as after>{control}</SettingRow>`,
+`<SettingRow label description htmlFor alignStart stack as after>{control}</SettingRow>`,
 grouped in `<SettingRows>`, which splits rows with `divide-border/50` and pads
 each 12px (none at the group's ends). The title is a `Label` for the control
 (`htmlFor` = the control's id), so every switch has a name and clicking the
 title toggles it; `as="h2" | "h3"` keeps a heading tag, and the control then
 needs its own `aria-label`. `alignStart` top-aligns the control for wrapping
-descriptions. `after` holds a field that belongs to the row, 8px under it
-(the agent form's limit Inputs). Inline "switch + label" pairs (a filter
+descriptions. `stack` puts a control too wide for a phone row (a 224px
+picker) under the title below `sm` at full width; give the picker
+`w-full sm:w-56`. `after` holds a field that belongs to the row, 8px under it
+(the agent form's limit Inputs). Settings → General is the page-level example:
+`PageToolbar` intro and rule, then `SectionHeader`ed groups of SettingRows in a
+`max-w-3xl` column. Inline "switch + label" pairs (a filter
 toggle) are not SettingRows.
 
 ### Checkbox (`ui/checkbox.tsx`)
@@ -662,6 +666,17 @@ title with its description. Every variant is
 is announced politely; pass `role` only to override that. Replaces the hand-rolled
 `rounded-lg border bg-amber-50 text-amber-800` boxes.
 
+A failed chat answer is an `Alert variant="destructive"` on the answer's
+`mr-5 ml-6` column: `CircleAlert`, the fixed title `conversation.failedTitle`,
+and the backend's error (often a raw provider exception) as `font-mono text-xs`
+detail in `AlertDescription`. Its action row is Retry (`RotateCcw`) and Copy,
+both `ghost-muted icon-sm pill` like every other answer action.
+
+The rows in an answer's step column (Sources, Reasoning, each tool step) are
+one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a
+16px muted icon on the `ml-6` text column, then muted 14px text and a chevron.
+Sources adds its count and a right chevron, and opens the All sources sheet.
+
 ### Breadcrumb (`ui/breadcrumb.tsx`)
 
 `BreadcrumbPage`, the current crumb, is always one line and truncates with
@@ -792,6 +807,18 @@ the overlay dismiss it; pass `showCloseButton` to keep one).
 `pb-safe` (the inset, at least 1rem) under its footer. `pb-safe` and
 `pb-safe-0` are the `index.css` utilities for `env(safe-area-inset-bottom)`;
 never spell `env()` in a class.
+
+**Open question: side panel or right sheet for chat content.** Chat has two
+ways to show something beside an answer. Notes, todos and files open in
+`components/ArtifactSidebar`, a panel that takes a column and leaves the chat
+usable. An answer's full source list opens in a right `Sheet`, which blurs
+and blocks the chat, so the answer being checked is hidden while its sources
+are read. No rule picks between them yet. The leading proposal is one
+surface: content read alongside the chat (artifacts, sources, a cited
+source) opens in the side panel, with citation chips opening it at that
+source; overlays stay for tasks that interrupt (forms, confirmations,
+pickers); phones keep the bottom sheet. Until that is decided, don't add a
+third pattern: new "read beside the chat" content uses the side panel.
 
 In a picker list, mark the item that is currently chosen with
 `CommandItem checked` (a `secondary` brand tint through `data-checked`), not

@@ -8,11 +8,7 @@ export type User = {
 // (application/storage/db/source_config.py). All fields are optional; absent
 // keys fall back to the backend defaults documented inline.
 export type ChunkingStrategy =
-  | 'classic_chunk'
-  | 'recursive'
-  | 'markdown'
-  | 'parent_child'
-  | 'semantic';
+  'classic_chunk' | 'recursive' | 'markdown' | 'parent_child' | 'semantic';
 
 export type RetrievalExposure = 'prefetch' | 'agentic_tool';
 

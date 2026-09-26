@@ -7,10 +7,9 @@ import {
   useRef,
   useState,
 } from 'react';
-import { TriangleAlert } from 'lucide-react';
+import { RotateCcw, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import Retry from '../assets/retry.svg?react';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { IconButton } from '../components/ui/icon-button';
 import {
@@ -163,9 +162,8 @@ export default function ConversationMessages({
         <IconButton
           label={t('conversation.retry')}
           variant="ghost-muted"
-          size="icon"
+          size="icon-sm"
           shape="pill"
-          className="self-center"
           disabled={status === 'loading'}
           onClick={() => {
             const questionToRetry = queries[index].prompt;
@@ -176,7 +174,7 @@ export default function ConversationMessages({
             });
           }}
         >
-          <Retry aria-hidden="true" />
+          <RotateCcw aria-hidden="true" />
         </IconButton>
       );
       return (

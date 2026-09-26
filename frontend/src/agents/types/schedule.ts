@@ -3,12 +3,7 @@ export type ScheduleTriggerType = 'once' | 'recurring';
 export type ScheduleStatus = 'active' | 'paused' | 'completed' | 'cancelled';
 
 export type ScheduleRunStatus =
-  | 'pending'
-  | 'running'
-  | 'success'
-  | 'failed'
-  | 'skipped'
-  | 'timeout';
+  'pending' | 'running' | 'success' | 'failed' | 'skipped' | 'timeout';
 
 // Mirrors the schedule_runs.error_type CHECK constraint (migrations 0010, 0027).
 export type ScheduleRunErrorType =
