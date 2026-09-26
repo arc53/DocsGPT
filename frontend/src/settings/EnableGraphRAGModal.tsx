@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { CircleAlert, CircleCheck } from 'lucide-react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
+import { LoadingState } from '@/components/ui/loading-state';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
+import { Progress } from '../components/ui/progress';
 import { ActiveState, Doc } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../store';
@@ -196,31 +199,58 @@ export default function EnableGraphRAGModal({
       ? Math.min(100, Math.round((build.current / build.total) * 100))
       : null;
 
+  let footer: ReactNode = null;
+  if (phase === 'confirm') {
+    footer = (
+      <ModalActions
+        cancelLabel={t('cancel')}
+        onCancel={closeModal}
+        submitLabel={t('settings.sources.graphrag.enable.confirm')}
+        onSubmit={handleEnable}
+      />
+    );
+  } else if (phase === 'summary' && summary) {
+    footer = (
+      <Button type="button" onClick={closeModal} size="lg" shape="pill">
+        {t('settings.sources.graphrag.enable.done')}
+      </Button>
+    );
+  } else if (phase === 'error') {
+    footer = (
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={closeModal}
+        size="lg"
+        shape="pill"
+      >
+        {t('cancel')}
+      </Button>
+    );
+  }
+
   return (
     <Modal
       open={modalState === 'ACTIVE'}
       onOpenChange={(o) => !o && closeModal()}
-      hideTitle
       title={t('settings.sources.graphrag.enable.title')}
+      description={
+        phase === 'confirm'
+          ? document?.name
+            ? t('settings.sources.graphrag.enable.intro', {
+                name: document.name,
+              })
+            : t('settings.sources.graphrag.enable.introGeneric')
+          : undefined
+      }
+      footer={footer}
       size="md"
       mobileVariant="sheet"
-      className="max-w-[480px]"
       isPerformingTask={phase === 'building'}
     >
-      <div className="flex flex-col gap-5 px-1 py-1">
-        <h2 className="text-foreground text-xl font-semibold">
-          {t('settings.sources.graphrag.enable.title')}
-        </h2>
-
+      <div className="flex flex-col gap-5">
         {phase === 'confirm' && (
           <>
-            <p className="text-muted-foreground text-sm">
-              {document?.name
-                ? t('settings.sources.graphrag.enable.intro', {
-                    name: document.name,
-                  })
-                : t('settings.sources.graphrag.enable.introGeneric')}
-            </p>
             <ul className="text-muted-foreground list-disc space-y-1.5 pl-5 text-sm">
               <li>{t('settings.sources.graphrag.enable.costExtraction')}</li>
               <li>{t('settings.sources.graphrag.enable.costCost')}</li>
@@ -231,50 +261,32 @@ export default function EnableGraphRAGModal({
                 hi: estimate.hi.toLocaleString(),
               })}
             </div>
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {t('cancel')}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleEnable}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {t('settings.sources.graphrag.enable.confirm')}
-              </Button>
-            </div>
           </>
         )}
 
-        {phase === 'building' && (
-          <div className="flex flex-col items-center gap-3 py-6">
-            <Spinner size="medium" />
-            <p className="text-muted-foreground text-sm">
-              {progressPct !== null
-                ? t('settings.sources.graphrag.enable.inProgressPct', {
-                    pct: progressPct,
-                  })
-                : t('settings.sources.graphrag.enable.inProgress')}
-            </p>
-            {progressPct !== null && (
-              <div className="bg-muted h-1.5 w-48 overflow-hidden rounded-full">
-                <div
-                  className="bg-foreground/70 h-full rounded-full transition-all"
-                  style={{ width: `${progressPct}%` }}
-                />
-              </div>
-            )}
-          </div>
-        )}
+        {phase === 'building' &&
+          (progressPct === null ? (
+            <LoadingState
+              fill="block"
+              label={t('settings.sources.graphrag.enable.inProgress')}
+            />
+          ) : (
+            // The bar sits under the caption, so the block's py-10 moves to
+            // this wrapper and the ring only centres itself.
+            <div className="flex flex-col items-center gap-3 py-10">
+              <LoadingState
+                label={t('settings.sources.graphrag.enable.inProgressPct', {
+                  pct: progressPct,
+                })}
+              />
+              <Progress size="sm" value={progressPct} className="w-48" />
+            </div>
+          ))}
 
         {phase === 'summary' && summary && (
-          <>
-            <div className="rounded-xl bg-green-50 p-4 text-sm text-green-800 dark:bg-green-900/30 dark:text-green-200">
+          <Alert variant="success">
+            <CircleCheck className="size-4" aria-hidden="true" />
+            <AlertDescription>
               {[
                 t('settings.sources.graphrag.enable.summaryNodes', {
                   count: summary.nodes,
@@ -286,35 +298,15 @@ export default function EnableGraphRAGModal({
                   count: summary.chunksProcessed,
                 }),
               ].join(' · ')}
-            </div>
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {t('settings.sources.graphrag.enable.done')}
-              </Button>
-            </div>
-          </>
+            </AlertDescription>
+          </Alert>
         )}
 
         {phase === 'error' && (
-          <>
-            <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-900/40 dark:text-red-300">
-              {error}
-            </div>
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={closeModal}
-                className="w-full rounded-3xl px-6 sm:w-auto"
-              >
-                {t('cancel')}
-              </Button>
-            </div>
-          </>
+          <Alert variant="destructive">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
       </div>
     </Modal>

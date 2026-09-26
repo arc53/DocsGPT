@@ -1,8 +1,8 @@
 import { ChevronDownIcon } from 'lucide-react';
 import * as React from 'react';
 
-import { cn } from '@/lib/utils';
-import * as AccordionPrimitive from '@radix-ui/react-accordion';
+import { cn, focusRing } from '@/lib/utils';
+import { Accordion as AccordionPrimitive } from 'radix-ui';
 
 function Accordion({
   ...props
@@ -17,7 +17,7 @@ function AccordionItem({
   return (
     <AccordionPrimitive.Item
       data-slot="accordion-item"
-      className={cn('overflow-hidden shadow-xs', className)}
+      className={cn('overflow-hidden', className)}
       {...props}
     />
   );
@@ -33,14 +33,14 @@ function AccordionTrigger({
       <AccordionPrimitive.Trigger
         data-slot="accordion-trigger"
         className={cn(
-          'focus-visible:ring-ring/50 flex flex-1 items-center justify-between gap-4 text-left transition-all outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 [&[data-state=open]>svg]:rotate-180',
+          `${focusRing} flex flex-1 items-center justify-between gap-4 px-4 py-3 text-left text-sm font-medium transition-colors outline-none focus-visible:ring-inset disabled:pointer-events-none disabled:opacity-50 [&[data-state=open]>svg]:rotate-180`,
           className,
         )}
         {...props}
       >
         {children}
         <ChevronDownIcon
-          className="text-muted-foreground h-5 w-5 shrink-0 transition-transform duration-200 dark:invert"
+          className="text-muted-foreground size-5 shrink-0 transition-transform duration-200"
           aria-hidden="true"
         />
       </AccordionPrimitive.Trigger>

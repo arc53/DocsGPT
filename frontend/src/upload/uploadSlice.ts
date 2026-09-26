@@ -1,3 +1,4 @@
+import i18n from 'i18next';
 import { createSelector, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 import {
@@ -411,7 +412,7 @@ export const uploadSlice = createSlice({
           task.errorMessage =
             typeof payload.error === 'string'
               ? payload.error
-              : 'Ingestion failed.';
+              : i18n.t('modals.uploadDoc.progress.ingestionFailed');
           if (!wasTerminal && !sourceWasDismissed) task.dismissed = false;
           break;
         default:

@@ -5,7 +5,7 @@ import userService from '../api/services/userService';
 import { useMediaQuery } from '../hooks';
 import { Doc } from '../models/misc';
 import SectionIndexPage from '../navigation/SectionIndexPage';
-import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
+import SectionShell from '../navigation/SectionShell';
 import { SETTINGS_SECTION } from '../navigation/sections';
 import {
   selectPaginatedDocuments,
@@ -31,10 +31,9 @@ import Tools from './Tools';
 export default function Settings() {
   const dispatch = useDispatch();
   const location = useLocation();
-  const { isMobile, isTablet } = useMediaQuery();
+  const { isMobile } = useMediaQuery();
 
-  const showIndex =
-    (isMobile || isTablet) && location.pathname === SETTINGS_SECTION.rootPath;
+  const showIndex = isMobile && location.pathname === SETTINGS_SECTION.rootPath;
 
   const token = useSelector(selectToken);
   const documents = useSelector(selectSourceDocs);
@@ -63,40 +62,39 @@ export default function Settings() {
       .catch((error) => console.error(error));
   };
 
+  if (showIndex) {
+    return (
+      <SectionShell header={false}>
+        <SectionIndexPage section={SETTINGS_SECTION} />
+      </SectionShell>
+    );
+  }
+
   return (
-    <div className="h-full overflow-auto p-4 md:p-12">
-      <div className="mx-auto w-full max-w-6xl">
-        {showIndex ? (
-          <SectionIndexPage section={SETTINGS_SECTION} />
-        ) : (
-          <>
-            <CurrentSectionHeader />
-            <Routes>
-              <Route index element={<General />} />
-              <Route path="general" element={<General />} />
-              <Route
-                path="sources"
-                element={
-                  <Sources
-                    paginatedDocuments={paginatedDocuments}
-                    handleDeleteDocument={handleDeleteClick}
-                  />
-                }
-              />
-              <Route path="analytics" element={<Analytics />} />
-              <Route path="logs" element={<Logs />} />
-              <Route path="tools" element={<Tools />} />
-              <Route
-                path="devices"
-                element={<Navigate to="/settings/tools" replace />}
-              />
-              <Route path="custom-models" element={<CustomModels />} />
-              <Route path="access-tokens" element={<PersonalAccessTokens />} />
-              <Route path="*" element={<Navigate to="/settings" replace />} />
-            </Routes>
-          </>
-        )}
-      </div>
-    </div>
+    <SectionShell>
+      <Routes>
+        <Route index element={<General />} />
+        <Route path="general" element={<General />} />
+        <Route
+          path="sources"
+          element={
+            <Sources
+              paginatedDocuments={paginatedDocuments}
+              handleDeleteDocument={handleDeleteClick}
+            />
+          }
+        />
+        <Route path="analytics" element={<Analytics />} />
+        <Route path="logs" element={<Logs />} />
+        <Route path="tools" element={<Tools />} />
+        <Route
+          path="devices"
+          element={<Navigate to="/settings/tools" replace />}
+        />
+        <Route path="custom-models" element={<CustomModels />} />
+        <Route path="access-tokens" element={<PersonalAccessTokens />} />
+        <Route path="*" element={<Navigate to="/settings" replace />} />
+      </Routes>
+    </SectionShell>
   );
 }

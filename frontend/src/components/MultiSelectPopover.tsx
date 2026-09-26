@@ -1,12 +1,11 @@
+import { Check } from 'lucide-react';
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 
-import CheckmarkIcon from '../assets/checkmark.svg';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
-import { useDarkTheme, useMediaQuery } from '../hooks';
+import { useMediaQuery } from '../hooks';
 import { cn } from '@/lib/utils';
-import Spinner from './Spinner';
+import { EmptyState } from '@/components/ui/empty-state';
+import { LoadingState } from '@/components/ui/loading-state';
 import {
   Command,
   CommandEmpty,
@@ -16,6 +15,7 @@ import {
   CommandList,
 } from './ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { SectionHeader } from './ui/section-header';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from './ui/sheet';
 
 export type MultiSelectPopoverItem = {
@@ -42,7 +42,8 @@ export type MultiSelectPopoverProps = {
   footer?: React.ReactNode;
   align?: 'start' | 'center' | 'end';
   side?: 'top' | 'right' | 'bottom' | 'left';
-  contentClassName?: string;
+  /** Extra layout classes for the popup (the desktop popover or the mobile sheet). */
+  className?: string;
   emptyMessage?: string;
   selectedFirst?: boolean;
   title?: string;
@@ -52,16 +53,11 @@ function renderIcon(icon: MultiSelectPopoverItem['icon']) {
   if (!icon) return null;
   if (typeof icon === 'string') {
     return (
-      <img
-        src={icon}
-        alt=""
-        aria-hidden="true"
-        className="mr-3 h-5 w-5 shrink-0"
-      />
+      <img src={icon} alt="" aria-hidden="true" className="size-5 shrink-0" />
     );
   }
   return (
-    <span className="mr-3 flex h-5 w-5 shrink-0 items-center justify-center">
+    <span className="flex size-5 shrink-0 items-center justify-center">
       {icon}
     </span>
   );
@@ -80,13 +76,12 @@ export function MultiSelectPopover({
   footer,
   align = 'start',
   side = 'bottom',
-  contentClassName,
+  className,
   emptyMessage,
   selectedFirst = false,
   title,
 }: MultiSelectPopoverProps) {
   const { t } = useTranslation();
-  const [isDarkTheme] = useDarkTheme();
   const { isMobile } = useMediaQuery();
   const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds]);
 
@@ -128,14 +123,15 @@ export function MultiSelectPopover({
         onSelect={() => {
           if (!item.disabled) onToggle(item.id);
         }}
-        className="dark:border-border data-[selected=true]:bg-accent flex cursor-pointer items-center justify-between gap-2 rounded-none border-b border-[#D9D9D9] px-3 py-3 last:border-b-0"
+        checked={isSelected}
+        className="cursor-pointer justify-between"
         aria-selected={isSelected}
       >
-        <div className="mr-3 flex grow items-center overflow-hidden">
+        <div className="mr-3 flex grow items-center gap-3 overflow-hidden">
           {renderIcon(item.icon)}
           <div className="overflow-hidden">
             <p
-              className="overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap text-gray-900 dark:text-white"
+              className="text-foreground overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap"
               title={item.label}
             >
               {item.label}
@@ -150,17 +146,11 @@ export function MultiSelectPopover({
           </div>
         </div>
         <div
-          className="border-border bg-card flex h-4 w-4 shrink-0 items-center justify-center rounded-xs border-2 p-[0.5px]"
+          className="border-border bg-card flex size-4 shrink-0 items-center justify-center rounded-xs border-2"
           aria-hidden="true"
         >
           {isSelected && (
-            <img
-              src={CheckmarkIcon}
-              alt=""
-              width={10}
-              height={10}
-              aria-hidden="true"
-            />
+            <Check className="text-primary size-2.5" aria-hidden="true" />
           )}
         </div>
       </CommandItem>
@@ -168,26 +158,19 @@ export function MultiSelectPopover({
   };
 
   const renderEmptyState = () => (
-    <div className="flex flex-col items-center justify-center px-4 py-8 text-center">
-      <img
-        src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-        alt=""
-        aria-hidden="true"
-        className="mb-3 h-16 w-16"
-      />
-      <p className="text-sm text-gray-500 dark:text-gray-400">
-        {emptyMessage || t('settings.tools.noToolsFound', 'No results found')}
-      </p>
-    </div>
+    <EmptyState
+      size="xs"
+      title={
+        emptyMessage || t('settings.tools.noToolsFound', 'No results found')
+      }
+    />
   );
 
   const commandBody = (
-    <Command shouldFilter={searchable} className="bg-transparent">
+    <Command shouldFilter={searchable}>
       {title && (
         <div className="shrink-0 px-4 pt-4">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-            {title}
-          </h3>
+          <SectionHeader as="h3" size="xs" title={title} />
         </div>
       )}
       {searchable && (
@@ -197,11 +180,9 @@ export function MultiSelectPopover({
       )}
 
       {loading ? (
-        <div className="text-foreground flex items-center justify-center py-8 dark:text-white">
-          <Spinner size="small" />
-        </div>
+        <LoadingState fill="block" size="sm" />
       ) : (
-        <div className="dark:border-border mx-4 my-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-[#D9D9D9]">
+        <div className="border-border mx-4 my-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border">
           <CommandList className="max-h-none min-h-0 flex-1 overflow-y-auto">
             <CommandEmpty>{renderEmptyState()}</CommandEmpty>
             {hasGroups ? (
@@ -212,23 +193,20 @@ export function MultiSelectPopover({
                   <CommandGroup
                     key={`group-${groupKey || 'ungrouped'}`}
                     heading={groupKey || undefined}
-                    className="[&_[cmdk-group-heading]]:bg-muted/50 [&_[cmdk-group-heading]]:dark:bg-card [&_[cmdk-group-heading]]:text-muted-foreground p-0 [&_[cmdk-group-heading]]:sticky [&_[cmdk-group-heading]]:top-0 [&_[cmdk-group-heading]]:z-10 [&_[cmdk-group-heading]]:border-b [&_[cmdk-group-heading]]:border-[#D9D9D9] [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:dark:border-[#2E2E2E]"
                   >
                     {groupItems.map(renderItem)}
                   </CommandGroup>
                 );
               })
             ) : (
-              <CommandGroup className="p-0">
-                {orderedItems.map(renderItem)}
-              </CommandGroup>
+              <CommandGroup>{orderedItems.map(renderItem)}</CommandGroup>
             )}
           </CommandList>
         </div>
       )}
 
       {footer && (
-        <div className="border-border dark:border-border shrink-0 border-t px-4 py-4">
+        <div className="border-border shrink-0 border-t px-4 py-4">
           {footer}
         </div>
       )}
@@ -241,20 +219,14 @@ export function MultiSelectPopover({
         <SheetTrigger asChild>{trigger}</SheetTrigger>
         <SheetContent
           side="bottom"
+          handle
           showCloseButton={false}
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className={cn(
-            'border-border bg-background dark:border-border dark:bg-card flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-t-2xl p-0 pb-[env(safe-area-inset-bottom)]',
-            contentClassName,
-          )}
+          className={cn('overflow-hidden', className)}
         >
           <SheetTitle className="sr-only">
             {title || effectivePlaceholder}
           </SheetTitle>
-          <div
-            className="mx-auto mt-2 mb-1 h-1.5 w-12 shrink-0 rounded-full bg-gray-300 dark:bg-gray-600"
-            aria-hidden="true"
-          />
           {commandBody}
         </SheetContent>
       </Sheet>
@@ -268,8 +240,8 @@ export function MultiSelectPopover({
         align={align}
         side={side}
         className={cn(
-          'border-border bg-background dark:border-border dark:bg-card flex max-h-[min(600px,80vh)] w-[min(462px,calc(100vw-20px))] flex-col overflow-hidden rounded-lg p-0 shadow-md',
-          contentClassName,
+          'flex max-h-[min(600px,80vh)] w-[min(462px,calc(100vw-20px))] flex-col overflow-hidden p-0',
+          className,
         )}
       >
         {commandBody}

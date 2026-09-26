@@ -40,10 +40,7 @@ export default function DetailBreadcrumb({
         </BreadcrumbItem>
         <BreadcrumbSeparator />
         <BreadcrumbItem className="min-w-0">
-          <BreadcrumbPage
-            title={currentLabel}
-            className="max-w-[32ch] truncate"
-          >
+          <BreadcrumbPage title={currentLabel} className="max-w-[32ch]">
             {currentLabel}
           </BreadcrumbPage>
         </BreadcrumbItem>

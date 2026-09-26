@@ -23,7 +23,10 @@ function renderWith(roles: string[] | null) {
 
 describe('AdminRoute', () => {
   it('hides content until roles are resolved', () => {
-    expect(renderWith(null)).not.toContain('admin-secret');
+    const html = renderWith(null);
+    expect(html).not.toContain('admin-secret');
+    expect(html).toContain('data-slot="loading-state"');
+    expect(html).toContain('data-fill="screen"');
   });
 
   it('redirects (renders nothing) for non-admins', () => {

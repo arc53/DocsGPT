@@ -2,7 +2,8 @@ import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
 import { getSectionItems, type Section } from './sections';
@@ -40,18 +41,16 @@ export default function SectionRail({
       key={section.key}
       className="animate-in fade-in flex flex-col items-center gap-2 duration-200 motion-reduce:animate-none"
     >
-      <Button
-        type="button"
-        variant="ghost"
+      <IconButton
+        label={backLabel}
+        side="right"
+        variant="ghost-muted"
         size="icon"
         onClick={onBack}
-        aria-label={backLabel}
-        title={backLabel}
-        className="text-muted-foreground hover:text-foreground"
       >
-        <ArrowLeft className="size-5" strokeWidth={1.75} />
-      </Button>
-      <div className="bg-border my-1 h-px w-6 shrink-0" aria-hidden />
+        <ArrowLeft aria-hidden />
+      </IconButton>
+      <Separator className="my-1 w-6" />
       {items.map((item) => {
         const label = t(item.labelKey);
         const isActive = item.key === activeItemKey;
@@ -73,7 +72,7 @@ export default function SectionRail({
               isActive && 'bg-sidebar-accent text-foreground',
             )}
           >
-            <Icon className="size-5" strokeWidth={1.75} aria-hidden />
+            <Icon className="size-5" aria-hidden />
           </Link>
         );
       })}

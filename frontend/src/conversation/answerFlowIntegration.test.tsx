@@ -85,7 +85,7 @@ describe('stream reducers feeding the answer flow', () => {
       </I18nextProvider>,
     );
 
-    expect(html.split('fade-in-bubble').length - 1).toBe(1);
+    expect(html.split('slide-in-from-bottom-1.5').length - 1).toBe(1);
     expect(html.indexOf('I should search.')).toBeLessThan(
       html.indexOf('Searched the web'),
     );

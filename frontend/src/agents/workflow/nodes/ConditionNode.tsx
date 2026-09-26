@@ -1,6 +1,9 @@
 import { GitBranch } from 'lucide-react';
 import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Handle, NodeProps, Position } from 'reactflow';
+
+import { cn } from '@/lib/utils';
 
 import { ConditionCase } from '../../types/workflow';
 
@@ -29,40 +32,45 @@ function getHandleTop(index: number, total: number): string {
 }
 
 const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
-  const title = data.title || data.label || 'If / Else';
+  const { t } = useTranslation();
+  const title =
+    data.title || data.label || t('agents.workflow.nodes.condition');
   const cases = data.config?.cases || [];
   const totalOutputs = cases.length + 1;
   const height = getNodeHeight(cases.length);
 
   return (
     <div
-      className={`bg-card relative rounded-2xl border shadow-md transition-all ${
+      className={cn(
+        'bg-card relative rounded-2xl border shadow-md transition',
         selected
-          ? 'border-primary dark:ring-primary scale-105 ring-2 ring-purple-300'
-          : 'border-border hover:shadow-lg'
-      }`}
+          ? 'border-primary ring-primary scale-105 ring-2'
+          : 'border-border hover:shadow-lg',
+      )}
       style={{ minWidth: 180, maxWidth: 220, height }}
     >
       <Handle
         type="target"
         position={Position.Left}
         isConnectable
-        className="hover:bg-primary/90! border-card! top-1/2! -left-1! h-3! w-3! rounded-full! border-2! bg-gray-400! transition-colors!"
+        className="hover:bg-primary/90! border-card! bg-muted-foreground! top-1/2! -left-1! h-3! w-3! rounded-full! border-2! transition-colors!"
       />
 
       <div className="flex items-center gap-3 px-3 py-2">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400">
-          <GitBranch size={14} />
+        <div className="bg-warning/10 text-warning flex size-9 shrink-0 items-center justify-center rounded-full">
+          <GitBranch className="size-3.5" />
         </div>
         <div className="min-w-0 flex-1 pr-2">
           <div
-            className="truncate text-sm font-semibold text-gray-900 dark:text-white"
+            className="text-foreground truncate text-sm font-semibold"
             title={title}
           >
             {title}
           </div>
-          <div className="text-xs text-gray-500 uppercase">
-            {data.config?.mode || 'simple'}
+          <div className="text-muted-foreground text-xs">
+            {data.config?.mode === 'advanced'
+              ? t('agents.workflow.nodes.modeAdvanced')
+              : t('agents.workflow.nodes.modeSimple')}
           </div>
         </div>
       </div>
@@ -74,12 +82,14 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
             className="flex items-center gap-1"
             style={{ height: ROW_HEIGHT }}
           >
-            <span className="shrink-0 text-xs font-medium text-orange-600 dark:text-orange-400">
-              {i === 0 ? 'If' : 'Else if'}
+            <span className="text-warning shrink-0 text-xs font-medium">
+              {i === 0
+                ? t('agents.workflow.nodes.if')
+                : t('agents.workflow.nodes.elseIf')}
             </span>
             {c.name && (
               <span
-                className="truncate text-xs text-gray-600 dark:text-gray-400"
+                className="text-muted-foreground truncate text-xs"
                 title={c.name}
               >
                 {c.name}
@@ -88,7 +98,9 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
           </div>
         ))}
         <div className="flex items-center gap-1" style={{ height: ROW_HEIGHT }}>
-          <span className="text-xs font-medium text-gray-500">Else</span>
+          <span className="text-muted-foreground text-xs font-medium">
+            {t('agents.workflow.nodes.else')}
+          </span>
         </div>
       </div>
 
@@ -100,7 +112,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
           id={c.sourceHandle}
           isConnectable
           style={{ top: getHandleTop(i, totalOutputs) }}
-          className="hover:bg-primary/90! dark:border-border! -right-1! h-3! w-3! rounded-full! border-2! border-white! bg-orange-400! transition-colors"
+          className="hover:bg-primary/90! border-card! bg-warning! -right-1! h-3! w-3! rounded-full! border-2! transition-colors"
         />
       ))}
       <Handle
@@ -109,7 +121,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
         id="else"
         isConnectable
         style={{ top: getHandleTop(cases.length, totalOutputs) }}
-        className="hover:bg-primary/90! border-card! -right-1! h-3! w-3! rounded-full! border-2! bg-gray-400! transition-colors!"
+        className="hover:bg-primary/90! border-card! bg-muted-foreground! -right-1! h-3! w-3! rounded-full! border-2! transition-colors!"
       />
     </div>
   );

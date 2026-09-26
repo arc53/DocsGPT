@@ -1,16 +1,16 @@
-import { Search as SearchIcon } from 'lucide-react';
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
+import {
+  Command,
+  CommandDialog,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '../components/ui/command';
 import { Modal } from '../components/ui/modal';
+import { useMediaQuery } from '../hooks';
 import { searchConversations } from '../preferences/preferenceApi';
 
 type ConversationListItem = {
@@ -51,6 +51,13 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   );
 }
 
+/**
+ * Conversation search palette. At `sm`+ it is a `CommandDialog`; on phones it
+ * is the `Modal` bottom sheet with the same Command parts inside, showing
+ * titles only. Results come from the debounced server search and are shown
+ * unfiltered (`shouldFilter={false}`); cmdk owns arrow-key navigation and
+ * Enter/click open the highlighted conversation via `onSelect`.
+ */
 export default function SearchConversationsModal({
   close,
   conversations,
@@ -58,17 +65,21 @@ export default function SearchConversationsModal({
   onSelectConversation,
 }: SearchConversationsModalProps) {
   const { t } = useTranslation();
+  const { isMobile } = useMediaQuery();
   const inputRef = useRef<HTMLInputElement>(null);
-  const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<ConversationListItem[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
+  const [selectedId, setSelectedId] = useState('');
 
+  const title = t('modals.searchConversations.searchPlaceholder');
+
+  // The branch can switch after mount (useMediaQuery settles in an effect),
+  // remounting the input, so refocus it whenever the branch changes.
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+  }, [isMobile]);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -92,152 +103,143 @@ export default function SearchConversationsModal({
     return results ?? [];
   }, [query, results, conversations]);
 
+  // Keep the highlighted row when it survives a list change, otherwise
+  // highlight the first row, so Enter always has a target.
   useEffect(() => {
     if (isSearching || visibleConversations.length === 0) {
-      setActiveIndex(-1);
+      setSelectedId('');
       return;
     }
-
-    setActiveIndex((currentIndex) => {
-      if (currentIndex >= 0 && currentIndex < visibleConversations.length) {
-        return currentIndex;
-      }
-
-      return 0;
-    });
+    setSelectedId((current) =>
+      visibleConversations.some((c) => c.id === current)
+        ? current
+        : visibleConversations[0].id,
+    );
   }, [isSearching, visibleConversations]);
-
-  useEffect(() => {
-    if (activeIndex < 0) return;
-
-    resultRefs.current[activeIndex]?.scrollIntoView({
-      block: 'nearest',
-    });
-  }, [activeIndex]);
 
   const handleSelect = (id: string) => {
     onSelectConversation(id);
     close();
   };
 
-  const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (visibleConversations.length === 0 || isSearching) return;
+  const trimmedQuery = query.trim();
+  const showEmptyState =
+    !!trimmedQuery && !isSearching && visibleConversations.length === 0;
 
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setActiveIndex((currentIndex) =>
-        currentIndex < visibleConversations.length - 1 ? currentIndex + 1 : 0,
+  const status = (
+    <>
+      {isSearching && (
+        <div className="text-muted-foreground px-3 py-3 text-xs">
+          {t('modals.searchConversations.loading')}
+        </div>
+      )}
+      {showEmptyState && (
+        <div className="text-muted-foreground px-3 py-3 text-xs">
+          {t('modals.searchConversations.noResults')}
+        </div>
+      )}
+    </>
+  );
+
+  const renderItems = (withSnippet: boolean) =>
+    !isSearching &&
+    visibleConversations.map((conversation) => {
+      const titleNode = trimmedQuery ? (
+        <HighlightedText text={conversation.name} query={trimmedQuery} />
+      ) : (
+        conversation.name
       );
-      return;
-    }
+      const showSnippet =
+        withSnippet &&
+        !!trimmedQuery &&
+        !!conversation.match_snippet &&
+        conversation.match_field !== 'name';
 
-    if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setActiveIndex((currentIndex) =>
-        currentIndex > 0 ? currentIndex - 1 : visibleConversations.length - 1,
+      return (
+        <CommandItem
+          key={conversation.id}
+          value={conversation.id}
+          onSelect={() => handleSelect(conversation.id)}
+        >
+          {withSnippet ? (
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="truncate">{titleNode}</span>
+              {showSnippet && (
+                <span className="text-muted-foreground line-clamp-2 text-xs">
+                  <HighlightedText
+                    text={conversation.match_snippet as string}
+                    query={trimmedQuery}
+                  />
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="truncate">{titleNode}</span>
+          )}
+        </CommandItem>
       );
-      return;
-    }
+    });
 
-    if (event.key === 'Enter' && activeIndex >= 0) {
-      event.preventDefault();
-      handleSelect(visibleConversations[activeIndex].id);
-    }
+  const commandProps = {
+    shouldFilter: false,
+    label: title,
+    value: selectedId,
+    onValueChange: setSelectedId,
   };
 
-  const showEmptyState =
-    !!query.trim() && !isSearching && visibleConversations.length === 0;
+  const input = (
+    <CommandInput
+      ref={inputRef}
+      value={query}
+      onValueChange={setQuery}
+      placeholder={title}
+    />
+  );
+
+  const onOpenChange = (open: boolean) => {
+    if (!open) close();
+  };
+
+  if (isMobile) {
+    return (
+      <Modal
+        open={true}
+        onOpenChange={onOpenChange}
+        hideTitle
+        title={title}
+        showCloseButton={false}
+        mobileVariant="sheet"
+        contentClassName="-mx-3 -mt-3 flex flex-col"
+      >
+        <Command variant="palette" {...commandProps} className="min-h-0">
+          {input}
+          <CommandList className="max-h-none">
+            <div className="py-1">
+              {status}
+              {renderItems(false)}
+            </div>
+          </CommandList>
+        </Command>
+      </Modal>
+    );
+  }
 
   return (
-    <Modal
+    <CommandDialog
       open={true}
-      onOpenChange={(open) => {
-        if (!open) close();
-      }}
-      hideTitle
-      title={t('modals.searchConversations.searchPlaceholder')}
+      onOpenChange={onOpenChange}
+      title={title}
+      description={title}
       showCloseButton={false}
-      mobileVariant="sheet"
-      className="w-[92vw] !max-w-xl !p-0"
-      contentClassName="max-h-[70vh]"
+      commandProps={commandProps}
     >
-      <div className="flex flex-col">
-        <div className="border-sidebar-border flex items-center gap-2 border-b px-5 py-4">
-          <SearchIcon
-            className="text-muted-foreground size-4"
-            strokeWidth={1.75}
-            aria-label="search"
-          />
-          <Input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleInputKeyDown}
-            placeholder={t('modals.searchConversations.searchPlaceholder')}
-            className="h-auto rounded-none border-none px-0 py-0 text-sm shadow-none focus-visible:ring-0"
-          />
-        </div>
-
-        <div className="max-h-[55vh] overflow-y-auto py-2" role="listbox">
-          {isSearching && (
-            <div className="text-muted-foreground px-5 py-3 text-xs">
-              {t('modals.searchConversations.loading')}
-            </div>
-          )}
-          {showEmptyState && (
-            <div className="text-muted-foreground px-5 py-3 text-xs">
-              {t('modals.searchConversations.noResults')}
-            </div>
-          )}
-          {!isSearching &&
-            visibleConversations.map((conversation, index) => {
-              const trimmedQuery = query.trim();
-              const showSnippet =
-                !!trimmedQuery &&
-                !!conversation.match_snippet &&
-                conversation.match_field !== 'name';
-              const isActive = index === activeIndex;
-
-              return (
-                <Button
-                  key={conversation.id}
-                  type="button"
-                  variant="ghost"
-                  ref={(element) => {
-                    resultRefs.current[index] = element;
-                  }}
-                  onClick={() => handleSelect(conversation.id)}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  role="option"
-                  aria-selected={isActive}
-                  className={`text-foreground flex h-auto w-full flex-col items-start gap-0.5 rounded-none px-5 py-2.5 text-left ${
-                    isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent'
-                  }`}
-                >
-                  <span className="w-full truncate">
-                    {trimmedQuery ? (
-                      <HighlightedText
-                        text={conversation.name}
-                        query={trimmedQuery}
-                      />
-                    ) : (
-                      conversation.name
-                    )}
-                  </span>
-                  {showSnippet && (
-                    <span className="text-muted-foreground line-clamp-2 w-full text-xs">
-                      <HighlightedText
-                        text={conversation.match_snippet as string}
-                        query={trimmedQuery}
-                      />
-                    </span>
-                  )}
-                </Button>
-              );
-            })}
-        </div>
-      </div>
-    </Modal>
+      {input}
+      <CommandList>
+        {status}
+        {!isSearching && visibleConversations.length > 0 && (
+          <CommandGroup>{renderItems(true)}</CommandGroup>
+        )}
+      </CommandList>
+    </CommandDialog>
   );
 }

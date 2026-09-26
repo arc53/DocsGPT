@@ -22,9 +22,9 @@ export function SectionBackLink({
 }) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const { isMobile, isTablet } = useMediaQuery();
+  const { isMobile } = useMediaQuery();
 
-  if (!(isMobile || isTablet)) return null;
+  if (!isMobile) return null;
 
   // Up one level, matching the sidebar's back button: out of an agent lands
   // on the agent list, out of a settings page on the settings index. A
@@ -46,7 +46,7 @@ export function SectionBackLink({
         className,
       )}
     >
-      <ArrowLeft className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
+      <ArrowLeft className="size-4 shrink-0" aria-hidden />
       {parent ? t(parent.titleKey) : (section.title ?? t(section.titleKey))}
     </Link>
   );
@@ -70,7 +70,7 @@ export default function SectionPageHeader({
   return (
     <div className={cn('flex flex-col', className)}>
       <SectionBackLink section={section} />
-      <h1 className="text-foreground dark:text-foreground text-2xl font-bold">
+      <h1 className="text-foreground text-2xl font-bold">
         {item && section.pageTitle !== 'section'
           ? t(item.labelKey)
           : (section.title ?? t(section.titleKey))}

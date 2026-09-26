@@ -1,3 +1,5 @@
+import { foldSeries, OTHER_SERIES_KEY } from '../settings/foldSeries';
+import type { ChartPalette } from '../utils/chartUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import { seriesColor, usageColors } from './UsageChart';
 
@@ -34,12 +36,20 @@ function valueOf(row: UsageBucket, metric: Metric): number {
  * Ungrouped gives one dataset per token kind (or a single cost series);
  * grouped gives one dataset per group key, each aligned to the shared bucket
  * axis so a group missing a day plots 0 rather than shifting the whole series
- * left by one bar.
+ * left by one bar. Past five groups, the four largest stay and the rest sum
+ * into one "Other" series (`foldSeries`), so no chart colour repeats.
+ *
+ * @param series Usage rows from the server.
+ * @param groupBy How the rows are grouped.
+ * @param metric Tokens or cost.
+ * @param palette The resolved theme palette; read from the DOM when omitted.
+ * @returns Chart.js bar data.
  */
 export function buildUsageChart(
   series: UsageBucket[],
   groupBy: GroupBy,
   metric: Metric,
+  palette?: ChartPalette,
 ) {
   const buckets = Array.from(new Set(series.map((row) => row.bucket))).sort();
   const labels = buckets.map((bucket) => formatDate(bucket));
@@ -52,12 +62,12 @@ export function buildUsageChart(
           {
             label: 'Cost',
             data: series.map((row) => row.cost),
-            backgroundColor: seriesColor(0),
+            backgroundColor: seriesColor(0, palette),
           },
         ],
       };
     }
-    const colors = usageColors();
+    const colors = usageColors(palette);
     return {
       labels,
       datasets: [
@@ -78,20 +88,29 @@ export function buildUsageChart(
   const keys = Array.from(
     new Set(series.map((row) => row.group_key ?? 'unknown')),
   );
-  return {
-    labels,
-    datasets: keys.map((key, index) => {
+  // Each group aligned to the shared bucket axis, then folded past five.
+  const entries = foldSeries(
+    keys.map((key): [string, Record<string, number>] => {
       const byBucket = new Map(
         series
           .filter((row) => (row.group_key ?? 'unknown') === key)
           .map((row) => [row.bucket, valueOf(row, metric)]),
       );
-      return {
-        label: key,
-        data: buckets.map((bucket) => byBucket.get(bucket) ?? 0),
-        backgroundColor: seriesColor(index),
-      };
+      return [
+        key,
+        Object.fromEntries(
+          buckets.map((bucket) => [bucket, byBucket.get(bucket) ?? 0]),
+        ),
+      ];
     }),
+  );
+  return {
+    labels,
+    datasets: entries.map(([key, values], index) => ({
+      label: key === OTHER_SERIES_KEY ? 'Other' : key,
+      data: buckets.map((bucket) => values[bucket] ?? 0),
+      backgroundColor: seriesColor(index, palette),
+    })),
   };
 }
 

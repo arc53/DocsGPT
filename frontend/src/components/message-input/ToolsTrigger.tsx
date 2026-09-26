@@ -1,7 +1,6 @@
+import { ArrowRight, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import RedirectIcon from '../../assets/redirect.svg';
-import ToolIcon from '../../assets/tool.svg';
 import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
@@ -39,32 +38,23 @@ export default function ToolsTrigger({
       emptyMessage={t('settings.tools.noToolsFound')}
       loading={loading}
       footer={
-        <a
-          href="/settings/tools"
-          className="text-primary inline-flex items-center text-base font-medium"
-        >
-          {t('settings.tools.manageTools')}
-          <img
-            src={RedirectIcon}
-            alt=""
-            aria-hidden="true"
-            className="ml-2 h-[11px] w-[11px]"
-          />
-        </a>
+        <Button variant="link" size="inline" asChild>
+          <a href="/settings/tools">
+            {t('settings.tools.manageTools')}
+            <ArrowRight aria-hidden="true" className="size-3" />
+          </a>
+        </Button>
       }
       trigger={
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="xs:px-3 xs:py-1.5 xs:max-w-[150px] dark:border-border border-border hover:bg-muted dark:hover:bg-muted flex h-auto max-w-[130px] items-center justify-start rounded-full border bg-transparent px-2 py-1 shadow-none transition-colors"
+          shape="pill"
+          className="max-w-[130px] justify-start"
         >
-          <img
-            src={ToolIcon}
-            alt="Tools"
-            className="mr-1 h-3.5 w-3.5 shrink-0 sm:mr-1.5 sm:h-4 sm:w-4 dark:invert"
-          />
-          <span className="xs:text-xs dark:text-foreground text-muted-foreground truncate overflow-hidden text-xs font-medium sm:text-sm">
+          <Wrench />
+          <span className="text-foreground truncate overflow-hidden text-xs sm:text-sm">
             {t('settings.tools.label')}
           </span>
         </Button>

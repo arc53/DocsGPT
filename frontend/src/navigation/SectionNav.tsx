@@ -2,7 +2,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
-import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 import { getVisibleGroups, type Section, type SectionItem } from './sections';
 import { useSidebarLevel } from './SidebarLevelProvider';
@@ -42,54 +42,48 @@ export default function SectionNav({
     const isActive = item.key === activeItemKey;
     const Icon = item.icon;
     return (
-      <Link
+      <Button
         key={item.key}
-        to={item.path}
-        onClick={(event) => {
-          // Same level, so nothing slides — but routing through the level
-          // provider still renders the page at low priority, which keeps the
-          // highlight moving under the cursor instead of after the mount.
-          if (event.metaKey || event.ctrlKey || event.shiftKey) return;
-          event.preventDefault();
-          goToLevel(item.path);
-          onNavigate?.();
-        }}
-        aria-current={isActive ? 'page' : undefined}
-        className={cn(
-          'hover:bg-sidebar-accent mx-4 my-1 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3',
-          isActive && 'bg-sidebar-accent',
-        )}
+        variant="sidebar-item"
+        asChild
+        className="mx-4 my-1 flex"
       >
-        <Icon
-          className="text-muted-foreground size-5 shrink-0"
-          strokeWidth={1.75}
-          aria-hidden
-        />
-        <p className="text-foreground dark:text-foreground overflow-hidden text-sm leading-6 text-ellipsis whitespace-nowrap">
-          {t(item.labelKey)}
-        </p>
-      </Link>
+        <Link
+          to={item.path}
+          onClick={(event) => {
+            // Same level, so nothing slides — but routing through the level
+            // provider still renders the page at low priority, which keeps the
+            // highlight moving under the cursor instead of after the mount.
+            if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+            event.preventDefault();
+            goToLevel(item.path);
+            onNavigate?.();
+          }}
+          aria-current={isActive ? 'page' : undefined}
+        >
+          <Icon className="text-muted-foreground size-5 shrink-0" aria-hidden />
+          <span className="truncate">{t(item.labelKey)}</span>
+        </Link>
+      </Button>
     );
   };
 
   return (
     <div className="flex h-full flex-col">
-      <button
+      <Button
         type="button"
+        variant="sidebar-item"
         onClick={onBack}
-        className="group border-sidebar-border hover:border-sidebar-border mx-4 mt-4 flex shrink-0 cursor-pointer items-center gap-2.5 rounded-3xl border p-3 text-left"
+        className="mx-4 mt-4 flex shrink-0"
       >
         <ArrowLeft
-          className="text-muted-foreground group-hover:text-foreground size-5 shrink-0"
-          strokeWidth={1.75}
+          className="text-muted-foreground size-5 shrink-0"
           aria-hidden
         />
-        <p className="text-muted-foreground group-hover:text-foreground text-sm">
-          {backLabel}
-        </p>
-      </button>
+        <span className="truncate">{backLabel}</span>
+      </Button>
       <p
-        className="text-foreground mt-6 ml-8 shrink-0 truncate pr-4 text-sm font-semibold dark:text-white"
+        className="text-foreground mt-6 ml-8 shrink-0 truncate pr-4 text-sm font-semibold"
         title={sectionTitle}
       >
         {sectionTitle}

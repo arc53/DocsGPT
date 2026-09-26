@@ -9,6 +9,7 @@ import {
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Badge } from '@/components/ui/badge';
 import { TraceCounts } from '../types';
 import { formatDurationMs, formatTokens } from './traceUtils';
 
@@ -76,17 +77,15 @@ export default function TraceChips({ durationMs, counts }: TraceChipsProps) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {chips.map((chip) => (
-        <span
+        <Badge
           key={chip.key}
-          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs tabular-nums ${
-            chip.tone === 'danger'
-              ? 'bg-destructive/10 text-destructive'
-              : 'bg-muted text-foreground'
-          }`}
+          variant={chip.tone === 'danger' ? 'destructive' : 'neutral'}
+          // eslint-disable-next-line shadcn/no-restyle -- durations and counts use tabular figures so chips don't jitter between rows
+          className="tabular-nums"
         >
           {chip.icon}
           {chip.label}
-        </span>
+        </Badge>
       ))}
     </div>
   );

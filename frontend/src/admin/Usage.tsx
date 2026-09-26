@@ -20,16 +20,14 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import { useDarkTheme } from '../hooks';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { selectToken } from '../preferences/preferenceSlice';
-import {
-  Loading,
-  LoadError,
-  StatCard,
-  fmtMs,
-  fmtNumber,
-  fmtUsd,
-} from './AdminUI';
+import { LoadingState } from '@/components/ui/loading-state';
+import StatCard from '@/components/StatCard';
+import { Card } from '@/components/ui/card';
+import { SectionHeader } from '@/components/ui/section-header';
+import { LoadError, fmtMs, fmtNumber, fmtUsd } from './AdminUI';
+import { useChartPalette } from '../utils/chartUtils';
 import UsageChart from './UsageChart';
 import {
   GROUP_OPTIONS,
@@ -54,7 +52,8 @@ const RANGES = [7, 30, 90];
 
 export default function Usage() {
   const token = useSelector(selectToken);
-  const [isDarkTheme] = useDarkTheme();
+  // Re-read on every theme change; Chart.js can't read CSS variables.
+  const palette = useChartPalette();
   const [days, setDays] = useState(30);
   const [groupBy, setGroupBy] = useState<GroupBy>('none');
   const [metric, setMetric] = useState<Metric>('tokens');
@@ -70,6 +69,8 @@ export default function Usage() {
         token,
       );
       setData(await res.json().catch(() => ({})));
+    } catch {
+      setData({});
     } finally {
       setLoading(false);
     }
@@ -84,33 +85,32 @@ export default function Usage() {
   const latency: Latency | undefined = data?.latency;
 
   const chartData = useMemo(
-    () => buildUsageChart(series, groupBy, metric),
-    // isDarkTheme re-resolves the canvas colors when the theme toggles.
-    [series, groupBy, metric, isDarkTheme],
+    () => buildUsageChart(series, groupBy, metric, palette),
+    [series, groupBy, metric, palette],
   );
 
   const cacheHitRate = useMemo(() => computeCacheHitRate(series), [series]);
 
-  if (data === null && loading) return <Loading />;
+  if (data === null && loading) return <LoadingState fill="block" />;
   if (data && !data.success)
-    return <LoadError message="Failed to load usage." />;
+    return <LoadError message="Failed to load usage." onRetry={load} />;
 
   return (
-    <div className="mt-6">
+    <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1">
+        <ToggleGroup
+          type="single"
+          size="sm"
+          value={String(days)}
+          onValueChange={(value) => value && setDays(Number(value))}
+          aria-label="Range"
+        >
           {RANGES.map((range) => (
-            <Button
-              key={range}
-              variant={range === days ? 'default' : 'outline'}
-              size="sm"
-              className="rounded-3xl"
-              onClick={() => setDays(range)}
-            >
+            <ToggleGroupItem key={range} value={String(range)}>
               {range}d
-            </Button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
         <Select
           value={groupBy}
           onValueChange={(value) => setGroupBy(value as GroupBy)}
@@ -126,27 +126,19 @@ export default function Usage() {
             ))}
           </SelectContent>
         </Select>
-        <div className="flex items-center gap-1">
-          <Button
-            variant={metric === 'tokens' ? 'default' : 'outline'}
-            size="sm"
-            className="rounded-3xl"
-            onClick={() => setMetric('tokens')}
-          >
-            Tokens
-          </Button>
-          <Button
-            variant={metric === 'cost' ? 'default' : 'outline'}
-            size="sm"
-            className="rounded-3xl"
-            onClick={() => setMetric('cost')}
-          >
-            Cost
-          </Button>
-        </div>
+        <ToggleGroup
+          type="single"
+          size="sm"
+          value={metric}
+          onValueChange={(value) => value && setMetric(value as Metric)}
+          aria-label="Metric"
+        >
+          <ToggleGroupItem value="tokens">Tokens</ToggleGroupItem>
+          <ToggleGroupItem value="cost">Cost</ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
           label={`Spend (${days}d)`}
           value={fmtUsd(data?.total_cost)}
@@ -176,17 +168,23 @@ export default function Usage() {
         />
       </div>
 
-      <div className="border-border dark:border-border mt-4 h-[345px] w-full overflow-hidden rounded-2xl border px-6 py-5">
+      <Card
+        variant="subtle"
+        padding="lg"
+        className="mt-4 h-[345px] w-full overflow-hidden"
+      >
         <div className="flex flex-row items-center justify-between gap-3">
-          <p className="text-foreground dark:text-foreground font-bold">
-            {metric === 'cost' ? 'Spend' : 'Token usage'}
-          </p>
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={metric === 'cost' ? 'Spend' : 'Token usage'}
+          />
           <div
             id="admin-usage-legend"
             className="flex flex-row items-center justify-end"
           ></div>
         </div>
-        <div className="relative mt-px h-[260px] w-full">
+        <div className="relative h-[260px] w-full">
           {loading ? (
             <SkeletonLoader count={1} component={'analysis'} />
           ) : series.length === 0 ? (
@@ -198,15 +196,19 @@ export default function Usage() {
               data={chartData}
               legendID="admin-usage-legend"
               currency={metric === 'cost'}
+              gridColor={palette.border}
+              tickColor={palette.mutedForeground}
             />
           )}
         </div>
-      </div>
+      </Card>
 
-      <div className="border-border dark:border-border mt-4 w-full overflow-hidden rounded-2xl border px-6 py-5">
-        <p className="text-foreground dark:text-foreground mb-3 font-bold">
-          Top users
-        </p>
+      <Card
+        variant="subtle"
+        padding="lg"
+        className="mt-4 w-full overflow-hidden"
+      >
+        <SectionHeader as="h3" size="xs" title="Top users" />
         {topUsers.length === 0 ? (
           <p className="text-muted-foreground text-sm">No usage.</p>
         ) : (
@@ -221,15 +223,18 @@ export default function Usage() {
               </TableHead>
               <TableBody>
                 {topUsers.map((user) => (
-                  <TableRow key={user.user_id} className="hover:bg-muted/40">
-                    <TableCell className="font-mono text-[13px] break-all">
-                      <button
+                  <TableRow key={user.user_id}>
+                    <TableCell className="font-mono text-xs break-all">
+                      <Button
                         type="button"
-                        className="hover:text-foreground focus-visible:ring-ring cursor-pointer rounded text-left underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:outline-none"
+                        variant="link"
+                        size="inline"
+                        // eslint-disable-next-line shadcn/no-restyle -- the id keeps the cell's 12px mono type and wraps
+                        className="text-left font-mono text-xs font-normal whitespace-normal"
                         onClick={() => setDrilldown(user.user_id)}
                       >
                         {user.user_id}
-                      </button>
+                      </Button>
                     </TableCell>
                     <TableCell
                       align="right"
@@ -249,7 +254,7 @@ export default function Usage() {
             </Table>
           </TableContainer>
         )}
-      </div>
+      </Card>
 
       <UserUsageModal userId={drilldown} onClose={() => setDrilldown(null)} />
     </div>

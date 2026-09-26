@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next';
+import { Pencil } from 'lucide-react';
 
-import EditIcon from '../assets/edit.svg';
 import ToolIcon from '../components/ToolIcon';
 import { Avatar } from '../components/ui/avatar';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
 import { formatDateTime } from '../utils/dateTimeUtils';
 import { getToolDisplayName } from '../utils/toolUtils';
 import { Agent } from './types';
@@ -23,14 +25,19 @@ export default function SharedAgentCard({
     agent.shared_metadata !== null &&
     Object.keys(agent.shared_metadata).length > 0;
   return (
-    <div className="border-border dark:border-border flex w-full max-w-[720px] flex-col rounded-3xl border p-6 shadow-xs sm:w-fit sm:min-w-[480px]">
+    <Card
+      variant="subtle"
+      padding="lg"
+      className="w-full max-w-[720px] sm:w-fit sm:min-w-[480px]"
+    >
       <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full p-1">
+        <div className="flex size-12 items-center justify-center overflow-hidden rounded-full p-1">
           <Avatar
             src={agent.image}
             alt={agent.name}
-            className="h-full w-full"
-            imgClassName="h-full w-full rounded-full object-contain"
+            shape="circle"
+            className="size-full overflow-hidden"
+            imgClassName="size-full object-contain"
           />
         </div>
         <div className="flex max-h-[92px] flex-1 flex-col gap-px">
@@ -46,51 +53,58 @@ export default function SharedAgentCard({
             type="button"
             variant="outline"
             size="sm"
+            shape="pill"
             onClick={onEdit}
-            className="shrink-0 gap-1.5 rounded-full"
+            className="shrink-0"
             aria-label={t('agents.edit')}
           >
-            <img src={EditIcon} alt="" className="h-3.5 w-3.5" />
+            <Pencil />
             {t('agents.edit')}
           </Button>
         )}
       </div>
       {hasSharedMetadata && (
-        <div className="mt-4 flex items-center gap-8">
+        <div className="mt-1 flex items-center gap-8">
           {agent.shared_metadata?.shared_by && (
             <p className="text-foreground text-xs font-light sm:text-sm">
-              by {agent.shared_metadata.shared_by}
+              {t('agents.shared.sharedBy', {
+                name: agent.shared_metadata.shared_by,
+                interpolation: { escapeValue: false },
+              })}
             </p>
           )}
           {agent.shared_metadata?.shared_at && (
             <p className="text-muted-foreground text-xs font-light sm:text-sm">
-              Shared on {formatDateTime(agent.shared_metadata.shared_at)}
+              {t('agents.shared.sharedOn', {
+                date: formatDateTime(agent.shared_metadata.shared_at),
+                interpolation: { escapeValue: false },
+              })}
             </p>
           )}
         </div>
       )}
       {agent.tool_details && agent.tool_details.length > 0 && (
-        <div className="mt-8">
+        <div className="mt-5">
           <p className="text-foreground text-sm font-semibold sm:text-base">
-            Connected Tools
+            {t('agents.shared.connectedTools')}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {agent.tool_details.map((tool, index) => (
-              <span
-                key={index}
-                className="bg-accent text-foreground dark:bg-card flex items-center gap-1 rounded-full px-3 py-1 text-xs font-light"
-              >
+              <Badge key={index} variant="default">
                 <ToolIcon
                   name={tool.name}
-                  title={`${getToolDisplayName(tool)} icon`}
-                  className="h-3 w-3"
+                  title={t('agents.shared.toolIconTitle', {
+                    name: getToolDisplayName(tool),
+                    interpolation: { escapeValue: false },
+                  })}
+                  className="size-3"
                 />{' '}
                 {getToolDisplayName(tool)}
-              </span>
+              </Badge>
             ))}
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

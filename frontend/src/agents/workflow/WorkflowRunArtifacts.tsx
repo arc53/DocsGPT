@@ -1,16 +1,23 @@
 import { ChevronLeft, FileBox } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
 import DocumentArtifactView from '../../components/DocumentArtifactView';
-import Spinner from '../../components/Spinner';
+import { EmptyState } from '@/components/ui/empty-state';
+import { LoadingState } from '@/components/ui/loading-state';
 import {
   isDocumentArtifact,
   type DocumentArtifact,
 } from '../../components/artifactViewUtils';
 import { Button } from '@/components/ui/button';
 import { selectToken } from '../../preferences/preferenceSlice';
+
+// Error states hold locale keys; the render translates them.
+const PREVIEW_UNSUPPORTED = 'agents.workflow.artifacts.previewUnsupported';
+const LIST_FAILED = 'agents.workflow.artifacts.loadListFailed';
+const DETAIL_FAILED = 'agents.workflow.artifacts.loadFailed';
 
 interface RunArtifactSummary {
   id: string;
@@ -31,6 +38,7 @@ export default function WorkflowRunArtifacts({
   workflowRunId,
   inProgress = false,
 }: WorkflowRunArtifactsProps) {
+  const { t } = useTranslation();
   const token = useSelector(selectToken);
   const [artifacts, setArtifacts] = useState<RunArtifactSummary[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,7 +66,7 @@ export default function WorkflowRunArtifacts({
           if (res.status === 403) {
             setArtifacts([]);
           } else {
-            setError('Failed to load artifacts');
+            setError(LIST_FAILED);
           }
           setLoading(false);
           return;
@@ -70,7 +78,7 @@ export default function WorkflowRunArtifacts({
       })
       .catch(() => {
         if (cancelled) return;
-        setError('Failed to load artifacts');
+        setError(LIST_FAILED);
         setLoading(false);
       });
     return () => {
@@ -93,7 +101,7 @@ export default function WorkflowRunArtifacts({
         .then(async (res: Response) => {
           if (cancelled) return;
           if (!res.ok) {
-            setDetailError('Failed to load artifact');
+            setDetailError(DETAIL_FAILED);
             setDetailLoading(false);
             return;
           }
@@ -103,13 +111,13 @@ export default function WorkflowRunArtifacts({
             setDetail(data.artifact);
             setDetailLoading(false);
           } else {
-            setDetailError('This artifact cannot be previewed');
+            setDetailError(PREVIEW_UNSUPPORTED);
             setDetailLoading(false);
           }
         })
         .catch(() => {
           if (cancelled) return;
-          setDetailError('Failed to load artifact');
+          setDetailError(DETAIL_FAILED);
           setDetailLoading(false);
         });
       return () => {
@@ -131,29 +139,41 @@ export default function WorkflowRunArtifacts({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
-        <Spinner size="small" /> Loading artifacts...
-      </div>
+      <LoadingState
+        fill="block"
+        size="sm"
+        label={t('agents.workflow.artifacts.loading')}
+      />
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-between gap-2 px-3 py-3 text-sm text-red-500">
-        <span>{error}</span>
-        <Button type="button" variant="outline" size="sm" onClick={loadList}>
-          Retry
-        </Button>
-      </div>
+      <EmptyState
+        tone="destructive"
+        size="sm"
+        illustration="none"
+        title={t(error)}
+        action={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => loadList()}
+          >
+            {t('retry')}
+          </Button>
+        }
+      />
     );
   }
 
   if (!artifacts || artifacts.length === 0) {
     return (
-      <div className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+      <div className="text-muted-foreground px-3 py-3 text-sm">
         {inProgress
-          ? 'Run in progress — artifacts appear here as nodes produce them.'
-          : 'No artifacts produced by this run.'}
+          ? t('agents.workflow.artifacts.inProgress')
+          : t('agents.workflow.artifacts.empty')}
       </div>
     );
   }
@@ -166,22 +186,41 @@ export default function WorkflowRunArtifacts({
             type="button"
             variant="ghost"
             size="sm"
-            className="gap-1 px-2"
             onClick={() => setSelectedId(null)}
           >
-            <ChevronLeft className="h-4 w-4" />
-            Back to artifacts
+            <ChevronLeft />
+            {t('agents.workflow.artifacts.back')}
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-hidden">
           {detailLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <Spinner />
-            </div>
+            <LoadingState fill="parent" />
+          ) : detailError === PREVIEW_UNSUPPORTED ? (
+            // Not a failed load: nothing to retry.
+            <EmptyState
+              size="sm"
+              illustration="none"
+              title={t(detailError)}
+              className="h-full"
+            />
           ) : detailError ? (
-            <div className="flex h-full items-center justify-center">
-              <p className="text-sm text-red-500">{detailError}</p>
-            </div>
+            <EmptyState
+              tone="destructive"
+              size="sm"
+              illustration="none"
+              title={t(detailError)}
+              className="h-full"
+              action={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fetchDetail(selectedId)}
+                >
+                  {t('retry')}
+                </Button>
+              }
+            />
           ) : detail ? (
             <DocumentArtifactView
               artifact={detail}
@@ -201,15 +240,18 @@ export default function WorkflowRunArtifacts({
             type="button"
             variant="outline"
             onClick={() => setSelectedId(artifact.id)}
-            className="h-auto w-full justify-start gap-3 px-3 py-2 text-left"
+            className="h-auto w-full justify-start text-left"
           >
-            <FileBox className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
+            <FileBox className="text-muted-foreground shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-gray-900 dark:text-white">
-                {artifact.title || `Artifact ${artifact.id.slice(0, 8)}`}
+              <div className="text-foreground truncate text-sm font-medium">
+                {artifact.title ||
+                  t('agents.workflow.artifacts.untitled', {
+                    id: artifact.id.slice(0, 8),
+                  })}
               </div>
-              <div className="truncate text-xs text-gray-500 dark:text-gray-400">
-                {artifact.kind || 'file'}
+              <div className="text-muted-foreground truncate text-xs">
+                {artifact.kind || t('agents.workflow.artifacts.fileKind')}
                 {artifact.current_version != null
                   ? ` · v${artifact.current_version}`
                   : ''}

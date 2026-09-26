@@ -8,6 +8,7 @@ import {
   conversationSlice,
 } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
+import actionToastReducer from './notifications/actionToastSlice';
 import notificationsReducer from './notifications/notificationsSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
@@ -70,6 +71,7 @@ const store = configureStore({
     agentPreview: agentPreviewReducer,
     workflowPreview: workflowPreviewReducer,
     notifications: notificationsReducer,
+    actionToast: actionToastReducer,
     schedules: schedulesReducer,
     teams: teamsReducer,
     graphBuild: graphBuildReducer,

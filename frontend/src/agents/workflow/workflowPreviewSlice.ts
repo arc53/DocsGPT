@@ -76,9 +76,9 @@ export function collectCompletedAttachmentIds(
     .map((att) => att.id);
 }
 
-/** User-facing message shown when a Preview send is blocked. */
+/** Locale key of the message shown when a Preview send is blocked. */
 export const UNSAVED_DRAFT_ATTACHMENTS_MESSAGE =
-  'Save the workflow before attaching documents in Preview.';
+  'agents.workflow.preview.unsavedDraftAttachments';
 
 /**
  * Reason a Preview send must be blocked, or null when it may proceed. An

@@ -33,22 +33,22 @@ export function useOutsideAlerter<T extends HTMLElement>(
   }, [ref, handler, handleEscapeKey, ...additionalDeps]);
 }
 
+/**
+ * The app's one phone / desktop switch, matching Tailwind's ``lg`` (1024px):
+ * below it the shell is the phone layout, so JS and classes always agree.
+ */
 export function useMediaQuery() {
-  const mobileQuery = '(max-width: 768px)';
-  const tabletQuery = '(max-width: 1023px)';
+  const mobileQuery = '(max-width: 1023.98px)';
   const desktopQuery = '(min-width: 1024px)';
   const [isMobile, setIsMobile] = useState(false);
-  const [isTablet, setIsTablet] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
     const mobileMedia = window.matchMedia(mobileQuery);
-    const tabletMedia = window.matchMedia(tabletQuery);
     const desktopMedia = window.matchMedia(desktopQuery);
 
     const updateMediaQueries = () => {
       setIsMobile(mobileMedia.matches);
-      setIsTablet(tabletMedia.matches && !mobileMedia.matches); // Tablet but not mobile
       setIsDesktop(desktopMedia.matches);
     };
 
@@ -60,9 +60,9 @@ export function useMediaQuery() {
     return () => {
       window.removeEventListener('resize', listener);
     };
-  }, [mobileQuery, tabletQuery, desktopQuery]);
+  }, [mobileQuery, desktopQuery]);
 
-  return { isMobile, isTablet, isDesktop };
+  return { isMobile, isDesktop };
 }
 
 /**
@@ -94,6 +94,11 @@ export function usePacedText(text: string, enabled: boolean): string {
 
   return enabled ? text.slice(0, Math.min(visibleLength, text.length)) : text;
 }
+
+// Each useDarkTheme() caller holds its own state; a toggle broadcasts the new
+// value so every other caller (logo, Mermaid, code blocks) follows without a
+// reload.
+const THEME_CHANGE_EVENT = 'docsgpt:themechange';
 
 export function useDarkTheme() {
   const getSystemThemePreference = () => {
@@ -127,12 +132,25 @@ export function useDarkTheme() {
   }, []);
 
   useEffect(() => {
+    const handleThemeChange = (event: Event) => {
+      setIsDarkTheme((event as CustomEvent<boolean>).detail);
+    };
+    window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+    return () =>
+      window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem('selectedTheme', isDarkTheme ? 'Dark' : 'Light');
     const action = isDarkTheme ? 'add' : 'remove';
     document.body?.classList[action]('dark');
     document.documentElement.classList[action]('dark');
 
-    const color = isDarkTheme ? '#161616' : '#fbfbfb';
+    // The browser toolbar matches the sidebar; read the token now that the
+    // `.dark` class above has flipped it.
+    const color =
+      getComputedStyle(document.body).getPropertyValue('--sidebar').trim() ||
+      (isDarkTheme ? '#161616' : '#fbfbfb');
     document.head
       .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
       .forEach((m) => {
@@ -144,7 +162,11 @@ export function useDarkTheme() {
   }, [isDarkTheme]);
 
   const toggleTheme = () => {
-    setIsDarkTheme(!isDarkTheme);
+    const next = !isDarkTheme;
+    setIsDarkTheme(next);
+    window.dispatchEvent(
+      new CustomEvent<boolean>(THEME_CHANGE_EVENT, { detail: next }),
+    );
   };
 
   return [isDarkTheme, toggleTheme, componentMounted] as const;

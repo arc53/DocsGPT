@@ -29,7 +29,8 @@ describe('quotaErrorMessage', () => {
     const [key, used, limit, resetsAt] = message.split('|');
     expect(key).toBe('conversation.quotaExceeded.tokens');
     expect([used, limit]).toEqual(['1,200,000', '1,000,000']);
-    expect(resetsAt).not.toBe('');
+    // Dates are en-GB everywhere, whatever the UI language.
+    expect(resetsAt).toMatch(/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}$/);
   });
 
   it('formats cost budgets as dollars', () => {

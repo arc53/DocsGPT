@@ -1,27 +1,21 @@
-import { RefreshCcw, Search as SearchIcon, Trash, Users } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Pencil, RefreshCw, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
-import Edit from '../assets/edit.svg';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
-import ThreeDotsIcon from '../assets/three-dots.svg';
+import PageToolbar from '../components/PageToolbar';
+import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Card, CardDescription, CardTitle } from '../components/ui/card';
 import { Switch } from '../components/ui/switch';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
-import { Input } from '../components/ui/input';
-import { useDarkTheme, useLoaderState } from '../hooks';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
+import { EmptyState } from '../components/ui/empty-state';
+import { useLoaderState } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MCPServerModal from '../modals/MCPServerModal';
@@ -32,20 +26,9 @@ import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
 
-type ToolsMenuOption = {
-  icon: string | LucideIcon;
-  label: string;
-  onClick: () => void;
-  variant: 'default' | 'destructive';
-  iconWidth?: number;
-  iconHeight?: number;
-  iconClassName?: string;
-};
-
 export default function Tools() {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const [isDarkTheme] = useDarkTheme();
 
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
@@ -118,23 +101,19 @@ export default function Tools() {
     setReconnectModalState('ACTIVE');
   };
 
-  const getMenuOptions = (tool: UserToolType): ToolsMenuOption[] => {
-    const options: ToolsMenuOption[] = [
+  const getMenuOptions = (tool: UserToolType): MenuOption[] => {
+    const options: MenuOption[] = [
       {
-        icon: Edit,
+        icon: Pencil,
         label: t('settings.tools.edit'),
         onClick: () => handleSettingsClick(tool),
         variant: 'default',
-        iconWidth: 14,
-        iconHeight: 14,
       },
       {
-        icon: Trash,
+        icon: Trash2,
         label: t('settings.tools.delete'),
         onClick: () => handleDeleteTool(tool),
         variant: 'destructive',
-        iconWidth: 16,
-        iconHeight: 16,
       },
     ];
     // Sharing is an owner-only action: hide it for tools shared into the
@@ -145,19 +124,14 @@ export default function Tools() {
         label: t('settings.tools.shareWithTeam'),
         onClick: () => setToolToShare(tool),
         variant: 'default',
-        iconWidth: 16,
-        iconHeight: 16,
       });
     }
     if (tool.name === 'mcp_tool') {
       options.splice(1, 0, {
-        icon: RefreshCcw,
+        icon: RefreshCw,
         label: t('settings.tools.reconnect'),
         onClick: () => handleReconnect(tool),
         variant: 'default',
-        iconWidth: 16,
-        iconHeight: 16,
-        iconClassName: 'text-[#747474]',
       });
     }
     return options;
@@ -279,224 +253,142 @@ export default function Tools() {
           />
         )
       ) : (
-        <div className="mt-8">
+        <div>
           <div className="relative flex flex-col">
-            <p className="text-muted-foreground mb-5 text-sm leading-6">
-              {t('settings.tools.subtitle')}
-            </p>
-            <div className="my-3 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="w-full max-w-md">
-                <Input
+            <PageToolbar
+              intro={t('settings.tools.subtitle')}
+              search={
+                <SearchInput
                   maxLength={256}
                   label={t('settings.tools.searchPlaceholder')}
                   name="Document-search-input"
-                  type="text"
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  labelBgClassName="bg-background"
-                  className="rounded-full"
-                  leftIcon={
-                    <SearchIcon
-                      className="text-muted-foreground size-4"
-                      strokeWidth={1.75}
-                    />
-                  }
                 />
-              </div>
-              <Button
-                type="button"
-                className="h-11 min-w-[108px] rounded-full whitespace-normal text-white"
-                onClick={() => {
-                  setAddToolModalState('ACTIVE');
-                }}
-              >
-                {t('settings.tools.addTool')}
-              </Button>
-            </div>
-            <div className="border-border dark:border-border mt-5 mb-8 border-b" />
+              }
+              action={
+                <Button
+                  type="button"
+                  size="field"
+                  shape="pill"
+                  onClick={() => {
+                    setAddToolModalState('ACTIVE');
+                  }}
+                >
+                  {t('settings.tools.addTool')}
+                </Button>
+              }
+              divider
+            />
             {loading ? (
-              <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 <SkeletonLoader component="toolCards" count={6} />
               </div>
+            ) : userTools.length === 0 ? (
+              <EmptyState title={t('settings.tools.noToolsFound')} />
             ) : (
-              <div className="flex flex-wrap justify-center gap-4 sm:justify-start">
-                {userTools.length === 0 ? (
-                  <div className="flex w-full flex-col items-center justify-center py-12">
-                    <img
-                      src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                      alt={t('settings.tools.noToolsFound')}
-                      className="mx-auto mb-6 h-32 w-32"
-                    />
-                    <p className="text-center text-lg text-gray-500 dark:text-gray-400">
-                      {t('settings.tools.noToolsFound')}
-                    </p>
-                  </div>
+              (() => {
+                const filtered = userTools.filter((tool) =>
+                  (tool.customName || tool.displayName)
+                    .toLowerCase()
+                    .includes(searchTerm.toLowerCase()),
+                );
+                return filtered.length === 0 ? (
+                  <EmptyState title={t('settings.tools.noToolsFound')} />
                 ) : (
-                  (() => {
-                    const filtered = userTools.filter((tool) =>
-                      (tool.customName || tool.displayName)
-                        .toLowerCase()
-                        .includes(searchTerm.toLowerCase()),
-                    );
-                    return filtered.length === 0 ? (
-                      <div className="flex w-full flex-col items-center justify-center py-12">
-                        <img
-                          src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                          alt={t('settings.tools.noToolsFound')}
-                          className="mx-auto mb-6 h-32 w-32"
-                        />
-                        <p className="text-center text-lg text-gray-500 dark:text-gray-400">
-                          {t('settings.tools.noToolsFound')}
-                        </p>
-                      </div>
-                    ) : (
-                      filtered.map((tool, index) => (
-                        <div
-                          key={index}
-                          className="bg-muted hover:bg-accent relative flex h-52 w-[300px] flex-col justify-between overflow-hidden rounded-2xl p-5"
-                        >
-                          {!tool.default && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="absolute top-4 right-4 z-10 cursor-pointer"
-                                  aria-label={t(
-                                    'settings.tools.settingsIconAlt',
-                                  )}
-                                >
-                                  <img
-                                    src={ThreeDotsIcon}
-                                    alt={t('settings.tools.settingsIconAlt')}
-                                    className="h-[19px] w-[19px]"
-                                  />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="end"
-                                className="min-w-[144px]"
-                              >
-                                {getMenuOptions(tool).map((option, idx) => {
-                                  const IconCmp =
-                                    typeof option.icon !== 'string'
-                                      ? option.icon
-                                      : null;
-                                  return (
-                                    <DropdownMenuItem
-                                      key={idx}
-                                      variant={option.variant}
-                                      onSelect={() => option.onClick()}
-                                    >
-                                      {typeof option.icon === 'string' ? (
-                                        <img
-                                          src={option.icon}
-                                          alt=""
-                                          width={option.iconWidth ?? 16}
-                                          height={option.iconHeight ?? 16}
-                                          className={option.iconClassName}
-                                        />
-                                      ) : (
-                                        IconCmp && (
-                                          <IconCmp
-                                            size={Math.max(
-                                              option.iconWidth ?? 16,
-                                              option.iconHeight ?? 16,
-                                            )}
-                                            strokeWidth={1.75}
-                                            aria-hidden="true"
-                                            className={option.iconClassName}
-                                          />
-                                        )
-                                      )}
-                                      <span>{option.label}</span>
-                                    </DropdownMenuItem>
-                                  );
-                                })}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                          <div className="w-full">
-                            <div className="flex w-full items-center gap-2 px-1">
-                              <ToolIcon
-                                name={tool.name}
-                                title={`${tool.displayName} icon`}
-                                className="h-6 w-6"
-                              />
-                              {tool.default && (
-                                <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs leading-none font-medium text-gray-600 dark:bg-gray-700/40 dark:text-gray-300">
-                                  {t('settings.tools.builtIn')}
-                                </span>
-                              )}
-                              {tool.name === 'mcp_tool' &&
-                                mcpStatuses[tool.id] && (
-                                  <span
-                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs leading-none font-medium ${
-                                      mcpStatuses[tool.id] === 'connected'
-                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                                        : mcpStatuses[tool.id] === 'needs_auth'
-                                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                                          : 'bg-gray-100 text-gray-600 dark:bg-gray-700/40 dark:text-gray-300'
-                                    }`}
-                                  >
-                                    {mcpStatuses[tool.id] === 'connected'
-                                      ? t('settings.tools.authStatus.connected')
-                                      : mcpStatuses[tool.id] === 'needs_auth'
-                                        ? t(
-                                            'settings.tools.authStatus.needsAuth',
-                                          )
-                                        : t(
-                                            'settings.tools.authStatus.configured',
-                                          )}
-                                  </span>
-                                )}
-                              {tool.ownership === 'team' && (
-                                <span className="bg-muted-foreground/10 text-muted-foreground inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs leading-none font-medium">
-                                  <Users
-                                    size={11}
-                                    strokeWidth={2}
-                                    aria-hidden="true"
-                                  />
-                                  {tool.team_access === 'editor'
-                                    ? t('teamAccess.editor')
-                                    : t('teamAccess.viewer')}
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-[9px]">
-                              <p
-                                title={tool.customName || tool.displayName}
-                                className="text-foreground dark:text-foreground truncate px-1 text-sm leading-relaxed font-semibold capitalize"
-                              >
-                                {tool.customName || tool.displayName}
-                              </p>
-                              <p
-                                className="text-muted-foreground mt-1 line-clamp-4 max-h-24 overflow-hidden px-1 text-xs leading-relaxed break-all"
-                                title={tool.description}
-                              >
-                                {tool.description}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="absolute right-4 bottom-4">
-                            <Switch
-                              checked={tool.status}
-                              onCheckedChange={(checked) =>
-                                updateToolStatus(tool.id, checked)
-                              }
-                              id={`toolToggle-${index}`}
-                              aria-label={t('settings.tools.toggleToolAria', {
-                                toolName: tool.customName || tool.displayName,
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {filtered.map((tool, index) => (
+                      <Card
+                        key={index}
+                        variant="filled"
+                        padding="lg"
+                        className="relative h-52 justify-between overflow-hidden"
+                      >
+                        {!tool.default && (
+                          <ActionMenu
+                            options={getMenuOptions(tool)}
+                            triggerLabel={t('settings.tools.settingsIconAlt')}
+                            className="absolute top-3 right-3 z-10"
+                          />
+                        )}
+                        <div className="w-full">
+                          <div className="flex w-full items-center gap-2 px-1">
+                            <ToolIcon
+                              name={tool.name}
+                              title={t('settings.tools.toolIconTitle', {
+                                name: tool.displayName,
                               })}
+                              className="size-6"
                             />
+                            {tool.default && (
+                              <Badge variant="neutral">
+                                {t('settings.tools.builtIn')}
+                              </Badge>
+                            )}
+                            {tool.name === 'mcp_tool' &&
+                              mcpStatuses[tool.id] && (
+                                <Badge
+                                  variant={
+                                    mcpStatuses[tool.id] === 'connected'
+                                      ? 'success'
+                                      : mcpStatuses[tool.id] === 'needs_auth'
+                                        ? 'warning'
+                                        : 'neutral'
+                                  }
+                                >
+                                  {mcpStatuses[tool.id] === 'connected'
+                                    ? t('settings.tools.authStatus.connected')
+                                    : mcpStatuses[tool.id] === 'needs_auth'
+                                      ? t('settings.tools.authStatus.needsAuth')
+                                      : t(
+                                          'settings.tools.authStatus.configured',
+                                        )}
+                                </Badge>
+                              )}
+                            {tool.ownership === 'team' && (
+                              <Badge variant="neutral">
+                                <Users className="size-3" aria-hidden="true" />
+                                {tool.team_access === 'editor'
+                                  ? t('teamAccess.editor')
+                                  : t('teamAccess.viewer')}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="mt-[9px] px-1">
+                            <CardTitle
+                              as="h2"
+                              title={tool.customName || tool.displayName}
+                              className="truncate capitalize"
+                            >
+                              {tool.customName || tool.displayName}
+                            </CardTitle>
+                            <CardDescription
+                              size="xs"
+                              className="mt-1 line-clamp-4 max-h-24 overflow-hidden break-words"
+                              title={tool.description}
+                            >
+                              {tool.description}
+                            </CardDescription>
                           </div>
                         </div>
-                      ))
-                    );
-                  })()
-                )}
-              </div>
+                        <div className="absolute right-4 bottom-4">
+                          <Switch
+                            checked={tool.status}
+                            onCheckedChange={(checked) =>
+                              updateToolStatus(tool.id, checked)
+                            }
+                            id={`toolToggle-${index}`}
+                            aria-label={t('settings.tools.toggleToolAria', {
+                              toolName: tool.customName || tool.displayName,
+                            })}
+                          />
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                );
+              })()
             )}
           </div>
           <AddToolModal
@@ -516,7 +408,7 @@ export default function Tools() {
             setModalState={setDeleteModalState}
             handleSubmit={confirmDeleteTool}
             submitLabel={t('settings.tools.delete')}
-            variant="danger"
+            variant="destructive"
           />
           <MCPServerModal
             modalState={reconnectModalState}

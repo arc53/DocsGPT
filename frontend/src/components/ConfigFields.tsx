@@ -1,10 +1,8 @@
 import { useMemo } from 'react';
 
-import { cn } from '@/lib/utils';
-
 import { ConfigRequirements } from '../modals/types';
+import { FormField, type FormFieldProps } from './ui/form-field';
 import { Input } from './ui/input';
-import { Label } from './ui/label';
 import {
   Select,
   SelectContent,
@@ -22,6 +20,8 @@ interface ConfigFieldsProps {
   errors?: { [key: string]: string };
   isEditing?: boolean;
   hasEncryptedCredentials?: boolean;
+  /** Surface behind the fields, for the floating labels' notch. */
+  labelSurface?: FormFieldProps['labelSurface'];
 }
 
 function shouldShowField(
@@ -41,6 +41,7 @@ export default function ConfigFields({
   errors = {},
   isEditing = false,
   hasEncryptedCredentials = false,
+  labelSurface,
 }: ConfigFieldsProps) {
   const sortedFields = useMemo(
     () =>
@@ -53,7 +54,7 @@ export default function ConfigFields({
   if (sortedFields.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       {sortedFields.map(([key, spec]) => {
         if (!shouldShowField(spec, values)) return null;
 
@@ -61,29 +62,22 @@ export default function ConfigFields({
         const hasEncrypted =
           isEditing && spec.secret && hasEncryptedCredentials;
         const placeholder = hasEncrypted ? '••••••••' : '';
-        const hasError = !!errors[key];
+        const error = errors[key] || undefined;
 
         if (spec.enum) {
           return (
-            <div key={key} className="flex flex-col gap-1.5">
-              <Label htmlFor={key}>
-                {spec.label || key}
-                {spec.required && <span className="text-red-500">*</span>}
-              </Label>
+            <FormField
+              key={key}
+              label={spec.label || key}
+              required={!!spec.required}
+              error={error}
+              labelSurface={labelSurface}
+            >
               <Select
                 value={value || spec.default || ''}
                 onValueChange={(v) => onChange(key, v)}
               >
-                <SelectTrigger
-                  id={key}
-                  variant="ghost"
-                  size="lg"
-                  className={cn(
-                    'w-full rounded-xl',
-                    hasError &&
-                      'border-destructive aria-invalid:ring-destructive/20',
-                  )}
-                >
+                <SelectTrigger size="field" className="w-full">
                   <SelectValue placeholder={spec.label || key} />
                 </SelectTrigger>
                 <SelectContent>
@@ -95,21 +89,19 @@ export default function ConfigFields({
                   ))}
                 </SelectContent>
               </Select>
-              {hasError && (
-                <p className="text-destructive text-xs">{errors[key]}</p>
-              )}
-            </div>
+            </FormField>
           );
         }
 
         return (
-          <div key={key} className="flex flex-col gap-1.5">
-            <Label htmlFor={key}>
-              {spec.label || key}
-              {spec.required && <span className="text-red-500">*</span>}
-            </Label>
+          <FormField
+            key={key}
+            label={spec.label || key}
+            required={!!spec.required}
+            error={error}
+            labelSurface={labelSurface}
+          >
             <Input
-              id={key}
               type={
                 spec.secret
                   ? 'password'
@@ -135,13 +127,8 @@ export default function ConfigFields({
               max={
                 spec.type === 'number' && key === 'timeout' ? 300 : undefined
               }
-              aria-invalid={hasError || undefined}
-              className={cn('rounded-xl', hasError && 'border-destructive')}
             />
-            {hasError && (
-              <p className="text-destructive text-xs">{errors[key]}</p>
-            )}
-          </div>
+          </FormField>
         );
       })}
     </div>

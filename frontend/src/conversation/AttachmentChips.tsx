@@ -1,6 +1,6 @@
+import { Paperclip } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import DocumentationDark from '../assets/documentation-dark.svg';
 import { planEntryFor, summarizePlan } from './attachmentPlan';
 import type {
   AttachmentPlanEntry,
@@ -62,13 +62,12 @@ export default function AttachmentChips({
               key={index}
               title={label ? `${file.fileName} — ${label}` : file.fileName}
               data-plan-status={entry?.status}
-              className="dark:text-foreground dark:bg-accent text-muted-foreground bg-muted flex items-center rounded-xl p-2 text-sm"
+              className="bg-muted text-foreground flex items-center rounded-xl p-2 text-sm"
             >
-              <div className="bg-primary mr-2 items-center justify-center rounded-lg p-[5.5px]">
-                <img
-                  src={DocumentationDark}
-                  alt="Attachment"
-                  className="h-3.75 w-3.75 object-fill"
+              <div className="bg-primary mr-2 items-center justify-center rounded-lg p-1.5">
+                <Paperclip
+                  aria-label={t('conversation.attachments.attachment')}
+                  className="text-primary-foreground size-3.75"
                 />
               </div>
               <div className="flex min-w-0 flex-col">

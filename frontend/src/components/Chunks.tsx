@@ -1,16 +1,12 @@
-import { Search as SearchIcon } from 'lucide-react';
+import { File, Folder } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import { cn, fieldFrame } from '@/lib/utils';
+
 import userService from '../api/services/userService';
-import ArrowLeft from '../assets/arrow-left.svg';
-import FileIcon from '../assets/file.svg';
-import FolderIcon from '../assets/folder.svg';
-import NoFilesDarkIcon from '../assets/no-files-dark.svg';
-import NoFilesIcon from '../assets/no-files.svg';
 import {
-  useDarkTheme,
   useDebouncedValue,
   useLoaderState,
   useMediaQuery,
@@ -21,10 +17,29 @@ import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { ChunkType } from '../settings/types';
 import { formatChunkTokens } from './chunkUtils';
-import Pagination from './DocumentPagination';
 import SkeletonLoader from './SkeletonLoader';
+import PathHeader from './tree/PathHeader';
 import { Button } from './ui/button';
+import { Card } from './ui/card';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from './ui/command';
+import { EmptyState } from './ui/empty-state';
 import { Input } from './ui/input';
+import { Pagination } from './ui/pagination';
+
+// The search field's frame: the Input look around a CommandInput (38px,
+// rounded-md, focus ring while the input has keyboard focus). CommandInput's
+// row is 36px with a bottom rule; pt-px + overflow-hidden clips that rule.
+const SEARCH_FRAME = cn(
+  fieldFrame,
+  'border-border has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-ring/50 h-9.5 overflow-hidden rounded-md pt-px has-[input:focus-visible]:ring-3',
+);
 
 interface LineNumberedTextareaProps {
   value: string;
@@ -51,7 +66,7 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
     onChange(e.target.value);
   };
 
-  const lineHeight = 19.93;
+  const lineHeight = 20;
   const contentLines = value.split('\n').length;
 
   const heightOffset = isMobile ? 200 : 300;
@@ -62,24 +77,30 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
   const totalLines = Math.max(contentLines, minLinesForDisplay);
 
   return (
-    <div className={`relative w-full ${className}`}>
-      <div
-        className="pointer-events-none absolute top-0 left-0 w-8 pr-2 text-right font-mono text-xs leading-[19.93px] text-gray-500 select-none lg:w-12 lg:pr-3 lg:text-sm dark:text-gray-400"
-        style={{
-          height: `${totalLines * lineHeight}px`,
-        }}
-      >
+    <div
+      className={cn('relative w-full', className)}
+      style={
+        {
+          '--numbered-height': `${totalLines * lineHeight}px`,
+        } as React.CSSProperties
+      }
+    >
+      <div className="text-muted-foreground pointer-events-none absolute top-0 left-0 h-(--numbered-height) w-8 pr-2 text-right font-mono text-xs leading-5 select-none lg:w-12 lg:pr-3 lg:text-sm">
         {Array.from({ length: totalLines }, (_, i) => (
           <div
             key={i + 1}
-            className="flex h-[19.93px] items-center justify-end leading-[19.93px]"
+            className="flex h-5 items-center justify-end leading-5"
           >
             {i + 1}
           </div>
         ))}
       </div>
       <textarea
-        className={`text-foreground focus-visible:ring-ring/50 focus-visible:border-ring w-full resize-none overflow-hidden border-none bg-transparent pl-8 font-['Inter'] text-[13.68px] leading-[19.93px] outline-none focus-visible:ring-[3px] lg:pl-12 dark:text-white ${isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]'} ${!editable ? 'select-none' : ''}`}
+        className={cn(
+          'text-foreground focus-visible:ring-ring/50 focus-visible:border-ring h-(--numbered-height) w-full resize-none overflow-hidden border-none bg-transparent pl-8 text-sm leading-5 outline-none focus-visible:ring-3 lg:pl-12',
+          isMobile ? 'min-h-[calc(100vh-200px)]' : 'min-h-[calc(100vh-300px)]',
+          !editable && 'select-none',
+        )}
         value={value}
         onChange={editable ? handleChange : undefined}
         onDoubleClick={onDoubleClick}
@@ -87,9 +108,6 @@ const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
         aria-label={ariaLabel}
         rows={totalLines}
         readOnly={!editable}
-        style={{
-          height: `${totalLines * lineHeight}px`,
-        }}
       />
     </div>
   );
@@ -111,6 +129,12 @@ interface ChunksProps {
   onFileSelect?: (path: string) => void;
   /** Extra header control, rendered left of the chunk actions. */
   headerAction?: React.ReactNode;
+  /**
+   * Opens a level of the path: 0 is the source root, n the folder made of
+   * the first n path segments. Without it the root crumb calls handleGoBack
+   * and folder crumbs are plain text.
+   */
+  onPathSelect?: (depth: number) => void;
 }
 
 const Chunks: React.FC<ChunksProps> = ({
@@ -122,6 +146,7 @@ const Chunks: React.FC<ChunksProps> = ({
   onFileSearch,
   onFileSelect,
   headerAction,
+  onPathSelect,
 }) => {
   const [fileSearchQuery, setFileSearchQuery] = useState('');
   const [fileSearchResults, setFileSearchResults] = useState<SearchResult[]>(
@@ -130,7 +155,6 @@ const Chunks: React.FC<ChunksProps> = ({
   const searchDropdownRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
   const token = useSelector(selectToken);
-  const [isDarkTheme] = useDarkTheme();
   const [paginatedChunks, setPaginatedChunks] = useState<ChunkType[]>([]);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(5);
@@ -302,159 +326,137 @@ const Chunks: React.FC<ChunksProps> = ({
 
   const filteredChunks = paginatedChunks;
 
+  // The root crumb returns to the source (TreeBrowser: its top folder;
+  // standalone: back to the source list). Folder crumbs only navigate when
+  // the parent can open a folder (onPathSelect); the file is the current one.
   const renderPathNavigation = () => {
+    const rootLabel = documentName ?? '';
+    const selectRoot = onPathSelect ? () => onPathSelect(0) : handleGoBack;
     return (
-      <div className="mb-0 flex min-h-[38px] flex-col gap-2 text-base sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex w-full items-center sm:w-auto">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            className="mr-3 h-[29px] w-[29px] rounded-full p-2 text-gray-400 dark:border-0 dark:text-gray-500"
-            onClick={
-              editingChunk
-                ? () => setEditingChunk(null)
-                : isAddingChunk
-                  ? () => setIsAddingChunk(false)
-                  : handleGoBack
-            }
-          >
-            <img src={ArrowLeft} alt="left-arrow" className="h-3 w-3" />
-          </Button>
-
-          <div className="flex flex-wrap items-center">
-            {/* Removed the directory icon */}
-            <span className="text-primary font-semibold wrap-break-word">
-              {documentName}
-            </span>
-
-            {pathParts.length > 0 && (
-              <>
-                <span className="mx-1 shrink-0 text-gray-500">/</span>
-                {pathParts.map((part, index) => (
-                  <React.Fragment key={index}>
-                    <span
-                      className={`wrap-break-word ${
-                        index < pathParts.length - 1
-                          ? 'text-primary font-medium'
-                          : 'text-gray-700 dark:text-gray-300'
-                      }`}
-                    >
-                      {part}
-                    </span>
-                    {index < pathParts.length - 1 && (
-                      <span className="mx-1 shrink-0 text-gray-500">/</span>
-                    )}
-                  </React.Fragment>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-2 flex w-full flex-row flex-nowrap items-center justify-end gap-2 overflow-x-auto sm:mt-0 sm:w-auto">
-          {headerAction}
-          {editingChunk ? (
-            !isEditing ? (
-              <>
-                <Button
-                  type="button"
-                  className="h-[38px] min-w-[108px] rounded-full px-4 text-sm font-medium whitespace-nowrap"
-                  onClick={() => setIsEditing(true)}
-                >
-                  {t('modals.chunk.edit')}
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive-outline"
-                  className="h-[38px] min-w-[108px] rounded-full px-4 py-1 text-sm font-medium text-nowrap"
-                  onClick={() => {
-                    confirmDeleteChunk(editingChunk);
-                  }}
-                >
-                  {t('modals.chunk.delete')}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setIsEditing(false);
-                  }}
-                  className="dark:text-foreground h-[38px] min-w-[108px] cursor-pointer rounded-full px-4 py-1 text-sm font-medium text-nowrap"
-                >
-                  {t('modals.chunk.cancel')}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    if (editingText.trim()) {
-                      const hasChanges =
-                        editingTitle !==
-                          (editingChunk?.metadata?.title || '') ||
-                        editingText !== (editingChunk?.text || '');
-
-                      if (hasChanges) {
-                        handleUpdateChunk(
-                          editingTitle,
-                          editingText,
-                          editingChunk,
-                        );
-                      }
-                      setIsEditing(false);
-                      setEditingChunk(null);
-                    }
-                  }}
-                  disabled={
-                    !editingText.trim() ||
-                    (editingTitle === (editingChunk?.metadata?.title || '') &&
-                      editingText === (editingChunk?.text || ''))
-                  }
-                  className={`h-[38px] min-w-[108px] rounded-full px-4 py-1 text-sm font-medium text-nowrap transition-all ${
-                    editingText.trim() &&
-                    (editingTitle !== (editingChunk?.metadata?.title || '') ||
-                      editingText !== (editingChunk?.text || ''))
-                      ? 'cursor-pointer'
-                      : 'cursor-not-allowed bg-gray-400 text-white hover:bg-gray-400'
-                  }`}
-                >
-                  {t('modals.chunk.save')}
-                </Button>
-              </>
-            )
-          ) : isAddingChunk ? (
+      <PathHeader
+        root={{
+          label: rootLabel,
+          onSelect: pathParts.length > 0 ? selectRoot : undefined,
+        }}
+        segments={pathParts.map((part, index) => ({
+          label: part,
+          onSelect:
+            onPathSelect && index < pathParts.length - 1
+              ? () => onPathSelect(index + 1)
+              : undefined,
+        }))}
+        backLabel={t('settings.sources.back')}
+        onBack={
+          editingChunk
+            ? () => setEditingChunk(null)
+            : isAddingChunk
+              ? () => setIsAddingChunk(false)
+              : handleGoBack
+        }
+        actions={
+          headerAction || editingChunk || isAddingChunk ? (
             <>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setIsAddingChunk(false)}
-                className="dark:text-foreground h-[38px] min-w-[108px] cursor-pointer rounded-full px-4 py-1 text-sm font-medium text-nowrap"
-              >
-                {t('modals.chunk.cancel')}
-              </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  if (editingText.trim()) {
-                    handleAddChunk(editingTitle, editingText);
-                    setIsAddingChunk(false);
-                  }
-                }}
-                disabled={!editingText.trim()}
-                className={`h-[38px] min-w-[108px] rounded-full px-4 py-1 text-sm font-medium text-nowrap transition-all ${
-                  editingText.trim()
-                    ? 'cursor-pointer'
-                    : 'cursor-not-allowed bg-gray-400 text-white hover:bg-gray-400'
-                }`}
-              >
-                {t('modals.chunk.add')}
-              </Button>
+              {headerAction}
+              {editingChunk ? (
+                !isEditing ? (
+                  <>
+                    <Button
+                      type="button"
+                      size="field"
+                      shape="pill"
+                      onClick={() => setIsEditing(true)}
+                    >
+                      {t('modals.chunk.edit')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive-outline"
+                      size="field"
+                      shape="pill"
+                      onClick={() => {
+                        confirmDeleteChunk(editingChunk);
+                      }}
+                    >
+                      {t('modals.chunk.delete')}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        setIsEditing(false);
+                      }}
+                      size="field"
+                      shape="pill"
+                    >
+                      {t('modals.chunk.cancel')}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        if (editingText.trim()) {
+                          const hasChanges =
+                            editingTitle !==
+                              (editingChunk?.metadata?.title || '') ||
+                            editingText !== (editingChunk?.text || '');
+
+                          if (hasChanges) {
+                            handleUpdateChunk(
+                              editingTitle,
+                              editingText,
+                              editingChunk,
+                            );
+                          }
+                          setIsEditing(false);
+                          setEditingChunk(null);
+                        }
+                      }}
+                      disabled={
+                        !editingText.trim() ||
+                        (editingTitle ===
+                          (editingChunk?.metadata?.title || '') &&
+                          editingText === (editingChunk?.text || ''))
+                      }
+                      size="field"
+                      shape="pill"
+                    >
+                      {t('modals.chunk.save')}
+                    </Button>
+                  </>
+                )
+              ) : isAddingChunk ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setIsAddingChunk(false)}
+                    size="field"
+                    shape="pill"
+                  >
+                    {t('modals.chunk.cancel')}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (editingText.trim()) {
+                        handleAddChunk(editingTitle, editingText);
+                        setIsAddingChunk(false);
+                      }
+                    }}
+                    disabled={!editingText.trim()}
+                    size="field"
+                    shape="pill"
+                  >
+                    {t('modals.chunk.add')}
+                  </Button>
+                </>
+              ) : null}
             </>
-          ) : null}
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
     );
   };
 
@@ -496,60 +498,49 @@ const Chunks: React.FC<ChunksProps> = ({
   const renderFileSearch = () => {
     return (
       <div className="relative" ref={searchDropdownRef}>
-        <div className="relative flex items-center">
-          <div className="pointer-events-none absolute left-3">
-            <SearchIcon
-              className="text-muted-foreground size-4"
-              strokeWidth={1.75}
-              aria-label="Search"
+        {/* `contents`: the Command only scopes cmdk (the arrow keys move from
+            the input to the rows); the frame and the dropdown draw the look. */}
+        <Command shouldFilter={false} className="contents">
+          <div className={SEARCH_FRAME}>
+            <CommandInput
+              value={fileSearchQuery}
+              onValueChange={handleFileSearchChange}
+              placeholder={t('settings.sources.searchFiles')}
             />
           </div>
-          <Input
-            type="text"
-            value={fileSearchQuery}
-            onChange={(e) => handleFileSearchChange(e.target.value)}
-            placeholder={t('settings.sources.searchFiles')}
-            className={`h-[38px] py-2 pr-4 pl-10 ${
-              fileSearchQuery ? 'rounded-t-md' : 'rounded-md'
-            } transition-all duration-200`}
-          />
-        </div>
 
-        {fileSearchQuery && (
-          <div className="border-border bg-card dark:border-border dark:bg-card absolute z-10 max-h-[calc(100vh-200px)] w-full overflow-hidden rounded-b-md border border-t-0 shadow-lg">
-            <div className="max-h-[calc(100vh-200px)] overflow-x-hidden overflow-y-auto">
-              {fileSearchResults.length === 0 ? (
-                <div className="py-2 text-center text-sm text-gray-500 dark:text-gray-400">
-                  {t('settings.sources.noResults')}
-                </div>
-              ) : (
-                fileSearchResults.map((result, index) => (
-                  <div
-                    key={index}
-                    title={result.path}
-                    onClick={() => handleSearchResultClick(result)}
-                    className={`hover:bg-muted dark:hover:bg-muted flex cursor-pointer items-center px-3 py-2 ${
-                      index !== fileSearchResults.length - 1
-                        ? 'border-border dark:border-border border-b'
-                        : ''
-                    }`}
-                  >
-                    <img
-                      src={result.isFile ? FileIcon : FolderIcon}
-                      alt={result.isFile ? 'File' : 'Folder'}
-                      className="mr-2 h-4 w-4 shrink-0"
-                    />
-                    <span className="truncate text-sm">
-                      {result.name ||
-                        result.path.split('/').pop() ||
-                        result.path}
-                    </span>
-                  </div>
-                ))
-              )}
+          {fileSearchQuery && (
+            <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 left-0 z-20 mt-1 w-full overflow-hidden rounded-xl border shadow-md">
+              <CommandList className="max-h-[calc(100vh-200px)]">
+                {fileSearchResults.length === 0 ? (
+                  <CommandEmpty>{t('settings.sources.noResults')}</CommandEmpty>
+                ) : (
+                  <CommandGroup>
+                    {fileSearchResults.map((result) => (
+                      <CommandItem
+                        key={result.path}
+                        value={result.path}
+                        title={result.path}
+                        onSelect={() => handleSearchResultClick(result)}
+                      >
+                        {result.isFile ? (
+                          <File />
+                        ) : (
+                          <Folder className="text-primary" />
+                        )}
+                        <span className="truncate">
+                          {result.name ||
+                            result.path.split('/').pop() ||
+                            result.path}
+                        </span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+              </CommandList>
             </div>
-          </div>
-        )}
+          )}
+        </Command>
       </div>
     );
   };
@@ -567,8 +558,8 @@ const Chunks: React.FC<ChunksProps> = ({
           {!editingChunk && !isAddingChunk ? (
             <>
               <div className="mb-3 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-                <div className="border-border dark:border-border flex h-[38px] w-full flex-1 items-center overflow-hidden rounded-md border">
-                  <div className="dark:text-foreground flex h-full items-center px-4 font-medium whitespace-nowrap text-gray-700">
+                <div className="border-border flex h-9.5 w-full flex-1 items-center overflow-hidden rounded-md border">
+                  <div className="text-foreground flex h-full items-center px-4 font-medium whitespace-nowrap">
                     {totalChunks > 999999
                       ? `${(totalChunks / 1000000).toFixed(2)}M`
                       : totalChunks > 999
@@ -576,21 +567,23 @@ const Chunks: React.FC<ChunksProps> = ({
                         : totalChunks}{' '}
                     {t('settings.sources.chunks')}
                   </div>
-                  <div className="bg-border dark:bg-border h-full w-px"></div>
-                  <div className="h-full flex-1">
+                  <div className="bg-border h-full w-px"></div>
+                  <div className="h-full flex-1 px-3 py-2">
                     <Input
                       type="text"
+                      variant="bare"
                       placeholder={t('settings.sources.searchPlaceholder')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="h-full rounded-none border-0 px-3 py-2 text-[13.56px] leading-[100%] font-normal shadow-none focus-visible:ring-0 md:text-[13.56px] dark:border-0"
+                      className="h-full"
                     />
                   </div>
                 </div>
                 <Button
                   type="button"
-                  className="h-[38px] w-full min-w-[108px] shrink-0 rounded-full px-4 text-sm font-medium whitespace-normal sm:w-auto"
-                  title={t('settings.sources.addChunk')}
+                  size="field"
+                  shape="pill"
+                  className="w-full shrink-0 sm:w-auto"
                   onClick={() => {
                     setIsAddingChunk(true);
                     setEditingTitle('');
@@ -607,39 +600,43 @@ const Chunks: React.FC<ChunksProps> = ({
               ) : (
                 <div className="grid w-full grid-cols-1 justify-items-start gap-4 sm:grid-cols-[repeat(auto-fit,minmax(400px,1fr))]">
                   {filteredChunks.length === 0 ? (
-                    <div className="col-span-full flex min-h-[50vh] w-full flex-col items-center justify-center text-center text-gray-500 dark:text-gray-400">
-                      <img
-                        src={isDarkTheme ? NoFilesDarkIcon : NoFilesIcon}
-                        alt={t('settings.sources.noChunksAlt')}
-                        className="mx-auto mb-2 h-24 w-24"
-                      />
-                      {t('settings.sources.noChunks')}
-                    </div>
+                    <EmptyState
+                      size="sm"
+                      title={t('settings.sources.noChunks')}
+                      className="col-span-full min-h-[50vh] w-full"
+                    />
                   ) : (
                     filteredChunks.map((chunk, index) => (
-                      <div
+                      <Card
                         key={index}
-                        className="border-border dark:border-border relative flex h-[197px] w-full max-w-[487px] transform cursor-pointer flex-col justify-between overflow-hidden rounded-md border transition-transform duration-200 hover:scale-105"
-                        onClick={() => {
-                          setEditingChunk(chunk);
-                          setEditingTitle(chunk.metadata?.title || '');
-                          setEditingText(chunk.text || '');
-                        }}
+                        interactive
+                        padding="none"
+                        asChild
+                        className="relative h-[197px] w-full max-w-[487px] justify-between gap-0 overflow-hidden"
                       >
-                        <div className="w-full">
-                          <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
-                            <div className="dark:text-muted-foreground text-sm text-[#59636E]">
-                              {formatChunkTokens(chunk.metadata)}{' '}
-                              {t('settings.sources.tokensUnit')}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingChunk(chunk);
+                            setEditingTitle(chunk.metadata?.title || '');
+                            setEditingText(chunk.text || '');
+                          }}
+                        >
+                          <div className="w-full">
+                            <div className="border-border bg-muted flex w-full items-center justify-between border-b px-4 py-3">
+                              <div className="text-muted-foreground text-sm">
+                                {formatChunkTokens(chunk.metadata)}{' '}
+                                {t('settings.sources.tokensUnit')}
+                              </div>
+                            </div>
+                            <div className="px-4 pt-3 pb-6">
+                              <p className="text-foreground line-clamp-6 text-sm leading-5 font-normal">
+                                {chunk.text}
+                              </p>
                             </div>
                           </div>
-                          <div className="px-4 pt-3 pb-6">
-                            <p className="text-foreground line-clamp-6 font-['Inter'] text-[13.68px] leading-[19.93px] font-normal">
-                              {chunk.text}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
+                        </button>
+                      </Card>
                     ))
                   )}
                 </div>
@@ -647,7 +644,7 @@ const Chunks: React.FC<ChunksProps> = ({
             </>
           ) : isAddingChunk ? (
             <div className="w-full">
-              <div className="border-border dark:border-border relative overflow-hidden rounded-lg border">
+              <div className="border-border relative overflow-hidden rounded-lg border">
                 <LineNumberedTextarea
                   value={editingText}
                   onChange={setEditingText}
@@ -659,9 +656,9 @@ const Chunks: React.FC<ChunksProps> = ({
           ) : (
             editingChunk && (
               <div className="w-full">
-                <div className="border-border dark:border-border relative flex w-full flex-col overflow-hidden rounded-md border">
-                  <div className="border-border bg-muted dark:border-border dark:bg-card flex w-full items-center justify-between border-b px-4 py-3">
-                    <div className="dark:text-muted-foreground text-sm text-[#59636E]">
+                <div className="border-border relative flex w-full flex-col overflow-hidden rounded-md border">
+                  <div className="border-border bg-muted flex w-full items-center justify-between border-b px-4 py-3">
+                    <div className="text-muted-foreground text-sm">
                       {formatChunkTokens(editingChunk.metadata)}{' '}
                       {t('settings.sources.tokensUnit')}
                     </div>
@@ -691,11 +688,11 @@ const Chunks: React.FC<ChunksProps> = ({
             !editingChunk &&
             !isAddingChunk && (
               <Pagination
-                currentPage={page}
-                totalPages={Math.ceil(totalChunks / perPage)}
-                rowsPerPage={perPage}
+                page={page}
+                pageCount={Math.ceil(totalChunks / perPage)}
+                pageSize={perPage}
                 onPageChange={setPage}
-                onRowsPerPageChange={(rows) => {
+                onPageSizeChange={(rows) => {
                   setPerPage(rows);
                   setPage(1);
                 }}
@@ -712,7 +709,7 @@ const Chunks: React.FC<ChunksProps> = ({
         handleSubmit={handleConfirmedDelete}
         handleCancel={handleCancelDelete}
         submitLabel={t('modals.chunk.delete')}
-        variant="danger"
+        variant="destructive"
       />
     </div>
   );

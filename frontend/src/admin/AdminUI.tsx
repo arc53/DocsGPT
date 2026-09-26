@@ -1,72 +1,39 @@
-import Spinner from '../components/Spinner';
-import { formatDateOnly, formatDateTime } from '../utils/dateTimeUtils';
+import type { VariantProps } from 'class-variance-authority';
 
-export function Loading() {
-  return (
-    <div className="flex h-40 items-center justify-center">
-      <Spinner />
-    </div>
-  );
-}
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import type { badgeVariants } from '../components/ui/badge';
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatRelative,
+} from '../utils/dateTimeUtils';
 
+/** A failed admin fetch: a red message with a Retry that re-runs the fetch. */
 export function LoadError({
   message = 'Failed to load.',
+  onRetry,
 }: {
   message?: string;
-}) {
-  return <p className="text-muted-foreground mt-8 text-sm">{message}</p>;
-}
-
-export function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: React.ReactNode;
-  sub?: string;
+  onRetry: () => void;
 }) {
   return (
-    <div className="border-border dark:border-border rounded-2xl border px-6 py-5">
-      <p className="text-muted-foreground text-sm">{label}</p>
-      <p className="text-foreground dark:text-foreground mt-1 text-2xl font-bold tabular-nums">
-        {value}
-      </p>
-      {sub ? <p className="text-muted-foreground mt-1 text-xs">{sub}</p> : null}
-    </div>
+    <EmptyState
+      tone="destructive"
+      size="sm"
+      illustration="none"
+      title={message}
+      action={
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      }
+    />
   );
 }
 
-type Tone = 'default' | 'success' | 'danger' | 'muted' | 'brand' | 'warning';
-
-const TONES: Record<Tone, string> = {
-  default: 'bg-muted text-foreground',
-  success:
-    'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-  danger: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  muted: 'bg-muted text-muted-foreground',
-  // brand violet — matches the chart's --primary; used for the Admin role.
-  brand:
-    'bg-[#7D54D1]/15 text-[#7D54D1] dark:bg-violet-900/40 dark:text-violet-300',
-  warning:
-    'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-};
-
-export function Pill({
-  tone = 'default',
-  children,
-}: {
-  tone?: Tone;
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${TONES[tone]}`}
-    >
-      {children}
-    </span>
-  );
-}
+// Audit-feed pills render as Badge; these helpers pick its variant.
+type Tone = NonNullable<VariantProps<typeof badgeVariants>['variant']>;
 
 export function fmtDate(value?: string | null): string {
   return value ? formatDateTime(value) : '—';
@@ -76,21 +43,10 @@ export function fmtDateShort(value?: string | null): string {
   return value ? formatDateOnly(value) : '—';
 }
 
+/** "3 minutes ago" in the UI language; `never` when there is no value. */
 export function fmtRelative(value?: string | null): string {
   if (!value) return 'never';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  const sec = Math.round((Date.now() - date.getTime()) / 1000);
-  if (sec < 60) return 'just now';
-  const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  if (day < 30) return `${Math.round(day / 7)}w ago`;
-  if (day < 365) return `${Math.round(day / 30)}mo ago`;
-  return `${Math.round(day / 365)}y ago`;
+  return formatRelative(value) ?? String(value);
 }
 
 export function fmtNumber(n?: number | null): string {
@@ -202,25 +158,25 @@ const WARNING_EVENTS = new Set([
 ]);
 
 export function eventTone(event: string): Tone {
-  if (DANGER_EVENTS.has(event)) return 'danger';
-  if (event === 'role_granted') return 'brand';
+  if (DANGER_EVENTS.has(event)) return 'destructive';
+  if (event === 'role_granted') return 'default';
   if (WARNING_EVENTS.has(event)) return 'warning';
-  return 'muted';
+  return 'neutral';
 }
 
 // Category facet colors. Mirrors docsgpt/audit_events.py.
 const CATEGORY_TONES: Record<string, Tone> = {
-  identity: 'default',
-  access: 'brand',
+  identity: 'outline',
+  access: 'default',
   config: 'warning',
   data: 'success',
   device: 'warning',
-  safety: 'danger',
-  other: 'muted',
+  safety: 'destructive',
+  other: 'neutral',
 };
 
 export function categoryTone(category: string): Tone {
-  return CATEGORY_TONES[category] ?? 'muted';
+  return CATEGORY_TONES[category] ?? 'neutral';
 }
 
 // Outcome values the two side journals actually write.
@@ -232,13 +188,13 @@ export function categoryTone(category: string): Tone {
 // produced, so every outcome rendered neutral grey -- including a guardrail
 // that fired, which is the one signal the merged feed exists to surface.
 const OUTCOME_TONES: Record<string, Tone> = {
-  triggered: 'danger',
-  not_evaluated: 'muted',
+  triggered: 'destructive',
+  not_evaluated: 'neutral',
   dispatched: 'success',
 };
 
 export function outcomeTone(outcome: string): Tone {
-  return OUTCOME_TONES[outcome] ?? 'muted';
+  return OUTCOME_TONES[outcome] ?? 'neutral';
 }
 
 const OUTCOME_LABELS: Record<string, string> = {

@@ -1,3 +1,4 @@
+import { CircleAlert, TriangleAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -8,11 +9,13 @@ import patService, {
   CreateAccessTokenResponse,
 } from '../api/services/patService';
 import userService from '../api/services/userService';
-import Spinner from '../components/Spinner';
+import { Spinner } from '@/components/ui/spinner';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { MultiSelect } from '../components/ui/multi-select';
 import {
   Select,
@@ -21,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { selectToken } from '../preferences/preferenceSlice';
 import {
@@ -38,6 +42,7 @@ import {
   toResourceOptions,
 } from '../settings/accessTokenUtils';
 import { formatDateOnly } from '../utils/dateTimeUtils';
+import { cn } from '@/lib/utils';
 
 const MAX_NAME_LENGTH = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -200,65 +205,33 @@ export default function CreateAccessTokenModal({
     <Modal
       open={open}
       onOpenChange={(o) => !o && handleClose()}
-      hideTitle
       title={t('settings.accessTokens.create.title')}
+      description={t('settings.accessTokens.create.subtitle')}
       size="lg"
       mobileVariant="sheet"
       isPerformingTask={submitting}
-      contentClassName="max-h-[65vh]"
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleClose}
-            disabled={submitting}
-            className="rounded-3xl px-6"
-          >
-            {t('settings.accessTokens.create.cancel')}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className="rounded-3xl px-6 text-white"
-          >
-            {submitting ? (
-              <span className="flex items-center gap-2">
-                <Spinner size="small" />
-                {t('settings.accessTokens.create.submitting')}
-              </span>
-            ) : (
-              t('settings.accessTokens.create.submit')
-            )}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={t('settings.accessTokens.create.cancel')}
+          onCancel={handleClose}
+          submitLabel={t('settings.accessTokens.create.submit')}
+          onSubmit={handleSubmit}
+          pending={submitting}
+          disabled={!canSubmit}
+          cancelProps={{ disabled: submitting }}
+        />
       }
     >
       <form
-        className="flex flex-col gap-6 px-1"
+        className="flex flex-col gap-6"
         onSubmit={(e) => {
           e.preventDefault();
           handleSubmit();
         }}
       >
-        <div>
-          <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-            {t('settings.accessTokens.create.title')}
-          </h2>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {t('settings.accessTokens.create.subtitle')}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="pat-name">
-              {t('settings.accessTokens.create.name')}
-              <span className="text-red-500">*</span>
-            </Label>
+        <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+          <FormField label={t('settings.accessTokens.create.name')} required>
             <Input
-              id="pat-name"
               type="text"
               value={name}
               maxLength={MAX_NAME_LENGTH}
@@ -267,23 +240,27 @@ export default function CreateAccessTokenModal({
                 setError(null);
               }}
               placeholder={t('settings.accessTokens.create.namePlaceholder')}
-              className="rounded-xl"
               autoComplete="off"
             />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="pat-expiry">
-              {t('settings.accessTokens.create.expiration')}
-            </Label>
+          </FormField>
+          <FormField
+            label={t('settings.accessTokens.create.expiration')}
+            hint={
+              expiry === NO_EXPIRY
+                ? undefined
+                : t('settings.accessTokens.create.expiresOn', {
+                    date: formatDateOnly(
+                      new Date(Date.now() + expiry * DAY_MS).toISOString(),
+                    ),
+                    ...NO_ESCAPE,
+                  })
+            }
+          >
             <Select
               value={String(expiry)}
               onValueChange={(value) => setExpiry(Number(value))}
             >
-              <SelectTrigger
-                id="pat-expiry"
-                className="w-full rounded-xl px-4 py-2"
-                size="lg"
-              >
+              <SelectTrigger className="w-full" size="field">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -294,40 +271,32 @@ export default function CreateAccessTokenModal({
                 ))}
               </SelectContent>
             </Select>
-            <p
-              className={`text-xs ${
-                expiry === NO_EXPIRY
-                  ? 'text-amber-700 dark:text-amber-400'
-                  : 'text-muted-foreground'
-              }`}
-            >
-              {expiry === NO_EXPIRY
-                ? t('settings.accessTokens.create.noExpirationHint')
-                : t('settings.accessTokens.create.expiresOn', {
-                    date: formatDateOnly(
-                      new Date(Date.now() + expiry * DAY_MS).toISOString(),
-                    ),
-                    ...NO_ESCAPE,
-                  })}
-            </p>
-          </div>
+            {expiry === NO_EXPIRY ? (
+              <Alert variant="warning">
+                <TriangleAlert className="size-4" aria-hidden="true" />
+                <AlertDescription>
+                  {t('settings.accessTokens.create.noExpirationHint')}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+          </FormField>
         </div>
 
         <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
-          <legend className="text-foreground dark:text-foreground text-sm font-semibold">
+          <legend className="text-foreground text-sm font-semibold">
             {t('settings.accessTokens.create.scopes')}
-            <span className="text-red-500">*</span>
+            <span className="text-destructive">*</span>
           </legend>
           <p className="text-muted-foreground text-xs">
             {t('settings.accessTokens.create.scopesHint')}
           </p>
-          <div className="border-border dark:border-border divide-border flex flex-col divide-y rounded-xl border">
+          <div className="border-border divide-border flex flex-col divide-y rounded-xl border">
             {scopeGroups.map((group) => (
               <div
                 key={group.family}
                 className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:gap-4"
               >
-                <p className="text-foreground dark:text-foreground w-32 shrink-0 text-sm font-medium capitalize">
+                <p className="text-foreground w-32 shrink-0 text-sm font-medium capitalize">
                   {familyLabel(group.family)}
                 </p>
                 <div className="flex min-w-0 flex-1 flex-col gap-2.5">
@@ -345,22 +314,22 @@ export default function CreateAccessTokenModal({
                             ? t('settings.accessTokens.create.impliedByWrite')
                             : undefined
                         }
-                        className={`flex items-start gap-3 ${
+                        className={cn(
+                          'flex items-start gap-3',
                           implied
                             ? 'cursor-not-allowed opacity-70'
-                            : 'cursor-pointer'
-                        }`}
+                            : 'cursor-pointer',
+                        )}
                       >
-                        <input
+                        <Checkbox
                           id={id}
-                          type="checkbox"
                           checked={checked}
                           disabled={implied}
-                          onChange={() => toggleScope(scope.name)}
-                          className="accent-primary mt-0.5 size-4 shrink-0 rounded-sm border-gray-300 bg-transparent dark:[color-scheme:dark]"
+                          onCheckedChange={() => toggleScope(scope.name)}
+                          className="mt-0.5"
                         />
                         <span className="flex min-w-0 flex-col gap-0.5">
-                          <code className="text-foreground dark:text-foreground font-mono text-xs font-medium">
+                          <code className="text-foreground font-mono text-xs font-medium">
                             {scope.name}
                           </code>
                           <span className="text-muted-foreground text-xs leading-relaxed">
@@ -378,21 +347,20 @@ export default function CreateAccessTokenModal({
 
         {policy.filterable_families.length > 0 && (
           <div className="flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="pat-restrict" className="text-sm font-semibold">
-                  {t('settings.accessTokens.create.restrict')}
-                </Label>
-                <p className="text-muted-foreground text-xs">
-                  {t('settings.accessTokens.create.restrictHint')}
-                </p>
-              </div>
-              <Switch
-                id="pat-restrict"
-                checked={restrict}
-                onCheckedChange={setRestrict}
-              />
-            </div>
+            <SettingRows>
+              <SettingRow
+                label={t('settings.accessTokens.create.restrict')}
+                description={t('settings.accessTokens.create.restrictHint')}
+                htmlFor="pat-restrict"
+                alignStart
+              >
+                <Switch
+                  id="pat-restrict"
+                  checked={restrict}
+                  onCheckedChange={setRestrict}
+                />
+              </SettingRow>
+            </SettingRows>
             {restrict && pickerFamilies.length === 0 && (
               <p className="text-muted-foreground bg-muted rounded-lg px-4 py-2 text-xs">
                 {t('settings.accessTokens.create.restrictNoFamilies')}
@@ -402,11 +370,17 @@ export default function CreateAccessTokenModal({
               pickerFamilies.map((family) => {
                 const state = resources[family];
                 return (
-                  <div key={family} className="flex flex-col gap-1.5">
-                    <Label className="capitalize">{familyLabel(family)}</Label>
+                  <FormField
+                    key={family}
+                    id={`pat-resources-${family}`}
+                    float={false}
+                    label={
+                      <span className="capitalize">{familyLabel(family)}</span>
+                    }
+                  >
                     {!state || state.status === 'loading' ? (
                       <div className="flex h-10 items-center">
-                        <Spinner size="small" />
+                        <Spinner size="sm" />
                       </div>
                     ) : state.status === 'error' ? (
                       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -416,7 +390,7 @@ export default function CreateAccessTokenModal({
                         <Button
                           type="button"
                           variant="link"
-                          className="h-auto p-0 text-xs"
+                          size="xs"
                           onClick={() => loadResources(family)}
                         >
                           {t('settings.accessTokens.create.retry')}
@@ -441,23 +415,20 @@ export default function CreateAccessTokenModal({
                         searchPlaceholder={t(
                           'settings.accessTokens.create.searchResources',
                         )}
-                        className="rounded-xl"
                         modal
                       />
                     )}
-                  </div>
+                  </FormField>
                 );
               })}
           </div>
         )}
 
         {error && (
-          <div
-            role="alert"
-            className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400"
-          >
-            {error}
-          </div>
+          <Alert variant="destructive">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
       </form>
     </Modal>

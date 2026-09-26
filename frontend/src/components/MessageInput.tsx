@@ -1,4 +1,6 @@
 import { envVar } from '@/env';
+import { cn } from '@/lib/utils';
+import { CloudUpload, Database } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -9,14 +11,13 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useDropzone } from 'react-dropzone';
+import i18n from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
-import DragFileUpload from '../assets/DragFileUpload.svg';
 import SendArrow from '../assets/send.svg?react';
-import SourceIcon from '../assets/source.svg';
 import {
   addAttachment,
   removeAttachment,
@@ -38,6 +39,7 @@ import type { RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
 import { Button } from './ui/button';
+import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
 import ToolIcon from './ToolIcon';
 import {
@@ -125,19 +127,19 @@ const getLegacyGetUserMedia = () => {
 
 const getVoiceInputSupportError = (): string | null => {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
-    return 'Voice input is unavailable right now.';
+    return i18n.t('conversation.voice.unavailable');
   }
 
   if (!window.isSecureContext) {
-    return 'Voice input requires a secure connection (HTTPS or localhost).';
+    return i18n.t('conversation.voice.insecure');
   }
 
   if (!navigator.mediaDevices?.getUserMedia && !getLegacyGetUserMedia()) {
-    return 'Voice input is not available in this browser.';
+    return i18n.t('conversation.voice.unsupported');
   }
 
   if (!getAudioContextConstructor()) {
-    return 'Voice input requires Web Audio support in this browser.';
+    return i18n.t('conversation.voice.noWebAudio');
   }
 
   return null;
@@ -152,9 +154,7 @@ const getUserMediaStream = (
 
   const legacyGetUserMedia = getLegacyGetUserMedia();
   if (!legacyGetUserMedia) {
-    return Promise.reject(
-      new Error('Voice input is not available in this browser.'),
-    );
+    return Promise.reject(new Error(i18n.t('conversation.voice.unsupported')));
   }
 
   return new Promise((resolve, reject) => {
@@ -164,7 +164,7 @@ const getUserMediaStream = (
 
 const getVoiceInputErrorMessage = (error: unknown): string => {
   if (typeof window !== 'undefined' && !window.isSecureContext) {
-    return 'Voice input requires a secure connection (HTTPS or localhost).';
+    return i18n.t('conversation.voice.insecure');
   }
 
   if (error instanceof DOMException) {
@@ -172,15 +172,15 @@ const getVoiceInputErrorMessage = (error: unknown): string => {
       case 'NotAllowedError':
       case 'PermissionDeniedError':
       case 'SecurityError':
-        return 'Microphone access was blocked. Allow microphone permission and try again.';
+        return i18n.t('conversation.voice.micBlocked');
       case 'NotFoundError':
       case 'DevicesNotFoundError':
-        return 'No microphone was found on this device.';
+        return i18n.t('conversation.voice.micNotFound');
       case 'NotReadableError':
       case 'TrackStartError':
-        return 'The microphone is unavailable or already in use.';
+        return i18n.t('conversation.voice.micBusy');
       case 'AbortError':
-        return 'Microphone access was interrupted before recording started.';
+        return i18n.t('conversation.voice.micInterrupted');
       default:
         break;
     }
@@ -190,7 +190,7 @@ const getVoiceInputErrorMessage = (error: unknown): string => {
     return error.message;
   }
 
-  return 'Microphone access was denied.';
+  return i18n.t('conversation.voice.micDenied');
 };
 
 const downsampleFloat32Buffer = (
@@ -1060,7 +1060,9 @@ export default function MessageInput({
       const data = await response.json();
 
       if (!response.ok || !data?.success) {
-        throw new Error(data?.message || 'Failed to transcribe audio.');
+        throw new Error(
+          data?.message || t('conversation.voice.transcribeFailed'),
+        );
       }
 
       if (typeof data.text !== 'string' || !data.text.trim()) {
@@ -1078,7 +1080,9 @@ export default function MessageInput({
       console.error('Uploaded audio transcription failed', error);
       setRecordingState('error');
       setVoiceError(
-        error instanceof Error ? error.message : 'Failed to transcribe audio.',
+        error instanceof Error
+          ? error.message
+          : t('conversation.voice.transcribeFailed'),
       );
     }
   };
@@ -1155,7 +1159,7 @@ export default function MessageInput({
 
       if (!response.ok || !data?.success) {
         throw new Error(
-          data?.message || 'Failed to finalize live transcription.',
+          data?.message || t('conversation.voice.finalizeFailed'),
         );
       }
 
@@ -1175,7 +1179,7 @@ export default function MessageInput({
       setVoiceError(
         error instanceof Error
           ? error.message
-          : 'Failed to finalize live transcription.',
+          : t('conversation.voice.finalizeFailed'),
       );
     } finally {
       resetLiveTranscriptionState();
@@ -1227,7 +1231,9 @@ export default function MessageInput({
       const data = await response.json();
 
       if (!response.ok || !data?.success) {
-        throw new Error(data?.message || 'Failed to transcribe audio.');
+        throw new Error(
+          data?.message || t('conversation.voice.transcribeFailed'),
+        );
       }
 
       if (typeof data.transcript_text === 'string') {
@@ -1235,7 +1241,9 @@ export default function MessageInput({
       }
     } catch (error) {
       await failLiveTranscription(
-        error instanceof Error ? error.message : 'Failed to transcribe audio.',
+        error instanceof Error
+          ? error.message
+          : t('conversation.voice.transcribeFailed'),
       );
       return;
     } finally {
@@ -1308,7 +1316,7 @@ export default function MessageInput({
     const AudioContextConstructor = getAudioContextConstructor();
     if (!AudioContextConstructor) {
       setRecordingState('error');
-      setVoiceError('Voice input requires Web Audio support in this browser.');
+      setVoiceError(t('conversation.voice.noWebAudio'));
       return;
     }
 
@@ -1326,7 +1334,7 @@ export default function MessageInput({
       const liveStartData = await liveStartResponse.json();
       if (!liveStartResponse.ok || !liveStartData?.success) {
         throw new Error(
-          liveStartData?.message || 'Failed to start live transcription.',
+          liveStartData?.message || t('conversation.voice.startFailed'),
         );
       }
 
@@ -1410,7 +1418,7 @@ export default function MessageInput({
       setVoiceError(
         error instanceof Error
           ? error.message
-          : 'Failed to start live transcription.',
+          : t('conversation.voice.startFailed'),
       );
     }
   };
@@ -1494,7 +1502,7 @@ export default function MessageInput({
           own: t('conversation.sources.groupOwn'),
           team: t('conversation.sources.groupTeam'),
         },
-        SourceIcon,
+        <Database />,
       ),
     [sourceDocs, t],
   );
@@ -1541,7 +1549,7 @@ export default function MessageInput({
   const toolItems: MultiSelectPopoverItem[] = userTools.map((tool) => ({
     id: tool.id,
     label: tool.customName || tool.displayName,
-    icon: <ToolIcon name={tool.name} className="h-5 w-5" />,
+    icon: <ToolIcon name={tool.name} className="size-5" />,
   }));
 
   const selectedToolIds = userTools
@@ -1678,7 +1686,7 @@ export default function MessageInput({
           controls (dead Attach button, see AttachFileButton). */}
       <div
         translate="no"
-        className="border-border bg-card relative flex w-full flex-col rounded-3xl border dark:bg-transparent"
+        className="border-border bg-card relative flex w-full flex-col rounded-3xl border"
       >
         <AttachmentChipList
           attachments={attachments}
@@ -1701,18 +1709,22 @@ export default function MessageInput({
                 count: sendReadiness.pendingCount,
               })}
             </span>
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="inline"
               onClick={cancelArmedSend}
-              className="underline hover:opacity-80"
+              /* eslint-disable-next-line shadcn/no-restyle --
+                 The queued-send Cancel sits inline in the composer's 12px status line; link inline keeps the base text-sm, so it takes the line's size. */
+              className="text-xs"
             >
               {t('conversation.attachments.cancelQueuedSend')}
-            </button>
+            </Button>
           </div>
         )}
         {sendArmed && sendReadiness.state === 'blocked' && (
           <div
-            className="px-2 pb-1 text-xs text-[#B42318] sm:px-3"
+            className="text-destructive px-2 pb-1 text-xs sm:px-3"
             role="alert"
           >
             {t('conversation.attachments.sendBlockedByFailed', {
@@ -1721,7 +1733,7 @@ export default function MessageInput({
           </div>
         )}
         {voiceError && (
-          <div className="px-2 pb-1 text-xs text-[#B42318] sm:px-3">
+          <div className="text-destructive px-2 pb-1 text-xs sm:px-3">
             {voiceError}
           </div>
         )}
@@ -1742,7 +1754,7 @@ export default function MessageInput({
             }
             tabIndex={1}
             placeholder={t('inputPlaceholder')}
-            className="inputbox-style dark:text-foreground dark:placeholder:text-muted-foreground/50 w-full scrollbar-thin overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 placeholder:text-gray-500 focus:outline-hidden sm:px-3"
+            className="text-foreground placeholder:text-muted-foreground w-full resize-none overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 focus:outline-hidden sm:px-3"
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             aria-label={t('inputPlaceholder')}
@@ -1787,37 +1799,40 @@ export default function MessageInput({
           </div>
 
           {loading ? (
-            <Button
-              type="button"
+            <IconButton
+              label={t('cancel')}
               variant="default"
               size="icon"
+              shape="pill"
               onClick={handleCancel}
-              aria-label={t('cancel')}
-              className="bg-primary ml-auto h-7 w-7 shrink-0 rounded-full text-white sm:h-9 sm:w-9"
+              className="ml-auto size-7 shrink-0 sm:size-9"
               disabled={!loading}
             >
-              <div className="flex h-3 w-3 items-center justify-center rounded-sm bg-white sm:h-3.5 sm:w-3.5" />
-            </Button>
+              <div className="flex size-3 items-center justify-center rounded-sm bg-white sm:size-3.5" />
+            </IconButton>
           ) : (
-            <Button
-              type="button"
+            <IconButton
+              label={t('conversation.send')}
               variant="default"
               size="icon"
+              shape="pill"
               onClick={handleSubmit}
-              aria-label={t('send')}
-              className={`ml-auto h-7 w-7 shrink-0 rounded-full transition-colors duration-300 ease-in-out sm:h-9 sm:w-9 ${
-                canSubmit
-                  ? 'bg-primary text-white'
-                  : 'bg-muted text-muted-foreground dark:bg-accent dark:text-muted-foreground'
-              }`}
+              className={cn(
+                'ml-auto size-7 shrink-0 sm:size-9',
+                !canSubmit &&
+                  /* eslint-disable-next-line shadcn/no-restyle --
+                     The empty composer's send button is a grey circle, not a
+                     faded brand one: no variant is neutral while disabled, and
+                     secondary is the brand-tinted pressed state. */
+                  'bg-muted text-muted-foreground dark:bg-accent',
+              )}
               disabled={!canSubmit}
             >
               <SendArrow
-                className="mx-auto my-auto block h-3.5 w-3.5 sm:h-4 sm:w-4"
-                aria-label={t('send')}
-                role="img"
+                className="mx-auto my-auto block size-3.5 sm:size-4"
+                aria-hidden="true"
               />
-            </Button>
+            </IconButton>
           )}
         </div>
       </div>
@@ -1834,12 +1849,12 @@ export default function MessageInput({
 
       {handleDragActive &&
         createPortal(
-          <div className="dark:bg-background/85 pointer-events-none fixed top-0 left-0 z-50 flex size-full flex-col items-center justify-center bg-white/85">
-            <img className="filter dark:invert" src={DragFileUpload} />
-            <span className="text-muted-foreground dark:text-muted-foreground px-2 text-2xl font-bold">
+          <div className="bg-background/85 pointer-events-none fixed top-0 left-0 z-50 flex size-full flex-col items-center justify-center">
+            <CloudUpload className="size-18" />
+            <span className="text-muted-foreground px-2 text-2xl font-bold">
               {t('modals.uploadDoc.drag.title')}
             </span>
-            <span className="text-s text-muted-foreground dark:text-muted-foreground w-48 p-2 text-center">
+            <span className="text-muted-foreground w-48 p-2 text-center text-sm">
               {t('modals.uploadDoc.drag.description')}
             </span>
           </div>,

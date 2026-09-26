@@ -1,11 +1,11 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -13,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
+import { SectionHeader } from '../../components/ui/section-header';
+import { SettingRow, SettingRows } from '../../components/ui/setting-row';
 import { Switch } from '../../components/ui/switch';
 import type {
   ChunkingStrategy,
@@ -21,8 +23,6 @@ import type {
   SourceConfig,
 } from '../../models/misc';
 import type { Model } from '../../models/types';
-
-import ChevronRight from '../../assets/chevron-right.svg';
 
 // Defaults mirror the backend SourceConfig
 // (application/storage/db/source_config.py). A form seeded with these and sent
@@ -150,60 +150,24 @@ export function availableRetrievers(
 }
 
 /**
- * Group eyebrow: an uppercase, tracked title with a normal-weight muted ` · tag`
- * suffix. Reads as more prominent than the individual field labels below it.
+ * Group eyebrow: an uppercase, tracked title with a normal-weight ` · tag`
+ * suffix, set above the field rows of a group.
  */
 function GroupHeader({ title, tag }: { title: string; tag: string }) {
   return (
-    <h4 className="text-foreground text-xs font-semibold tracking-wider uppercase">
-      {title}
-      <span className="text-muted-foreground font-normal normal-case">
-        {' · '}
-        {tag}
-      </span>
-    </h4>
-  );
-}
-
-/**
- * One settings row: a left block (medium-weight label plus optional muted
- * description) and a right block holding the control. `alignStart` top-aligns
- * the row for controls paired with a multi-line description; otherwise both
- * sides are vertically centered.
- */
-function SettingRow({
-  label,
-  htmlFor,
-  description,
-  alignStart = false,
-  children,
-}: {
-  label: string;
-  htmlFor?: string;
-  description?: ReactNode;
-  alignStart?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex flex-row justify-between gap-4 py-3 first:pt-0 last:pb-0',
-        alignStart ? 'items-start' : 'items-center',
-      )}
-    >
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <Label
-          htmlFor={htmlFor}
-          className="text-foreground pointer-events-none w-fit text-sm font-medium"
-        >
-          {label}
-        </Label>
-        {description ? (
-          <p className="text-muted-foreground text-xs">{description}</p>
-        ) : null}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
+    <SectionHeader
+      as="h4"
+      size="sm"
+      title={
+        <>
+          {title}
+          <span className="text-muted-foreground font-normal normal-case">
+            {' · '}
+            {tag}
+          </span>
+        </>
+      }
+    />
   );
 }
 
@@ -448,7 +412,7 @@ export default function RetrievalOptions({
       <div className="flex flex-col gap-3">
         <GroupHeader title={tr('retrieval.title')} tag={tr('retrieval.tag')} />
 
-        <div className="divide-border/50 divide-y">
+        <SettingRows>
           <SettingRow
             label={tr('retrieval.retriever')}
             htmlFor="retrieval-retriever"
@@ -462,8 +426,8 @@ export default function RetrievalOptions({
             >
               <SelectTrigger
                 id="retrieval-retriever"
-                className="w-52 rounded-md"
-                size="lg"
+                className="w-52"
+                size="field"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -559,8 +523,8 @@ export default function RetrievalOptions({
               >
                 <SelectTrigger
                   id="retrieval-exposure"
-                  className="w-52 rounded-md"
-                  size="lg"
+                  className="w-52"
+                  size="field"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -589,7 +553,7 @@ export default function RetrievalOptions({
               onCheckedChange={(checked) => setPrescreen({ enabled: checked })}
             />
           </SettingRow>
-        </div>
+        </SettingRows>
 
         {/* Prescreen expanded inputs (kept as floating-label cards) */}
         {value.retrieval.prescreen.enabled && (
@@ -600,7 +564,6 @@ export default function RetrievalOptions({
               label={tr('prescreen.candidateK')}
               value={String(value.retrieval.prescreen.candidate_k)}
               disabled={disabled}
-              labelBgClassName="bg-card"
               onChange={(e) =>
                 setPrescreen({
                   candidate_k: Math.max(
@@ -616,7 +579,6 @@ export default function RetrievalOptions({
               label={tr('prescreen.maxKeep')}
               value={String(value.retrieval.prescreen.max_keep)}
               disabled={disabled}
-              labelBgClassName="bg-card"
               onChange={(e) =>
                 setPrescreen({
                   max_keep: Math.min(
@@ -632,7 +594,6 @@ export default function RetrievalOptions({
               label={tr('prescreen.batchSize')}
               value={String(value.retrieval.prescreen.batch_size)}
               disabled={disabled}
-              labelBgClassName="bg-card"
               onChange={(e) =>
                 setPrescreen({
                   batch_size: Math.max(1, Number(e.target.value) || 1),
@@ -654,7 +615,7 @@ export default function RetrievalOptions({
             {tr('graphRetrieval.agentToolHint')}
           </p>
 
-          <div className="divide-border/50 divide-y">
+          <SettingRows>
             <SettingRow
               label={tr('graphRetrieval.seedStrategy')}
               htmlFor="graph-seed-strategy"
@@ -670,8 +631,8 @@ export default function RetrievalOptions({
               >
                 <SelectTrigger
                   id="graph-seed-strategy"
-                  className="w-52 rounded-md"
-                  size="lg"
+                  className="w-52"
+                  size="field"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -717,7 +678,7 @@ export default function RetrievalOptions({
                 }
               />
             </SettingRow>
-          </div>
+          </SettingRows>
         </div>
       )}
 
@@ -726,7 +687,7 @@ export default function RetrievalOptions({
         <div className="flex flex-col gap-3">
           <GroupHeader title={tr('graph.title')} tag={tr('graph.tag')} />
 
-          <div className="divide-border/50 divide-y">
+          <SettingRows>
             <SettingRow
               label={tr('graph.extractionModel')}
               htmlFor="graph-extraction-model"
@@ -744,8 +705,8 @@ export default function RetrievalOptions({
               >
                 <SelectTrigger
                   id="graph-extraction-model"
-                  className="w-52 rounded-md"
-                  size="lg"
+                  className="w-52"
+                  size="field"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -794,7 +755,7 @@ export default function RetrievalOptions({
                 }}
               />
             </SettingRow>
-          </div>
+          </SettingRows>
         </div>
       )}
 
@@ -802,7 +763,7 @@ export default function RetrievalOptions({
       <div className={cn('flex flex-col gap-3', queryOnly && 'hidden')}>
         <GroupHeader title={tr('chunking.title')} tag={tr('chunking.tag')} />
 
-        <div className="divide-border/50 divide-y">
+        <SettingRows>
           <SettingRow
             label={tr('chunking.strategy')}
             htmlFor="chunking-strategy"
@@ -816,8 +777,8 @@ export default function RetrievalOptions({
             >
               <SelectTrigger
                 id="chunking-strategy"
-                className="w-52 rounded-md"
-                size="lg"
+                className="w-52"
+                size="field"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -882,7 +843,7 @@ export default function RetrievalOptions({
               }
             />
           </SettingRow>
-        </div>
+        </SettingRows>
       </div>
     </div>
   );
@@ -896,22 +857,26 @@ export default function RetrievalOptions({
       <Button
         type="button"
         variant="link"
+        size="sm"
         onClick={() => setOpen((o) => !o)}
-        className="text-foreground hover:text-foreground h-auto w-fit justify-start px-0 py-2 text-sm font-normal hover:no-underline"
+        className="-ml-3 w-fit justify-start"
       >
-        <img
-          src={ChevronRight}
-          alt=""
-          className={`h-3 w-3 transform transition-transform dark:invert ${
-            expanded ? 'rotate-90' : ''
-          }`}
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            'size-3 transition-transform duration-200',
+            expanded && 'rotate-90',
+          )}
         />
         <span>{tr('title')}</span>
       </Button>
       <div
-        className={`grid transition-all duration-300 ease-in-out ${
-          expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-        }`}
+        className={cn(
+          'grid transition-[grid-template-rows,opacity] duration-300 ease-out',
+          expanded
+            ? 'grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0',
+        )}
       >
         <div className="overflow-hidden">{body}</div>
       </div>

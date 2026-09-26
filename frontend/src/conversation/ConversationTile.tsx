@@ -1,31 +1,23 @@
-import { Share, X } from 'lucide-react';
+import { Check, Pencil, Share, Trash2, X } from 'lucide-react';
 import {
   SyntheticEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
-  type ReactNode,
 } from 'react';
 import { useSelector } from 'react-redux';
-import Edit from '../assets/edit.svg';
-import { useDarkTheme } from '../hooks';
+import { Link } from 'react-router-dom';
 import ConfirmationModal from '../modals/ConfirmationModal';
-import CheckMark2 from '../assets/checkMark2.svg';
-import Trash from '../assets/red-trash.svg';
-import threeDots from '../assets/three-dots.svg';
 import { selectConversationId } from '../preferences/preferenceSlice';
 import { ActiveState } from '../models/misc';
 import { ShareConversationModal } from '../modals/ShareConversationModal';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+import { cn } from '../lib/utils';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { useOutsideAlerter } from '../hooks';
 
 interface ConversationProps {
@@ -49,7 +41,6 @@ export default function ConversationTile({
 }: ConversationTileProps) {
   const conversationId = useSelector(selectConversationId);
   const tileRef = useRef<HTMLInputElement>(null);
-  const [isDarkTheme] = useDarkTheme();
   const [isEdit, setIsEdit] = useState(false);
   const [conversationName, setConversationsName] = useState('');
   const [isOpen, setOpen] = useState<boolean>(false);
@@ -58,12 +49,12 @@ export default function ConversationTile({
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
   const { t } = useTranslation();
+  const isCurrent = conversationId === conversation.id;
   useEffect(() => {
     setConversationsName(conversation.name);
   }, [conversation.name]);
 
-  function handleEditConversation(event: SyntheticEvent) {
-    event.stopPropagation();
+  function handleEditConversation() {
     setIsEdit(true);
     setOpen(false);
   }
@@ -126,35 +117,24 @@ export default function ConversationTile({
     }
   };
 
-  type ConversationMenuOption = {
-    icon: ReactNode;
-    label: string;
-    onClick: (event: SyntheticEvent) => void;
-    variant: 'default' | 'destructive';
-  };
-
-  const menuOptions: ConversationMenuOption[] = [
+  const menuOptions: MenuOption[] = [
     {
-      icon: <Share className="size-4" strokeWidth={1.75} />,
+      icon: Share,
       label: t('convTile.share'),
-      onClick: (event: SyntheticEvent) => {
-        event.stopPropagation();
+      onClick: () => {
         setShareModalState(true);
         setOpen(false);
       },
-      variant: 'default',
     },
     {
-      icon: <img src={Edit} alt="" width={16} height={16} />,
+      icon: Pencil,
       label: t('convTile.rename'),
       onClick: handleEditConversation,
-      variant: 'default',
     },
     {
-      icon: <img src={Trash} alt="" width={18} height={18} />,
+      icon: Trash2,
       label: t('convTile.delete'),
-      onClick: (event: SyntheticEvent) => {
-        event.stopPropagation();
+      onClick: () => {
         setDeleteModalState('ACTIVE');
         setOpen(false);
       },
@@ -185,44 +165,59 @@ export default function ConversationTile({
             setIsHovered(false);
           }
         }}
-        onClick={() => {
-          onConversationClick();
-          conversationId !== conversation.id &&
-            selectConversation(conversation.id);
-        }}
-        className={`hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between gap-4 rounded-3xl pl-4 ${
-          conversationId === conversation.id || isOpen || isHovered || isEdit
-            ? 'bg-sidebar-accent'
-            : ''
-        }`}
+        className="group relative mx-4 mt-4"
       >
-        <div className={`flex w-10/12 gap-4`}>
-          {isEdit ? (
+        {isEdit ? (
+          // The rename field takes the row's place; the row keeps its fill
+          // and the Save / Cancel buttons sit where the menu was.
+          <div className="bg-sidebar-accent flex h-9 items-center rounded-full pr-20 pl-3">
             <Input
               autoFocus
               type="text"
-              className="h-6 w-full rounded-2xl border-0 px-1 text-sm leading-6 font-normal shadow-none focus-visible:ring-0 md:text-sm dark:border-0"
+              variant="bare"
+              className="w-full"
               value={conversationName}
               onChange={(e) => setConversationsName(e.target.value)}
               onKeyDown={handleRenameKeyDown}
             />
-          ) : (
-            <p className="text-foreground dark:text-foreground my-auto overflow-hidden text-sm leading-6 font-normal text-ellipsis whitespace-nowrap">
-              {conversationName}
-            </p>
-          )}
-        </div>
-        {(conversationId === conversation.id || isHovered || isOpen) && (
-          <div className="dark:text-muted-foreground flex text-white">
+          </div>
+        ) : (
+          <Button
+            variant="sidebar-item"
+            asChild
+            /* eslint-disable shadcn/no-restyle -- the link and its menu
+               button are siblings, so the row keeps its fill while the
+               pointer is on the button or the menu is open, and pr-10 keeps
+               the label clear of the button. */
+            className={cn(
+              'group-hover:bg-sidebar-accent flex w-full pr-10',
+              isOpen && 'bg-sidebar-accent',
+            )}
+            /* eslint-enable shadcn/no-restyle */
+          >
+            <Link
+              to={`/c/${conversation.id}`}
+              aria-current={isCurrent ? 'page' : undefined}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                event.preventDefault();
+                onConversationClick();
+                if (!isCurrent) selectConversation(conversation.id);
+              }}
+            >
+              <span className="truncate">{conversationName}</span>
+            </Link>
+          </Button>
+        )}
+        {(isCurrent || isHovered || isOpen || isEdit) && (
+          <div className="absolute top-1 right-2 flex">
             {isEdit ? (
               <div className="flex gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('convTile.save')}
-                  title={t('convTile.save')}
-                  className="mr-2 h-auto w-auto bg-transparent p-0 hover:bg-transparent hover:opacity-50"
+                <IconButton
+                  label={t('convTile.save')}
+                  icon={Check}
+                  variant="ghost-on-accent"
+                  size="icon-xs"
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
                     handleSaveConversation({
@@ -230,55 +225,26 @@ export default function ConversationTile({
                       name: conversationName,
                     });
                   }}
-                >
-                  <img src={CheckMark2} alt="" className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('cancel')}
-                  title={t('cancel')}
+                />
+                <IconButton
+                  label={t('cancel')}
+                  icon={X}
+                  variant="ghost-on-accent"
+                  size="icon-xs"
                   id={`img-${conversation.id}`}
-                  className="mt-px mr-4 h-auto w-auto bg-transparent p-0 hover:bg-transparent hover:opacity-50"
                   onClick={(event: SyntheticEvent) => {
                     event.stopPropagation();
                     onClear();
                   }}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
+                />
               </div>
             ) : (
-              <DropdownMenu open={isOpen} onOpenChange={setOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={(event: SyntheticEvent) => {
-                      event.stopPropagation();
-                    }}
-                    className="mr-2 h-6 w-6 rounded-full"
-                  >
-                    <img src={threeDots} width={8} alt="menu" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[144px]">
-                  {menuOptions.map((option, index) => (
-                    <DropdownMenuItem
-                      key={index}
-                      variant={option.variant}
-                      onSelect={(event) => {
-                        option.onClick(event as unknown as SyntheticEvent);
-                      }}
-                    >
-                      {option.icon}
-                      <span>{option.label}</span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <ActionMenu
+                options={menuOptions}
+                triggerLabel={t('convTile.menu')}
+                open={isOpen}
+                onOpenChange={setOpen}
+              />
             )}
           </div>
         )}

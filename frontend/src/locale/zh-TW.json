@@ -8,6 +8,7 @@
   "sourceDocs": "原始文件",
   "none": "無",
   "loading": "載入中...",
+  "retry": "重試",
   "cancel": "取消",
   "help": "幫助",
   "emailUs": "給我們發電郵",
@@ -23,7 +24,10 @@
     "sharedTitle": "已與您分享",
     "sharedBody": "已與您的團隊分享{{type}}：{{name}}（{{access}}）",
     "sharedBodyNoName": "已與您的團隊分享一個{{type}}（{{access}}）",
-    "dismiss": "關閉"
+    "dismiss": "關閉",
+    "toolApprovalTitle": "需要核准工具",
+    "toolApprovalReview": "檢視",
+    "toolApprovalFallbackName": "對話"
   },
   "demo": [
     {
@@ -56,14 +60,24 @@
     "label": "設定",
     "general": {
       "label": "一般",
-      "selectTheme": "選擇主題",
+      "subtitle": "選擇 DocsGPT 的外觀、介面語言以及聊天使用的提示詞。",
+      "sections": {
+        "appearance": "外觀",
+        "chat": "聊天",
+        "dangerZone": "危險操作"
+      },
+      "theme": "主題",
+      "themeDescription": "淺色或深色介面。",
+      "language": "語言",
+      "languageDescription": "選單和標籤的語言。",
       "light": "淺色",
       "dark": "深色",
-      "selectLanguage": "選擇語言",
       "chunks": "每次查詢處理的區塊數",
       "prompt": "使用中的提示",
+      "promptDescription": "不使用代理的聊天所用的系統提示詞。代理會使用各自的提示詞。",
       "deleteAllLabel": "刪除所有對話",
       "deleteAllBtn": "全部刪除",
+      "deleteAllDescription": "永久刪除您帳戶中的所有對話。此操作無法復原。",
       "addNew": "新增",
       "convHistory": "對話歷史記錄",
       "none": "無",
@@ -72,7 +86,14 @@
       "high": "高",
       "unlimited": "無限制",
       "default": "預設",
-      "add": "添加"
+      "add": "添加",
+      "promptActions": {
+        "select": "選擇提示詞",
+        "edit": "編輯提示詞",
+        "view": "檢視提示詞",
+        "duplicate": "複製提示詞",
+        "delete": "刪除提示詞"
+      }
     },
     "sources": {
       "title": "在這裡您可以管理所有可用的來源檔案以及您上傳的檔案。",
@@ -111,7 +132,6 @@
         "edit": "編輯",
         "save": "儲存",
         "cancel": "取消",
-        "saving": "儲存中…",
         "saveFailed": "無法儲存頁面。請再試一次。",
         "forbidden": "您沒有編輯此頁面的權限。",
         "conflict": "此頁面在您開啟後已變更，並已重新載入。您的編輯內容如下——請重新套用後再次儲存。",
@@ -220,6 +240,7 @@
       "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？",
       "confirmDelete": "您確定要刪除此檔案嗎？此操作無法復原。",
       "backToAll": "返回所有來源",
+      "back": "返回",
       "chunks": "文本塊",
       "noChunks": "未找到文本塊",
       "noChunksAlt": "未找到文本塊",
@@ -323,7 +344,6 @@
         "subtitle": "設定「{{name}}」的分塊與檢索方式。",
         "subtitleGeneric": "設定此來源的分塊與檢索方式。",
         "save": "儲存",
-        "saving": "儲存中…",
         "readOnly": "您對此共享來源僅有檢視權限，無法變更其設定。",
         "chunkingChangeHint": "您變更了分塊設定。儲存後需重新索引此來源才會生效。",
         "prescreenInvalidHint": "請檢查預篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
@@ -370,6 +390,7 @@
       "failed": "失敗",
       "skipped": "已略過",
       "successful": "成功",
+      "otherSeries": "其他",
       "stats": {
         "messages": "訊息",
         "tokens": "Token",
@@ -668,12 +689,19 @@
       "description": "描述",
       "descriptionPlaceholder": "輸入描述",
       "bodyContentType": "主體內容類型",
+      "bodyTypeHint": {
+        "json": "最常用的格式。適用於現代 REST API。",
+        "formUrlencoded": "標準表單提交格式。最適合舊版 API 和登入表單。",
+        "multipart": "適用於需要 multipart 格式的 API。不支援透過 LLM 上傳檔案。",
+        "text": "純文字資料。每個欄位佔一行。",
+        "xml": "結構化 XML 格式。適用於 SOAP 和企業級 API。",
+        "octetStream": "原始二進位資料，傳輸時使用 base64 編碼。"
+      },
       "headers": "標頭",
       "queryParameters": "查詢參數",
       "body": "主體",
       "deleteActionWarning": "您確定要刪除操作 \"{{name}}\" 嗎？",
       "save": "儲存",
-      "saving": "儲存中...",
       "saveFailed": "儲存工具設定失敗",
       "fieldName": "欄位名稱",
       "fieldType": "欄位類型",
@@ -699,8 +727,6 @@
         "password": "密碼",
         "timeout": "Timeout (seconds)",
         "testConnection": "Test Connection",
-        "testing": "Testing",
-        "saving": "Saving",
         "save": "Save",
         "cancel": "Cancel",
         "noAuth": "No Authentication",
@@ -739,7 +765,14 @@
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
         }
-      }
+      },
+      "configErrors": {
+        "required": "{{field}}為必填項",
+        "positiveNumber": "必須是正數",
+        "maxTimeout": "逾時時間最長為 300 秒"
+      },
+      "headerValuePlaceholder": "例如：application/json",
+      "toolIconTitle": "{{name}} 圖示"
     },
     "devices": {
       "label": "裝置",
@@ -790,10 +823,11 @@
         "installLink": "還沒有 docsgpt-cli？安裝它",
         "stepTwo": "2. 在提示時輸入此配對碼：",
         "start": "產生配對碼",
-        "starting": "處理中…",
         "waitingForCli": "等待 CLI 兌換配對碼…",
         "cancel": "取消"
-      }
+      },
+      "auditDurationValue": "{{value}} 毫秒",
+      "fallbackName": "裝置"
     },
     "customModels": {
       "label": "自訂模型",
@@ -805,9 +839,7 @@
       "addTitle": "新增自訂模型",
       "editTitle": "編輯自訂模型",
       "save": "儲存",
-      "saving": "儲存中",
       "testConnection": "測試連線",
-      "testing": "測試中",
       "testSuccess": "連線成功。",
       "testHintNew": "請填寫 Base URL、模型 ID 與 API 金鑰以啟用連線測試。",
       "disabledBadge": "已停用",
@@ -908,15 +940,6 @@
         "workflows_one": "{{count}} 個工作流程",
         "workflows_other": "{{count}} 個工作流程"
       },
-      "relative": {
-        "now": "剛剛",
-        "minutes_one": "{{count}} 分鐘前",
-        "minutes_other": "{{count}} 分鐘前",
-        "hours_one": "{{count}} 小時前",
-        "hours_other": "{{count}} 小時前",
-        "days_one": "{{count}} 天前",
-        "days_other": "{{count}} 天前"
-      },
       "families": {
         "agents": "代理",
         "sources": "來源",
@@ -954,7 +977,6 @@
         "retry": "重試",
         "cancel": "取消",
         "submit": "建立權杖",
-        "submitting": "建立中",
         "error": "建立權杖失敗，請再試一次。"
       },
       "created": {
@@ -973,7 +995,6 @@
         "warning": "要為「{{name}}」產生新的密鑰嗎？目前的密鑰會立即失效，所有使用它的地方都需要更新。名稱、權限範圍和限制維持不變。",
         "newExpiration": "新的到期時間",
         "submit": "重新產生",
-        "submitting": "正在重新產生…",
         "error": "重新產生權杖失敗，請再試一次。",
         "done": {
           "title": "權杖已重新產生",
@@ -1030,7 +1051,8 @@
         "collapseDetails": "摺疊上傳詳情",
         "dismiss": "關閉上傳通知",
         "uploadProgress": "上傳進度 {{progress}}%",
-        "clear": "清除"
+        "clear": "清除",
+        "ingestionFailed": "匯入失敗。"
       },
       "showAdvanced": "顯示進階選項",
       "hideAdvanced": "隱藏進階選項",
@@ -1096,7 +1118,6 @@
           "pickerFailed": "無法開啟檔案選擇器。請重試。",
           "selectedFiles": "已選擇的檔案",
           "selectFiles": "選擇檔案",
-          "loading": "載入中...",
           "noFilesSelected": "未選擇檔案或資料夾",
           "folders": "資料夾",
           "files": "檔案",
@@ -1122,6 +1143,16 @@
           "folderAlt": "資料夾",
           "fileAlt": "檔案"
         }
+      },
+      "fields": {
+        "url": "URL",
+        "awsAccessKeyId": "AWS 存取金鑰 ID",
+        "awsSecretAccessKey": "AWS 秘密存取金鑰",
+        "bucket": "儲存貯體名稱",
+        "prefix": "路徑前綴（選填）",
+        "region": "AWS 區域",
+        "endpointUrl": "自訂端點 URL（選填）",
+        "initialContent": "初始內容（選填）"
       }
     },
     "createAPIKey": {
@@ -1162,7 +1193,10 @@
       "apiKeyPlaceholder": "輸入 API 金鑰 / OAuth",
       "addButton": "新增工具",
       "closeButton": "關閉",
-      "customNamePlaceholder": "Enter custom name (optional)"
+      "customNamePlaceholder": "Enter custom name (optional)",
+      "fieldRequired": "{{field}} 為必填",
+      "positiveNumber": "必須是正數",
+      "maxTimeout": "逾時上限為 300 秒"
     },
     "prompts": {
       "addPrompt": "新增提示",
@@ -1283,15 +1317,22 @@
       "review": "Review",
       "import": "Import",
       "continueToAgent": "Continue to agent"
+    },
+    "jwt": {
+      "title": "新增 JWT 權杖",
+      "label": "JWT 權杖",
+      "save": "儲存權杖"
     }
   },
   "sharedConv": {
     "subtitle": "使用以下工具建立",
     "button": "開始使用 DocsGPT",
-    "meta": "DocsGPT 使用生成式 AI，請使用原始資料來源審閱重要資訊。"
+    "meta": "DocsGPT 使用生成式 AI，請使用原始資料來源審閱重要資訊。",
+    "metaDescription": "使用 DocsGPT 分享的對話"
   },
   "convTile": {
     "share": "分享",
+    "menu": "對話操作",
     "delete": "刪除",
     "rename": "重新命名",
     "save": "儲存",
@@ -1313,7 +1354,8 @@
     "edit": {
       "update": "更新",
       "cancel": "取消",
-      "placeholder": "輸入更新的查詢..."
+      "placeholder": "輸入更新的查詢...",
+      "label": "編輯"
     },
     "sources": {
       "title": "來源",
@@ -1328,6 +1370,9 @@
     "attachments": {
       "attach": "附件",
       "remove": "刪除附件",
+      "attached": "附件",
+      "failed": "失敗",
+      "attachment": "附件",
       "plan": {
         "inline": "已在上下文中",
         "partial": "部分在上下文中",
@@ -1340,6 +1385,7 @@
       }
     },
     "retry": "重試",
+    "failedTitle": "無法產生回覆",
     "reasoning": "推理",
     "wikiWrite": {
       "edited": "已編輯 Wiki",
@@ -1392,7 +1438,55 @@
     "quotaExceeded": {
       "tokens": "您已使用 {{limit}} 權杖配額中的 {{used}}。配額將於 {{resetsAt}} 重設。",
       "cost": "您已使用 {{limit}} 用量預算中的 {{used}}。預算將於 {{resetsAt}} 重設。"
-    }
+    },
+    "voice": {
+      "start": "語音輸入",
+      "stopRecording": "停止錄音",
+      "transcribingAudio": "正在轉錄音訊",
+      "voice": "語音",
+      "stop": "停止",
+      "transcribing": "轉錄中",
+      "unavailable": "語音輸入目前無法使用。",
+      "insecure": "語音輸入需要安全連線（HTTPS 或 localhost）。",
+      "unsupported": "此瀏覽器不支援語音輸入。",
+      "noWebAudio": "語音輸入需要此瀏覽器支援 Web Audio。",
+      "micBlocked": "麥克風存取遭到封鎖。請允許麥克風權限後再試一次。",
+      "micNotFound": "在此裝置上找不到麥克風。",
+      "micBusy": "麥克風無法使用或已被占用。",
+      "micInterrupted": "錄音開始前麥克風存取被中斷。",
+      "micDenied": "麥克風存取遭拒。",
+      "transcribeFailed": "音訊轉錄失敗。",
+      "finalizeFailed": "無法完成即時轉錄。",
+      "startFailed": "無法啟動即時轉錄。"
+    },
+    "selectModel": "選擇模型",
+    "question": {
+      "expand": "顯示完整訊息",
+      "collapse": "收合"
+    },
+    "exportMarkdown": "匯出為 Markdown",
+    "feedback": {
+      "like": "讚",
+      "removeLike": "取消讚",
+      "dislike": "倒讚",
+      "removeDislike": "取消倒讚"
+    },
+    "toolApproval": {
+      "approve": "核准",
+      "approveAlways": "核准，不再詢問",
+      "deny": "拒絕",
+      "details": "詳細資料",
+      "denyReasonPlaceholder": "拒絕原因（選填）…"
+    },
+    "research": {
+      "title": "研究",
+      "planning": "正在規劃研究…",
+      "researching": "正在研究…",
+      "synthesizing": "正在撰寫報告…",
+      "complete": "已完成",
+      "researched": "已研究 {{count}} 個主題"
+    },
+    "openFile": "開啟檔案"
   },
   "agents": {
     "title": "代理",
@@ -1402,7 +1496,8 @@
       "unpin": "取消釘選代理",
       "open": "開啟",
       "remove": "移除",
-      "draft": "草稿"
+      "draft": "草稿",
+      "actions": "代理操作"
     },
     "description": "探索並創建結合指令、額外知識和任意技能組合的DocsGPT自訂版本",
     "newAgent": "新建代理",
@@ -1528,7 +1623,8 @@
       },
       "agentTypes": {
         "classic": "經典",
-        "react": "ReAct"
+        "react": "ReAct",
+        "research": "研究"
       },
       "labels": {
         "defaultModel": "預設模型"
@@ -1683,13 +1779,95 @@
           "nov": "11月",
           "dec": "12月"
         }
+      },
+      "status": {
+        "active": "啟用中",
+        "paused": "已暫停",
+        "completed": "已完成",
+        "cancelled": "已取消",
+        "success": "成功",
+        "failed": "失敗",
+        "skipped": "已略過",
+        "running": "執行中",
+        "pending": "等待中",
+        "timeout": "逾時"
+      },
+      "trigger": {
+        "cron": "排程",
+        "manual": "手動"
+      },
+      "runDetails": {
+        "title": "執行詳情",
+        "status": "狀態",
+        "scheduledFor": "排定時間",
+        "started": "開始",
+        "finished": "結束",
+        "tokens": "權杖",
+        "tokensValue": "提示 {{prompt}} · 生成 {{generated}}",
+        "trigger": "觸發方式",
+        "error": "錯誤",
+        "errorWithType": "錯誤（{{type}}）",
+        "output": "輸出",
+        "truncated": "（已截斷）"
+      },
+      "timezoneMeta": "時區：{{timezone}}",
+      "nextRunMeta": "下次：{{time}}",
+      "toolCard": {
+        "cancelFailed": "取消失敗",
+        "taskCancelled": "已取消排程工作。",
+        "pendingCount_other": "{{count}} 個待執行的排程工作",
+        "schedulingFailed": "排程失敗",
+        "scheduling": "正在排程…",
+        "scheduled": "排程工作",
+        "pendingCount_one": "{{count}} 個待執行的排程工作"
+      },
+      "cron": {
+        "daily": "每天 {{time}}",
+        "weekly": "每週{{day}} {{time}}",
+        "monthly": "每月 {{day}} 日 {{time}}",
+        "yearly": "每年{{month}}{{day}}日 {{time}}",
+        "custom": "自訂：{{expression}}",
+        "dayNames": {
+          "sun": "日",
+          "mon": "一",
+          "tue": "二",
+          "wed": "三",
+          "thu": "四",
+          "fri": "五",
+          "sat": "六"
+        },
+        "monthNames": {
+          "jan": "1月",
+          "feb": "2月",
+          "mar": "3月",
+          "apr": "4月",
+          "may": "5月",
+          "jun": "6月",
+          "jul": "7月",
+          "aug": "8月",
+          "sep": "9月",
+          "oct": "10月",
+          "nov": "11月",
+          "dec": "12月"
+        }
+      },
+      "runLog": {
+        "when": "時間",
+        "details": "詳細資料",
+        "empty": "此排程尚無執行紀錄。"
       }
     },
     "shared": {
-      "notFound": "未找到代理。請確保代理已共享。"
+      "notFound": "未找到代理。請確保代理已共享。",
+      "logoAlt": "代理標誌",
+      "sharedBy": "來自 {{name}}",
+      "sharedOn": "分享於 {{date}}",
+      "connectedTools": "已連接的工具",
+      "toolIconTitle": "{{name}} 圖示"
     },
     "preview": {
-      "testMessage": "在此測試您的代理。已發佈的代理可以在對話中使用。"
+      "testMessage": "在此測試您的代理。已發佈的代理可以在對話中使用。",
+      "emptyTitle": "測試你的代理"
     },
     "deleteConfirmation": "您確定要刪除此代理嗎？",
     "folders": {
@@ -1707,7 +1885,9 @@
       "backToRoot": "返回",
       "currentFolder": "此資料夾",
       "noSubfolders": "沒有子資料夾",
-      "noFolders": "暫無資料夾"
+      "openFolder": "開啟資料夾",
+      "noFolders": "暫無資料夾",
+      "menuAriaLabel": "{{folderName}} 的操作"
     },
     "guardrailEvents": {
       "heading": "Guardrail activity",
@@ -1731,6 +1911,198 @@
       "emptyForFilter": "No decisions match this filter.",
       "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
+    },
+    "workflow": {
+      "artifacts": {
+        "previewUnsupported": "此產出物無法預覽",
+        "loadListFailed": "無法載入產出物",
+        "loadFailed": "無法載入產出物",
+        "loading": "正在載入產出物...",
+        "inProgress": "執行中——節點產生的產出物會顯示在這裡。",
+        "empty": "此次執行未產生產出物。",
+        "back": "返回產出物列表",
+        "untitled": "產出物 {{id}}",
+        "fileKind": "檔案"
+      },
+      "builder": {
+        "deleteFailed": "無法刪除工作流程代理",
+        "updateWorkflowFailed": "無法更新工作流程",
+        "updateAgentFailed": "無法更新代理",
+        "createWorkflowFailed": "無法建立工作流程",
+        "createAgentFailed": "無法建立代理",
+        "saveFailed": "無法儲存工作流程",
+        "defaultDescription": "工作流程代理：{{name}}",
+        "newWorkflow": "新增工作流程",
+        "editDetails": "編輯工作流程詳細資料",
+        "workflowName": "工作流程名稱",
+        "workflowNamePlaceholder": "輸入工作流程名稱",
+        "workflowDescriptionPlaceholder": "描述此工作流程的用途",
+        "agentImageAlt": "代理圖片",
+        "currentImage": "目前圖片",
+        "agentImage": "代理圖片",
+        "agentImageHint": "圖片更新將於下次儲存時生效。",
+        "done": "完成",
+        "unablePreview": "無法預覽工作流程",
+        "unableSave": "無法儲存工作流程",
+        "unablePublish": "無法發佈工作流程",
+        "coreNodes": "核心節點",
+        "logicNodes": "邏輯與資料",
+        "aiAgent": "AI 代理",
+        "setStateHint": "修改工作流程變數",
+        "conditionHint": "條件分支",
+        "codeHint": "在沙箱中執行程式碼",
+        "startNode": "開始節點",
+        "endNode": "結束節點",
+        "stateTitle": "設定全域變數",
+        "nodeId": "節點 ID",
+        "title": "標題",
+        "titlePlaceholder": "輸入節點標題",
+        "agentType": "代理類型",
+        "agentTypePlaceholder": "選擇代理類型",
+        "model": "模型",
+        "modelPlaceholder": "選擇模型",
+        "systemPrompt": "系統提示詞",
+        "systemPromptPlaceholder": "代理的系統提示詞",
+        "promptTemplate": "提示詞範本",
+        "promptTemplatePlaceholder": "使用 {{example}} 插入動態內容",
+        "outputVariable": "輸出變數",
+        "outputVariablePlaceholder": "輸出的變數名稱",
+        "streamToUser": "將輸出串流給使用者",
+        "sources": "來源",
+        "documents": "文件",
+        "documentsHint": "從上傳或上游節點傳給此代理的文件。",
+        "filePassing": "檔案傳遞",
+        "filePassingHint": "自動：模型支援時以原生方式傳送，否則擷取文字。",
+        "structuredOutput": "結構化輸出（JSON Schema）",
+        "modelNoStructuredOutput": "所選模型不支援結構化輸出。",
+        "validSchema": "JSON Schema 有效",
+        "invalidSchema": "JSON Schema 無效：{{error}}",
+        "noteContent": "備註內容",
+        "noteContentPlaceholder": "輸入備註內容",
+        "stateIntro": "為工作流程的狀態變數指定值",
+        "assignValue": "指定值",
+        "celHint": "使用 Common Expression Language 撰寫自訂運算式。直接以名稱參照狀態（<code>query</code>），而非 <code>{{braced}}</code>。",
+        "learnMore": "瞭解更多",
+        "toVariable": "目標變數",
+        "conditionIntro": "建立條件以分支你的工作流程",
+        "modeSimple": "簡易",
+        "modeAdvanced": "進階",
+        "caseNamePlaceholder": "分支名稱（選填）",
+        "variablePlaceholder": "變數",
+        "valuePlaceholder": "值",
+        "opContains": "包含",
+        "opStartsWith": "開頭為",
+        "conditionPlaceholder": "輸入條件，例如 query.contains(\"refund\")",
+        "codeIntro": "在工作流程沙箱中執行程式碼。產生的檔案會儲存為產出物。",
+        "inputFiles": "輸入檔案",
+        "inputFilesHint": "在沙箱中以檔案形式放置的產出物/上游參照（每個都會成為 inputs/<name>）。",
+        "timeout": "逾時（秒）",
+        "optional": "選填",
+        "cannotDeleteStart": "無法刪除開始節點",
+        "deleteNode": "刪除節點",
+        "deleteConfirm": "確定要刪除「{{name}}」嗎？",
+        "deleteConfirmUnnamed": "確定要刪除此工作流程代理嗎？"
+      },
+      "validation": {
+        "nameRequired": "工作流程名稱為必填",
+        "oneStart": "工作流程必須有且僅有一個開始節點",
+        "needEnd": "工作流程必須至少有一個結束節點",
+        "needAgent": "工作流程必須至少有一個 AI 代理節點",
+        "agentModel": "代理「{{name}}」必須選擇模型",
+        "agentStructuredOutput": "代理「{{name}}」所選模型不支援結構化輸出",
+        "agentSchema": "代理「{{name}}」的 JSON Schema：{{error}}",
+        "startConnected": "開始節點必須連接到其他節點",
+        "endIncoming": "結束節點「{{name}}」必須有傳入連線",
+        "edgeSource": "連線參照了不存在的來源節點",
+        "edgeTarget": "連線參照了不存在的目標節點",
+        "conditionNeedsCase": "條件「{{name}}」必須至少有一個包含運算式的分支",
+        "conditionCaseNoHandle": "條件「{{name}}」有一個缺少分支控點的分支",
+        "conditionDuplicateHandle": "條件「{{name}}」的分支控點「{{handle}}」重複",
+        "conditionTwoOutgoing": "條件「{{name}}」必須至少有 2 個傳出連線",
+        "conditionEdgeNoHandle": "條件「{{name}}」有一個缺少分支控點的連線",
+        "conditionUnknownBranch": "條件「{{name}}」有來自未知分支「{{handle}}」的連線",
+        "conditionMultipleEdges": "條件「{{name}}」的分支「{{handle}}」有多個連線",
+        "conditionNeedsElse": "條件「{{name}}」必須有 Else 分支",
+        "caseNoConnection": "條件「{{name}}」的分支「{{handle}}」有運算式但沒有分支連線",
+        "caseNoExpression": "條件「{{name}}」的分支「{{handle}}」有分支連線但沒有運算式",
+        "caseNoVariable": "條件「{{name}}」的分支「{{handle}}」在簡易模式下必須指定變數",
+        "branchReachEnd": "條件「{{name}}」的分支「{{handle}}」最終必須到達結束節點",
+        "codeRequired": "程式碼節點「{{name}}」必須包含要執行的程式碼",
+        "codeSchema": "程式碼節點「{{name}}」的 JSON Schema：{{error}}"
+      },
+      "schema": {
+        "notObject": "必須是有效的 JSON 物件",
+        "missingType": "必須包含 \"type\" 或 \"schema\" 欄位",
+        "invalidJson": "必須是有效的 JSON"
+      },
+      "filePassing": {
+        "auto": "自動",
+        "native": "原生",
+        "extract": "擷取"
+      },
+      "mobileBlocker": {
+        "title": "需要桌上型裝置",
+        "body": "工作流程建構器需要更大的螢幕才能獲得最佳體驗。請在桌上型電腦或筆記型電腦上開啟此頁面。"
+      },
+      "nodes": {
+        "start": "開始",
+        "startHint": "工作流程的入口",
+        "end": "結束",
+        "endHint": "工作流程完成",
+        "agent": "代理",
+        "note": "備註",
+        "condition": "If / Else",
+        "code": "程式碼",
+        "setState": "設定狀態",
+        "output": "輸出：{{variable}}",
+        "noCode": "尚無程式碼",
+        "modeSimple": "簡易",
+        "modeAdvanced": "進階",
+        "if": "If",
+        "elseIf": "Else if",
+        "else": "Else",
+        "operationCount_other": "{{count}} 個操作",
+        "variableCount_other": "{{count}} 個變數",
+        "variableTitle": "變數：{{name}}",
+        "valueTitle": "值：{{value}}",
+        "operationCount_one": "{{count}} 個操作",
+        "variableCount_one": "{{count}} 個變數"
+      },
+      "preview": {
+        "executionDetails": "執行詳細資料",
+        "stepCount_other": "（{{count}} 步）",
+        "outputLabel": "輸出：",
+        "errorLabel": "錯誤：",
+        "artifacts": "產出物",
+        "minimapHeading": "工作流程",
+        "emptyTitle": "測試工作流程",
+        "unsavedDraftAttachments": "在預覽中附加文件前，請先儲存工作流程。",
+        "stepCount_one": "（{{count}} 步）"
+      },
+      "documents": {
+        "modeAll": "所有輸入文件",
+        "modeNone": "無",
+        "modeChoose": "選擇…",
+        "selectPlaceholder": "選擇文件...",
+        "searchPlaceholder": "搜尋變數...",
+        "empty": "沒有上游文件",
+        "refPlaceholder": "新增參照（例如 A1）"
+      },
+      "variables": {
+        "globalContext": "全域內容",
+        "workflowInput": "工作流程輸入",
+        "searchPlaceholder": "搜尋變數...",
+        "empty": "找不到變數",
+        "addContext": "新增內容"
+      }
+    },
+    "typeModal": {
+      "title": "建立新代理",
+      "description": "選擇要建立的代理類型",
+      "classicTitle": "經典代理",
+      "classicDescription": "建立一個使用單一模型、工具和知識來源的標準 AI 代理",
+      "workflowTitle": "工作流程代理",
+      "workflowDescription": "設計包含不同模型、條件邏輯和狀態管理的複雜多步驟工作流程"
     }
   },
   "components": {
@@ -1739,7 +2111,39 @@
       "dropFiles": "Drop the files here",
       "fileTypes": "PNG, JPG, JPEG up to",
       "sizeLimitUnit": "MB",
-      "fileSizeError": "File exceeds {{size}}MB limit"
+      "fileSizeError": "File exceeds {{size}}MB limit",
+      "preview": "圖片預覽",
+      "remove": "移除檔案"
+    },
+    "artifact": {
+      "types": {
+        "todoList": "待辦清單",
+        "note": "筆記",
+        "memory": "記憶"
+      },
+      "fallbackTitle": "Artifact",
+      "todo": {
+        "done": "已完成 {{count}}",
+        "open": "未完成 {{count}}",
+        "empty": "尚無待辦事項"
+      },
+      "note": {
+        "lines_other": "{{count}} 行",
+        "empty": "空白筆記"
+      },
+      "notFound": "找不到 Artifact",
+      "loadFailed": "無法載入 Artifact",
+      "fetchFailed": "無法取得 Artifact",
+      "preview": "Artifact 預覽",
+      "download": "下載",
+      "restore": "還原",
+      "version": "版本 {{version}}",
+      "versionCurrent": "版本 {{version}}（目前）",
+      "downloadFailed": "下載失敗",
+      "restoreFailed": "還原失敗"
+    },
+    "profile": {
+      "avatarAlt": "使用者頭像"
     }
   },
   "pageNotFound": {
@@ -1755,7 +2159,14 @@
     "size": "大小",
     "myFiles": "我的檔案",
     "sharedWithMe": "與我共用",
-    "loadingMore": "載入更多檔案..."
+    "loadingMore": "載入更多檔案...",
+    "myDrive": "我的雲端硬碟",
+    "spaces": "空間",
+    "root": "根目錄",
+    "shared": "共用",
+    "connectTo": "連接到 {{provider}}",
+    "sessionExpiredFor": "工作階段已過期。請重新連接到 {{provider}}。",
+    "selectFilesFrom": "從 {{provider}} 選擇檔案"
   },
   "actionButtons": {
     "openNewChat": "開啟新聊天",
@@ -1766,7 +2177,13 @@
     "viewCode": "查看程式碼",
     "decreaseZoom": "縮小",
     "resetZoom": "重設縮放",
-    "increaseZoom": "放大"
+    "increaseZoom": "放大",
+    "download": "下載",
+    "downloadAs": "下載為 {{format}}",
+    "code": "程式碼",
+    "loading": "正在載入圖表...",
+    "codeTitle": "Mermaid 程式碼",
+    "renderFailed": "無法繪製圖表：{{message}}"
   },
   "navigation": {
     "agents": "代理",
@@ -1779,6 +2196,13 @@
         "insights": "洞察",
         "administration": "管理"
       }
+    },
+    "openSidebar": "開啟側邊欄",
+    "closeSidebar": "關閉側邊欄",
+    "social": {
+      "discord": "加入 Discord 社群",
+      "x": "在 X 上追蹤我們",
+      "github": "在 GitHub 上查看"
     }
   },
   "teams": {
@@ -1789,7 +2213,8 @@
       "roleAdmin": "管理員",
       "roleMember": "成員",
       "manageTeam": "管理團隊",
-      "createTeam": "建立團隊"
+      "createTeam": "建立團隊",
+      "logoAlt": "DocsGPT 標誌"
     }
   },
   "notification": {

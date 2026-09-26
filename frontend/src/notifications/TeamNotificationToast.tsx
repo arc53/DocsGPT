@@ -4,6 +4,14 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { Button } from '../components/ui/button';
+import {
+  Toast,
+  ToastActions,
+  ToastContent,
+  ToastHeader,
+  ToastMessage,
+  ToastTitle,
+} from '../components/ui/toast';
 
 import {
   dismissShareNotification,
@@ -50,28 +58,25 @@ function ShareToast({
   }, [id, onDismiss]);
 
   return (
-    <div className="border-border bg-card shadow-toast w-[271px] overflow-hidden rounded-2xl border">
-      <div className="bg-accent/50 dark:bg-muted flex items-center justify-between px-4 py-3">
-        <h3 className="dark:text-foreground text-sm leading-[16.5px] font-medium text-black">
-          {title}
-        </h3>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => onDismiss(id)}
-          className="h-8 w-8 p-0 text-black opacity-70 transition-opacity hover:bg-transparent hover:opacity-100 dark:text-white"
-          aria-label={dismissLabel}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-      <div className="px-5 py-3">
-        <p className="dark:text-muted-foreground text-sm leading-[18px] font-normal text-black">
-          {body}
-        </p>
-      </div>
-    </div>
+    <Toast>
+      <ToastHeader variant="default">
+        <ToastTitle wrap>{title}</ToastTitle>
+        <ToastActions>
+          <Button
+            type="button"
+            variant="ghost-muted"
+            size="icon-sm"
+            onClick={() => onDismiss(id)}
+            aria-label={dismissLabel}
+          >
+            <X />
+          </Button>
+        </ToastActions>
+      </ToastHeader>
+      <ToastContent>
+        <ToastMessage size="sm">{body}</ToastMessage>
+      </ToastContent>
+    </Toast>
   );
 }
 
@@ -141,16 +146,10 @@ export default function TeamNotificationToast() {
     };
   };
 
+  // Cards only: App.tsx mounts the shared ToastViewport (the live region)
+  // and stacks these above ToolApprovalToast and UploadToast.
   return (
-    // Standard bottom-right toast rail. UploadToast / ToolApprovalToast use the
-    // same corner but rarely co-occur with team-share toasts.
-    <div
-      className="fixed right-4 bottom-4 z-50 flex max-w-md flex-col gap-2"
-      onMouseDown={(e) => e.stopPropagation()}
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-    >
+    <>
       {visible.map((event) => {
         const { title, body } = describe(event);
         return (
@@ -164,6 +163,6 @@ export default function TeamNotificationToast() {
           />
         );
       })}
-    </div>
+    </>
   );
 }

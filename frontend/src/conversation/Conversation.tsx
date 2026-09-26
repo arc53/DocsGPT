@@ -39,6 +39,7 @@ import {
   selectAttachments,
   selectCompletedAttachments,
 } from '../upload/uploadSlice';
+import { cn } from '@/lib/utils';
 
 export default function Conversation() {
   const { t } = useTranslation();
@@ -372,9 +373,10 @@ export default function Conversation() {
   return (
     <div className="flex h-full">
       <div
-        className={`flex h-full min-h-0 flex-col transition-all ${
-          isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full'
-        }`}
+        className={cn(
+          'flex h-full min-h-0 flex-col transition-[width,padding]',
+          isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full',
+        )}
       >
         <div className="relative min-h-0 flex-1">
           {/* A render crash in the message list must leave the composer
@@ -408,22 +410,24 @@ export default function Conversation() {
             />
           </ErrorBoundary>
           <div
-            className={`from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2 ${
+            className={cn(
+              'from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2',
               isSplitArtifactOpen
                 ? 'max-w-325'
-                : 'max-w-325 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12'
-            }`}
+                : 'max-w-325 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12',
+            )}
           />
         </div>
 
         {/* One notch narrower than the message column above it, which keeps its
             own width. */}
         <div
-          className={`bg-opacity-0 z-3 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1 ${
+          className={cn(
+            'z-10 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1',
             isSplitArtifactOpen
               ? 'max-w-290'
-              : 'max-w-290 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12'
-          }`}
+              : 'max-w-290 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12',
+          )}
         >
           <div className="flex w-full items-center rounded-full px-2">
             <MessageInput

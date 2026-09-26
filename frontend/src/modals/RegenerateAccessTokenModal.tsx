@@ -1,3 +1,4 @@
+import { CircleAlert, TriangleAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -8,10 +9,9 @@ import patService, {
   CreateAccessTokenResponse,
   PersonalAccessToken,
 } from '../api/services/patService';
-import Spinner from '../components/Spinner';
-import { Button } from '../components/ui/button';
-import { Label } from '../components/ui/label';
-import { Modal } from '../components/ui/modal';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { FormField } from '../components/ui/form-field';
+import { Modal, ModalActions } from '../components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -89,66 +89,48 @@ export default function RegenerateAccessTokenModal({
     <Modal
       open={item !== null}
       onOpenChange={(o) => !o && handleClose()}
-      hideTitle
       title={t('settings.accessTokens.regenerate.title')}
+      description={
+        <span className="break-words">
+          {t('settings.accessTokens.regenerate.warning', {
+            name: item?.name ?? '',
+            ...NO_ESCAPE,
+          })}
+        </span>
+      }
       size="md"
       mobileVariant="sheet"
       isPerformingTask={submitting}
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleClose}
-            disabled={submitting}
-            className="rounded-3xl px-6"
-          >
-            {t('settings.accessTokens.create.cancel')}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="rounded-3xl px-6 text-white"
-          >
-            {submitting ? (
-              <span className="flex items-center gap-2">
-                <Spinner size="small" />
-                {t('settings.accessTokens.regenerate.submitting')}
-              </span>
-            ) : (
-              t('settings.accessTokens.regenerate.submit')
-            )}
-          </Button>
-        </>
+        <ModalActions
+          cancelLabel={t('settings.accessTokens.create.cancel')}
+          onCancel={handleClose}
+          submitLabel={t('settings.accessTokens.regenerate.submit')}
+          onSubmit={handleSubmit}
+          pending={submitting}
+          cancelProps={{ disabled: submitting }}
+        />
       }
     >
-      <div className="flex flex-col gap-5 px-1">
-        <div>
-          <h2 className="text-foreground dark:text-foreground text-xl font-semibold">
-            {t('settings.accessTokens.regenerate.title')}
-          </h2>
-          <p className="text-muted-foreground mt-2 text-sm break-words">
-            {t('settings.accessTokens.regenerate.warning', {
-              name: item?.name ?? '',
-              ...NO_ESCAPE,
-            })}
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="pat-regenerate-expiry">
-            {t('settings.accessTokens.regenerate.newExpiration')}
-          </Label>
+      <div className="flex flex-col gap-5">
+        <FormField
+          label={t('settings.accessTokens.regenerate.newExpiration')}
+          hint={
+            expiry === NO_EXPIRY
+              ? undefined
+              : t('settings.accessTokens.create.expiresOn', {
+                  date: formatDateOnly(
+                    new Date(Date.now() + expiry * DAY_MS).toISOString(),
+                  ),
+                  ...NO_ESCAPE,
+                })
+          }
+        >
           <Select
             value={String(expiry)}
             onValueChange={(value) => setExpiry(Number(value))}
           >
-            <SelectTrigger
-              id="pat-regenerate-expiry"
-              className="w-full rounded-xl px-4 py-2"
-              size="lg"
-            >
+            <SelectTrigger className="w-full" size="field">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -159,31 +141,21 @@ export default function RegenerateAccessTokenModal({
               ))}
             </SelectContent>
           </Select>
-          <p
-            className={`text-xs ${
-              expiry === NO_EXPIRY
-                ? 'text-amber-700 dark:text-amber-400'
-                : 'text-muted-foreground'
-            }`}
-          >
-            {expiry === NO_EXPIRY
-              ? t('settings.accessTokens.create.noExpirationHint')
-              : t('settings.accessTokens.create.expiresOn', {
-                  date: formatDateOnly(
-                    new Date(Date.now() + expiry * DAY_MS).toISOString(),
-                  ),
-                  ...NO_ESCAPE,
-                })}
-          </p>
-        </div>
+          {expiry === NO_EXPIRY ? (
+            <Alert variant="warning">
+              <TriangleAlert className="size-4" aria-hidden="true" />
+              <AlertDescription>
+                {t('settings.accessTokens.create.noExpirationHint')}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+        </FormField>
 
         {error && (
-          <p
-            role="alert"
-            className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400"
-          >
-            {error}
-          </p>
+          <Alert variant="destructive">
+            <CircleAlert className="size-4" aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
       </div>
     </Modal>

@@ -1,18 +1,26 @@
-import { X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { selectWorkflowPreviewOpen } from '../agents/workflow/workflowPreviewSlice';
-import CheckCircleFilled from '../assets/check-circle-filled.svg';
-import ChevronDown from '../assets/chevron-down.svg';
-import WarnIcon from '../assets/warn.svg';
+import { cn } from '@/lib/utils';
+
 import {
   dismissUploadTask,
   selectUploadTasks,
   type UploadTask,
 } from '../upload/uploadSlice';
 import { Button } from './ui/button';
+import {
+  Toast,
+  ToastActions,
+  ToastContent,
+  ToastHeader,
+  ToastItem,
+  ToastMessage,
+  ToastStatus,
+  ToastTitle,
+} from './ui/toast';
 
 const PROGRESS_RADIUS = 10;
 const PROGRESS_CIRCUMFERENCE = 2 * Math.PI * PROGRESS_RADIUS;
@@ -30,6 +38,11 @@ const IN_PROGRESS_STATUSES = new Set<UploadTask['status']>([
  * newest task overall if all are terminal). Per-task progress lives
  * on each row.
  *
+ * Renders only its ``Toast`` card: App.tsx mounts the shared
+ * ``ToastViewport`` and places this card at the bottom of the stack
+ * (and moves the whole stack left while the workflow Preview drawer is
+ * open).
+ *
  * Dismissal: the header X dismisses every visible task at once
  * (mirrors the GDrive panel close — keeps the surface tidy without
  * per-row controls). The chevron collapses the row list.
@@ -40,10 +53,6 @@ export default function UploadToast() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const uploadTasks = useSelector(selectUploadTasks);
-  // The workflow Preview drawer occupies the right edge; shift the toast to
-  // the bottom-left while it's open so it stays visible without covering the
-  // drawer's attach/send controls.
-  const previewOpen = useSelector(selectWorkflowPreviewOpen);
 
   const visibleTasks = uploadTasks.filter((task) => !task.dismissed);
   if (visibleTasks.length === 0) return null;
@@ -64,80 +73,62 @@ export default function UploadToast() {
   };
 
   return (
-    <div
-      className={`fixed bottom-4 z-50 flex max-w-md flex-col gap-2 ${
-        previewOpen ? 'left-4' : 'right-4'
-      }`}
-      onMouseDown={(e) => e.stopPropagation()}
-      role="status"
-      aria-live="polite"
-      aria-atomic="false"
-    >
+    <Toast>
+      <ToastHeader
+        variant={primaryTask.status === 'failed' ? 'destructive' : 'default'}
+      >
+        <ToastTitle>{headerLabel}</ToastTitle>
+        <ToastActions>
+          <Button
+            type="button"
+            variant="ghost-muted"
+            size="icon-sm"
+            onClick={() => setCollapsed((prev) => !prev)}
+            aria-label={
+              collapsed
+                ? t('modals.uploadDoc.progress.expandDetails')
+                : t('modals.uploadDoc.progress.collapseDetails')
+            }
+          >
+            <ChevronDown
+              className={cn(
+                'transition-transform duration-200',
+                collapsed && 'rotate-180',
+              )}
+            />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost-muted"
+            size="icon-sm"
+            onClick={dismissAll}
+            aria-label={t('modals.uploadDoc.progress.dismiss')}
+          >
+            <X />
+          </Button>
+        </ToastActions>
+      </ToastHeader>
+
       <div
-        className={`border-border bg-card shadow-toast w-[271px] overflow-hidden rounded-2xl border transition-all duration-300`}
+        className={cn(
+          'grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out',
+          collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+        )}
       >
         <div
-          className={`flex items-center justify-between px-4 py-3 ${
-            primaryTask.status !== 'failed'
-              ? 'bg-accent/50 dark:bg-muted'
-              : 'bg-destructive/10 dark:bg-destructive/10'
-          }`}
+          className={cn(
+            'min-h-0 overflow-hidden transition-opacity duration-300',
+            collapsed ? 'opacity-0' : 'opacity-100',
+          )}
         >
-          <h3 className="dark:text-foreground text-sm leading-[16.5px] font-medium text-black">
-            {headerLabel}
-          </h3>
-          <div className="flex items-center gap-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setCollapsed((prev) => !prev)}
-              aria-label={
-                collapsed
-                  ? t('modals.uploadDoc.progress.expandDetails')
-                  : t('modals.uploadDoc.progress.collapseDetails')
-              }
-              className="text-black opacity-70 hover:bg-transparent hover:opacity-100 dark:text-white dark:hover:bg-transparent"
-            >
-              <img
-                src={ChevronDown}
-                alt=""
-                className={`h-4 w-4 transform transition-transform duration-200 dark:invert ${
-                  collapsed ? 'rotate-180' : ''
-                }`}
-              />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={dismissAll}
-              className="text-black opacity-70 hover:bg-transparent hover:opacity-100 dark:text-white dark:hover:bg-transparent"
-              aria-label={t('modals.uploadDoc.progress.dismiss')}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        <div
-          className="grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out"
-          style={{ gridTemplateRows: collapsed ? '0fr' : '1fr' }}
-        >
-          <div
-            className={`min-h-0 overflow-hidden transition-opacity duration-300 ${
-              collapsed ? 'opacity-0' : 'opacity-100'
-            }`}
-          >
-            <ul className="max-h-72 overflow-y-auto">
-              {visibleTasks.map((task) => (
-                <UploadRow key={task.id} task={task} t={t} />
-              ))}
-            </ul>
-          </div>
+          <ToastContent scrollable>
+            {visibleTasks.map((task) => (
+              <UploadRow key={task.id} task={task} t={t} />
+            ))}
+          </ToastContent>
         </div>
       </div>
-    </div>
+    </Toast>
   );
 }
 
@@ -154,91 +145,80 @@ function UploadRow({
   const progressOffset = PROGRESS_CIRCUMFERENCE * (1 - rawProgress / 100);
 
   return (
-    <li className="border-border/50 border-b last:border-b-0">
-      <div className="flex items-center justify-between px-5 py-3">
-        <div className="flex min-w-0 flex-col">
-          <p
-            className="dark:text-muted-foreground max-w-[200px] truncate text-sm leading-[16.5px] font-normal text-black"
-            title={task.fileName}
+    <>
+      <ToastItem
+        label={<span title={task.fileName}>{task.fileName}</span>}
+        meta={
+          task.status === 'training' && task.stage
+            ? t(`modals.uploadDoc.progress.${task.stage}`)
+            : undefined
+        }
+      >
+        {showProgress && (
+          // Determinate ring: ToastStatus "pending" is an indeterminate
+          // spinner, and each row reports its own percentage.
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            className="text-primary size-6 shrink-0"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={formattedProgress}
+            aria-label={t('modals.uploadDoc.progress.uploadProgress', {
+              progress: formattedProgress,
+            })}
           >
-            {task.fileName}
-          </p>
-          {task.status === 'training' && task.stage && (
-            <span className="text-muted-foreground mt-0.5 text-xs leading-[14px]">
-              {t(`modals.uploadDoc.progress.${task.stage}`)}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {showProgress && (
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              className="text-primary h-6 w-6 shrink-0"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={formattedProgress}
-              aria-label={t('modals.uploadDoc.progress.uploadProgress', {
-                progress: formattedProgress,
-              })}
-            >
-              <circle
-                className="text-muted dark:text-muted-foreground/30"
-                stroke="currentColor"
-                strokeWidth="2"
-                cx="12"
-                cy="12"
-                r={PROGRESS_RADIUS}
-                fill="none"
-              />
-              <circle
-                className="text-primary"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeDasharray={PROGRESS_CIRCUMFERENCE}
-                strokeDashoffset={progressOffset}
-                cx="12"
-                cy="12"
-                r={PROGRESS_RADIUS}
-                fill="none"
-                transform="rotate(-90 12 12)"
-              />
-            </svg>
-          )}
-
-          {task.status === 'completed' && (
-            <img
-              src={CheckCircleFilled}
-              alt=""
-              className="h-6 w-6 shrink-0"
-              aria-hidden="true"
+            <circle
+              className="text-muted dark:text-muted-foreground/30"
+              stroke="currentColor"
+              strokeWidth="2"
+              cx="12"
+              cy="12"
+              r={PROGRESS_RADIUS}
+              fill="none"
             />
-          )}
-
-          {task.status === 'failed' && (
-            <img
-              src={WarnIcon}
-              alt=""
-              className="h-6 w-6 shrink-0"
-              aria-hidden="true"
+            <circle
+              className="text-primary"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeDasharray={PROGRESS_CIRCUMFERENCE}
+              strokeDashoffset={progressOffset}
+              cx="12"
+              cy="12"
+              r={PROGRESS_RADIUS}
+              fill="none"
+              transform="rotate(-90 12 12)"
             />
-          )}
-        </div>
-      </div>
+          </svg>
+        )}
+
+        {task.status === 'completed' && (
+          <ToastStatus
+            status="success"
+            label={t('modals.uploadDoc.progress.completed')}
+          />
+        )}
+
+        {task.status === 'failed' && (
+          <ToastStatus
+            status="destructive"
+            label={t('modals.uploadDoc.progress.failed')}
+          />
+        )}
+      </ToastItem>
 
       {task.status === 'failed' &&
         (task.tokenLimitReached || task.errorMessage) && (
-          <span className="block px-5 pb-3 text-xs text-red-500">
+          <ToastMessage variant="destructive">
             {task.tokenLimitReached
               ? t('modals.uploadDoc.progress.tokenLimit')
               : task.errorMessage}
-          </span>
+          </ToastMessage>
         )}
-    </li>
+    </>
   );
 }
 

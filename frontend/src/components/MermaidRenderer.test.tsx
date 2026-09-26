@@ -6,7 +6,10 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const renderMermaidDiagramMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { format?: string }) =>
+      opts?.format ? `${key} ${opts.format}` : key,
+  }),
 }));
 vi.mock('react-redux', () => ({ useSelector: () => 'idle' }));
 vi.mock('../hooks', () => ({ useDarkTheme: () => [false] }));
@@ -48,7 +51,44 @@ describe('MermaidRenderer', () => {
       );
     });
 
-    expect(container.querySelector('pre.mermaid')).not.toBeNull();
+    // The diagram host is the only <pre> while the code view is closed.
+    expect(container.querySelectorAll('pre')).toHaveLength(1);
+    expect(container.querySelector('pre')?.id).toMatch(/^mermaid-/);
     expect(container.querySelector('svg[data-rendered="true"]')).not.toBeNull();
+  });
+
+  it('opens the Download menu with a menu item per format', async () => {
+    renderMermaidDiagramMock.mockResolvedValue({ svg: '<svg></svg>' });
+
+    await act(async () => {
+      root.render(
+        <MermaidRenderer code={'flowchart LR\nA --> B'} isLoading={false} />,
+      );
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-haspopup="menu"]',
+    );
+    expect(trigger).not.toBeNull();
+    expect(trigger?.textContent).toContain('mermaid.download');
+    expect(trigger?.hasAttribute('title')).toBe(false);
+    expect(trigger?.getAttribute('aria-haspopup')).toBe('menu');
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+
+    await act(async () => {
+      trigger?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+      );
+    });
+
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+    const items = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((item) => item.textContent);
+    expect(items).toEqual([
+      'mermaid.downloadAs SVG',
+      'mermaid.downloadAs PNG',
+      'mermaid.downloadAs MMD',
+    ]);
   });
 });

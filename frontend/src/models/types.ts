@@ -1,12 +1,7 @@
 export type ModelSource = 'builtin' | 'user';
 export type ModelApiFlavor = 'chat_completions' | 'responses';
 export type ReasoningEffort =
-  | 'none'
-  | 'minimal'
-  | 'low'
-  | 'medium'
-  | 'high'
-  | 'xhigh';
+  'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface AvailableModel {
   id: string;

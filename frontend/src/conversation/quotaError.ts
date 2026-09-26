@@ -1,5 +1,7 @@
 import type { TFunction } from 'i18next';
 
+import { formatDateTime } from '../utils/dateTimeUtils';
+
 export type QuotaErrorBody = {
   error_code?: string;
   dimension?: string;
@@ -33,10 +35,7 @@ export function quotaErrorMessage(
   const reset = body.resets_at ? new Date(body.resets_at) : null;
   const resetsAt =
     reset && !Number.isNaN(reset.getTime())
-      ? new Intl.DateTimeFormat(locale, {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        }).format(reset)
+      ? formatDateTime(body.resets_at as string)
       : '';
   return t(
     isCost

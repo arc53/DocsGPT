@@ -1,5 +1,12 @@
-import { Download, FileText, History, RotateCcw } from 'lucide-react';
+import {
+  CircleAlert,
+  Download,
+  FileText,
+  History,
+  RotateCcw,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
@@ -7,7 +14,7 @@ import { useDarkTheme } from '../hooks';
 import { selectToken } from '../preferences/preferenceSlice';
 import MarkdownPreview from './MarkdownPreview';
 import { renderMermaidDiagram } from './mermaidSecurity';
-import Spinner from './Spinner';
+import { LoadingState } from '@/components/ui/loading-state';
 import {
   buildPreviewDocument,
   bytesPreviewModeForMime,
@@ -21,6 +28,7 @@ import {
   type BytesPreviewMode,
   type DocumentArtifact,
 } from './artifactViewUtils';
+import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import { useArtifactBytes } from './useArtifactBytes';
 import {
@@ -49,6 +57,7 @@ function FramePreview({
   artifactKind: string;
   source: string;
 }) {
+  const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
   const [rendered, setRendered] = useState<string | null>(null);
   const [renderError, setRenderError] = useState(false);
@@ -86,17 +95,13 @@ function FramePreview({
 
   if (renderError) {
     return (
-      <pre className="overflow-auto p-4 text-xs text-gray-600 dark:text-gray-400">
+      <pre className="text-muted-foreground overflow-auto p-4 font-mono text-xs wrap-break-word whitespace-pre-wrap">
         {source}
       </pre>
     );
   }
   if (rendered === null) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner />
-      </div>
-    );
+    return <LoadingState fill="parent" />;
   }
 
   // For mermaid, `rendered` is mermaid's sandboxed-iframe wrapper; the 'mermaid'
@@ -106,8 +111,8 @@ function FramePreview({
     <iframe
       // No allow-same-origin: content is fully isolated from the app origin.
       sandbox=""
-      title="Artifact preview"
-      className="h-full w-full rounded-md border border-gray-200 bg-white dark:border-gray-700"
+      title={t('components.artifact.preview')}
+      className="border-border h-full w-full rounded-md border bg-white"
       srcDoc={buildPreviewDocument(previewKind, rendered)}
     />
   );
@@ -124,18 +129,17 @@ function DownloadCard({
   onDownload: () => void;
   downloading: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4">
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-gray-200 p-8 text-center dark:border-gray-700">
-        <FileText className="h-12 w-12 text-gray-400" />
+      <div className="border-border flex flex-col items-center gap-3 rounded-xl border p-8 text-center">
+        <FileText className="text-muted-foreground size-12" />
         <div>
-          <p className="text-sm font-medium break-all text-gray-800 dark:text-gray-200">
+          <p className="text-foreground text-sm font-medium break-all">
             {filename}
           </p>
           {size != null && (
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {formatBytes(size)}
-            </p>
+            <p className="text-muted-foreground text-xs">{formatBytes(size)}</p>
           )}
         </div>
         <Button
@@ -143,14 +147,10 @@ function DownloadCard({
           variant="outline"
           size="sm"
           onClick={onDownload}
-          disabled={downloading}
+          loading={downloading}
         >
-          {downloading ? (
-            <Spinner size="small" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
-          Download
+          <Download />
+          {t('components.artifact.download')}
         </Button>
       </div>
     </div>
@@ -177,14 +177,11 @@ function BytesPreview({
   token: string | null;
   fallback: ReactNode;
 }) {
+  const { t } = useTranslation();
   const state = useArtifactBytes(artifactId, version, mode, token);
 
   if (state.status === 'loading') {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner />
-      </div>
-    );
+    return <LoadingState fill="parent" />;
   }
   if (state.status === 'error') {
     return <>{fallback}</>;
@@ -194,7 +191,7 @@ function BytesPreview({
       <div className="flex h-full items-center justify-center overflow-auto p-4">
         <img
           src={state.url}
-          alt="Artifact preview"
+          alt={t('components.artifact.preview')}
           className="max-h-full max-w-full object-contain"
         />
       </div>
@@ -206,8 +203,8 @@ function BytesPreview({
       <iframe
         // No allow-same-origin / no scripts: bytes are isolated from the app origin.
         sandbox=""
-        title="Artifact preview"
-        className="h-full w-full rounded-md border border-gray-200 bg-white dark:border-gray-700"
+        title={t('components.artifact.preview')}
+        className="border-border h-full w-full rounded-md border bg-white"
         srcDoc={buildPreviewDocument(
           mode === 'iframe-svg' ? 'svg' : 'html',
           state.text,
@@ -219,7 +216,7 @@ function BytesPreview({
     return <MarkdownPreview content={state.text} />;
   }
   return (
-    <pre className="h-full overflow-auto p-4 text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+    <pre className="text-foreground h-full overflow-auto p-4 font-mono text-xs wrap-break-word whitespace-pre-wrap">
       {state.text}
     </pre>
   );
@@ -232,6 +229,7 @@ export default function DocumentArtifactView({
   artifact: DocumentArtifact;
   onRefresh: () => void;
 }) {
+  const { t } = useTranslation();
   const token = useSelector(selectToken);
   const versionsDesc = useMemo(
     () => sortVersionsDesc(artifact.versions),
@@ -281,9 +279,11 @@ export default function DocumentArtifactView({
         'url',
       );
       const ok = await triggerResponseDownload(response, filename);
-      if (!ok && isMountedRef.current) setActionError('Download failed');
+      if (!ok && isMountedRef.current)
+        setActionError(t('components.artifact.downloadFailed'));
     } catch {
-      if (isMountedRef.current) setActionError('Download failed');
+      if (isMountedRef.current)
+        setActionError(t('components.artifact.downloadFailed'));
     } finally {
       if (isMountedRef.current) setDownloading(false);
     }
@@ -299,12 +299,14 @@ export default function DocumentArtifactView({
         token,
       );
       if (!response.ok) {
-        if (isMountedRef.current) setActionError('Restore failed');
+        if (isMountedRef.current)
+          setActionError(t('components.artifact.restoreFailed'));
         return;
       }
       if (isMountedRef.current) onRefresh();
     } catch {
-      if (isMountedRef.current) setActionError('Restore failed');
+      if (isMountedRef.current)
+        setActionError(t('components.artifact.restoreFailed'));
     } finally {
       if (isMountedRef.current) setRestoring(false);
     }
@@ -340,7 +342,7 @@ export default function DocumentArtifactView({
         : (selectedRow?.preview_text ?? '');
       if (text) {
         return (
-          <pre className="h-full overflow-auto p-4 text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+          <pre className="text-foreground h-full overflow-auto p-4 font-mono text-xs wrap-break-word whitespace-pre-wrap">
             {text}
           </pre>
         );
@@ -379,15 +381,18 @@ export default function DocumentArtifactView({
           value={String(selectedVersion)}
           onValueChange={(v) => setSelectedVersion(Number(v))}
         >
-          <SelectTrigger className="h-8 w-auto gap-2 rounded-md px-3 text-xs">
-            <History className="h-3.5 w-3.5" />
+          <SelectTrigger size="sm" className="w-auto">
+            <History className="size-3.5" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {versionsDesc.map((v) => (
               <SelectItem key={v.version} value={String(v.version)}>
-                Version {v.version}
-                {v.version === artifact.current_version ? ' (current)' : ''}
+                {v.version === artifact.current_version
+                  ? t('components.artifact.versionCurrent', {
+                      version: v.version,
+                    })
+                  : t('components.artifact.version', { version: v.version })}
               </SelectItem>
             ))}
           </SelectContent>
@@ -398,14 +403,10 @@ export default function DocumentArtifactView({
           variant="outline"
           size="sm"
           onClick={handleDownload}
-          disabled={downloading}
+          loading={downloading}
         >
-          {downloading ? (
-            <Spinner size="small" />
-          ) : (
-            <Download className="h-4 w-4" />
-          )}
-          Download
+          <Download />
+          {t('components.artifact.download')}
         </Button>
 
         {!isCurrent && (
@@ -414,19 +415,20 @@ export default function DocumentArtifactView({
             variant="ghost"
             size="sm"
             onClick={handleRestore}
-            disabled={restoring}
+            loading={restoring}
           >
-            {restoring ? (
-              <Spinner size="small" />
-            ) : (
-              <RotateCcw className="h-4 w-4" />
-            )}
-            Restore
+            <RotateCcw />
+            {t('components.artifact.restore')}
           </Button>
         )}
       </div>
 
-      {actionError && <p className="text-xs text-red-500">{actionError}</p>}
+      {actionError && (
+        <Alert variant="destructive">
+          <CircleAlert className="size-4" aria-hidden="true" />
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="min-h-0 flex-1 overflow-hidden">{renderPreview()}</div>
     </div>

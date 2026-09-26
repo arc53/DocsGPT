@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState } from '../models/misc';
 
 type FolderNameModalProps = {
@@ -62,26 +61,17 @@ export default function FolderNameModal({
           : t('agents.folders.rename')
       }
       footer={
-        <>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={handleCancel}
-            className="rounded-3xl px-5"
-          >
-            {t('cancel')}
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!name.trim()}
-            className="rounded-3xl px-5"
-          >
-            {mode === 'create'
+        <ModalActions
+          cancelLabel={t('cancel')}
+          onCancel={handleCancel}
+          submitLabel={
+            mode === 'create'
               ? t('agents.folders.createFolder')
-              : t('agents.folders.rename')}
-          </Button>
-        </>
+              : t('agents.folders.rename')
+          }
+          onSubmit={handleSubmit}
+          disabled={!name.trim()}
+        />
       }
     >
       <Input
