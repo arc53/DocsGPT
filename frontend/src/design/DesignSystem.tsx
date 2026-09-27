@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Pencil,
   Pin,
+  Play,
   Plus,
   Search,
   Settings,
@@ -1142,25 +1143,44 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Action menu"
-            code="<ActionMenu options triggerLabel />"
+            code='<ActionMenu options triggerLabel /> on a tile · size="toolbar" in a page header'
           >
-            <div className="bg-muted hover:bg-accent relative h-24 w-48 rounded-2xl p-4 text-sm">
-              <span className="font-semibold">Vendor Due Diligence</span>
-              <ActionMenu
-                triggerLabel="Agent actions"
-                className="absolute top-3 right-3"
-                options={[
-                  { icon: Pencil, label: 'Edit', onClick: () => {} },
-                  { icon: Copy, label: 'Duplicate', onClick: () => {} },
-                  { icon: Pin, label: 'Pin agent', onClick: () => {} },
-                  {
-                    icon: Trash2,
-                    label: 'Delete',
-                    variant: 'destructive',
-                    onClick: () => {},
-                  },
-                ]}
-              />
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="bg-muted hover:bg-accent relative h-24 w-48 rounded-2xl p-4 text-sm">
+                <span className="font-semibold">Vendor Due Diligence</span>
+                <ActionMenu
+                  triggerLabel="Agent actions"
+                  className="absolute top-3 right-3"
+                  options={[
+                    { icon: Pencil, label: 'Edit', onClick: () => {} },
+                    { icon: Copy, label: 'Duplicate', onClick: () => {} },
+                    { icon: Pin, label: 'Pin agent', onClick: () => {} },
+                    {
+                      icon: Trash2,
+                      label: 'Delete',
+                      variant: 'destructive',
+                      onClick: () => {},
+                    },
+                  ]}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="field" shape="pill">
+                  <Play />
+                  Preview
+                </Button>
+                <Button size="field" shape="pill">
+                  Save
+                </Button>
+                <ActionMenu
+                  size="toolbar"
+                  triggerLabel="More actions"
+                  options={[
+                    { label: 'Access details', onClick: () => {} },
+                    { label: 'Share with team', onClick: () => {} },
+                  ]}
+                />
+              </div>
             </div>
           </Example>
           <Example title="States" code="disabled · asChild">
@@ -2109,8 +2129,8 @@ export default function DesignSystem() {
           intro="Click-or-drag file target used by imports and uploads. Colours follow the drag state; pass accept and limits and describe them in the second line."
         >
           <Example
-            title="Default and compact"
-            code='<Dropzone accept={…} description="…" size="compact">'
+            title="Default, compact and tile"
+            code='<Dropzone accept={…} description="…" size="compact | tile">'
           >
             <div className="grid gap-6 md:grid-cols-2">
               <Dropzone
@@ -2141,6 +2161,17 @@ export default function DesignSystem() {
                   title="With an error"
                   error="Only .yaml or .yml files are supported"
                 />
+                <div className="flex items-center gap-3">
+                  <Dropzone
+                    size="tile"
+                    onDrop={(files) => setDropped(files.map((f) => f.name))}
+                    title="Avatar"
+                  />
+                  <span className="text-muted-foreground text-xs">
+                    size=&quot;tile&quot;: the agent&apos;s avatar beside its
+                    name and description.
+                  </span>
+                </div>
                 <p className="text-muted-foreground text-xs">
                   Last drop:{' '}
                   {dropped.length ? dropped.join(', ') : 'nothing yet'}
@@ -2589,7 +2620,7 @@ export default function DesignSystem() {
         >
           <Example
             title="Modal and sheet"
-            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SheetContent side="right | left | top"> · <SheetContent side="bottom" handle>'
+            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SheetContent side="right" size="default | detail | wide"> · <SheetContent side="left | top"> · <SheetContent side="bottom" handle>'
           >
             <div className="flex flex-wrap items-center gap-3">
               <Button variant="outline" onClick={() => setModalOpen(true)}>
@@ -2628,9 +2659,38 @@ export default function DesignSystem() {
                 </SheetTrigger>
                 <SheetContent side="right">
                   <SheetHeader>
+                    <SheetTitle>Sources</SheetTitle>
+                    <SheetDescription>
+                      size=&quot;default&quot; (384px): a companion list read
+                      beside the chat.
+                    </SheetDescription>
+                  </SheetHeader>
+                </SheetContent>
+              </Sheet>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline">Detail sheet</Button>
+                </SheetTrigger>
+                <SheetContent side="right" size="detail">
+                  <SheetHeader>
                     <SheetTitle>Run details</SheetTitle>
                     <SheetDescription>
-                      Started 09:30, finished 09:31, 3 tools called.
+                      size=&quot;detail&quot; (576px, full width on a phone):
+                      one record&apos;s fields.
+                    </SheetDescription>
+                  </SheetHeader>
+                </SheetContent>
+              </Sheet>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline">Wide sheet</Button>
+                </SheetTrigger>
+                <SheetContent side="right" size="wide">
+                  <SheetHeader>
+                    <SheetTitle>Trace</SheetTitle>
+                    <SheetDescription>
+                      size=&quot;wide&quot; (600 / 700 / 800px): a working
+                      surface such as a trace or an agent preview.
                     </SheetDescription>
                   </SheetHeader>
                 </SheetContent>

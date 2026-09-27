@@ -65,6 +65,28 @@ describe('FileUpload', () => {
     ).toBe('compact');
   });
 
+  it('shows the current image inside a tile until a new one is picked', async () => {
+    await act(async () => {
+      root.render(
+        <FileUpload
+          onUpload={vi.fn()}
+          size="tile"
+          showPreview
+          currentImage="https://example.com/agent.png"
+          uploadText="Avatar"
+        />,
+      );
+    });
+    const zone = container.querySelector('[data-slot="dropzone"]')!;
+    expect(zone.getAttribute('data-size')).toBe('tile');
+    const img = zone.querySelector('img')!;
+    expect(img.getAttribute('src')).toBe('https://example.com/agent.png');
+    expect(img.className).toContain('object-cover');
+    expect(container.textContent).not.toContain(
+      'components.fileUpload.fileTypes',
+    );
+  });
+
   it('renders highlighted upload text segments', async () => {
     await act(async () => {
       root.render(

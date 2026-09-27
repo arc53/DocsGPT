@@ -1,8 +1,9 @@
+import { ChevronRight } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Button } from '../../components/ui/button';
+import { EmptyState } from '../../components/ui/empty-state';
 import {
   Table,
   TableBody,
@@ -12,15 +13,15 @@ import {
   TableRow,
 } from '../../components/ui/table';
 import { selectToken } from '../../preferences/preferenceSlice';
+import {
+  formatDurationMs,
+  formatTokens,
+} from '../../settings/traces/traceUtils';
 import type { AppDispatch, RootState } from '../../store';
 import { formatDateTime } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
 import ScheduleStatusBadge from './StatusBadge';
 import { loadRunsForSchedule, selectRunsForSchedule } from './schedulesSlice';
-
-// The column heads are a label row, so they take the eyebrow recipe.
-const HEADER_CELL =
-  'text-muted-foreground text-xs font-semibold tracking-wider uppercase';
 
 export type RunLogProps = {
   scheduleId: string;
@@ -31,7 +32,18 @@ const formatTimestamp = (value?: string | null): string => {
   return value ? formatDateTime(value) : '—';
 };
 
-/** Paginated run log for a schedule (SSE updates merge via schedulesSlice). */
+/** How long a run took, or a dash while it hasn't started or finished. */
+const runDuration = (run: ScheduleRun): string => {
+  if (!run.started_at || !run.finished_at) return '—';
+  return formatDurationMs(
+    Date.parse(run.finished_at) - Date.parse(run.started_at),
+  );
+};
+
+/**
+ * A schedule's run log (SSE updates merge via schedulesSlice). Each row opens
+ * the run's details when `onSelect` is given.
+ */
 export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -47,9 +59,11 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
 
   if (runs.length === 0) {
     return (
-      <p className="text-muted-foreground py-3 text-sm">
-        {t('agents.schedules.runLog.empty')}
-      </p>
+      <EmptyState
+        size="xs"
+        illustration="none"
+        title={t('agents.schedules.runLog.empty')}
+      />
     );
   }
 
@@ -57,24 +71,26 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
     <Table minWidth="min-w-0">
       <TableHead>
         <TableRow>
-          <TableHeader className={HEADER_CELL}>
-            {t('agents.schedules.runLog.when')}
-          </TableHeader>
-          <TableHeader className={HEADER_CELL}>
-            {t('agents.schedules.runDetails.status')}
-          </TableHeader>
-          <TableHeader className={HEADER_CELL}>
-            {t('agents.schedules.runDetails.tokens')}
-          </TableHeader>
-          <TableHeader className={HEADER_CELL}>
-            {t('agents.schedules.runDetails.trigger')}
-          </TableHeader>
-          <TableHeader className={HEADER_CELL}></TableHeader>
+          <TableHeader>{t('agents.schedules.runLog.when')}</TableHeader>
+          <TableHeader>{t('agents.schedules.runDetails.status')}</TableHeader>
+          <TableHeader>{t('agents.schedules.runLog.duration')}</TableHeader>
+          <TableHeader>{t('agents.schedules.runDetails.tokens')}</TableHeader>
+          <TableHeader>{t('agents.schedules.runDetails.trigger')}</TableHeader>
+          {onSelect && (
+            <TableHeader width="40px" align="center">
+              <span className="sr-only">
+                {t('agents.schedules.runLog.details')}
+              </span>
+            </TableHeader>
+          )}
         </TableRow>
       </TableHead>
       <TableBody>
         {runs.map((run) => (
-          <TableRow key={run.id}>
+          <TableRow
+            key={run.id}
+            onClick={onSelect ? () => onSelect(run) : undefined}
+          >
             <TableCell>{formatTimestamp(run.scheduled_for)}</TableCell>
             <TableCell>
               <div className="flex items-center gap-1.5">
@@ -86,25 +102,23 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
                 )}
               </div>
             </TableCell>
-            <TableCell>{run.prompt_tokens + run.generated_tokens}</TableCell>
+            <TableCell className="tabular-nums">{runDuration(run)}</TableCell>
+            <TableCell className="tabular-nums">
+              {formatTokens(run.prompt_tokens + run.generated_tokens)}
+            </TableCell>
             <TableCell>
               {t(`agents.schedules.trigger.${run.trigger_source}`, {
                 defaultValue: run.trigger_source,
               })}
             </TableCell>
-            <TableCell>
-              {onSelect && (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="xs"
-                  onClick={() => onSelect(run)}
-                  className="-mx-2 -my-1"
-                >
-                  {t('agents.schedules.runLog.details')}
-                </Button>
-              )}
-            </TableCell>
+            {onSelect && (
+              <TableCell align="center">
+                <ChevronRight
+                  aria-hidden
+                  className="text-muted-foreground size-4"
+                />
+              </TableCell>
+            )}
           </TableRow>
         ))}
       </TableBody>

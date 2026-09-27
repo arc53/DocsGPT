@@ -92,26 +92,36 @@ const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
 ];
 
 /**
- * "3 minutes ago", "yesterday", "now" in the UI language.
+ * "3 minutes ago", "yesterday", "now", "in 18 hours" in the UI language.
  *
  * Args:
  *   value: an ISO timestamp.
  *   options.now: the reference time (tests).
  *   options.locale: an app language code; defaults to the current one.
  *   options.dateAfterDays: past this many days, show the date instead.
+ *   options.future: word future times as "in …"; otherwise they read "now"
+ *     (a past-event field under server clock skew).
  *
  * Returns:
  *   The phrase, or null when the value is empty or unparseable.
  */
 export function formatRelative(
   value: string | null | undefined,
-  options: { now?: number; locale?: string; dateAfterDays?: number } = {},
+  options: {
+    now?: number;
+    locale?: string;
+    dateAfterDays?: number;
+    future?: boolean;
+  } = {},
 ): string | null {
   if (!value) return null;
   const then = Date.parse(value);
   if (Number.isNaN(then)) return null;
-  const { now = Date.now(), locale, dateAfterDays } = options;
-  const diffMs = Math.max(0, now - then);
+  const { now = Date.now(), locale, dateAfterDays, future = false } = options;
+  // Past times read "… ago"; future ones "in …" only when the caller expects
+  // them (a schedule's next run), else they clamp to "now".
+  const sign = then > now ? 1 : -1;
+  const diffMs = future ? Math.abs(now - then) : Math.max(0, now - then);
   if (dateAfterDays !== undefined && diffMs > dateAfterDays * 86_400_000) {
     return formatDateOnly(value);
   }
@@ -119,7 +129,8 @@ export function formatRelative(
     numeric: 'auto',
   });
   for (const [unit, ms] of RELATIVE_UNITS) {
-    if (diffMs >= ms) return formatter.format(-Math.round(diffMs / ms), unit);
+    if (diffMs >= ms)
+      return formatter.format(sign * Math.round(diffMs / ms), unit);
   }
   return formatter.format(0, 'second');
 }

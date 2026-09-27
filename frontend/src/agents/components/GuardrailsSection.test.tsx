@@ -195,6 +195,28 @@ describe('GuardrailsSection', () => {
     expect(chevron.getAttribute('class')).not.toContain('rotate-90');
   });
 
+  // Decision 74: the panel spaces header and body with gap-5 like the other
+  // form sections, and the body stacks its rows with a gap-5 flex column
+  // rather than per-child margins.
+  it('spaces the panel and its body with gap-5, not margins', async () => {
+    await render({ disabled: true });
+    const panel = q('guardrails-section')!;
+    expect(panel.className.split(' ')).toContain('gap-5');
+    expect(panel.className.split(' ')).not.toContain('gap-3');
+    const body = panel.children[1] as HTMLElement;
+    expect(body.className.split(' ')).toEqual(
+      expect.arrayContaining(['flex', 'flex-col', 'gap-5']),
+    );
+    // Notices, Enable row, mode, checks, block message, fail-open, timeout.
+    expect(body.children.length).toBeGreaterThanOrEqual(9);
+    for (const child of Array.from(body.children)) {
+      expect(child.getAttribute('class') ?? '').not.toMatch(/(^|\s)mt-\d/);
+    }
+    // The checks list keeps its own tighter gap.
+    const checks = q('guardrail-orphan-gone')!.parentElement!;
+    expect(checks.className.split(' ')).toContain('gap-3');
+  });
+
   it('renders the header pills as badges in their status roles', async () => {
     await render();
     expect(q('guardrails-active-badge')?.dataset.slot).toBe('badge');

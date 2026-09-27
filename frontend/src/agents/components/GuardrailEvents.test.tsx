@@ -78,6 +78,14 @@ describe('GuardrailEvents tones', () => {
     container.remove();
   });
 
+  // A3: the section lines up with Analytics and the log table on Logs.
+  it('is not indented against the sections around it', () => {
+    const root = document.querySelector<HTMLElement>(
+      '[data-testid="guardrail-events"]',
+    )!;
+    expect(root.className).not.toMatch(/(^|\s)px-/);
+  });
+
   it('colours outcome badges by meaning', () => {
     const variants = Array.from(
       container.querySelectorAll(

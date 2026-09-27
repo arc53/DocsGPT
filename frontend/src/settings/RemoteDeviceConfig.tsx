@@ -336,7 +336,7 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           </DescriptionItem>
           <DescriptionItem label={t('settings.devices.deviceIdLabel')}>
             <div className="flex flex-wrap items-center gap-2">
-              <code className="text-foreground bg-muted max-w-full truncate rounded px-2 py-0.5 font-mono text-xs">
+              <code className="text-foreground bg-muted max-w-full truncate rounded-md px-2 py-0.5 font-mono text-xs">
                 {deviceId || '-'}
               </code>
               {deviceId && <CopyButton textToCopy={deviceId} />}

@@ -39,10 +39,11 @@ type AgentPageHeaderProps = {
 };
 
 /**
- * Shared chrome for the agent sub-pages (Overview/Edit, Logs, Schedules).
- *
- * Top: shadcn Breadcrumb (`Agents > <agent name> > <current page>`).
- * Bottom: underline-style sub-nav linking between the agent's sub-pages.
+ * The workflow builder's toolbar chrome: a Breadcrumb (`Agents > <agent
+ * name> > <current page>`) and underline tab links to the agent's Overview,
+ * Logs and Schedules. The builder is full-screen with no sidebar, so it needs
+ * its own way between them. Section pages use `components/AgentPageToolbar`
+ * and the sidebar (or `SectionPills` on a phone) instead.
  */
 export default function AgentPageHeader({
   agentId,

@@ -52,6 +52,23 @@ describe('formatRelative', () => {
     expect(formatRelative('garbage', { now: NOW })).toBeNull();
   });
 
+  it('words a future time as "in …" when asked (the next scheduled run)', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    const ahead = (ms: number) => new Date(NOW + ms).toISOString();
+    const opts = { now: NOW, locale: 'en', future: true };
+    expect(formatRelative(ahead(18 * 3_600_000), opts)).toBe('in 18 hours');
+    // Clock skew under a minute still reads "now".
+    expect(formatRelative(ahead(20_000), opts)).toBe('now');
+  });
+
+  it('clamps a future time to "now" by default (server clock skew)', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    const ahead = (ms: number) => new Date(NOW + ms).toISOString();
+    expect(formatRelative(ahead(3 * 60_000), { now: NOW, locale: 'en' })).toBe(
+      'now',
+    );
+  });
+
   it('words the gap with Intl in the given language', async () => {
     const { formatRelative } = await import('./dateTimeUtils');
     expect(formatRelative(ago(20_000), { now: NOW, locale: 'en' })).toBe('now');

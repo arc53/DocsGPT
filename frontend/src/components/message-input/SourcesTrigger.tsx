@@ -53,14 +53,16 @@ export default function SourcesTrigger({
           size="sm"
           shape="pill"
           className="max-w-[130px] justify-start sm:max-w-[150px]"
-          title={
-            selectedDocs && selectedDocs.length > 0
-              ? selectedDocs.map((doc) => doc.name).join(', ')
-              : t('conversation.sources.title')
-          }
         >
-          <Database />
-          <span className="text-foreground truncate overflow-hidden text-xs sm:text-sm">
+          <Database className="size-3.5 sm:size-4" />
+          <span
+            className="text-foreground truncate overflow-hidden text-xs sm:text-sm"
+            title={
+              selectedDocs && selectedDocs.length > 0
+                ? selectedDocs.map((doc) => doc.name).join(', ')
+                : undefined
+            }
+          >
             {selectedDocs && selectedDocs.length > 0
               ? selectedDocs.length === 1
                 ? selectedDocs[0].name

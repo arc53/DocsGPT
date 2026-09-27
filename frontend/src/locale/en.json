@@ -1024,6 +1024,9 @@
       "start": "Start Chatting",
       "name": "Name",
       "choose": "Choose Files",
+      "dropzoneText": "Click to upload or drag and drop",
+      "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, images, audio, EPUB, JSON or ZIP, up to 25 MB each",
+      "filesRejected": "Not added (over 25 MB or not a supported type): {{files}}",
       "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip limited to 25mb",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
@@ -1585,15 +1588,16 @@
         "moreActions": "More actions"
       },
       "sections": {
-        "meta": "Meta",
-        "source": "Source",
         "prompt": "Prompt",
         "tools": "Tools",
         "agentType": "Agent type",
         "models": "Models",
         "advanced": "Advanced",
         "guardrails": "Guardrails",
-        "preview": "Preview"
+        "preview": "Preview",
+        "basics": "Basics",
+        "knowledge": "Knowledge and behaviour",
+        "model": "Model"
       },
       "placeholders": {
         "agentName": "Agent name",
@@ -1640,7 +1644,9 @@
       "labels": {
         "defaultModel": "Default Model",
         "name": "Name",
-        "description": "Description"
+        "description": "Description",
+        "sources": "Sources",
+        "avatar": "Avatar"
       },
       "advanced": {
         "jsonSchema": "JSON response schema",
@@ -1657,7 +1663,10 @@
         "requestLimit": "Request limit"
       },
       "preview": {
-        "publishedPreview": "Published agents can be previewed here"
+        "savedVersion": "saved version",
+        "publishTitle": "Publish to preview",
+        "publishDescription": "The preview chats with the published agent. Drafts stay private until you publish.",
+        "unsavedChanges": "You have unsaved changes. The preview uses the saved version until you save."
       },
       "dangerZone": {
         "heading": "Danger zone",
@@ -1720,6 +1729,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "Set up the agent, then publish it to chat with it."
+      },
+      "status": {
+        "published": "Published"
       }
     },
     "logs": {
@@ -1730,7 +1745,6 @@
     },
     "schedules": {
       "title": "Agent Schedules",
-      "heading": "Schedules",
       "newRecurring": "New schedule",
       "closeForm": "Close form",
       "edit": "Edit",
@@ -1828,8 +1842,6 @@
         "output": "Output",
         "truncated": "(truncated)"
       },
-      "timezoneMeta": "tz: {{timezone}}",
-      "nextRunMeta": "next: {{time}}",
       "toolCard": {
         "cancelFailed": "Cancel failed",
         "taskCancelled": "Scheduled task cancelled.",
@@ -1872,7 +1884,28 @@
       "runLog": {
         "when": "When",
         "details": "Details",
-        "empty": "No runs recorded for this schedule yet."
+        "empty": "No runs recorded for this schedule yet.",
+        "duration": "Duration"
+      },
+      "actions": "Schedule actions",
+      "cancelTask": "Cancel task",
+      "failureStreak_one": "{{count}} failure in a row",
+      "failureStreak_other": "{{count}} failures in a row",
+      "meta": {
+        "nextRun": "Next run {{time}}",
+        "runsAt": "Runs on {{time}}",
+        "lastRun": "Last run {{time}}"
+      },
+      "stats": {
+        "active": "Active schedules",
+        "nextRun": "Next run",
+        "runs": "Runs, last {{days}} days",
+        "tokens": "{{tokens}} tokens",
+        "failed": "Failed, last {{days}} days",
+        "latestFailure": "Latest: {{status}}, {{date}}",
+        "paused_one": "{{count}} paused",
+        "paused_other": "{{count}} paused",
+        "overdue": "Overdue"
       }
     },
     "shared": {
@@ -2176,6 +2209,10 @@
     },
     "profile": {
       "avatarAlt": "User avatar"
+    },
+    "multiSelect": {
+      "more_one": "+{{count}} more",
+      "more_other": "+{{count}} more"
     }
   },
   "pageNotFound": {

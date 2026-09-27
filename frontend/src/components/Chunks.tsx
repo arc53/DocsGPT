@@ -596,11 +596,11 @@ const Chunks: React.FC<ChunksProps> = ({
                 </Button>
               </div>
               {loading ? (
-                <div className="grid w-full grid-cols-1 justify-items-start gap-4 sm:grid-cols-[repeat(auto-fit,minmax(400px,1fr))]">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(min(400px,100%),1fr))]">
                   <SkeletonLoader component="chunkCards" count={perPage} />
                 </div>
               ) : (
-                <div className="grid w-full grid-cols-1 justify-items-start gap-4 sm:grid-cols-[repeat(auto-fit,minmax(400px,1fr))]">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(min(400px,100%),1fr))]">
                   {filteredChunks.length === 0 ? (
                     <EmptyState
                       size="sm"

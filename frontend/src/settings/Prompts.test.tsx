@@ -124,6 +124,27 @@ describe('Prompts', () => {
     ).toBe('Prompt');
   });
 
+  it('labels the picker with a floating FormField label with titleAs="field"', () => {
+    renderPrompts({
+      titleAs: 'field',
+      title: 'Prompt',
+      labelSurface: 'background',
+      showAddButton: false,
+    });
+    expect(container.querySelector('[data-slot="section-header"]')).toBeNull();
+    const label = container.querySelector<HTMLLabelElement>(
+      '[data-slot="form-field-label"]',
+    )!;
+    expect(label.textContent).toBe('Prompt');
+    expect(label.className).toContain('bg-background');
+    const trigger = container.querySelector<HTMLButtonElement>(
+      'button[role="combobox"]',
+    )!;
+    expect(label.htmlFor).toBe(trigger.id);
+    expect(trigger.hasAttribute('aria-label')).toBe(false);
+    expect(trigger.className).toContain('w-full');
+  });
+
   it('makes Add a neutral outline pill sized to the field row', () => {
     renderPrompts();
     const add = Array.from(

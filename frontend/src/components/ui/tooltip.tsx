@@ -3,7 +3,7 @@ import { Tooltip as TooltipPrimitive } from 'radix-ui';
 
 import { cn } from '@/lib/utils';
 
-/** Hover delay before a tooltip opens (Pavel, phase 7: 400ms, not shadcn's 0). */
+/** Hover delay before a tooltip opens: 400ms, not shadcn's 0 (DESIGN.md). */
 const TOOLTIP_DELAY_MS = 400;
 
 /** True under a TooltipProvider, so a Tooltip knows not to add its own. */

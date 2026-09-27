@@ -19,6 +19,10 @@ const dropzoneVariants = cva(
       size: {
         default: 'px-6 py-10',
         compact: 'flex-row justify-start px-4 py-3 text-left',
+        // An 88px square beside a form's fields (an agent's avatar): the icon
+        // and a one-word label, or the picked image filling it.
+        // 64px and icon-only on a phone (beside the Name field), 88px from sm.
+        tile: 'size-16 shrink-0 gap-1 rounded-2xl p-2 sm:size-22',
       },
     },
     defaultVariants: { size: 'default' },
@@ -32,6 +36,7 @@ const dropzoneIconVariants = cva(
       size: {
         default: 'size-12 [&>svg]:size-6',
         compact: 'size-8 [&>svg]:size-4',
+        tile: 'size-8 [&>svg]:size-4',
       },
     },
     defaultVariants: { size: 'default' },
@@ -47,8 +52,11 @@ type DropzoneProps = {
   maxFiles?: number;
   maxSize?: number;
   disabled?: boolean;
-  /** Compact fits inside forms and modals; default is the full-height target. */
-  size?: 'default' | 'compact';
+  /**
+   * Compact fits inside forms and modals; default is the full-height target;
+   * tile is an 88px square that shows only the icon and the title.
+   */
+  size?: 'default' | 'compact' | 'tile';
   /** Main line. Defaults to the generic upload prompt. */
   title?: React.ReactNode;
   /** Secondary line for accepted types and limits, e.g. ".yaml, up to 5 MB". */
@@ -111,24 +119,34 @@ function Dropzone({
         data-disabled={disabled || undefined}
         data-drag-active={isDragActive || undefined}
         data-drag-reject={isDragReject || undefined}
-        className={dropzoneVariants({ size })}
+        className={cn(dropzoneVariants({ size }))}
       >
         <input {...getInputProps({ id: field.id })} />
-        {children ?? (
-          <>
-            <span className={dropzoneIconVariants({ size })}>
-              {icon ?? <CloudUpload />}
-            </span>
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-sm font-medium">{title}</span>
-              {description ? (
-                <span className="text-muted-foreground text-xs">
-                  {description}
-                </span>
-              ) : null}
-            </span>
-          </>
-        )}
+        {children ??
+          (size === 'tile' ? (
+            <>
+              <span className={dropzoneIconVariants({ size })}>
+                {icon ?? <CloudUpload />}
+              </span>
+              <span className="text-muted-foreground sr-only text-xs sm:not-sr-only">
+                {title}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className={dropzoneIconVariants({ size })}>
+                {icon ?? <CloudUpload />}
+              </span>
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-sm font-medium">{title}</span>
+                {description ? (
+                  <span className="text-muted-foreground text-xs">
+                    {description}
+                  </span>
+                ) : null}
+              </span>
+            </>
+          ))}
       </div>
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
     </div>

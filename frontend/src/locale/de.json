@@ -1018,6 +1018,9 @@
       "start": "Chat starten",
       "name": "Name",
       "choose": "Dateien auswählen",
+      "dropzoneText": "Zum Hochladen klicken oder per Drag & Drop ablegen",
+      "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, Bilder, Audio, EPUB, JSON oder ZIP, jeweils bis zu 25 MB",
+      "filesRejected": "Nicht hinzugefügt (größer als 25 MB oder kein unterstützter Dateityp): {{files}}",
       "info": "Bitte lade .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip hoch (max. 25 MB)",
       "uploadedFiles": "Hochgeladene Dateien",
       "cancel": "Abbrechen",
@@ -1568,15 +1571,16 @@
         "moreActions": "Weitere Aktionen"
       },
       "sections": {
-        "meta": "Meta",
-        "source": "Quelle",
         "prompt": "Prompt",
         "tools": "Werkzeuge",
         "agentType": "Agententyp",
         "models": "Modelle",
         "advanced": "Erweitert",
         "guardrails": "Guardrails",
-        "preview": "Vorschau"
+        "preview": "Vorschau",
+        "basics": "Grundlagen",
+        "knowledge": "Wissen und Verhalten",
+        "model": "Modell"
       },
       "placeholders": {
         "agentName": "Agentenname",
@@ -1621,7 +1625,11 @@
         "research": "Recherche"
       },
       "labels": {
-        "defaultModel": "Standardmodell"
+        "defaultModel": "Standardmodell",
+        "name": "Name",
+        "description": "Beschreibung",
+        "sources": "Quellen",
+        "avatar": "Avatar"
       },
       "advanced": {
         "jsonSchema": "JSON-Antwortschema",
@@ -1636,7 +1644,10 @@
         "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen"
       },
       "preview": {
-        "publishedPreview": "Veröffentlichte Agenten können hier in der Vorschau angezeigt werden"
+        "savedVersion": "gespeicherte Version",
+        "publishTitle": "Zum Testen veröffentlichen",
+        "publishDescription": "Die Vorschau chattet mit dem veröffentlichten Agenten. Entwürfe bleiben privat, bis Sie sie veröffentlichen.",
+        "unsavedChanges": "Sie haben ungespeicherte Änderungen. Die Vorschau nutzt die gespeicherte Version, bis Sie speichern."
       },
       "dangerZone": {
         "heading": "Gefahrenzone",
@@ -1699,6 +1710,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "Richten Sie den Agenten ein und veröffentlichen Sie ihn, um mit ihm zu chatten."
+      },
+      "status": {
+        "published": "Veröffentlicht"
       }
     },
     "logs": {
@@ -1709,7 +1726,6 @@
     },
     "schedules": {
       "title": "Agenten-Zeitpläne",
-      "heading": "Zeitpläne",
       "newRecurring": "Neuer Zeitplan",
       "closeForm": "Formular schließen",
       "edit": "Bearbeiten",
@@ -1805,8 +1821,6 @@
         "output": "Ausgabe",
         "truncated": "(gekürzt)"
       },
-      "timezoneMeta": "Zeitzone: {{timezone}}",
-      "nextRunMeta": "nächster Lauf: {{time}}",
       "toolCard": {
         "cancelFailed": "Abbrechen fehlgeschlagen",
         "taskCancelled": "Geplante Aufgabe abgebrochen.",
@@ -1849,7 +1863,28 @@
       "runLog": {
         "when": "Wann",
         "details": "Details",
-        "empty": "Für diesen Zeitplan wurden noch keine Läufe aufgezeichnet."
+        "empty": "Für diesen Zeitplan wurden noch keine Läufe aufgezeichnet.",
+        "duration": "Dauer"
+      },
+      "actions": "Aktionen für den Zeitplan",
+      "cancelTask": "Aufgabe abbrechen",
+      "failureStreak_one": "{{count}} Fehlschlag in Folge",
+      "failureStreak_other": "{{count}} Fehlschläge in Folge",
+      "meta": {
+        "nextRun": "Nächster Lauf {{time}}",
+        "runsAt": "Läuft am {{time}}",
+        "lastRun": "Letzter Lauf {{time}}"
+      },
+      "stats": {
+        "active": "Aktive Zeitpläne",
+        "nextRun": "Nächster Lauf",
+        "runs": "Läufe, letzte {{days}} Tage",
+        "tokens": "{{tokens}} Tokens",
+        "failed": "Fehlgeschlagen, letzte {{days}} Tage",
+        "latestFailure": "Zuletzt: {{status}}, {{date}}",
+        "paused_one": "{{count}} pausiert",
+        "paused_other": "{{count}} pausiert",
+        "overdue": "Überfällig"
       }
     },
     "shared": {
@@ -2140,6 +2175,10 @@
     },
     "profile": {
       "avatarAlt": "Benutzeravatar"
+    },
+    "multiSelect": {
+      "more_one": "+{{count}} weitere",
+      "more_other": "+{{count}} weitere"
     }
   },
   "pageNotFound": {

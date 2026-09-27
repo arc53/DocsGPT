@@ -1017,6 +1017,9 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
+      "dropzoneText": "クリックしてアップロード、またはドラッグ＆ドロップ",
+      "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、画像、音声、EPUB、JSON、ZIP（各 25 MB まで）",
+      "filesRejected": "追加されませんでした（25 MB を超えているか、未対応の形式です）: {{files}}",
       "info": "25MBまでの.pdf、.txt、.rst、.csv、.xlsx、.xlsm、.xlsb、.xls、.ods、.docx、.docm、.doc、.odt、.rtf、.md、.html、.xhtml、.png、.jpg、.jpeg、.epub、.json、.pptx、.pptm、.ppt、.pps、.ppsx、.ppsm、.pot、.odp、.zipファイルをアップロードしてください",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
@@ -1564,15 +1567,16 @@
         "moreActions": "その他のアクション"
       },
       "sections": {
-        "meta": "メタ",
-        "source": "ソース",
         "prompt": "プロンプト",
         "tools": "ツール",
         "agentType": "エージェントタイプ",
         "models": "モデル",
         "advanced": "詳細設定",
         "guardrails": "Guardrails",
-        "preview": "プレビュー"
+        "preview": "プレビュー",
+        "basics": "基本情報",
+        "knowledge": "ナレッジと動作",
+        "model": "モデル"
       },
       "placeholders": {
         "agentName": "エージェント名",
@@ -1617,7 +1621,11 @@
         "research": "リサーチ"
       },
       "labels": {
-        "defaultModel": "デフォルトモデル"
+        "defaultModel": "デフォルトモデル",
+        "name": "名前",
+        "description": "説明",
+        "sources": "ソース",
+        "avatar": "アバター"
       },
       "advanced": {
         "jsonSchema": "JSON応答スキーマ",
@@ -1632,7 +1640,10 @@
         "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します"
       },
       "preview": {
-        "publishedPreview": "公開されたエージェントはここでプレビューできます"
+        "savedVersion": "保存済みバージョン",
+        "publishTitle": "公開してプレビュー",
+        "publishDescription": "プレビューは公開済みのエージェントとチャットします。下書きは公開するまで非公開のままです。",
+        "unsavedChanges": "保存されていない変更があります。保存するまで、プレビューは保存済みのバージョンを使います。"
       },
       "dangerZone": {
         "heading": "危険ゾーン",
@@ -1694,6 +1705,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "エージェントを設定し、公開するとチャットできます。"
+      },
+      "status": {
+        "published": "公開済み"
       }
     },
     "logs": {
@@ -1704,7 +1721,6 @@
     },
     "schedules": {
       "title": "エージェントスケジュール",
-      "heading": "スケジュール",
       "newRecurring": "新しいスケジュール",
       "closeForm": "フォームを閉じる",
       "edit": "編集",
@@ -1800,8 +1816,6 @@
         "output": "出力",
         "truncated": "（切り詰め）"
       },
-      "timezoneMeta": "タイムゾーン: {{timezone}}",
-      "nextRunMeta": "次回: {{time}}",
       "toolCard": {
         "cancelFailed": "キャンセルに失敗しました",
         "taskCancelled": "予約タスクをキャンセルしました。",
@@ -1844,7 +1858,28 @@
       "runLog": {
         "when": "日時",
         "details": "詳細",
-        "empty": "このスケジュールの実行記録はまだありません。"
+        "empty": "このスケジュールの実行記録はまだありません。",
+        "duration": "所要時間"
+      },
+      "actions": "スケジュールの操作",
+      "cancelTask": "タスクをキャンセル",
+      "failureStreak_one": "{{count}}回連続で失敗",
+      "failureStreak_other": "{{count}}回連続で失敗",
+      "meta": {
+        "nextRun": "次回実行: {{time}}",
+        "runsAt": "実行日時: {{time}}",
+        "lastRun": "前回実行: {{time}}"
+      },
+      "stats": {
+        "active": "有効なスケジュール",
+        "nextRun": "次回実行",
+        "runs": "実行回数（過去{{days}}日）",
+        "tokens": "{{tokens}} トークン",
+        "failed": "失敗（過去{{days}}日）",
+        "latestFailure": "最新: {{status}}、{{date}}",
+        "paused_one": "{{count}}件一時停止中",
+        "paused_other": "{{count}}件一時停止中",
+        "overdue": "期限超過"
       }
     },
     "shared": {
@@ -2134,6 +2169,10 @@
     },
     "profile": {
       "avatarAlt": "ユーザーのアバター"
+    },
+    "multiSelect": {
+      "more_one": "他{{count}}件",
+      "more_other": "他{{count}}件"
     }
   },
   "pageNotFound": {

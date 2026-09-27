@@ -53,7 +53,7 @@ export default function ToolsTrigger({
           shape="pill"
           className="max-w-[130px] justify-start"
         >
-          <Wrench />
+          <Wrench className="size-3.5 sm:size-4" />
           <span className="text-foreground truncate overflow-hidden text-xs sm:text-sm">
             {t('settings.tools.label')}
           </span>

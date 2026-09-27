@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { AlertCircle, Check, Info, TriangleAlert } from 'lucide-react';
+import { Check, CircleAlert, Info, TriangleAlert } from 'lucide-react';
 
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
@@ -198,7 +198,7 @@ const STATUS_ICON = {
   pending: <Spinner size="sm" />,
   success: <Check strokeWidth={3} />,
   warning: <TriangleAlert strokeWidth={3} />,
-  destructive: <AlertCircle strokeWidth={3} />,
+  destructive: <CircleAlert strokeWidth={3} />,
   info: <Info strokeWidth={3} />,
 } as const;
 

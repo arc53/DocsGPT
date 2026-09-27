@@ -127,7 +127,7 @@ export default function GuardrailEvents({ agentId }: Props) {
   const tableHeadingId = React.useId();
 
   return (
-    <div className="mt-8 px-4" data-testid="guardrail-events">
+    <div className="mt-8" data-testid="guardrail-events">
       <SectionHeader
         title={t('agents.guardrailEvents.heading')}
         description={t('agents.guardrailEvents.description')}

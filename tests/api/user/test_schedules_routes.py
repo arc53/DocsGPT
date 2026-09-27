@@ -506,3 +506,136 @@ class TestUnexpectedExceptionMasked:
         assert body["message"] == "internal error"
         # Defensive: the internal-sounding detail must not leak through.
         assert "secret connection string" not in resp.get_data(as_text=True)
+
+
+class TestAgentScheduleStats:
+    def _get(self, app, pg_conn, agent_id: str, *, user="u1", query=""):
+        from docsgpt.api.user.schedules.routes import AgentScheduleStats
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/agents/{agent_id}/schedules/stats{query}", method="GET",
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user} if user else None
+            return AgentScheduleStats().get(agent_id)
+
+    def _run(self, conn, schedule_id, user_id, agent_id, *, ago, **fields):
+        from docsgpt.storage.db.repositories.schedule_runs import (
+            ScheduleRunsRepository,
+        )
+
+        repo = ScheduleRunsRepository(conn)
+        run = repo.record_pending(schedule_id, user_id, agent_id, _now() - ago)
+        return repo.update(str(run["id"]), fields)
+
+    def test_unauthorized(self, app):
+        resp = self._get(app, None, "x", user=None)
+        assert resp.status_code == 401
+
+    def test_agent_not_found(self, app, pg_conn):
+        resp = self._get(
+            app, pg_conn, "00000000-0000-0000-0000-000000000000",
+        )
+        assert resp.status_code == 404
+        assert resp.get_json()["message"] == "agent not found"
+
+    def test_other_users_agent_not_found(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn, user_id="u2")
+        resp = self._get(app, pg_conn, agent_id)
+        assert resp.status_code == 404
+
+    def test_empty_window(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn)
+        resp = self._get(app, pg_conn, agent_id)
+        assert resp.status_code == 200
+        assert resp.get_json() == {
+            "days": 30, "runs": 0, "failed": 0, "tokens": 0,
+            "latest_failure": None,
+        }
+
+    def test_counts_and_latest_failure(self, app, pg_conn):
+        agent_id = _make_agent(pg_conn)
+        s = SchedulesRepository(pg_conn).create(
+            user_id="u1", agent_id=agent_id, trigger_type="recurring",
+            instruction="i", cron="* * * * *",
+            next_run_at=_now() + timedelta(hours=1),
+        )
+        sid = str(s["id"])
+        self._run(
+            pg_conn, sid, "u1", agent_id, ago=timedelta(days=1),
+            status="success", prompt_tokens=100, generated_tokens=50,
+        )
+        self._run(
+            pg_conn, sid, "u1", agent_id, ago=timedelta(days=5),
+            status="failed", prompt_tokens=10, generated_tokens=5,
+            error_type="agent_error",
+        )
+        latest = self._run(
+            pg_conn, sid, "u1", agent_id, ago=timedelta(days=2),
+            status="timeout", prompt_tokens=1, generated_tokens=2,
+            error_type="timeout",
+        )
+        self._run(
+            pg_conn, sid, "u1", agent_id, ago=timedelta(days=45),
+            status="failed", prompt_tokens=999, generated_tokens=999,
+        )
+        other = SchedulesRepository(pg_conn).create(
+            user_id="u2", agent_id=agent_id, trigger_type="recurring",
+            instruction="i", cron="* * * * *",
+            next_run_at=_now() + timedelta(hours=1),
+        )
+        self._run(
+            pg_conn, str(other["id"]), "u2", agent_id, ago=timedelta(hours=1),
+            status="failed", prompt_tokens=7, generated_tokens=7,
+        )
+
+        resp = self._get(app, pg_conn, agent_id)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["days"] == 30
+        assert body["runs"] == 3
+        assert body["failed"] == 2
+        assert body["tokens"] == 168
+        assert body["latest_failure"] == {
+            "scheduled_for": latest["scheduled_for"],
+            "status": "timeout",
+            "error_type": "timeout",
+        }
+
+    @pytest.mark.parametrize(
+        "query, expected",
+        [("?days=0", 1), ("?days=-5", 1), ("?days=9999", 365),
+         ("?days=7", 7), ("?days=abc", 30), ("", 30)],
+    )
+    def test_days_clamped(self, app, pg_conn, query, expected):
+        agent_id = _make_agent(pg_conn)
+        resp = self._get(app, pg_conn, agent_id, query=query)
+        assert resp.status_code == 200
+        assert resp.get_json()["days"] == expected
+
+    def test_db_error_returns_500(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.schedule_runs import (
+            ScheduleRunsRepository,
+        )
+
+        agent_id = _make_agent(pg_conn)
+        with patch.object(
+            ScheduleRunsRepository, "stats_for_agent",
+            side_effect=RuntimeError("secret detail"), create=True,
+        ):
+            resp = self._get(app, pg_conn, agent_id)
+        assert resp.status_code == 500
+        assert "secret detail" not in resp.get_data(as_text=True)
+
+    def test_route_registered_without_collision(self):
+        from docsgpt.api.user.schedules.routes import (
+            AgentScheduleStats,
+            schedules_ns,
+        )
+
+        paths = {
+            r.urls[0]: r.resource for r in schedules_ns.resources
+        }
+        assert paths["/agents/<string:agent_id>/schedules/stats"] is (
+            AgentScheduleStats
+        )

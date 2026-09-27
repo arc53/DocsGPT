@@ -51,7 +51,6 @@ import {
   resendQuery,
   resetWorkflowPreview,
   selectActiveNodeId,
-  setPreviewOpen,
   selectWorkflowExecutionSteps,
   selectWorkflowPreviewQueries,
   selectWorkflowPreviewStatus,
@@ -409,11 +408,11 @@ export function WorkflowMiniMap({
               className={cn(
                 'h-12 w-full justify-start disabled:opacity-100',
                 isActive
-                  ? 'bg-primary/10 ring-primary hover:bg-primary/10 dark:bg-primary/10 dark:hover:bg-primary/10 ring-2'
+                  ? 'bg-secondary ring-primary hover:bg-secondary dark:bg-secondary dark:hover:bg-secondary ring-2'
                   : status === 'completed'
                     ? 'border-success/50 bg-success/10 hover:bg-success/10 dark:border-success/50 dark:bg-success/10 dark:hover:bg-success/10'
                     : status === 'running'
-                      ? 'border-primary/50 bg-primary/10 hover:bg-primary/10 dark:border-primary/50 dark:bg-primary/10 dark:hover:bg-primary/10 animate-pulse'
+                      ? 'border-primary/50 bg-secondary hover:bg-secondary dark:border-primary/50 dark:bg-secondary dark:hover:bg-secondary animate-pulse'
                       : status === 'failed'
                         ? 'border-destructive/50 bg-destructive/10 hover:bg-destructive/10 dark:border-destructive/50 dark:bg-destructive/10 dark:hover:bg-destructive/10'
                         : 'border-border bg-muted hover:bg-muted dark:border-border dark:bg-muted dark:hover:bg-muted',
@@ -596,12 +595,10 @@ export default function WorkflowPreview({
 
   useEffect(() => {
     dispatch(resetWorkflowPreview());
-    dispatch(setPreviewOpen(true));
     return () => {
       if (fetchStream.current) fetchStream.current.abort();
       handleWorkflowPreviewAbort();
       dispatch(resetWorkflowPreview());
-      dispatch(setPreviewOpen(false));
     };
   }, [dispatch]);
 

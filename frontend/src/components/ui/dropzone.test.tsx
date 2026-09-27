@@ -36,6 +36,26 @@ describe('Dropzone', () => {
     expect(html).toContain('data-size="compact"');
   });
 
+  it('draws the tile size as an 88px square with a short muted label', () => {
+    const html = renderToStaticMarkup(
+      <Dropzone
+        onDrop={vi.fn()}
+        size="tile"
+        title="Avatar"
+        description="hidden"
+      />,
+    );
+    expect(html).toContain('data-size="tile"');
+    // 64px beside the Name field on a phone, 88px beside both fields from sm.
+    expect(html).toContain('size-16');
+    expect(html).toContain('sm:size-22');
+    // The word shows from sm; on a phone the tile is icon-only.
+    expect(html).toMatch(/class="[^"]*\bsr-only\b[^"]*sm:not-sr-only/);
+    expect(html).not.toContain('w-full cursor-pointer');
+    expect(html).toContain('Avatar');
+    expect(html).not.toContain('hidden</span>');
+  });
+
   it('never uses raw palette colours', () => {
     const html = renderToStaticMarkup(<Dropzone onDrop={vi.fn()} />);
     expect(html).not.toMatch(/\b(bg|text|border)-(gray|red|green|blue)-\d+/);

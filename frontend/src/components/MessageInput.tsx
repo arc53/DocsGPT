@@ -1851,7 +1851,7 @@ export default function MessageInput({
         createPortal(
           <div className="bg-background/85 pointer-events-none fixed top-0 left-0 z-50 flex size-full flex-col items-center justify-center">
             <CloudUpload className="size-18" />
-            <span className="text-muted-foreground px-2 text-2xl font-bold">
+            <span className="text-foreground px-2 text-xl leading-tight font-semibold">
               {t('modals.uploadDoc.drag.title')}
             </span>
             <span className="text-muted-foreground w-48 p-2 text-center text-sm">

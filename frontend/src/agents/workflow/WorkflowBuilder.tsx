@@ -88,6 +88,7 @@ import {
 } from '../../preferences/preferenceSlice';
 import { getToolDisplayName } from '../../utils/toolUtils';
 import { agentEditPath, agentsListPath } from '../paths';
+import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
 import AgentPreviewSheet from '../components/AgentPreviewSheet';
 import { Agent } from '../types';
@@ -133,7 +134,7 @@ type PaletteTone = 'primary' | 'success' | 'warning' | 'info';
 // Whole class strings per tone so Tailwind sees them.
 const PALETTE_TONE_CLASSES: Record<PaletteTone, string> = {
   primary:
-    'bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground',
+    'bg-secondary text-secondary-foreground group-hover:bg-primary group-hover:text-primary-foreground',
   success:
     'bg-success/10 text-success group-hover:bg-success group-hover:text-success-foreground',
   warning:
@@ -1795,6 +1796,7 @@ function WorkflowBuilderInner() {
               <Button
                 type="button"
                 variant="outline"
+                size="field"
                 shape="pill"
                 onClick={navigateBackToAgents}
               >
@@ -1931,32 +1933,10 @@ function WorkflowBuilderInner() {
             </Popover>
           </div>
           <div className="flex items-center gap-2">
-            {canManageAgent && (
-              <Button
-                type="button"
-                variant="outline"
-                shape="pill"
-                onClick={() => setAgentDetails('ACTIVE')}
-              >
-                <Link />
-                {t('agents.form.buttons.accessDetails')}
-              </Button>
-            )}
-            {canManageAgent && (
-              <Button
-                type="button"
-                variant="destructive-outline"
-                shape="pill"
-                onClick={() => setDeleteConfirmation('ACTIVE')}
-                loading={isDeletingAgent}
-              >
-                <Trash2 />
-                {t('agents.form.buttons.delete')}
-              </Button>
-            )}
             <Button
               type="button"
               variant="outline"
+              size="field"
               shape="pill"
               onClick={() => {
                 const validationErrors = validateWorkflow();
@@ -1976,11 +1956,31 @@ function WorkflowBuilderInner() {
               onClick={handlePrimaryAction}
               disabled={isPrimaryActionDisabled}
               loading={showPrimaryActionSpinner}
-              size="lg"
+              size="field"
               shape="pill"
             >
               {primaryActionLabel}
             </Button>
+            {canManageAgent && (
+              <ActionMenu
+                size="toolbar"
+                triggerLabel={t('agents.form.buttons.moreActions')}
+                options={[
+                  {
+                    label: t('agents.form.buttons.accessDetails'),
+                    icon: Link,
+                    onClick: () => setAgentDetails('ACTIVE'),
+                  },
+                  {
+                    label: t('agents.form.buttons.delete'),
+                    icon: Trash2,
+                    variant: 'destructive',
+                    disabled: isDeletingAgent,
+                    onClick: () => setDeleteConfirmation('ACTIVE'),
+                  },
+                ]}
+              />
+            )}
           </div>
         </div>
 

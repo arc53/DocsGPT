@@ -33,6 +33,15 @@ describe('PageToolbar', () => {
     expect(html).not.toContain('data-slot="separator"');
   });
 
+  // On a phone the row stacks; the action slot spans it, so a caller can
+  // stretch its main button. From sm the slot hugs its buttons.
+  it('lets the action slot span the stacked row on a phone', () => {
+    const html = renderToStaticMarkup(
+      <PageToolbar intro="x" action={<button type="button">Add</button>} />,
+    );
+    expect(html).toContain('<div class="w-full shrink-0 sm:w-auto">');
+  });
+
   it('renders notices between the row and the rule', () => {
     const html = renderToStaticMarkup(
       <PageToolbar intro="x" action={<span />} divider>

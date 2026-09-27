@@ -612,11 +612,7 @@ const ConversationBubble = forwardRef<
         )}
         {sources && (
           <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
-            <SheetContent
-              side="right"
-              title={t('conversation.sources.title')}
-              className="w-64 sm:w-80 sm:max-w-none"
-            >
+            <SheetContent side="right" title={t('conversation.sources.title')}>
               <div className="flex h-full flex-col items-center gap-2 px-6 py-4 text-center">
                 <AllSources sources={sources} />
               </div>
@@ -832,14 +828,12 @@ function ToolCallApprovalBar({
           <p className="text-muted-foreground mb-1 text-xs font-medium">
             {t('conversation.inlineSteps.arguments')}
           </p>
-          <Card
-            variant="subtle"
-            padding="sm"
-            className="mb-2 max-h-40 overflow-y-auto"
-          >
-            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-              {JSON.stringify(toolCall.arguments, null, 2)}
-            </pre>
+          <Card variant="subtle" padding="sm" className="mb-2">
+            <div className="scrollbar-overlay max-h-40 overflow-y-auto">
+              <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+                {JSON.stringify(toolCall.arguments, null, 2)}
+              </pre>
+            </div>
           </Card>
           <Input
             type="text"

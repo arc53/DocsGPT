@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useDispatch } from 'react-redux';
 
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -9,6 +10,8 @@ import {
   SheetDescription,
   SheetTitle,
 } from '@/components/ui/sheet';
+
+import { setPreviewOpen } from '../workflow/workflowPreviewSlice';
 
 type AgentPreviewSheetProps = {
   open: boolean;
@@ -48,12 +51,21 @@ export default function AgentPreviewSheet({
   children,
 }: AgentPreviewSheetProps) {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
+
+  // App moves the toast stack bottom-left while a preview drawer is open, so
+  // it doesn't sit over the chat. The flag lives in the workflow preview
+  // slice for both agent types.
+  useEffect(() => {
+    dispatch(setPreviewOpen(open));
+    return () => {
+      dispatch(setPreviewOpen(false));
+    };
+  }, [dispatch, open]);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
-      >
+      <SheetContent side="right" size="wide" className="p-0">
         <div className="flex min-h-0 flex-1 flex-col">
           {/* pr-12 keeps the header clear of the close X at top-2 right-2. */}
           <div className="flex items-center gap-3 px-6 pt-6 pr-12 pb-4">

@@ -113,13 +113,6 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         shape="pill"
         onClick={() => setSyncConfirmationModal('ACTIVE')}
         disabled={isSyncing}
-        title={
-          isSyncing
-            ? `${t('settings.sources.syncing')} ${syncProgress}%`
-            : syncDone
-              ? 'Done'
-              : t('settings.sources.sync')
-        }
       >
         {syncDone ? (
           <Check />

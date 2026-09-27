@@ -167,6 +167,79 @@ class ScheduleRunsRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
+    def stats_for_agent(
+        self, agent_id: str, user_id: str, *, days: int = 30,
+    ) -> dict:
+        """Aggregate run stats for an agent's owned schedules over a window.
+
+        Only runs of schedules owned by ``user_id`` on ``agent_id`` whose
+        ``scheduled_for`` falls within the last ``days`` days are counted.
+
+        Args:
+            agent_id: Agent UUID the schedules belong to.
+            user_id: Owner of the schedules (and runs).
+            days: Window length in days, counted back from now.
+
+        Returns:
+            Dict with ``runs``, ``failed`` (``failed``/``timeout``),
+            ``tokens`` (prompt + generated) and ``latest_failure`` — the
+            most recent failed run's ``scheduled_for``/``status``/
+            ``error_type``, or ``None`` when there is none.
+        """
+        row = self._conn.execute(
+            text(
+                """
+                WITH window_runs AS (
+                    SELECT r.scheduled_for, r.status, r.error_type,
+                           r.prompt_tokens, r.generated_tokens
+                    FROM schedule_runs r
+                    JOIN schedules s ON s.id = r.schedule_id
+                    WHERE s.agent_id = CAST(:agent_id AS uuid)
+                      AND s.user_id = :user_id
+                      AND r.user_id = :user_id
+                      AND r.scheduled_for >= now() - make_interval(days => :days)
+                ),
+                latest_failure AS (
+                    SELECT scheduled_for, status, error_type
+                    FROM window_runs
+                    WHERE status IN ('failed', 'timeout')
+                    ORDER BY scheduled_for DESC
+                    LIMIT 1
+                )
+                SELECT agg.runs, agg.failed, agg.tokens,
+                       lf.scheduled_for AS latest_failure_scheduled_for,
+                       lf.status AS latest_failure_status,
+                       lf.error_type AS latest_failure_error_type
+                FROM (
+                    SELECT count(*) AS runs,
+                           count(*) FILTER (
+                               WHERE status IN ('failed', 'timeout')
+                           ) AS failed,
+                           COALESCE(
+                               SUM(prompt_tokens + generated_tokens), 0
+                           ) AS tokens
+                    FROM window_runs
+                ) agg
+                LEFT JOIN latest_failure lf ON true
+                """
+            ),
+            {"agent_id": str(agent_id), "user_id": user_id, "days": int(days)},
+        ).fetchone()
+        data = row_to_dict(row)
+        latest_failure = None
+        if data.get("latest_failure_scheduled_for") is not None:
+            latest_failure = {
+                "scheduled_for": data["latest_failure_scheduled_for"],
+                "status": data["latest_failure_status"],
+                "error_type": data["latest_failure_error_type"],
+            }
+        return {
+            "runs": int(data.get("runs") or 0),
+            "failed": int(data.get("failed") or 0),
+            "tokens": int(data.get("tokens") or 0),
+            "latest_failure": latest_failure,
+        }
+
     def update(self, run_id: str, fields: dict) -> Optional[dict]:
         """Apply a whitelisted partial update to a run row."""
         filtered = {k: v for k, v in fields.items() if k in _ALLOWED_UPDATES}

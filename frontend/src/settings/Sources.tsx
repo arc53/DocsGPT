@@ -598,7 +598,6 @@ export default function Sources({
               type="button"
               size="field"
               shape="pill"
-              title={t('settings.sources.addSource')}
               onClick={() => {
                 setIsOnboarding(false);
                 setModalState('ACTIVE');

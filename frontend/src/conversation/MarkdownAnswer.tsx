@@ -17,6 +17,11 @@ import { markdownHeadings } from '@/lib/markdown';
 import CopyButton from '../components/CopyButton';
 import MermaidRenderer from '../components/MermaidRenderer';
 import { Button } from '../components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
 import { useDarkTheme } from '../hooks';
 import classes from './ConversationBubble.module.css';
 import {
@@ -218,33 +223,42 @@ export default function MarkdownAnswer({
                       const num = href.replace('#cite-', '');
                       const sourceIdx = parseInt(num, 10) - 1;
                       return (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="xs"
-                          shape="pill"
-                          onClick={() => {
-                            const el = document.getElementById(
-                              `source-${sourceIdx}`,
-                            );
-                            if (el) {
-                              el.scrollIntoView({
-                                behavior: 'smooth',
-                                block: 'center',
-                              });
-                              el.classList.add('ring-3', 'ring-primary');
-                              setTimeout(
-                                () =>
-                                  el.classList.remove('ring-3', 'ring-primary'),
-                                2000,
-                              );
-                            }
-                          }}
-                          className="mx-0.5 h-5 min-w-5"
-                          title={t('conversation.jumpToSource', { num })}
-                        >
-                          {num}
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="xs"
+                              shape="pill"
+                              onClick={() => {
+                                const el = document.getElementById(
+                                  `source-${sourceIdx}`,
+                                );
+                                if (el) {
+                                  el.scrollIntoView({
+                                    behavior: 'smooth',
+                                    block: 'center',
+                                  });
+                                  el.classList.add('ring-3', 'ring-primary');
+                                  setTimeout(
+                                    () =>
+                                      el.classList.remove(
+                                        'ring-3',
+                                        'ring-primary',
+                                      ),
+                                    2000,
+                                  );
+                                }
+                              }}
+                              className="mx-0.5 h-5 min-w-5"
+                            >
+                              {num}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t('conversation.jumpToSource', { num })}
+                          </TooltipContent>
+                        </Tooltip>
                       );
                     }
                     return (
@@ -340,6 +354,7 @@ export default function MarkdownAnswer({
                   table({ children }) {
                     return (
                       <div className="border-border relative overflow-x-auto rounded-lg border">
+                        {/* eslint-disable-next-line no-restricted-syntax -- the model's own markdown table, styled by the answer (DESIGN.md, Approved exceptions) */}
                         <table className="text-foreground w-full text-left">
                           {children}
                         </table>

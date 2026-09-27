@@ -3,6 +3,9 @@ import { act } from 'react';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+
+const dispatch = vi.fn();
+vi.mock('react-redux', () => ({ useDispatch: () => dispatch }));
 import { createRoot, type Root } from 'react-dom/client';
 
 import AgentPreviewSheet from './AgentPreviewSheet';
@@ -88,6 +91,22 @@ describe('AgentPreviewSheet', () => {
     const badge = document.querySelector<HTMLElement>('[data-slot="badge"]')!;
     expect(badge.dataset.variant).toBe('info');
     expect(badge.textContent).toBe('agents.schedules.status.running');
+  });
+
+  // The toast stack moves bottom-left while any agent preview is open.
+  it('reports whether it is open, and closed when it goes away', async () => {
+    dispatch.mockClear();
+    await render();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'workflowPreview/setPreviewOpen',
+      payload: true,
+    });
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    expect(dispatch).toHaveBeenLastCalledWith({
+      type: 'workflowPreview/setPreviewOpen',
+      payload: false,
+    });
   });
 
   it('renders the body under a separator on the sheet surface', async () => {

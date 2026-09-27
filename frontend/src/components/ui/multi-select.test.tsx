@@ -1,5 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { count?: number }) =>
+      opts?.count !== undefined ? `${key}:${opts.count}` : key,
+  }),
+}));
 
 import { MultiSelect } from './multi-select';
 
@@ -58,7 +65,7 @@ describe('MultiSelect', () => {
       // The hand-rolled chip's heavier tint is gone.
       expect(chip.className.split(' ')).not.toContain('bg-primary/20');
     });
-    expect(host.textContent).toContain('+1 more');
+    expect(host.textContent).toContain('components.multiSelect.more:1');
   });
 });
 

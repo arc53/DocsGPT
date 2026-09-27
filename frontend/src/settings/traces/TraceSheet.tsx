@@ -84,7 +84,8 @@ export default function TraceSheet({
         side="right"
         title={t('settings.logs.trace.title')}
         aria-describedby={undefined}
-        className="w-full overflow-y-auto sm:max-w-3xl"
+        size="wide"
+        className="overflow-y-auto"
       >
         <div className="flex flex-col gap-6 px-4 pt-4 pb-6">
           {loading && <LoadingState fill="block" />}

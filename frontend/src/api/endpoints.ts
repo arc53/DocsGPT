@@ -141,6 +141,8 @@ const endpoints = {
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
     AGENT_SCHEDULES: (agentId: string) => `/api/agents/${agentId}/schedules`,
+    AGENT_SCHEDULE_STATS: (agentId: string, days?: number) =>
+      `/api/agents/${agentId}/schedules/stats?days=${days ?? 30}`,
     SCHEDULE: (id: string) => `/api/schedules/${id}`,
     SCHEDULE_RUN_NOW: (id: string) => `/api/schedules/${id}/run`,
     SCHEDULE_RUNS: (id: string, limit?: number, offset?: number) =>

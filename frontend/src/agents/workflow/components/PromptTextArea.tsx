@@ -442,7 +442,7 @@ export default function PromptTextArea({
   // so typing keeps filtering it.
   const field = (
     <PopoverAnchor asChild>
-      <div className="border-border focus-within:ring-ring bg-card relative rounded-xl border transition-shadow focus-within:ring-2">
+      <div className="border-border focus-within:border-ring focus-within:ring-ring/50 bg-card relative rounded-xl border transition-shadow focus-within:ring-3">
         <div
           ref={overlayRef}
           aria-hidden

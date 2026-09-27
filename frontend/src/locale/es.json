@@ -1018,6 +1018,9 @@
       "start": "Comenzar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
+      "dropzoneText": "Haz clic para subir o arrastra y suelta",
+      "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, imágenes, audio, EPUB, JSON o ZIP, hasta 25 MB cada uno",
+      "filesRejected": "No se añadieron (más de 25 MB o tipo no admitido): {{files}}",
       "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip limitados a 25MB",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
@@ -1568,15 +1571,16 @@
         "moreActions": "Más acciones"
       },
       "sections": {
-        "meta": "Meta",
-        "source": "Fuente",
         "prompt": "Prompt",
         "tools": "Herramientas",
         "agentType": "Tipo de agente",
         "models": "Modelos",
         "advanced": "Avanzado",
         "guardrails": "Guardrails",
-        "preview": "Vista previa"
+        "preview": "Vista previa",
+        "basics": "Básico",
+        "knowledge": "Conocimiento y comportamiento",
+        "model": "Modelo"
       },
       "placeholders": {
         "agentName": "Nombre del agente",
@@ -1621,7 +1625,11 @@
         "research": "Investigación"
       },
       "labels": {
-        "defaultModel": "Modelo Predeterminado"
+        "defaultModel": "Modelo Predeterminado",
+        "name": "Nombre",
+        "description": "Descripción",
+        "sources": "Fuentes",
+        "avatar": "Avatar"
       },
       "advanced": {
         "jsonSchema": "Esquema de respuesta JSON",
@@ -1636,7 +1644,10 @@
         "systemPromptOverrideDescription": "Permitir que los llamadores de la API v1 reemplacen el prompt del sistema de este agente"
       },
       "preview": {
-        "publishedPreview": "Los agentes publicados se pueden previsualizar aquí"
+        "savedVersion": "versión guardada",
+        "publishTitle": "Publica para probarlo",
+        "publishDescription": "La vista previa chatea con el agente publicado. Los borradores siguen siendo privados hasta que los publiques.",
+        "unsavedChanges": "Tienes cambios sin guardar. La vista previa usa la versión guardada hasta que guardes."
       },
       "dangerZone": {
         "heading": "Zona de peligro",
@@ -1699,6 +1710,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "Configura el agente y publícalo para chatear con él."
+      },
+      "status": {
+        "published": "Publicado"
       }
     },
     "logs": {
@@ -1709,7 +1726,6 @@
     },
     "schedules": {
       "title": "Programaciones del Agente",
-      "heading": "Programaciones",
       "newRecurring": "Nueva programación",
       "closeForm": "Cerrar formulario",
       "edit": "Editar",
@@ -1805,8 +1821,6 @@
         "output": "Salida",
         "truncated": "(truncada)"
       },
-      "timezoneMeta": "zona horaria: {{timezone}}",
-      "nextRunMeta": "próxima: {{time}}",
       "toolCard": {
         "cancelFailed": "No se pudo cancelar",
         "taskCancelled": "Tarea programada cancelada.",
@@ -1849,7 +1863,28 @@
       "runLog": {
         "when": "Cuándo",
         "details": "Detalles",
-        "empty": "Aún no hay ejecuciones registradas para esta programación."
+        "empty": "Aún no hay ejecuciones registradas para esta programación.",
+        "duration": "Duración"
+      },
+      "actions": "Acciones de la programación",
+      "cancelTask": "Cancelar tarea",
+      "failureStreak_one": "{{count}} fallo seguido",
+      "failureStreak_other": "{{count}} fallos seguidos",
+      "meta": {
+        "nextRun": "Próxima ejecución {{time}}",
+        "runsAt": "Se ejecuta el {{time}}",
+        "lastRun": "Última ejecución {{time}}"
+      },
+      "stats": {
+        "active": "Programaciones activas",
+        "nextRun": "Próxima ejecución",
+        "runs": "Ejecuciones, últimos {{days}} días",
+        "tokens": "{{tokens}} tokens",
+        "failed": "Fallidas, últimos {{days}} días",
+        "latestFailure": "Última: {{status}}, {{date}}",
+        "paused_one": "{{count}} en pausa",
+        "paused_other": "{{count}} en pausa",
+        "overdue": "Atrasada"
       }
     },
     "shared": {
@@ -2140,6 +2175,10 @@
     },
     "profile": {
       "avatarAlt": "Avatar del usuario"
+    },
+    "multiSelect": {
+      "more_one": "+{{count}} más",
+      "more_other": "+{{count}} más"
     }
   },
   "pageNotFound": {

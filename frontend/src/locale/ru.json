@@ -1058,6 +1058,9 @@
       "start": "Начать чат",
       "name": "Имя",
       "choose": "Выбрать файлы",
+      "dropzoneText": "Нажмите, чтобы загрузить, или перетащите файлы",
+      "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, изображения, аудио, EPUB, JSON или ZIP, до 25 МБ каждый",
+      "filesRejected": "Не добавлены (больше 25 МБ или неподдерживаемый формат): {{files}}",
       "info": "Пожалуйста, загрузите файлы .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip размером до 25 МБ",
       "uploadedFiles": "Загруженные файлы",
       "cancel": "Отмена",
@@ -1614,15 +1617,16 @@
         "moreActions": "Другие действия"
       },
       "sections": {
-        "meta": "Мета",
-        "source": "Источник",
         "prompt": "Промпт",
         "tools": "Инструменты",
         "agentType": "Тип агента",
         "models": "Модели",
         "advanced": "Расширенные",
         "guardrails": "Guardrails",
-        "preview": "Предпросмотр"
+        "preview": "Предпросмотр",
+        "basics": "Основное",
+        "knowledge": "Знания и поведение",
+        "model": "Модель"
       },
       "placeholders": {
         "agentName": "Имя агента",
@@ -1667,7 +1671,11 @@
         "research": "Исследование"
       },
       "labels": {
-        "defaultModel": "Модель по умолчанию"
+        "defaultModel": "Модель по умолчанию",
+        "name": "Имя",
+        "description": "Описание",
+        "sources": "Источники",
+        "avatar": "Аватар"
       },
       "advanced": {
         "jsonSchema": "Схема ответа JSON",
@@ -1682,7 +1690,10 @@
         "systemPromptOverrideDescription": "Разрешить вызовам API v1 заменять системный промпт этого агента"
       },
       "preview": {
-        "publishedPreview": "Опубликованные агенты можно просмотреть здесь"
+        "savedVersion": "сохранённая версия",
+        "publishTitle": "Опубликуйте, чтобы проверить",
+        "publishDescription": "Предпросмотр общается с опубликованным агентом. Черновики остаются приватными, пока вы их не опубликуете.",
+        "unsavedChanges": "Есть несохранённые изменения. Пока вы не сохраните, предпросмотр использует сохранённую версию."
       },
       "dangerZone": {
         "heading": "Опасная зона",
@@ -1747,6 +1758,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "Настройте агента и опубликуйте его, чтобы с ним общаться."
+      },
+      "status": {
+        "published": "Опубликован"
       }
     },
     "logs": {
@@ -1757,7 +1774,6 @@
     },
     "schedules": {
       "title": "Расписания агента",
-      "heading": "Расписания",
       "newRecurring": "Новое расписание",
       "closeForm": "Закрыть форму",
       "edit": "Редактировать",
@@ -1853,8 +1869,6 @@
         "output": "Результат",
         "truncated": "(обрезано)"
       },
-      "timezoneMeta": "часовой пояс: {{timezone}}",
-      "nextRunMeta": "следующий: {{time}}",
       "toolCard": {
         "cancelFailed": "Не удалось отменить",
         "taskCancelled": "Запланированная задача отменена.",
@@ -1899,7 +1913,32 @@
       "runLog": {
         "when": "Когда",
         "details": "Подробнее",
-        "empty": "Для этого расписания пока нет запусков."
+        "empty": "Для этого расписания пока нет запусков.",
+        "duration": "Длительность"
+      },
+      "actions": "Действия с расписанием",
+      "cancelTask": "Отменить задачу",
+      "failureStreak_one": "{{count}} сбой подряд",
+      "failureStreak_few": "{{count}} сбоя подряд",
+      "failureStreak_many": "{{count}} сбоев подряд",
+      "failureStreak_other": "{{count}} сбоя подряд",
+      "meta": {
+        "nextRun": "Следующий запуск {{time}}",
+        "runsAt": "Запуск {{time}}",
+        "lastRun": "Последний запуск {{time}}"
+      },
+      "stats": {
+        "active": "Активные расписания",
+        "nextRun": "Следующий запуск",
+        "runs": "Запуски за {{days}} дней",
+        "tokens": "{{tokens}} токенов",
+        "failed": "Сбои за {{days}} дней",
+        "latestFailure": "Последний: {{status}}, {{date}}",
+        "paused_one": "{{count}} приостановлено",
+        "paused_few": "{{count}} приостановлено",
+        "paused_many": "{{count}} приостановлено",
+        "paused_other": "{{count}} приостановлено",
+        "overdue": "Просрочено"
       }
     },
     "shared": {
@@ -2198,6 +2237,12 @@
     },
     "profile": {
       "avatarAlt": "Аватар пользователя"
+    },
+    "multiSelect": {
+      "more_one": "+ещё {{count}}",
+      "more_few": "+ещё {{count}}",
+      "more_many": "+ещё {{count}}",
+      "more_other": "+ещё {{count}}"
     }
   },
   "pageNotFound": {

@@ -103,6 +103,41 @@ describe('SheetContent side="bottom"', () => {
   });
 });
 
+describe('SheetContent side="right" size', () => {
+  const widthClasses = async (size?: 'default' | 'detail' | 'wide') => {
+    await render(
+      <Sheet open>
+        <SheetContent
+          side="right"
+          size={size}
+          title="Drawer"
+          aria-describedby={undefined}
+        />
+      </Sheet>,
+    );
+    return content()
+      .className.split(' ')
+      .filter((c) => /^(sm:|md:|lg:)?(max-)?w-/.test(c));
+  };
+
+  it('is a 384px companion drawer by default', async () => {
+    expect(await widthClasses()).toEqual(['w-3/4', 'sm:max-w-sm']);
+  });
+
+  it('is full width on a phone and 576px from sm at detail', async () => {
+    expect(await widthClasses('detail')).toEqual(['w-full', 'sm:max-w-xl']);
+  });
+
+  it('steps 600 / 700 / 800px at wide', async () => {
+    expect(await widthClasses('wide')).toEqual([
+      'w-full',
+      'sm:max-w-[600px]',
+      'md:max-w-[700px]',
+      'lg:max-w-[800px]',
+    ]);
+  });
+});
+
 describe('SheetOverlay', () => {
   it('uses the blurred scrim every Modal uses', async () => {
     await render(

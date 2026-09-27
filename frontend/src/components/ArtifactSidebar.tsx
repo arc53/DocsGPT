@@ -26,7 +26,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { IconButton } from './ui/icon-button';
-import { Sheet, SheetContent } from './ui/sheet';
+import { Sheet, SheetContent, SheetTitle } from './ui/sheet';
 
 type TodoItem = {
   todo_id: number;
@@ -528,10 +528,10 @@ export default function ArtifactSidebar({
         <div className="h-14 shrink-0" />
         {/* Artifact panel */}
         <div className="border-border flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-transparent">
-          <div className="flex w-full items-center justify-between px-4 py-2">
-            <span className="text-muted-foreground text-sm font-medium">
+          <div className="flex w-full items-center justify-between gap-2 px-4 py-2">
+            <h2 className="text-foreground min-w-0 text-sm leading-tight font-semibold wrap-anywhere">
               {title}
-            </span>
+            </h2>
             <IconButton
               label={t('agents.close')}
               side="bottom"
@@ -556,27 +556,13 @@ export default function ArtifactSidebar({
         if (!open) onClose();
       }}
     >
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        title={title || t('components.artifact.preview')}
-        className="h-full w-80 p-0 sm:w-96 sm:max-w-none"
-      >
+      <SheetContent side="right" closeLabel={t('agents.close')} className="p-0">
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="border-border flex w-full items-center justify-between border-b px-4 py-3">
-            <span className="text-muted-foreground text-sm font-medium">
-              {title}
-            </span>
-            <IconButton
-              label={t('agents.close')}
-              side="bottom"
-              variant="ghost"
-              size="icon"
-              shape="pill"
-              onClick={onClose}
-            >
-              <X aria-hidden="true" className="size-4" />
-            </IconButton>
+          {/* pr-12 keeps the title clear of the built-in close X. */}
+          <div className="border-border flex w-full items-center border-b px-4 py-3 pr-12">
+            <SheetTitle className="min-w-0 text-sm font-semibold wrap-anywhere">
+              {title || t('components.artifact.preview')}
+            </SheetTitle>
           </div>
           <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
         </div>

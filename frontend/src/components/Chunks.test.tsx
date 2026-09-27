@@ -124,6 +124,18 @@ describe('Chunks', () => {
     expect(tile.querySelector('.bg-muted')).toBeNull();
   });
 
+  // Decision 79: text tiles follow the container with an auto-fit track that
+  // can't overflow a container narrower than 400px.
+  it('lays the tiles out on the guarded auto-fit text-tile grid', async () => {
+    await render();
+    const grid = container.querySelector<HTMLButtonElement>(
+      'button[data-slot="card"]',
+    )!.parentElement!;
+    expect(grid.className).toBe(
+      'grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(min(400px,100%),1fr))]',
+    );
+  });
+
   const renderPath = async (props: {
     onPathSelect?: (depth: number) => void;
     handleGoBack?: () => void;

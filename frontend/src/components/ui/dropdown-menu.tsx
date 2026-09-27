@@ -263,9 +263,12 @@ const stopPropagation = (event: React.SyntheticEvent) =>
  * Clicks and keys on the trigger and the menu stop propagating, because the
  * menu usually sits inside a clickable card and a portal still bubbles
  * through the React tree. The trigger is `ghost-on-accent`: most hosts turn
- * bg-accent while the pointer is on them.
+ * bg-accent while the pointer is on them. In a page header or toolbar
+ * (`size="toolbar"`) it is a 36px `ghost-muted` icon button like the others
+ * there, with its tooltip below.
  *
  * @param options The menu rows.
+ * @param size `row` (a card, tile or row; the default) or `toolbar`.
  * @param triggerLabel The trigger's accessible name.
  * @param className Layout classes for the trigger (position, margin).
  * @param triggerTestId A `data-testid` for the trigger.
@@ -279,6 +282,7 @@ function ActionMenu({
   disabled,
   className,
   triggerTestId,
+  size = 'row',
 }: {
   options: MenuOption[];
   triggerLabel: string;
@@ -288,7 +292,9 @@ function ActionMenu({
   disabled?: boolean;
   className?: string;
   triggerTestId?: string;
+  size?: 'row' | 'toolbar';
 }) {
+  const toolbar = size === 'toolbar';
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <Tooltip>
@@ -297,8 +303,8 @@ function ActionMenu({
           <TooltipTrigger asChild>
             <Button
               type="button"
-              variant="ghost-on-accent"
-              size="icon-xs"
+              variant={toolbar ? 'ghost-muted' : 'ghost-on-accent'}
+              size={toolbar ? 'icon' : 'icon-xs'}
               aria-label={triggerLabel}
               disabled={disabled}
               data-testid={triggerTestId}
@@ -310,7 +316,9 @@ function ActionMenu({
             </Button>
           </TooltipTrigger>
         </DropdownMenuTrigger>
-        <TooltipContent>{triggerLabel}</TooltipContent>
+        <TooltipContent side={toolbar ? 'bottom' : undefined}>
+          {triggerLabel}
+        </TooltipContent>
       </Tooltip>
       <DropdownMenuContent
         align={align}
