@@ -543,6 +543,8 @@ export default function Teams() {
                 <Card
                   key={team.id}
                   asChild
+                  variant="filled"
+                  padding="lg"
                   interactive
                   className="group h-full"
                 >

@@ -856,10 +856,10 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Section panel toggle"
-            code='<div className="has-[[data-variant=section-toggle]:focus-visible]:ring-3 …"><Button variant="section-toggle" size="sm" aria-expanded>'
+            code='<Card variant="subtle" padding="lg"><Button variant="section-toggle" size="sm" aria-expanded> (Card draws the focus ring)'
           >
-            <div className="bg-muted max-w-md rounded-2xl p-4">
-              <div className="bg-card has-[[data-variant=section-toggle]:focus-visible]:ring-ring/50 rounded-2xl px-6 py-3 has-[[data-variant=section-toggle]:focus-visible]:ring-3 has-[[data-variant=section-toggle]:focus-visible]:ring-inset">
+            <div className="max-w-md">
+              <Card variant="subtle" padding="lg">
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="section-toggle"
@@ -878,11 +878,11 @@ export default function DesignSystem() {
                   <Badge variant="destructive">1 needs setup</Badge>
                 </div>
                 {sectionOpen && (
-                  <p className="text-muted-foreground mt-2 text-sm">
+                  <p className="text-muted-foreground text-sm">
                     Run the selected checks on this agent&apos;s runs.
                   </p>
                 )}
-              </div>
+              </Card>
             </div>
           </Example>
           <Example
@@ -1536,14 +1536,14 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Subtle surface and paddings"
-            code='<Card variant="subtle"> on bg-muted · tone="destructive" · padding="lg" · padding="none"'
+            code='<Card variant="subtle"> a place on the page · tone="destructive" · padding="lg" · padding="none"'
           >
-            <div className="bg-muted grid items-start gap-4 rounded-2xl p-4 md:grid-cols-2">
+            <div className="grid items-start gap-4 md:grid-cols-2">
               <Card variant="subtle" padding="lg">
                 <CardTitle>Subtle</CardTitle>
                 <CardDescription>
-                  subtle is a bordered background-coloured box on a muted page;
-                  lg pads it 24px.
+                  subtle is a place: a bordered panel on the page background
+                  (form sections, charts, logs); lg pads it 24px.
                 </CardDescription>
               </Card>
               <Card tone="destructive" padding="lg">

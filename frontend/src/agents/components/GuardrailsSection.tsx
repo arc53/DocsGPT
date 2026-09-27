@@ -216,10 +216,7 @@ export default function GuardrailsSection({
   const instanceDisabled = catalog !== null && catalog.enabled === false;
 
   return (
-    <div
-      className="bg-card has-[[data-variant=section-toggle]:focus-visible]:ring-ring/50 rounded-2xl px-6 py-3 has-[[data-variant=section-toggle]:focus-visible]:ring-3 has-[[data-variant=section-toggle]:focus-visible]:ring-inset"
-      data-testid="guardrails-section"
-    >
+    <Card variant="subtle" padding="lg" data-testid="guardrails-section">
       <div className="flex flex-wrap items-center gap-2">
         {/* The heading wraps the toggle: a button's children are
             presentational, so a heading inside it is lost to screen readers. */}
@@ -265,7 +262,7 @@ export default function GuardrailsSection({
       </div>
 
       {expanded && (
-        <div className="mt-3 pb-3">
+        <div>
           {loadError && (
             <EmptyState
               tone="destructive"
@@ -339,6 +336,7 @@ export default function GuardrailsSection({
             <>
               <div className="mt-5">
                 <FormField
+                  labelSurface="background"
                   label={t('agents.form.guardrails.mode')}
                   hint={
                     config.mode === 'monitor_only'
@@ -426,6 +424,7 @@ export default function GuardrailsSection({
               </div>
 
               <FormField
+                labelSurface="background"
                 className="mt-6"
                 label={t('agents.form.guardrails.blockMessage')}
                 hint={t('agents.form.guardrails.blockMessageDescription')}
@@ -457,6 +456,7 @@ export default function GuardrailsSection({
               </SettingRow>
 
               <FormField
+                labelSurface="background"
                 className="mt-5"
                 label={t('agents.form.guardrails.timeout')}
                 disabled={disabled}
@@ -476,7 +476,7 @@ export default function GuardrailsSection({
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -597,7 +597,11 @@ function CheckCard({
   );
 
   return (
-    <Card padding="sm" data-testid={`guardrail-check-${info.name}`}>
+    <Card
+      variant="subtle"
+      padding="sm"
+      data-testid={`guardrail-check-${info.name}`}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <SectionHeader as="h4" size="xs" title={info.label} />

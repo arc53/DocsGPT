@@ -91,6 +91,8 @@ One tint scale, by purpose:
 - Neutral hover: solid `bg-accent` in both themes (ghost buttons, combobox,
   SelectTrigger, Card `interactive`, Dropzone, every list-row highlight).
 - Quiet panel inside a page or card: `bg-muted`, not `bg-muted/40` or `/60`.
+  It is a small box inside a panel (a well, a guardrail stage), never a
+  page-sized panel around cards (see Card surfaces).
 - Dividers: `border-border`, not `border-border/60`.
 
 Patterns:
@@ -242,10 +244,11 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
 justify-start` and `aria-expanded`: a lucide `ChevronRight` first
   (`rotate-90` while open) in primary, then the foreground title, with a
   primary underline on hover. The button draws no focus ring; the panel does,
-  so keyboard focus outlines the whole white block:
-  `has-[[data-variant=section-toggle]:focus-visible]:ring-3 …:ring-ring/50
-…:ring-inset` on the panel `<div>` (inset, because a scrolling column clips
-  an outset ring). Status badges go beside the button, not inside it, or the
+  so keyboard focus outlines the whole panel. The panel is a `Card` (a place,
+  `subtle lg`), and every Card carries that ring
+  (`has-[[data-variant=section-toggle]:focus-visible]:ring-3 … ring-inset`,
+  inset because a scrolling column clips an outset ring), so pages pass
+  nothing for it. Status badges go beside the button, not inside it, or the
   hover underline runs under them.
 - Drop `text-white` on default and destructive buttons; the foreground token
   already provides it. Drop `disabled:cursor-not-allowed` on buttons; the
@@ -267,28 +270,68 @@ justify-start` and `aria-expanded`: a lucide `ChevronRight` first
 
 ### Card (`ui/card.tsx`)
 
-| Prop          | Values                                                                                                                                                        |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `variant`     | `outline` (border + card surface, the default), `filled` (muted fill, no border, for tiles on a card-coloured page), `subtle` (border on the page background) |
-| `tone`        | `default`, `destructive` (the status soft fill and border, `border-destructive/50 bg-destructive/10`, over any variant)                                       |
-| `padding`     | `none`, `sm` (p-3, row boxes and code blocks), `default` (p-4), `lg` (p-6, tiles, chart panels and stat tiles)                                                |
-| `interactive` | whole card is the target: hover, focus ring and `selected` highlight; pair with `asChild` around a `<button>` or `<Link>`                                     |
+| Prop          | Values                                                                                                                                                          |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `variant`     | `outline` (border + card surface, the default), `filled` (muted fill, no border), `subtle` (border on the page background); which one is decided by role, below |
+| `tone`        | `default`, `destructive` (the status soft fill and border, `border-destructive/50 bg-destructive/10`, over any variant)                                         |
+| `padding`     | `none`, `sm` (p-3, row boxes and code blocks), `default` (p-4), `lg` (p-6, tiles, panels and stat tiles)                                                        |
+| `interactive` | whole card is the target: hover, focus ring and `selected` highlight; pair with `asChild` around a `<button>` or `<Link>`                                       |
 
 Parts: `CardHeader` (title left, `CardAction` top-right), `CardTitle`,
 `CardDescription`, `CardContent`, `CardFooter` (meta row, sticks to the
 bottom). One radius for every card (`rounded-2xl`); pass only layout and
 `gap-*` on `Card`. Children are spaced by Card's `gap-3`, so they carry no
 `mt-*`. Replaces every hand-rolled
-`rounded-(md|lg|xl|2xl|3xl|4xl) border bg-(card|muted) p-*` box:
+`rounded-(md|lg|xl|2xl|3xl|4xl) border bg-(card|muted) p-*` box.
 
-- Tiles (sources, tools, custom models, agents, folders) are `filled`, `lg`
-  (a folder row `default`), `interactive` only when a click navigates (a
-  draft agent is not). The Add tool picker tiles sit on the modal's card, so
-  they are `outline interactive lg` with `asChild` around a `<button>`.
+#### Card surfaces: a thing or a place
+
+The variant follows what the card is, not where it looks nice. Ask one
+question: is it a **thing** you open, move, share or delete as a whole, or a
+**place** where you read or edit content? The fill marks objects; the border
+marks structure.
+
+| Role                 | Variant                                                   | Examples                                                                                          |
+| -------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Thing (a tile)       | `filled`, on a page or in a modal                         | agents, folders, sources, tools, custom models, teams, chunks, the shared agent card              |
+| Place (a panel)      | `subtle` on the page, `outline` on a card (modal, drawer) | the agent form's sections, chart panels, stat tiles, log tables, schedule rows, the agent preview |
+| Choice (picker tile) | `outline interactive`, or `OptionCard`                    | the Add tool tiles; selection is drawn by the border, so the border stays                         |
+| Well                 | `filled padding="sm"`                                     | code, a token to copy, run output, inside a panel (see Code blocks below)                         |
+
+- Layers go page → panel (border) → well (fill), or page → tile (fill).
+  `subtle` and `outline` are one role on two surfaces; in light mode they
+  look the same.
+- An item that you read inside, rather than open elsewhere, is a place: a
+  schedule is an item, but its row expands into a run table, so it is a
+  `subtle` panel. The tile look is for a summary you open.
+- **No fill on a fill.** Nothing on a `filled` tile repeats its muted fill,
+  or it disappears: no `bg-muted` strip or box, no filled Card inside it, and
+  Skeleton bars take `surface="muted"`. Put a meta line such as a token count
+  in `CardFooter` instead of a muted header strip. The neutral Badge and the
+  muted Avatar are `bg-muted-foreground/15`, a tint that shows on the fill,
+  so they are fine on a tile. `no-restricted-syntax` enforces this for
+  children written in the same JSX as the `<Card variant="filled">`
+  (`eslint/card-surfaces.js`).
+- Never a page-sized `bg-muted` panel around a page's cards: panels sit on
+  the page background, as on Logs and Analytics.
+- A field in a `subtle` panel sits on the page background, so its floating
+  label passes `labelSurface="background"`; in an `outline` panel it keeps
+  the default `card`.
+
+Recipes by role:
+
+- Tiles are `filled`, `lg` (a folder row `default`), `interactive` only when a
+  click navigates (a draft agent is not). The Add tool picker tiles are
+  choices: `outline interactive lg` with `asChild` around a `<button>`.
 - Chart panels are `subtle lg` with fixed heights passed as layout; a chart
   panel inside a modal is `outline` (the modal is already `bg-card`).
-- Row boxes inside a form or panel (a guardrail check, the schedule's
-  timezone box, the discovered MCP tools) are `padding="sm"`.
+- Form sections (the agent form's Meta, Source, Prompt, Advanced,
+  Guardrails) are `subtle lg`; a disclosure section's header is a
+  `section-toggle`, and Card draws its focus ring.
+- Row boxes inside a form or panel (a guardrail check, a schedule row, the
+  schedule's timezone box, the discovered MCP tools) are `padding="sm"`, in
+  the panel variant of the surface they sit on (`subtle` in a page panel,
+  `outline` in a modal).
 - A danger zone (Delete agent, Revoke a device) and a failing stat are
   `tone="destructive"`; the title beside it is `SectionHeader
 tone="destructive"`. Muted text fails AA on the red fill, so the tone turns
@@ -296,8 +339,8 @@ tone="destructive"`. Muted text fails AA on the red fill, so the tone turns
   lighter colour back. Icon buttons inside a destructive-tone row are
   `ghost-destructive-on-accent`, whose red tint shows on the fill where
   ghost's grey square would not.
-- A card on the page background that must not look raised (the shared
-  agent card) is `subtle lg`. Cards never take a shadow.
+- The shared agent card (its page and a new agent chat) is a thing:
+  `filled lg`. Cards never take a shadow.
 - The shared agent card's description is `line-clamp-3` with no inner
   scroller (`max-h-* overflow-y-auto`) and no hover hint for the cut text.
 

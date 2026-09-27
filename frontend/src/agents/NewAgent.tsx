@@ -873,12 +873,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           <AlertDescription>{submitError}</AlertDescription>
         </Alert>
       )}
-      <div className="bg-muted mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 xl:grid xl:gap-5 xl:overflow-hidden">
+      <div className="mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 xl:grid xl:gap-5 xl:overflow-hidden">
         <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 xl:max-h-full xl:overflow-y-auto xl:pr-3">
-          <div className="bg-card flex flex-col gap-5 rounded-2xl px-6 py-3">
+          <Card variant="subtle" padding="lg" className="gap-5">
             <SectionHeader title={t('agents.form.sections.meta')} />
             <div className="flex flex-col gap-5">
-              <FormField label={t('agents.form.labels.name')}>
+              <FormField
+                labelSurface="background"
+                label={t('agents.form.labels.name')}
+              >
                 <Input
                   shape="pill"
                   type="text"
@@ -887,7 +890,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   onChange={(e) => setAgent({ ...agent, name: e.target.value })}
                 />
               </FormField>
-              <FormField label={t('agents.form.labels.description')}>
+              <FormField
+                labelSurface="background"
+                label={t('agents.form.labels.description')}
+              >
                 <Textarea
                   size="lg"
                   className="h-32"
@@ -915,8 +921,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 ]}
               />
             </div>
-          </div>
-          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
+          </Card>
+          <Card variant="subtle" padding="lg">
             <SectionHeader title={t('agents.form.sections.source')} />
             <div>
               <div className="flex flex-wrap items-center gap-1">
@@ -970,8 +976,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 </p>
               )}
             </div>
-          </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
+          </Card>
+          <Card variant="subtle" padding="lg">
             <div className="flex flex-wrap items-end gap-1">
               <div className="min-w-20 grow basis-full sm:basis-0">
                 <Prompts
@@ -1015,8 +1021,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 {t('agents.form.buttons.add')}
               </Button>
             </div>
-          </div>
-          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
+          </Card>
+          <Card variant="subtle" padding="lg">
             <SectionHeader title={t('agents.form.sections.tools')} />
             <div className="flex flex-wrap items-center gap-1">
               <MultiSelectPopover
@@ -1069,8 +1075,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 }
               />
             </div>
-          </div>
-          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
+          </Card>
+          <Card variant="subtle" padding="lg">
             <SectionHeader title={t('agents.form.sections.agentType')} />
             <div>
               <Select
@@ -1093,8 +1099,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
+          </Card>
+          <Card variant="subtle" padding="lg">
             <SectionHeader title={t('agents.form.sections.models')} />
             <div className="flex flex-col gap-3">
               <MultiSelectPopover
@@ -1154,7 +1160,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 }
               />
               {selectedModelIds.size > 0 && (
-                <FormField label={t('agents.form.labels.defaultModel')}>
+                <FormField
+                  labelSurface="background"
+                  label={t('agents.form.labels.defaultModel')}
+                >
                   <Select
                     value={agent.default_model_id || undefined}
                     onValueChange={(value) =>
@@ -1181,8 +1190,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 </FormField>
               )}
             </div>
-          </div>
-          <div className="bg-card has-[[data-variant=section-toggle]:focus-visible]:ring-ring/50 rounded-2xl px-6 py-3 has-[[data-variant=section-toggle]:focus-visible]:ring-3 has-[[data-variant=section-toggle]:focus-visible]:ring-inset">
+          </Card>
+          <Card variant="subtle" padding="lg" className="gap-5">
             {/* The heading wraps the toggle: a button's children are
                 presentational, so a heading inside it is lost to screen readers. */}
             <h2>
@@ -1209,8 +1218,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               </Button>
             </h2>
             {isAdvancedSectionExpanded && (
-              <div className="mt-5">
+              <div>
                 <FormField
+                  labelSurface="background"
                   label={t('agents.form.advanced.jsonSchema')}
                   hint={t('agents.form.advanced.jsonSchemaDescription')}
                 >
@@ -1355,7 +1365,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 </SettingRows>
               </div>
             )}
-          </div>
+          </Card>
           <GuardrailsSection
             value={agent.config?.guardrails}
             token={token}
@@ -1460,7 +1470,11 @@ function AgentPreviewArea() {
   const { t } = useTranslation();
   const selectedAgent = useSelector(selectSelectedAgent);
   return (
-    <div className="bg-card border-border h-[600px] w-full rounded-2xl border xl:h-full">
+    <Card
+      variant="subtle"
+      padding="none"
+      className="h-[600px] w-full xl:h-full"
+    >
       {selectedAgent?.status === 'published' ? (
         <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl">
           <AgentPreview />
@@ -1484,7 +1498,7 @@ function AgentPreviewArea() {
           </p>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 

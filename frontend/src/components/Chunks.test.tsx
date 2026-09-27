@@ -111,6 +111,19 @@ describe('Chunks', () => {
     expect(tile!.className).not.toContain('hover:scale-105');
   });
 
+  it('draws each chunk as a filled tile with its token count in the footer', async () => {
+    await render();
+    const tile = container.querySelector<HTMLButtonElement>(
+      'button[data-slot="card"]',
+    )!;
+    expect(tile.dataset.variant).toBe('filled');
+    expect(tile.dataset.padding).toBe('lg');
+    const footer = tile.querySelector('[data-slot="card-footer"]')!;
+    expect(footer.textContent).toContain('settings.sources.tokensUnit');
+    // No muted strip on the muted tile: it would disappear.
+    expect(tile.querySelector('.bg-muted')).toBeNull();
+  });
+
   const renderPath = async (props: {
     onPathSelect?: (depth: number) => void;
     handleGoBack?: () => void;

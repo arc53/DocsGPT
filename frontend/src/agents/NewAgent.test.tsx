@@ -221,7 +221,7 @@ describe('NewAgent form', () => {
     expect(toggle.querySelectorAll('svg')).toHaveLength(1);
     expect(toggle.querySelector('h2')).toBeNull();
     expect(toggle.parentElement!.tagName).toBe('H2');
-    const panel = toggle.closest('.bg-card')!;
+    const panel = toggle.closest('[data-slot="card"]')!;
     expect(panel.className).toContain(
       'has-[[data-variant=section-toggle]:focus-visible]:ring-3',
     );
@@ -325,6 +325,49 @@ describe('NewAgent form', () => {
     )!;
     expect(valid.className).toContain('text-success');
     expect(valid.querySelector('svg.lucide-circle-check')).not.toBeNull();
+  });
+
+  // Card surfaces: the form is a place, so each section is a subtle panel
+  // straight on the page, with no muted panel around the form.
+  it('draws each form section as a subtle panel on the page', async () => {
+    await render();
+    const titles = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="section-header"]'),
+    );
+    expect(titles.length).toBeGreaterThan(0);
+    for (const title of titles) {
+      const panel = title.closest<HTMLElement>('[data-slot="card"]')!;
+      expect(panel.dataset.variant).toBe(
+        title.closest('[data-tone="destructive"]')
+          ? panel.dataset.variant
+          : 'subtle',
+      );
+    }
+    const advanced = buttonByText('agents.form.sections.advanced');
+    const panel = advanced.closest<HTMLElement>('[data-slot="card"]')!;
+    expect(panel.dataset.variant).toBe('subtle');
+    expect(panel.dataset.padding).toBe('lg');
+    expect(container.querySelector('.bg-muted.rounded-2xl')).toBeNull();
+  });
+
+  it('notches floating labels on the page background', async () => {
+    await render();
+    const labels = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="form-field-label"]'),
+    );
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) {
+      expect(label.className).toContain('bg-background');
+    }
+  });
+
+  it('draws the preview area as a subtle panel', async () => {
+    await render();
+    const hint = Array.from(container.querySelectorAll('p')).find(
+      (p) => p.textContent === 'agents.form.preview.publishedPreview',
+    )!;
+    const panel = hint.closest<HTMLElement>('[data-slot="card"]')!;
+    expect(panel.dataset.variant).toBe('subtle');
   });
 
   it('shows the preview placeholder illustration as decorative images', async () => {

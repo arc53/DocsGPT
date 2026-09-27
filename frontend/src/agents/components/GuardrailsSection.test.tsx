@@ -179,12 +179,16 @@ describe('GuardrailsSection', () => {
     expect(active.parentElement).toBe(heading.parentElement);
     expect(heading.parentElement?.firstElementChild).toBe(heading);
 
+    // A place, not a thing: the section is a subtle panel on the page, and
+    // Card draws the ring for the section-toggle inside it.
     const panel = q('guardrails-section')!;
     expect(panel.contains(toggle)).toBe(true);
+    expect(panel.dataset.slot).toBe('card');
+    expect(panel.dataset.variant).toBe('subtle');
+    expect(panel.dataset.padding).toBe('lg');
     expect(panel.className).toContain(
       'has-[[data-variant=section-toggle]:focus-visible]:ring-3',
     );
-    expect(panel.className).toContain('bg-card');
 
     await act(async () => toggle.click());
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -343,6 +347,7 @@ describe('GuardrailsSection', () => {
     await render();
     const card = q('guardrail-check-pii');
     expect(card?.dataset.slot).toBe('card');
+    expect(card?.dataset.variant).toBe('subtle');
     expect(card?.dataset.padding).toBe('sm');
   });
 

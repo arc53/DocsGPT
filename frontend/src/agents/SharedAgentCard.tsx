@@ -27,7 +27,7 @@ export default function SharedAgentCard({
     Object.keys(agent.shared_metadata).length > 0;
   return (
     <Card
-      variant="subtle"
+      variant="filled"
       padding="lg"
       className="w-full max-w-[720px] sm:w-fit sm:min-w-[480px]"
     >

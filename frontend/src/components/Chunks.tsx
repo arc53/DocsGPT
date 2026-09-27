@@ -20,7 +20,7 @@ import { formatChunkTokens } from './chunkUtils';
 import SkeletonLoader from './SkeletonLoader';
 import PathHeader from './tree/PathHeader';
 import { Button } from './ui/button';
-import { Card } from './ui/card';
+import { Card, CardFooter } from './ui/card';
 import {
   Command,
   CommandEmpty,
@@ -611,10 +611,11 @@ const Chunks: React.FC<ChunksProps> = ({
                     filteredChunks.map((chunk, index) => (
                       <Card
                         key={index}
+                        variant="filled"
+                        padding="lg"
                         interactive
-                        padding="none"
                         asChild
-                        className="relative h-[197px] w-full max-w-[487px] justify-between gap-0 overflow-hidden"
+                        className="h-50 w-full justify-between"
                       >
                         <button
                           type="button"
@@ -624,19 +625,13 @@ const Chunks: React.FC<ChunksProps> = ({
                             setEditingText(chunk.text || '');
                           }}
                         >
-                          <div className="w-full">
-                            <div className="border-border bg-muted flex w-full items-center justify-between border-b px-4 py-3">
-                              <div className="text-muted-foreground text-sm">
-                                {formatChunkTokens(chunk.metadata)}{' '}
-                                {t('settings.sources.tokensUnit')}
-                              </div>
-                            </div>
-                            <div className="px-4 pt-3 pb-6">
-                              <p className="text-foreground line-clamp-6 text-sm leading-5 font-normal">
-                                {chunk.text}
-                              </p>
-                            </div>
-                          </div>
+                          <p className="text-foreground line-clamp-6 text-sm leading-5 font-normal">
+                            {chunk.text}
+                          </p>
+                          <CardFooter>
+                            {formatChunkTokens(chunk.metadata)}{' '}
+                            {t('settings.sources.tokensUnit')}
+                          </CardFooter>
                         </button>
                       </Card>
                     ))

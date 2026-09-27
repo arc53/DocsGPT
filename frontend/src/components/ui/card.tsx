@@ -4,16 +4,27 @@ import { cva, type VariantProps } from 'class-variance-authority';
 
 import { cn, focusRing } from '@/lib/utils';
 
+// A card holding a section-toggle (a disclosure panel's header) draws the
+// toggle's keyboard focus as a ring round the whole panel; the toggle itself
+// has none. Inset, because a scrolling column clips an outset ring.
+const sectionToggleRing =
+  'has-[[data-variant=section-toggle]:focus-visible]:ring-3 has-[[data-variant=section-toggle]:focus-visible]:ring-ring/50 has-[[data-variant=section-toggle]:focus-visible]:ring-inset';
+
+// Variants by role (DESIGN.md "Card surfaces"): a thing is `filled`, a place
+// is `subtle` on the page or `outline` on a card-coloured surface.
 const cardVariants = cva(
-  'text-card-foreground flex flex-col gap-3 rounded-2xl text-sm transition-colors',
+  `text-card-foreground flex flex-col gap-3 rounded-2xl text-sm transition-colors ${sectionToggleRing}`,
   {
     variants: {
       variant: {
-        // Bordered surface: lists of entities, panels, headers.
+        // A place on a card-coloured surface (a modal, a floating panel), and
+        // picker choices, whose selection is the border.
         outline: 'border-border bg-card border',
-        // Filled, no border: tiles on a card-coloured page (sources, tools).
+        // A thing: a tile you open, move, share or delete as a whole
+        // (agents, sources, tools, teams, chunks). Also a well (code,
+        // output) inside a panel.
         filled: 'bg-muted',
-        // Bordered on a muted page background.
+        // A place on the page: form sections, charts, tables, logs.
         subtle: 'border-border bg-background border',
       },
       tone: {

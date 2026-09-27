@@ -7,6 +7,7 @@ import userService from '../../api/services/userService';
 import { LoadingState } from '@/components/ui/loading-state';
 import { SectionHeader } from '@/components/ui/section-header';
 import { Button } from '../../components/ui/button';
+import { Card } from '../../components/ui/card';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
@@ -193,112 +194,117 @@ export default function SchedulesView() {
               ) : (
                 <ul className="flex flex-col gap-3">
                   {recurring.map((schedule) => (
-                    <li
+                    <Card
+                      asChild
                       key={schedule.id}
-                      className="border-border bg-card rounded-lg border p-3"
+                      variant="subtle"
+                      padding="sm"
+                      className="gap-0"
                     >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold">
-                              {schedule.name ||
-                                schedule.instruction.slice(0, 80)}
+                      <li>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold">
+                                {schedule.name ||
+                                  schedule.instruction.slice(0, 80)}
+                              </p>
+                              <ScheduleStatusBadge status={schedule.status} />
+                            </div>
+                            <p className="text-muted-foreground text-xs">
+                              {formatCron(schedule.cron, t)} ·{' '}
+                              {t('agents.schedules.timezoneMeta', {
+                                ...NO_ESCAPE,
+                                timezone: schedule.timezone,
+                              })}{' '}
+                              ·{' '}
+                              {t('agents.schedules.nextRunMeta', {
+                                ...NO_ESCAPE,
+                                time: formatTimestamp(schedule.next_run_at),
+                              })}
                             </p>
-                            <ScheduleStatusBadge status={schedule.status} />
                           </div>
-                          <p className="text-muted-foreground text-xs">
-                            {formatCron(schedule.cron, t)} ·{' '}
-                            {t('agents.schedules.timezoneMeta', {
-                              ...NO_ESCAPE,
-                              timezone: schedule.timezone,
-                            })}{' '}
-                            ·{' '}
-                            {t('agents.schedules.nextRunMeta', {
-                              ...NO_ESCAPE,
-                              time: formatTimestamp(schedule.next_run_at),
-                            })}
-                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline-primary"
+                              size="sm"
+                              shape="pill"
+                              onClick={() => openEdit(schedule)}
+                            >
+                              {t('agents.schedules.edit')}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline-primary"
+                              size="sm"
+                              shape="pill"
+                              onClick={() =>
+                                dispatch(
+                                  setSchedulePaused({
+                                    id: schedule.id,
+                                    action:
+                                      schedule.status === 'active'
+                                        ? 'pause'
+                                        : 'resume',
+                                    token,
+                                  }),
+                                )
+                              }
+                            >
+                              {schedule.status === 'active'
+                                ? t('agents.schedules.pause')
+                                : t('agents.schedules.resume')}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline-primary"
+                              size="sm"
+                              shape="pill"
+                              onClick={() =>
+                                dispatch(
+                                  runScheduleNow({ id: schedule.id, token }),
+                                )
+                              }
+                            >
+                              {t('agents.schedules.runNow')}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive-outline"
+                              size="sm"
+                              shape="pill"
+                              onClick={() => requestDelete(schedule)}
+                            >
+                              {t('agents.schedules.delete')}
+                            </Button>
+                          </div>
                         </div>
-                        <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            variant="outline-primary"
-                            size="sm"
-                            shape="pill"
-                            onClick={() => openEdit(schedule)}
-                          >
-                            {t('agents.schedules.edit')}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline-primary"
-                            size="sm"
-                            shape="pill"
-                            onClick={() =>
-                              dispatch(
-                                setSchedulePaused({
-                                  id: schedule.id,
-                                  action:
-                                    schedule.status === 'active'
-                                      ? 'pause'
-                                      : 'resume',
-                                  token,
-                                }),
-                              )
-                            }
-                          >
-                            {schedule.status === 'active'
-                              ? t('agents.schedules.pause')
-                              : t('agents.schedules.resume')}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline-primary"
-                            size="sm"
-                            shape="pill"
-                            onClick={() =>
-                              dispatch(
-                                runScheduleNow({ id: schedule.id, token }),
-                              )
-                            }
-                          >
-                            {t('agents.schedules.runNow')}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="destructive-outline"
-                            size="sm"
-                            shape="pill"
-                            onClick={() => requestDelete(schedule)}
-                          >
-                            {t('agents.schedules.delete')}
-                          </Button>
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="xs"
-                        onClick={() =>
-                          setExpanded(
-                            expanded === schedule.id ? null : schedule.id,
-                          )
-                        }
-                        className="mt-0.5 -ml-2"
-                      >
-                        {expanded === schedule.id
-                          ? t('agents.schedules.hideRuns')
-                          : t('agents.schedules.showRuns')}
-                      </Button>
-                      {expanded === schedule.id && (
-                        <div className="mt-2">
-                          <RunLog
-                            scheduleId={schedule.id}
-                            onSelect={(run) => setActiveRun(run)}
-                          />
-                        </div>
-                      )}
-                    </li>
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="xs"
+                          onClick={() =>
+                            setExpanded(
+                              expanded === schedule.id ? null : schedule.id,
+                            )
+                          }
+                          className="mt-0.5 -ml-2"
+                        >
+                          {expanded === schedule.id
+                            ? t('agents.schedules.hideRuns')
+                            : t('agents.schedules.showRuns')}
+                        </Button>
+                        {expanded === schedule.id && (
+                          <div className="mt-2">
+                            <RunLog
+                              scheduleId={schedule.id}
+                              onSelect={(run) => setActiveRun(run)}
+                            />
+                          </div>
+                        )}
+                      </li>
+                    </Card>
                   ))}
                 </ul>
               )}
@@ -316,49 +322,54 @@ export default function SchedulesView() {
               ) : (
                 <ul className="flex flex-col gap-2">
                   {oneTime.map((schedule) => (
-                    <li
+                    <Card
+                      asChild
                       key={schedule.id}
-                      className="border-border bg-card rounded-lg border p-3 text-sm"
+                      variant="subtle"
+                      padding="sm"
+                      className="gap-0"
                     >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold">
-                              {schedule.name ||
-                                schedule.instruction.slice(0, 80)}
+                      <li>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-semibold">
+                                {schedule.name ||
+                                  schedule.instruction.slice(0, 80)}
+                              </p>
+                              <ScheduleStatusBadge status={schedule.status} />
+                            </div>
+                            <p className="text-muted-foreground text-xs">
+                              runs at {formatTimestamp(schedule.run_at)}
                             </p>
-                            <ScheduleStatusBadge status={schedule.status} />
                           </div>
-                          <p className="text-muted-foreground text-xs">
-                            runs at {formatTimestamp(schedule.run_at)}
-                          </p>
+                          <div className="flex gap-2">
+                            {schedule.status === 'active' && (
+                              <Button
+                                type="button"
+                                variant="outline-primary"
+                                size="sm"
+                                shape="pill"
+                                onClick={() => openEdit(schedule)}
+                              >
+                                {t('agents.schedules.edit')}
+                              </Button>
+                            )}
+                            {schedule.status === 'active' && (
+                              <Button
+                                type="button"
+                                variant="destructive-outline"
+                                size="sm"
+                                shape="pill"
+                                onClick={() => requestDelete(schedule)}
+                              >
+                                {t('agents.schedules.cancel')}
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex gap-2">
-                          {schedule.status === 'active' && (
-                            <Button
-                              type="button"
-                              variant="outline-primary"
-                              size="sm"
-                              shape="pill"
-                              onClick={() => openEdit(schedule)}
-                            >
-                              {t('agents.schedules.edit')}
-                            </Button>
-                          )}
-                          {schedule.status === 'active' && (
-                            <Button
-                              type="button"
-                              variant="destructive-outline"
-                              size="sm"
-                              shape="pill"
-                              onClick={() => requestDelete(schedule)}
-                            >
-                              {t('agents.schedules.cancel')}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </li>
+                      </li>
+                    </Card>
                   ))}
                 </ul>
               )}

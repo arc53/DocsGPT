@@ -7,6 +7,8 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import prettier from 'eslint-plugin-prettier';
 import globals from 'globals';
 
+import { cardSurfaceSelectors } from './eslint/card-surfaces.js';
+
 export default [
   {
     ignores: [
@@ -113,6 +115,9 @@ export default [
           message:
             'Modal, Sheet and DialogContent already return focus to what had it on open (ui/use-focus-return.ts). Don\'t hand-roll onCloseAutoFocus. See DESIGN.md "Focus return".',
         },
+        // Nothing on a filled tile repeats its muted fill (DESIGN.md "Card
+        // surfaces").
+        ...cardSurfaceSelectors,
       ],
       // Design-system rules (@shadcn/lint). Tokens, variants and the
       // approved exceptions are documented in DESIGN.md.

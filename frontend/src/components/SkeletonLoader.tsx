@@ -185,27 +185,26 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     </>
   );
 
+  // Mirrors the chunk tile: a filled Card with text lines, then the token
+  // count in the footer.
   const renderChunkCards = () => (
     <>
       {Array.from({ length: count }).map((_, index) => (
-        <div
+        <Card
           key={`chunk-skel-${index}`}
-          className="border-border relative flex h-[197px] w-full max-w-[487px] animate-pulse flex-col overflow-hidden rounded-2xl border"
+          variant="filled"
+          padding="lg"
+          className="h-50 w-full justify-between"
         >
-          <div className="w-full">
-            <div className="border-border bg-muted flex w-full items-center justify-between border-b px-4 py-3">
-              <div className="bg-muted-foreground/20 h-4 w-20 rounded"></div>
-            </div>
-            <div className="flex flex-col gap-3 px-4 pt-4 pb-6">
-              <div className="bg-muted h-3 w-full rounded"></div>
-              <div className="bg-muted h-3 w-11/12 rounded"></div>
-              <div className="bg-muted h-3 w-5/6 rounded"></div>
-              <div className="bg-muted h-3 w-4/5 rounded"></div>
-              <div className="bg-muted h-3 w-3/4 rounded"></div>
-              <div className="bg-muted h-3 w-2/3 rounded"></div>
-            </div>
+          <div className="flex flex-col gap-3">
+            <Skeleton surface="muted" className="h-3 w-full" />
+            <Skeleton surface="muted" className="h-3 w-11/12" />
+            <Skeleton surface="muted" className="h-3 w-5/6" />
+            <Skeleton surface="muted" className="h-3 w-4/5" />
+            <Skeleton surface="muted" className="h-3 w-2/3" />
           </div>
-        </div>
+          <Skeleton surface="muted" className="h-3 w-20" />
+        </Card>
       ))}
     </>
   );
