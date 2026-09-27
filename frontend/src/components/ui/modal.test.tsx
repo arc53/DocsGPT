@@ -290,3 +290,45 @@ describe('Modal focus return', () => {
     expect(document.activeElement).toBe(document.body);
   });
 });
+
+describe('Modal bottom-bar reset', () => {
+  // Earlier tests close bottom sheets on unmount, which leaves strips behind.
+  beforeEach(() => {
+    document
+      .querySelectorAll('[data-slot="bottom-tint-reset"]')
+      .forEach((node) => node.remove());
+  });
+
+  afterEach(() => {
+    media.isMobile = false;
+  });
+
+  const strip = () =>
+    document.querySelector<HTMLElement>('[data-slot="bottom-tint-reset"]');
+
+  const renderModal = (open: boolean) =>
+    render(
+      <Modal
+        open={open}
+        onOpenChange={() => undefined}
+        title="Upload"
+        mobileVariant="sheet"
+      >
+        Body
+      </Modal>,
+    );
+
+  it('resets the bottom bar when the phone sheet closes', async () => {
+    media.isMobile = true;
+    await renderModal(true);
+    await renderModal(false);
+    expect(strip()).not.toBeNull();
+  });
+
+  it('leaves the bar alone for the centred dialog', async () => {
+    await renderModal(true);
+    await renderModal(false);
+    await settle();
+    expect(strip()).toBeNull();
+  });
+});

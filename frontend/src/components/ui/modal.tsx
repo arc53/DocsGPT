@@ -2,6 +2,7 @@ import { XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive, VisuallyHidden } from 'radix-ui';
 import * as React from 'react';
 
+import { BottomTintReset } from '@/components/ui/bottom-tint-reset';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -138,6 +139,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
                 ),
           )}
         >
+          {isMobileSheet && <BottomTintReset />}
           {isMobileSheet && <SheetHandle />}
           {headerNode}
           <div

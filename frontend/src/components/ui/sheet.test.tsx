@@ -216,3 +216,46 @@ describe('SheetContent focus', () => {
     expect(document.activeElement).toBe(trigger());
   });
 });
+
+describe('SheetContent bottom-bar reset', () => {
+  // Earlier tests close bottom sheets on unmount, which leaves strips behind.
+  beforeEach(() => {
+    document
+      .querySelectorAll('[data-slot="bottom-tint-reset"]')
+      .forEach((node) => node.remove());
+  });
+
+  const wait = (ms: number) =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+  const strip = () =>
+    document.querySelector<HTMLElement>('[data-slot="bottom-tint-reset"]');
+
+  const renderSheet = (open: boolean, side: 'bottom' | 'right') =>
+    render(
+      <Sheet open={open}>
+        <SheetContent side={side} title="Tools" aria-describedby={undefined} />
+      </Sheet>,
+    );
+
+  it('shows a 6px page-coloured strip on the bottom edge for one frame after a bottom sheet closes', async () => {
+    await renderSheet(true, 'bottom');
+    expect(strip()).toBeNull();
+    await renderSheet(false, 'bottom');
+    const classes = strip()!.className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['bg-background', 'fixed', 'bottom-0', 'h-1.5']),
+    );
+    expect(strip()!.getAttribute('aria-hidden')).toBe('true');
+    await wait(120);
+    expect(strip()).toBeNull();
+  });
+
+  it('adds no strip for a side sheet', async () => {
+    await renderSheet(true, 'right');
+    await renderSheet(false, 'right');
+    await wait(20);
+    expect(strip()).toBeNull();
+  });
+});

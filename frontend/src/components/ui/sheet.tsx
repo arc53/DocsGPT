@@ -3,6 +3,7 @@ import { Dialog as SheetPrimitive } from 'radix-ui';
 import { XIcon } from 'lucide-react';
 import { cva } from 'class-variance-authority';
 
+import { BottomTintReset } from '@/components/ui/bottom-tint-reset';
 import { Button } from '@/components/ui/button';
 import { cn, overlayScrim } from '@/lib/utils';
 import { useFocusReturn } from '@/components/ui/use-focus-return';
@@ -121,6 +122,7 @@ function SheetContent({
         {...focusReturn}
       >
         {title ? <SheetTitle className="sr-only">{title}</SheetTitle> : null}
+        {side === 'bottom' && <BottomTintReset />}
         {handle && <SheetHandle />}
         {children}
         {showCloseButton && (
