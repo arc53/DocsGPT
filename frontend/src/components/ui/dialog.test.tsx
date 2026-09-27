@@ -26,6 +26,11 @@ afterEach(async () => {
   container.remove();
 });
 
+const settle = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+
 const render = async (element: React.ReactElement) => {
   await act(async () => root.render(element));
 };
@@ -125,5 +130,33 @@ describe('DialogContent layout', () => {
       .className.split(' ');
     expect(header).toContain('text-left');
     expect(header).not.toContain('text-center');
+  });
+});
+
+describe('DialogContent focus return', () => {
+  const opener = () =>
+    document.querySelector<HTMLButtonElement>('[data-testid="opener"]')!;
+
+  const renderDialog = (open: boolean) =>
+    render(
+      <>
+        <button type="button" data-testid="opener">
+          Search
+        </button>
+        <Dialog open={open}>
+          <DialogContent aria-describedby={undefined}>
+            <DialogTitle>Search</DialogTitle>
+          </DialogContent>
+        </Dialog>
+      </>,
+    );
+
+  it('returns focus to the element that had it on open', async () => {
+    await renderDialog(false);
+    opener().focus();
+    await renderDialog(true);
+    await renderDialog(false);
+    await settle();
+    expect(document.activeElement).toBe(opener());
   });
 });

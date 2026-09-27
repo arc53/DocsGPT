@@ -30,6 +30,11 @@ const render = async (element: React.ReactElement) => {
   await act(async () => root.render(element));
 };
 
+const settle = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+
 const content = () =>
   document.querySelector<HTMLElement>('[data-slot="modal-content"]')!;
 
@@ -249,5 +254,39 @@ describe('Modal mobile sheet', () => {
     expect(content().hasAttribute('data-mobile-sheet')).toBe(false);
     expect(content().className).toContain('rounded-2xl');
     expect(content().querySelector('[data-slot="sheet-handle"]')).toBeNull();
+  });
+});
+
+describe('Modal focus return', () => {
+  const opener = () =>
+    document.querySelector<HTMLButtonElement>('[data-testid="opener"]')!;
+
+  const renderModal = (open: boolean) =>
+    render(
+      <>
+        <button type="button" data-testid="opener">
+          Open
+        </button>
+        <Modal open={open} onOpenChange={() => undefined} title="Upload">
+          Body
+        </Modal>
+      </>,
+    );
+
+  it('returns focus to the element that had it on open', async () => {
+    await renderModal(false);
+    opener().focus();
+    await renderModal(true);
+    await renderModal(false);
+    await settle();
+    expect(document.activeElement).toBe(opener());
+  });
+
+  it('moves focus nowhere when nothing had it on open', async () => {
+    await renderModal(false);
+    await renderModal(true);
+    await renderModal(false);
+    await settle();
+    expect(document.activeElement).toBe(document.body);
   });
 });

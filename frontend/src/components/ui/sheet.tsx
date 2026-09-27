@@ -5,6 +5,7 @@ import { cva } from 'class-variance-authority';
 
 import { Button } from '@/components/ui/button';
 import { cn, overlayScrim } from '@/lib/utils';
+import { useFocusReturn } from '@/components/ui/use-focus-return';
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
@@ -69,7 +70,7 @@ function SheetHandle({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 const sheetContentVariants = cva(
-  'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
+  'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg outline-none transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
   {
     variants: {
       side: {
@@ -95,6 +96,8 @@ function SheetContent({
   // handle is only a cue; it doesn't drag).
   showCloseButton = !handle,
   title,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left';
@@ -106,6 +109,7 @@ function SheetContent({
   // heading of its own (omit it if the children already render a SheetTitle).
   title?: string;
 }) {
+  const focusReturn = useFocusReturn(onOpenAutoFocus, onCloseAutoFocus);
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -114,6 +118,7 @@ function SheetContent({
         data-side={side}
         className={cn(sheetContentVariants({ side }), className)}
         {...props}
+        {...focusReturn}
       >
         {title ? <SheetTitle className="sr-only">{title}</SheetTitle> : null}
         {handle && <SheetHandle />}
