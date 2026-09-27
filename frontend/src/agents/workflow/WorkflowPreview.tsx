@@ -11,7 +11,6 @@ import {
   Flag,
   GitBranch,
   type LucideIcon,
-  MessageSquare,
   Play,
   StickyNote,
   Workflow,
@@ -21,9 +20,11 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
 import { SectionHeader } from '@/components/ui/section-header';
-import { SheetTitle } from '@/components/ui/sheet';
 import { Spinner } from '@/components/ui/spinner';
 import {
   MessageScroller,
@@ -94,7 +95,64 @@ const NODE_COLORS: Record<string, string> = {
   code: 'text-info',
 };
 
-function ExecutionDetails({
+/**
+ * A step row under an answer, like Reasoning in chat (AnswerFlow): a ghost
+ * button whose muted icon sits on the answer's ml-6 column, then the panel it
+ * opens in place on that column.
+ */
+function StepDisclosure({
+  icon: Icon,
+  label,
+  count,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  count?: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="my-2 flex w-full flex-col">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        // ml-3.5 plus size sm's own has-[>svg]:px-2.5 puts the icon on the
+        // answer's ml-6 text column.
+        className="ml-3.5 w-fit max-w-full justify-start"
+      >
+        <Icon className="text-muted-foreground" aria-hidden />
+        <span className="text-muted-foreground min-w-0 truncate">{label}</span>
+        {count && (
+          <span className="text-muted-foreground/70 font-normal">{count}</span>
+        )}
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            'text-muted-foreground shrink-0 transition-transform duration-200',
+            isOpen && 'rotate-180',
+          )}
+        />
+      </Button>
+      <div
+        className={cn(
+          'mr-5 ml-6 grid transition-[grid-template-rows,opacity] duration-300 ease-out',
+          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export function ExecutionDetails({
   steps,
   nodes,
   isOpen,
@@ -122,153 +180,121 @@ function ExecutionDetails({
   };
 
   return (
-    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      <div className="my-2 flex flex-row items-center justify-center gap-3">
-        <div className="flex h-[26px] w-[30px] items-center justify-center">
-          <Workflow className="text-muted-foreground size-5" />
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onToggle}
-          className="-ml-2.5"
-        >
-          <p className="text-base font-semibold">
-            {t('agents.workflow.preview.executionDetails')}
-            <span className="text-muted-foreground ml-1.5 text-sm font-normal">
-              {t('agents.workflow.preview.stepCount', {
-                count: completedSteps.length,
-              })}
-            </span>
-          </p>
-          <ChevronDown
-            className={cn(
-              'transition-transform duration-200',
-              isOpen && 'rotate-180',
-            )}
-          />
-        </Button>
-      </div>
-      <div
-        className={cn(
-          'ml-3 grid w-full transition-[grid-template-rows,opacity] duration-300 ease-out',
-          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
-        )}
-      >
-        <div className="overflow-hidden">
-          <div className="flex flex-col gap-2 pr-2">
-            {completedSteps.map((step, stepIndex) => {
-              const node = nodes.find((n) => n.id === step.nodeId);
-              const displayName =
-                node?.title || node?.data?.title || step.nodeTitle;
-              const StepIcon = NODE_ICONS[step.nodeType] || Circle;
-              const stateVars = step.stateDelta
-                ? Object.entries(step.stateDelta).filter(
-                    ([key]) => !['query', 'chat_history'].includes(key),
-                  )
-                : [];
+    <StepDisclosure
+      icon={Workflow}
+      label={t('agents.workflow.preview.executionDetails')}
+      count={t('agents.workflow.preview.stepCount', {
+        count: completedSteps.length,
+      })}
+      isOpen={isOpen}
+      onToggle={onToggle}
+    >
+      <div className="flex flex-col gap-2 pt-1">
+        {completedSteps.map((step, stepIndex) => {
+          const node = nodes.find((n) => n.id === step.nodeId);
+          const displayName =
+            node?.title || node?.data?.title || step.nodeTitle;
+          const StepIcon = NODE_ICONS[step.nodeType] || Circle;
+          const stateVars = step.stateDelta
+            ? Object.entries(step.stateDelta).filter(
+                ([key]) => !['query', 'chat_history'].includes(key),
+              )
+            : [];
 
-              const truncateText = (text: string, maxLength: number) => {
-                if (text.length <= maxLength) return text;
-                return text.slice(0, maxLength) + '...';
-              };
-              const hasOutput =
-                step.output !== undefined &&
-                step.output !== null &&
-                formatValue(step.output) !== '';
-              const formattedOutput = hasOutput ? formatValue(step.output) : '';
+          const truncateText = (text: string, maxLength: number) => {
+            if (text.length <= maxLength) return text;
+            return text.slice(0, maxLength) + '...';
+          };
+          const hasOutput =
+            step.output !== undefined &&
+            step.output !== null &&
+            formatValue(step.output) !== '';
+          const formattedOutput = hasOutput ? formatValue(step.output) : '';
 
-              return (
-                <div
-                  key={step.nodeId}
-                  ref={(el) => {
-                    if (el && stepRefs) stepRefs.current.set(step.nodeId, el);
-                  }}
-                  className="bg-muted rounded-xl p-3"
-                >
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground flex size-5 shrink-0 items-center justify-center text-xs font-medium">
-                      {stepIndex + 1}.
-                    </span>
-                    <div
-                      className={cn(
-                        'shrink-0',
-                        NODE_COLORS[step.nodeType] || NODE_COLORS.state,
-                      )}
-                    >
-                      <StepIcon className="size-3" />
-                    </div>
-                    <span className="text-foreground min-w-0 truncate font-medium">
-                      {displayName}
-                    </span>
-                    <div className="ml-auto shrink-0">
-                      {step.status === 'completed' && (
-                        <CircleCheck className="text-success size-4" />
-                      )}
-                      {step.status === 'failed' && (
-                        <CircleX className="text-destructive size-4" />
-                      )}
-                    </div>
-                  </div>
-                  {(hasOutput || step.error || stateVars.length > 0) && (
-                    <div className="mt-3 flex flex-col gap-2 text-sm">
-                      {hasOutput && (
-                        <div className="bg-muted rounded-lg p-2">
-                          <span className="text-muted-foreground font-medium">
-                            {t('agents.workflow.preview.outputLabel')}{' '}
-                          </span>
-                          <span className="text-foreground wrap-break-word whitespace-pre-wrap">
-                            {truncateText(formattedOutput, 300)}
-                          </span>
-                        </div>
-                      )}
-                      {step.error && (
-                        <Alert variant="destructive" role="status">
-                          <CircleAlert />
-                          <AlertDescription>
-                            <span className="font-medium">
-                              {t('agents.workflow.preview.errorLabel')}{' '}
-                            </span>
-                            <span className="wrap-break-word whitespace-pre-wrap">
-                              {step.error}
-                            </span>
-                          </AlertDescription>
-                        </Alert>
-                      )}
-                      {stateVars.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {stateVars.map(([key, value]) => (
-                            <span
-                              key={key}
-                              className="bg-muted inline-flex items-center rounded-lg px-2 py-1 text-xs"
-                            >
-                              <span className="text-muted-foreground max-w-[100px] truncate font-medium">
-                                {key}:
-                              </span>
-                              <span
-                                className="text-foreground ml-1 max-w-[200px] truncate"
-                                title={formatValue(value)}
-                              >
-                                {truncateText(formatValue(value), 50)}
-                              </span>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+          // A step is a place you read inside: a subtle panel on the
+          // drawer's background, with its output in a filled well.
+          return (
+            <Card
+              key={step.nodeId}
+              ref={(el: HTMLDivElement | null) => {
+                if (el && stepRefs) stepRefs.current.set(step.nodeId, el);
+              }}
+              variant="subtle"
+              padding="sm"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground flex size-5 shrink-0 items-center justify-center text-xs font-medium">
+                  {stepIndex + 1}.
+                </span>
+                <StepIcon
+                  aria-hidden
+                  className={cn(
+                    'size-3 shrink-0',
+                    NODE_COLORS[step.nodeType] || NODE_COLORS.state,
+                  )}
+                />
+                <span className="text-foreground min-w-0 truncate font-medium">
+                  {displayName}
+                </span>
+                <div className="ml-auto shrink-0">
+                  {step.status === 'completed' && (
+                    <CircleCheck className="text-success size-4" />
+                  )}
+                  {step.status === 'failed' && (
+                    <CircleX className="text-destructive size-4" />
                   )}
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+              {hasOutput && (
+                <Card variant="filled" padding="sm">
+                  <p className="wrap-break-word whitespace-pre-wrap">
+                    <span className="text-muted-foreground font-medium">
+                      {t('agents.workflow.preview.outputLabel')}{' '}
+                    </span>
+                    <span className="text-foreground">
+                      {truncateText(formattedOutput, 300)}
+                    </span>
+                  </p>
+                </Card>
+              )}
+              {step.error && (
+                <Alert variant="destructive" role="status">
+                  <CircleAlert />
+                  <AlertDescription>
+                    <span className="font-medium">
+                      {t('agents.workflow.preview.errorLabel')}{' '}
+                    </span>
+                    <span className="wrap-break-word whitespace-pre-wrap">
+                      {step.error}
+                    </span>
+                  </AlertDescription>
+                </Alert>
+              )}
+              {stateVars.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {stateVars.map(([key, value]) => (
+                    // eslint-disable-next-line shadcn/no-restyle -- state keys and values are serialised by the app, so the chip is set in mono
+                    <Badge key={key} variant="neutral" className="font-mono">
+                      <span className="max-w-[100px] truncate">{key}:</span>
+                      <span
+                        className="text-foreground max-w-[200px] truncate"
+                        title={formatValue(value)}
+                      >
+                        {truncateText(formatValue(value), 50)}
+                      </span>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })}
       </div>
-    </div>
+    </StepDisclosure>
   );
 }
 
-function RunArtifactsSection({
+export function RunArtifactsSection({
   workflowRunId,
   isOpen,
   onToggle,
@@ -281,47 +307,21 @@ function RunArtifactsSection({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="mb-4 flex w-full flex-col flex-wrap items-start self-start lg:flex-nowrap">
-      <div className="my-2 flex flex-row items-center justify-center gap-3">
-        <div className="flex h-[26px] w-[30px] items-center justify-center">
-          <FileBox className="text-muted-foreground size-5" />
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onToggle}
-          className="-ml-2.5"
-        >
-          <p className="text-base font-semibold">
-            {t('agents.workflow.preview.artifacts')}
-          </p>
-          <ChevronDown
-            className={cn(
-              'transition-transform duration-200',
-              isOpen && 'rotate-180',
-            )}
+    <StepDisclosure
+      icon={FileBox}
+      label={t('agents.workflow.preview.artifacts')}
+      isOpen={isOpen}
+      onToggle={onToggle}
+    >
+      <div className="max-h-[480px] overflow-y-auto pt-1">
+        {isOpen && (
+          <WorkflowRunArtifacts
+            workflowRunId={workflowRunId}
+            inProgress={runInProgress}
           />
-        </Button>
-      </div>
-      <div
-        className={cn(
-          'ml-3 grid w-full transition-[grid-template-rows,opacity] duration-300 ease-out',
-          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
         )}
-      >
-        <div className="overflow-hidden">
-          <div className="max-h-[480px] overflow-y-auto pr-2">
-            {isOpen && (
-              <WorkflowRunArtifacts
-                workflowRunId={workflowRunId}
-                inProgress={runInProgress}
-              />
-            )}
-          </div>
-        </div>
       </div>
-    </div>
+    </StepDisclosure>
   );
 }
 
@@ -616,28 +616,7 @@ export default function WorkflowPreview({
     queries.length > 0 ? queries[queries.length - 1].executionSteps || [] : [];
 
   return (
-    <div className="bg-card flex h-full flex-col">
-      <div className="border-border flex h-[77px] items-center justify-between border-b px-6">
-        <div className="flex items-center gap-3">
-          <div className="bg-muted text-muted-foreground flex items-center justify-center rounded-full p-3">
-            <Play className="size-4" />
-          </div>
-          <div>
-            <SheetTitle>{t('agents.form.sections.preview')}</SheetTitle>
-            <p className="text-muted-foreground max-w-md truncate text-xs">
-              {workflowData.name}
-              {workflowData.description && ` - ${workflowData.description}`}
-            </p>
-          </div>
-        </div>
-        {status === 'loading' && (
-          <span className="text-primary flex items-center gap-1 text-xs">
-            <Spinner size="xs" />
-            {t('agents.schedules.status.running')}
-          </span>
-        )}
-      </div>
-
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex min-h-0 flex-1">
         <div className="border-border flex w-64 shrink-0 flex-col border-r">
           <div className="flex items-center justify-between px-4 py-3">
@@ -662,13 +641,12 @@ export default function WorkflowPreview({
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
             {queries.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center px-4">
-                <div className="bg-muted mb-2 flex size-14 shrink-0 items-center justify-center rounded-xl">
-                  <MessageSquare className="text-muted-foreground size-6" />
-                </div>
-                <p className="text-foreground text-xl font-semibold">
-                  {t('agents.workflow.preview.emptyTitle')}
-                </p>
+              <div className="flex h-full items-center justify-center px-4">
+                <EmptyState
+                  size="sm"
+                  illustration="none"
+                  title={t('agents.workflow.preview.emptyTitle')}
+                />
               </div>
             ) : (
               <MessageScrollerProvider autoScroll>
@@ -788,11 +766,12 @@ export default function WorkflowPreview({
               </MessageScrollerProvider>
             )}
           </div>
-          <div className="bg-card flex w-full flex-col gap-2 px-4 pt-2 pb-4">
+          <div className="flex w-full flex-col gap-2 px-4 pt-2 pb-4">
             {sendBlockedMessage && (
-              <p className="text-destructive text-xs" role="alert">
-                {t(sendBlockedMessage)}
-              </p>
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertDescription>{t(sendBlockedMessage)}</AlertDescription>
+              </Alert>
             )}
             <MessageInput
               onSubmit={(text) => handleQuestionSubmission(text)}

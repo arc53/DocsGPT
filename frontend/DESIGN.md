@@ -291,12 +291,12 @@ question: is it a **thing** you open, move, share or delete as a whole, or a
 **place** where you read or edit content? The fill marks objects; the border
 marks structure.
 
-| Role                 | Variant                                                   | Examples                                                                                          |
-| -------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Thing (a tile)       | `filled`, on a page or in a modal                         | agents, folders, sources, tools, custom models, teams, chunks, the shared agent card              |
-| Place (a panel)      | `subtle` on the page, `outline` on a card (modal, drawer) | the agent form's sections, chart panels, stat tiles, log tables, schedule rows, the agent preview |
-| Choice (picker tile) | `outline interactive`, or `OptionCard`                    | the Add tool tiles; selection is drawn by the border, so the border stays                         |
-| Well                 | `filled padding="sm"`                                     | code, a token to copy, run output, inside a panel (see Code blocks below)                         |
+| Role                 | Variant                                                                           | Examples                                                                                          |
+| -------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Thing (a tile)       | `filled`, on a page or in a modal                                                 | agents, folders, sources, tools, custom models, teams, chunks, the shared agent card              |
+| Place (a panel)      | `subtle` on the page or a right drawer, `outline` on a card (modal, bottom sheet) | the agent form's sections, chart panels, stat tiles, log tables, schedule rows, the agent preview |
+| Choice (picker tile) | `outline interactive`, or `OptionCard`                                            | the Add tool tiles; selection is drawn by the border, so the border stays                         |
+| Well                 | `filled padding="sm"`                                                             | code, a token to copy, run output, inside a panel (see Code blocks below)                         |
 
 - Layers go page → panel (border) → well (fill), or page → tile (fill).
   `subtle` and `outline` are one role on two surfaces; in light mode they
@@ -898,6 +898,17 @@ scroller) and the same blurred overlay. Modal, DialogContent and every Sheet sha
 `overlayScrim` in `lib/utils.ts` (`bg-black/25 backdrop-blur-xs
 dark:bg-black/50`).
 
+A right drawer (`SheetContent side="right"`) is on `bg-background`, like the
+page: its content paints no surface of its own, and panels in it are
+`subtle` (see Card surfaces). An agent is previewed in one shared drawer,
+`agents/components/AgentPreviewSheet`, for workflow and classic agents alike:
+`w-full sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]`, a `SheetTitle`
+and a one-line `SheetDescription` (the agent's name) in a header padded
+`pr-12` to clear the close X, an `info` Running badge while it answers, a
+`Separator`, then the preview. The workflow preview's Execution details and
+Artifacts rows are the answer's step-row recipe (see Alert), each step a
+`subtle sm` panel with its output in a `filled sm` well.
+
 Every phone bottom sheet has one shape: `bg-card`, 16px top corners, no top
 border, `max-h-sheet` (the visible viewport less the top safe-area inset and a
 3rem strip, so the scrim above it can always be tapped to close), and bottom
@@ -1184,6 +1195,7 @@ list stays reviewable.
 | `agents/workflow/WorkflowBuilder.tsx`                               | `shadcn/no-restyle`             | The "Learn more" links in the Set state and Condition nodes' 12px hints keep the sentence's size and weight (`text-xs font-normal` on `link inline`). Two disables.                                                                                                                                                                                                                                                                                                                             |
 | `components/MessageInput.tsx`                                       | `shadcn/no-restyle`             | The queued-send Cancel is a `link inline` inside the composer's 12px status line, so it takes the line's size (`text-xs`). One disable, beside the send button's.                                                                                                                                                                                                                                                                                                                               |
 | `settings/PersonalAccessTokens.tsx`                                 | `shadcn/no-restyle`             | Token scope chips are identifiers, so the `neutral` Badge is set in mono (`font-mono`). One disable.                                                                                                                                                                                                                                                                                                                                                                                            |
+| `agents/workflow/WorkflowPreview.tsx`                               | `shadcn/no-restyle`             | A step's state changes (keys and values the app serialised) are `neutral` Badges set in mono (`font-mono`), like token scopes. One disable.                                                                                                                                                                                                                                                                                                                                                     |
 | `settings/traces/TraceChips.tsx`                                    | `shadcn/no-restyle`             | Trace stat chips (durations, counts) use tabular figures so they don't jitter between rows (`tabular-nums` on Badge). One disable.                                                                                                                                                                                                                                                                                                                                                              |
 | `modals/MCPServerModal.tsx`                                         | `shadcn/no-restyle`             | The authorization link inside the test-result Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable (phase 11, 63g).                                                                                                                                                                                                                                                                                                                                             |
 | `components/MermaidRenderer.tsx`                                    | `shadcn/no-restyle`             | The zoom readout between − and + is a `link inline` Button on the `bg-black/70` overlay; it keeps the overlay's white 12px regular text (`text-xs font-normal text-current`). One disable, beside the two zoom-button ones above (phase 11, 63g).                                                                                                                                                                                                                                               |

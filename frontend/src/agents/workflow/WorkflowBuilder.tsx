@@ -72,7 +72,6 @@ import {
 } from '@/components/ui/select';
 import { SectionHeader } from '@/components/ui/section-header';
 import { SettingRow } from '@/components/ui/setting-row';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -90,6 +89,7 @@ import {
 import { getToolDisplayName } from '../../utils/toolUtils';
 import { agentEditPath, agentsListPath } from '../paths';
 import AgentPageHeader from '../AgentPageHeader';
+import AgentPreviewSheet from '../components/AgentPreviewSheet';
 import { Agent } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import {
@@ -122,6 +122,7 @@ import {
   StartNode,
 } from './nodes';
 import WorkflowPreview from './WorkflowPreview';
+import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
 
 import type { Model } from '../../models/types';
 
@@ -448,6 +449,7 @@ function WorkflowBuilderInner() {
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
+  const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
   const [searchParams] = useSearchParams();
   const folderId = searchParams.get('folder_id');
@@ -3299,42 +3301,46 @@ function WorkflowBuilderInner() {
           </div>
         </div>
 
-        <Sheet open={showPreview} onOpenChange={setShowPreview}>
-          <SheetContent
-            side="right"
-            className="w-full max-w-none p-0 sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]"
-          >
-            <WorkflowPreview
-              workflowId={workflowId}
-              workflowData={{
-                name: workflowName,
-                description: workflowDescription,
-                nodes: nodes
-                  .filter((n) => n.type !== 'note')
-                  .map((n) => ({
-                    id: n.id,
-                    type: n.type as
-                      'start' | 'end' | 'agent' | 'state' | 'code',
-                    title: n.data.title || n.data.label || n.type,
-                    position: n.position,
-                    data:
-                      n.type === 'code'
-                        ? serializeCodeConfig(n.data.config)
-                        : n.type === 'agent'
-                          ? n.data.config
-                          : n.data,
-                  })),
-                edges: edges.map((e) => ({
-                  id: e.id,
-                  source: e.source,
-                  target: e.target,
-                  sourceHandle: e.sourceHandle || undefined,
-                  targetHandle: e.targetHandle || undefined,
+        <AgentPreviewSheet
+          open={showPreview}
+          onOpenChange={setShowPreview}
+          title={t('agents.form.sections.preview')}
+          description={
+            workflowDescription
+              ? `${workflowName} · ${workflowDescription}`
+              : workflowName
+          }
+          running={previewStatus === 'loading'}
+        >
+          <WorkflowPreview
+            workflowId={workflowId}
+            workflowData={{
+              name: workflowName,
+              description: workflowDescription,
+              nodes: nodes
+                .filter((n) => n.type !== 'note')
+                .map((n) => ({
+                  id: n.id,
+                  type: n.type as 'start' | 'end' | 'agent' | 'state' | 'code',
+                  title: n.data.title || n.data.label || n.type,
+                  position: n.position,
+                  data:
+                    n.type === 'code'
+                      ? serializeCodeConfig(n.data.config)
+                      : n.type === 'agent'
+                        ? n.data.config
+                        : n.data,
                 })),
-              }}
-            />
-          </SheetContent>
-        </Sheet>
+              edges: edges.map((e) => ({
+                id: e.id,
+                source: e.source,
+                target: e.target,
+                sourceHandle: e.sourceHandle || undefined,
+                targetHandle: e.targetHandle || undefined,
+              })),
+            }}
+          />
+        </AgentPreviewSheet>
         <ConfirmationModal
           message={
             workflowName
