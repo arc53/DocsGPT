@@ -312,6 +312,16 @@ class TestNativeUp:
                 _run(argv, _native_context())
             assert not (tmp_path / ".env").exists(), "it refuses before writing anything"
 
+    def test_an_explicitly_busy_default_port_is_refused(self, monkeypatch, tmp_path):
+        from docsgpt.deploy import commands
+
+        monkeypatch.setattr(commands, "_port_is_free", lambda port: False)
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--port", str(stack.DEFAULT_PORT),
+                "--postgres-uri", "postgresql://localhost/d"]
+        with pytest.raises(DeployError, match="already in use"):
+            _run(argv, _native_context())
+        assert not (tmp_path / ".env").exists(), "it refuses before writing anything"
+
     def test_an_install_may_keep_the_port_its_own_api_is_recorded_on(self, tmp_path):
         """Re-running an install must not trip over the API it is about to replace."""
         services = FakeServices()
