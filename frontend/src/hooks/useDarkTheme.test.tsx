@@ -60,4 +60,39 @@ describe('useDarkTheme', () => {
 
     await act(async () => root.unmount());
   });
+
+  it('resets both Safari bars once per theme change, not on load', async () => {
+    const strips = (edge: 'top' | 'bottom') =>
+      document.querySelectorAll(`[data-slot="${edge}-tint-reset"]`).length;
+    let toggle: (() => void) | undefined;
+
+    function Settings() {
+      const [, toggleTheme] = useDarkTheme();
+      toggle = toggleTheme;
+      return null;
+    }
+    function Logo() {
+      useDarkTheme();
+      return null;
+    }
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <>
+          <Settings />
+          <Logo />
+        </>,
+      );
+    });
+    expect(strips('bottom')).toBe(0);
+    expect(strips('top')).toBe(0);
+
+    // Both consumers apply the new theme; one strip is enough.
+    await act(async () => toggle?.());
+    expect(strips('bottom')).toBe(1);
+    expect(strips('top')).toBe(1);
+
+    await act(async () => root.unmount());
+  });
 });
