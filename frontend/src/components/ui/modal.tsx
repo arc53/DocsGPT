@@ -2,6 +2,7 @@ import { XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive, VisuallyHidden } from 'radix-ui';
 import * as React from 'react';
 
+import { BottomTintReset } from '@/components/ui/bar-tint-reset';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -12,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SheetHandle, sheetBottomShape } from '@/components/ui/sheet';
+import { useFocusReturn } from '@/components/ui/use-focus-return';
 import { useMediaQuery } from '@/hooks';
 import { cn } from '@/lib/utils';
 
@@ -63,6 +65,10 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
   const { isMobile } = useMediaQuery();
   const isMobileSheet = mobileVariant === 'sheet' && isMobile;
   const shouldShowCloseButton = showCloseButton && !isPerformingTask;
+  // The phone sheet opens without autofocus so the keyboard stays down.
+  const focusReturn = useFocusReturn(
+    isMobileSheet ? (event) => event.preventDefault() : undefined,
+  );
 
   // When a task is performing, block click-outside / pointer-outside to
   // mirror the legacy WrapperModal lock. Esc remains enabled (Radix default).
@@ -113,9 +119,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
           data-mobile-sheet={isMobileSheet ? '' : undefined}
           onPointerDownOutside={blockOutsideInteractions}
           onInteractOutside={blockOutsideInteractions}
-          onOpenAutoFocus={
-            isMobileSheet ? (event) => event.preventDefault() : undefined
-          }
+          {...focusReturn}
           // Radix portals this to <body> in the DOM, but React still bubbles
           // synthetic events through the JSX tree. Stop the bubble at the
           // modal boundary so consumers mounted inside clickable cards (e.g.
@@ -135,6 +139,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
                 ),
           )}
         >
+          {isMobileSheet && <BottomTintReset />}
           {isMobileSheet && <SheetHandle />}
           {headerNode}
           <div

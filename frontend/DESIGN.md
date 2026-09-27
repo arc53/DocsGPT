@@ -869,6 +869,20 @@ drag; pass `showCloseButton` to keep an X).
 and `max-h-sheet` are the `index.css` utilities for the safe-area insets; never
 spell `env()` in a class.
 
+Closing a bottom sheet resets iOS Safari's bottom bar. Safari 26 takes the bar's
+colour from a fixed element that appears on the bottom edge, so an open sheet
+turns it `bg-card`, and it never changes back when the sheet goes away or the
+page changes colour. `SheetContent side="bottom"` and `Modal`'s phone sheet
+mount `BottomTintReset` (`ui/bar-tint-reset.ts`), which shows a 6px
+`bg-background` strip on the edge for one painted frame after the sheet
+unmounts, and Safari samples the page colour again. `useDarkTheme` calls
+`resetBottomTint()` and `resetTopTint()` (a 16px strip on the top edge) when the
+theme changes. Anything else fixed to the bottom edge that can go away (a
+drawer, a bottom banner) calls `resetBottomTint()` when it is removed. The sizes
+and the one-frame life were measured on an iPhone: 4px at the bottom, 6px at
+the top and a 16ms timer all failed, and a strip behind the content,
+transparent or at `opacity-0` isn't sampled, so don't shrink or hide it.
+
 **Open question: side panel or right sheet for chat content.** Chat has two
 ways to show something beside an answer. Notes, todos and files open in
 `components/ArtifactSidebar`, a panel that takes a column and leaves the chat
@@ -1051,6 +1065,17 @@ shows.
   so plain elements should become components rather than copy the classes.
   Inside `ui/`, spell it with the `focusRing` constant from `lib/utils.ts`
   (with `invalidState` and `fieldFrame` for fields) rather than retyping it.
+- **Focus return**: Modal, Sheet and DialogContent give focus back on close
+  only to the element that had it when they opened (`ui/use-focus-return.ts`).
+  A tap on iOS, and a click in Safari, doesn't focus the trigger, so Radix's
+  default `trigger.focus()` lit it with a ring nobody asked for; after a
+  keyboard open the trigger did have focus and still gets it back. Don't pass
+  `onCloseAutoFocus` from app code to remember focus yourself (ESLint rejects
+  it); the primitive already does. `onOpenAutoFocus` with `preventDefault()`
+  is still how a phone picker keeps the keyboard down (`MultiSelectPopover`).
+  A dialog panel is a `tabIndex=-1` focus target that Radix can focus, so it
+  carries `outline-none`: Safari draws its own blue `outline: auto` there and
+  ignores our `outline-color`. Any new focusable container needs the same.
 - **Close buttons** on Modal, Sheet and DialogContent are a `ghost-muted`
   `size="icon-sm"` Button (32px, accent square on hover) at `top-2 right-2`.
 - **Disabled**: buttons (Button, Accordion, Tabs) use
@@ -1077,9 +1102,9 @@ shadow-lg` in both themes: the knob is white on any track, and a white knob
   an `absolute` div with a shadow and a hand-picked `z-*`.
 - **Stacking**: `z-10` sticky headers and table heads inside a page;
   `z-20` in-page floating chrome (banners, scroll-to-bottom, drag
-  handles); `z-50` overlays, modals, sheets and toasts; `z-200` every
-  portalled floating list (popover, menu, select, tooltip), so it opens above
-  a Modal without an override. Do not invent values in between. The app
+  handles); `z-50` overlays, modals, sheets, toasts and the one-frame
+  bar-tint strips; `z-200` every portalled floating list (popover, menu,
+  select, tooltip), so it opens above a Modal without an override. Do not invent values in between. The app
   shell uses the low layers too: the phone top bar is `z-10`, and the
   sidebar and its phone backdrop are `z-20`, so an open sidebar dims the bar.
 

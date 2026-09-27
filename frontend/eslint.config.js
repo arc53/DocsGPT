@@ -105,6 +105,14 @@ export default [
           message:
             "Tailwind's screen heights (h-/min-h-/max-h-screen) are the toolbar-hidden viewport on iOS Safari, taller than the visible screen. Use h-dvh / min-h-dvh, or svh for a fixed panel. See DESIGN.md.",
         })),
+        // Modal, Sheet and DialogContent return focus to what had it on open
+        // (ui/use-focus-return.ts). A hand-rolled return focuses the trigger
+        // even after a tap, which lights its ring on iOS.
+        {
+          selector: 'JSXAttribute[name.name="onCloseAutoFocus"]',
+          message:
+            'Modal, Sheet and DialogContent already return focus to what had it on open (ui/use-focus-return.ts). Don\'t hand-roll onCloseAutoFocus. See DESIGN.md "Focus return".',
+        },
       ],
       // Design-system rules (@shadcn/lint). Tokens, variants and the
       // approved exceptions are documented in DESIGN.md.

@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { Sheet, SheetContent, SheetTitle } from './sheet';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from './sheet';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -151,5 +151,111 @@ describe('SheetOverlay', () => {
     );
     const title = document.querySelector('[data-slot="sheet-title"]');
     expect(title?.className).toContain('text-xl leading-tight font-semibold');
+  });
+});
+
+describe('SheetContent focus', () => {
+  const pressEscape = async () => {
+    await act(async () => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+    });
+    // Radix moves focus once the closed content has unmounted.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  };
+
+  const renderWithTrigger = () =>
+    render(
+      <Sheet>
+        <SheetTrigger data-testid="trigger">Tools</SheetTrigger>
+        {/* Like the phone pickers: no autofocus, so the keyboard stays down. */}
+        <SheetContent
+          side="bottom"
+          title="Tools"
+          aria-describedby={undefined}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
+          <button type="button">Inside</button>
+        </SheetContent>
+      </Sheet>,
+    );
+
+  const trigger = () =>
+    document.querySelector<HTMLButtonElement>('[data-testid="trigger"]')!;
+
+  it('never draws the browser outline around the panel', async () => {
+    await render(
+      <Sheet open>
+        <SheetContent
+          side="bottom"
+          title="Tools"
+          aria-describedby={undefined}
+        />
+      </Sheet>,
+    );
+    expect(content().className.split(' ')).toContain('outline-none');
+  });
+
+  it('leaves the trigger unfocused when a tap opened the sheet', async () => {
+    await renderWithTrigger();
+    // iOS doesn't focus a tapped button: the click lands with body focused.
+    await act(async () => trigger().click());
+    expect(content()).not.toBeNull();
+    await pressEscape();
+    expect(document.activeElement).not.toBe(trigger());
+  });
+
+  it('returns focus to the trigger when it had focus on open', async () => {
+    await renderWithTrigger();
+    trigger().focus();
+    await act(async () => trigger().click());
+    await pressEscape();
+    expect(document.activeElement).toBe(trigger());
+  });
+});
+
+describe('SheetContent bottom-bar reset', () => {
+  // Earlier tests close bottom sheets on unmount, which leaves strips behind.
+  beforeEach(() => {
+    document
+      .querySelectorAll('[data-slot="bottom-tint-reset"]')
+      .forEach((node) => node.remove());
+  });
+
+  const wait = (ms: number) =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, ms));
+    });
+  const strip = () =>
+    document.querySelector<HTMLElement>('[data-slot="bottom-tint-reset"]');
+
+  const renderSheet = (open: boolean, side: 'bottom' | 'right') =>
+    render(
+      <Sheet open={open}>
+        <SheetContent side={side} title="Tools" aria-describedby={undefined} />
+      </Sheet>,
+    );
+
+  it('shows a 6px page-coloured strip on the bottom edge for one frame after a bottom sheet closes', async () => {
+    await renderSheet(true, 'bottom');
+    expect(strip()).toBeNull();
+    await renderSheet(false, 'bottom');
+    const classes = strip()!.className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining(['bg-background', 'fixed', 'bottom-0', 'h-1.5']),
+    );
+    expect(strip()!.getAttribute('aria-hidden')).toBe('true');
+    await wait(120);
+    expect(strip()).toBeNull();
+  });
+
+  it('adds no strip for a side sheet', async () => {
+    await renderSheet(true, 'right');
+    await renderSheet(false, 'right');
+    await wait(20);
+    expect(strip()).toBeNull();
   });
 });

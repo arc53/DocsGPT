@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, RefObject } from 'react';
 
+import { resetBottomTint, resetTopTint } from '@/components/ui/bar-tint-reset';
+
 export function useOutsideAlerter<T extends HTMLElement>(
   ref: RefObject<T | null>,
   handler: () => void,
@@ -118,6 +120,8 @@ export function useDarkTheme() {
 
   const [isDarkTheme, setIsDarkTheme] = useState<boolean>(getInitialTheme());
   const [componentMounted, setComponentMounted] = useState(false);
+  // The theme applied by this hook's last run; null before the first one.
+  const appliedTheme = useRef<boolean | null>(null);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -157,6 +161,13 @@ export function useDarkTheme() {
         m.removeAttribute('media');
         m.setAttribute('content', color);
       });
+    // Safari keeps both bars in the old theme's colour until a fixed element
+    // appears on their edge. Only on a change: on load they already match.
+    if (appliedTheme.current !== null && appliedTheme.current !== isDarkTheme) {
+      resetBottomTint();
+      resetTopTint();
+    }
+    appliedTheme.current = isDarkTheme;
 
     setComponentMounted(true);
   }, [isDarkTheme]);
