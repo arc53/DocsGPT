@@ -56,6 +56,18 @@ describe('Dropzone', () => {
     expect(html).not.toContain('hidden</span>');
   });
 
+  it('keeps a fixed tile at 64px and icon-only at every width', () => {
+    const html = renderToStaticMarkup(
+      <Dropzone onDrop={vi.fn()} size="tile" tileSize="fixed" title="Avatar" />,
+    );
+    expect(html).toContain('data-tile-size="fixed"');
+    expect(html).toContain('size-16');
+    expect(html).not.toContain('sm:size-22');
+    expect(html).not.toContain('sm:not-sr-only');
+    // The word is still the target's accessible name.
+    expect(html).toMatch(/class="[^"]*\bsr-only\b[^"]*">Avatar/);
+  });
+
   it('never uses raw palette colours', () => {
     const html = renderToStaticMarkup(<Dropzone onDrop={vi.fn()} />);
     expect(html).not.toMatch(/\b(bg|text|border)-(gray|red|green|blue)-\d+/);

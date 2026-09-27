@@ -22,6 +22,8 @@ interface FileUploadProps {
   previewSize?: number;
   /** `compact` is a one-row target for forms and panels. */
   size?: 'default' | 'compact' | 'tile';
+  /** A tile's width; `fixed` keeps it 64px in a narrow drawer. */
+  tileSize?: 'responsive' | 'fixed';
   /** An image already saved (an agent's avatar), shown in a tile until a new one is picked. */
   currentImage?: string;
 
@@ -55,6 +57,7 @@ export const FileUpload = ({
   showPreview = false,
   previewSize = 80,
   size = 'default',
+  tileSize,
   currentImage,
   children,
   className,
@@ -256,6 +259,7 @@ export const FileUpload = ({
       maxSize={maxSize}
       disabled={disabled}
       size={size}
+      tileSize={tileSize}
       title={title}
       description={description}
       icon={<ImageUp />}

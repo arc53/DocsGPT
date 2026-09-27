@@ -1,33 +1,8 @@
 import 'reactflow/dist/style.css';
 
-import {
-  Bot,
-  CircleAlert,
-  CodeXml,
-  Database,
-  Flag,
-  GitBranch,
-  Link,
-  Pencil,
-  Play,
-  Plus,
-  Redo2,
-  StickyNote,
-  Trash2,
-  Undo2,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
-import {
-  type DragEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { type TFunction } from 'i18next';
-import { Trans, useTranslation } from 'react-i18next';
+import { CircleAlert, Link, Pencil, Play, Trash2, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ReactFlow, {
@@ -36,49 +11,23 @@ import ReactFlow, {
   applyNodeChanges,
   Background,
   Connection,
-  Controls,
   Edge,
   EdgeChange,
   Node,
   NodeChange,
   NodeTypes,
-  Panel,
   ReactFlowProvider,
   useReactFlow,
+  XYPosition,
 } from 'reactflow';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Avatar } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { IconButton } from '@/components/ui/icon-button';
-import { FormField } from '@/components/ui/form-field';
-import { Input } from '@/components/ui/input';
-import { MultiSelect } from '@/components/ui/multi-select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { SectionHeader } from '@/components/ui/section-header';
-import { SettingRow } from '@/components/ui/setting-row';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
 
 import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
-import { FileUpload } from '../../components/FileUpload';
 import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
@@ -86,11 +35,13 @@ import {
   selectSourceDocs,
   selectToken,
 } from '../../preferences/preferenceSlice';
-import { getToolDisplayName } from '../../utils/toolUtils';
 import { agentEditPath, agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
 import AgentPreviewSheet from '../components/AgentPreviewSheet';
+import WorkflowDetailsSheet, {
+  type WorkflowDetailsSave,
+} from './components/WorkflowDetailsSheet';
 import { Agent } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import {
@@ -101,17 +52,9 @@ import {
   validateCodeJsonSchema,
 } from './codeNodeConfig';
 import MobileBlocker from './components/MobileBlocker';
-import { buildSimpleCel, parseSimpleCel } from './simpleCel';
-import NodeDocumentsControl from './components/NodeDocumentsControl';
-import PromptTextArea, {
-  extractUpstreamVariables,
-} from './components/PromptTextArea';
-import {
-  FILE_PASSING_OPTIONS,
-  FilePassing,
-  normalizeFilePassing,
-  toDocumentVariableOptions,
-} from './documentConfig';
+import { parseSimpleCel } from './simpleCel';
+import { extractUpstreamVariables } from './components/PromptTextArea';
+import { toDocumentVariableOptions } from './documentConfig';
 import { useUndoRedo, WorkflowSnapshot } from './hooks/useUndoRedo';
 import {
   AgentNode,
@@ -122,200 +65,38 @@ import {
   SetStateNode,
   StartNode,
 } from './nodes';
+import CanvasControls from './CanvasControls';
+import NodePalette from './NodePalette';
+import NodePanel from './panels/NodePanel';
+import { WorkflowModelsContext } from './WorkflowModelsContext';
+import AgentPanel from './panels/AgentPanel';
+import CodePanel from './panels/CodePanel';
+import ConditionPanel from './panels/ConditionPanel';
+import NotePanel from './panels/NotePanel';
+import StatePanel from './panels/StatePanel';
 import WorkflowPreview from './WorkflowPreview';
+import {
+  type AgentNodeConfig,
+  findFreePosition,
+  NO_ESCAPE,
+  normalizeConditionCases,
+  schemaErrorText,
+  type UserTool,
+  validateJsonSchemaConfig,
+} from './workflowHelpers';
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
 
 import type { Model } from '../../models/types';
 
 const PRIMARY_ACTION_SPINNER_DELAY_MS = 180;
-
-type PaletteTone = 'primary' | 'success' | 'warning' | 'info';
-
-// Whole class strings per tone so Tailwind sees them.
-const PALETTE_TONE_CLASSES: Record<PaletteTone, string> = {
-  primary:
-    'bg-secondary text-secondary-foreground group-hover:bg-primary group-hover:text-primary-foreground',
-  success:
-    'bg-success/10 text-success group-hover:bg-success group-hover:text-success-foreground',
-  warning:
-    'bg-warning/10 text-warning group-hover:bg-warning group-hover:text-warning-foreground',
-  info: 'bg-info/10 text-info group-hover:bg-info group-hover:text-info-foreground',
-};
-
-interface PaletteEntry {
-  type: string;
-  group: 'core' | 'logic';
-  icon: LucideIcon;
-  tone: PaletteTone;
-  labelKey: string;
-  hintKey?: string;
-}
-
-const PALETTE: PaletteEntry[] = [
-  {
-    type: 'agent',
-    group: 'core',
-    icon: Bot,
-    tone: 'primary',
-    labelKey: 'agents.workflow.builder.aiAgent',
-  },
-  {
-    type: 'end',
-    group: 'core',
-    icon: Flag,
-    tone: 'success',
-    labelKey: 'agents.workflow.nodes.end',
-  },
-  {
-    type: 'note',
-    group: 'core',
-    icon: StickyNote,
-    tone: 'warning',
-    labelKey: 'agents.workflow.nodes.note',
-  },
-  {
-    type: 'state',
-    group: 'logic',
-    icon: Database,
-    tone: 'info',
-    labelKey: 'agents.workflow.nodes.setState',
-    hintKey: 'agents.workflow.builder.setStateHint',
-  },
-  {
-    type: 'condition',
-    group: 'logic',
-    icon: GitBranch,
-    tone: 'warning',
-    labelKey: 'agents.workflow.nodes.condition',
-    hintKey: 'agents.workflow.builder.conditionHint',
-  },
-  {
-    type: 'code',
-    group: 'logic',
-    icon: CodeXml,
-    tone: 'info',
-    labelKey: 'agents.workflow.nodes.code',
-    hintKey: 'agents.workflow.builder.codeHint',
-  },
-];
-
-/**
- * A draggable pill in the builder's node palette.
- *
- * Args:
- *   entry: The palette entry to render.
- *   onDragStart: Starts dragging a node of the entry's type onto the canvas.
- */
-function NodePaletteItem({
-  entry,
-  onDragStart,
-}: {
-  entry: PaletteEntry;
-  onDragStart: (e: DragEvent, nodeType: string) => void;
-}) {
-  const { t } = useTranslation();
-  const Icon = entry.icon;
-  const label = (
-    <span className="text-foreground text-sm font-medium">
-      {t(entry.labelKey)}
-    </span>
-  );
-  return (
-    <div
-      className="group border-border bg-card hover:border-primary/40 flex cursor-move items-center gap-3 rounded-full border px-4 py-3 transition-colors"
-      draggable
-      onDragStart={(e) => onDragStart(e, entry.type)}
-    >
-      <div
-        className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors',
-          PALETTE_TONE_CLASSES[entry.tone],
-        )}
-      >
-        <Icon className="size-4.5" />
-      </div>
-      {entry.hintKey ? (
-        <div className="flex flex-col">
-          {label}
-          <span className="text-muted-foreground text-xs">
-            {t(entry.hintKey)}
-          </span>
-        </div>
-      ) : (
-        label
-      )}
-    </div>
-  );
-}
-
-interface AgentNodeConfig {
-  agent_type: 'classic' | 'research';
-  llm_name?: string;
-  model_id?: string;
-  system_prompt: string;
-  prompt_template: string;
-  output_variable?: string;
-  stream_to_user: boolean;
-  sources: string[];
-  tools: string[];
-  chunks?: string;
-  retriever?: string;
-  json_schema?: Record<string, unknown>;
-  input_documents?: string[];
-  file_passing?: FilePassing;
-}
-
-interface UserTool {
-  id: string;
-  name: string;
-  displayName: string;
-  customName?: string;
-  // Workflow-only builtins (e.g. read_document) are kept here; the classic
-  // agent picker filters them out.
-  workflow_only?: boolean;
-}
-
-function validateJsonSchemaConfig(schema: unknown): string | null {
-  if (schema === undefined || schema === null) return null;
-  if (typeof schema !== 'object' || Array.isArray(schema)) {
-    return 'must be a valid JSON object';
-  }
-
-  const schemaObject = schema as Record<string, unknown>;
-  if (!('schema' in schemaObject) && !('type' in schemaObject)) {
-    return 'must include either a "type" or "schema" field';
-  }
-
-  return null;
-}
-
-// The schema validators return short English fragments (tests and the
-// validation list key off them); these map each to its locale key.
-// Names and handles are the user's own text: React escapes on render, so
-// i18next must not escape them first.
-const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
-
-const SCHEMA_ERROR_KEYS: Record<string, string> = {
-  'must be a valid JSON object': 'agents.workflow.schema.notObject',
-  'must include either a "type" or "schema" field':
-    'agents.workflow.schema.missingType',
-  'must be valid JSON': 'agents.workflow.schema.invalidJson',
-};
-
-/**
- * Translate a JSON schema validation fragment.
- *
- * Args:
- *   t: The i18next translate function.
- *   fragment: The fragment a schema validator returned.
- *
- * Returns:
- *   The translated fragment, or the fragment itself when it is unknown.
- */
-function schemaErrorText(t: TFunction, fragment: string): string {
-  const key = SCHEMA_ERROR_KEYS[fragment];
-  return key ? t(key) : fragment;
-}
+// A node added from the palette while one is selected lands this far right
+// of it (then moves down until it covers nothing).
+const ADD_BESIDE_GAP_X = 80;
+// Roughly half a node's size, to centre a new node in the view.
+const NEW_NODE_HALF_WIDTH = 100;
+const NEW_NODE_HALF_HEIGHT = 32;
+// A duplicate sits this far down and right of its original.
+const DUPLICATE_OFFSET = 40;
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -353,52 +134,6 @@ function canReachEnd(
   return edges
     .filter((e) => e.source === nodeId)
     .some((e) => canReachEnd(e.target, edges, nodeIds, endIds, visited));
-}
-
-function normalizeConditionCases(cases: ConditionCase[]): ConditionCase[] {
-  const usedHandles = new Set<string>();
-  let nextIndex = 0;
-
-  return cases.map((conditionCase) => {
-    const candidate = (conditionCase.sourceHandle || '').trim();
-    if (candidate && !usedHandles.has(candidate)) {
-      usedHandles.add(candidate);
-      const match = candidate.match(/^case_(\d+)$/);
-      if (match) {
-        nextIndex = Math.max(nextIndex, Number(match[1]) + 1);
-      }
-      return conditionCase;
-    }
-
-    while (usedHandles.has(`case_${nextIndex}`)) {
-      nextIndex += 1;
-    }
-    const generatedHandle = `case_${nextIndex}`;
-    usedHandles.add(generatedHandle);
-    nextIndex += 1;
-
-    return {
-      ...conditionCase,
-      sourceHandle: generatedHandle,
-    };
-  });
-}
-
-function getNextConditionHandle(cases: ConditionCase[]): string {
-  const usedHandles = new Set(
-    cases.map((conditionCase) => conditionCase.sourceHandle).filter(Boolean),
-  );
-  const usedIndices = Array.from(usedHandles)
-    .map((handle) => handle.match(/^case_(\d+)$/))
-    .filter((match): match is RegExpMatchArray => Boolean(match))
-    .map((match) => Number(match[1]));
-
-  let nextIndex = usedIndices.length > 0 ? Math.max(...usedIndices) + 1 : 0;
-  while (usedHandles.has(`case_${nextIndex}`)) {
-    nextIndex += 1;
-  }
-
-  return `case_${nextIndex}`;
 }
 
 function createWorkflowPayload(
@@ -467,7 +202,11 @@ function WorkflowBuilderInner() {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [workflowName, setWorkflowName] = useState('New Workflow');
   const [workflowDescription, setWorkflowDescription] = useState('');
-  const [showWorkflowSettings, setShowWorkflowSettings] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  // A save asked for by the details sheet runs after its values reach state.
+  const [detailsSaveRequested, setDetailsSaveRequested] = useState(false);
+  const [detailsSaving, setDetailsSaving] = useState(false);
+  const [detailsSaveFailed, setDetailsSaveFailed] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [showPrimaryActionSpinner, setShowPrimaryActionSpinner] =
     useState(false);
@@ -489,6 +228,13 @@ function WorkflowBuilderInner() {
     string | null
   >(null);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  const modelNames = useMemo(
+    () =>
+      Object.fromEntries(
+        availableModels.map((model) => [model.id, model.display_name]),
+      ),
+    [availableModels],
+  );
   const [defaultAgentModelId, setDefaultAgentModelId] = useState('');
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
   const sourceOptions = useMemo(
@@ -635,19 +381,13 @@ function WorkflowBuilderInner() {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  const onDrop = useCallback(
-    (event: React.DragEvent) => {
-      event.preventDefault();
-
-      const type = event.dataTransfer.getData('application/reactflow');
-      if (!type) return;
-
+  /**
+   * Add a node of a palette type at a flow position, with its default config.
+   * Takes an undo snapshot first; the selection is left as it was.
+   */
+  const createNode = useCallback(
+    (type: string, position: XYPosition) => {
       takeSnapshot();
-
-      const position = reactFlowInstance.screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
 
       const baseNode: Node = {
         id: `${type}_${Date.now()}`,
@@ -696,7 +436,61 @@ function WorkflowBuilderInner() {
 
       setNodes((nds) => nds.concat(baseNode));
     },
-    [reactFlowInstance, availableModels, defaultAgentModelId, takeSnapshot],
+    [availableModels, defaultAgentModelId, takeSnapshot],
+  );
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow');
+      if (!type) return;
+
+      createNode(
+        type,
+        reactFlowInstance.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        }),
+      );
+    },
+    [reactFlowInstance, createNode],
+  );
+
+  // Click or Enter on a palette pill: beside the selected node, else in the
+  // middle of what the canvas shows.
+  const handleAddNodeFromPalette = useCallback(
+    (type: string) => {
+      const anchor = selectedNode
+        ? nodes.find((n) => n.id === selectedNode.id)
+        : undefined;
+      if (anchor) {
+        createNode(
+          type,
+          findFreePosition(nodes, {
+            x: anchor.position.x + (anchor.width ?? 0) + ADD_BESIDE_GAP_X,
+            y: anchor.position.y,
+          }),
+        );
+        return;
+      }
+      const rect = reactFlowWrapper.current?.getBoundingClientRect();
+      const center = rect
+        ? reactFlowInstance.screenToFlowPosition({
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          })
+        : { x: 0, y: 0 };
+      // Positions are a node's top-left corner; centre a typical node.
+      createNode(
+        type,
+        findFreePosition(nodes, {
+          x: center.x - NEW_NODE_HALF_WIDTH,
+          y: center.y - NEW_NODE_HALF_HEIGHT,
+        }),
+      );
+    },
+    [selectedNode, nodes, createNode, reactFlowInstance],
   );
 
   const handleNodeClick = useCallback(
@@ -750,6 +544,43 @@ function WorkflowBuilderInner() {
     if (!selectedNode) return;
     deleteNodesAndEdges([selectedNode], []);
   }, [selectedNode, deleteNodesAndEdges]);
+
+  // Clone the open node beside itself and open the copy.
+  const handleDuplicateNode = useCallback(() => {
+    if (!selectedNode || selectedNode.type === 'start') return;
+    const original = nodes.find((n) => n.id === selectedNode.id);
+    if (!original) return;
+    takeSnapshot();
+    const copy: Node = {
+      id: `${original.type}_${Date.now()}`,
+      type: original.type,
+      position: {
+        x: original.position.x + DUPLICATE_OFFSET,
+        y: original.position.y + DUPLICATE_OFFSET,
+      },
+      data: structuredClone(original.data),
+      selected: true,
+    };
+    setNodes((nds) =>
+      nds.map((n) => (n.selected ? { ...n, selected: false } : n)).concat(copy),
+    );
+    setSelectedNode(copy);
+    setShowNodeConfig(true);
+  }, [selectedNode, nodes, takeSnapshot]);
+
+  const handleRemoveConditionBranch = useCallback(
+    (sourceHandle: string) => {
+      if (!selectedNode) return;
+      const nodeId = selectedNode.id;
+      setEdges((eds) =>
+        eds.filter(
+          (edge) =>
+            !(edge.source === nodeId && edge.sourceHandle === sourceHandle),
+        ),
+      );
+    },
+    [selectedNode],
+  );
 
   const handleUpdateNodeData = useCallback(
     (data: Record<string, unknown>, options?: { snapshot?: boolean }) => {
@@ -834,12 +665,6 @@ function WorkflowBuilderInner() {
     [handleUpdateNodeData, selectedNode],
   );
 
-  const handleUpload = useCallback((files: File[]) => {
-    if (files && files.length > 0) {
-      setImageFile(files[0]);
-    }
-  }, []);
-
   const navigateBackToAgents = useCallback(() => {
     navigate(agentsListPath(folderId));
   }, [navigate, folderId]);
@@ -890,7 +715,10 @@ function WorkflowBuilderInner() {
     // behind it), or once another handler has already consumed the event. Kept
     // in one place so the branches can't drift apart.
     const shouldIgnoreShortcut = (e: KeyboardEvent): boolean =>
-      e.defaultPrevented || showPreview || isEditableTarget(e.target);
+      e.defaultPrevented ||
+      showPreview ||
+      showDetails ||
+      isEditableTarget(e.target);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (shouldIgnoreShortcut(e)) return;
@@ -931,12 +759,12 @@ function WorkflowBuilderInner() {
     undo,
     redo,
     showPreview,
+    showDetails,
   ]);
 
   const handlePaneClick = useCallback(() => {
     setShowNodeConfig(false);
     setSelectedNode(null);
-    setShowWorkflowSettings(false);
   }, []);
 
   useEffect(() => {
@@ -1652,17 +1480,42 @@ function WorkflowBuilderInner() {
       workflowName,
       workflowDescription,
       imageFile,
+      currentAgent.allow_system_prompt_override,
       folderId,
       navigateBackToAgents,
       t,
     ],
   );
 
-  const handleWorkflowSettingsDone = useCallback(() => {
-    setShowWorkflowSettings(false);
-    if (!canManageAgent || !hasSavableChanges || isPublishing) return;
-    void persistWorkflow(false);
-  }, [canManageAgent, hasSavableChanges, isPublishing, persistWorkflow]);
+  const openDetails = useCallback(() => {
+    setDetailsSaveFailed(false);
+    setShowDetails(true);
+  }, []);
+
+  // Save from the details sheet: put its values into the builder, then save
+  // once they are in state (the effect below), so the request carries them.
+  const handleDetailsSave = useCallback((values: WorkflowDetailsSave) => {
+    setWorkflowName(values.name);
+    setWorkflowDescription(values.description);
+    setCurrentAgent((prev) => ({
+      ...prev,
+      allow_system_prompt_override: values.allowPromptOverride,
+    }));
+    if (values.imageFile) setImageFile(values.imageFile);
+    setDetailsSaveRequested(true);
+  }, []);
+
+  useEffect(() => {
+    if (!detailsSaveRequested) return;
+    setDetailsSaveRequested(false);
+    setDetailsSaving(true);
+    setDetailsSaveFailed(false);
+    void persistWorkflow(false).then((ok) => {
+      setDetailsSaving(false);
+      if (ok) setShowDetails(false);
+      else setDetailsSaveFailed(true);
+    });
+  }, [detailsSaveRequested, persistWorkflow]);
 
   const isPrimaryActionDisabled =
     isPublishing || (canManageAgent && !hasSavableChanges);
@@ -1782,157 +1635,31 @@ function WorkflowBuilderInner() {
     <>
       <MobileBlocker />
       <div className="bg-background fixed inset-0 z-50 hidden h-dvh w-full flex-col lg:flex">
-        <div className="border-border bg-card flex items-center justify-between border-b px-6 py-4">
-          <div className="flex items-center gap-4">
-            {canManageAgent ? (
-              <AgentPageHeader
-                agentId={effectiveAgentId}
-                agentName={workflowName}
-                agentEditPath={agentEditPath(effectiveAgentId, true)}
-                currentPage="overview"
-                inline
-              />
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="field"
-                shape="pill"
-                onClick={navigateBackToAgents}
-              >
-                {t('agents.backToAll')}
-              </Button>
+        <div className="border-border bg-background flex items-center justify-between gap-4 border-b px-6 py-4">
+          <AgentPageHeader
+            agentId={canManageAgent ? effectiveAgentId : undefined}
+            agentName={workflowName || t('agents.workflow.builder.newWorkflow')}
+            agentEditPath={agentEditPath(effectiveAgentId, true)}
+            agentImage={currentAgentImage}
+            currentPage="overview"
+            onNameClick={openDetails}
+            status={
+              canManageAgent && currentAgent.status !== 'draft' ? (
+                <Badge variant="success">
+                  {t('agents.form.status.published')}
+                </Badge>
+              ) : (
+                <Badge variant="neutral">{t('agents.card.draft')}</Badge>
+              )
+            }
+            inline
+          />
+          <div className="flex shrink-0 items-center gap-2">
+            {(!canManageAgent || hasSavableChanges) && (
+              <span className="text-muted-foreground mr-2 text-sm">
+                {t('agents.workflow.builder.unsavedChanges')}
+              </span>
             )}
-            {!canManageAgent && (
-              <div className="min-w-0">
-                <div
-                  className="text-foreground max-w-xs truncate text-xl leading-tight font-semibold"
-                  title={
-                    workflowName || t('agents.workflow.builder.newWorkflow')
-                  }
-                >
-                  {workflowName || t('agents.workflow.builder.newWorkflow')}
-                </div>
-                {workflowDescription && (
-                  <div
-                    className="text-muted-foreground max-w-xs truncate text-xs"
-                    title={workflowDescription}
-                  >
-                    {workflowDescription}
-                  </div>
-                )}
-              </div>
-            )}
-            <Popover
-              open={showWorkflowSettings}
-              onOpenChange={setShowWorkflowSettings}
-            >
-              <PopoverTrigger asChild>
-                <IconButton
-                  variant="ghost-muted"
-                  size="icon-xs"
-                  side="bottom"
-                  label={t('agents.workflow.builder.editDetails')}
-                  hint={
-                    workflowDescription
-                      ? `${workflowName || t('agents.workflow.builder.newWorkflow')} — ${workflowDescription}`
-                      : undefined
-                  }
-                  icon={Pencil}
-                />
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-80">
-                <div className="flex flex-col gap-5">
-                  <FormField label={t('agents.workflow.builder.workflowName')}>
-                    <Input
-                      type="text"
-                      value={workflowName}
-                      onChange={(e) => setWorkflowName(e.target.value)}
-                      placeholder={t(
-                        'agents.workflow.builder.workflowNamePlaceholder',
-                      )}
-                    />
-                  </FormField>
-                  <FormField label={t('agents.form.labels.description')}>
-                    <Textarea
-                      value={workflowDescription}
-                      onChange={(e) => setWorkflowDescription(e.target.value)}
-                      rows={3}
-                      placeholder={t(
-                        'agents.workflow.builder.workflowDescriptionPlaceholder',
-                      )}
-                    />
-                  </FormField>
-                  {currentAgentImage && !imageFile && (
-                    <div className="flex items-center gap-2">
-                      <Avatar
-                        src={currentAgentImage}
-                        alt={t('agents.workflow.builder.agentImageAlt')}
-                        size="lg"
-                        shape="circle"
-                        imgClassName="size-full object-cover"
-                      />
-                      <span className="text-muted-foreground text-xs">
-                        {t('agents.workflow.builder.currentImage')}
-                      </span>
-                    </div>
-                  )}
-                  <FormField
-                    label={t('agents.workflow.builder.agentImage')}
-                    hint={t('agents.workflow.builder.agentImageHint')}
-                  >
-                    <FileUpload
-                      showPreview
-                      maxFiles={1}
-                      previewSize={56}
-                      size="compact"
-                      onUpload={handleUpload}
-                      onRemove={() => setImageFile(null)}
-                      uploadText={[
-                        {
-                          text: t('agents.form.upload.clickToUpload'),
-                          highlight: true,
-                        },
-                        {
-                          text: t('agents.form.upload.dragAndDrop'),
-                        },
-                      ]}
-                    />
-                  </FormField>
-                  <SettingRow
-                    label={t('agents.form.advanced.systemPromptOverride')}
-                    description={t(
-                      'agents.form.advanced.systemPromptOverrideDescription',
-                    )}
-                    htmlFor="workflow-system-prompt-override"
-                  >
-                    <Switch
-                      id="workflow-system-prompt-override"
-                      checked={Boolean(
-                        currentAgent.allow_system_prompt_override,
-                      )}
-                      onCheckedChange={() =>
-                        setCurrentAgent((prev) => ({
-                          ...prev,
-                          allow_system_prompt_override:
-                            !prev.allow_system_prompt_override,
-                        }))
-                      }
-                    />
-                  </SettingRow>
-                  <Button
-                    type="button"
-                    onClick={handleWorkflowSettingsDone}
-                    disabled={isPublishing}
-                    className="w-full"
-                  >
-                    {t('agents.workflow.builder.done')}
-                  </Button>
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <div className="flex items-center gap-2">
             <Button
               type="button"
               variant="outline"
@@ -1961,30 +1688,37 @@ function WorkflowBuilderInner() {
             >
               {primaryActionLabel}
             </Button>
-            {canManageAgent && (
-              <ActionMenu
-                size="toolbar"
-                triggerLabel={t('agents.form.buttons.moreActions')}
-                options={[
-                  {
-                    label: t('agents.form.buttons.accessDetails'),
-                    icon: Link,
-                    onClick: () => setAgentDetails('ACTIVE'),
-                  },
-                  {
-                    label: t('agents.form.buttons.delete'),
-                    icon: Trash2,
-                    variant: 'destructive',
-                    disabled: isDeletingAgent,
-                    onClick: () => setDeleteConfirmation('ACTIVE'),
-                  },
-                ]}
-              />
-            )}
+            <ActionMenu
+              size="toolbar"
+              triggerLabel={t('agents.form.buttons.moreActions')}
+              options={[
+                {
+                  label: t('agents.workflow.builder.editDetailsMenu'),
+                  icon: Pencil,
+                  onClick: openDetails,
+                },
+                ...(canManageAgent
+                  ? [
+                      {
+                        label: t('agents.form.buttons.accessDetails'),
+                        icon: Link,
+                        onClick: () => setAgentDetails('ACTIVE'),
+                      },
+                      {
+                        label: t('agents.form.buttons.delete'),
+                        icon: Trash2,
+                        variant: 'destructive' as const,
+                        disabled: isDeletingAgent,
+                        onClick: () => setDeleteConfirmation('ACTIVE'),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
         </div>
 
-        {publishErrors.length > 0 && (
+        {publishErrors.length > 0 && !showDetails && (
           <div className="pointer-events-none absolute top-20 right-0 left-0 z-20 flex justify-center px-4">
             <div className="bg-card pointer-events-auto w-full max-w-md rounded-xl shadow-md">
               <Alert
@@ -2021,1286 +1755,122 @@ function WorkflowBuilderInner() {
           </div>
         )}
 
-        <div className="flex flex-1 overflow-hidden">
-          <div className="border-border bg-muted flex w-64 flex-col gap-6 border-r p-4">
-            <div className="flex flex-col gap-3">
-              <SectionHeader
-                as="h3"
-                size="sm"
-                title={t('agents.workflow.builder.coreNodes')}
-              />
-              <div className="flex flex-col gap-2">
-                {PALETTE.filter((entry) => entry.group === 'core').map(
-                  (entry) => (
-                    <NodePaletteItem
-                      key={entry.type}
-                      entry={entry}
-                      onDragStart={handleNodeDragStart}
-                    />
-                  ),
-                )}
-              </div>
-            </div>
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <NodePalette
+            onAdd={handleAddNodeFromPalette}
+            onDragStart={handleNodeDragStart}
+          />
 
-            <div className="flex flex-col gap-3">
-              <SectionHeader
-                as="h3"
-                size="sm"
-                title={t('agents.workflow.builder.logicNodes')}
-              />
-              <div className="flex flex-col gap-2">
-                {PALETTE.filter((entry) => entry.group === 'logic').map(
-                  (entry) => (
-                    <NodePaletteItem
-                      key={entry.type}
-                      entry={entry}
-                      onDragStart={handleNodeDragStart}
-                    />
-                  ),
-                )}
-              </div>
-            </div>
+          <div
+            ref={reactFlowWrapper}
+            className="bg-muted relative min-w-0 flex-1"
+          >
+            <WorkflowModelsContext.Provider value={modelNames}>
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onEdgeClick={onEdgeClick}
+                onDrop={onDrop}
+                onDragOver={onDragOver}
+                onNodeClick={handleNodeClick}
+                onPaneClick={handlePaneClick}
+                onNodeDragStart={snapshotBeforeCanvasChange}
+                onSelectionDragStart={snapshotBeforeCanvasChange}
+                nodeTypes={nodeTypes}
+                nodeDragThreshold={1}
+                deleteKeyCode={null}
+                proOptions={{ hideAttribution: true }}
+                fitView
+              >
+                <Background />
+                <CanvasControls
+                  onUndo={undo}
+                  onRedo={redo}
+                  canUndo={canUndo}
+                  canRedo={canRedo}
+                />
+              </ReactFlow>
+            </WorkflowModelsContext.Provider>
           </div>
 
-          <div ref={reactFlowWrapper} className="bg-muted relative flex-1">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onEdgeClick={onEdgeClick}
-              onDrop={onDrop}
-              onDragOver={onDragOver}
-              onNodeClick={handleNodeClick}
-              onPaneClick={handlePaneClick}
-              onNodeDragStart={snapshotBeforeCanvasChange}
-              onSelectionDragStart={snapshotBeforeCanvasChange}
-              nodeTypes={nodeTypes}
-              nodeDragThreshold={1}
-              deleteKeyCode={null}
-              fitView
+          {showNodeConfig && selectedNode && (
+            <NodePanel
+              key={selectedNode.id}
+              node={selectedNode}
+              onClose={() => setShowNodeConfig(false)}
+              onDuplicate={handleDuplicateNode}
+              onDelete={handleDeleteNode}
+              onUpdate={handleUpdateNodeData}
             >
-              <Background />
-              <Controls />
-              <Panel position="top-left" className="flex gap-1.5">
-                <IconButton
-                  variant="outline"
-                  size="icon-sm"
-                  side="bottom"
-                  onClick={undo}
-                  disabled={!canUndo}
-                  label={t('agents.workflow.undo')}
-                  hint={t('agents.workflow.undoHint')}
-                  icon={Undo2}
+              {selectedNode.type === 'agent' && (
+                <AgentPanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                  nodes={nodes}
+                  edges={edges}
+                  availableModels={availableModels}
+                  availableTools={availableTools}
+                  sourceOptions={sourceOptions}
+                  documentOptions={selectedAgentDocumentOptions}
+                  jsonSchemaText={selectedAgentJsonSchemaText}
+                  jsonSchemaError={selectedAgentJsonSchemaError}
+                  modelSupportsStructuredOutput={
+                    selectedAgentModelSupportsStructuredOutput
+                  }
+                  onJsonSchemaChange={handleAgentJsonSchemaChange}
                 />
-                <IconButton
-                  variant="outline"
-                  size="icon-sm"
-                  side="bottom"
-                  onClick={redo}
-                  disabled={!canRedo}
-                  label={t('agents.workflow.redo')}
-                  hint={t('agents.workflow.redoHint')}
-                  icon={Redo2}
+              )}
+              {selectedNode.type === 'note' && (
+                <NotePanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
                 />
-              </Panel>
-            </ReactFlow>
-
-            {showNodeConfig && selectedNode && (
-              <>
-                <div className="border-border bg-card absolute top-4 right-4 z-20 w-96 rounded-2xl border shadow-md">
-                  <div className="border-border flex items-center justify-between border-b p-4">
-                    <h3 className="text-foreground text-sm font-semibold">
-                      {selectedNode.type === 'start' &&
-                        t('agents.workflow.builder.startNode')}
-                      {selectedNode.type === 'end' &&
-                        t('agents.workflow.builder.endNode')}
-                      {selectedNode.type === 'agent' &&
-                        t('agents.workflow.builder.aiAgent')}
-                      {selectedNode.type === 'note' &&
-                        t('agents.workflow.nodes.note')}
-                      {selectedNode.type === 'state' &&
-                        t('agents.workflow.builder.stateTitle')}
-                      {selectedNode.type === 'condition' &&
-                        t('agents.workflow.nodes.condition')}
-                      {selectedNode.type === 'code' &&
-                        t('agents.workflow.nodes.code')}
-                    </h3>
-                    <IconButton
-                      variant="ghost-muted"
-                      size="icon-xs"
-                      side="bottom"
-                      onClick={() => setShowNodeConfig(false)}
-                      label={t('agents.close')}
-                    >
-                      <X className="size-5" aria-hidden />
-                    </IconButton>
-                  </div>
-
-                  <div className="max-h-[calc(100dvh-200px)] overflow-y-auto p-4">
-                    <div className="mb-4 flex flex-col gap-5">
-                      <div className="bg-muted rounded-lg p-3">
-                        <div className="text-muted-foreground mb-1 text-xs">
-                          {t('agents.workflow.builder.nodeId')}
-                        </div>
-                        <div className="text-foreground truncate font-mono text-xs">
-                          {selectedNode.id}
-                        </div>
-                      </div>
-
-                      {selectedNode.type !== 'start' &&
-                        selectedNode.type !== 'end' && (
-                          <>
-                            <FormField
-                              label={t('agents.workflow.builder.title')}
-                            >
-                              <Input
-                                type="text"
-                                value={
-                                  selectedNode.data.title ||
-                                  selectedNode.data.label ||
-                                  ''
-                                }
-                                onChange={(e) =>
-                                  handleUpdateNodeData({
-                                    title: e.target.value,
-                                    label: e.target.value,
-                                  })
-                                }
-                                placeholder={t(
-                                  'agents.workflow.builder.titlePlaceholder',
-                                )}
-                              />
-                            </FormField>
-
-                            {selectedNode.type === 'agent' && (
-                              <>
-                                <FormField
-                                  label={t('agents.workflow.builder.agentType')}
-                                >
-                                  <Select
-                                    value={
-                                      selectedNode.data.config?.agent_type ||
-                                      'classic'
-                                    }
-                                    onValueChange={(value) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          agent_type: value,
-                                        },
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger
-                                      size="field"
-                                      className="w-full"
-                                    >
-                                      <SelectValue
-                                        placeholder={t(
-                                          'agents.workflow.builder.agentTypePlaceholder',
-                                        )}
-                                      />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="classic">
-                                        {t('agents.form.agentTypes.classic')}
-                                      </SelectItem>
-                                      <SelectItem value="research">
-                                        {t('agents.form.agentTypes.research')}
-                                      </SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </FormField>
-                                <FormField
-                                  label={t('agents.workflow.builder.model')}
-                                >
-                                  <Select
-                                    value={
-                                      selectedNode.data.config?.model_id || ''
-                                    }
-                                    onValueChange={(value) => {
-                                      const selectedModel =
-                                        availableModels.find(
-                                          (m) => m.id === value,
-                                        );
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          model_id: value,
-                                          llm_name:
-                                            selectedModel?.provider || '',
-                                        },
-                                      });
-                                    }}
-                                  >
-                                    <SelectTrigger
-                                      size="field"
-                                      className="w-full"
-                                    >
-                                      <SelectValue
-                                        placeholder={t(
-                                          'agents.workflow.builder.modelPlaceholder',
-                                        )}
-                                      />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {(() => {
-                                        const builtin = availableModels.filter(
-                                          (m) => m.source !== 'user',
-                                        );
-                                        const user = availableModels.filter(
-                                          (m) => m.source === 'user',
-                                        );
-                                        return (
-                                          <>
-                                            {builtin.length > 0 && (
-                                              <SelectGroup>
-                                                <SelectLabel>
-                                                  {t(
-                                                    'settings.customModels.modelsGroup.builtin',
-                                                  )}
-                                                </SelectLabel>
-                                                {builtin.map((model) => (
-                                                  <SelectItem
-                                                    key={model.id}
-                                                    value={model.id}
-                                                  >
-                                                    {model.display_name} ·{' '}
-                                                    {model.provider}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectGroup>
-                                            )}
-                                            {user.length > 0 && (
-                                              <SelectGroup>
-                                                <SelectLabel>
-                                                  {t(
-                                                    'settings.customModels.modelsGroup.user',
-                                                  )}
-                                                </SelectLabel>
-                                                {user.map((model) => (
-                                                  <SelectItem
-                                                    key={model.id}
-                                                    value={model.id}
-                                                  >
-                                                    {model.display_name} ·{' '}
-                                                    {model.provider}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectGroup>
-                                            )}
-                                          </>
-                                        );
-                                      })()}
-                                    </SelectContent>
-                                  </Select>
-                                </FormField>
-                                <FormField
-                                  label={t(
-                                    'agents.workflow.builder.systemPrompt',
-                                  )}
-                                >
-                                  <Textarea
-                                    value={
-                                      selectedNode.data.config?.system_prompt ??
-                                      ''
-                                    }
-                                    onChange={(e) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          system_prompt: e.target.value,
-                                        },
-                                      })
-                                    }
-                                    rows={3}
-                                    placeholder={t(
-                                      'agents.workflow.builder.systemPromptPlaceholder',
-                                    )}
-                                  />
-                                </FormField>
-                                <PromptTextArea
-                                  label={t(
-                                    'agents.workflow.builder.promptTemplate',
-                                  )}
-                                  value={
-                                    selectedNode.data.config?.prompt_template ||
-                                    ''
-                                  }
-                                  onChange={(val) =>
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        prompt_template: val,
-                                      },
-                                    })
-                                  }
-                                  nodes={nodes}
-                                  edges={edges}
-                                  selectedNodeId={selectedNode.id}
-                                  placeholder={t(
-                                    'agents.workflow.builder.promptTemplatePlaceholder',
-                                    {
-                                      ...NO_ESCAPE,
-                                      example: '{{ agent.variable }}',
-                                    },
-                                  )}
-                                />
-                                <FormField
-                                  label={t(
-                                    'agents.workflow.builder.outputVariable',
-                                  )}
-                                >
-                                  <Input
-                                    type="text"
-                                    value={
-                                      selectedNode.data.config
-                                        ?.output_variable || ''
-                                    }
-                                    onChange={(e) => {
-                                      const nextOutputVariable = e.target.value;
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          output_variable: nextOutputVariable,
-                                        },
-                                      });
-                                    }}
-                                    placeholder={t(
-                                      'agents.workflow.builder.outputVariablePlaceholder',
-                                    )}
-                                  />
-                                </FormField>
-                                <div className="flex items-center gap-2">
-                                  <Checkbox
-                                    id="stream_to_user"
-                                    checked={
-                                      selectedNode.data.config
-                                        ?.stream_to_user ?? true
-                                    }
-                                    onCheckedChange={(checked) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          stream_to_user: checked === true,
-                                        },
-                                      })
-                                    }
-                                  />
-                                  <label
-                                    htmlFor="stream_to_user"
-                                    className="text-foreground text-sm"
-                                  >
-                                    {t('agents.workflow.builder.streamToUser')}
-                                  </label>
-                                </div>{' '}
-                                <FormField
-                                  label={t('agents.form.sections.tools')}
-                                >
-                                  <MultiSelect
-                                    options={availableTools.map((tool) => ({
-                                      value: tool.id,
-                                      label: getToolDisplayName(tool),
-                                    }))}
-                                    selected={
-                                      selectedNode.data.config?.tools || []
-                                    }
-                                    onChange={(newTools) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          tools: newTools,
-                                        },
-                                      })
-                                    }
-                                    placeholder={t(
-                                      'agents.form.placeholders.selectTools',
-                                    )}
-                                    searchPlaceholder={t(
-                                      'agents.form.toolsPopup.searchPlaceholder',
-                                    )}
-                                    emptyText={t(
-                                      'agents.form.toolsPopup.noOptionsMessage',
-                                    )}
-                                  />
-                                </FormField>
-                                <FormField
-                                  label={t('agents.workflow.builder.sources')}
-                                >
-                                  <MultiSelect
-                                    options={sourceOptions}
-                                    selected={
-                                      selectedNode.data.config?.sources || []
-                                    }
-                                    onChange={(newSources) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          sources: newSources,
-                                        },
-                                      })
-                                    }
-                                    placeholder={t(
-                                      'agents.form.placeholders.selectSources',
-                                    )}
-                                    searchPlaceholder={t(
-                                      'agents.form.sourcePopup.searchPlaceholder',
-                                    )}
-                                    emptyText={t(
-                                      'agents.form.sourcePopup.noOptionsMessage',
-                                    )}
-                                  />
-                                </FormField>
-                                <NodeDocumentsControl
-                                  key={selectedNode.id}
-                                  value={
-                                    selectedNode.data.config?.input_documents ??
-                                    []
-                                  }
-                                  onChange={(nextInputDocuments) =>
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        input_documents: nextInputDocuments,
-                                      },
-                                    })
-                                  }
-                                  options={selectedAgentDocumentOptions}
-                                  label={t('agents.workflow.builder.documents')}
-                                  helpText={t(
-                                    'agents.workflow.builder.documentsHint',
-                                  )}
-                                />
-                                <FormField
-                                  label={t(
-                                    'agents.workflow.builder.filePassing',
-                                  )}
-                                  hint={t(
-                                    'agents.workflow.builder.filePassingHint',
-                                  )}
-                                >
-                                  <Select
-                                    value={normalizeFilePassing(
-                                      selectedNode.data.config?.file_passing,
-                                    )}
-                                    onValueChange={(value) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          file_passing: value as FilePassing,
-                                        },
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger
-                                      size="field"
-                                      className="w-full"
-                                    >
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {FILE_PASSING_OPTIONS.map((option) => (
-                                        <SelectItem
-                                          key={option.value}
-                                          value={option.value}
-                                        >
-                                          {t(
-                                            `agents.workflow.filePassing.${option.value}`,
-                                            { defaultValue: option.label },
-                                          )}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </FormField>
-                                <FormField
-                                  label={t(
-                                    'agents.workflow.builder.structuredOutput',
-                                  )}
-                                  hint={
-                                    [
-                                      !selectedAgentModelSupportsStructuredOutput
-                                        ? t(
-                                            'agents.workflow.builder.modelNoStructuredOutput',
-                                          )
-                                        : null,
-                                      selectedAgentJsonSchemaText.trim() !==
-                                        '' && !selectedAgentJsonSchemaError
-                                        ? t(
-                                            'agents.workflow.builder.validSchema',
-                                          )
-                                        : null,
-                                    ]
-                                      .filter(Boolean)
-                                      .join(' ') || undefined
-                                  }
-                                  error={
-                                    selectedAgentJsonSchemaText.trim() !== '' &&
-                                    selectedAgentJsonSchemaError
-                                      ? t(
-                                          'agents.workflow.builder.invalidSchema',
-                                          {
-                                            ...NO_ESCAPE,
-                                            error: schemaErrorText(
-                                              t,
-                                              selectedAgentJsonSchemaError,
-                                            ),
-                                          },
-                                        )
-                                      : undefined
-                                  }
-                                >
-                                  <Textarea
-                                    value={selectedAgentJsonSchemaText}
-                                    onChange={(e) =>
-                                      handleAgentJsonSchemaChange(
-                                        e.target.value,
-                                      )
-                                    }
-                                    className="font-mono"
-                                    rows={8}
-                                    placeholder={`{
-  "type": "object",
-  "properties": {
-    "summary": { "type": "string" }
-  },
-  "required": ["summary"]
-}`}
-                                  />
-                                </FormField>
-                              </>
-                            )}
-
-                            {selectedNode.type === 'note' && (
-                              <FormField
-                                label={t('agents.workflow.builder.noteContent')}
-                              >
-                                <Textarea
-                                  value={selectedNode.data.content || ''}
-                                  onChange={(e) =>
-                                    handleUpdateNodeData({
-                                      content: e.target.value,
-                                    })
-                                  }
-                                  rows={4}
-                                  placeholder={t(
-                                    'agents.workflow.builder.noteContentPlaceholder',
-                                  )}
-                                />
-                              </FormField>
-                            )}
-
-                            {selectedNode.type === 'state' && (
-                              <>
-                                <p className="text-muted-foreground text-xs">
-                                  {t('agents.workflow.builder.stateIntro')}
-                                </p>
-                                {(
-                                  selectedNode.data.config?.operations || []
-                                ).map(
-                                  (
-                                    op: {
-                                      expression: string;
-                                      target_variable: string;
-                                    },
-                                    idx: number,
-                                  ) => (
-                                    <Card
-                                      key={idx}
-                                      padding="sm"
-                                      className="gap-2"
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-foreground text-sm font-medium">
-                                          {t(
-                                            'agents.workflow.builder.assignValue',
-                                          )}
-                                        </span>
-                                        {(
-                                          selectedNode.data.config
-                                            ?.operations || []
-                                        ).length > 1 && (
-                                          <IconButton
-                                            variant="ghost-destructive"
-                                            size="icon-xs"
-                                            label={t(
-                                              'agents.workflow.removeAssignment',
-                                              { index: idx + 1 },
-                                            )}
-                                            icon={Trash2}
-                                            onClick={() => {
-                                              const ops = [
-                                                ...(selectedNode.data.config
-                                                  ?.operations || []),
-                                              ];
-                                              ops.splice(idx, 1);
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  operations: ops,
-                                                },
-                                              });
-                                            }}
-                                          />
-                                        )}
-                                      </div>
-                                      <div className="flex flex-col gap-5">
-                                        <div className="flex flex-col gap-1">
-                                          <Textarea
-                                            value={op.expression}
-                                            onChange={(e) => {
-                                              const ops = [
-                                                ...(selectedNode.data.config
-                                                  ?.operations || []),
-                                              ];
-                                              ops[idx] = {
-                                                ...ops[idx],
-                                                expression: e.target.value,
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  operations: ops,
-                                                },
-                                              });
-                                            }}
-                                            rows={2}
-                                            placeholder="query"
-                                            aria-label={t(
-                                              'agents.workflow.expressionRow',
-                                              { index: idx + 1 },
-                                            )}
-                                          />
-                                          <p className="text-muted-foreground text-xs">
-                                            <Trans
-                                              i18nKey="agents.workflow.builder.celHint"
-                                              components={{ code: <code /> }}
-                                              values={{ braced: '{{query}}' }}
-                                            />{' '}
-                                            <Button
-                                              variant="link"
-                                              size="inline"
-                                              asChild
-                                              // eslint-disable-next-line shadcn/no-restyle -- a link in a 12px hint keeps the sentence's size and weight
-                                              className="text-xs font-normal"
-                                            >
-                                              <a
-                                                href="https://cel.dev/"
-                                                target="_blank"
-                                                rel="noreferrer"
-                                              >
-                                                {t(
-                                                  'agents.workflow.builder.learnMore',
-                                                )}
-                                              </a>
-                                            </Button>
-                                          </p>
-                                        </div>
-                                        <FormField
-                                          label={t(
-                                            'agents.workflow.builder.toVariable',
-                                          )}
-                                        >
-                                          <Input
-                                            type="text"
-                                            value={op.target_variable}
-                                            onChange={(e) => {
-                                              const ops = [
-                                                ...(selectedNode.data.config
-                                                  ?.operations || []),
-                                              ];
-                                              ops[idx] = {
-                                                ...ops[idx],
-                                                target_variable: e.target.value,
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  operations: ops,
-                                                },
-                                              });
-                                            }}
-                                            placeholder="variable_name"
-                                          />
-                                        </FormField>
-                                      </div>
-                                    </Card>
-                                  ),
-                                )}
-                                <Button
-                                  type="button"
-                                  variant="ghost-muted"
-                                  size="sm"
-                                  onClick={() => {
-                                    const ops = [
-                                      ...(selectedNode.data.config
-                                        ?.operations || []),
-                                      { expression: '', target_variable: '' },
-                                    ];
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        operations: ops,
-                                      },
-                                    });
-                                  }}
-                                  className="self-start"
-                                >
-                                  <Plus className="size-3.5" />
-                                  {t('agents.form.buttons.add')}
-                                </Button>
-                              </>
-                            )}
-
-                            {selectedNode.type === 'condition' && (
-                              <>
-                                <p className="text-muted-foreground text-xs">
-                                  {t('agents.workflow.builder.conditionIntro')}
-                                </p>
-                                <div className="border-border bg-card flex gap-1 rounded-xl border p-1">
-                                  <Button
-                                    type="button"
-                                    variant={
-                                      (selectedNode.data.config?.mode ||
-                                        'simple') === 'simple'
-                                        ? 'outline'
-                                        : 'ghost-muted'
-                                    }
-                                    size="xs"
-                                    onClick={() =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          mode: 'simple',
-                                        },
-                                      })
-                                    }
-                                    className="flex-1"
-                                  >
-                                    {t('agents.workflow.builder.modeSimple')}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant={
-                                      selectedNode.data.config?.mode ===
-                                      'advanced'
-                                        ? 'outline'
-                                        : 'ghost-muted'
-                                    }
-                                    size="xs"
-                                    onClick={() =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          mode: 'advanced',
-                                        },
-                                      })
-                                    }
-                                    className="flex-1"
-                                  >
-                                    {t('agents.workflow.builder.modeAdvanced')}
-                                  </Button>
-                                </div>
-
-                                {(selectedNode.data.config?.cases || []).map(
-                                  (c: ConditionCase, idx: number) => (
-                                    <Card
-                                      key={c.sourceHandle}
-                                      padding="sm"
-                                      className="gap-2"
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-warning text-sm font-semibold">
-                                          {idx === 0
-                                            ? t('agents.workflow.nodes.if')
-                                            : t('agents.workflow.nodes.elseIf')}
-                                        </span>
-                                        {(selectedNode.data.config?.cases || [])
-                                          .length > 1 && (
-                                          <IconButton
-                                            variant="ghost-destructive"
-                                            size="icon-xs"
-                                            label={t(
-                                              'agents.workflow.removeCondition',
-                                              { index: idx + 1 },
-                                            )}
-                                            icon={Trash2}
-                                            onClick={() => {
-                                              const cases =
-                                                normalizeConditionCases([
-                                                  ...(selectedNode.data.config
-                                                    ?.cases || []),
-                                                ]);
-                                              const removedHandle =
-                                                cases[idx]?.sourceHandle;
-                                              cases.splice(idx, 1);
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                              if (removedHandle) {
-                                                setEdges((eds) =>
-                                                  eds.filter(
-                                                    (edge) =>
-                                                      !(
-                                                        edge.source ===
-                                                          selectedNode.id &&
-                                                        edge.sourceHandle ===
-                                                          removedHandle
-                                                      ),
-                                                  ),
-                                                );
-                                              }
-                                            }}
-                                          />
-                                        )}
-                                      </div>
-                                      <Input
-                                        type="text"
-                                        value={c.name || ''}
-                                        onChange={(e) => {
-                                          const cases = [
-                                            ...(selectedNode.data.config
-                                              ?.cases || []),
-                                          ];
-                                          cases[idx] = {
-                                            ...cases[idx],
-                                            name: e.target.value,
-                                          };
-                                          handleUpdateNodeData({
-                                            config: {
-                                              ...(selectedNode.data.config ||
-                                                {}),
-                                              cases,
-                                            },
-                                          });
-                                        }}
-                                        placeholder={t(
-                                          'agents.workflow.builder.caseNamePlaceholder',
-                                        )}
-                                        aria-label={t(
-                                          'agents.workflow.conditionNameRow',
-                                          { index: idx + 1 },
-                                        )}
-                                      />
-                                      {(selectedNode.data.config?.mode ||
-                                        'simple') === 'simple' ? (
-                                        <div className="flex items-center gap-2">
-                                          <Input
-                                            type="text"
-                                            value={
-                                              parseSimpleCel(c.expression)
-                                                .variable
-                                            }
-                                            onChange={(e) => {
-                                              const parsed = parseSimpleCel(
-                                                c.expression,
-                                              );
-                                              const cases = [
-                                                ...(selectedNode.data.config
-                                                  ?.cases || []),
-                                              ];
-                                              cases[idx] = {
-                                                ...cases[idx],
-                                                expression: buildSimpleCel(
-                                                  e.target.value,
-                                                  parsed.operator,
-                                                  parsed.value,
-                                                ),
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                            }}
-                                            placeholder={t(
-                                              'agents.workflow.builder.variablePlaceholder',
-                                            )}
-                                            aria-label={t(
-                                              'agents.workflow.conditionVariableRow',
-                                              { index: idx + 1 },
-                                            )}
-                                          />
-                                          <Select
-                                            value={
-                                              parseSimpleCel(c.expression)
-                                                .operator
-                                            }
-                                            onValueChange={(op) => {
-                                              const parsed = parseSimpleCel(
-                                                c.expression,
-                                              );
-                                              const cases = [
-                                                ...(selectedNode.data.config
-                                                  ?.cases || []),
-                                              ];
-                                              cases[idx] = {
-                                                ...cases[idx],
-                                                expression: buildSimpleCel(
-                                                  parsed.variable,
-                                                  op,
-                                                  parsed.value,
-                                                ),
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                            }}
-                                          >
-                                            <SelectTrigger
-                                              size="field"
-                                              className="w-24 shrink-0"
-                                              aria-label={t(
-                                                'agents.workflow.conditionOperatorRow',
-                                                { index: idx + 1 },
-                                              )}
-                                            >
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="==">
-                                                =
-                                              </SelectItem>
-                                              <SelectItem value="!=">
-                                                !=
-                                              </SelectItem>
-                                              <SelectItem value=">">
-                                                &gt;
-                                              </SelectItem>
-                                              <SelectItem value="<">
-                                                &lt;
-                                              </SelectItem>
-                                              <SelectItem value=">=">
-                                                &gt;=
-                                              </SelectItem>
-                                              <SelectItem value="<=">
-                                                &lt;=
-                                              </SelectItem>
-                                              <SelectItem value="contains">
-                                                {t(
-                                                  'agents.workflow.builder.opContains',
-                                                )}
-                                              </SelectItem>
-                                              <SelectItem value="startsWith">
-                                                {t(
-                                                  'agents.workflow.builder.opStartsWith',
-                                                )}
-                                              </SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                          <Input
-                                            type="text"
-                                            value={
-                                              parseSimpleCel(c.expression).value
-                                            }
-                                            onChange={(e) => {
-                                              const parsed = parseSimpleCel(
-                                                c.expression,
-                                              );
-                                              const cases = [
-                                                ...(selectedNode.data.config
-                                                  ?.cases || []),
-                                              ];
-                                              cases[idx] = {
-                                                ...cases[idx],
-                                                expression: buildSimpleCel(
-                                                  parsed.variable,
-                                                  parsed.operator,
-                                                  e.target.value,
-                                                ),
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                            }}
-                                            placeholder={t(
-                                              'agents.workflow.builder.valuePlaceholder',
-                                            )}
-                                            aria-label={t(
-                                              'agents.workflow.conditionValueRow',
-                                              { index: idx + 1 },
-                                            )}
-                                          />
-                                        </div>
-                                      ) : (
-                                        <FormField
-                                          label={t(
-                                            'agents.workflow.conditionRow',
-                                            { index: idx + 1 },
-                                          )}
-                                          hint={
-                                            <>
-                                              <Trans
-                                                i18nKey="agents.workflow.builder.celHint"
-                                                components={{ code: <code /> }}
-                                                values={{ braced: '{{query}}' }}
-                                              />{' '}
-                                              <Button
-                                                variant="link"
-                                                size="inline"
-                                                asChild
-                                                // eslint-disable-next-line shadcn/no-restyle -- a link in a 12px hint keeps the sentence's size and weight
-                                                className="text-xs font-normal"
-                                              >
-                                                <a
-                                                  href="https://cel.dev/"
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                >
-                                                  {t(
-                                                    'agents.workflow.builder.learnMore',
-                                                  )}
-                                                </a>
-                                              </Button>
-                                            </>
-                                          }
-                                        >
-                                          <Textarea
-                                            value={c.expression}
-                                            onChange={(e) => {
-                                              const cases = [
-                                                ...(selectedNode.data.config
-                                                  ?.cases || []),
-                                              ];
-                                              cases[idx] = {
-                                                ...cases[idx],
-                                                expression: e.target.value,
-                                              };
-                                              handleUpdateNodeData({
-                                                config: {
-                                                  ...(selectedNode.data
-                                                    .config || {}),
-                                                  cases,
-                                                },
-                                              });
-                                            }}
-                                            rows={2}
-                                            placeholder={t(
-                                              'agents.workflow.builder.conditionPlaceholder',
-                                            )}
-                                          />
-                                        </FormField>
-                                      )}
-                                    </Card>
-                                  ),
-                                )}
-
-                                <Button
-                                  type="button"
-                                  variant="ghost-muted"
-                                  size="sm"
-                                  onClick={() => {
-                                    const cases = normalizeConditionCases([
-                                      ...(selectedNode.data.config?.cases ||
-                                        []),
-                                    ]);
-                                    const nextHandle =
-                                      getNextConditionHandle(cases);
-                                    cases.push({
-                                      name: '',
-                                      expression: '',
-                                      sourceHandle: nextHandle,
-                                    });
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        cases,
-                                      },
-                                    });
-                                  }}
-                                  className="self-start"
-                                >
-                                  <Plus className="size-3.5" />
-                                  {t('agents.form.buttons.add')}
-                                </Button>
-                              </>
-                            )}
-
-                            {selectedNode.type === 'code' && (
-                              <>
-                                <p className="text-muted-foreground text-xs">
-                                  {t('agents.workflow.builder.codeIntro')}
-                                </p>
-                                <FormField
-                                  label={t('agents.workflow.nodes.code')}
-                                >
-                                  <Textarea
-                                    value={selectedNode.data.config?.code ?? ''}
-                                    onChange={(e) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          code: e.target.value,
-                                        },
-                                      })
-                                    }
-                                    className="font-mono"
-                                    rows={10}
-                                    spellCheck={false}
-                                    placeholder={'print("hello world")'}
-                                  />
-                                </FormField>
-                                <NodeDocumentsControl
-                                  key={selectedNode.id}
-                                  value={selectedNode.data.config?.inputs ?? []}
-                                  onChange={(nextInputs) =>
-                                    handleUpdateNodeData({
-                                      config: {
-                                        ...(selectedNode.data.config || {}),
-                                        inputs: nextInputs,
-                                      },
-                                    })
-                                  }
-                                  options={selectedCodeDocumentOptions}
-                                  label={t(
-                                    'agents.workflow.builder.inputFiles',
-                                  )}
-                                  helpText={t(
-                                    'agents.workflow.builder.inputFilesHint',
-                                  )}
-                                />
-                                <FormField
-                                  label={t(
-                                    'agents.workflow.builder.outputVariable',
-                                  )}
-                                >
-                                  <Input
-                                    type="text"
-                                    value={
-                                      selectedNode.data.config
-                                        ?.output_variable || ''
-                                    }
-                                    onChange={(e) =>
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          output_variable: e.target.value,
-                                        },
-                                      })
-                                    }
-                                    placeholder={t(
-                                      'agents.workflow.builder.outputVariablePlaceholder',
-                                    )}
-                                  />
-                                </FormField>
-                                <FormField
-                                  label={t('agents.workflow.builder.timeout')}
-                                >
-                                  <Input
-                                    type="number"
-                                    min={1}
-                                    value={
-                                      selectedNode.data.config?.timeout ?? ''
-                                    }
-                                    onChange={(e) => {
-                                      const raw = e.target.value;
-                                      const parsed =
-                                        raw.trim() === ''
-                                          ? undefined
-                                          : Number.parseInt(raw, 10);
-                                      handleUpdateNodeData({
-                                        config: {
-                                          ...(selectedNode.data.config || {}),
-                                          timeout:
-                                            parsed !== undefined &&
-                                            Number.isFinite(parsed)
-                                              ? parsed
-                                              : undefined,
-                                        },
-                                      });
-                                    }}
-                                    placeholder={t(
-                                      'agents.workflow.builder.optional',
-                                    )}
-                                  />
-                                </FormField>
-                                <FormField
-                                  label={t(
-                                    'agents.workflow.builder.structuredOutput',
-                                  )}
-                                  hint={
-                                    selectedCodeJsonSchemaText.trim() !== '' &&
-                                    !selectedCodeJsonSchemaError
-                                      ? t('agents.workflow.builder.validSchema')
-                                      : undefined
-                                  }
-                                  error={
-                                    selectedCodeJsonSchemaText.trim() !== '' &&
-                                    selectedCodeJsonSchemaError
-                                      ? t(
-                                          'agents.workflow.builder.invalidSchema',
-                                          {
-                                            ...NO_ESCAPE,
-                                            error: schemaErrorText(
-                                              t,
-                                              selectedCodeJsonSchemaError,
-                                            ),
-                                          },
-                                        )
-                                      : undefined
-                                  }
-                                >
-                                  <Textarea
-                                    value={selectedCodeJsonSchemaText}
-                                    onChange={(e) =>
-                                      handleCodeJsonSchemaChange(e.target.value)
-                                    }
-                                    className="font-mono"
-                                    rows={6}
-                                    placeholder={`{
-  "type": "object",
-  "properties": {
-    "result": { "type": "string" }
-  },
-  "required": ["result"]
-}`}
-                                  />
-                                </FormField>
-                              </>
-                            )}
-                          </>
-                        )}
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="destructive-outline"
-                      onClick={handleDeleteNode}
-                      disabled={selectedNode?.type === 'start'}
-                      shape="pill"
-                      className="w-full"
-                    >
-                      <Trash2 />
-                      {selectedNode?.type === 'start'
-                        ? t('agents.workflow.builder.cannotDeleteStart')
-                        : t('agents.workflow.builder.deleteNode')}
-                    </Button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+              )}
+              {selectedNode.type === 'state' && (
+                <StatePanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                />
+              )}
+              {selectedNode.type === 'condition' && (
+                <ConditionPanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                  onRemoveBranch={handleRemoveConditionBranch}
+                />
+              )}
+              {selectedNode.type === 'code' && (
+                <CodePanel
+                  node={selectedNode}
+                  onUpdate={handleUpdateNodeData}
+                  documentOptions={selectedCodeDocumentOptions}
+                  jsonSchemaText={selectedCodeJsonSchemaText}
+                  jsonSchemaError={selectedCodeJsonSchemaError}
+                  onJsonSchemaChange={handleCodeJsonSchemaChange}
+                />
+              )}
+            </NodePanel>
+          )}
         </div>
 
+        <WorkflowDetailsSheet
+          open={showDetails}
+          onOpenChange={setShowDetails}
+          details={{
+            name: workflowName,
+            description: workflowDescription,
+            allowPromptOverride: Boolean(
+              currentAgent.allow_system_prompt_override,
+            ),
+          }}
+          currentImage={currentAgentImage}
+          saving={detailsSaving}
+          errors={detailsSaveFailed ? publishErrors : []}
+          onSave={handleDetailsSave}
+        />
         <AgentPreviewSheet
           open={showPreview}
           onOpenChange={setShowPreview}

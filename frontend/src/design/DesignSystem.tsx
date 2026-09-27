@@ -2172,6 +2172,18 @@ export default function DesignSystem() {
                     name and description.
                   </span>
                 </div>
+                <div className="flex items-center gap-3">
+                  <Dropzone
+                    size="tile"
+                    tileSize="fixed"
+                    onDrop={(files) => setDropped(files.map((f) => f.name))}
+                    title="Avatar"
+                  />
+                  <span className="text-muted-foreground text-xs">
+                    tileSize=&quot;fixed&quot;: 64px and icon-only at every
+                    width, for a narrow drawer.
+                  </span>
+                </div>
                 <p className="text-muted-foreground text-xs">
                   Last drop:{' '}
                   {dropped.length ? dropped.join(', ') : 'nothing yet'}

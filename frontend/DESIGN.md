@@ -228,7 +228,8 @@ field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
   row never holds more than three buttons and fits a phone, where the main
   one stretches across it (`flex-1 sm:flex-none`; `PageToolbar`'s action slot
   spans the stacked row below `sm`). The workflow builder's toolbar has no
-  title row and keeps its ⋯ at the row's end. The
+  title row and keeps its ⋯ at the row's end, holding Edit details, Access
+  details and Delete (see Workflow builder). The
   agent's Delete is in Overview's danger zone; only the workflow builder's
   toolbar has it in the ⋯ menu, as a `destructive` item. The row itself is
   `agents/components/AgentPageToolbar` (see Page chrome). A row's common
@@ -255,8 +256,9 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   Padding-free tabs (a sub-nav with `gap-6`) add `size="inline"`, which keeps
   4px above the line; the row draws the 1px baseline, and `-mb-px` lays the
   underline over it. Its one use is `agents/AgentPageHeader.tsx`, the workflow
-  builder's fixed toolbar: a breadcrumb and the Overview / Logs / Schedules
-  tabs in a `<nav>`, the others `<Link>`s and the current one a `<span
+  builder's fixed toolbar: a breadcrumb, the status Badge and the Overview /
+  Logs / Schedules tabs in a `<nav>` (no tabs until the workflow has an
+  id), the others `<Link>`s and the current one a `<span
 aria-current="page">` with `data-active`. The
   agent section pages switch with the section sidebar (the phone menu below
   `lg`) and carry no pill row; the agent tile's ⋯ also opens Logs. Tabs that switch a panel in place are
@@ -556,8 +558,10 @@ controls in a row, a loading or error line in place of the field. Controls
 whose label sits beside them (Switch, Checkbox, radio) use `SettingRow` or
 an inline `Label`, not FormField. An editing surface that fills its area
 (the chat composer, the chunk and wiki editors, editing a sent question) and
-repeated rows in a list (workflow expressions) have no visible label and
-must have an `aria-label`. Never hand-build a label above a field, a
+bare repeated rows in a list have no visible label and must have an
+`aria-label`. A row box that is a small form (a workflow condition case or
+state assignment) is not a bare row: each of its fields has a floating
+label. Never hand-build a label above a field, a
 hand-positioned floating label, or a `div.flex-col` + `Label` + `<p>` stack.
 
 ### SettingRow (`ui/setting-row.tsx`)
@@ -707,7 +711,10 @@ from device, Import agent, Import API specification), `compact` (one row, a
 file field among other fields),
 `tile` (a square beside a form's fields, the agent's avatar: 64px and
 icon-only on a phone beside the Name field, 88px with a one-word title from
-`sm` beside Name and Description; no description). `FileUpload size="tile"` fills the tile
+`sm` beside Name and Description; no description). `tileSize="fixed"` keeps
+it 64px and icon-only at every width, for a tile in a narrow drawer (the
+workflow details sheet), where the breakpoint follows the window rather than
+the drawer. `FileUpload size="tile"` fills the tile
 with the picked image, or with `currentImage` (the saved one) until then.
 Props: `onDrop`, `accept`, `multiple`, `maxFiles`, `maxSize`, `disabled`,
 `title`, `description`, `icon`, `error`, `validator` (react-dropzone's
@@ -960,6 +967,74 @@ grid inside a Modal keeps its own column counts, because breakpoints follow
 the window, not the dialog.
 Skeleton mirrors follow the grid they stand in for.
 
+### Workflow builder (`agents/workflow/`)
+
+The toolbar is `AgentPageHeader` on `bg-background` with a `border-b`. Its
+current crumb is the agent's `Avatar` (circle, 20px image, the robot when
+there is none), the name (`truncate`, `max-w-[24ch]`) and a muted
+`ChevronDown` in a `ghost sm` Button, the phone top bar's title recipe; it
+opens the workflow details. The status Badge follows (`success` Published,
+`neutral` Draft until the first save), then the tabs. On the right: "Unsaved
+changes" as muted `text-sm` meta while there are any, Preview, Save, and the
+⋯ (`ActionMenu size="toolbar"`): Edit details first (the same drawer, for
+anyone who doesn't try the name), then Access details and Delete once the
+workflow is saved.
+
+The workflow details are a right `Sheet size="default"`
+(`components/WorkflowDetailsSheet.tsx`), built like AgentPreviewSheet (header,
+`Separator`, one scrolling body) with the classic Basics phone layout: a
+`subtle lg` Basics panel with `FileUpload size="tile" tileSize="fixed"` beside
+the Name pill and Description across the row, then an Advanced panel with the
+prompt-override `SettingRow`. Its footer is a `ghost lg pill` Cancel and a
+`default lg pill` Save after a `Separator`. The sheet edits a copy: Cancel,
+the X, Escape and the scrim drop the edits; Save is disabled until something
+changes, then saves the workflow and closes, or stays open with a destructive
+`Alert` listing the errors.
+
+The canvas is `bg-muted`; the node palette to its left is a `bg-background`
+rail with `border-r` (`NodePalette.tsx`), and each palette pill is a
+`<button>` that is also `draggable`: drag it onto the canvas, or click (or
+press Enter) to add the node beside the selected one, or in the middle of the
+view. Each pill's icon is a `size-8 rounded-md` tinted square, like the
+settings panel's header (the pill is round, its icon is not; the canvas
+nodes keep their `size-10` circles). Pills hover to `bg-accent` only, with
+the focus ring, and a muted `text-xs` line under the groups says so.
+
+- **One tone per node type**: `nodeTones.ts` (`NODE_TONES`, `nodeToneClass`)
+  is read by the palette, every canvas node and the settings panel's header.
+  Agent is the brand soft fill (`bg-secondary text-secondary-foreground`),
+  Start and End `success`, Note and If / Else `warning`, Set State and Code
+  `info`, each `bg-<tone>/10 text-<tone>`. End is never `destructive`.
+- **Selected node**: `border-primary ring-3 ring-ring/50`, the focus-ring
+  look, with no scale (the Note node: `border-warning ring-3
+ring-warning/50`). Node meta is translated and muted (the agent type · the
+  model's display name, from `WorkflowModelsContext`); an output variable is
+  an `ArrowRight` then the name in `font-mono`.
+- **Canvas controls**: one `bg-card border rounded-full p-1` strip at the
+  bottom left (`CanvasControls.tsx`, no shadow): Undo, Redo, a vertical
+  `Separator`, Zoom out, the zoom level, Zoom in and Fit view, each
+  `ghost-muted icon-sm pill` with a top tooltip. React Flow's own
+  `<Controls />` and attribution are not shown.
+- **Node settings** dock at the canvas's right edge (`panels/NodePanel.tsx`):
+  a `w-96 border-l bg-background` column at full height whose body is the one
+  scroller, with no shadow or `z-*`. The header holds the type's `size-8
+rounded-md` icon square, the node's title with a `neutral` type Badge (only
+  once the title differs from the type's name), the
+  id in `font-mono text-xs` with a `CopyButton`, an `ActionMenu
+size="toolbar"` (Duplicate, Delete node; none on Start) and the close
+  button. Start and End have no Title field: their body is one muted
+  `text-sm` line saying what the node does. The body is `flex flex-col gap-6
+p-4`, so its fields pass
+  `labelSurface="background"` and its row boxes (a condition case, a state
+  assignment) are `Card variant="subtle" padding="sm"`. The agent node's
+  fields are grouped by `SectionHeader size="xs" as="h3"` (Model, Prompt,
+  Knowledge, Output) with an Advanced settings `link sm` disclosure that
+  opens on its own when one of its settings is set. The column is narrow, so
+  every field stacks at full width (`flex flex-col gap-5`), Agent type and
+  Model included; no two-up grids. A row box's title is `SectionHeader
+size="xs" as="h4"`. In an If / Else case's Simple mode, the operator Select
+  and Value each carry a floating label (Operator, Value).
+
 ### Accordion (`ui/accordion.tsx`)
 
 `AccordionTrigger` carries its own inset and type (`px-4 py-3 text-sm
@@ -1205,7 +1280,8 @@ bubble) and `4xl` the answer's source cards and the landing page's model
 picker; app chrome stops at `2xl`. Skeleton bars: the default. Tinted icon squares:
 `rounded-md` at `size-7|8`, `rounded-xl` at `size-12|14`, `rounded-2xl` at
 `size-20`. `rounded-full` only for pills (`shape="pill"` controls and
-fields), avatars, status dots and the workflow palette pills.
+fields), avatars, status dots, the workflow palette pills (not their icon
+squares) and the canvas nodes' icon circles.
 
 ## Motion
 
@@ -1271,9 +1347,9 @@ shadow-lg` in both themes: the knob is white on any track, and a white knob
   `bg-input`. Accordions are
   panels and have none. Outside `ui/` the only shadows are: the workflow
   canvas nodes (`shadow-md`, `hover:shadow-lg`: a node lifts off the canvas
-  while you drag it); the workflow builder's node-settings panel and its
-  publish-error panel, which float over the canvas at popover elevation
-  (`shadow-md`, `z-20`); the chunk viewer's and file tree's search result
+  while you drag it); the workflow builder's publish-error panel, which
+  floats over the canvas at popover elevation (`shadow-md`, `z-20`); the
+  chunk viewer's and file tree's search result
   lists (`shadow-md`, in-page `z-20`, their results are `CommandItem`s inside
   the search frame); the sliding panel in `navigation/SidebarLevel.tsx`,
   which casts a horizontal shadow while it slides; and the Hero model
@@ -1320,7 +1396,7 @@ list stays reviewable.
 | `Hero.tsx`                                                          | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. One disable.                                                                                                                                                                            |
 | `Navigation.tsx`, `conversation/ConversationTile.tsx`               | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
 | `admin/Usage.tsx`                                                   | `shadcn/no-restyle`             | The Top users id is a `link inline` Button inside a mono table cell; it keeps the cell's type and wraps (`font-mono text-xs font-normal whitespace-normal text-left`). One disable.                                                                                                                                                                                                                                                                                                             |
-| `agents/workflow/WorkflowBuilder.tsx`                               | `shadcn/no-restyle`             | The "Learn more" links in the Set state and Condition nodes' 12px hints keep the sentence's size and weight (`text-xs font-normal` on `link inline`). Two disables.                                                                                                                                                                                                                                                                                                                             |
+| `agents/workflow/panels/ConditionPanel.tsx`                         | `shadcn/no-restyle`             | The "Learn more" link in the Condition node's Advanced-mode 12px hint keeps the sentence's size and weight (`text-xs font-normal` on `link inline`). One disable; the Set state node's link sits in its `text-sm` intro and needs none.                                                                                                                                                                                                                                                         |
 | `components/MessageInput.tsx`                                       | `shadcn/no-restyle`             | The queued-send Cancel is a `link inline` inside the composer's 12px status line, so it takes the line's size (`text-xs`). One disable, beside the send button's.                                                                                                                                                                                                                                                                                                                               |
 | `settings/PersonalAccessTokens.tsx`                                 | `shadcn/no-restyle`             | Token scope chips are identifiers, so the `neutral` Badge is set in mono (`font-mono`). One disable.                                                                                                                                                                                                                                                                                                                                                                                            |
 | `agents/workflow/WorkflowPreview.tsx`                               | `shadcn/no-restyle`             | A step's state changes (keys and values the app serialised) are `neutral` Badges set in mono (`font-mono`), like token scopes. One disable.                                                                                                                                                                                                                                                                                                                                                     |

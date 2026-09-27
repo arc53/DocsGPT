@@ -4,13 +4,13 @@ import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 
+import { nodeToneClass } from '../nodeTones';
+import { useModelDisplayName } from '../WorkflowModelsContext';
 import { BaseNode } from './BaseNode';
+import OutputVariableLine from './OutputVariableLine';
 import CodeNode from './CodeNode';
 import ConditionNode from './ConditionNode';
 import SetStateNode from './SetStateNode';
-
-// Variable names are the user's own text: React escapes on render.
-const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
 
 export const StartNode = memo(function StartNode({
   selected,
@@ -73,6 +73,12 @@ export const AgentNode = memo(function AgentNode({
   const { t } = useTranslation();
   const title = data.title || data.label || t('agents.workflow.nodes.agent');
   const config = data.config || {};
+  const modelName = useModelDisplayName(config.model_id);
+  const agentType =
+    config.agent_type === 'research' || config.agent_type === 'classic'
+      ? t(`agents.form.agentTypes.${config.agent_type}`)
+      : config.agent_type;
+  const meta = [agentType, modelName].filter(Boolean).join(' · ');
   return (
     <BaseNode
       title={title}
@@ -81,35 +87,13 @@ export const AgentNode = memo(function AgentNode({
       icon={<Bot className="size-4" />}
     >
       <div className="flex flex-col gap-1">
-        {config.agent_type && (
-          <div
-            className="text-muted-foreground truncate text-xs"
-            title={config.agent_type}
-          >
-            {config.agent_type}
-          </div>
-        )}
-        {config.model_id && (
-          <div
-            className="text-primary truncate text-xs"
-            title={config.model_id}
-          >
-            {config.model_id}
+        {meta && (
+          <div className="text-muted-foreground truncate text-xs" title={meta}>
+            {meta}
           </div>
         )}
         {config.output_variable && (
-          <div
-            className="text-muted-foreground truncate text-xs"
-            title={t('agents.workflow.nodes.output', {
-              ...NO_ESCAPE,
-              variable: config.output_variable,
-            })}
-          >
-            {t('agents.workflow.nodes.output', {
-              ...NO_ESCAPE,
-              variable: config.output_variable,
-            })}
-          </div>
+          <OutputVariableLine variable={config.output_variable} />
         )}
       </div>
     </BaseNode>
@@ -138,12 +122,17 @@ export const NoteNode = memo(function NoteNode({
         // over it as a flat gradient, so the canvas grid doesn't show through.
         'bg-card from-warning/10 to-warning/10 max-w-[250px] rounded-3xl border bg-linear-to-b px-5 py-3 shadow-md transition',
         selected
-          ? 'border-warning ring-warning scale-105 ring-2'
+          ? 'border-warning ring-warning/50 ring-3'
           : 'border-warning/50 hover:shadow-lg',
       )}
     >
       <div className="flex items-start gap-3">
-        <div className="bg-warning/15 text-warning flex size-10 shrink-0 items-center justify-center rounded-full">
+        <div
+          className={cn(
+            'flex size-10 shrink-0 items-center justify-center rounded-full',
+            nodeToneClass('note'),
+          )}
+        >
           <StickyNote className="size-4.5" />
         </div>
         <div className="min-w-0 flex-1">

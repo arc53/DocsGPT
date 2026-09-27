@@ -66,7 +66,7 @@ export default function NodeDocumentsControl({
   return (
     <FormField label={label} hint={helpText} id={fieldId} float={false}>
       {/* The track is a plain wrapper: ToggleGroup takes layout only. */}
-      <div className="border-border bg-card rounded-xl border p-1">
+      <div className="bg-muted rounded-full p-1">
         <ToggleGroup
           id={fieldId}
           type="single"
@@ -121,7 +121,7 @@ export default function NodeDocumentsControl({
               onClick={addRef}
               className="shrink-0"
             >
-              <Plus className="size-3.5" />
+              <Plus />
               {t('agents.form.buttons.add')}
             </Button>
           </div>

@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { type ReactNode, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
@@ -10,6 +11,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -36,14 +38,26 @@ type AgentPageHeaderProps = {
    * (e.g. the workflow builder's fixed toolbar) to avoid a double rule.
    */
   inline?: boolean;
+  /** The agent's avatar URL; the robot is drawn when it's empty. */
+  agentImage?: string;
+  /**
+   * Makes the current crumb a button (avatar, name, chevron) that opens the
+   * agent's details. Only with `currentPage="overview"`.
+   */
+  onNameClick?: () => void;
+  /** A status Badge placed after the crumbs. */
+  status?: ReactNode;
 };
 
 /**
  * The workflow builder's toolbar chrome: a Breadcrumb (`Agents > <agent
- * name> > <current page>`) and underline tab links to the agent's Overview,
- * Logs and Schedules. The builder is full-screen with no sidebar, so it needs
- * its own way between them. Section pages use `components/AgentPageToolbar`
- * and the sidebar (or `SectionPills` on a phone) instead.
+ * name> > <current page>`), an optional status Badge, and underline tab links
+ * to the agent's Overview, Logs and Schedules (hidden until the agent has an
+ * id). The builder is full-screen with no sidebar, so it needs its own way
+ * between them. With `onNameClick` the current crumb is the agent's avatar,
+ * name and a chevron in a `ghost sm` Button that opens the details, like the
+ * phone top bar's chat title. Section pages use
+ * `components/AgentPageToolbar` and the sidebar instead.
  */
 export default function AgentPageHeader({
   agentId,
@@ -52,6 +66,9 @@ export default function AgentPageHeader({
   currentPage,
   className,
   inline = false,
+  agentImage,
+  onNameClick,
+  status,
 }: AgentPageHeaderProps) {
   const { t } = useTranslation();
 
@@ -86,83 +103,116 @@ export default function AgentPageHeader({
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 md:flex-row md:items-baseline md:gap-6',
+        // The builder only renders from lg, so one row.
+        'flex min-w-0 items-center gap-6',
         className,
       )}
     >
-      <Breadcrumb className="shrink-0">
-        <BreadcrumbList className="flex-nowrap">
-          <BreadcrumbItem>
-            <BreadcrumbLink asChild>
-              <Link to={AGENTS_MANAGE_ROOT}>
-                {t('agents.pageHeader.crumbs.agents')}
-              </Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            {currentPage === 'overview' ? (
-              <BreadcrumbPage title={displayName} className="w-[16ch]">
-                {displayName}
-              </BreadcrumbPage>
-            ) : (
+      <div className="flex min-w-0 items-center gap-2">
+        <Breadcrumb className="min-w-0">
+          <BreadcrumbList className="flex-nowrap">
+            <BreadcrumbItem>
               <BreadcrumbLink asChild>
-                <Link to={editPath} className="max-w-[40ch] truncate">
-                  {displayName}
+                <Link to={AGENTS_MANAGE_ROOT}>
+                  {t('agents.pageHeader.crumbs.agents')}
                 </Link>
               </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              {currentPage === 'overview' && onNameClick ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-haspopup="dialog"
+                  onClick={onNameClick}
+                  // Button is shrink-0; shrink lets a long name truncate.
+                  className="min-w-0 shrink"
+                >
+                  <Avatar
+                    src={agentImage}
+                    alt=""
+                    shape="circle"
+                    className="shrink-0 overflow-hidden"
+                    imgClassName="size-5 object-contain"
+                  />
+                  {/* The list's muted colour would reach the name; the current crumb
+                    is foreground, like BreadcrumbPage. */}
+                  <span
+                    className="text-foreground max-w-[24ch] truncate"
+                    title={displayName}
+                  >
+                    {displayName}
+                  </span>
+                  <ChevronDown className="text-muted-foreground" aria-hidden />
+                </Button>
+              ) : currentPage === 'overview' ? (
+                <BreadcrumbPage title={displayName} className="w-[16ch]">
+                  {displayName}
+                </BreadcrumbPage>
+              ) : (
+                <BreadcrumbLink asChild>
+                  <Link to={editPath} className="max-w-[40ch] truncate">
+                    {displayName}
+                  </Link>
+                </BreadcrumbLink>
+              )}
+            </BreadcrumbItem>
+            {currentPage !== 'overview' && (
+              <>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{currentTabLabel}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </>
             )}
-          </BreadcrumbItem>
-          {currentPage !== 'overview' && (
-            <>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{currentTabLabel}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </>
-          )}
-        </BreadcrumbList>
-      </Breadcrumb>
+          </BreadcrumbList>
+        </Breadcrumb>
+        {status}
+      </div>
 
-      <nav
-        aria-label={t('agents.pageHeader.subnavAriaLabel')}
-        className={cn(
-          'flex items-center gap-6',
-          // 1px baseline rule under the whole row; the active tab's 2px
-          // primary underline sits on top of it for the GitHub-style look.
-          !inline && 'border-border border-b',
-        )}
-      >
-        {tabs.map((tab) => {
-          const isActive = tab.id === currentPage;
-          // -mb-px lays the tab's 2px underline over the nav's 1px baseline.
-          if (isActive) {
+      {agentId && (
+        <nav
+          aria-label={t('agents.pageHeader.subnavAriaLabel')}
+          className={cn(
+            'flex items-center gap-6',
+            // 1px baseline rule under the whole row; the active tab's 2px
+            // primary underline sits on top of it for the GitHub-style look.
+            !inline && 'border-border border-b',
+          )}
+        >
+          {tabs.map((tab) => {
+            const isActive = tab.id === currentPage;
+            // -mb-px lays the tab's 2px underline over the nav's 1px baseline.
+            if (isActive) {
+              return (
+                <Button
+                  key={tab.id}
+                  asChild
+                  variant="tab"
+                  size="inline"
+                  data-active
+                  className="-mb-px"
+                >
+                  <span aria-current="page">{tab.label}</span>
+                </Button>
+              );
+            }
             return (
               <Button
                 key={tab.id}
                 asChild
                 variant="tab"
                 size="inline"
-                data-active
                 className="-mb-px"
               >
-                <span aria-current="page">{tab.label}</span>
+                <Link to={tab.href}>{tab.label}</Link>
               </Button>
             );
-          }
-          return (
-            <Button
-              key={tab.id}
-              asChild
-              variant="tab"
-              size="inline"
-              className="-mb-px"
-            >
-              <Link to={tab.href}>{tab.label}</Link>
-            </Button>
-          );
-        })}
-      </nav>
+          })}
+        </nav>
+      )}
     </div>
   );
 }
