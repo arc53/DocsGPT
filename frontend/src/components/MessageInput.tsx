@@ -1578,10 +1578,12 @@ export default function MessageInput({
   };
 
   // When ``allowSendWithoutText`` is set, an attachment-only submit is
-  // permitted as long as at least one attachment exists; a still-pending
-  // one arms the send instead of submitting (see handleSubmit).
+  // permitted as long as at least one attachment can still go out; a
+  // still-pending one arms the send instead of submitting (see handleSubmit).
+  // A failed one doesn't count: it is dropped at submit time.
   const hasSubmittableContent =
-    Boolean(value.trim()) || (allowSendWithoutText && attachments.length > 0);
+    Boolean(value.trim()) ||
+    (allowSendWithoutText && attachments.some((a) => a.status !== 'failed'));
   const canSubmit =
     hasSubmittableContent &&
     !loading &&
@@ -1589,6 +1591,17 @@ export default function MessageInput({
     recordingState !== 'transcribing';
 
   const submitNow = () => {
+    const failed = attachments.filter((a) => a.status === 'failed');
+    const hasContent =
+      Boolean(value.trim()) ||
+      (allowSendWithoutText &&
+        attachments.some((a) => a.status === 'completed'));
+    // An attachment-only send whose files all failed has nothing left to
+    // send; keep the failed chips so the user can see why.
+    if (!hasContent) return;
+    // A failed file will never succeed, so it must never cost the user their
+    // question: drop it and send with whatever did upload.
+    failed.forEach((a) => dispatch(removeAttachment(a.id)));
     onSubmit(value);
     setValue('');
     if (isTouch) {
@@ -1621,9 +1634,10 @@ export default function MessageInput({
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    // Attachments still uploading/parsing (or failed) must never be
-    // silently dropped from the payload: hold the send in the composer
-    // until every attachment resolves, then flush automatically.
+    // Attachments still uploading/parsing must never be silently dropped
+    // from the payload: hold the send in the composer until every
+    // attachment resolves, then flush automatically. Failed ones don't hold
+    // it; submitNow drops them.
     if (sendReadiness.state !== 'ready') {
       armSend();
       return;
@@ -1720,16 +1734,6 @@ export default function MessageInput({
             >
               {t('conversation.attachments.cancelQueuedSend')}
             </Button>
-          </div>
-        )}
-        {sendArmed && sendReadiness.state === 'blocked' && (
-          <div
-            className="text-destructive px-2 pb-1 text-xs sm:px-3"
-            role="alert"
-          >
-            {t('conversation.attachments.sendBlockedByFailed', {
-              names: sendReadiness.failedNames.join(', '),
-            })}
           </div>
         )}
         {voiceError && (

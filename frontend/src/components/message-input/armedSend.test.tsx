@@ -36,22 +36,28 @@ describe('getSendReadiness', () => {
     ).toEqual({ state: 'waiting', pendingCount: 2 });
   });
 
-  it('blocks on a failed attachment, listing its name', () => {
+  it('ignores a failed attachment: it is dropped at send time', () => {
     expect(
       getSendReadiness([
         att(),
         att({ id: 'a2', status: 'failed', fileName: 'broken.pdf' }),
       ]),
-    ).toEqual({ state: 'blocked', failedNames: ['broken.pdf'] });
+    ).toEqual({ state: 'ready' });
   });
 
-  it('failed takes precedence over pending', () => {
+  it('is ready when every attachment failed', () => {
+    expect(getSendReadiness([att({ status: 'failed' })])).toEqual({
+      state: 'ready',
+    });
+  });
+
+  it('still waits on a pending file next to a failed one', () => {
     expect(
       getSendReadiness([
-        att({ status: 'processing' }),
+        att({ status: 'uploading', progress: 5 }),
         att({ id: 'a2', status: 'failed', fileName: 'broken.pdf' }),
       ]),
-    ).toEqual({ state: 'blocked', failedNames: ['broken.pdf'] });
+    ).toEqual({ state: 'waiting', pendingCount: 1 });
   });
 });
 
@@ -120,21 +126,17 @@ describe('useArmedSend', () => {
     expect(onFlush).toHaveBeenCalledTimes(1);
   });
 
-  it('holds the flush while a file is failed and resumes when it is removed', async () => {
-    await render([att({ status: 'processing' })]);
+  it('flushes once when the pending file fails instead of completing', async () => {
+    await render([att({ status: 'uploading', progress: 5 })]);
     await act(async () => api.current!.arm());
+    expect(onFlush).not.toHaveBeenCalled();
 
     await render([att({ status: 'failed', fileName: 'broken.pdf' })]);
-    expect(onFlush).not.toHaveBeenCalled();
-    expect(api.current!.armed).toBe(true);
-    expect(api.current!.readiness).toEqual({
-      state: 'blocked',
-      failedNames: ['broken.pdf'],
-    });
-
-    await render([]);
     expect(onFlush).toHaveBeenCalledTimes(1);
     expect(api.current!.armed).toBe(false);
+
+    await render([att({ status: 'failed', fileName: 'broken.pdf' })]);
+    expect(onFlush).toHaveBeenCalledTimes(1);
   });
 
   it('cancel disarms and prevents the auto-flush', async () => {

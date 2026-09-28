@@ -1382,7 +1382,6 @@
       "waitingToSend_one": "Will send when {{count}} file finishes processing…",
       "waitingToSend_other": "Will send when {{count}} files finish processing…",
       "cancelQueuedSend": "Cancel",
-      "sendBlockedByFailed": "{{names}} couldn't be processed — remove to send",
       "unsupportedType": "Not a supported file type ({{extension}})",
       "unreadableByModel": "{{model}} can't read {{name}} — switch to a model that supports images or PDFs",
       "attached": "Attachment",

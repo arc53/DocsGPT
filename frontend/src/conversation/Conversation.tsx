@@ -224,9 +224,9 @@ export default function Conversation() {
         });
       } else if (getSendReadiness(attachments).state !== 'ready') {
         // Direct new sends (hero suggestion cards) bypass MessageInput's
-        // submit gate. With files still uploading/parsing (or failed),
-        // sending now would silently drop them — route the question into
-        // the composer instead, where the armed-send banner takes over.
+        // submit gate. With files still uploading/parsing, sending now
+        // would silently drop them — route the question into the composer
+        // instead, where the armed-send banner takes over.
         setQueuedQuestion(trimmedQuestion);
       } else {
         const filesAttached = completedAttachments
@@ -247,7 +247,9 @@ export default function Conversation() {
           index,
           attachmentIds: filesAttached.map((f) => f.id),
         });
-        if (filesAttached.length > 0) dispatch(clearAttachments());
+        // Clears the sent files and drops any failed ones, which never
+        // hold a send (nothing is pending here, so nothing else remains).
+        if (attachments.length > 0) dispatch(clearAttachments());
       }
     },
     [dispatch, handleFetchAnswer, completedAttachments, attachments, queries],

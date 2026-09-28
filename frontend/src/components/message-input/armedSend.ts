@@ -3,16 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Attachment } from '../../upload/uploadSlice';
 
 export type SendReadiness =
-  | { state: 'ready' }
-  | { state: 'waiting'; pendingCount: number }
-  | { state: 'blocked'; failedNames: string[] };
+  { state: 'ready' } | { state: 'waiting'; pendingCount: number };
 
+// A failed file never resolves, so it never holds the send: the composer
+// drops it at submit time and sends the question with whatever succeeded.
 export function getSendReadiness(attachments: Attachment[]): SendReadiness {
-  const failedNames = attachments
-    .filter((a) => a.status === 'failed')
-    .map((a) => a.fileName);
-  if (failedNames.length > 0) return { state: 'blocked', failedNames };
-
   const pendingCount = attachments.filter(
     (a) => a.status === 'uploading' || a.status === 'processing',
   ).length;
