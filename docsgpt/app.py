@@ -184,6 +184,27 @@ if settings.AUTH_TYPE == "simple_jwt":
     print(f"Generated Simple JWT Token: {SIMPLE_JWT_TOKEN}")
 
 
+def _warn_default_encryption_key() -> None:
+    """Say when stored credentials are sealed with the public default key."""
+    from docsgpt.security.encryption import is_default_encryption_key
+
+    if not is_default_encryption_key():
+        return
+    if settings.AUTH_TYPE:
+        logging.getLogger(__name__).warning(
+            "ENCRYPTION_SECRET_KEY is the public default: connecting services is refused until you set your "
+            "own value (then run `docsgpt connectors reencrypt`)."
+        )
+    else:
+        logging.getLogger(__name__).warning(
+            "ENCRYPTION_SECRET_KEY is the public default. Stored connector credentials are only as safe as "
+            "that key; set your own value before exposing this install."
+        )
+
+
+_warn_default_encryption_key()
+
+
 @app.route("/")
 def home():
     if request.remote_addr in ("0.0.0.0", "127.0.0.1", "localhost", "172.18.0.1"):

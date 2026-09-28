@@ -34,7 +34,13 @@ Signing key for session tokens and other signed capabilities. Required on every 
 
 Type `str`, default `default-docsgpt-encryption-key`.
 
-Key used to encrypt stored credentials such as tool and connector secrets.
+Key used to encrypt stored credentials such as tool and connector secrets. Set your own value before connecting services on a multi-user install; the default is public.
+
+### `ENCRYPTION_SECRET_KEY_PREVIOUS`
+
+Type `str`, default unset.
+
+Previous ENCRYPTION_SECRET_KEY, tried when a stored credential was encrypted with it. Set it while rotating the key, run `docsgpt connectors reencrypt`, then remove it.
 
 ### `INTERNAL_KEY`
 
