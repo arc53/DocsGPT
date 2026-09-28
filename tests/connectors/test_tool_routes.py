@@ -183,3 +183,14 @@ class TestUpdateConnectedTool:
         assert resp.status_code == 200
         row = _connection_row(pg_conn, created["connection_id"])
         assert service.read_secrets(row)["credentials"]["token"] == "123456:SECRETTOKEN"
+
+    def test_rejected_edit_leaves_the_connection_untouched(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        created = self._create(app, pg_conn)
+        with _db(pg_conn), patch("docsgpt.api.user.tools.routes._validate_config",
+                                 return_value={"timeout": "Timeout must be between 1 and 300"}):
+            resp = _call(app, UpdateTool, {"id": created["id"], "config": {"token": "999999:ROTATED"}})
+        assert resp.status_code == 400
+        row = _connection_row(pg_conn, created["connection_id"])
+        assert service.read_secrets(row)["credentials"]["token"] == "123456:SECRETTOKEN"

@@ -326,7 +326,11 @@ class TestMcpServerMismatch:
 
         cid = _connection(pg_conn, provider="custom_mcp", server_url="https://old.example.com")
         existing = {"connection_id": cid}
+        same = {"server_url": "https://old.example.com/mcp", "auth_type": "bearer"}
         with patch("docsgpt.api.user.tools.mcp.db_readonly", _yield):
-            assert _previous_connection(existing, {"server_url": "https://old.example.com/mcp"}) == cid
-            assert _previous_connection(existing, {"server_url": "https://new.example.com/mcp"}) is None
-            assert _previous_connection(None, {"server_url": "https://old.example.com/mcp"}) is None
+            assert _previous_connection(existing, same, "alice") == cid
+            assert _previous_connection(existing, {**same, "server_url": "https://new.example.com/mcp"}, "alice") is None
+            assert _previous_connection(None, same, "alice") is None
+            # Someone else's connection, or one that signs in another way, is not kept.
+            assert _previous_connection(existing, same, "bob") is None
+            assert _previous_connection(existing, {**same, "auth_type": "oauth"}, "alice") is None

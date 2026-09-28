@@ -610,19 +610,11 @@ class UpdateTool(Resource):
                         else {}
                     )
                     existing_config = tool_doc.get("config", {}) or {}
-                    has_existing_secrets = "encrypted_credentials" in existing_config
-                    if tool_doc.get("connection_id"):
-                        has_existing_secrets = True
-                        new_config = _update_connection_secrets(
-                            conn, user, tool_doc, data["config"], config_requirements,
-                        )
-                        if new_config is None:
-                            return make_response(
-                                jsonify({"success": False, "message": "Only the owner can change the credentials"}),
-                                403,
-                            )
-                        data = {**data, "config": new_config}
-
+                    has_existing_secrets = (
+                        "encrypted_credentials" in existing_config or bool(tool_doc.get("connection_id"))
+                    )
+                    # Validate before touching the connection: a rejected
+                    # edit must not have rotated its credentials.
                     if config_requirements:
                         validation_errors = _validate_config(
                             data["config"], config_requirements,
@@ -637,6 +629,16 @@ class UpdateTool(Resource):
                                 }),
                                 400,
                             )
+                    if tool_doc.get("connection_id"):
+                        new_config = _update_connection_secrets(
+                            conn, user, tool_doc, data["config"], config_requirements,
+                        )
+                        if new_config is None:
+                            return make_response(
+                                jsonify({"success": False, "message": "Only the owner can change the credentials"}),
+                                403,
+                            )
+                        data = {**data, "config": new_config}
 
                     update_data["config"] = _merge_secrets_on_update(
                         data["config"], existing_config, config_requirements, user
