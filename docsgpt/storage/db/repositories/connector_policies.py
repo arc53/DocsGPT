@@ -37,14 +37,18 @@ class ConnectorPoliciesRepository:
         credential_mode: Optional[str] = None,
         updated_by: Optional[str] = None,
     ) -> dict:
-        """Set one connector's policy; fields left None keep their value."""
+        """Set one connector's policy; fields left None keep their value.
+
+        A new row leaves ``enabled`` NULL unless it is given, so changing only
+        the credential mode never switches a connector on.
+        """
         if credential_mode is not None and credential_mode not in CREDENTIAL_POLICIES:
             raise ValueError(f"unknown credential mode: {credential_mode!r}")
         row = self._conn.execute(
             text(
                 """
                 INSERT INTO connector_policies (connector_key, enabled, credential_mode, updated_by)
-                VALUES (:key, COALESCE(:enabled, true), COALESCE(:mode, 'choose'), :by)
+                VALUES (:key, :enabled, COALESCE(:mode, 'choose'), :by)
                 ON CONFLICT (connector_key) DO UPDATE SET
                     enabled = COALESCE(:enabled, connector_policies.enabled),
                     credential_mode = COALESCE(:mode, connector_policies.credential_mode),

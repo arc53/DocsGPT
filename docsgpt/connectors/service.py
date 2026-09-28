@@ -223,10 +223,14 @@ def catalog_for_user(conn, user_id: str, *, is_admin: bool, policies: Optional[d
     entries = []
     for definition in catalog.all_definitions():
         policy = policies.get(definition.key) or {}
-        disabled = policy.get("enabled") is False
+        disabled = not connector_is_enabled(policies, definition.key)
         missing = definition.missing_settings
         available = not missing and not disabled
         statuses = by_key.get(definition.key, [])
+        if not available and not statuses:
+            # Members only see what they can use, plus what they connected
+            # before an admin turned it off (to manage or remove it).
+            continue
         status = worst_status(statuses)
         entries.append(
             {
@@ -1231,6 +1235,24 @@ def custom_mcp_allowed(conn) -> bool:
     return AppMetadataRepository(conn).get(ALLOW_CUSTOM_MCP_KEY) != "false"
 
 
+def connector_is_enabled(policies: dict, connector_key: Optional[str]) -> bool:
+    """Whether a connector is switched on.
+
+    An admin's explicit switch wins. Without one, a connector is on when it
+    has the server settings it needs, so one that still needs admin setup
+    starts off and members never see it.
+
+    Args:
+        policies: ``connector_key`` to policy row, from :func:`load_policies`.
+        connector_key: The catalog key.
+    """
+    explicit = (policies.get(connector_key) or {}).get("enabled") if connector_key else None
+    if explicit is not None:
+        return bool(explicit)
+    definition = catalog.get_definition(connector_key) if connector_key else None
+    return definition is None or definition.configured
+
+
 def load_policies(conn) -> dict[str, dict]:
     """Every connector's policy, with custom MCP folded in from its switch."""
     from docsgpt.storage.db.repositories.connector_policies import ConnectorPoliciesRepository
@@ -1251,8 +1273,7 @@ def connector_enabled(conn, row: dict) -> bool:
     Returns:
         False when the connector (or custom MCP servers) is turned off.
     """
-    key = catalog.connector_key_for_row(row)
-    return (load_policies(conn).get(key) or {}).get("enabled") is not False
+    return connector_is_enabled(load_policies(conn), catalog.connector_key_for_row(row))
 
 
 def ensure_connector_allowed(conn, connector_key: Optional[str]) -> None:
@@ -1263,8 +1284,7 @@ def ensure_connector_allowed(conn, connector_key: Optional[str]) -> None:
     """
     if not connector_key:
         return
-    policy = load_policies(conn).get(connector_key) or {}
-    if policy.get("enabled") is False:
+    if not connector_is_enabled(load_policies(conn), connector_key):
         raise ConnectorDisabled(f"{connector_key} is turned off by an admin")
 
 

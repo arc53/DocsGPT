@@ -126,19 +126,35 @@ class TestCatalogForUser:
         assert entries["google_drive"]["state"] == "connected"
         assert entries["google_drive"]["connected_count"] == 1
         assert entries["confluence"]["state"] == "reconnect"
-        assert entries["share_point"]["state"] == "needs_setup"
-        assert entries["share_point"]["missing_settings"] == []
+        # Needs server settings and nobody connected it: members never see it.
+        assert "share_point" not in entries
         assert entries["telegram"]["state"] == "available"
         assert entries["custom_mcp"]["state"] == "custom"
 
-    def test_admin_sees_missing_setting_names(self, pg_conn, monkeypatch):
+    def test_unconfigured_connector_stays_hidden_even_when_switched_on(self, pg_conn, monkeypatch):
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "MICROSOFT_CLIENT_ID", None)
-        entries = {e["key"]: e for e in service.catalog_for_user(pg_conn, "alice", is_admin=True)}
-        assert "MICROSOFT_CLIENT_ID" in entries["share_point"]["missing_settings"]
+        entries = {
+            e["key"]: e
+            for e in service.catalog_for_user(
+                pg_conn, "alice", is_admin=True, policies={"share_point": {"enabled": True}}
+            )
+        }
+        assert "share_point" not in entries
 
-    def test_policy_disables(self, pg_conn):
+    def test_policy_hides_a_disabled_connector(self, pg_conn):
+        entries = {
+            e["key"]: e
+            for e in service.catalog_for_user(
+                pg_conn, "alice", is_admin=False, policies={"telegram": {"enabled": False}}
+            )
+        }
+        assert "telegram" not in entries
+
+    def test_disabled_connector_with_a_connection_shows_as_turned_off(self, pg_conn):
+        """Members can still see and remove what they connected before it was turned off."""
+        _session(pg_conn, provider="telegram")
         entries = {
             e["key"]: e
             for e in service.catalog_for_user(
@@ -147,6 +163,30 @@ class TestCatalogForUser:
         }
         assert entries["telegram"]["state"] == "disabled"
         assert entries["telegram"]["available"] is False
+
+
+class TestConnectorIsEnabled:
+    def test_unconfigured_connector_is_off_by_default(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", None)
+        assert service.connector_is_enabled({}, "google_drive") is False
+        assert service.connector_is_enabled({}, "telegram") is True
+
+    def test_configured_connector_is_on_by_default(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "id")
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "secret")
+        assert service.connector_is_enabled({}, "google_drive") is True
+
+    def test_an_explicit_switch_wins(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", None)
+        assert service.connector_is_enabled({"google_drive": {"enabled": True}}, "google_drive") is True
+        assert service.connector_is_enabled({"telegram": {"enabled": False}}, "telegram") is False
+        assert service.connector_is_enabled({"telegram": {"enabled": None}}, "telegram") is True
 
 
 @contextmanager

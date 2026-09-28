@@ -206,3 +206,18 @@ class TestUpdateConnectedTool:
         assert resp.status_code == 400
         row = _connection_row(pg_conn, created["connection_id"])
         assert service.read_secrets(row)["credentials"]["token"] == "123456:SECRETTOKEN"
+
+
+class TestAvailableTools:
+    def test_tools_of_a_turned_off_connector_are_not_offered(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import AvailableTools
+        from docsgpt.storage.db.repositories.connector_policies import ConnectorPoliciesRepository
+
+        ConnectorPoliciesRepository(pg_conn).upsert("telegram", enabled=False)
+        with _db(pg_conn), app.test_request_context("/api/available_tools"):
+            from flask import request
+
+            request.decoded_token = {"sub": "alice"}
+            names = {t["name"] for t in AvailableTools().get().get_json()["data"]}
+        assert "telegram" not in names
+        assert "brave" in names

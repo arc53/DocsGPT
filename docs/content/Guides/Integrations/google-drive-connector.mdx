@@ -68,7 +68,7 @@ Restart your application, then go to **Settings > Connectors** and pick **Google
 
 ## Troubleshooting
 
-- **Shows Needs admin setup** — `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is missing from the backend `.env`. Admin > Connectors lists which one.
+- **Google Drive is not offered** — `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is missing from the backend `.env`, so the connector stays off. Admin > Connectors lists which one.
 - **Authentication failed** — Check that the redirect URI matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters. Ensure the Google Drive API is enabled.
 - **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Permission denied** — Verify the OAuth consent screen is configured and the user has access to the target files.

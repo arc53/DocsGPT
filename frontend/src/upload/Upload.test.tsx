@@ -106,6 +106,9 @@ describe('Upload source-type tiles', () => {
   });
 
   it('groups upload and web apart from connections', async () => {
+    connectorsState.catalog = [
+      { key: 's3', icon: 's3', sync_ingestor: 's3', available: true },
+    ];
     await render();
     expect(document.body.textContent).toContain(
       'modals.uploadDoc.groupUploadWeb',
@@ -113,31 +116,49 @@ describe('Upload source-type tiles', () => {
     expect(document.body.textContent).toContain(
       'modals.uploadDoc.groupConnection',
     );
+    connectorsState.catalog = [];
   });
 
-  it('shows connector tiles even when the server is not set up', async () => {
+  it('hides connector tiles members cannot use', async () => {
     connectorsState.catalog = [
       {
         key: 'google_drive',
         icon: 'drive',
         sync_ingestor: 'google_drive',
         available: false,
-        missing_settings: ['GOOGLE_CLIENT_ID'],
+        missing_settings: [],
+      },
+      {
+        key: 's3',
+        icon: 's3',
+        sync_ingestor: 's3',
+        auth_kind: 'api_key',
+        available: true,
+        missing_settings: [],
       },
     ];
     await render();
-    const drive = tiles().find((tile) =>
-      tile.textContent?.includes(
-        'modals.uploadDoc.ingestors.google_drive.label',
-      ),
+    const labels = tiles().map((tile) => tile.textContent ?? '');
+    expect(labels.some((l) => l.includes('ingestors.google_drive.label'))).toBe(
+      false,
     );
-    expect(drive).toBeDefined();
-    expect(drive!.textContent).toContain(
+    // Not in the catalog at all (needs setup, or turned off): not offered.
+    expect(labels.some((l) => l.includes('ingestors.confluence.label'))).toBe(
+      false,
+    );
+    expect(labels.some((l) => l.includes('ingestors.s3.label'))).toBe(true);
+    expect(document.body.textContent).not.toContain(
       'settings.connectors.status.needsAdminSetup',
     );
-    await act(async () => drive!.click());
-    expect(document.body.textContent).toContain('GOOGLE_CLIENT_ID');
     connectorsState.catalog = [];
+  });
+
+  it('hides the connection group when no connector is usable', async () => {
+    connectorsState.catalog = [];
+    await render();
+    expect(document.body.textContent).not.toContain(
+      'modals.uploadDoc.groupConnection',
+    );
   });
 
   it('names the connected account on a connection tile', async () => {

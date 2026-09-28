@@ -34,6 +34,7 @@ import {
   loadConnectors,
   selectConnections,
   selectConnectorCatalog,
+  selectConnectorsEnabled,
   selectConnectorsLoaded,
 } from '../connectors/connectorsSlice';
 import type { AppDispatch } from '../store';
@@ -106,6 +107,7 @@ function Upload({
   const connectorCatalog = useSelector(selectConnectorCatalog);
   const connections = useSelector(selectConnections);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
 
   const [files, setfiles] = useState<File[]>(receivedFile);
   // Names of the files the last drop turned away (over the size limit or of
@@ -1196,11 +1198,21 @@ function Upload({
     return t('settings.connectors.status.connect');
   };
 
+  // With the catalog loaded, members only see connections they can use:
+  // a connector that needs admin setup, or that an admin turned off, is not
+  // offered. Without connectors (or before the catalog loads) every source
+  // type stays, as before connectors existed.
+  const offersConnection = (type: IngestorType) =>
+    !connectorsEnabled || !connectorsLoaded || !!connectorFor(type)?.available;
+
   const renderIngestorSelection = () => {
     const optionsFor = (types: IngestorType[]) =>
       types
         .map((type) => ingestorOptions.find((o) => o.value === type))
         .filter((option): option is IngestorOption => !!option);
+    const connectionOptions = optionsFor(CONNECTION_INGESTORS).filter(
+      (option) => offersConnection(option.value),
+    );
     return (
       <div className="flex w-full flex-col gap-6">
         <section className="flex flex-col gap-3">
@@ -1226,32 +1238,36 @@ function Upload({
             ))}
           </div>
         </section>
-        <section className="flex flex-col gap-3">
-          <SectionHeader
-            as="h3"
-            size="sm"
-            title={t('modals.uploadDoc.groupConnection')}
-          />
-          <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-            {optionsFor(CONNECTION_INGESTORS).map((option) => {
-              const connector = connectorFor(option.value);
-              return (
-                <OptionCard
-                  key={option.value}
-                  icon={
-                    <ConnectorIcon
-                      icon={connector?.icon ?? option.value}
-                      className="size-6"
-                    />
-                  }
-                  title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
-                  description={connectionTileState(option.value)}
-                  onClick={() => handleIngestorTypeChange(option.value)}
-                />
-              );
-            })}
-          </div>
-        </section>
+        {connectionOptions.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <SectionHeader
+              as="h3"
+              size="sm"
+              title={t('modals.uploadDoc.groupConnection')}
+            />
+            <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+              {connectionOptions.map((option) => {
+                const connector = connectorFor(option.value);
+                return (
+                  <OptionCard
+                    key={option.value}
+                    icon={
+                      <ConnectorIcon
+                        icon={connector?.icon ?? option.value}
+                        className="size-6"
+                      />
+                    }
+                    title={t(
+                      `modals.uploadDoc.ingestors.${option.value}.label`,
+                    )}
+                    description={connectionTileState(option.value)}
+                    onClick={() => handleIngestorTypeChange(option.value)}
+                  />
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
     );
   };

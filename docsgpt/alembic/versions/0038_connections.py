@@ -43,7 +43,9 @@ Backfill (idempotent, only fills NULLs or unconverted rows):
    doing so (``member``); owners can switch them in the share dialog.
 
 ``connector_policies`` holds the admin's per-connector switches (enabled,
-forced credential mode). The instance-wide "Allow custom MCP servers" switch
+forced credential mode). ``enabled`` NULL means the default: on when the
+connector has the server settings it needs, off (and hidden from members)
+until then. The instance-wide "Allow custom MCP servers" switch
 is the ``connectors.allow_custom_mcp`` key in ``app_metadata`` (absent means
 allowed).
 
@@ -86,7 +88,7 @@ def upgrade() -> None:
         """
         CREATE TABLE IF NOT EXISTS connector_policies (
             connector_key   TEXT PRIMARY KEY,
-            enabled         BOOLEAN NOT NULL DEFAULT true,
+            enabled         BOOLEAN,
             credential_mode TEXT NOT NULL DEFAULT 'choose'
                 CONSTRAINT connector_policies_credential_mode_chk
                 CHECK (credential_mode IN ('choose', 'owner', 'member')),

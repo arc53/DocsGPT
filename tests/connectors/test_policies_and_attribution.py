@@ -121,12 +121,35 @@ class TestAdminPolicies:
             })
             assert resp.status_code == 200
             entries = {e["key"]: e for e in service.catalog_for_user(pg_conn, "bob", is_admin=False)}
-            assert entries["telegram"]["state"] == "disabled"
-            assert entries["custom_mcp"]["state"] == "disabled"
+            assert "telegram" not in entries
+            assert "custom_mcp" not in entries
             with pytest.raises(service.ConnectorDisabled):
                 service.create_api_key_connection(
                     pg_conn, "bob", catalog.get_definition("telegram"), {"token": "long-enough-token"},
                 )
+
+    def test_unconfigured_connectors_are_off_until_an_admin_turns_them_on(self, app, pg_conn, monkeypatch):
+        from docsgpt.api.admin.connectors import AdminConnectorsResource
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "MICROSOFT_CLIENT_ID", None)
+        with _db(pg_conn):
+            before = _call(app, AdminConnectorsResource, "get", "/api/admin/connectors", roles=["admin"]).get_json()
+            # Changing only the sharing mode must not switch it on.
+            _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"],
+                  body={"policies": {"share_point": {"credential_mode": "member"}}})
+            middle = _call(app, AdminConnectorsResource, "get", "/api/admin/connectors", roles=["admin"]).get_json()
+            _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"],
+                  body={"policies": {"share_point": {"enabled": True}}})
+            after = _call(app, AdminConnectorsResource, "get", "/api/admin/connectors", roles=["admin"]).get_json()
+
+        def enabled(payload, key):
+            return next(c for c in payload["connectors"] if c["key"] == key)["enabled"]
+
+        assert enabled(before, "share_point") is False
+        assert enabled(before, "telegram") is True
+        assert enabled(middle, "share_point") is False
+        assert enabled(after, "share_point") is True
 
     def test_rejects_unknown_connector(self, app, pg_conn):
         from docsgpt.api.admin.connectors import AdminConnectorsResource

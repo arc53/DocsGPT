@@ -198,6 +198,16 @@ class AvailableTools(Resource):
     def get(self):
         if not request.decoded_token:
             return make_response(jsonify({"success": False}), 401)
+        from docsgpt.connectors import service as connection_service
+
+        try:
+            with db_readonly() as conn:
+                policies = connection_service.load_policies(conn)
+        except Exception:
+            # Without the admin's switches, fall back to the defaults (a
+            # connector is on when its server settings are present).
+            current_app.logger.warning("Could not read connector policies", exc_info=True)
+            policies = {}
         try:
             tools_metadata = []
             for tool_name, tool_instance in tool_manager.tools.items():
@@ -209,6 +219,10 @@ class AvailableTools(Resource):
                 actions = tool_instance.get_actions_metadata()
                 definition = definition_for_tool(tool_name)
                 if definition is not None:
+                    if not (definition.configured and connection_service.connector_is_enabled(
+                        policies, definition.key,
+                    )):
+                        continue
                     group, connector_key = "service", definition.key
                 elif tool_name in _CUSTOM_CONNECTOR_TOOLS:
                     group, connector_key = "custom", _CUSTOM_CONNECTOR_TOOLS[tool_name]

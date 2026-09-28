@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from flask import Flask
 
+from tests.connectors.conftest import _oauth_connectors_configured  # noqa: F401,E402  (autouse)
+
 
 @pytest.fixture
 def app():

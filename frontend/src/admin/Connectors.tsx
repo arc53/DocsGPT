@@ -196,8 +196,9 @@ export default function Connectors() {
     <div className="flex flex-col gap-8">
       <p className="text-muted-foreground text-sm">
         Choose which connectors members can use and whose account a shared tool
-        runs with. Connectors that need server settings stay listed for members
-        as Needs admin setup until you add them.
+        runs with. A connector that still needs server settings starts turned
+        off and is hidden from members; it turns on once its settings are in
+        place, unless you switch it off.
       </p>
 
       {data.default_encryption_key && (

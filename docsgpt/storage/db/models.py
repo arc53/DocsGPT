@@ -419,7 +419,8 @@ user_custom_models_table = Table(
     # docsgpt.security.encryption.encrypt_credentials.
     Column("api_key_encrypted", Text, nullable=False),
     Column("capabilities", JSONB, nullable=False, server_default="{}"),
-    Column("enabled", Boolean, nullable=False, server_default="true"),
+    # NULL: on when the connector has its server settings (see connectors.service).
+    Column("enabled", Boolean),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
