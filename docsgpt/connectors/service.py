@@ -716,9 +716,13 @@ def create_api_key_connection(
         ``(row, created)``.
 
     Raises:
+        ConnectorDisabled: An admin turned the connector off. Checked first,
+            so callers that fall back to a legacy path on the other errors
+            never do so for a disabled connector.
         ValueError: A required credential field is missing.
         EncryptionKeyNotConfigured: See :func:`ensure_can_store_credentials`.
     """
+    ensure_connector_allowed(conn, definition.key)
     fields = {f.key: f for f in definition.credential_fields}
     if fields:
         missing = [f.label for f in fields.values() if f.required and not str(credentials.get(f.key) or "").strip()]
@@ -728,7 +732,6 @@ def create_api_key_connection(
     else:
         credentials = {k: v for k, v in credentials.items() if v not in (None, "")}
     ensure_can_store_credentials()
-    ensure_connector_allowed(conn, definition.key)
     secret_values = {k: v for k, v in credentials.items() if (fields.get(k).secret if fields.get(k) else True)}
     repo = ConnectorSessionsRepository(conn)
     existing, account_label = _api_key_account(

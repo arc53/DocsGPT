@@ -136,6 +136,17 @@ class TestCreateConnectedTool:
             resp = _call(app, CreateTool, _telegram())
         assert resp.status_code == 403
 
+    def test_disabled_connector_is_refused_on_the_default_key(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import CreateTool
+        from docsgpt.storage.db.repositories.connector_policies import ConnectorPoliciesRepository
+
+        ConnectorPoliciesRepository(pg_conn).upsert("telegram", enabled=False)
+        with _db(pg_conn), patch.object(service, "ensure_can_store_credentials",
+                                        side_effect=service.EncryptionKeyNotConfigured("set a key")):
+            resp = _call(app, CreateTool, _telegram())
+        assert resp.status_code == 403
+        assert pg_conn.execute(text("SELECT count(*) FROM user_tools")).scalar() == 0
+
     def test_default_key_on_multi_user_falls_back_to_the_tool(self, app, pg_conn):
         from docsgpt.api.user.tools.routes import CreateTool
 

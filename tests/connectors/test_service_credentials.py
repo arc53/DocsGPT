@@ -300,6 +300,21 @@ class TestApiKeyConnections:
                 pg_conn, "alice", catalog.get_definition("brave"), {"token": "secret-key-1234"},
             )
 
+    def test_disabled_connector_refused_before_other_errors(self, pg_conn, monkeypatch):
+        from docsgpt.connectors import catalog
+        from docsgpt.core.settings import settings
+        from docsgpt.security.encryption import DEFAULT_ENCRYPTION_KEY
+        from docsgpt.storage.db.repositories.connector_policies import ConnectorPoliciesRepository
+
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", DEFAULT_ENCRYPTION_KEY)
+        monkeypatch.setattr(settings, "AUTH_TYPE", "session_jwt")
+        ConnectorPoliciesRepository(pg_conn).upsert("telegram", enabled=False)
+        telegram = catalog.get_definition("telegram")
+        # Callers fall back to a legacy per-tool secret on these other errors.
+        for credentials in ({"token": "123456:ABCDEFG"}, {}):
+            with pytest.raises(service.ConnectorDisabled):
+                service.create_api_key_connection(pg_conn, "alice", telegram, credentials)
+
     def test_default_key_allowed_single_user(self, pg_conn, monkeypatch):
         from docsgpt.connectors import catalog
         from docsgpt.core.settings import settings
