@@ -1652,6 +1652,16 @@ class ToolExecutor:
                 f"{resolved.connector_name or 'This service'} needs to be connected",
                 connection_id=resolved.connection_id,
             )
+        if tool_data.get("name") == "mcp_tool":
+            from docsgpt.connectors import catalog
+
+            # A connection's secret only goes to the server it was stored for.
+            stored_for = catalog.base_url(resolved.row.get("server_url"))
+            if stored_for and stored_for != catalog.base_url(tool_config.get("server_url")):
+                raise service.ConnectionUnavailable(
+                    f"{resolved.connector_name or 'This service'} needs to be connected",
+                    connection_id=resolved.connection_id,
+                )
         audit_delegation(
             resolved,
             invoker=self.user,

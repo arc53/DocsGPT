@@ -301,3 +301,32 @@ def test_redaction_covers_connection_secrets(secret_key):
     from docsgpt.storage.db.redaction import REDACTED, redact_secrets
 
     assert redact_secrets({secret_key: {"x": "y"}})[secret_key] == REDACTED
+
+
+class TestMcpServerMismatch:
+    def test_connection_for_another_server_is_not_applied(self, pg_conn):
+        """A key stored for one MCP server is never sent to a tool now pointing at another."""
+        from docsgpt.connectors import service
+
+        cid = _connection(pg_conn, provider="custom_mcp", server_url="https://old.example.com",
+                          secrets={"credentials": {"bearer_token": "old-server-secret"}})
+        tool = {**_tool(cid, name="mcp_tool"), "config": {"server_url": "https://new.example.com/mcp",
+                                                         "auth_type": "bearer"}}
+        with _service_db(pg_conn), patch("docsgpt.agents.tool_executor.ToolManager") as manager:
+            with pytest.raises(service.ConnectionUnavailable):
+                _executor()._get_or_load_tool(tool, "t1", "search")
+        manager.return_value.load_tool.assert_not_called()
+
+    def test_save_keeps_previous_connection_only_for_the_same_server(self, pg_conn):
+        from docsgpt.api.user.tools.mcp import _previous_connection
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        cid = _connection(pg_conn, provider="custom_mcp", server_url="https://old.example.com")
+        existing = {"connection_id": cid}
+        with patch("docsgpt.api.user.tools.mcp.db_readonly", _yield):
+            assert _previous_connection(existing, {"server_url": "https://old.example.com/mcp"}) == cid
+            assert _previous_connection(existing, {"server_url": "https://new.example.com/mcp"}) is None
+            assert _previous_connection(None, {"server_url": "https://old.example.com/mcp"}) is None

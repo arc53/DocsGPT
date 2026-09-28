@@ -115,6 +115,26 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
     return str(row["id"]) if row else None
 
 
+def _previous_connection(existing_doc, config) -> str | None:
+    """The saved tool's connection, kept only while the server is unchanged.
+
+    An edit that cannot resolve a connection of its own (the default
+    encryption key blocks storing a new secret) must not carry the old
+    one over to a different server: its key would be sent there.
+    """
+    from docsgpt.connectors import catalog
+
+    connection_id = (existing_doc or {}).get("connection_id")
+    base = catalog.base_url(config.get("server_url"))
+    if not connection_id or not base:
+        return None
+    with db_readonly() as conn:
+        row = ConnectorSessionsRepository(conn).get(str(connection_id))
+    if row is None or catalog.base_url(row.get("server_url")) != base:
+        return None
+    return str(connection_id)
+
+
 def _mcp_policy_error(config: dict):
     """A 403 when an admin turned this MCP server's connector off, else None.
 
@@ -363,7 +383,7 @@ class MCPServerSave(Resource):
             display_name = data["displayName"]
             connection_id = _mcp_connection(
                 user, storage_config, auth_type, auth_credentials, display_name,
-            ) or (str(existing_doc["connection_id"]) if existing_doc and existing_doc.get("connection_id") else None)
+            ) or _previous_connection(existing_doc, storage_config)
             if connection_id and auth_type != "oauth":
                 # The secret lives on the connection only.
                 storage_config.pop("encrypted_credentials", None)
