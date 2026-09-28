@@ -98,15 +98,15 @@
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
       "subtitle": "DocsGPT 可以搜索和引用的内容：上传的文件、网站、Wiki，以及从连接同步的内容。",
-      "label": "来源",
+      "label": "知识库",
       "name": "来源名称",
       "date": "向量日期",
       "type": "类型",
       "tokenUsage": "令牌使用",
-      "noData": "没有现有的来源",
+      "noData": "还没有知识",
       "searchPlaceholder": "搜索...",
       "addNew": "添加新文档",
-      "addSource": "添加来源",
+      "addSource": "添加知识",
       "addChunk": "添加块",
       "preLoaded": "预加载",
       "private": "私有",
@@ -287,7 +287,7 @@
       "chunks": "文本块",
       "noChunks": "未找到文本块",
       "noChunksAlt": "未找到文本块",
-      "goToSources": "前往来源",
+      "goToSources": "前往知识库",
       "uploadNew": "上传新文档",
       "noResults": "未找到结果",
       "fileName": "名称",
@@ -1084,9 +1084,9 @@
     },
     "connectors": {
       "label": "连接器",
-      "subtitle": "将 DocsGPT 连接到团队使用的服务。一个连接可以把内容同步到来源，也可以为智能体提供工具。",
+      "subtitle": "将 DocsGPT 连接到团队使用的服务。一个连接可以把内容同步到知识库，也可以为智能体提供工具。",
       "search": "搜索连接器...",
-      "addCustom": "添加自定义连接器",
+      "addCustom": "添加自定义工具",
       "custom": {
         "custom_mcp": "MCP 服务器",
         "custom_openapi": "OpenAPI / REST"
@@ -1095,8 +1095,8 @@
       "categories": {
         "all": "全部",
         "connected": "已连接",
-        "files": "文件和文档",
-        "knowledge": "知识库",
+        "files": "文件与存储",
+        "knowledge": "文档与 Wiki",
         "dev": "开发者工具",
         "messaging": "消息",
         "database": "数据库",
@@ -1130,11 +1130,11 @@
         "custom": "自定义"
       },
       "descriptions": {
-        "google_drive": "将文档、表格和 PDF 同步到来源。",
-        "share_point": "将 SharePoint 站点和 OneDrive 中的文件同步到来源。",
-        "confluence": "将 Confluence 空间和页面同步到来源。",
-        "s3": "将 S3 存储桶中的文档同步到来源。",
-        "reddit": "将符合搜索条件的 Reddit 帖子同步到来源。",
+        "google_drive": "将文档、表格和 PDF 同步到知识库。",
+        "share_point": "将 SharePoint 站点和 OneDrive 中的文件同步到知识库。",
+        "confluence": "将 Confluence 空间和页面同步到知识库。",
+        "s3": "将 S3 存储桶中的文档同步到知识库。",
+        "reddit": "将符合你搜索条件的 Reddit 帖子同步到知识库。",
         "brave": "使用 Brave Search API 搜索网页和图片。",
         "telegram": "向 Telegram 聊天发送消息和图片。",
         "ntfy": "通过 ntfy 服务器发送推送通知。",
@@ -1159,7 +1159,7 @@
         "accounts": "账号",
         "connectedAs": "已作为 {{account}} 连接",
         "connectAnother": "连接其他账号",
-        "sources": "来自此连接的来源",
+        "sources": "来自此连接的知识",
         "tools": "来自此连接的工具",
         "noAccounts": "尚未连接账号。",
         "failed": "无法加载此连接。",
@@ -1268,17 +1268,22 @@
       },
       "createFailed": "无法添加连接器。请重试。",
       "capabilityFilter": {
-        "sync": "正在显示将内容同步到来源的连接器。",
+        "sync": "正在显示将内容同步到知识库的连接器。",
         "tools": "正在显示为智能体提供工具的连接器。",
         "showAll": "显示全部"
+      },
+      "capabilityPlain": {
+        "sync": "同步到知识库",
+        "read": "查找信息",
+        "write": "执行操作"
       }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "添加来源",
+      "label": "添加知识",
       "select": "选择如何将文档上传到 DocsGPT",
-      "selectSource": "添加来源",
+      "selectSource": "添加知识",
       "selectedFiles": "已选择的文件",
       "noFilesSelected": "未选择文件",
       "file": "从设备上传",
@@ -1293,7 +1298,7 @@
       "filesRejected": "未添加（超过 25 MB 或不支持的类型）：{{files}}",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
-      "train": "添加来源",
+      "train": "添加到知识库",
       "create": "创建",
       "link": "链接",
       "urlLink": "URL 链接",
@@ -1642,16 +1647,17 @@
     },
     "sources": {
       "title": "来源",
-      "text": "来源文本",
+      "text": "选择知识",
       "link": "来源链接",
       "view_more": "还有{{count}}个来源",
-      "noSourcesAvailable": "没有可用的来源",
+      "noSourcesAvailable": "还没有知识",
       "selectedCount": "已选择 {{count}} 个来源",
       "groupOwn": "我的来源",
       "groupTeam": "团队共享",
       "connectMore": "连接更多",
       "fromConnector": "来自 {{name}}",
-      "fromConnectorTitle": "来自 {{name}}：{{title}}"
+      "fromConnectorTitle": "来自 {{name}}：{{title}}",
+      "knowledge": "知识库"
     },
     "attachments": {
       "attach": "附件",
@@ -1875,7 +1881,7 @@
       "placeholders": {
         "agentName": "代理名称",
         "describeAgent": "描述您的代理",
-        "selectSources": "选择来源",
+        "selectSources": "选择知识",
         "chunksPerQuery": "每次查询的块数",
         "selectType": "选择类型",
         "selectTools": "选择工具",
@@ -1885,19 +1891,19 @@
         "enterRequestLimit": "输入请求限制"
       },
       "sourcePopup": {
-        "title": "选择来源",
-        "searchPlaceholder": "搜索来源...",
-        "noOptionsMessage": "没有可用的来源",
+        "title": "选择知识",
+        "searchPlaceholder": "搜索知识...",
+        "noOptionsMessage": "还没有知识",
         "groupOwn": "我的来源",
         "groupTeam": "团队共享",
-        "noSourceHint": "可选。未选择来源时，智能体仅根据模型和工具作答。"
+        "noSourceHint": "可选。没有知识时，智能体只用模型和它的工具回答。"
       },
       "toolsPopup": {
         "title": "选择工具",
         "searchPlaceholder": "搜索工具...",
         "noOptionsMessage": "没有可用的工具",
         "groupBuiltin": "内置",
-        "groupDefault": "默认",
+        "groupDefault": "内置",
         "groupCustom": "自定义",
         "groupConnection": "{{name}} · {{account}}"
       },
@@ -1919,7 +1925,7 @@
         "defaultModel": "默认模型",
         "name": "名称",
         "description": "描述",
-        "sources": "来源",
+        "sources": "知识库",
         "avatar": "头像"
       },
       "advanced": {
@@ -2297,7 +2303,7 @@
         "outputVariable": "输出变量",
         "outputVariablePlaceholder": "输出的变量名",
         "streamToUser": "将输出流式传输给用户",
-        "sources": "来源",
+        "sources": "知识库",
         "documents": "文档",
         "documentsHint": "从上传或上游节点传给此智能体的文档。",
         "filePassing": "文件传递",

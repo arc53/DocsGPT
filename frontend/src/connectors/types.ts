@@ -51,6 +51,8 @@ export type ConnectorDefinition = {
   publisher: 'built_in' | 'preset' | 'custom';
   docs_url: string | null;
   oauth_scopes: string[];
+  /** Shown under this connector's card (one service offered two ways). */
+  part_of?: string | null;
   available: boolean;
   disabled: boolean;
   needs_setup: boolean;

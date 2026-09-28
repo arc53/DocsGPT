@@ -98,15 +98,15 @@
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
       "subtitle": "Contenido que DocsGPT puede buscar y citar: archivos subidos, sitios web, wikis y contenido sincronizado desde tus conexiones.",
-      "label": "Fuentes",
+      "label": "Conocimiento",
       "name": "Nombre de la Fuente",
       "date": "Fecha de Vector",
       "type": "Tipo",
       "tokenUsage": "Uso de Tokens",
-      "noData": "No hay fuentes existentes",
+      "noData": "Aún no hay conocimiento",
       "searchPlaceholder": "Buscar...",
       "addNew": "Agregar Nuevo",
-      "addSource": "Agregar Fuente",
+      "addSource": "Añadir conocimiento",
       "addChunk": "Agregar Fragmento",
       "preLoaded": "Precargado",
       "private": "Privado",
@@ -294,7 +294,7 @@
       "chunks": "Fragmentos",
       "noChunks": "No se encontraron fragmentos",
       "noChunksAlt": "No se encontraron fragmentos",
-      "goToSources": "Ir a Fuentes",
+      "goToSources": "Ir a Conocimiento",
       "uploadNew": "Subir nuevo",
       "noResults": "No se encontraron resultados",
       "fileName": "Nombre",
@@ -1093,9 +1093,9 @@
     },
     "connectors": {
       "label": "Conectores",
-      "subtitle": "Conecta DocsGPT a los servicios que usa tu equipo. Una conexión puede sincronizar contenido en Fuentes y dar herramientas a los agentes.",
+      "subtitle": "Conecta DocsGPT a los servicios que usa tu equipo. Una conexión puede sincronizar contenido en Conocimiento y dar herramientas a los agentes.",
       "search": "Buscar conectores...",
-      "addCustom": "Añadir conector personalizado",
+      "addCustom": "Añadir herramienta propia",
       "custom": {
         "custom_mcp": "Servidor MCP",
         "custom_openapi": "OpenAPI / REST"
@@ -1104,8 +1104,8 @@
       "categories": {
         "all": "Todos",
         "connected": "Conectados",
-        "files": "Archivos y documentos",
-        "knowledge": "Bases de conocimiento",
+        "files": "Archivos y almacenamiento",
+        "knowledge": "Documentos y wikis",
         "dev": "Herramientas de desarrollo",
         "messaging": "Mensajería",
         "database": "Bases de datos",
@@ -1139,11 +1139,11 @@
         "custom": "Personalizado"
       },
       "descriptions": {
-        "google_drive": "Sincroniza Docs, Hojas de cálculo y PDF en Fuentes.",
-        "share_point": "Sincroniza archivos de sitios de SharePoint y OneDrive en Fuentes.",
-        "confluence": "Sincroniza espacios y páginas de Confluence en Fuentes.",
-        "s3": "Sincroniza documentos de un bucket de S3 en Fuentes.",
-        "reddit": "Sincroniza en Fuentes las publicaciones de Reddit que coinciden con tus búsquedas.",
+        "google_drive": "Sincroniza Docs, Hojas de cálculo y PDF en Conocimiento.",
+        "share_point": "Sincroniza archivos de sitios de SharePoint y OneDrive en Conocimiento.",
+        "confluence": "Sincroniza espacios y páginas de Confluence en Conocimiento.",
+        "s3": "Sincroniza documentos de un bucket de S3 en Conocimiento.",
+        "reddit": "Sincroniza publicaciones de Reddit que coinciden con tus búsquedas en Conocimiento.",
         "brave": "Busca en la web e imágenes con la API de Brave Search.",
         "telegram": "Envía mensajes e imágenes a un chat de Telegram.",
         "ntfy": "Envía notificaciones push mediante un servidor ntfy.",
@@ -1168,7 +1168,7 @@
         "accounts": "Cuentas",
         "connectedAs": "Conectado como {{account}}",
         "connectAnother": "Conectar otra cuenta",
-        "sources": "Fuentes de esta conexión",
+        "sources": "Conocimiento de esta conexión",
         "tools": "Herramientas de esta conexión",
         "noAccounts": "Aún no hay ninguna cuenta conectada.",
         "failed": "No se pudo cargar esta conexión.",
@@ -1284,17 +1284,22 @@
       },
       "createFailed": "No se pudo añadir el conector. Inténtalo de nuevo.",
       "capabilityFilter": {
-        "sync": "Se muestran los conectores que sincronizan contenido en Fuentes.",
+        "sync": "Se muestran los conectores que sincronizan contenido en Conocimiento.",
         "tools": "Se muestran los conectores que dan herramientas a los agentes.",
         "showAll": "Mostrar todos"
+      },
+      "capabilityPlain": {
+        "sync": "Sincroniza en Conocimiento",
+        "read": "Consulta datos",
+        "write": "Realiza acciones"
       }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "Añadir una fuente",
+      "label": "Añadir conocimiento",
       "select": "Elige cómo cargar tu documento en DocsGPT",
-      "selectSource": "Añadir una fuente",
+      "selectSource": "Añadir conocimiento",
       "selectedFiles": "Archivos Seleccionados",
       "noFilesSelected": "No hay archivos seleccionados",
       "file": "Subir desde el dispositivo",
@@ -1309,7 +1314,7 @@
       "filesRejected": "No se añadieron (más de 25 MB o tipo no admitido): {{files}}",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
-      "train": "Añadir fuente",
+      "train": "Añadir al conocimiento",
       "create": "Crear",
       "link": "Enlace",
       "urlLink": "Enlace URL",
@@ -1659,17 +1664,18 @@
     },
     "sources": {
       "title": "Fuentes",
-      "text": "Elegir tus fuentes",
+      "text": "Elegir conocimiento",
       "link": "Enlace fuente",
       "view_more_one": "Ver {{count}} fuente más",
       "view_more_other": "Ver {{count}} fuentes más",
-      "noSourcesAvailable": "No hay fuentes disponibles",
+      "noSourcesAvailable": "Aún no hay conocimiento",
       "selectedCount": "{{count}} fuentes seleccionadas",
       "groupOwn": "Tus fuentes",
       "groupTeam": "Compartidas con el equipo",
       "connectMore": "Conectar más",
       "fromConnector": "De {{name}}",
-      "fromConnectorTitle": "De {{name}}: {{title}}"
+      "fromConnectorTitle": "De {{name}}: {{title}}",
+      "knowledge": "Conocimiento"
     },
     "attachments": {
       "attach": "Adjuntar",
@@ -1894,7 +1900,7 @@
       "placeholders": {
         "agentName": "Nombre del agente",
         "describeAgent": "Describe tu agente",
-        "selectSources": "Seleccionar fuentes",
+        "selectSources": "Seleccionar conocimiento",
         "chunksPerQuery": "Fragmentos por consulta",
         "selectType": "Seleccionar tipo",
         "selectTools": "Seleccionar herramientas",
@@ -1904,19 +1910,19 @@
         "enterRequestLimit": "Ingresar límite de solicitudes"
       },
       "sourcePopup": {
-        "title": "Seleccionar Fuentes",
-        "searchPlaceholder": "Buscar fuentes...",
-        "noOptionsMessage": "No hay fuentes disponibles",
+        "title": "Seleccionar conocimiento",
+        "searchPlaceholder": "Buscar conocimiento...",
+        "noOptionsMessage": "Aún no hay conocimiento",
         "groupOwn": "Tus fuentes",
         "groupTeam": "Compartidas con el equipo",
-        "noSourceHint": "Opcional. Sin una fuente, el agente responde solo con el modelo y sus herramientas."
+        "noSourceHint": "Opcional. Sin conocimiento, el agente responde solo con el modelo y sus herramientas."
       },
       "toolsPopup": {
         "title": "Seleccionar Herramientas",
         "searchPlaceholder": "Buscar herramientas...",
         "noOptionsMessage": "No hay herramientas disponibles",
         "groupBuiltin": "Integradas",
-        "groupDefault": "Predeterminadas",
+        "groupDefault": "Integradas",
         "groupCustom": "Personalizadas",
         "groupConnection": "{{name}} · {{account}}"
       },
@@ -1938,7 +1944,7 @@
         "defaultModel": "Modelo Predeterminado",
         "name": "Nombre",
         "description": "Descripción",
-        "sources": "Fuentes",
+        "sources": "Conocimiento",
         "avatar": "Avatar"
       },
       "advanced": {
@@ -2317,7 +2323,7 @@
         "outputVariable": "Variable de salida",
         "outputVariablePlaceholder": "Nombre de la variable de salida",
         "streamToUser": "Transmitir la salida al usuario",
-        "sources": "Fuentes",
+        "sources": "Conocimiento",
         "documents": "Documentos",
         "documentsHint": "Documentos que se pasan a este agente desde cargas o nodos anteriores.",
         "filePassing": "Paso de archivos",

@@ -98,15 +98,15 @@
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",
       "subtitle": "Inhalte, die DocsGPT durchsuchen und zitieren kann: Uploads, Websites, Wikis und aus deinen Verbindungen synchronisierte Inhalte.",
-      "label": "Quellen",
+      "label": "Wissen",
       "name": "Quellenname",
       "date": "Vektor-Datum",
       "type": "Typ",
       "tokenUsage": "Token-Verbrauch",
-      "noData": "Keine vorhandenen Quellen",
+      "noData": "Noch kein Wissen",
       "searchPlaceholder": "Suchen...",
       "addNew": "Neu hinzufügen",
-      "addSource": "Quelle hinzufügen",
+      "addSource": "Wissen hinzufügen",
       "addChunk": "Chunk hinzufügen",
       "preLoaded": "Vorgeladen",
       "private": "Privat",
@@ -294,7 +294,7 @@
       "chunks": "Chunks",
       "noChunks": "Keine Chunks gefunden",
       "noChunksAlt": "Keine Chunks gefunden",
-      "goToSources": "Zu den Quellen",
+      "goToSources": "Zum Wissen",
       "uploadNew": "Neu hochladen",
       "noResults": "Keine Ergebnisse gefunden",
       "fileName": "Name",
@@ -1093,9 +1093,9 @@
     },
     "connectors": {
       "label": "Konnektoren",
-      "subtitle": "Verbinde DocsGPT mit den Diensten, die dein Team nutzt. Eine Verbindung kann Inhalte in Quellen synchronisieren und Agenten Werkzeuge geben.",
+      "subtitle": "Verbinde DocsGPT mit den Diensten, die dein Team nutzt. Eine Verbindung kann Inhalte ins Wissen synchronisieren und Agenten Werkzeuge geben.",
       "search": "Konnektoren suchen...",
-      "addCustom": "Eigenen Konnektor hinzufügen",
+      "addCustom": "Eigenes Werkzeug hinzufügen",
       "custom": {
         "custom_mcp": "MCP-Server",
         "custom_openapi": "OpenAPI / REST"
@@ -1104,8 +1104,8 @@
       "categories": {
         "all": "Alle",
         "connected": "Verbunden",
-        "files": "Dateien und Dokumente",
-        "knowledge": "Wissensdatenbanken",
+        "files": "Dateien & Speicher",
+        "knowledge": "Dokus & Wikis",
         "dev": "Entwicklerwerkzeuge",
         "messaging": "Nachrichten",
         "database": "Datenbanken",
@@ -1139,11 +1139,11 @@
         "custom": "Eigener"
       },
       "descriptions": {
-        "google_drive": "Docs, Tabellen und PDFs in Quellen synchronisieren.",
-        "share_point": "Dateien aus SharePoint-Sites und OneDrive in Quellen synchronisieren.",
-        "confluence": "Confluence-Bereiche und -Seiten in Quellen synchronisieren.",
-        "s3": "Dokumente aus einem S3-Bucket in Quellen synchronisieren.",
-        "reddit": "Reddit-Beiträge zu deinen Suchen in Quellen synchronisieren.",
+        "google_drive": "Docs, Tabellen und PDFs ins Wissen synchronisieren.",
+        "share_point": "Dateien aus SharePoint-Sites und OneDrive ins Wissen synchronisieren.",
+        "confluence": "Confluence-Bereiche und -Seiten ins Wissen synchronisieren.",
+        "s3": "Dokumente aus einem S3-Bucket ins Wissen synchronisieren.",
+        "reddit": "Reddit-Beiträge zu deinen Suchen ins Wissen synchronisieren.",
         "brave": "Web und Bilder mit der Brave Search API durchsuchen.",
         "telegram": "Nachrichten und Bilder an einen Telegram-Chat senden.",
         "ntfy": "Push-Benachrichtigungen über einen ntfy-Server senden.",
@@ -1168,7 +1168,7 @@
         "accounts": "Konten",
         "connectedAs": "Verbunden als {{account}}",
         "connectAnother": "Weiteres Konto verbinden",
-        "sources": "Quellen aus dieser Verbindung",
+        "sources": "Wissen aus dieser Verbindung",
         "tools": "Werkzeuge aus dieser Verbindung",
         "noAccounts": "Noch kein Konto verbunden.",
         "failed": "Diese Verbindung konnte nicht geladen werden.",
@@ -1284,17 +1284,22 @@
       },
       "createFailed": "Der Konnektor konnte nicht hinzugefügt werden. Versuche es erneut.",
       "capabilityFilter": {
-        "sync": "Angezeigt werden Konnektoren, die Inhalte in Quellen synchronisieren.",
+        "sync": "Angezeigt werden Konnektoren, die Inhalte ins Wissen synchronisieren.",
         "tools": "Angezeigt werden Konnektoren, die Agenten Werkzeuge geben.",
         "showAll": "Alle anzeigen"
+      },
+      "capabilityPlain": {
+        "sync": "Synchronisiert ins Wissen",
+        "read": "Schlägt nach",
+        "write": "Führt Aktionen aus"
       }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "Quelle hinzufügen",
+      "label": "Wissen hinzufügen",
       "select": "Wähle, wie du dein Dokument zu DocsGPT hochladen möchtest",
-      "selectSource": "Quelle hinzufügen",
+      "selectSource": "Wissen hinzufügen",
       "selectedFiles": "Ausgewählte Dateien",
       "noFilesSelected": "Keine Dateien ausgewählt",
       "file": "Vom Gerät hochladen",
@@ -1309,7 +1314,7 @@
       "filesRejected": "Nicht hinzugefügt (größer als 25 MB oder kein unterstützter Dateityp): {{files}}",
       "uploadedFiles": "Hochgeladene Dateien",
       "cancel": "Abbrechen",
-      "train": "Quelle hinzufügen",
+      "train": "Zum Wissen hinzufügen",
       "create": "Erstellen",
       "link": "Link",
       "urlLink": "URL-Link",
@@ -1659,17 +1664,18 @@
     },
     "sources": {
       "title": "Quellen",
-      "text": "Wähle deine Quellen",
+      "text": "Wissen auswählen",
       "link": "Quellen-Link",
       "view_more_one": "{{count}} weitere Quelle",
       "view_more_other": "{{count}} weitere Quellen",
-      "noSourcesAvailable": "Keine Quellen verfügbar",
+      "noSourcesAvailable": "Noch kein Wissen",
       "selectedCount": "{{count}} Quellen ausgewählt",
       "groupOwn": "Deine Quellen",
       "groupTeam": "Mit dem Team geteilt",
       "connectMore": "Weitere verbinden",
       "fromConnector": "Aus {{name}}",
-      "fromConnectorTitle": "Aus {{name}}: {{title}}"
+      "fromConnectorTitle": "Aus {{name}}: {{title}}",
+      "knowledge": "Wissen"
     },
     "attachments": {
       "attach": "Anhängen",
@@ -1894,7 +1900,7 @@
       "placeholders": {
         "agentName": "Agentenname",
         "describeAgent": "Beschreibe deinen Agenten",
-        "selectSources": "Quellen auswählen",
+        "selectSources": "Wissen auswählen",
         "chunksPerQuery": "Chunks pro Anfrage",
         "selectType": "Typ auswählen",
         "selectTools": "Werkzeuge auswählen",
@@ -1904,19 +1910,19 @@
         "enterRequestLimit": "Anfrage-Limit eingeben"
       },
       "sourcePopup": {
-        "title": "Quellen auswählen",
-        "searchPlaceholder": "Quellen suchen...",
-        "noOptionsMessage": "Keine Quellen verfügbar",
+        "title": "Wissen auswählen",
+        "searchPlaceholder": "Wissen durchsuchen...",
+        "noOptionsMessage": "Noch kein Wissen",
         "groupOwn": "Deine Quellen",
         "groupTeam": "Mit dem Team geteilt",
-        "noSourceHint": "Optional. Ohne Quelle antwortet der Agent nur anhand des Modells und seiner Werkzeuge."
+        "noSourceHint": "Optional. Ohne Wissen antwortet der Agent nur mit dem Modell und seinen Werkzeugen."
       },
       "toolsPopup": {
         "title": "Werkzeuge auswählen",
         "searchPlaceholder": "Werkzeuge suchen...",
         "noOptionsMessage": "Keine Werkzeuge verfügbar",
         "groupBuiltin": "Integriert",
-        "groupDefault": "Standard",
+        "groupDefault": "Integriert",
         "groupCustom": "Benutzerdefiniert",
         "groupConnection": "{{name}} · {{account}}"
       },
@@ -1938,7 +1944,7 @@
         "defaultModel": "Standardmodell",
         "name": "Name",
         "description": "Beschreibung",
-        "sources": "Quellen",
+        "sources": "Wissen",
         "avatar": "Avatar"
       },
       "advanced": {
@@ -2317,7 +2323,7 @@
         "outputVariable": "Ausgabevariable",
         "outputVariablePlaceholder": "Variablenname für die Ausgabe",
         "streamToUser": "Ausgabe an Nutzer streamen",
-        "sources": "Quellen",
+        "sources": "Wissen",
         "documents": "Dokumente",
         "documentsHint": "Dokumente, die diesem Agenten aus Uploads oder vorgelagerten Knoten übergeben werden.",
         "filePassing": "Dateiübergabe",

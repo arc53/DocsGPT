@@ -102,15 +102,15 @@
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
       "subtitle": "Content DocsGPT can search and cite: uploads, websites, wikis and content synced from your connections.",
-      "label": "Sources",
+      "label": "Knowledge",
       "name": "Source Name",
       "date": "Vector Date",
       "type": "Type",
       "tokenUsage": "Token Usage",
-      "noData": "No existing Sources",
+      "noData": "No knowledge yet",
       "searchPlaceholder": "Search...",
       "addNew": "Add New",
-      "addSource": "Add Source",
+      "addSource": "Add knowledge",
       "addChunk": "Add Chunk",
       "preLoaded": "Pre-loaded",
       "private": "Private",
@@ -299,7 +299,7 @@
       "chunks": "Chunks",
       "noChunks": "No chunks found",
       "noChunksAlt": "No chunks found",
-      "goToSources": "Go to Sources",
+      "goToSources": "Go to Knowledge",
       "uploadNew": "Upload new",
       "noResults": "No results found",
       "fileName": "Name",
@@ -1099,9 +1099,9 @@
     },
     "connectors": {
       "label": "Connectors",
-      "subtitle": "Connect DocsGPT to the services your team uses. A connection can sync content into Sources and give agents tools.",
+      "subtitle": "Connect DocsGPT to the services your team uses. A connection can sync content into Knowledge and give agents tools.",
       "search": "Search connectors...",
-      "addCustom": "Add custom connector",
+      "addCustom": "Add custom tool",
       "custom": {
         "custom_mcp": "MCP server",
         "custom_openapi": "OpenAPI / REST"
@@ -1110,8 +1110,8 @@
       "categories": {
         "all": "All",
         "connected": "Connected",
-        "files": "Files and docs",
-        "knowledge": "Knowledge bases",
+        "files": "Files & storage",
+        "knowledge": "Docs & wikis",
         "dev": "Developer tools",
         "messaging": "Messaging",
         "database": "Databases",
@@ -1145,11 +1145,11 @@
         "custom": "Custom"
       },
       "descriptions": {
-        "google_drive": "Sync Docs, Sheets and PDFs into Sources.",
-        "share_point": "Sync files from SharePoint sites and OneDrive into Sources.",
-        "confluence": "Sync Confluence spaces and pages into Sources.",
-        "s3": "Sync documents from an S3 bucket into Sources.",
-        "reddit": "Sync Reddit posts that match your searches into Sources.",
+        "google_drive": "Sync Docs, Sheets and PDFs into Knowledge.",
+        "share_point": "Sync files from SharePoint sites and OneDrive into Knowledge.",
+        "confluence": "Sync Confluence spaces and pages into Knowledge.",
+        "s3": "Sync documents from an S3 bucket into Knowledge.",
+        "reddit": "Sync Reddit posts that match your searches into Knowledge.",
         "brave": "Search the web and images with the Brave Search API.",
         "telegram": "Send messages and images to a Telegram chat.",
         "ntfy": "Send push notifications through an ntfy server.",
@@ -1174,7 +1174,7 @@
         "accounts": "Accounts",
         "connectedAs": "Connected as {{account}}",
         "connectAnother": "Connect another account",
-        "sources": "Sources from this connection",
+        "sources": "Knowledge from this connection",
         "tools": "Tools from this connection",
         "noAccounts": "No account connected yet.",
         "failed": "Could not load this connection.",
@@ -1290,17 +1290,22 @@
       },
       "createFailed": "Could not add the connector. Try again.",
       "capabilityFilter": {
-        "sync": "Showing connectors that sync content into Sources.",
+        "sync": "Showing connectors that sync content into Knowledge.",
         "tools": "Showing connectors that give agents tools.",
         "showAll": "Show all"
+      },
+      "capabilityPlain": {
+        "sync": "Syncs into Knowledge",
+        "read": "Looks things up",
+        "write": "Takes actions"
       }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "Add a source",
+      "label": "Add knowledge",
       "select": "Choose how to upload your document to DocsGPT",
-      "selectSource": "Add a source",
+      "selectSource": "Add knowledge",
       "selectedFiles": "Selected Files",
       "noFilesSelected": "No files selected",
       "file": "Upload from device",
@@ -1315,7 +1320,7 @@
       "filesRejected": "Not added (over 25 MB or not a supported type): {{files}}",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
-      "train": "Add source",
+      "train": "Add to Knowledge",
       "create": "Create",
       "link": "Link",
       "urlLink": "URL Link",
@@ -1665,17 +1670,18 @@
     },
     "sources": {
       "title": "Sources",
-      "text": "Choose Your Sources",
+      "text": "Choose knowledge",
       "link": "Source link",
       "view_more_one": "{{count}} more source",
       "view_more_other": "{{count}} more sources",
-      "noSourcesAvailable": "No sources available",
+      "noSourcesAvailable": "No knowledge yet",
       "selectedCount": "{{count}} sources selected",
       "groupOwn": "Your sources",
       "groupTeam": "Shared with team",
       "connectMore": "Connect more",
       "fromConnector": "From {{name}}",
-      "fromConnectorTitle": "From {{name}}: {{title}}"
+      "fromConnectorTitle": "From {{name}}: {{title}}",
+      "knowledge": "Knowledge"
     },
     "attachments": {
       "attach": "Attach",
@@ -1910,7 +1916,7 @@
       "placeholders": {
         "agentName": "Agent name",
         "describeAgent": "Describe your agent",
-        "selectSources": "Select sources",
+        "selectSources": "Select knowledge",
         "chunksPerQuery": "Chunks per query",
         "selectType": "Select type",
         "selectTools": "Select tools",
@@ -1920,19 +1926,19 @@
         "enterRequestLimit": "Enter request limit"
       },
       "sourcePopup": {
-        "title": "Select Sources",
-        "searchPlaceholder": "Search sources...",
-        "noOptionsMessage": "No sources available",
+        "title": "Select knowledge",
+        "searchPlaceholder": "Search knowledge...",
+        "noOptionsMessage": "No knowledge yet",
         "groupOwn": "Your sources",
         "groupTeam": "Shared with team",
-        "noSourceHint": "Optional. Without a source the agent answers from the model and its tools only."
+        "noSourceHint": "Optional. Without knowledge the agent answers from the model and its tools only."
       },
       "toolsPopup": {
         "title": "Select Tools",
         "searchPlaceholder": "Search tools...",
         "noOptionsMessage": "No tools available",
         "groupBuiltin": "Built-in",
-        "groupDefault": "Default",
+        "groupDefault": "Built-in",
         "groupCustom": "Custom",
         "groupConnection": "{{name}} · {{account}}"
       },
@@ -1954,7 +1960,7 @@
         "defaultModel": "Default Model",
         "name": "Name",
         "description": "Description",
-        "sources": "Sources",
+        "sources": "Knowledge",
         "avatar": "Avatar"
       },
       "advanced": {
@@ -2352,7 +2358,7 @@
         "outputVariable": "Output Variable",
         "outputVariablePlaceholder": "Variable name for output",
         "streamToUser": "Stream output to user",
-        "sources": "Sources",
+        "sources": "Knowledge",
         "documents": "Documents",
         "documentsHint": "Documents passed to this agent from uploads or upstream nodes.",
         "filePassing": "File passing",

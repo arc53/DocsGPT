@@ -54,7 +54,7 @@ describe('SourcesPopoverFooter', () => {
   it('renders the sources link as an inline link Button', async () => {
     await renderFooter();
     const [link, connect] = Array.from(container.querySelectorAll('a'));
-    expect(link.getAttribute('href')).toBe('/settings/sources');
+    expect(link.getAttribute('href')).toBe('/settings/knowledge');
     expect(connect.getAttribute('href')).toBe(
       '/settings/connectors?capability=sync',
     );

@@ -26,7 +26,7 @@ export default function SourcesPopoverFooter({
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <Button variant="link" size="inline" asChild>
-          <Link to="/settings/sources" onClick={onNavigate}>
+          <Link to="/settings/knowledge" onClick={onNavigate}>
             {t('settings.sources.goToSources')}
             <ArrowRight aria-hidden="true" className="size-3" />
           </Link>

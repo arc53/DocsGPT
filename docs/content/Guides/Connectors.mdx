@@ -1,6 +1,6 @@
 ---
 title: Connectors
-description: Connect DocsGPT to the services your team uses. One connection can sync content into Sources and give agents tools, with credentials encrypted on the server.
+description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
 ---
 
 import { Callout } from 'nextra/components'
@@ -20,7 +20,7 @@ Open **Settings > Connectors**. Filters narrow the list by category, and **Conne
 2. Choose what the connection sets up. File services offer a synced source (pick files or folders, then how often to sync: never, daily, weekly or monthly). Tool services create their tools right away.
 3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
 
-The **Add Source** and **Add Tool** dialogs, the composer's Sources and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use.
+**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence.
 
 Click a connected card to see its account, the sources and tools that use it, and to **Reconnect** or **Disconnect**. Disconnecting keeps a source's indexed content but stops its sync.
 

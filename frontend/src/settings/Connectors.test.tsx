@@ -168,8 +168,9 @@ describe('Connectors page', () => {
       'settings.connectors.status.disabledByAdmin',
     );
     expect(card('brave')!.disabled).toBe(true);
-    expect(card('custom_mcp')!.textContent).toContain(
-      'settings.connectors.publisher.custom',
+    // No publisher jargon ("Preset", "Built in") on cards.
+    expect(card('custom_mcp')!.textContent).not.toContain(
+      'settings.connectors.publisher',
     );
   });
 
@@ -186,10 +187,10 @@ describe('Connectors page', () => {
   it('shows capability chips', async () => {
     await render();
     expect(card('google_drive')!.textContent).toContain(
-      'settings.connectors.capability.sync',
+      'settings.connectors.capabilityPlain.sync',
     );
     expect(card('telegram')!.textContent).toContain(
-      'settings.connectors.capability.write',
+      'settings.connectors.capabilityPlain.write',
     );
   });
 
@@ -244,6 +245,75 @@ describe('Connectors page', () => {
     expect(pills).toContain('settings.connectors.categories.files');
     // Telegram (messaging) cannot sync.
     expect(pills).not.toContain('settings.connectors.categories.messaging');
+  });
+
+  const ATLASSIAN = definition({
+    key: 'mcp:atlassian',
+    name: 'Jira & Confluence',
+    description: 'Search and update Jira issues.',
+    category: 'dev',
+    auth_kind: 'mcp_oauth',
+    capabilities: ['read', 'write'],
+    publisher: 'preset',
+    part_of: 'confluence',
+  });
+
+  it('shows one Confluence card that also does what its MCP part does', async () => {
+    service.getCatalog.mockResolvedValue({
+      success: true,
+      connectors: [...CATALOG, ATLASSIAN],
+    });
+    await render();
+    expect(card('mcp:atlassian')).toBeNull();
+    const confluence = card('confluence')!;
+    expect(confluence.textContent).toContain(
+      'settings.connectors.capabilityPlain.sync',
+    );
+    expect(confluence.textContent).toContain(
+      'settings.connectors.capabilityPlain.write',
+    );
+  });
+
+  it("finds the merged card by its part's name", async () => {
+    service.getCatalog.mockResolvedValue({
+      success: true,
+      connectors: [...CATALOG, ATLASSIAN],
+    });
+    await render();
+    const input = container.querySelector<HTMLInputElement>(
+      '#connector-search-input',
+    )!;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setter.call(input, 'jira');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(card('confluence')).not.toBeNull();
+  });
+
+  it('shows the part on its own when its parent is not listed', async () => {
+    service.getCatalog.mockResolvedValue({
+      success: true,
+      connectors: [...CATALOG.filter((c) => c.key !== 'confluence'), ATLASSIAN],
+    });
+    await render();
+    expect(card('mcp:atlassian')).not.toBeNull();
+  });
+
+  it("opens the merged card's page with a section for its part", async () => {
+    service.getCatalog.mockResolvedValue({
+      success: true,
+      connectors: [...CATALOG, ATLASSIAN],
+    });
+    await render();
+    await act(async () => card('confluence')!.click());
+    expect(document.body.textContent).toContain('Jira & Confluence');
+    expect(document.body.textContent).toContain(
+      'settings.connectors.descriptions.mcp_atlassian',
+    );
   });
 
   it('shows a retry when the catalog fails to load', async () => {

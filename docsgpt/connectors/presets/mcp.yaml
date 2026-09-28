@@ -31,10 +31,12 @@
   docs_url: https://linear.app/docs/mcp
 
 - key: mcp:atlassian
-  name: Atlassian (Jira and Confluence)
+  name: Jira & Confluence
   description: Search and update Jira issues and Confluence pages.
   icon: atlassian
   category: dev
+  # Shown on the Confluence card, next to syncing pages into Knowledge.
+  part_of: confluence
   mcp_url: https://mcp.atlassian.com/v1/mcp
   auth_kind: mcp_oauth
   capabilities: [read, write]

@@ -22,10 +22,10 @@ export function CapabilityBadges({
   return (
     <div className="flex flex-wrap gap-1">
       {capabilities.map((capability) => (
-        // Capabilities are categories, not states: neutral, so the status
-        // hues stay free for the state badge (DESIGN.md "Colour tokens").
+        // What it does, in plain words; categories, not states, so neutral and
+        // the status hues stay free for the state badge.
         <Badge key={capability} variant="neutral">
-          {t(`settings.connectors.capability.${capability}`)}
+          {t(`settings.connectors.capabilityPlain.${capability}`)}
         </Badge>
       ))}
     </div>
@@ -108,16 +108,9 @@ export default function ConnectorCard({
       >
         <span className="flex w-full items-center gap-3">
           <ConnectorIcon icon={connector.icon} className="size-8 shrink-0" />
-          <span className="flex min-w-0 flex-1 flex-col gap-1">
-            <CardTitle className="truncate" title={name}>
-              {name}
-            </CardTitle>
-            {connector.publisher !== 'built_in' && (
-              <span className="text-muted-foreground text-xs">
-                {t(`settings.connectors.publisher.${connector.publisher}`)}
-              </span>
-            )}
-          </span>
+          <CardTitle className="min-w-0 flex-1 truncate" title={name}>
+            {name}
+          </CardTitle>
         </span>
         <CardDescription size="xs" className="line-clamp-2">
           {connectorDescription(t, connector)}

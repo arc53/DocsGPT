@@ -114,7 +114,7 @@ export const SETTINGS_SECTION: Section = {
       items: [
         {
           key: 'sources',
-          path: '/settings/sources',
+          path: '/settings/knowledge',
           labelKey: 'settings.sources.label',
           icon: Database,
         },

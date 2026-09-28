@@ -90,6 +90,30 @@ export default function Connectors() {
   const custom = catalog.filter((c) => c.publisher === 'custom');
   const openConnector = catalog.find((c) => c.key === openKey) ?? null;
 
+  // One service offered two ways (Confluence sync and the Jira & Confluence
+  // MCP actions) is one card. A part is shown on its own only when its
+  // parent is not listed (not set up, or turned off).
+  const partsOf = (key: string) => catalog.filter((c) => c.part_of === key);
+  const isShownUnderParent = (connector: ConnectorDefinition) =>
+    !!connector.part_of && catalog.some((c) => c.key === connector.part_of);
+  const merged = (connector: ConnectorDefinition): ConnectorDefinition => {
+    const parts = partsOf(connector.key);
+    if (parts.length === 0) return connector;
+    const all = [connector, ...parts];
+    const state = all.some((c) => c.state === 'reconnect')
+      ? 'reconnect'
+      : all.some((c) => c.state === 'connected')
+        ? 'connected'
+        : connector.state;
+    return {
+      ...connector,
+      capabilities: Array.from(new Set(all.flatMap((c) => c.capabilities))),
+      connection_count: all.reduce((n, c) => n + c.connection_count, 0),
+      connected_count: all.reduce((n, c) => n + c.connected_count, 0),
+      state,
+    };
+  };
+
   // "Connect more" in the composer opens the connectors that can do what the
   // picker is for: sync content, or give tools.
   const capability = searchParams.get('capability');
@@ -101,7 +125,10 @@ export default function Connectors() {
   // Only categories that have something in them once the composer's
   // capability filter applies (hidden connectors can empty one too), so no
   // pill leads to an empty page.
-  const withCapability = catalog.filter((connector) =>
+  const cards = catalog
+    .filter((connector) => !isShownUnderParent(connector))
+    .map(merged);
+  const withCapability = cards.filter((connector) =>
     capability === 'sync'
       ? connector.capabilities.includes('sync')
       : capability === 'tools'
@@ -128,14 +155,21 @@ export default function Connectors() {
       .filter(
         (connector) =>
           !query ||
-          connectorName(t, connector).toLowerCase().includes(query) ||
-          connectorDescription(t, connector).toLowerCase().includes(query),
+          [connector, ...partsOf(connector.key)].some(
+            (c) =>
+              connectorName(t, c).toLowerCase().includes(query) ||
+              connectorDescription(t, c).toLowerCase().includes(query),
+          ),
       )
       .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
   }, [withCapability, filter, search, t]);
 
   const open = (connector: ConnectorDefinition) => {
-    if (connector.state === 'available' || connector.state === 'custom') {
+    const hasParts = partsOf(connector.key).length > 0;
+    if (
+      !hasParts &&
+      (connector.state === 'available' || connector.state === 'custom')
+    ) {
       launch(connector);
       return;
     }
@@ -283,6 +317,7 @@ export default function Connectors() {
 
       <ConnectionDrawer
         connector={openConnector}
+        parts={openConnector ? partsOf(openConnector.key) : []}
         onClose={closeDrawer}
         onConnect={(connector, options) => {
           closeDrawer();

@@ -98,15 +98,15 @@
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",
       "subtitle": "DocsGPT が検索・引用できるコンテンツ：アップロード、ウェブサイト、Wiki、接続から同期したコンテンツ。",
-      "label": "ソース",
+      "label": "ナレッジ",
       "name": "ソース名",
       "date": "ベクトル日付",
       "type": "タイプ",
       "tokenUsage": "トークン使用量",
-      "noData": "既存のソースがありません",
+      "noData": "ナレッジはまだありません",
       "searchPlaceholder": "検索...",
       "addNew": "新規追加",
-      "addSource": "ソースを追加",
+      "addSource": "ナレッジを追加",
       "addChunk": "チャンクを追加",
       "preLoaded": "プリロード済み",
       "private": "プライベート",
@@ -287,7 +287,7 @@
       "chunks": "チャンク",
       "noChunks": "チャンクが見つかりません",
       "noChunksAlt": "チャンクが見つかりません",
-      "goToSources": "ソースへ移動",
+      "goToSources": "ナレッジへ移動",
       "uploadNew": "新規アップロード",
       "noResults": "結果が見つかりません",
       "fileName": "名前",
@@ -1084,9 +1084,9 @@
     },
     "connectors": {
       "label": "コネクタ",
-      "subtitle": "DocsGPT をチームで使っているサービスに接続します。接続ごとに、コンテンツをソースへ同期したり、エージェントにツールを提供したりできます。",
+      "subtitle": "DocsGPT をチームで使っているサービスに接続します。接続ごとに、コンテンツをナレッジへ同期したり、エージェントにツールを提供したりできます。",
       "search": "コネクタを検索...",
-      "addCustom": "カスタムコネクタを追加",
+      "addCustom": "カスタムツールを追加",
       "custom": {
         "custom_mcp": "MCP サーバー",
         "custom_openapi": "OpenAPI / REST"
@@ -1095,8 +1095,8 @@
       "categories": {
         "all": "すべて",
         "connected": "接続済み",
-        "files": "ファイルとドキュメント",
-        "knowledge": "ナレッジベース",
+        "files": "ファイルとストレージ",
+        "knowledge": "ドキュメントと Wiki",
         "dev": "開発者ツール",
         "messaging": "メッセージ",
         "database": "データベース",
@@ -1130,11 +1130,11 @@
         "custom": "カスタム"
       },
       "descriptions": {
-        "google_drive": "ドキュメント、スプレッドシート、PDF をソースに同期します。",
-        "share_point": "SharePoint サイトと OneDrive のファイルをソースに同期します。",
-        "confluence": "Confluence のスペースとページをソースに同期します。",
-        "s3": "S3 バケットのドキュメントをソースに同期します。",
-        "reddit": "検索に一致する Reddit の投稿をソースに同期します。",
+        "google_drive": "ドキュメント、スプレッドシート、PDF をナレッジに同期します。",
+        "share_point": "SharePoint サイトと OneDrive のファイルをナレッジに同期します。",
+        "confluence": "Confluence のスペースとページをナレッジに同期します。",
+        "s3": "S3 バケットのドキュメントをナレッジに同期します。",
+        "reddit": "検索条件に一致する Reddit の投稿をナレッジに同期します。",
         "brave": "Brave Search API でウェブと画像を検索します。",
         "telegram": "Telegram のチャットにメッセージや画像を送信します。",
         "ntfy": "ntfy サーバー経由でプッシュ通知を送信します。",
@@ -1159,7 +1159,7 @@
         "accounts": "アカウント",
         "connectedAs": "{{account}} として接続中",
         "connectAnother": "別のアカウントを接続",
-        "sources": "この接続のソース",
+        "sources": "この接続からのナレッジ",
         "tools": "この接続のツール",
         "noAccounts": "まだアカウントが接続されていません。",
         "failed": "この接続を読み込めませんでした。",
@@ -1268,17 +1268,22 @@
       },
       "createFailed": "コネクタを追加できませんでした。もう一度お試しください。",
       "capabilityFilter": {
-        "sync": "ソースにコンテンツを同期するコネクタを表示しています。",
+        "sync": "ナレッジにコンテンツを同期するコネクタを表示しています。",
         "tools": "エージェントにツールを提供するコネクタを表示しています。",
         "showAll": "すべて表示"
+      },
+      "capabilityPlain": {
+        "sync": "ナレッジに同期",
+        "read": "情報を調べる",
+        "write": "操作を行う"
       }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "ソースを追加",
+      "label": "ナレッジを追加",
       "select": "ドキュメントを DocsGPT にアップロードする方法を選択します",
-      "selectSource": "ソースを追加",
+      "selectSource": "ナレッジを追加",
       "selectedFiles": "選択されたファイル",
       "noFilesSelected": "ファイルが選択されていません",
       "file": "デバイスからアップロード",
@@ -1293,7 +1298,7 @@
       "filesRejected": "追加されませんでした（25 MB を超えているか、未対応の形式です）: {{files}}",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
-      "train": "ソースを追加",
+      "train": "ナレッジに追加",
       "create": "作成",
       "link": "リンク",
       "urlLink": "URLリンク",
@@ -1642,16 +1647,17 @@
     },
     "sources": {
       "title": "ソース",
-      "text": "ソーステキスト",
+      "text": "ナレッジを選択",
       "link": "ソースリンク",
       "view_more": "さらに{{count}}個のソース",
-      "noSourcesAvailable": "利用可能なソースがありません",
+      "noSourcesAvailable": "ナレッジはまだありません",
       "selectedCount": "{{count}} 件のソースを選択中",
       "groupOwn": "自分のソース",
       "groupTeam": "チームと共有",
       "connectMore": "さらに接続",
       "fromConnector": "{{name}} から",
-      "fromConnectorTitle": "{{name}} から: {{title}}"
+      "fromConnectorTitle": "{{name}} から: {{title}}",
+      "knowledge": "ナレッジ"
     },
     "attachments": {
       "attach": "添付",
@@ -1875,7 +1881,7 @@
       "placeholders": {
         "agentName": "エージェント名",
         "describeAgent": "エージェントを説明してください",
-        "selectSources": "ソースを選択",
+        "selectSources": "ナレッジを選択",
         "chunksPerQuery": "クエリごとのチャンク数",
         "selectType": "タイプを選択",
         "selectTools": "ツールを選択",
@@ -1885,19 +1891,19 @@
         "enterRequestLimit": "リクエスト制限を入力"
       },
       "sourcePopup": {
-        "title": "ソースを選択",
-        "searchPlaceholder": "ソースを検索...",
-        "noOptionsMessage": "利用可能なソースがありません",
+        "title": "ナレッジを選択",
+        "searchPlaceholder": "ナレッジを検索...",
+        "noOptionsMessage": "ナレッジはまだありません",
         "groupOwn": "自分のソース",
         "groupTeam": "チームと共有",
-        "noSourceHint": "任意。ソースがない場合、エージェントはモデルとツールのみで回答します。"
+        "noSourceHint": "任意です。ナレッジがない場合、エージェントはモデルとツールだけで回答します。"
       },
       "toolsPopup": {
         "title": "ツールを選択",
         "searchPlaceholder": "ツールを検索...",
         "noOptionsMessage": "利用可能なツールがありません",
         "groupBuiltin": "ビルトイン",
-        "groupDefault": "デフォルト",
+        "groupDefault": "組み込み",
         "groupCustom": "カスタム",
         "groupConnection": "{{name}} · {{account}}"
       },
@@ -1919,7 +1925,7 @@
         "defaultModel": "デフォルトモデル",
         "name": "名前",
         "description": "説明",
-        "sources": "ソース",
+        "sources": "ナレッジ",
         "avatar": "アバター"
       },
       "advanced": {
@@ -2297,7 +2303,7 @@
         "outputVariable": "出力変数",
         "outputVariablePlaceholder": "出力の変数名",
         "streamToUser": "出力をユーザーにストリーミング",
-        "sources": "ソース",
+        "sources": "ナレッジ",
         "documents": "ドキュメント",
         "documentsHint": "アップロードまたは上流ノードからこのエージェントに渡されるドキュメント。",
         "filePassing": "ファイルの受け渡し",

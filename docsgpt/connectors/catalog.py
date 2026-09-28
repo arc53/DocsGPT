@@ -76,6 +76,8 @@ class ConnectorDefinition:
         publisher: ``built_in``, ``preset`` or ``custom``.
         docs_url: Setup guide for admins.
         oauth_scopes: Scopes an MCP preset requests.
+        part_of: Another connector this one is shown under, for one service
+            offered two ways (the Atlassian MCP preset under Confluence).
     """
 
     key: str
@@ -96,6 +98,7 @@ class ConnectorDefinition:
     publisher: str = "built_in"
     docs_url: Optional[str] = None
     oauth_scopes: tuple[str, ...] = ()
+    part_of: Optional[str] = None
 
     @property
     def missing_settings(self) -> list[str]:
@@ -132,6 +135,7 @@ class ConnectorDefinition:
             "publisher": self.publisher,
             "docs_url": self.docs_url,
             "oauth_scopes": list(self.oauth_scopes),
+            "part_of": self.part_of,
         }
 
 
@@ -328,6 +332,7 @@ def _load_presets(path: Optional[Path] = None) -> tuple[ConnectorDefinition, ...
                 publisher="preset",
                 docs_url=entry.get("docs_url"),
                 oauth_scopes=tuple(entry.get("oauth_scopes") or ()),
+                part_of=entry.get("part_of"),
             )
         )
     return tuple(presets)

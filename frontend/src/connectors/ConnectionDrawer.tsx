@@ -381,10 +381,13 @@ function AccountSection({
  */
 export default function ConnectionDrawer({
   connector,
+  parts = [],
   onClose,
   onConnect,
 }: {
   connector: ConnectorDefinition | null;
+  /** The same service offered another way, shown here (Jira & Confluence). */
+  parts?: ConnectorDefinition[];
   onClose: () => void;
   onConnect: (connector: ConnectorDefinition, options?: LaunchOptions) => void;
 }) {
@@ -401,8 +404,9 @@ export default function ConnectionDrawer({
   );
   const [toRemove, setToRemove] = useState<ConnectionDetail | null>(null);
 
+  const keys = [connector?.key, ...parts.map((part) => part.key)];
   const accountIds = connections
-    .filter((connection) => connection.connector_key === connector?.key)
+    .filter((connection) => keys.includes(connection.connector_key))
     .map((connection) => `${connection.id}:${connection.status}`)
     .join(',');
 
@@ -458,8 +462,12 @@ export default function ConnectionDrawer({
 
   const reconnect = (detail: ConnectionDetail) => {
     if (!connector) return;
+    // A part's account (Jira & Confluence under Confluence) reconnects
+    // through its own connector.
+    const target =
+      parts.find((part) => part.key === detail.connector_key) ?? connector;
     const mcpTool = detail.tools.find((tool) => tool.name === 'mcp_tool');
-    onConnect(connector, {
+    onConnect(target, {
       mode: 'reconnect',
       connectionId: detail.id,
       mcpServer:
@@ -497,6 +505,9 @@ export default function ConnectionDrawer({
 
   if (!connector) return null;
   const name = connectorName(t, connector);
+  const ownDetails = details.filter(
+    (detail) => detail.connector_key === connector.key,
+  );
 
   return (
     <>
@@ -509,16 +520,11 @@ export default function ConnectionDrawer({
         >
           <div className="flex flex-col gap-6 p-6">
             {/* pr-12 keeps the header clear of the close X. */}
-            <div className="flex items-start gap-4 pr-12">
+            <div className="flex items-center gap-4 pr-12">
               <span className="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
                 <ConnectorIcon icon={connector.icon} className="size-7" />
               </span>
-              <div className="flex min-w-0 flex-col gap-1">
-                <SheetTitle className="truncate">{name}</SheetTitle>
-                <p className="text-muted-foreground text-sm">
-                  {t(`settings.connectors.publisher.${connector.publisher}`)}
-                </p>
-              </div>
+              <SheetTitle className="min-w-0 truncate">{name}</SheetTitle>
             </div>
             <SheetDescription>
               {connectorDescription(t, connector)}
@@ -544,7 +550,7 @@ export default function ConnectionDrawer({
                 size="xs"
                 title={t('settings.connectors.detail.accounts')}
                 actions={
-                  connector.available && details.length > 0 ? (
+                  connector.available && ownDetails.length > 0 ? (
                     <Button
                       type="button"
                       variant="link"
@@ -577,7 +583,7 @@ export default function ConnectionDrawer({
                     </Button>
                   }
                 />
-              ) : details.length === 0 ? (
+              ) : ownDetails.length === 0 ? (
                 <EmptyState
                   size="xs"
                   illustration="none"
@@ -596,7 +602,7 @@ export default function ConnectionDrawer({
                 />
               ) : (
                 <div className="flex flex-col gap-6">
-                  {details.map((detail) => (
+                  {ownDetails.map((detail) => (
                     <AccountSection
                       key={detail.id}
                       connector={connector}
@@ -616,6 +622,49 @@ export default function ConnectionDrawer({
                 </div>
               )}
             </section>
+
+            {parts.map((part) => {
+              const partDetails = details.filter(
+                (detail) => detail.connector_key === part.key,
+              );
+              return (
+                <section key={part.key} className="flex flex-col gap-3">
+                  <SectionHeader
+                    as="h3"
+                    size="xs"
+                    title={connectorName(t, part)}
+                    description={connectorDescription(t, part)}
+                    actions={
+                      part.available && partDetails.length === 0 ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          shape="pill"
+                          onClick={() => onConnect(part)}
+                        >
+                          {t('settings.connectors.status.connect')}
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                  <CapabilityBadges capabilities={part.capabilities} />
+                  {partDetails.map((detail) => (
+                    <AccountSection
+                      key={detail.id}
+                      connector={part}
+                      detail={detail}
+                      onReconnect={reconnect}
+                      onDisconnect={setToDisconnect}
+                      onRemove={setToRemove}
+                      onSyncMore={(d) =>
+                        onConnect(part, { mode: 'sync', connectionId: d.id })
+                      }
+                      onRefreshTools={refreshTools}
+                    />
+                  ))}
+                </section>
+              );
+            })}
           </div>
         </SheetContent>
       </Sheet>
