@@ -216,9 +216,7 @@ describe('Admin Connectors', () => {
       ),
     );
     expect(rows).toHaveLength(3);
-    expect(rows[0].textContent).toContain(
-      'Needs setup · 3 connections · No tools',
-    );
+    expect(rows[0].textContent).toContain('Off · 3 connections · No tools');
     await act(async () => rows[1].click());
     expect(
       document.body.querySelector('[data-slot="sheet-content"]'),

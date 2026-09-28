@@ -248,11 +248,9 @@ export default function Connectors() {
 
   const summary = (connector: AdminConnector) =>
     [
-      !connector.configured
-        ? 'Needs setup'
-        : enabledOf(connector)
-          ? 'On'
-          : 'Off',
+      // The badge beside it says whether setup is missing; this is what
+      // members get.
+      connector.configured && enabledOf(connector) ? 'On' : 'Off',
       `${fmtNumber(connector.connection_count)} ${
         connector.connection_count === 1 ? 'connection' : 'connections'
       }`,
