@@ -94,6 +94,7 @@ export default function MCPServerModal({
   const popupOpenedRef = useRef(false);
   const [oauthCompleted, setOAuthCompleted] = useState(false);
   const [saveActive, setSaveActive] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const cleanupOAuthListener = useCallback(() => {
     setOauthTaskId(null);
@@ -526,19 +527,6 @@ export default function MCPServerModal({
             </FormField>
           </div>
         );
-      case 'oauth':
-        return (
-          <FormField label={t('settings.tools.mcp.placeholders.oauthScopes')}>
-            <Input
-              type="text"
-              value={formData.oauth_scopes}
-              onChange={(e) =>
-                handleInputChange('oauth_scopes', e.target.value)
-              }
-              placeholder="read, write"
-            />
-          </FormField>
-        );
       default:
         return null;
     }
@@ -660,29 +648,59 @@ export default function MCPServerModal({
 
         {renderAuthFields()}
 
-        <FormField
-          label={t('settings.tools.mcp.timeout')}
-          error={errors.timeout}
+        {/* Scopes and timeout rarely need changing: behind Advanced. */}
+        {showAdvanced || errors.timeout ? (
+          <>
+            {formData.auth_type === 'oauth' && (
+              <FormField
+                label={t('settings.tools.mcp.placeholders.oauthScopes')}
+              >
+                <Input
+                  type="text"
+                  value={formData.oauth_scopes}
+                  onChange={(e) =>
+                    handleInputChange('oauth_scopes', e.target.value)
+                  }
+                  placeholder="read, write"
+                />
+              </FormField>
+            )}
+            <FormField
+              label={t('settings.tools.mcp.timeout')}
+              error={errors.timeout}
+            >
+              <Input
+                type="number"
+                value={formData.timeout}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === '') {
+                    handleInputChange('timeout', '');
+                  } else {
+                    const numValue = parseInt(value);
+                    if (!isNaN(numValue) && numValue >= 1) {
+                      handleInputChange('timeout', numValue);
+                    }
+                  }
+                }}
+                placeholder="30"
+                min={1}
+                max={300}
+              />
+            </FormField>
+          </>
+        ) : null}
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShowAdvanced((open) => !open)}
+          className="-ml-3 w-fit justify-start"
         >
-          <Input
-            type="number"
-            value={formData.timeout}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === '') {
-                handleInputChange('timeout', '');
-              } else {
-                const numValue = parseInt(value);
-                if (!isNaN(numValue) && numValue >= 1) {
-                  handleInputChange('timeout', numValue);
-                }
-              }
-            }}
-            placeholder="30"
-            min={1}
-            max={300}
-          />
-        </FormField>
+          {showAdvanced
+            ? t('modals.uploadDoc.hideAdvanced')
+            : t('modals.uploadDoc.showAdvanced')}
+        </Button>
 
         {testResult && (
           <Alert variant={testResult.success ? 'success' : 'destructive'}>

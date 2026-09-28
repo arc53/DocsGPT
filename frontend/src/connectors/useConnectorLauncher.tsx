@@ -13,6 +13,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import ConnectWizard, { type WizardMode } from './ConnectWizard';
 import { loadConnectors } from './connectorsSlice';
+import { isMcpPreset } from './launchRules';
 import type { ConnectorDefinition } from './types';
 
 export type LaunchOptions = {
@@ -29,6 +30,7 @@ type Active =
       connector: ConnectorDefinition;
       mode: WizardMode;
       connectionId?: string;
+      mcpToolId?: string;
     }
   | {
       kind: 'mcp';
@@ -61,6 +63,19 @@ export default function useConnectorLauncher({
 
   const launch = useCallback(
     async (connector: ConnectorDefinition, options: LaunchOptions = {}) => {
+      if (isMcpPreset(connector)) {
+        setActive({
+          kind: 'wizard',
+          connector,
+          mode: options.mode === 'reconnect' ? 'reconnect' : 'connect',
+          connectionId: options.connectionId,
+          mcpToolId:
+            typeof options.mcpServer?.id === 'string'
+              ? options.mcpServer.id
+              : undefined,
+        });
+        return;
+      }
       if (isMcp(connector)) {
         setActive({
           kind: 'mcp',
@@ -158,6 +173,7 @@ export default function useConnectorLauncher({
           connector={active.connector}
           mode={active.mode}
           connectionId={active.connectionId}
+          mcpToolId={active.mcpToolId}
           onClose={() => {
             setActive(null);
             refresh();

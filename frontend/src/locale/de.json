@@ -1240,7 +1240,9 @@
         "connectedWithKey": "Verbunden mit dem Schlüssel, der auf {{hint}} endet.",
         "doneCounts": "{{sources}} werden synchronisiert, {{tools}} bereit.",
         "doneSources": "{{sources}} werden synchronisiert.",
-        "doneTools": "{{tools}} bereit."
+        "doneTools": "{{tools}} bereit.",
+        "waiting": "Schließe die Anmeldung bei {{name}} im geöffneten Fenster ab.",
+        "openSignIn": "Anmeldung bei {{name}} öffnen"
       },
       "remove": {
         "title": "{{name}} entfernen?",

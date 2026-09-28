@@ -1302,7 +1302,9 @@
         "connectedWithKey": "Подключено ключом, оканчивающимся на {{hint}}.",
         "doneCounts": "Синхронизируется: {{sources}}, готово: {{tools}}.",
         "doneSources": "Синхронизируется: {{sources}}.",
-        "doneTools": "Готово: {{tools}}."
+        "doneTools": "Готово: {{tools}}.",
+        "waiting": "Завершите вход в {{name}} в открывшемся окне.",
+        "openSignIn": "Открыть вход в {{name}}"
       },
       "remove": {
         "title": "Удалить {{name}}?",

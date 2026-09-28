@@ -310,8 +310,14 @@ class MCPServerSave(Resource):
             mcp_config = config.copy()
             mcp_config["auth_credentials"] = auth_credentials
 
-            if auth_type == "oauth":
-                if not config.get("oauth_task_id"):
+            if auth_type == "oauth" and not config.get("oauth_task_id"):
+                # No new handshake: the caller signed in to this server
+                # before, so its stored tokens answer the discovery.
+                try:
+                    mcp_tool = MCPTool(config=mcp_config, user_id=user)
+                    mcp_tool.discover_tools()
+                    actions_metadata = mcp_tool.get_actions_metadata()
+                except Exception:
                     return make_response(
                         jsonify(
                             {
@@ -321,6 +327,7 @@ class MCPServerSave(Resource):
                         ),
                         400,
                     )
+            elif auth_type == "oauth":
                 redis_client = get_redis_instance()
                 manager = MCPOAuthManager(redis_client)
                 result = manager.get_oauth_status(

@@ -12,6 +12,7 @@ import {
   selectConnectorCatalog,
   selectConnectorsLoaded,
 } from '../connectors/connectorsSlice';
+import { reconnectsInPlace } from '../connectors/launchRules';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
@@ -59,13 +60,13 @@ export default function ConnectToolCallBar({
   const connect = () => {
     // No account yet: connect one. The caller's own account that needs
     // signing in again is reconnected right here (every tool and source on
-    // it heals). MCP servers and anyone else's account go to the drawer.
+    // it heals). Custom MCP servers and anyone else's account go to the
+    // drawer.
     if (connector && required?.status === 'missing') {
       launch(connector);
       return;
     }
-    const inPlace =
-      connector?.auth_kind === 'oauth' || connector?.auth_kind === 'api_key';
+    const inPlace = !!connector && reconnectsInPlace(connector);
     if (connector && required?.connection_id && inPlace) {
       launch(connector, {
         mode: 'reconnect',

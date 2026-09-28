@@ -1228,7 +1228,9 @@
         "connectedWithKey": "已使用結尾為 {{hint}} 的金鑰連線。",
         "doneCounts": "{{sources}}同步中，{{tools}}已就緒。",
         "doneSources": "{{sources}}同步中。",
-        "doneTools": "{{tools}}已就緒。"
+        "doneTools": "{{tools}}已就緒。",
+        "waiting": "請在開啟的視窗中完成 {{name}} 登入。",
+        "openSignIn": "開啟 {{name}} 登入"
       },
       "remove": {
         "title": "要移除 {{name}} 嗎？",

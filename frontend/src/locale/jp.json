@@ -1228,7 +1228,9 @@
         "connectedWithKey": "末尾が {{hint}} のキーで接続しました。",
         "doneCounts": "{{sources}}を同期中、{{tools}}を利用できます。",
         "doneSources": "{{sources}}を同期中です。",
-        "doneTools": "{{tools}}を利用できます。"
+        "doneTools": "{{tools}}を利用できます。",
+        "waiting": "開いたウィンドウで {{name}} へのサインインを完了してください。",
+        "openSignIn": "{{name}} のサインインを開く"
       },
       "remove": {
         "title": "{{name}} を削除しますか？",

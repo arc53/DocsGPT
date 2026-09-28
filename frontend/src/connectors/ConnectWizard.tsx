@@ -6,7 +6,9 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import { envVar } from '@/env';
+import { baseURL } from '../api/client';
 import connectorsService from '../api/services/connectorsService';
+import userService from '../api/services/userService';
 import { useConnectorAuth } from '../components/ConnectorAuth';
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
@@ -17,6 +19,7 @@ import {
   AccordionTrigger,
 } from '../components/ui/accordion';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
@@ -43,6 +46,7 @@ import CredentialForm, { credentialsComplete } from './CredentialForm';
 import { loadConnectors, selectConnections } from './connectorsSlice';
 import { connectorDescription, connectorName } from './i18n';
 import ToolPermissions from './ToolPermissions';
+import useMcpOAuth, { type McpOAuthConfig } from './useMcpOAuth';
 import type { ConnectionTool, ConnectorDefinition } from './types';
 
 export type WizardMode = 'connect' | 'reconnect' | 'sync' | 'done';
@@ -66,12 +70,15 @@ export default function ConnectWizard({
   connector,
   mode = 'connect',
   connectionId: initialConnectionId = null,
+  mcpToolId,
   onClose,
   onFinished,
 }: {
   connector: ConnectorDefinition;
   mode?: WizardMode;
   connectionId?: string | null;
+  /** Reconnecting an MCP preset: the tool to update rather than add. */
+  mcpToolId?: string;
   onClose: () => void;
   onFinished?: () => void;
 }) {
@@ -133,6 +140,73 @@ export default function ConnectWizard({
       if (setup?.success) setTools(setup.tools ?? []);
     }
     setStep(canSync ? 'setup' : 'done');
+  };
+
+  // MCP presets (Notion, Linear…) sign in over MCP OAuth: no URL or auth
+  // form, just "Sign in to Notion". The tool is saved on success, and the
+  // done step shows what it can do.
+  const isMcpPreset =
+    connector.auth_kind === 'mcp_oauth' && !!connector.mcp_url;
+  const mcp = useMcpOAuth();
+  const mcpConfig = (): McpOAuthConfig => ({
+    server_url: connector.mcp_url ?? '',
+    auth_type: 'oauth',
+    oauth_scopes: connector.oauth_scopes ?? [],
+    timeout: 30,
+    redirect_uri: `${baseURL.replace(/\/$/, '')}/api/mcp_server/callback`,
+  });
+
+  const saveMcp = async (config: McpOAuthConfig, taskId: string | null) => {
+    setPending(true);
+    try {
+      const response = await userService.saveMCPServer(
+        {
+          displayName: name,
+          config: { ...config, oauth_task_id: taskId ?? '' },
+          status: true,
+          ...(mcpToolId && { id: mcpToolId }),
+        },
+        token,
+      );
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error);
+      const list = await connectorsService.listConnections(token);
+      const saved = (
+        (list?.connections ?? []) as {
+          id: string;
+          connector_key: string;
+          updated_at: string | null;
+        }[]
+      )
+        .filter((c) => c.connector_key === connector.key)
+        .sort((a, b) =>
+          (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
+        )[0];
+      refresh();
+      if (saved) {
+        setConnectionId(saved.id);
+        const detail = await connectorsService.getConnection(saved.id, token);
+        if (detail?.success) setTools(detail.connection.tools ?? []);
+      }
+      setStep('done');
+    } catch (err) {
+      setError(
+        (err instanceof Error && err.message) ||
+          t('settings.tools.mcp.errors.saveFailed'),
+      );
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const startMcpSignIn = () => {
+    setError('');
+    const config = mcpConfig();
+    mcp.start(config, {
+      onDone: ({ taskId }) => saveMcp(config, taskId),
+      onError: (message) =>
+        setError(message || t('settings.tools.mcp.errors.oauthFailed')),
+    });
   };
 
   const startSignIn = useConnectorAuth({
@@ -300,7 +374,25 @@ export default function ConnectWizard({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {connector.auth_kind === 'oauth' ? null : (
+      {isMcpPreset && mcp.pending && (
+        <p className="text-muted-foreground text-sm">
+          {t('settings.connectors.wizard.waiting', {
+            name,
+            interpolation: { escapeValue: false },
+          })}
+        </p>
+      )}
+      {isMcpPreset && mcp.blockedUrl && (
+        <Button variant="link" size="inline" asChild className="w-fit">
+          <a href={mcp.blockedUrl} target="_blank" rel="noopener noreferrer">
+            {t('settings.connectors.wizard.openSignIn', {
+              name,
+              interpolation: { escapeValue: false },
+            })}
+          </a>
+        </Button>
+      )}
+      {connector.auth_kind === 'oauth' || isMcpPreset ? null : (
         <CredentialForm
           connectorKey={connector.key}
           idPrefix={`connect-${connector.key}`}
@@ -432,15 +524,19 @@ export default function ConnectWizard({
 
   const footer =
     step === 'signin' ? (
-      connector.auth_kind === 'oauth' ? (
+      connector.auth_kind === 'oauth' || isMcpPreset ? (
         <ModalActions
           cancelLabel={t('cancel')}
-          onCancel={onClose}
+          onCancel={() => {
+            mcp.cancel();
+            onClose();
+          }}
           submitLabel={t('settings.connectors.wizard.signIn', {
             name,
             interpolation: { escapeValue: false },
           })}
-          onSubmit={startSignIn}
+          onSubmit={isMcpPreset ? startMcpSignIn : startSignIn}
+          pending={isMcpPreset && (mcp.pending || pending)}
         />
       ) : (
         <ModalActions

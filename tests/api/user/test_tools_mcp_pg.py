@@ -328,7 +328,10 @@ class TestMCPServerSave:
     def test_oauth_missing_task_id_returns_400(self, app):
         from docsgpt.api.user.tools.mcp import MCPServerSave
 
-        with app.test_request_context(
+        # No OAuth task and no stored sign-in that works.
+        unauthorized = MagicMock()
+        unauthorized.discover_tools.side_effect = RuntimeError("401")
+        with patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=unauthorized), app.test_request_context(
             "/api/mcp_server/save", method="POST",
             json={
                 "displayName": "Srv",
@@ -343,6 +346,31 @@ class TestMCPServerSave:
             request.decoded_token = {"sub": "u"}
             response = MCPServerSave().post()
         assert response.status_code == 400
+
+    def test_oauth_without_task_uses_the_stored_sign_in(self, app, pg_conn):
+        """Signed in before: the server answers with the saved tokens, no new handshake."""
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+
+        signed_in = MagicMock()
+        signed_in.get_actions_metadata.return_value = [{"name": "search"}]
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=signed_in,
+        ), patch("docsgpt.api.user.tools.mcp._mcp_connection", return_value=None), app.test_request_context(
+            "/api/mcp_server/save", method="POST",
+            json={
+                "displayName": "Linear",
+                "config": {
+                    "transport_type": "http",
+                    "server_url": "https://mcp.linear.app/mcp",
+                    "auth_type": "oauth",
+                },
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-signed-in"}
+            response = MCPServerSave().post()
+        assert response.status_code == 200
+        signed_in.discover_tools.assert_called_once()
 
     def test_creates_mcp_tool_successfully(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import MCPServerSave

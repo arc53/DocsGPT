@@ -18,6 +18,7 @@ import {
   selectConnectorCatalog,
   selectConnectorsLoaded,
 } from '../connectors/connectorsSlice';
+import { reconnectsInPlace } from '../connectors/launchRules';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { formatCount } from '../utils/dateTimeUtils';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -106,8 +107,7 @@ export default function ConnectionHealthToast() {
   const reconnect = (payload: Record<string, unknown>) => {
     const connectionId = String(payload.connection_id ?? '');
     const connector = catalog.find((c) => c.key === payload.connector_key);
-    const inPlace =
-      connector?.auth_kind === 'oauth' || connector?.auth_kind === 'api_key';
+    const inPlace = !!connector && reconnectsInPlace(connector);
     if (connector && connectionId && inPlace) {
       launch(connector, { mode: 'reconnect', connectionId });
       return true;
@@ -137,7 +137,7 @@ export default function ConnectionHealthToast() {
               </ToastActions>
             </ToastHeader>
             <ToastFooter>
-              {/* Sign in again right here; MCP servers reconnect from the
+              {/* Sign in again right here; custom MCP servers reconnect from the
                   connector's drawer. The toast stays until it works. */}
               <Button asChild size="sm" shape="pill">
                 <Link

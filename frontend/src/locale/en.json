@@ -1246,7 +1246,9 @@
         "connectedWithKey": "Connected with the key ending {{hint}}.",
         "doneCounts": "{{sources}} syncing, {{tools}} ready.",
         "doneSources": "{{sources}} syncing.",
-        "doneTools": "{{tools}} ready."
+        "doneTools": "{{tools}} ready.",
+        "waiting": "Finish signing in to {{name}} in the window that opened.",
+        "openSignIn": "Open the {{name}} sign-in"
       },
       "remove": {
         "title": "Remove {{name}}?",

@@ -1240,7 +1240,9 @@
         "connectedWithKey": "Conectado con la clave que termina en {{hint}}.",
         "doneCounts": "{{sources}} sincronizando, {{tools}} listas.",
         "doneSources": "{{sources}} sincronizando.",
-        "doneTools": "{{tools}} listas."
+        "doneTools": "{{tools}} listas.",
+        "waiting": "Termina de iniciar sesión en {{name}} en la ventana que se abrió.",
+        "openSignIn": "Abrir el inicio de sesión de {{name}}"
       },
       "remove": {
         "title": "¿Eliminar {{name}}?",

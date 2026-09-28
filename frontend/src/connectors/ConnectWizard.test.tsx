@@ -23,6 +23,15 @@ const service = vi.hoisted(() => ({
 }));
 vi.mock('../api/services/connectorsService', () => ({ default: service }));
 
+const mcpApi = vi.hoisted(() => ({
+  testMCPConnection: vi.fn(),
+  saveMCPServer: vi.fn(),
+}));
+vi.mock('../api/services/userService', async (importOriginal) => {
+  const original = await importOriginal<{ default: object }>();
+  return { default: { ...original.default, ...mcpApi } };
+});
+
 // The OAuth popup is covered by ConnectorAuth's own tests; here it only has
 // to report a finished sign-in.
 vi.mock('../components/ConnectorAuth', () => ({
@@ -55,6 +64,9 @@ vi.mock('../components/FilePicker', () => ({
   ),
 }));
 
+import notificationsReducer, {
+  sseEventReceived,
+} from '../notifications/notificationsSlice';
 import connectorsReducer from './connectorsSlice';
 import ConnectWizard from './ConnectWizard';
 import type { ConnectorDefinition } from './types';
@@ -147,6 +159,7 @@ describe('ConnectWizard', () => {
     const store = configureStore({
       reducer: {
         connectors: connectorsReducer,
+        notifications: notificationsReducer,
         preference: (state = { token: null, selectedDocs: [] }) => state,
         conversation: (state = {}) => state,
       },
@@ -168,6 +181,7 @@ describe('ConnectWizard', () => {
         </Provider>,
       );
     });
+    return store;
   };
 
   const click = async (text: string) => {
@@ -291,5 +305,88 @@ describe('ConnectWizard', () => {
     await click('settings.connectors.wizard.tryInChat');
     expect(onClose).toHaveBeenCalled();
     expect(document.body.textContent).toContain('NEW_CHAT');
+  });
+
+  it('signs in to an MCP preset with one button and shows its tools', async () => {
+    const notion: ConnectorDefinition = {
+      ...base,
+      key: 'mcp:notion',
+      name: 'Notion',
+      icon: 'notion',
+      auth_kind: 'mcp_oauth',
+      credential_fields: [],
+      tool_templates: ['mcp_tool'],
+      mcp_url: 'https://mcp.notion.com/mcp',
+      oauth_scopes: [],
+      publisher: 'preset',
+    };
+    const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
+    mcpApi.testMCPConnection.mockResolvedValue({
+      json: async () => ({ requires_oauth: true, task_id: 'task-1' }),
+    });
+    mcpApi.saveMCPServer.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, id: 'tool-9' }),
+    });
+    service.listConnections.mockResolvedValue({
+      success: true,
+      connections: [
+        { id: 'conn-9', connector_key: 'mcp:notion', updated_at: '2026-09-28' },
+      ],
+    });
+    service.getConnection.mockResolvedValue({
+      success: true,
+      connection: { tools: [{ ...TELEGRAM_TOOL, display_name: 'Notion' }] },
+    });
+    const store = await render(notion);
+    // No server URL or auth form: one sign-in button.
+    expect(document.body.querySelector('input')).toBeNull();
+    await click('settings.connectors.wizard.signIn');
+    // The pop-up opens inside the click, then follows the worker.
+    expect(open).toHaveBeenCalledWith(
+      'about:blank',
+      'mcpOAuth',
+      expect.any(String),
+    );
+    expect(document.body.textContent).toContain(
+      'settings.connectors.wizard.waiting',
+    );
+    await act(async () => {
+      store.dispatch(
+        sseEventReceived({
+          id: 'ev-1',
+          type: 'mcp.oauth.awaiting_redirect',
+          scope: { kind: 'mcp_oauth', id: 'task-1' },
+          payload: { authorization_url: 'https://notion.example/authorize' },
+        }),
+      );
+    });
+    expect(popup.location.href).toBe('https://notion.example/authorize');
+    await act(async () => {
+      store.dispatch(
+        sseEventReceived({
+          id: 'ev-2',
+          type: 'mcp.oauth.completed',
+          scope: { kind: 'mcp_oauth', id: 'task-1' },
+          payload: { tools: [] },
+        }),
+      );
+    });
+    expect(mcpApi.saveMCPServer.mock.calls[0][0]).toMatchObject({
+      displayName: 'Notion',
+      config: {
+        server_url: 'https://mcp.notion.com/mcp',
+        auth_type: 'oauth',
+        oauth_task_id: 'task-1',
+      },
+    });
+    expect(document.body.textContent).toContain(
+      'settings.connectors.wizard.doneTitle',
+    );
+    expect(document.body.textContent).toContain(
+      'settings.connectors.wizard.toolsHeading:1',
+    );
+    open.mockRestore();
   });
 });
