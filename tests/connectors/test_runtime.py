@@ -157,9 +157,19 @@ class TestExecutor:
         with _service_db(pg_conn):
             pause = _pause(_executor(), _tool(cid))
         assert pause["pause_type"] == "awaiting_approval"
+        # The caller's own connection: the card can reconnect it in place.
         assert pause["connection_required"] == {
             "connector_key": "telegram", "connector_name": "Telegram", "status": "reconnect_needed",
+            "connection_id": cid, "owner_account": False,
         }
+
+    def test_owners_broken_account_is_not_handed_to_the_member(self, pg_conn):
+        cid = _connection(pg_conn, status="reconnect_needed")
+        with _service_db(pg_conn):
+            pause = _pause(_executor(user="bob"), _tool(cid))
+        required = pause["connection_required"]
+        assert required["owner_account"] is True
+        assert "connection_id" not in required
 
     def test_member_without_connection_pauses(self, pg_conn):
         cid = _connection(pg_conn)

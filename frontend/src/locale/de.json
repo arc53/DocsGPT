@@ -1256,7 +1256,12 @@
         "failed": "Die Verbindung konnte nicht entfernt werden. Versuche es erneut."
       },
       "health": {
-        "reconnect": "Verbinde {{name}} neu, um weiter zu synchronisieren."
+        "reconnect": "Verbinde {{name}} neu, um weiter zu synchronisieren.",
+        "reconnectSources_one": "{{name}} neu verbinden: {{formatted}} Quelle ist pausiert",
+        "reconnectSources_other": "{{name}} neu verbinden: {{formatted}} Quellen sind pausiert",
+        "reconnectTools": "{{name}} neu verbinden, damit Agenten es wieder nutzen können",
+        "reconnectBoth_one": "{{name}} neu verbinden: {{formatted}} Quelle ist pausiert und Agenten können es nicht nutzen",
+        "reconnectBoth_other": "{{name}} neu verbinden: {{formatted}} Quellen sind pausiert und Agenten können es nicht nutzen"
       },
       "error": {
         "decrypt": "Die gespeicherten Zugangsdaten konnten nicht entschlüsselt werden. Verbinde neu, um fortzufahren.",

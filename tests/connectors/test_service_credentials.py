@@ -175,6 +175,9 @@ class TestGetValidTokenInfo:
         assert meta["sync_state"] == "paused_reconnect"
         publish.assert_called_once()
         assert publish.call_args.args[1] == "connection.reconnect_needed"
+        # The toast says what stopped working.
+        assert publish.call_args.args[2]["source_count"] == 1
+        assert publish.call_args.args[2]["tool_count"] == 0
         # No account data or secrets in the event.
         assert "alice@example.com" not in json.dumps(publish.call_args.args[2])
 

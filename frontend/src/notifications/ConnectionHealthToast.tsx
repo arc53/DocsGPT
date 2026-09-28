@@ -12,7 +12,14 @@ import {
   ToastHeader,
   ToastTitle,
 } from '../components/ui/toast';
-import { loadConnectors } from '../connectors/connectorsSlice';
+import {
+  loadConnectors,
+  selectConnections,
+  selectConnectorCatalog,
+  selectConnectorsLoaded,
+} from '../connectors/connectorsSlice';
+import useConnectorLauncher from '../connectors/useConnectorLauncher';
+import { formatCount } from '../utils/dateTimeUtils';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import {
@@ -27,11 +34,11 @@ const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_VISIBLE = 2;
 
 /**
- * "Reconnect Google Drive to keep syncing": a connection whose sign-in
- * stopped working (``connection.reconnect_needed``). Stays until the user
- * reconnects or dismisses it, since syncing is paused until then. Shares
- * the team notifications' persisted dismissals, so a reload does not pop it
- * again.
+ * "Reconnect Google Drive: 3 sources paused": a connection whose sign-in
+ * stopped working (``connection.reconnect_needed``). Reconnect signs in
+ * again right here; the toast closes itself once the connection works, or
+ * when dismissed. Shares the team notifications' persisted dismissals, so a
+ * reload does not pop it again.
  */
 export default function ConnectionHealthToast() {
   const dispatch = useDispatch<AppDispatch>();
@@ -40,6 +47,10 @@ export default function ConnectionHealthToast() {
   const events = useSelector(selectRecentEvents);
   const dismissed = useSelector(selectDismissedShareNotifications);
   const dismissedSet = useMemo(() => new Set(dismissed), [dismissed]);
+  const catalog = useSelector(selectConnectorCatalog);
+  const connections = useSelector(selectConnections);
+  const connectionsLoaded = useSelector(selectConnectorsLoaded);
+  const { launch, modals } = useConnectorLauncher();
 
   const onDismiss = useCallback(
     (id: string) => dispatch(dismissShareNotification(id)),
@@ -58,6 +69,9 @@ export default function ConnectionHealthToast() {
     }
     const connectionId = String(event.scope?.id ?? event.id);
     if (seenConnections.has(connectionId)) continue;
+    // Reconnected since (here or anywhere): nothing to say any more.
+    const current = connections.find((c) => c.id === connectionId);
+    if (connectionsLoaded && current?.status === 'connected') continue;
     seenConnections.add(connectionId);
     visible.push(event);
     if (visible.length >= MAX_VISIBLE) break;
@@ -69,23 +83,47 @@ export default function ConnectionHealthToast() {
     if (newest) dispatch(loadConnectors({ token }));
   }, [newest, dispatch, token]);
 
-  if (visible.length === 0) return null;
+  if (visible.length === 0) return <>{modals}</>;
+
+  const title = (payload: Record<string, unknown>) => {
+    const name = String(payload.name ?? '');
+    const sources = Number(payload.source_count ?? 0);
+    const tools = Number(payload.tool_count ?? 0);
+    const values = {
+      name,
+      count: sources,
+      formatted: formatCount(sources),
+      interpolation: { escapeValue: false },
+    };
+    if (sources && tools)
+      return t('settings.connectors.health.reconnectBoth', values);
+    if (sources)
+      return t('settings.connectors.health.reconnectSources', values);
+    if (tools) return t('settings.connectors.health.reconnectTools', values);
+    return t('settings.connectors.health.reconnect', values);
+  };
+
+  const reconnect = (payload: Record<string, unknown>) => {
+    const connectionId = String(payload.connection_id ?? '');
+    const connector = catalog.find((c) => c.key === payload.connector_key);
+    const inPlace =
+      connector?.auth_kind === 'oauth' || connector?.auth_kind === 'api_key';
+    if (connector && connectionId && inPlace) {
+      launch(connector, { mode: 'reconnect', connectionId });
+      return true;
+    }
+    return false;
+  };
 
   return (
     <>
       {visible.map((event) => {
         const payload = (event.payload ?? {}) as Record<string, unknown>;
-        const name = String(payload.name ?? '');
         const key = String(payload.connector_key ?? '');
         return (
           <Toast key={event.id}>
             <ToastHeader variant="warning">
-              <ToastTitle wrap>
-                {t('settings.connectors.health.reconnect', {
-                  name,
-                  interpolation: { escapeValue: false },
-                })}
-              </ToastTitle>
+              <ToastTitle wrap>{title(payload)}</ToastTitle>
               <ToastActions>
                 <Button
                   type="button"
@@ -99,10 +137,14 @@ export default function ConnectionHealthToast() {
               </ToastActions>
             </ToastHeader>
             <ToastFooter>
+              {/* Sign in again right here; MCP servers reconnect from the
+                  connector's drawer. The toast stays until it works. */}
               <Button asChild size="sm" shape="pill">
                 <Link
                   to={`/settings/connectors?connector=${encodeURIComponent(key)}`}
-                  onClick={() => onDismiss(event.id as string)}
+                  onClick={(e) => {
+                    if (reconnect(payload)) e.preventDefault();
+                  }}
                 >
                   {t('settings.connectors.status.reconnect')}
                 </Link>
@@ -111,6 +153,7 @@ export default function ConnectionHealthToast() {
           </Toast>
         );
       })}
+      {modals}
     </>
   );
 }

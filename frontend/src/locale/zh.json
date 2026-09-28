@@ -1242,7 +1242,10 @@
         "failed": "无法移除此连接。请重试。"
       },
       "health": {
-        "reconnect": "重新连接 {{name}} 以继续同步。"
+        "reconnect": "重新连接 {{name}} 以继续同步。",
+        "reconnectSources_other": "请重新连接 {{name}}：{{formatted}} 个来源已暂停",
+        "reconnectTools": "请重新连接 {{name}}，让智能体可以再次使用它",
+        "reconnectBoth_other": "请重新连接 {{name}}：{{formatted}} 个来源已暂停，智能体也无法使用它"
       },
       "error": {
         "decrypt": "无法解密保存的凭据。请重新连接以继续。",

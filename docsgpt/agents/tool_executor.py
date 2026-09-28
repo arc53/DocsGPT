@@ -812,15 +812,24 @@ class ToolExecutor:
 
     @staticmethod
     def _connection_payload(resolved) -> Dict:
-        """What the chat's Connect card needs; never an account or a secret."""
-        return {
+        """What the chat's Connect card needs; never an account or a secret.
+
+        ``connection_id`` is only the caller's own connection, which the card
+        reconnects in place; an owner's account (``owner_account``) is not
+        the caller's to reconnect.
+        """
+        payload = {
             "connector_key": resolved.connector_key,
             "connector_name": resolved.connector_name,
             "status": (
                 "missing" if resolved.row is None
                 else (resolved.row.get("status") or "reconnect_needed")
             ),
+            "owner_account": bool(resolved.delegated),
         }
+        if resolved.row is not None and not resolved.delegated:
+            payload["connection_id"] = str(resolved.row["id"])
+        return payload
 
     def check_pause(self, tools_dict: Dict, call, llm_class_name: str) -> Optional[Dict]:
         """Return a pending-action dict (approval / client / headless_denied) or None.

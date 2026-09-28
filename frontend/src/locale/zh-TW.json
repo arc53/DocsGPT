@@ -1242,7 +1242,10 @@
         "failed": "無法移除此連線。請再試一次。"
       },
       "health": {
-        "reconnect": "重新連線 {{name}} 以繼續同步。"
+        "reconnect": "重新連線 {{name}} 以繼續同步。",
+        "reconnectSources_other": "請重新連線 {{name}}：{{formatted}} 個來源已暫停",
+        "reconnectTools": "請重新連線 {{name}}，讓代理可以再次使用它",
+        "reconnectBoth_other": "請重新連線 {{name}}：{{formatted}} 個來源已暫停，代理也無法使用它"
       },
       "error": {
         "decrypt": "無法解密已儲存的憑證。請重新連線以繼續。",

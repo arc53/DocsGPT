@@ -464,6 +464,7 @@ def mark_reconnect_needed(connection_id: str, error: str) -> None:
         if row is None:
             return
         already = normalize_status(row) == STATUS_RECONNECT
+        counts = repo.resource_counts([connection_id]).get(str(connection_id), {})
         repo.update(connection_id, {"status": STATUS_RECONNECT, "last_error": error[:500]})
         conn.execute(
             text(
@@ -480,6 +481,8 @@ def mark_reconnect_needed(connection_id: str, error: str) -> None:
                 "connection_id": connection_id,
                 "connector_key": catalog.connector_key_for_row(row),
                 "name": serialize_connection(row)["name"],
+                "source_count": counts.get("sources", 0),
+                "tool_count": counts.get("tools", 0),
             },
             scope={"kind": "connection", "id": connection_id},
         )

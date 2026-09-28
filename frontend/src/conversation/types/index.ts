@@ -28,6 +28,10 @@ export type ToolCallsType = {
     connector_key: string | null;
     connector_name: string | null;
     status: 'missing' | 'reconnect_needed' | 'disconnected' | 'error' | string;
+    /** The caller's own connection, reconnected in place. */
+    connection_id?: string;
+    /** The tool runs on its owner's account, not the caller's. */
+    owner_account?: boolean;
   };
   // Which connection a tool call used, for the connector's logo and name on
   // its chip (never an account or a secret).

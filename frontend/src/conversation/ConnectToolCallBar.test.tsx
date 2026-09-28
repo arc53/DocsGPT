@@ -20,6 +20,11 @@ vi.mock('../api/services/connectorsService', () => ({
   },
 }));
 
+const launch = vi.fn();
+vi.mock('../connectors/useConnectorLauncher', () => ({
+  default: () => ({ launch, modals: null }),
+}));
+
 import connectorsReducer from '../connectors/connectorsSlice';
 import ConnectToolCallBar from './ConnectToolCallBar';
 import type { ToolCallsType } from './types';
@@ -54,13 +59,31 @@ describe('ConnectToolCallBar', () => {
     container.remove();
   });
 
-  const render = async (toolCall: ToolCallsType, onToolAction = vi.fn()) => {
+  const render = async (
+    toolCall: ToolCallsType,
+    onToolAction = vi.fn(),
+    connectors?: Record<string, unknown>,
+  ) => {
     const store = configureStore({
       reducer: {
         connectors: connectorsReducer,
         preference: (state = { token: null }) => state,
       },
-    });
+      preloadedState: connectors
+        ? {
+            connectors: {
+              enabled: true,
+              loading: false,
+              loaded: true,
+              failed: false,
+              catalog: [],
+              connections: [],
+              ...connectors,
+            },
+            preference: { token: null },
+          }
+        : undefined,
+    } as Parameters<typeof configureStore>[0]);
     await act(async () => {
       root.render(
         <Provider store={store}>
@@ -101,6 +124,47 @@ describe('ConnectToolCallBar', () => {
     const onToolAction = await render(call('missing'));
     await act(async () => button('conversation.toolApproval.skip').click());
     expect(onToolAction).toHaveBeenCalledWith('call-1', 'denied');
+  });
+
+  const TELEGRAM = {
+    key: 'telegram',
+    name: 'Telegram',
+    icon: 'tool_telegram',
+    auth_kind: 'api_key',
+  };
+  const ownCall = (status: string): ToolCallsType => ({
+    ...call(status),
+    connection_required: {
+      connector_key: 'telegram',
+      connector_name: 'Telegram',
+      status,
+      connection_id: 'conn-1',
+      owner_account: false,
+    },
+  });
+
+  it('reconnects your own account right here', async () => {
+    launch.mockClear();
+    await render(ownCall('reconnect_needed'), vi.fn(), {
+      catalog: [TELEGRAM],
+      connections: [{ id: 'conn-1', status: 'reconnect_needed' }],
+    });
+    await act(async () =>
+      button('conversation.toolApproval.connect:Telegram').click(),
+    );
+    expect(launch).toHaveBeenCalledWith(TELEGRAM, {
+      mode: 'reconnect',
+      connectionId: 'conn-1',
+    });
+    expect(document.body.textContent).not.toContain('DRAWER');
+  });
+
+  it('offers Continue once the connection works again', async () => {
+    await render(ownCall('reconnect_needed'), vi.fn(), {
+      catalog: [TELEGRAM],
+      connections: [{ id: 'conn-1', status: 'connected' }],
+    });
+    expect(button('conversation.toolApproval.continue')).toBeDefined();
   });
 
   it('an account that needs signing in again is healed from its drawer', async () => {

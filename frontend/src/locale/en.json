@@ -1262,7 +1262,12 @@
         "failed": "Could not remove the connection. Try again."
       },
       "health": {
-        "reconnect": "Reconnect {{name}} to keep syncing."
+        "reconnect": "Reconnect {{name}} to keep syncing.",
+        "reconnectSources_one": "Reconnect {{name}}: {{formatted}} source is paused",
+        "reconnectSources_other": "Reconnect {{name}}: {{formatted}} sources are paused",
+        "reconnectTools": "Reconnect {{name}} so agents can use it again",
+        "reconnectBoth_one": "Reconnect {{name}}: {{formatted}} source is paused and agents can't use it",
+        "reconnectBoth_other": "Reconnect {{name}}: {{formatted}} sources are paused and agents can't use it"
       },
       "error": {
         "decrypt": "Stored credentials could not be decrypted. Reconnect to continue.",

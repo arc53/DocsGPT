@@ -1256,7 +1256,12 @@
         "failed": "No se pudo eliminar la conexión. Inténtalo de nuevo."
       },
       "health": {
-        "reconnect": "Reconecta {{name}} para seguir sincronizando."
+        "reconnect": "Reconecta {{name}} para seguir sincronizando.",
+        "reconnectSources_one": "Vuelve a conectar {{name}}: {{formatted}} fuente está en pausa",
+        "reconnectSources_other": "Vuelve a conectar {{name}}: {{formatted}} fuentes están en pausa",
+        "reconnectTools": "Vuelve a conectar {{name}} para que los agentes puedan usarlo de nuevo",
+        "reconnectBoth_one": "Vuelve a conectar {{name}}: {{formatted}} fuente está en pausa y los agentes no pueden usarlo",
+        "reconnectBoth_other": "Vuelve a conectar {{name}}: {{formatted}} fuentes están en pausa y los agentes no pueden usarlo"
       },
       "error": {
         "decrypt": "No se pudieron descifrar las credenciales guardadas. Reconecta para continuar.",

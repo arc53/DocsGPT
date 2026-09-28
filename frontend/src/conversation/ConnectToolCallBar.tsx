@@ -8,6 +8,7 @@ import { Button } from '../components/ui/button';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
   loadConnectors,
+  selectConnections,
   selectConnectorCatalog,
   selectConnectorsLoaded,
 } from '../connectors/connectorsSlice';
@@ -34,12 +35,18 @@ export default function ConnectToolCallBar({
   const token = useSelector(selectToken);
   const catalog = useSelector(selectConnectorCatalog);
   const loaded = useSelector(selectConnectorsLoaded);
+  const connections = useSelector(selectConnections);
   const [connected, setConnected] = useState(false);
   const { launch, modals } = useConnectorLauncher({
     onConnected: () => setConnected(true),
   });
   const required = toolCall.connection_required;
   const connector = catalog.find((c) => c.key === required?.connector_key);
+  const ownConnection = required?.connection_id
+    ? connections.find((c) => c.id === required.connection_id)
+    : undefined;
+  // Connected here, or healthy again when the user comes back to the chat.
+  const ready = connected || ownConnection?.status === 'connected';
   const name =
     required?.connector_name ||
     connector?.name ||
@@ -50,11 +57,20 @@ export default function ConnectToolCallBar({
   }, [loaded, dispatch, token]);
 
   const connect = () => {
-    // A member who has no account for the service connects one. An owner's
-    // existing account that needs signing in again is healed from its drawer,
-    // which reconnects that same connection for every tool and source.
+    // No account yet: connect one. The caller's own account that needs
+    // signing in again is reconnected right here (every tool and source on
+    // it heals). MCP servers and anyone else's account go to the drawer.
     if (connector && required?.status === 'missing') {
       launch(connector);
+      return;
+    }
+    const inPlace =
+      connector?.auth_kind === 'oauth' || connector?.auth_kind === 'api_key';
+    if (connector && required?.connection_id && inPlace) {
+      launch(connector, {
+        mode: 'reconnect',
+        connectionId: required.connection_id,
+      });
       return;
     }
     navigate(
@@ -78,7 +94,7 @@ export default function ConnectToolCallBar({
         </span>
       </div>
       <div className="flex items-center gap-2">
-        {connected ? (
+        {ready ? (
           <Button
             type="button"
             size="xs"
