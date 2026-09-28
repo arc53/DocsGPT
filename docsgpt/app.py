@@ -29,6 +29,7 @@ from docsgpt.api.scim import scim_bp  # noqa: E402
 from docsgpt.api.user.authz import ROLE_USER, resolve_roles  # noqa: E402
 from docsgpt.api.user.routes import user  # noqa: E402
 from docsgpt.api.connector.routes import connector  # noqa: E402
+from docsgpt.api.connector import connections as _connections  # noqa: E402,F401
 from docsgpt.api.v1 import v1_bp  # noqa: E402
 from docsgpt.celery_init import celery  # noqa: E402
 from docsgpt.core.secret_key import resolve_jwt_secret_key  # noqa: E402
@@ -209,6 +210,9 @@ def get_config():
         "hybrid_available": settings.VECTOR_STORE == "pgvector",
         "tts_available": TTSCreator.is_enabled(settings.TTS_PROVIDER),
         "stt_available": STTCreator.is_enabled(settings.STT_PROVIDER),
+        # Lets a frontend built before the Connectors page run against this
+        # backend, and a new frontend hide the page against an older one.
+        "connectors_enabled": True,
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

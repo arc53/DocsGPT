@@ -24,12 +24,13 @@ from typing import Any, Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 
 
 _UPDATABLE_SCALARS = {
     "server_url", "session_token", "user_email", "status", "expires_at",
+    "connector_key", "display_name", "account_label", "auth_kind",
 }
 _UPDATABLE_JSONB = {"session_data", "token_info"}
 
@@ -176,8 +177,80 @@ class ConnectorSessionsRepository:
 
     def list_for_user(self, user_id: str) -> list[dict]:
         result = self._conn.execute(
-            text("SELECT * FROM connector_sessions WHERE user_id = :user_id"),
+            text("SELECT * FROM connector_sessions WHERE user_id = :user_id ORDER BY created_at"),
             {"user_id": user_id},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def get(self, connection_id: str) -> Optional[dict]:
+        """Fetch a connection by id, whoever owns it. Callers authorise."""
+        if not looks_like_uuid(connection_id):
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM connector_sessions WHERE id = CAST(:id AS uuid)"),
+            {"id": str(connection_id)},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_for_user(self, connection_id: str, user_id: str) -> Optional[dict]:
+        """Fetch a connection only when ``user_id`` owns it."""
+        row = self.get(connection_id)
+        if row is None or row.get("user_id") != user_id:
+            return None
+        return row
+
+    def get_for_update(self, connection_id: str) -> Optional[dict]:
+        """Fetch and row-lock a connection until the transaction ends.
+
+        Token refresh holds this lock so two workers refreshing a rotating
+        refresh token (Microsoft, Atlassian) cannot both spend it.
+        """
+        if not looks_like_uuid(connection_id):
+            return None
+        result = self._conn.execute(
+            text("SELECT * FROM connector_sessions WHERE id = CAST(:id AS uuid) FOR UPDATE"),
+            {"id": str(connection_id)},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def resource_counts(self, connection_ids: list[str]) -> dict[str, dict[str, int]]:
+        """Number of sources and tools linked to each connection id."""
+        ids = [str(i) for i in connection_ids if looks_like_uuid(str(i))]
+        counts: dict[str, dict[str, int]] = {i: {"sources": 0, "tools": 0} for i in ids}
+        if not ids:
+            return counts
+        for table, key in (("sources", "sources"), ("user_tools", "tools")):
+            result = self._conn.execute(
+                text(
+                    f"SELECT connection_id, count(*) FROM {table} "
+                    "WHERE connection_id = ANY(CAST(:ids AS uuid[])) GROUP BY connection_id"
+                ),
+                {"ids": ids},
+            )
+            for connection_id, count in result.fetchall():
+                counts[str(connection_id)][key] = int(count)
+        return counts
+
+    def list_sources(self, connection_id: str) -> list[dict]:
+        """Sources synced from a connection, newest first."""
+        result = self._conn.execute(
+            text(
+                "SELECT id, name, type, date, sync_frequency, metadata, remote_data, user_id "
+                "FROM sources WHERE connection_id = CAST(:id AS uuid) ORDER BY date DESC"
+            ),
+            {"id": str(connection_id)},
+        )
+        return [row_to_dict(r) for r in result.fetchall()]
+
+    def list_tools(self, connection_id: str) -> list[dict]:
+        """Tools a connection provides, oldest first."""
+        result = self._conn.execute(
+            text(
+                "SELECT * FROM user_tools WHERE connection_id = CAST(:id AS uuid) ORDER BY created_at"
+            ),
+            {"id": str(connection_id)},
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
@@ -198,6 +271,7 @@ class ConnectorSessionsRepository:
             else:
                 set_clauses.append(f"{col} = :{col}")
                 params[col] = val
+        set_clauses.append("updated_at = now()")
         result = self._conn.execute(
             text(
                 f"UPDATE connector_sessions SET {', '.join(set_clauses)} "

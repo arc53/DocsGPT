@@ -216,6 +216,9 @@ user_tools_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    Column(
+        "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="SET NULL"),
+    ),
 )
 
 token_usage_table = Table(
@@ -338,6 +341,9 @@ sources_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    Column(
+        "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="SET NULL"),
+    ),
 )
 
 agents_table = Table(
@@ -585,6 +591,13 @@ connector_sessions_table = Table(
     Column("expires_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # Added in ``0038_connections``: each row is a connection (one signed-in
+    # account, one MCP server or one set of API credentials).
+    Column("connector_key", Text),
+    Column("display_name", Text),
+    Column("account_label", Text),
+    Column("auth_kind", Text),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 

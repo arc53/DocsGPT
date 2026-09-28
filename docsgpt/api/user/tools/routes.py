@@ -19,6 +19,7 @@ from docsgpt.api import api
 from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 from docsgpt.api.user.team_sharing import effective_write_owner, visible_with_access
+from docsgpt.connectors.catalog import definition_for_tool
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
@@ -186,6 +187,10 @@ def transform_actions(actions_metadata):
 
 tools_ns = Namespace("tools", description="Tool management operations", path="/api")
 
+# Tools the Connectors page adds through "Add custom connector" rather than
+# the Add Tool modal.
+_CUSTOM_CONNECTOR_TOOLS = {"mcp_tool": "custom_mcp", "api_tool": "custom_openapi"}
+
 
 @tools_ns.route("/available_tools")
 class AvailableTools(Resource):
@@ -202,6 +207,13 @@ class AvailableTools(Resource):
                 description = lines[1].strip() if len(lines) > 1 else ""
                 config_req = tool_instance.get_config_requirements()
                 actions = tool_instance.get_actions_metadata()
+                definition = definition_for_tool(tool_name)
+                if definition is not None:
+                    group, connector_key = "service", definition.key
+                elif tool_name in _CUSTOM_CONNECTOR_TOOLS:
+                    group, connector_key = "custom", _CUSTOM_CONNECTOR_TOOLS[tool_name]
+                else:
+                    group, connector_key = "built_in", None
                 tools_metadata.append(
                     {
                         "name": tool_name,
@@ -209,6 +221,8 @@ class AvailableTools(Resource):
                         "description": description,
                         "configRequirements": config_req,
                         "actions": actions,
+                        "group": group,
+                        "connector_key": connector_key,
                     }
                 )
         except Exception as err:

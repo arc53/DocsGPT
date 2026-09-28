@@ -67,6 +67,12 @@ def _get_provider_from_remote_data(remote_data):
     return None
 
 
+def _connection_id(row: dict) -> str | None:
+    """The connection a source syncs from, as a string id, or None."""
+    value = row.get("connection_id")
+    return str(value) if value else None
+
+
 @sources_ns.route("/sources")
 class CombinedJson(Resource):
     @api.doc(description="Provide JSON file with combined available indexes")
@@ -117,6 +123,7 @@ class CombinedJson(Resource):
                     "config": SourceConfig.parse(index.get("config")).model_dump(),
                     "ownership": ownership,
                     "team_access": team_access,
+                    "connectionId": _connection_id(index),
                 }
 
             for index in indexes:
@@ -207,6 +214,7 @@ class PaginatedSources(Resource):
                         "team_access": (
                             None if owned else team_shared.get(str(doc["id"]))
                         ),
+                        "connectionId": _connection_id(doc),
                     }
                 )
             response = {

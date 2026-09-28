@@ -357,6 +357,7 @@ DENIED_PREFIXES = (
     "/api/admin/",
     "/api/auth/oidc/",
     "/api/connectors/",
+    "/api/connections",
     "/api/devices",
     "/scim/",
     "/static/",
