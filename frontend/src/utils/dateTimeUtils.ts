@@ -82,6 +82,24 @@ export function intlLocale(language: string = i18next.language): string {
   return INTL_LOCALES[language] ?? language;
 }
 
+/**
+ * A count with the UI language's digit grouping ("1,234", "1.234", "1 234").
+ *
+ * Args:
+ *   value: the number.
+ *   language: an app language code; defaults to the current one.
+ *
+ * Returns:
+ *   The formatted number. Pass it to a plural key as its own param and keep
+ *   `count` numeric, so i18next still picks the plural form.
+ */
+export function formatCount(
+  value: number,
+  language: string = i18next.language,
+): string {
+  return new Intl.NumberFormat(intlLocale(language)).format(value);
+}
+
 const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ['year', 31_536_000_000],
   ['month', 2_592_000_000],

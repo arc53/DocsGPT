@@ -246,7 +246,10 @@ class TestSitemapLoaderLoadData:
             assert len(docs) == 1
             assert isinstance(docs[0], Document)
             assert docs[0].text == "Page body"
-            assert docs[0].extra_info == {"source": "https://example.com/page1"}
+            assert docs[0].extra_info == {
+                "source": "https://example.com/page1",
+                "file_path": "page1.md",
+            }
 
     @patch("docsgpt.parser.remote.sitemap_loader.validate_url")
     def test_load_data_no_urls(self, mock_validate):
@@ -330,3 +333,21 @@ class TestSitemapLoaderLoadData:
         with patch.object(loader, "_extract_urls", return_value=urls):
             docs = loader.load_data("https://example.com/sitemap.xml")
             assert len(docs) == 5
+
+
+@pytest.mark.unit
+class TestSitemapLoaderDistinctPaths:
+    @patch("docsgpt.parser.remote.sitemap_loader.validate_url", side_effect=lambda url: url)
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
+    def test_colliding_pages_get_distinct_file_paths(self, mock_pinned_request, mock_validate):
+        loader = SitemapLoader(limit=None)
+        response = MagicMock()
+        response.text = "Page body"
+        response.raise_for_status.return_value = None
+        mock_pinned_request.return_value = response
+        urls = ["https://x.io/p?page=2", "https://x.io/p", "https://x.io/p.htm"]
+
+        with patch.object(loader, "_extract_urls", return_value=urls):
+            docs = loader.load_data("https://x.io/sitemap.xml")
+
+        assert [d.extra_info["file_path"] for d in docs] == ["p__page=2.md", "p.md", "p-2.md"]

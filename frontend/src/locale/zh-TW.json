@@ -111,6 +111,7 @@
       "preLoaded": "預載入",
       "private": "私人",
       "sync": "同步",
+      "syncDone": "完成",
       "syncNow": "立即同步",
       "syncing": "同步中...",
       "reingest": "重新索引",
@@ -131,14 +132,10 @@
         "selectPage": "選擇頁面以查看其內容。",
         "edit": "編輯",
         "save": "儲存",
-        "cancel": "取消",
         "saveFailed": "無法儲存頁面。請再試一次。",
         "forbidden": "您沒有編輯此頁面的權限。",
         "conflict": "此頁面在您開啟後已變更，並已重新載入。您的編輯內容如下——請重新套用後再次儲存。",
         "editPlaceholder": "以 Markdown 撰寫頁面…",
-        "livingTitle": "動態 Wiki。",
-        "livingExplainer": "可由代理編輯的來源：代理工作時會讀取並改寫頁面，且預設透過代理搜尋工具向代理開放。",
-        "livingExplainerEditable": "任何使用此來源的代理都可以編輯它。",
         "stamp": {
           "editedBy": "由 {{who}} 編輯",
           "agent": "代理",
@@ -168,7 +165,17 @@
             "forbidden": "您沒有轉換此來源的權限。",
             "conflict": "此來源仍在索引中。請等候完成後再轉換。"
           }
-        }
+        },
+        "badge": "動態 Wiki",
+        "byline_other": "{{pages}} 個頁面 · {{tokens}} 個 token",
+        "explainer": "代理在工作時會閱讀並改寫這些頁面。",
+        "explainerEditable": "代理在工作時會閱讀並改寫這些頁面；任何使用此來源的代理都可以編輯它。",
+        "home": "首頁",
+        "filterPages": "篩選頁面",
+        "pagesTitle": "頁面",
+        "loadFailed": "無法載入 Wiki 頁面。",
+        "pageLoadFailed": "無法載入此頁面。",
+        "editTitle": "編輯頁面"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -201,13 +208,51 @@
         "view": {
           "action": "查看圖譜",
           "title": "知識圖譜",
-          "explainer": "節點代表實體，邊代表它們之間的關係。點擊節點可查看其描述及擷取來源的區塊。",
-          "stats": "{{nodes}} 個實體 · {{edges}} 個關係",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "尚無圖譜——擷取可能仍在進行中。",
           "selectNode": "選擇節點以查看其詳細資訊。",
-          "linkedChunks": "關聯區塊",
           "noChunks": "此實體沒有關聯的區塊。",
-          "close": "關閉"
+          "close": "關閉",
+          "tabs": {
+            "graph": "圖譜",
+            "entities": "實體",
+            "files": "檔案"
+          },
+          "findEntity": "尋找實體",
+          "entityName": "名稱",
+          "noEntities": "找不到實體",
+          "showTop": "顯示前",
+          "byConnections": "（依連結數）",
+          "typeFilter": "依類型篩選",
+          "otherTypes": "其他：{{types}}",
+          "otherTypesMore_other": "另外 {{formatted}} 個",
+          "untyped": "無類型",
+          "loadFailed": "無法載入圖譜。",
+          "entitiesLoadFailed": "無法載入實體。",
+          "nodeLoadFailed": "無法載入此實體。",
+          "loadingNode": "正在載入實體",
+          "connections": "連結數",
+          "mentionedIn": "出現於",
+          "showMore": "顯示更多",
+          "showLess": "收合",
+          "relationships": "關係",
+          "relationshipsCapped_other": "顯示 {{total}} 個關係中最強的 {{shown}} 個。",
+          "noRelationships": "此實體沒有關係。",
+          "relatedTo": "相關",
+          "showAll": "顯示全部 {{formatted}} 個",
+          "showFewer": "收合",
+          "sourceChunks": "來源區塊",
+          "showInGraph": "在圖譜中顯示",
+          "allTypes": "所有類型",
+          "chunkCount_other": "{{formatted}} 個區塊",
+          "entityCount_other": "{{formatted}} 個實體",
+          "relationshipCount_other": "{{formatted}} 個關係",
+          "chunk": "區塊",
+          "chunkMeta": "{{file}} · {{tokens}} Token",
+          "chunkTokens": "{{tokens}} Token",
+          "openInFiles": "在檔案中開啟",
+          "editChunk": "編輯區塊",
+          "chunkSaved": "區塊已儲存"
         }
       },
       "testRetrieval": {
@@ -239,14 +284,11 @@
       "shareWithTeam": "與團隊分享",
       "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？",
       "confirmDelete": "您確定要刪除此檔案嗎？此操作無法復原。",
-      "backToAll": "返回所有來源",
-      "back": "返回",
       "chunks": "文本塊",
       "noChunks": "未找到文本塊",
       "noChunksAlt": "未找到文本塊",
       "goToSources": "前往來源",
       "uploadNew": "上傳新文件",
-      "searchFiles": "搜尋檔案...",
       "noResults": "未找到結果",
       "fileName": "名稱",
       "tokens": "Token",
@@ -353,7 +395,37 @@
           "forbidden": "您沒有編輯此來源設定的權限。",
           "saveFailed": "儲存設定失敗。請再試一次。"
         }
-      }
+      },
+      "chunkErrors": {
+        "add": "無法新增文本塊",
+        "save": "無法儲存文本塊",
+        "delete": "無法刪除文本塊",
+        "load": "無法載入文本塊"
+      },
+      "chunkPosition": "第 {{n}} 個文本塊，共 {{total}} 個 · {{tokens}} Token",
+      "chunkCrumb": "第 {{n}} 個文本塊",
+      "chunkTileMeta": "#{{n}} · {{tokens}} Token",
+      "copyText": "複製文字",
+      "chunkTitleHint": "回答引用此文本塊時使用的名稱。",
+      "files": "檔案",
+      "filesLoadError": "無法載入檔案",
+      "filesByline_other": "{{files}} 個檔案 · {{tokens}} Token",
+      "filterFiles": "篩選檔案",
+      "searchChunks": "搜尋文本塊",
+      "chunkCount_other": "{{formatted}} 個文本塊",
+      "editor": {
+        "write": "編輯",
+        "preview": "預覽",
+        "previewEmpty": "目前沒有可預覽的內容。",
+        "cancel": "取消",
+        "close": "關閉",
+        "discardMessage": "要捨棄未儲存的變更嗎？",
+        "discard": "捨棄"
+      },
+      "editChunk": "編輯文本塊",
+      "editChunkDescription": "{{file}} · 第 {{n}} 個文本塊 · {{tokens}} Token",
+      "previousChunk": "上一個文本塊",
+      "nextChunk": "下一個文本塊"
     },
     "analytics": {
       "label": "分析",
@@ -1251,7 +1323,6 @@
       "promptText": "提示文字",
       "save": "儲存",
       "close": "關閉",
-      "cancel": "取消",
       "delete": "刪除",
       "deleteConfirmation": "您確定要刪除此區塊嗎？"
     },
@@ -1347,7 +1418,8 @@
     "firstPage": "第一頁",
     "previousPage": "上一頁",
     "nextPage": "下一頁",
-    "lastPage": "最後一頁"
+    "lastPage": "最後一頁",
+    "chunksPerPage": "每頁文本塊數"
   },
   "conversation": {
     "copy": "複製",

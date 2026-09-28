@@ -183,3 +183,28 @@ class TestCrawlerLoaderGaps:
 
                 result = loader.load_data("https://example.com")
                 assert result[0].text == "test"
+
+
+@patch("docsgpt.parser.remote.crawler_loader.validate_url", side_effect=_mock_validate_url)
+@patch("docsgpt.parser.remote.crawler_loader.pinned_request")
+def test_colliding_pages_get_distinct_file_paths(mock_pinned_request, mock_validate_url):
+    responses = {
+        "http://example.com": DummyResponse(
+            "<html><body><a href='/a'>A</a><a href='/a.html'>A2</a>"
+            "<a href='/l?page=2'>L</a></body></html>"
+        ),
+        "http://example.com/a": DummyResponse("<html><body>a</body></html>"),
+        "http://example.com/a.html": DummyResponse("<html><body>a2</body></html>"),
+        "http://example.com/l?page=2": DummyResponse("<html><body>l</body></html>"),
+    }
+    mock_pinned_request.side_effect = lambda _m, url, timeout=30: responses[url]
+
+    result = CrawlerLoader(limit=10).load_data("http://example.com")
+
+    paths = {doc.extra_info["source"]: doc.extra_info["file_path"] for doc in result}
+    assert paths == {
+        "http://example.com": "index.md",
+        "http://example.com/a": "a.md",
+        "http://example.com/a.html": "a-2.md",
+        "http://example.com/l?page=2": "l__page=2.md",
+    }

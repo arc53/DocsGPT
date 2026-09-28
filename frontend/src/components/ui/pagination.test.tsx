@@ -96,4 +96,20 @@ describe('Pagination', () => {
     );
     expect(texts).toEqual(['pagination.previousPage', 'pagination.nextPage']);
   });
+
+  it('names the page-size select with pageSizeLabel', async () => {
+    await render(
+      <Pagination
+        page={1}
+        pageCount={3}
+        onPageChange={() => undefined}
+        pageSize={12}
+        pageSizeOptions={[12, 24]}
+        pageSizeLabel="Chunks per page"
+      />,
+    );
+    expect(container.textContent).toContain('Chunks per page:');
+    expect(button('Chunks per page')).not.toBeNull();
+    expect(container.textContent).not.toContain('pagination.rowsPerPage');
+  });
 });

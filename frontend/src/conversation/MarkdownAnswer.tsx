@@ -12,7 +12,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
-import { markdownHeadings } from '@/lib/markdown';
+import { markdownHeadings, markdownTables } from '@/lib/markdown';
 
 import CopyButton from '../components/CopyButton';
 import MermaidRenderer from '../components/MermaidRenderer';
@@ -203,6 +203,7 @@ export default function MarkdownAnswer({
                 urlTransform={sandboxUrlTransform}
                 components={{
                   ...markdownHeadings,
+                  ...markdownTables,
                   a({ href, children }) {
                     // A generated file is already on the turn as a download
                     // chip, but the model links it with a `sandbox:`/`artifact:`
@@ -350,36 +351,6 @@ export default function MarkdownAnswer({
                         {children}
                       </ol>
                     );
-                  },
-                  table({ children }) {
-                    return (
-                      <div className="border-border relative overflow-x-auto rounded-lg border">
-                        {/* eslint-disable-next-line no-restricted-syntax -- the model's own markdown table, styled by the answer (DESIGN.md, Approved exceptions) */}
-                        <table className="text-foreground w-full text-left">
-                          {children}
-                        </table>
-                      </div>
-                    );
-                  },
-                  thead({ children }) {
-                    return (
-                      <thead className="bg-muted text-foreground text-xs uppercase">
-                        {children}
-                      </thead>
-                    );
-                  },
-                  tr({ children }) {
-                    return (
-                      <tr className="border-border odd:bg-card even:bg-muted border-b">
-                        {children}
-                      </tr>
-                    );
-                  },
-                  th({ children }) {
-                    return <th className="px-6 py-3">{children}</th>;
-                  },
-                  td({ children }) {
-                    return <td className="px-6 py-3">{children}</td>;
                   },
                 }}
               >

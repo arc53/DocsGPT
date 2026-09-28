@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDate, formatDateOnly, formatDateTime } from './dateTimeUtils';
+import {
+  formatCount,
+  formatDate,
+  formatDateOnly,
+  formatDateTime,
+} from './dateTimeUtils';
 
 describe('dateTimeUtils', () => {
   it('formats date-only values as DD/MM/YYYY', () => {
@@ -96,5 +101,22 @@ describe('formatRelative', () => {
     expect(
       formatRelative(old, { now: NOW, locale: 'en', dateAfterDays: 30 }),
     ).toBe(formatDateOnly(old));
+  });
+});
+
+describe('formatCount', () => {
+  it('groups digits the way the app language does', () => {
+    expect(formatCount(1234567, 'en')).toBe('1,234,567');
+    expect(formatCount(1234567, 'de')).toBe('1.234.567');
+    expect(formatCount(1234, 'ru')).toBe('1\u00a0234');
+  });
+
+  it('maps the app codes Intl does not know', () => {
+    expect(formatCount(1234, 'jp')).toBe('1,234');
+    expect(formatCount(1234, 'zhTW')).toBe('1,234');
+  });
+
+  it('leaves small numbers alone', () => {
+    expect(formatCount(7, 'de')).toBe('7');
   });
 });

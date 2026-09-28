@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import { markdownHeadings } from '@/lib/markdown';
+import { markdownHeadings, markdownTables } from '@/lib/markdown';
 
 import { Button } from './ui/button';
 
@@ -18,6 +18,7 @@ export default function MarkdownPreview({ content }: { content: string }) {
           remarkPlugins={[remarkGfm]}
           components={{
             ...markdownHeadings,
+            ...markdownTables,
             a({ children, href }) {
               return (
                 <Button variant="link" size="inline" asChild>

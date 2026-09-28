@@ -11,7 +11,7 @@ import {
 } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import remarkGfm from 'remark-gfm';
 
-import { markdownHeadings } from '@/lib/markdown';
+import { markdownHeadings, markdownTables } from '@/lib/markdown';
 import { cn } from '@/lib/utils';
 
 import userService from '../api/services/userService';
@@ -197,6 +197,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
               remarkPlugins={[remarkGfm]}
               components={{
                 ...markdownHeadings,
+                ...markdownTables,
                 code(props) {
                   const {
                     children,

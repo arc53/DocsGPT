@@ -62,6 +62,20 @@ class TestWebLoaderLoadData:
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
     @patch("docsgpt.parser.remote.web_loader.pinned_request")
+    def test_same_host_urls_get_path_only_file_paths(self, mock_pinned_request, mock_validate, web_loader):
+        # The tree and the chunk path filter both key off file_path, so each
+        # page needs a stable, distinct one (not its title).
+        mock_pinned_request.side_effect = [
+            _fake_response("<html><head><title>Home</title></head><body>a</body></html>"),
+            _fake_response("<html><head><title>Setup</title></head><body>b</body></html>"),
+        ]
+
+        result = web_loader.load_data(["https://docs.x.io/", "https://docs.x.io/guides/setup.html"])
+
+        assert [d.extra_info["file_path"] for d in result] == ["index.md", "guides/setup.md"]
+
+    @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    @patch("docsgpt.parser.remote.web_loader.pinned_request")
     def test_load_data_single_url_string(self, mock_pinned_request, mock_validate, web_loader):
         mock_pinned_request.return_value = _fake_response(
             "<html lang='en'><head><title>Test Page</title></head>"
@@ -77,6 +91,7 @@ class TestWebLoaderLoadData:
             "source": "https://example.com",
             "title": "Test Page",
             "language": "en",
+            "file_path": "index.md",
         }
         mock_pinned_request.assert_called_once_with(
             "GET", "https://example.com", headers=headers, timeout=30
@@ -97,8 +112,9 @@ class TestWebLoaderLoadData:
         assert all(isinstance(doc, Document) for doc in result)
         assert result[0].text == "Content from site 1"
         assert result[1].text == "Content from site 2"
-        assert result[0].extra_info == {"source": "https://site1.com"}
-        assert result[1].extra_info == {"source": "https://site2.com"}
+        # Two hosts would both map to index.md, so the host prefixes the path.
+        assert result[0].extra_info == {"source": "https://site1.com", "file_path": "site1.com/index.md"}
+        assert result[1].extra_info == {"source": "https://site2.com", "file_path": "site2.com/index.md"}
 
         assert mock_pinned_request.call_count == 2
         mock_pinned_request.assert_any_call(
@@ -146,7 +162,7 @@ class TestWebLoaderLoadData:
 
         assert len(result) == 1
         assert result[0].text == "Bare body"
-        assert result[0].extra_info == {"source": "https://example.com"}
+        assert result[0].extra_info == {"source": "https://example.com", "file_path": "index.md"}
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
     @patch("docsgpt.parser.remote.web_loader.pinned_request")
@@ -203,7 +219,7 @@ class TestWebLoaderErrorHandling:
 
         assert len(result) == 1
         assert result[0].text == "Success content"
-        assert result[0].extra_info == {"source": "https://good-url.com"}
+        assert result[0].extra_info == {"source": "https://good-url.com", "file_path": "good-url.com/index.md"}
 
         mock_logging.error.assert_called_once()
         error_call = mock_logging.error.call_args
@@ -276,7 +292,7 @@ class TestWebLoaderEdgeCases:
 
         assert len(result) == 1
         assert result[0].text == ""
-        assert result[0].extra_info == {"source": "https://empty-page.com"}
+        assert result[0].extra_info == {"source": "https://empty-page.com", "file_path": "index.md"}
 
     def test_url_scheme_detection(self):
         """Test URL scheme detection logic."""
@@ -314,3 +330,24 @@ class TestWebLoaderIntegration:
         assert "Test web page content" in result[0].page_content
         assert result[0].metadata["source"] == "https://example.com"
         assert result[0].metadata["title"] == "Test Page"
+
+
+@pytest.mark.unit
+class TestWebLoaderDistinctPaths:
+    @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    @patch("docsgpt.parser.remote.web_loader.pinned_request")
+    def test_colliding_pages_get_distinct_file_paths(self, mock_pinned_request, mock_validate, web_loader):
+        mock_pinned_request.side_effect = lambda *a, **k: _fake_response("<html><body>x</body></html>")
+
+        result = web_loader.load_data(
+            [
+                "https://x.io/list?page=1",
+                "https://x.io/list?page=2",
+                "https://x.io/a.html",
+                "https://x.io/a",
+            ]
+        )
+
+        assert [d.extra_info["file_path"] for d in result] == [
+            "list__page=1.md", "list__page=2.md", "a-2.md", "a.md"
+        ]

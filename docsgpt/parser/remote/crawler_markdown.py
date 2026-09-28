@@ -1,13 +1,12 @@
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
-from docsgpt.parser.remote.base import BaseRemote
+from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, url_to_virtual_path
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
 import re
 from markdownify import markdownify
 from docsgpt.parser.schema.base import Document
 import tldextract
-import os
 
 # The bundled public-suffix snapshot is enough for domain matching; the
 # default extractor would fetch the live list on first use and cache it on
@@ -91,7 +90,7 @@ class CrawlerLoader(BaseRemote):
             if self.limit is not None and len(visited_urls) >= self.limit:
                 break
 
-        return documents
+        return dedupe_virtual_paths(documents)
 
     def _fetch_page(self, url):
         try:
@@ -160,28 +159,5 @@ class CrawlerLoader(BaseRemote):
         return filtered
 
     def _url_to_virtual_path(self, url):
-        """
-        Convert a URL to a virtual file path ending with .md.
-
-        Examples:
-            https://docs.docsgpt.cloud/ -> index.md
-            https://docs.docsgpt.cloud/guides/setup -> guides/setup.md
-            https://docs.docsgpt.cloud/guides/setup/ -> guides/setup.md
-            https://example.com/page.html -> page.md
-        """
-        parsed = urlparse(url)
-        path = parsed.path.strip("/")
-
-        if not path:
-            return "index.md"
-
-        # Remove common file extensions and add .md
-        base, ext = os.path.splitext(path)
-        if ext.lower() in [".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]:
-            path = base
-
-        # Ensure path ends with .md
-        if not path.endswith(".md"):
-            path = path + ".md"
-
-        return path
+        """Convert a URL to a virtual ``.md`` path; see ``url_to_virtual_path``."""
+        return url_to_virtual_path(url)

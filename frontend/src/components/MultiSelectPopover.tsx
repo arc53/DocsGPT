@@ -124,7 +124,7 @@ export function MultiSelectPopover({
           if (!item.disabled) onToggle(item.id);
         }}
         checked={isSelected}
-        className="cursor-pointer justify-between"
+        className="justify-between"
         aria-selected={isSelected}
       >
         <div className="mr-3 flex grow items-center gap-3 overflow-hidden">

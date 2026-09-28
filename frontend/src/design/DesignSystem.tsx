@@ -35,6 +35,8 @@ import {
   Trash2,
   Undo2,
   Redo2,
+  File,
+  Folder,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -1703,6 +1705,34 @@ export default function DesignSystem() {
             </Card>
           </Example>
           <Example
+            title="Dense rows (side panel)"
+            code='<ul className="-mx-2"><ListRow size="sm" interactive asChild leading title description>'
+          >
+            <ul className="-mx-2 flex max-w-80 flex-col">
+              {[
+                ['Oslo Freight Terminal', 'operates · ships via', 'bg-chart-2'],
+                ['Meridian Freight Group', 'contracted by', 'bg-chart-1'],
+              ].map(([name, meta, dot]) => (
+                <ListRow
+                  key={name}
+                  size="sm"
+                  interactive
+                  asChild
+                  leading={
+                    <span
+                      aria-hidden="true"
+                      className={`mt-1.5 size-2 shrink-0 rounded-full ${dot}`}
+                    />
+                  }
+                  title={name}
+                  description={meta}
+                >
+                  <button type="button" />
+                </ListRow>
+              ))}
+            </ul>
+          </Example>
+          <Example
             title="Key/value rows"
             code='<DescriptionList layout="columns | justified" size="sm | xs"><DescriptionItem label mono>'
           >
@@ -1728,7 +1758,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Pager"
-            code='<Pagination page pageCount onPageChange pageSize? summary? labels="icons | text">'
+            code='<Pagination page pageCount onPageChange pageSize? pageSizeLabel? summary? labels="icons | text">'
           >
             <div className="flex flex-col gap-4">
               <Pagination
@@ -1743,6 +1773,15 @@ export default function DesignSystem() {
                 pageCount={5}
                 onPageChange={setPagerPage}
                 summary="1,024 users"
+              />
+              <Pagination
+                page={pagerPage}
+                pageCount={9}
+                onPageChange={setPagerPage}
+                pageSize={12}
+                pageSizeOptions={[12, 24, 48]}
+                pageSizeLabel="Chunks per page"
+                onPageSizeChange={() => undefined}
               />
             </div>
           </Example>
@@ -2623,6 +2662,35 @@ export default function DesignSystem() {
               </Table>
             </TableContainer>
           </Example>
+          <Example
+            title="Clickable rows, one open beside the table"
+            code="<TableRow selected onClick={…}>"
+          >
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableHeader>Entity</TableHeader>
+                    <TableHeader align="right">Connections</TableHeader>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {TABLE_ROWS.map((row, index) => (
+                    <TableRow
+                      key={row.name}
+                      selected={index === 1}
+                      onClick={() => undefined}
+                    >
+                      <TableCell className="font-medium">{row.name}</TableCell>
+                      <TableCell align="right" className="tabular-nums">
+                        {row.runs}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Example>
         </Section>
 
         <Section
@@ -3051,6 +3119,26 @@ export default function DesignSystem() {
                   </CommandList>
                 </Command>
               </div>
+            </div>
+          </Example>
+          <Example
+            title="Filter field over a list (source navigator)"
+            code='<CommandInput variant="field" placeholder="Filter files" />'
+          >
+            <div className="flex w-64 flex-col gap-2">
+              <Command className="contents">
+                <CommandInput variant="field" placeholder="Filter files" />
+                <CommandList>
+                  <CommandItem>
+                    <Folder />
+                    carriers
+                  </CommandItem>
+                  <CommandItem checked>
+                    <File />
+                    rate-card-2026.pdf
+                  </CommandItem>
+                </CommandList>
+              </Command>
             </div>
           </Example>
           <Example

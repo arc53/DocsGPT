@@ -8,7 +8,7 @@ import { Card } from '../../components/ui/card';
 import { SectionHeader } from '../../components/ui/section-header';
 import { Progress } from '../../components/ui/progress';
 import { selectToken } from '../../preferences/preferenceSlice';
-import { formatDateTime } from '../../utils/dateTimeUtils';
+import { formatDateTime, intlLocale } from '../../utils/dateTimeUtils';
 
 type Budget = { limit: number | null; used: number };
 type Bucket = {
@@ -80,8 +80,8 @@ export default function UsageQuota() {
 
   if (buckets.length === 0) return null;
 
-  const number = new Intl.NumberFormat(i18n.language);
-  const usd = new Intl.NumberFormat(i18n.language, {
+  const number = new Intl.NumberFormat(intlLocale(i18n.language));
+  const usd = new Intl.NumberFormat(intlLocale(i18n.language), {
     style: 'currency',
     currency: 'USD',
   });

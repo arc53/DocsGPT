@@ -179,3 +179,28 @@ def test_load_data_returns_empty_on_ssrf_validation_failure(monkeypatch):
 
     assert result == []
 
+
+
+def test_colliding_pages_get_distinct_file_paths(monkeypatch, _patch_markdownify):
+    root_html = (
+        "<html><head><title>Home</title></head><body>"
+        "<a href='/a'>A</a><a href='/a.html'>A2</a><a href='/l?page=2'>L</a>"
+        "</body></html>"
+    )
+    responses = {
+        "http://example.com": DummyResponse(root_html),
+        "http://example.com/a": DummyResponse("<html><body>a</body></html>"),
+        "http://example.com/a.html": DummyResponse("<html><body>a2</body></html>"),
+        "http://example.com/l?page=2": DummyResponse("<html><body>l</body></html>"),
+    }
+    _patch_pinned_request(monkeypatch, lambda url: responses[url])
+
+    docs = CrawlerLoader(limit=10).load_data("http://example.com")
+
+    paths = {doc.extra_info["source"]: doc.extra_info["file_path"] for doc in docs}
+    assert paths == {
+        "http://example.com": "index.md",
+        "http://example.com/a": "a.md",
+        "http://example.com/a.html": "a-2.md",
+        "http://example.com/l?page=2": "l__page=2.md",
+    }

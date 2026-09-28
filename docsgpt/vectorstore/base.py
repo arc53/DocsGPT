@@ -362,6 +362,14 @@ def build_local_embeddings(
     return embedding_instance
 
 
+class InvalidChunkMetadataError(ValueError):
+    """Chunk metadata the store cannot write, such as a key it reserves.
+
+    A client-input error, distinct from a store or embedding failure: the
+    chunk routes answer it with a 400 rather than a 500.
+    """
+
+
 class BaseVectorStore(ABC):
     def __init__(self):
         pass
@@ -430,6 +438,32 @@ class BaseVectorStore(ABC):
     def delete_chunk(self, chunk_id, *args, **kwargs):
         """Delete a specific chunk from the vectorstore"""
         pass
+
+    def update_chunk(self, chunk_id: str, text: str, metadata: dict) -> str:
+        """Replace a chunk's text and metadata, returning the id it is now under.
+
+        Stores that can rewrite a row in place override this and keep both the
+        id and the chunk's position in :meth:`get_chunks`. This default works
+        for any store but re-adds the chunk and deletes the old one, so the
+        returned id differs and the chunk moves; callers holding the old id
+        (graph links, for one) must follow the returned id.
+
+        Args:
+            chunk_id: Id of the chunk to replace.
+            text: The chunk's new text.
+            metadata: The chunk's complete new metadata.
+
+        Returns:
+            The id the updated chunk is stored under.
+        """
+        new_chunk_id = self.add_chunk(text, metadata)
+        if not self.delete_chunk(chunk_id):
+            logging.warning(
+                "Failed to delete old chunk %s, but new chunk %s was created",
+                chunk_id,
+                new_chunk_id,
+            )
+        return new_chunk_id
 
     def delete_chunks_by_source_path(self, path) -> int:
         """Delete every chunk whose ``metadata.source`` equals ``path``.

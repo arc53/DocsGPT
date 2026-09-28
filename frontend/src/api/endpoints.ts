@@ -68,6 +68,19 @@ const endpoints = {
     ENABLE_GRAPHRAG: (id: string) => `/api/sources/${id}/graphrag/enable`,
     SOURCE_GRAPH: (id: string, limit?: number) =>
       `/api/sources/${id}/graph${limit ? `?limit=${limit}` : ''}`,
+    SOURCE_GRAPH_NODES: (
+      id: string,
+      params: { q?: string; type?: string; page?: number; perPage?: number },
+    ) => {
+      const search = new URLSearchParams();
+      if (params.q) search.set('q', params.q);
+      // An empty type filters to untyped nodes, so it is sent only when set.
+      if (params.type !== undefined) search.set('type', params.type);
+      if (params.page) search.set('page', String(params.page));
+      if (params.perPage) search.set('per_page', String(params.perPage));
+      const qs = search.toString();
+      return `/api/sources/${id}/graph/nodes${qs ? `?${qs}` : ''}`;
+    },
     SOURCE_GRAPH_NODE: (id: string, nodeId: string) =>
       `/api/sources/${id}/graph/node/${encodeURIComponent(nodeId)}`,
     TASK_STATUS: (taskId: string) => `/api/task_status?task_id=${taskId}`,

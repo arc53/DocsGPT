@@ -55,14 +55,18 @@ const inputVariants = cva(
 );
 
 // Where the floating label sits while the field is empty, per input height.
+// It rests at the field's own text size (16px, 14px from md), so it doesn't
+// change size when the first character replaces it.
 const LABEL_RESTING_CLASSES: Record<
   NonNullable<VariantProps<typeof inputVariants>['size']>,
   string
 > = {
-  default: 'peer-placeholder-shown:top-2 peer-placeholder-shown:text-base',
+  default:
+    'peer-placeholder-shown:top-2 peer-placeholder-shown:text-base md:peer-placeholder-shown:text-sm md:peer-focus:text-xs',
   sm: 'peer-placeholder-shown:top-1.5 peer-placeholder-shown:text-sm',
-  lg: 'peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-base',
-  field: 'peer-placeholder-shown:top-2 peer-placeholder-shown:text-base',
+  lg: 'peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-base md:peer-placeholder-shown:text-sm md:peer-focus:text-xs',
+  field:
+    'peer-placeholder-shown:top-2 peer-placeholder-shown:text-base md:peer-placeholder-shown:text-sm md:peer-focus:text-xs',
 };
 
 // The floating label sits on the field's border, so its background has to
@@ -168,7 +172,7 @@ function Input(inputProps: InputProps) {
           'text-muted-foreground pointer-events-none absolute -top-2.5 left-3 max-w-[calc(100%-24px)] overflow-hidden px-2 text-xs text-ellipsis whitespace-nowrap transition-all select-none',
           LABEL_RESTING_CLASSES[size ?? 'default'],
           leftIcon
-            ? 'peer-placeholder-shown:left-7'
+            ? 'peer-placeholder-shown:left-8'
             : 'peer-placeholder-shown:left-3',
           'peer-focus:-top-2.5 peer-focus:left-3 peer-focus:text-xs',
           LABEL_SURFACE_CLASSES[labelSurface],

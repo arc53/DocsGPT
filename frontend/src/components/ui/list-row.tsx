@@ -25,6 +25,13 @@ type ListRowProps = Omit<React.ComponentProps<'li'>, 'title'> & {
   /** The whole row is a target: hover fill and an inset focus ring. */
   interactive?: boolean;
   /**
+   * `sm` is the dense row of a narrow side panel (the graph node panel's
+   * relationships): 6px / 8px padding, rounded, top-aligned so a small
+   * leading mark sits on the title line. Use it in a plain list, not in
+   * `ListRows` (no divide rules).
+   */
+  size?: 'default' | 'sm';
+  /**
    * Render the row's content into its single child (a `<Link>` or
    * `<button>`), wrapped in the `<li>`.
    */
@@ -38,13 +45,17 @@ function ListRow({
   description,
   trailing,
   interactive = false,
+  size = 'default',
   asChild = false,
   className,
   children,
   ...props
 }: ListRowProps) {
   const rowClass = cn(
-    'flex items-center gap-3 px-4 py-3',
+    'flex',
+    size === 'sm'
+      ? 'items-start gap-2.5 rounded-md px-2 py-1.5'
+      : 'items-center gap-3 px-4 py-3',
     // Inset, because a row list usually sits in an overflow-hidden rounded
     // box that would clip an outer ring.
     interactive &&

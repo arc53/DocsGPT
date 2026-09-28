@@ -111,6 +111,7 @@
       "preLoaded": "プリロード済み",
       "private": "プライベート",
       "sync": "同期",
+      "syncDone": "完了",
       "syncNow": "今すぐ同期",
       "syncing": "同期中...",
       "reingest": "再インデックス",
@@ -131,14 +132,10 @@
         "selectPage": "ページを選択して内容を表示します。",
         "edit": "編集",
         "save": "保存",
-        "cancel": "キャンセル",
         "saveFailed": "ページを保存できませんでした。もう一度お試しください。",
         "forbidden": "このページを編集する権限がありません。",
         "conflict": "このページは開いた後に変更されたため、再読み込みされました。あなたの編集内容は下にあります。再適用して、もう一度保存してください。",
         "editPlaceholder": "Markdownでページを記述…",
-        "livingTitle": "リビングWiki。",
-        "livingExplainer": "エージェントが編集可能なソースです。エージェントの作業中にページが読み書きされ、デフォルトでエージェント検索ツールを通じてエージェントに公開されます。",
-        "livingExplainerEditable": "このソースを使用するすべてのエージェントが編集できます。",
         "stamp": {
           "editedBy": "{{who}}が編集",
           "agent": "エージェント",
@@ -168,7 +165,17 @@
             "forbidden": "このソースを変換する権限がありません。",
             "conflict": "このソースはまだインデックス作成中です。完了してから変換してください。"
           }
-        }
+        },
+        "badge": "リビングWiki",
+        "byline_other": "{{pages}} ページ · {{tokens}} トークン",
+        "explainer": "エージェントは作業しながらこれらのページを読み、書き換えます。",
+        "explainerEditable": "エージェントは作業しながらこれらのページを読み、書き換えます。このソースを使うエージェントは誰でも編集できます。",
+        "home": "ホーム",
+        "filterPages": "ページを絞り込む",
+        "pagesTitle": "ページ",
+        "loadFailed": "Wikiページを読み込めませんでした。",
+        "pageLoadFailed": "このページを読み込めませんでした。",
+        "editTitle": "ページを編集"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -201,13 +208,51 @@
         "view": {
           "action": "グラフを表示",
           "title": "ナレッジグラフ",
-          "explainer": "ノードはエンティティ、エッジはその関係を表します。ノードをクリックすると、説明と抽出元のチャンクが表示されます。",
-          "stats": "{{nodes}}件のエンティティ · {{edges}}件の関係",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "グラフはまだありません。抽出が実行中の可能性があります。",
           "selectNode": "ノードを選択すると詳細が表示されます。",
-          "linkedChunks": "リンクされたチャンク",
           "noChunks": "このエンティティにリンクされたチャンクはありません。",
-          "close": "閉じる"
+          "close": "閉じる",
+          "tabs": {
+            "graph": "グラフ",
+            "entities": "エンティティ",
+            "files": "ファイル"
+          },
+          "findEntity": "エンティティを検索",
+          "entityName": "名前",
+          "noEntities": "エンティティが見つかりません",
+          "showTop": "上位を表示",
+          "byConnections": "（接続数順）",
+          "typeFilter": "種類で絞り込む",
+          "otherTypes": "その他: {{types}}",
+          "otherTypesMore_other": "他{{formatted}}件",
+          "untyped": "種類なし",
+          "loadFailed": "グラフを読み込めませんでした。",
+          "entitiesLoadFailed": "エンティティを読み込めませんでした。",
+          "nodeLoadFailed": "このエンティティを読み込めませんでした。",
+          "loadingNode": "エンティティを読み込み中",
+          "connections": "接続数",
+          "mentionedIn": "出現箇所",
+          "showMore": "もっと見る",
+          "showLess": "表示を減らす",
+          "relationships": "関係",
+          "relationshipsCapped_other": "{{total}}件の関係のうち、強い順に{{shown}}件を表示しています。",
+          "noRelationships": "このエンティティには関係がありません。",
+          "relatedTo": "関連",
+          "showAll": "すべて表示（{{formatted}}件）",
+          "showFewer": "表示を減らす",
+          "sourceChunks": "ソースチャンク",
+          "showInGraph": "グラフで表示",
+          "allTypes": "すべての種類",
+          "chunkCount_other": "{{formatted}}件のチャンク",
+          "entityCount_other": "{{formatted}}件のエンティティ",
+          "relationshipCount_other": "{{formatted}}件の関係",
+          "chunk": "チャンク",
+          "chunkMeta": "{{file}} · {{tokens}} トークン",
+          "chunkTokens": "{{tokens}} トークン",
+          "openInFiles": "ファイルで開く",
+          "editChunk": "チャンクを編集",
+          "chunkSaved": "チャンクを保存しました"
         }
       },
       "testRetrieval": {
@@ -239,14 +284,11 @@
       "shareWithTeam": "チームと共有",
       "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？",
       "confirmDelete": "このファイルを削除してもよろしいですか？この操作は元に戻せません。",
-      "backToAll": "すべてのソースに戻る",
-      "back": "戻る",
       "chunks": "チャンク",
       "noChunks": "チャンクが見つかりません",
       "noChunksAlt": "チャンクが見つかりません",
       "goToSources": "ソースへ移動",
       "uploadNew": "新規アップロード",
-      "searchFiles": "ファイルを検索...",
       "noResults": "結果が見つかりません",
       "fileName": "名前",
       "tokens": "トークン",
@@ -353,7 +395,37 @@
           "forbidden": "このソースの設定を編集する権限がありません。",
           "saveFailed": "設定の保存に失敗しました。もう一度お試しください。"
         }
-      }
+      },
+      "chunkErrors": {
+        "add": "チャンクを追加できませんでした",
+        "save": "チャンクを保存できませんでした",
+        "delete": "チャンクを削除できませんでした",
+        "load": "チャンクを読み込めませんでした"
+      },
+      "chunkPosition": "チャンク {{n}} / {{total}} · {{tokens}} トークン",
+      "chunkCrumb": "チャンク {{n}}",
+      "chunkTileMeta": "#{{n}} · {{tokens}} トークン",
+      "copyText": "テキストをコピー",
+      "chunkTitleHint": "回答がこのチャンクを引用するときの名前です。",
+      "files": "ファイル",
+      "filesLoadError": "ファイルを読み込めませんでした",
+      "filesByline_other": "{{files}} ファイル · {{tokens}} トークン",
+      "filterFiles": "ファイルを絞り込む",
+      "searchChunks": "チャンクを検索",
+      "chunkCount_other": "{{formatted}} 件のチャンク",
+      "editor": {
+        "write": "編集",
+        "preview": "プレビュー",
+        "previewEmpty": "プレビューする内容がまだありません。",
+        "cancel": "キャンセル",
+        "close": "閉じる",
+        "discardMessage": "保存されていない変更を破棄しますか?",
+        "discard": "破棄"
+      },
+      "editChunk": "チャンクを編集",
+      "editChunkDescription": "{{file}} · チャンク {{n}} · {{tokens}} トークン",
+      "previousChunk": "前のチャンク",
+      "nextChunk": "次のチャンク"
     },
     "analytics": {
       "label": "分析",
@@ -1251,7 +1323,6 @@
       "promptText": "プロンプトテキスト",
       "save": "保存",
       "close": "閉じる",
-      "cancel": "キャンセル",
       "delete": "削除",
       "deleteConfirmation": "このチャンクを削除してもよろしいですか？"
     },
@@ -1347,7 +1418,8 @@
     "firstPage": "最初のページ",
     "previousPage": "前のページ",
     "nextPage": "次のページ",
-    "lastPage": "最後のページ"
+    "lastPage": "最後のページ",
+    "chunksPerPage": "1ページあたりのチャンク数"
   },
   "conversation": {
     "copy": "コピー",

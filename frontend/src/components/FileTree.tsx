@@ -6,6 +6,7 @@ import { Trash2 } from 'lucide-react';
 import { SOURCE_FILE_TREE_ACCEPT_ATTR } from '../constants/fileUpload';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { selectToken } from '../preferences/preferenceSlice';
+import type { Crumb } from './tree/PathHeader';
 import TreeBrowser from './tree/TreeBrowser';
 import { Button } from './ui/button';
 import type { MenuOption } from './ui/dropdown-menu';
@@ -26,6 +27,17 @@ interface FileTreeProps {
   onBackToDocuments: () => void;
   /** Extra header control, rendered left of "Add file". */
   headerAction?: React.ReactNode;
+  /**
+   * Inside another source view (the graph source's Files tab): no Sources
+   * crumb, badge or byline, and no headerAction; Add file stays.
+   */
+  embedded?: boolean;
+  /** Embedded only: the host header's action slot (see TreeBrowser). */
+  actionsTarget?: HTMLElement | null;
+  /** A file to open once the structure loads (path, file name or display name). */
+  initialPath?: string;
+  /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
+  onCrumbsChange?: (crumbs: Crumb[]) => void;
 }
 
 const FileTree: React.FC<FileTreeProps> = ({
@@ -33,6 +45,10 @@ const FileTree: React.FC<FileTreeProps> = ({
   sourceName,
   onBackToDocuments,
   headerAction,
+  embedded = false,
+  actionsTarget,
+  initialPath,
+  onCrumbsChange,
 }) => {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -231,7 +247,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   // Add file button is suppressed then.
   const topRightAction = (
     <>
-      {headerAction}
+      {embedded ? null : headerAction}
       {!isProcessing ? (
         <Button type="button" size="field" shape="pill" onClick={handleAddFile}>
           {t('settings.sources.addFile')}
@@ -263,6 +279,10 @@ const FileTree: React.FC<FileTreeProps> = ({
       docId={docId}
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
+      embedded={embedded}
+      onCrumbsChange={onCrumbsChange}
+      actionsTarget={actionsTarget}
+      initialPath={initialPath}
       columnOrder="size-first"
       sortEntries={false}
       controllerRef={controllerRef}

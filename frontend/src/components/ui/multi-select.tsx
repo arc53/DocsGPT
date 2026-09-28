@@ -177,7 +177,6 @@ export function MultiSelect({
                     key={option.value}
                     value={option.label}
                     onSelect={() => handleSelect(option.value)}
-                    className="cursor-pointer"
                   >
                     {/* Visual only: the row is the control (cmdk handles the
                         click and Enter), so the box takes no focus or events. */}

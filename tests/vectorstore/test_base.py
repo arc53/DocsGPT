@@ -660,3 +660,55 @@ class TestGetEmbeddingsResolver:
 
         assert result is sentinel
         mock_resolver.assert_called_once_with("a-name", "a-key")
+
+
+class _RecordingStore(ConcreteVectorStore):
+    """Store whose add/delete calls are recorded, for the update fallback."""
+
+    def __init__(self, delete_result=True):
+        super().__init__()
+        self.calls = []
+        self._delete_result = delete_result
+
+    def add_chunk(self, text, metadata=None, *args, **kwargs):
+        self.calls.append(("add", text, metadata))
+        return "new-id"
+
+    def delete_chunk(self, chunk_id, *args, **kwargs):
+        self.calls.append(("delete", chunk_id))
+        return self._delete_result
+
+
+@pytest.mark.unit
+class TestBaseUpdateChunkFallback:
+    def test_adds_then_deletes_and_returns_the_new_id(self):
+        store = _RecordingStore()
+
+        new_id = store.update_chunk("old-id", "new text", {"k": "v"})
+
+        assert new_id == "new-id"
+        assert store.calls == [("add", "new text", {"k": "v"}), ("delete", "old-id")]
+
+    def test_failed_delete_is_logged_not_raised(self, caplog):
+        store = _RecordingStore(delete_result=False)
+
+        with caplog.at_level("WARNING"):
+            new_id = store.update_chunk("old-id", "new text", {})
+
+        assert new_id == "new-id"
+        assert "old-id" in caplog.text
+
+    def test_failed_add_skips_the_delete(self):
+        store = _RecordingStore()
+        store.add_chunk = Mock(side_effect=RuntimeError("embed down"))
+
+        with pytest.raises(RuntimeError):
+            store.update_chunk("old-id", "new text", {})
+
+        assert ("delete", "old-id") not in store.calls
+
+    def test_milvus_keeps_the_default(self):
+        """Milvus has no in-place update here; it re-adds under a new id."""
+        from docsgpt.vectorstore.milvus import MilvusStore
+
+        assert MilvusStore.update_chunk is BaseVectorStore.update_chunk

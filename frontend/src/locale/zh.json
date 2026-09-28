@@ -111,6 +111,7 @@
       "preLoaded": "预加载",
       "private": "私有",
       "sync": "同步",
+      "syncDone": "完成",
       "syncNow": "立即同步",
       "syncing": "同步中...",
       "reingest": "重新索引",
@@ -131,14 +132,10 @@
         "selectPage": "选择一个页面以查看其内容。",
         "edit": "编辑",
         "save": "保存",
-        "cancel": "取消",
         "saveFailed": "无法保存页面，请重试。",
         "forbidden": "您没有权限编辑此页面。",
         "conflict": "此页面在您打开后已被修改，并已重新加载。您的编辑内容在下方——请重新应用并再次保存。",
         "editPlaceholder": "使用 Markdown 编写页面…",
-        "livingTitle": "动态 Wiki。",
-        "livingExplainer": "可由代理编辑的来源：代理在工作时会读取和重写页面，并且它默认通过代理搜索工具向代理开放。",
-        "livingExplainerEditable": "任何使用此来源的代理都可以编辑它。",
         "stamp": {
           "editedBy": "由{{who}}编辑",
           "agent": "代理",
@@ -168,7 +165,17 @@
             "forbidden": "您没有权限转换此来源。",
             "conflict": "此来源仍在索引中。请等待完成后再转换。"
           }
-        }
+        },
+        "badge": "动态 Wiki",
+        "byline_other": "{{pages}} 个页面 · {{tokens}} 个 token",
+        "explainer": "代理在工作时会阅读并改写这些页面。",
+        "explainerEditable": "代理在工作时会阅读并改写这些页面；任何使用此来源的代理都可以编辑它。",
+        "home": "首页",
+        "filterPages": "筛选页面",
+        "pagesTitle": "页面",
+        "loadFailed": "无法加载 Wiki 页面。",
+        "pageLoadFailed": "无法加载此页面。",
+        "editTitle": "编辑页面"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -201,13 +208,51 @@
         "view": {
           "action": "查看图谱",
           "title": "知识图谱",
-          "explainer": "节点表示实体，边表示它们之间的关系。点击节点可查看其描述以及提取它的文本块。",
-          "stats": "{{nodes}} 个实体 · {{edges}} 个关系",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "暂无图谱——提取可能仍在进行中。",
           "selectNode": "选择一个节点以查看其详情。",
-          "linkedChunks": "关联的文本块",
           "noChunks": "此实体没有关联的文本块。",
-          "close": "关闭"
+          "close": "关闭",
+          "tabs": {
+            "graph": "图谱",
+            "entities": "实体",
+            "files": "文件"
+          },
+          "findEntity": "查找实体",
+          "entityName": "名称",
+          "noEntities": "未找到实体",
+          "showTop": "显示前",
+          "byConnections": "（按连接数）",
+          "typeFilter": "按类型筛选",
+          "otherTypes": "其他：{{types}}",
+          "otherTypesMore_other": "另外 {{formatted}} 个",
+          "untyped": "无类型",
+          "loadFailed": "无法加载图谱。",
+          "entitiesLoadFailed": "无法加载实体。",
+          "nodeLoadFailed": "无法加载此实体。",
+          "loadingNode": "正在加载实体",
+          "connections": "连接数",
+          "mentionedIn": "出现于",
+          "showMore": "显示更多",
+          "showLess": "收起",
+          "relationships": "关系",
+          "relationshipsCapped_other": "显示 {{total}} 个关系中最强的 {{shown}} 个。",
+          "noRelationships": "此实体没有关系。",
+          "relatedTo": "相关",
+          "showAll": "显示全部 {{formatted}} 个",
+          "showFewer": "收起",
+          "sourceChunks": "来源分块",
+          "showInGraph": "在图谱中显示",
+          "allTypes": "所有类型",
+          "chunkCount_other": "{{formatted}} 个分块",
+          "entityCount_other": "{{formatted}} 个实体",
+          "relationshipCount_other": "{{formatted}} 个关系",
+          "chunk": "分块",
+          "chunkMeta": "{{file}} · {{tokens}} 个令牌",
+          "chunkTokens": "{{tokens}} 个令牌",
+          "openInFiles": "在文件中打开",
+          "editChunk": "编辑分块",
+          "chunkSaved": "分块已保存"
         }
       },
       "testRetrieval": {
@@ -239,14 +284,11 @@
       "shareWithTeam": "与团队共享",
       "deleteWarning": "您确定要删除 \"{{name}}\" 吗？",
       "confirmDelete": "您确定要删除此文件吗？此操作无法撤销。",
-      "backToAll": "返回所有来源",
-      "back": "返回",
       "chunks": "文本块",
       "noChunks": "未找到文本块",
       "noChunksAlt": "未找到文本块",
       "goToSources": "前往来源",
       "uploadNew": "上传新文档",
-      "searchFiles": "搜索文件...",
       "noResults": "未找到结果",
       "fileName": "名称",
       "tokens": "令牌",
@@ -353,7 +395,37 @@
           "forbidden": "您没有权限编辑此来源的配置。",
           "saveFailed": "保存配置失败，请重试。"
         }
-      }
+      },
+      "chunkErrors": {
+        "add": "无法添加文本块",
+        "save": "无法保存文本块",
+        "delete": "无法删除文本块",
+        "load": "无法加载文本块"
+      },
+      "chunkPosition": "第 {{n}} 个文本块，共 {{total}} 个 · {{tokens}} 个令牌",
+      "chunkCrumb": "第 {{n}} 个文本块",
+      "chunkTileMeta": "#{{n}} · {{tokens}} 个令牌",
+      "copyText": "复制文本",
+      "chunkTitleHint": "回答引用此文本块时使用的名称。",
+      "files": "文件",
+      "filesLoadError": "无法加载文件",
+      "filesByline_other": "{{files}} 个文件 · {{tokens}} 个令牌",
+      "filterFiles": "筛选文件",
+      "searchChunks": "搜索文本块",
+      "chunkCount_other": "{{formatted}} 个文本块",
+      "editor": {
+        "write": "编辑",
+        "preview": "预览",
+        "previewEmpty": "暂无可预览的内容。",
+        "cancel": "取消",
+        "close": "关闭",
+        "discardMessage": "放弃未保存的更改？",
+        "discard": "放弃"
+      },
+      "editChunk": "编辑文本块",
+      "editChunkDescription": "{{file}} · 第 {{n}} 个文本块 · {{tokens}} 个令牌",
+      "previousChunk": "上一个文本块",
+      "nextChunk": "下一个文本块"
     },
     "analytics": {
       "label": "分析",
@@ -1251,7 +1323,6 @@
       "promptText": "提示文本",
       "save": "保存",
       "close": "关闭",
-      "cancel": "取消",
       "delete": "删除",
       "deleteConfirmation": "您确定要删除此块吗？"
     },
@@ -1347,7 +1418,8 @@
     "firstPage": "第一页",
     "previousPage": "上一页",
     "nextPage": "下一页",
-    "lastPage": "最后一页"
+    "lastPage": "最后一页",
+    "chunksPerPage": "每页文本块数"
   },
   "conversation": {
     "copy": "复制",

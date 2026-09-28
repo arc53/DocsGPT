@@ -73,6 +73,27 @@ describe('Table parts', () => {
     expect(classes).not.toContain('text-muted-foreground');
   });
 
+  // The row whose detail is open beside the table (the graph's Entities):
+  // the brand tint of an open navigator item, so it never reads as hover.
+  it('marks the open row with the secondary tint and aria-current', () => {
+    const host = render(
+      <table>
+        <tbody>
+          <TableRow data-testid="open" selected onClick={vi.fn()} />
+          <TableRow data-testid="other" onClick={vi.fn()} />
+        </tbody>
+      </table>,
+    );
+    const open = host.querySelector<HTMLElement>('[data-testid="open"]')!;
+    expect(open.dataset.selected).toBe('');
+    expect(open.getAttribute('aria-current')).toBe('true');
+    expect(open.className).toContain('bg-secondary');
+    expect(open.className).toContain('hover:bg-secondary');
+    const other = host.querySelector<HTMLElement>('[data-testid="other"]')!;
+    expect(other.dataset.selected).toBeUndefined();
+    expect(other.className).not.toContain('bg-secondary');
+  });
+
   it('hovers only rows that have an onClick', () => {
     const host = render(
       <table>

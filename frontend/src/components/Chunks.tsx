@@ -1,124 +1,67 @@
-import { File, Folder } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import copy from 'copy-to-clipboard';
+import { ChevronLeft, ChevronRight, Copy, Pencil, Trash2 } from 'lucide-react';
+import React, { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
-
-import { cn, fieldFrame } from '@/lib/utils';
+import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import {
-  useDebouncedValue,
-  useLoaderState,
-  useMediaQuery,
-  useOutsideAlerter,
-} from '../hooks';
+import { useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { ChunkType } from '../settings/types';
-import { formatChunkTokens } from './chunkUtils';
+import {
+  abbreviateCount,
+  chunkPreviewText,
+  formatChunkTokens,
+} from './chunkUtils';
+import SearchInput from './SearchInput';
 import SkeletonLoader from './SkeletonLoader';
+import SourceMarkdown from './SourceMarkdown';
 import PathHeader from './tree/PathHeader';
+import ReaderPanel from './tree/ReaderPanel';
+import SourceEditSheet from './tree/SourceEditSheet';
+import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import { Card, CardFooter } from './ui/card';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from './ui/command';
-import { EmptyState } from './ui/empty-state';
+import { FormField } from './ui/form-field';
 import { Input } from './ui/input';
+import { ActionMenu } from './ui/dropdown-menu';
+import { EmptyState } from './ui/empty-state';
+import { IconButton } from './ui/icon-button';
 import { Pagination } from './ui/pagination';
 
-// The search field's frame: the Input look around a CommandInput (38px,
-// rounded-md, focus ring while the input has keyboard focus). CommandInput's
-// row is 36px with a bottom rule; pt-px + overflow-hidden clips that rule.
-const SEARCH_FRAME = cn(
-  fieldFrame,
-  'border-border has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-ring/50 h-9.5 overflow-hidden rounded-md pt-px has-[input:focus-visible]:ring-3',
-);
+/** Chunks per page: divisible by 2, 3 and 4 columns, so a page fills the grid. */
+const PAGE_SIZE_OPTIONS = [12, 24, 48];
 
-interface LineNumberedTextareaProps {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  ariaLabel?: string;
-  className?: string;
-  editable?: boolean;
-  onDoubleClick?: () => void;
+/** Lets the host's crumbs close the open chunk (see TreeBrowser). */
+export interface ChunksController {
+  closeChunk: () => void;
 }
 
-const LineNumberedTextarea: React.FC<LineNumberedTextareaProps> = ({
-  value,
-  onChange,
-  placeholder,
-  ariaLabel,
-  className = '',
-  editable = true,
-  onDoubleClick,
-}) => {
-  const { isMobile } = useMediaQuery();
+const TILE_GRID =
+  'grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(min(400px,100%),1fr))]';
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onChange(e.target.value);
-  };
-
-  const lineHeight = 20;
-  const contentLines = value.split('\n').length;
-
-  const heightOffset = isMobile ? 200 : 300;
-  const minLinesForDisplay = Math.ceil(
-    (typeof window !== 'undefined' ? window.innerHeight - heightOffset : 600) /
-      lineHeight,
-  );
-  const totalLines = Math.max(contentLines, minLinesForDisplay);
-
-  return (
-    <div
-      className={cn('relative w-full', className)}
-      style={
-        {
-          '--numbered-height': `${totalLines * lineHeight}px`,
-        } as React.CSSProperties
-      }
-    >
-      <div className="text-muted-foreground pointer-events-none absolute top-0 left-0 h-(--numbered-height) w-8 pr-2 text-right font-mono text-xs leading-5 select-none lg:w-12 lg:pr-3 lg:text-sm">
-        {Array.from({ length: totalLines }, (_, i) => (
-          <div
-            key={i + 1}
-            className="flex h-5 items-center justify-end leading-5"
-          >
-            {i + 1}
-          </div>
-        ))}
-      </div>
-      <textarea
-        className={cn(
-          'text-foreground focus-visible:ring-ring/50 focus-visible:border-ring h-(--numbered-height) w-full resize-none overflow-hidden border-none bg-transparent pl-8 text-sm leading-5 outline-none focus-visible:ring-3 lg:pl-12',
-          isMobile
-            ? 'min-h-[calc(100svh-200px)]'
-            : 'min-h-[calc(100svh-300px)]',
-          !editable && 'select-none',
-        )}
-        value={value}
-        onChange={editable ? handleChange : undefined}
-        onDoubleClick={onDoubleClick}
-        placeholder={placeholder}
-        aria-label={ariaLabel}
-        rows={totalLines}
-        readOnly={!editable}
-      />
-    </div>
-  );
-};
-
-interface SearchResult {
-  path: string;
-  isFile: boolean;
-  name?: string;
+/**
+ * Whether a key press belongs to something else: a field being typed in, an
+ * open dialog, drawer or menu.
+ *
+ * @param event The keydown event.
+ * @returns True when the chunk arrows should leave the key alone.
+ */
+function keyBelongsElsewhere(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented) return true;
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
+    return true;
+  const target = event.target as HTMLElement | null;
+  if (
+    target &&
+    (target.isContentEditable ||
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+  )
+    return true;
+  return !!document.querySelector('[role="dialog"], [role="menu"]');
 }
 
 interface ChunksProps {
@@ -126,57 +69,76 @@ interface ChunksProps {
   documentName?: string;
   handleGoBack: () => void;
   path?: string;
-  displayPath?: string;
-  onFileSearch?: (query: string) => SearchResult[];
-  onFileSelect?: (path: string) => void;
-  /** Extra header control, rendered left of the chunk actions. */
+  /** The open file's display name: a new chunk's default title. */
+  fileName?: string;
+  /** Extra header control (Test retrieval); standalone only. */
   headerAction?: React.ReactNode;
   /**
-   * Opens a level of the path: 0 is the source root, n the folder made of
-   * the first n path segments. Without it the root crumb calls handleGoBack
-   * and folder crumbs are plain text.
+   * Rendered inside a source view that draws the header itself (TreeBrowser):
+   * no PathHeader here. The host's crumbs show the open chunk
+   * (`onOpenChunkChange`) and close it (`controllerRef`).
    */
-  onPathSelect?: (depth: number) => void;
+  embedded?: boolean;
+  /** The open chunk's position (1-based), or null while the grid shows. */
+  onOpenChunkChange?: (position: number | null) => void;
+  controllerRef?: React.MutableRefObject<ChunksController | null>;
 }
+
+type SheetMode = 'edit' | 'add';
 
 const Chunks: React.FC<ChunksProps> = ({
   documentId,
   documentName,
   handleGoBack,
   path,
-  displayPath,
-  onFileSearch,
-  onFileSelect,
+  fileName,
   headerAction,
-  onPathSelect,
+  embedded = false,
+  onOpenChunkChange,
+  controllerRef,
 }) => {
-  const [fileSearchQuery, setFileSearchQuery] = useState('');
-  const [fileSearchResults, setFileSearchResults] = useState<SearchResult[]>(
-    [],
-  );
-  const searchDropdownRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [paginatedChunks, setPaginatedChunks] = useState<ChunkType[]>([]);
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(5);
+  const [perPage, setPerPage] = useState(PAGE_SIZE_OPTIONS[0]);
   const [totalChunks, setTotalChunks] = useState(0);
   const [loading, setLoading] = useLoaderState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 300);
-  const [editingChunk, setEditingChunk] = useState<ChunkType | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
-  const [editingText, setEditingText] = useState('');
-  const [isAddingChunk, setIsAddingChunk] = useState(false);
+  const [openChunk, setOpenChunk] = useState<ChunkType | null>(null);
+  // The open chunk's position in the whole filtered list (1-based).
+  const [openPosition, setOpenPosition] = useState(0);
+  // A previous / next fetch in flight.
+  const [stepping, setStepping] = useState(false);
+  const stepRef = useRef(0);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // Kept after closing so the title holds through the exit animation.
+  const [sheetMode, setSheetMode] = useState<SheetMode>('add');
+  const [draft, setDraft] = useState('');
+  // The chunk's title: the name answers cite it by.
+  const [draftTitle, setDraftTitle] = useState('');
+  // A new chunk's default title as it was when the Add drawer opened: the
+  // discard check compares against it, not a default a later fetch moved.
+  const [addBaselineTitle, setAddBaselineTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const [deleteModalState, setDeleteModalState] =
     useState<ActiveState>('INACTIVE');
   const [chunkToDelete, setChunkToDelete] = useState<ChunkType | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
 
-  const displayPathValue = displayPath ?? path ?? '';
-  const pathParts = displayPathValue ? displayPathValue.split('/') : [];
+  const showError = (message: string) =>
+    dispatch(showActionToast({ variant: 'destructive', message }));
 
+  const fileLabel = path || documentName || '';
+
+  // Only the latest grid fetch may write: an older response (a refresh after
+  // a save, a page just left) is dropped.
+  const fetchRef = useRef(0);
   const fetchChunks = async () => {
+    const request = ++fetchRef.current;
     setLoading(true);
     try {
       const response = await userService.getDocumentChunks(
@@ -193,101 +155,283 @@ const Chunks: React.FC<ChunksProps> = ({
       }
 
       const data = await response.json();
+      if (request !== fetchRef.current) return;
 
       setPage(data.page);
       setPerPage(data.per_page);
       setTotalChunks(data.total);
       setPaginatedChunks(data.chunks);
+      setLoadFailed(false);
     } catch (error) {
-      setPaginatedChunks([]);
       console.error(error);
+      if (request !== fetchRef.current) return;
+      setPaginatedChunks([]);
+      setLoadFailed(true);
     } finally {
-      // ✅ always runs, success or failure
-      setLoading(false);
+      if (request === fetchRef.current) setLoading(false);
     }
   };
 
-  const handleAddChunk = (title: string, text: string) => {
-    if (!text.trim()) {
-      return;
-    }
-
+  /**
+   * Open chunk n of the current (searched, per-file) list: one chunk per
+   * page, so the page number is the position.
+   */
+  const goToChunk = async (position: number) => {
+    if (position < 1 || (totalChunks > 0 && position > totalChunks)) return;
+    const request = ++stepRef.current;
+    setStepping(true);
     try {
-      const metadata = {
-        source: path || documentName,
-        source_id: documentId,
-        title: title,
+      const response = await userService.getDocumentChunks(
+        documentId,
+        position,
+        1,
+        token,
+        path,
+        debouncedSearchTerm,
+      );
+      if (!response.ok) throw new Error('Failed to fetch chunk');
+      const data = await response.json();
+      if (request !== stepRef.current) return;
+      const chunk: ChunkType | undefined = data.chunks?.[0];
+      if (typeof data.total === 'number') setTotalChunks(data.total);
+      if (chunk) {
+        setOpenChunk(chunk);
+        setOpenPosition(position);
+      }
+    } catch (error) {
+      console.error(error);
+      if (request === stepRef.current)
+        showError(t('settings.sources.chunkErrors.load'));
+    } finally {
+      if (request === stepRef.current) setStepping(false);
+    }
+  };
+
+  /**
+   * After a save, find the edited chunk in the store's current order and show
+   * its stored copy (fresh metadata) at that position, so "n of total" and
+   * previous / next follow the list as it now is. Checked in turn: the open
+   * position (the chunk stayed), the last one (a store that appends the new
+   * copy), then the whole filtered list. Each probe matches by id, so no
+   * store ordering is assumed. When the chunk is not in the list (a search
+   * it no longer matches), what is shown stays.
+   *
+   * @param chunk The chunk just saved, with its new id.
+   */
+  const locateOpenChunk = async (chunk: ChunkType) => {
+    const request = ++stepRef.current;
+    const fetchPage = async (pageNumber: number, size: number) => {
+      const response = await userService.getDocumentChunks(
+        documentId,
+        pageNumber,
+        size,
+        token,
+        path,
+        debouncedSearchTerm,
+      );
+      if (!response.ok) return null;
+      const data = await response.json();
+      return request === stepRef.current ? data : null;
+    };
+    const show = (stored: ChunkType, at: number, total: number) => {
+      setTotalChunks(total);
+      setOpenChunk(stored);
+      setOpenPosition(at);
+    };
+    try {
+      const here = await fetchPage(openPosition, 1);
+      if (!here) return;
+      const total: number =
+        typeof here.total === 'number' ? here.total : totalChunks;
+      const stored: ChunkType | undefined = here.chunks?.[0];
+      if (stored?.doc_id === chunk.doc_id) {
+        show(stored, openPosition, total);
+        return;
+      }
+      if (total < 1) return;
+      if (total !== openPosition) {
+        const last = await fetchPage(total, 1);
+        if (!last) return;
+        const lastChunk: ChunkType | undefined = last.chunks?.[0];
+        if (lastChunk?.doc_id === chunk.doc_id) {
+          show(lastChunk, total, total);
+          return;
+        }
+      }
+      const all = await fetchPage(1, total);
+      if (!all) return;
+      const list: ChunkType[] = all.chunks ?? [];
+      const index = list.findIndex((c) => c.doc_id === chunk.doc_id);
+      if (index >= 0)
+        show(
+          list[index],
+          index + 1,
+          typeof all.total === 'number' ? all.total : total,
+        );
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  /**
+   * Back to the grid, on the page holding the chunk last open.
+   *
+   * @param total The chunk count to page against, when it just changed (a
+   *   delete); the page is clamped to the last one that still exists.
+   * @returns Whether the page changed (and so fetches by itself).
+   */
+  const closeChunk = (total = totalChunks) => {
+    stepRef.current++;
+    setStepping(false);
+    const lastPage = Math.max(1, Math.ceil(total / perPage));
+    const target = Math.min(
+      lastPage,
+      Math.max(1, Math.ceil(openPosition / perPage)),
+    );
+    setOpenChunk(null);
+    if (target !== page) setPage(target);
+    return target !== page;
+  };
+
+  useImperativeHandle(controllerRef, () => ({
+    closeChunk: () => closeChunk(),
+  }));
+
+  const openChunkPosition = openChunk ? openPosition : null;
+  const onOpenChunkChangeRef = useRef(onOpenChunkChange);
+  useEffect(() => {
+    onOpenChunkChangeRef.current = onOpenChunkChange;
+  });
+  useEffect(() => {
+    onOpenChunkChangeRef.current?.(openChunkPosition);
+  }, [openChunkPosition]);
+  useEffect(() => () => onOpenChunkChangeRef.current?.(null), []);
+
+  const showChunk = (chunk: ChunkType, position: number) => {
+    setOpenChunk(chunk);
+    setOpenPosition(position);
+  };
+
+  /**
+   * A new chunk's title: the one this file's chunks are cited by, else the
+   * file's name, as ingest sets it.
+   */
+  const defaultTitle = () =>
+    paginatedChunks.find((chunk) => chunk.metadata?.title)?.metadata.title ||
+    fileName ||
+    path?.split('/').pop() ||
+    documentName ||
+    '';
+
+  const openSheet = (mode: SheetMode) => {
+    const baseline = mode === 'add' ? defaultTitle() : '';
+    setDraft(mode === 'edit' ? openChunk?.text || '' : '');
+    setDraftTitle(
+      mode === 'edit' ? openChunk?.metadata?.title || '' : baseline,
+    );
+    setAddBaselineTitle(baseline);
+    setSaveFailed(false);
+    setSheetMode(mode);
+    setSheetOpen(true);
+  };
+
+  const closeSheet = () => {
+    setSheetOpen(false);
+    setSaveFailed(false);
+  };
+
+  const handleAddChunk = async (text: string, title: string) => {
+    if (!text.trim()) return;
+    setSaving(true);
+    setSaveFailed(false);
+    try {
+      const response = await userService.addChunk(
+        {
+          id: documentId,
+          text,
+          metadata: {
+            source: path || documentName,
+            source_id: documentId,
+            title: title.trim(),
+          },
+        },
+        token,
+      );
+      if (!response.ok) throw new Error('Failed to add chunk');
+      closeSheet();
+      fetchChunks();
+    } catch (e) {
+      console.error(e);
+      setSaveFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateChunk = async (
+    text: string,
+    title: string,
+    chunk: ChunkType,
+  ) => {
+    const savedTitle = chunk.metadata?.title || '';
+    if (!text.trim()) return;
+    if (text === (chunk.text || '') && title.trim() === savedTitle) return;
+    setSaving(true);
+    setSaveFailed(false);
+    // The backend merges metadata: send a title only when the chunk had one
+    // (clearing it sends '') or one was entered, never '' onto an untitled one.
+    const sendTitle = !!savedTitle || !!title.trim();
+    try {
+      const response = await userService.updateChunk(
+        {
+          id: documentId,
+          chunk_id: chunk.doc_id,
+          text,
+          ...(sendTitle ? { metadata: { title: title.trim() } } : {}),
+        },
+        token,
+      );
+      if (!response.ok) throw new Error('Failed to update chunk');
+      const data = await response.json().catch(() => ({}));
+      closeSheet();
+      // The edit is saved under a new id. Show it straight away (its token
+      // count is recomputed server-side, so it is dropped until the reload),
+      // then find where the store now keeps it: the update re-adds the chunk,
+      // so it can move (FAISS appends it; pgvector has no ORDER BY).
+      const edited: ChunkType = {
+        ...chunk,
+        doc_id: data.chunk_id ?? chunk.doc_id,
+        text,
+        metadata: {
+          ...chunk.metadata,
+          ...(sendTitle ? { title: title.trim() } : {}),
+          token_count: undefined,
+        },
       };
-
-      userService
-        .addChunk(
-          {
-            id: documentId,
-            text: text,
-            metadata: metadata,
-          },
-          token,
-        )
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error('Failed to add chunk');
-          }
-          fetchChunks();
-        });
+      setOpenChunk(edited);
+      locateOpenChunk(edited);
+      fetchChunks();
     } catch (e) {
-      console.log(e);
+      console.error(e);
+      setSaveFailed(true);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleUpdateChunk = (title: string, text: string, chunk: ChunkType) => {
-    if (!text.trim()) {
-      return;
-    }
-
-    const originalTitle = chunk.metadata?.title || '';
-    const originalText = chunk.text || '';
-
-    if (title === originalTitle && text === originalText) {
-      return;
-    }
-
+  const handleDeleteChunk = async (chunk: ChunkType) => {
     try {
-      userService
-        .updateChunk(
-          {
-            id: documentId,
-            chunk_id: chunk.doc_id,
-            text: text,
-            metadata: {
-              title: title,
-            },
-          },
-          token,
-        )
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error('Failed to update chunk');
-          }
-          fetchChunks();
-        });
+      const response = await userService.deleteChunk(
+        documentId,
+        chunk.doc_id,
+        token,
+      );
+      if (!response.ok) throw new Error('Failed to delete chunk');
+      // A page change fetches by itself; otherwise refresh this page.
+      if (!closeChunk(Math.max(0, totalChunks - 1))) fetchChunks();
     } catch (e) {
-      console.log(e);
-    }
-  };
-
-  const handleDeleteChunk = (chunk: ChunkType) => {
-    try {
-      userService
-        .deleteChunk(documentId, chunk.doc_id, token)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error('Failed to delete chunk');
-          }
-          setEditingChunk(null);
-          fetchChunks();
-        });
-    } catch (e) {
-      console.log(e);
+      console.error(e);
+      showError(t('settings.sources.chunkErrors.delete'));
     }
   };
 
@@ -309,396 +453,335 @@ const Chunks: React.FC<ChunksProps> = ({
     setChunkToDelete(null);
   };
 
+  // One fetch per page, page size, file or search; a new search starts on
+  // page 1 (that page change then fetches).
+  const fetchedSearchRef = useRef(debouncedSearchTerm);
   useEffect(() => {
-    if (page !== 1) {
-      setPage(1);
-    } else {
-      fetchChunks();
+    if (fetchedSearchRef.current !== debouncedSearchTerm) {
+      fetchedSearchRef.current = debouncedSearchTerm;
+      if (page !== 1) {
+        setPage(1);
+        return;
+      }
     }
-  }, [debouncedSearchTerm]);
-
-  useEffect(() => {
-    !loading && fetchChunks();
-  }, [page, perPage, path]);
+    fetchChunks();
+  }, [page, perPage, path, debouncedSearchTerm]);
 
   useEffect(() => {
     setSearchTerm('');
     setPage(1);
   }, [path]);
 
-  const filteredChunks = paginatedChunks;
+  const canGoPrevious = !!openChunk && !stepping && openPosition > 1;
+  const canGoNext = !!openChunk && !stepping && openPosition < totalChunks;
 
-  // The root crumb returns to the source (TreeBrowser: its top folder;
-  // standalone: back to the source list). Folder crumbs only navigate when
-  // the parent can open a folder (onPathSelect); the file is the current one.
-  const renderPathNavigation = () => {
-    const rootLabel = documentName ?? '';
-    const selectRoot = onPathSelect ? () => onPathSelect(0) : handleGoBack;
-    return (
-      <PathHeader
-        root={{
-          label: rootLabel,
-          onSelect: pathParts.length > 0 ? selectRoot : undefined,
-        }}
-        segments={pathParts.map((part, index) => ({
-          label: part,
-          onSelect:
-            onPathSelect && index < pathParts.length - 1
-              ? () => onPathSelect(index + 1)
-              : undefined,
-        }))}
-        backLabel={t('settings.sources.back')}
-        onBack={
-          editingChunk
-            ? () => setEditingChunk(null)
-            : isAddingChunk
-              ? () => setIsAddingChunk(false)
-              : handleGoBack
-        }
-        actions={
-          headerAction || editingChunk || isAddingChunk ? (
-            <>
-              {headerAction}
-              {editingChunk ? (
-                !isEditing ? (
-                  <>
-                    <Button
-                      type="button"
-                      size="field"
-                      shape="pill"
-                      onClick={() => setIsEditing(true)}
-                    >
-                      {t('modals.chunk.edit')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="destructive-outline"
-                      size="field"
-                      shape="pill"
-                      onClick={() => {
-                        confirmDeleteChunk(editingChunk);
-                      }}
-                    >
-                      {t('modals.chunk.delete')}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        setIsEditing(false);
-                      }}
-                      size="field"
-                      shape="pill"
-                    >
-                      {t('modals.chunk.cancel')}
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        if (editingText.trim()) {
-                          const hasChanges =
-                            editingTitle !==
-                              (editingChunk?.metadata?.title || '') ||
-                            editingText !== (editingChunk?.text || '');
+  // ← / → walk the chunks while nothing else owns the keys.
+  const goToChunkRef = useRef(goToChunk);
+  goToChunkRef.current = goToChunk;
+  useEffect(() => {
+    if (!openChunk || sheetOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      if (keyBelongsElsewhere(event)) return;
+      if (event.key === 'ArrowLeft' && !canGoPrevious) return;
+      if (event.key === 'ArrowRight' && !canGoNext) return;
+      event.preventDefault();
+      goToChunkRef.current(openPosition + (event.key === 'ArrowLeft' ? -1 : 1));
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [openChunk, sheetOpen, canGoPrevious, canGoNext, openPosition]);
 
-                          if (hasChanges) {
-                            handleUpdateChunk(
-                              editingTitle,
-                              editingText,
-                              editingChunk,
-                            );
-                          }
-                          setIsEditing(false);
-                          setEditingChunk(null);
-                        }
-                      }}
-                      disabled={
-                        !editingText.trim() ||
-                        (editingTitle ===
-                          (editingChunk?.metadata?.title || '') &&
-                          editingText === (editingChunk?.text || ''))
-                      }
-                      size="field"
-                      shape="pill"
-                    >
-                      {t('modals.chunk.save')}
-                    </Button>
-                  </>
-                )
-              ) : isAddingChunk ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setIsAddingChunk(false)}
-                    size="field"
-                    shape="pill"
-                  >
-                    {t('modals.chunk.cancel')}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      if (editingText.trim()) {
-                        handleAddChunk(editingTitle, editingText);
-                        setIsAddingChunk(false);
-                      }
-                    }}
-                    disabled={!editingText.trim()}
-                    size="field"
-                    shape="pill"
-                  >
-                    {t('modals.chunk.add')}
-                  </Button>
-                </>
-              ) : null}
-            </>
-          ) : undefined
-        }
-      />
-    );
-  };
-
-  // File search handling
-  const handleFileSearchChange = (query: string) => {
-    setFileSearchQuery(query);
-    if (query.trim() && onFileSearch) {
-      const results = onFileSearch(query);
-      setFileSearchResults(results);
-    } else {
-      setFileSearchResults([]);
-    }
-  };
-
-  const handleSearchResultClick = (result: SearchResult) => {
-    if (!onFileSelect) return;
-
-    if (result.isFile) {
-      onFileSelect(result.path);
-    } else {
-      // For directories, navigate to the directory and return to file tree
-      onFileSelect(result.path);
-      handleGoBack();
-    }
-    setFileSearchQuery('');
-    setFileSearchResults([]);
-  };
-
-  useOutsideAlerter(
-    searchDropdownRef,
-    () => {
-      setFileSearchQuery('');
-      setFileSearchResults([]);
-    },
-    [], // No additional dependencies
-    false, // Don't handle escape key
+  // Standalone (a non-nested source): Sources, the source, then the open
+  // chunk; the source crumb closes the chunk, the Sources crumb leaves.
+  const renderHeader = () => (
+    <PathHeader
+      root={{ label: t('settings.sources.label'), onSelect: handleGoBack }}
+      segments={[
+        {
+          label: documentName ?? '',
+          onSelect: openChunk ? () => closeChunk() : undefined,
+        },
+        ...(openChunk
+          ? [{ label: t('settings.sources.chunkCrumb', { n: openPosition }) }]
+          : []),
+      ]}
+      byline={
+        loading && totalChunks === 0
+          ? undefined
+          : t('settings.sources.chunkCount', {
+              count: totalChunks,
+              formatted: abbreviateCount(totalChunks),
+            })
+      }
+      actions={headerAction}
+    />
   );
 
-  const renderFileSearch = () => {
-    return (
-      <div className="relative" ref={searchDropdownRef}>
-        {/* `contents`: the Command only scopes cmdk (the arrow keys move from
-            the input to the rows); the frame and the dropdown draw the look. */}
-        <Command shouldFilter={false} className="contents">
-          <div className={SEARCH_FRAME}>
-            <CommandInput
-              value={fileSearchQuery}
-              onValueChange={handleFileSearchChange}
-              placeholder={t('settings.sources.searchFiles')}
-            />
-          </div>
+  const renderToolbar = () => (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="w-full min-w-0 sm:max-w-md sm:flex-1">
+        <SearchInput
+          label={t('settings.sources.searchChunks')}
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+      {/* Standalone, the header's byline already shows the count. */}
+      {embedded && !(loading && totalChunks === 0) ? (
+        <p className="text-muted-foreground text-sm whitespace-nowrap">
+          {t('settings.sources.chunkCount', {
+            count: totalChunks,
+            formatted: abbreviateCount(totalChunks),
+          })}
+        </p>
+      ) : null}
+      <Button
+        type="button"
+        size="field"
+        shape="pill"
+        className="sm:ml-auto"
+        onClick={() => openSheet('add')}
+      >
+        {t('settings.sources.addChunk')}
+      </Button>
+    </div>
+  );
 
-          {fileSearchQuery && (
-            <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 left-0 z-20 mt-1 w-full overflow-hidden rounded-xl border shadow-md">
-              <CommandList className="max-h-[calc(100dvh-200px)]">
-                {fileSearchResults.length === 0 ? (
-                  <CommandEmpty>{t('settings.sources.noResults')}</CommandEmpty>
-                ) : (
-                  <CommandGroup>
-                    {fileSearchResults.map((result) => (
-                      <CommandItem
-                        key={result.path}
-                        value={result.path}
-                        title={result.path}
-                        onSelect={() => handleSearchResultClick(result)}
-                      >
-                        {result.isFile ? (
-                          <File />
-                        ) : (
-                          <Folder className="text-primary" />
-                        )}
-                        <span className="truncate">
-                          {result.name ||
-                            result.path.split('/').pop() ||
-                            result.path}
-                        </span>
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-              </CommandList>
-            </div>
-          )}
-        </Command>
+  const renderList = () => {
+    if (loading) {
+      return (
+        <div className={TILE_GRID}>
+          <SkeletonLoader component="chunkCards" count={perPage} />
+        </div>
+      );
+    }
+    if (loadFailed) {
+      return (
+        <EmptyState
+          tone="destructive"
+          illustration="none"
+          title={t('settings.sources.chunkErrors.load')}
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              shape="pill"
+              onClick={() => fetchChunks()}
+            >
+              {t('retry')}
+            </Button>
+          }
+        />
+      );
+    }
+    return (
+      <div className={TILE_GRID}>
+        {paginatedChunks.length === 0 ? (
+          <EmptyState
+            size="sm"
+            title={t('settings.sources.noChunks')}
+            className="col-span-full min-h-[50svh] w-full"
+          />
+        ) : (
+          paginatedChunks.map((chunk, index) => {
+            const position = (page - 1) * perPage + index + 1;
+            return (
+              <Card
+                key={chunk.doc_id}
+                variant="filled"
+                padding="lg"
+                interactive
+                asChild
+                className="h-50 w-full justify-between"
+              >
+                <button
+                  type="button"
+                  onClick={() => showChunk(chunk, position)}
+                >
+                  <p className="text-foreground line-clamp-6 text-sm leading-5 font-normal">
+                    {chunkPreviewText(chunk.text)}
+                  </p>
+                  <CardFooter>
+                    {t('settings.sources.chunkTileMeta', {
+                      n: position,
+                      tokens: formatChunkTokens(chunk.metadata),
+                    })}
+                  </CardFooter>
+                </button>
+              </Card>
+            );
+          })
+        )}
       </div>
     );
   };
 
+  const renderOpenChunk = (chunk: ChunkType) => (
+    <ReaderPanel
+      meta={
+        <span>
+          {t('settings.sources.chunkPosition', {
+            n: openPosition,
+            total: totalChunks,
+            tokens: formatChunkTokens(chunk.metadata),
+          })}
+        </span>
+      }
+      actions={
+        <>
+          <IconButton
+            variant="ghost-muted"
+            size="icon-sm"
+            shape="pill"
+            label={t('settings.sources.previousChunk')}
+            icon={ChevronLeft}
+            side="bottom"
+            disabled={!canGoPrevious}
+            onClick={() => goToChunk(openPosition - 1)}
+          />
+          <IconButton
+            variant="ghost-muted"
+            size="icon-sm"
+            shape="pill"
+            label={t('settings.sources.nextChunk')}
+            icon={ChevronRight}
+            side="bottom"
+            disabled={!canGoNext}
+            onClick={() => goToChunk(openPosition + 1)}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            shape="pill"
+            onClick={() => openSheet('edit')}
+          >
+            <Pencil />
+            {t('modals.chunk.edit')}
+          </Button>
+          <ActionMenu
+            size="toolbar"
+            triggerLabel={t('settings.sources.menuAlt')}
+            options={[
+              {
+                icon: Copy,
+                label: t('settings.sources.copyText'),
+                onClick: () => {
+                  copy(chunk.text || '');
+                  dispatch(
+                    showActionToast({
+                      variant: 'success',
+                      message: t('conversation.copied'),
+                    }),
+                  );
+                },
+              },
+              {
+                icon: Trash2,
+                label: t('modals.chunk.delete'),
+                variant: 'destructive',
+                onClick: () => confirmDeleteChunk(chunk),
+              },
+            ]}
+          />
+        </>
+      }
+    >
+      <SourceMarkdown content={chunk.text || ''} />
+    </ReaderPanel>
+  );
+
+  const editing = sheetMode === 'edit' && !!openChunk;
+  const savedText = editing ? openChunk?.text || '' : '';
+  const savedTitle = editing
+    ? openChunk?.metadata?.title || ''
+    : addBaselineTitle;
+
   return (
-    <div className="flex flex-col">
-      <div className="mb-2">{renderPathNavigation()}</div>
-      <div className="flex gap-4">
-        {onFileSearch && onFileSelect && (
-          <div className="hidden w-[198px] lg:block">{renderFileSearch()}</div>
-        )}
-
-        {/* Right side: Chunks content */}
-        <div className="flex-1">
-          {!editingChunk && !isAddingChunk ? (
-            <>
-              <div className="mb-3 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-                <div className="border-border flex h-9.5 w-full flex-1 items-center overflow-hidden rounded-md border">
-                  <div className="text-foreground flex h-full items-center px-4 font-medium whitespace-nowrap">
-                    {totalChunks > 999999
-                      ? `${(totalChunks / 1000000).toFixed(2)}M`
-                      : totalChunks > 999
-                        ? `${(totalChunks / 1000).toFixed(2)}K`
-                        : totalChunks}{' '}
-                    {t('settings.sources.chunks')}
-                  </div>
-                  <div className="bg-border h-full w-px"></div>
-                  <div className="h-full flex-1 px-3 py-2">
-                    <Input
-                      type="text"
-                      variant="bare"
-                      placeholder={t('settings.sources.searchPlaceholder')}
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="h-full"
-                    />
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  size="field"
-                  shape="pill"
-                  className="w-full shrink-0 sm:w-auto"
-                  onClick={() => {
-                    setIsAddingChunk(true);
-                    setEditingTitle('');
-                    setEditingText('');
-                  }}
-                >
-                  {t('settings.sources.addChunk')}
-                </Button>
-              </div>
-              {loading ? (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(min(400px,100%),1fr))]">
-                  <SkeletonLoader component="chunkCards" count={perPage} />
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fit,minmax(min(400px,100%),1fr))]">
-                  {filteredChunks.length === 0 ? (
-                    <EmptyState
-                      size="sm"
-                      title={t('settings.sources.noChunks')}
-                      className="col-span-full min-h-[50svh] w-full"
-                    />
-                  ) : (
-                    filteredChunks.map((chunk, index) => (
-                      <Card
-                        key={index}
-                        variant="filled"
-                        padding="lg"
-                        interactive
-                        asChild
-                        className="h-50 w-full justify-between"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingChunk(chunk);
-                            setEditingTitle(chunk.metadata?.title || '');
-                            setEditingText(chunk.text || '');
-                          }}
-                        >
-                          <p className="text-foreground line-clamp-6 text-sm leading-5 font-normal">
-                            {chunk.text}
-                          </p>
-                          <CardFooter>
-                            {formatChunkTokens(chunk.metadata)}{' '}
-                            {t('settings.sources.tokensUnit')}
-                          </CardFooter>
-                        </button>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              )}
-            </>
-          ) : isAddingChunk ? (
-            <div className="w-full">
-              <div className="border-border relative overflow-hidden rounded-lg border">
-                <LineNumberedTextarea
-                  value={editingText}
-                  onChange={setEditingText}
-                  ariaLabel={t('modals.chunk.promptText')}
-                  editable={true}
-                />
-              </div>
-            </div>
-          ) : (
-            editingChunk && (
-              <div className="w-full">
-                <div className="border-border relative flex w-full flex-col overflow-hidden rounded-md border">
-                  <div className="border-border bg-muted flex w-full items-center justify-between border-b px-4 py-3">
-                    <div className="text-muted-foreground text-sm">
-                      {formatChunkTokens(editingChunk.metadata)}{' '}
-                      {t('settings.sources.tokensUnit')}
-                    </div>
-                  </div>
-                  <div className="overflow-hidden p-4">
-                    <LineNumberedTextarea
-                      value={isEditing ? editingText : editingChunk.text}
-                      onChange={setEditingText}
-                      ariaLabel={t('modals.chunk.promptText')}
-                      editable={isEditing}
-                      onDoubleClick={() => {
-                        if (!isEditing) {
-                          setIsEditing(true);
-                          setEditingTitle(editingChunk.metadata.title || '');
-                          setEditingText(editingChunk.text);
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )
-          )}
-
-          {!loading &&
-            totalChunks > perPage &&
-            !editingChunk &&
-            !isAddingChunk && (
-              <Pagination
-                page={page}
-                pageCount={Math.ceil(totalChunks / perPage)}
-                pageSize={perPage}
-                onPageChange={setPage}
-                onPageSizeChange={(rows) => {
-                  setPerPage(rows);
-                  setPage(1);
-                }}
-              />
-            )}
+    <div className="flex min-w-0 flex-col gap-4">
+      {embedded ? null : renderHeader()}
+      {openChunk ? (
+        renderOpenChunk(openChunk)
+      ) : (
+        <div className="flex flex-col gap-4">
+          {renderToolbar()}
+          {renderList()}
+          {/* Past the smallest page size a different size can change the
+              grid, so the pager (and its size select) stays even at 1 page. */}
+          {!loading && !loadFailed && totalChunks > PAGE_SIZE_OPTIONS[0] ? (
+            <Pagination
+              page={page}
+              pageCount={Math.ceil(totalChunks / perPage)}
+              pageSize={perPage}
+              pageSizeOptions={PAGE_SIZE_OPTIONS}
+              pageSizeLabel={t('pagination.chunksPerPage')}
+              onPageChange={setPage}
+              onPageSizeChange={(rows) => {
+                setPerPage(rows);
+                setPage(1);
+              }}
+            />
+          ) : null}
         </div>
-      </div>
+      )}
 
-      {/* Delete Confirmation Modal */}
+      <SourceEditSheet
+        open={sheetOpen}
+        onClose={closeSheet}
+        title={
+          editing
+            ? t('settings.sources.editChunk')
+            : t('settings.sources.addChunk')
+        }
+        description={
+          editing
+            ? t('settings.sources.editChunkDescription', {
+                file: fileLabel,
+                n: openPosition,
+                tokens: formatChunkTokens(openChunk?.metadata),
+                interpolation: { escapeValue: false },
+              })
+            : fileLabel || undefined
+        }
+        value={draft}
+        onChange={setDraft}
+        dirty={draft !== savedText || draftTitle.trim() !== savedTitle}
+        onSave={() =>
+          editing && openChunk
+            ? handleUpdateChunk(draft, draftTitle, openChunk)
+            : handleAddChunk(draft, draftTitle)
+        }
+        fields={
+          <FormField
+            label={t('modals.chunk.title')}
+            hint={t('settings.sources.chunkTitleHint')}
+            labelSurface="background"
+          >
+            <Input
+              value={draftTitle}
+              onChange={(event) => setDraftTitle(event.target.value)}
+              disabled={saving}
+            />
+          </FormField>
+        }
+        saving={saving}
+        saveLabel={editing ? t('modals.chunk.save') : t('modals.chunk.add')}
+        alert={
+          saveFailed ? (
+            <Alert variant="destructive">
+              <AlertDescription>
+                {editing
+                  ? t('settings.sources.chunkErrors.save')
+                  : t('settings.sources.chunkErrors.add')}
+              </AlertDescription>
+            </Alert>
+          ) : undefined
+        }
+        fieldLabel={t('modals.chunk.bodyText')}
+      />
+
       <ConfirmationModal
         message={t('modals.chunk.deleteConfirmation')}
         modalState={deleteModalState}

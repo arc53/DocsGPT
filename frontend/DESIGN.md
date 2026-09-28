@@ -71,7 +71,12 @@ ones `warning`. Series with no meaning (models, agents, sources) take
 `chart-1` to `chart-5` in order. When there are more than five, the four
 largest keep `chart-1` to `chart-4` and the rest are summed into one
 "Other" series in `chart-5`, so no colour repeats (`settings/foldSeries.ts`).
-`secondary` is never a chart colour.
+`secondary` is never a chart colour. The knowledge graph is the one
+place Other is not `chart-5`: its entity types have no meaning to map, and
+half a graph often folds into Other, so red would read as "these failed".
+There the four largest types take `chart-1` to `chart-4` and Other is
+`muted-foreground` (`foldGraphTypes`, `readGraphPalette` in
+`components/graphViewUtils.ts`).
 
 The status set is `success | warning | destructive | info`. `default` is the
 component's own base tone (brand on a Badge or Button, quiet on an Alert or
@@ -266,8 +271,17 @@ aria-current="page">` with `data-active`. The
   the same pixels, plus `role="tablist"`/`"tab"`, `aria-selected` and
   arrow-key focus; wrap the panel in `TabsContent` (FilePicker's My Files /
   Shared with Me, Schedules' Recurring / One-time in
-  `agents/schedules/SchedulesView.tsx`). The `default` variant is a pill tab,
-  unused in the app.
+  `agents/schedules/SchedulesView.tsx`, the graph source view, the source
+  edit drawer). Each trigger keeps its `px-4`, so the first label sits 16px
+  in from the content edge and the underline runs past the label on both
+  sides. That inset is deliberate (decided 2026-09-28): the tab row reads as
+  its own strip, with a wider target per tab, so don't pull it flush with
+  `-ml-4` or strip the padding. Only the workflow builder's toolbar, where
+  the tabs share a row with a breadcrumb, uses the padding-free `Button
+variant="tab" size="inline"`. The `default` variant is a pill tab, unused
+  in the app. Panels unmount when hidden, except one whose state is costly to
+  rebuild (the graph source view's laid-out canvas and zoom): that
+  `TabsContent` takes `forceMount` plus `data-[state=inactive]:hidden`.
 - A section panel's disclosure header (NewAgent's Advanced and Guardrails
   panels) is `variant="section-toggle" size="sm"` with `-ml-3 w-fit
 justify-start` and `aria-expanded`: a lucide `ChevronRight` first
@@ -499,7 +513,10 @@ that already draws the frame (the renaming sidebar row, a search strip in a
 bordered panel) is `variant="bare"`; the host shows focus, and any inset
 padding goes on the host, not the field. A field on a muted panel (the
 ImportSpec Base URL box) is `variant="filled"`, so it keeps the card fill
-instead of showing the panel through; never pass `bg-card` for it.
+instead of showing the panel through; never pass `bg-card` for it. A floating
+label rests at the field's own text size (16px, 14px from `md`), so a
+labelled search and a placeholder-only one read the same, and with a
+`leftIcon` it rests where the text starts (40px in).
 
 ### SelectTrigger (`ui/select.tsx`)
 
@@ -520,9 +537,29 @@ lg` and CommandInput. The `sm` sizes stay 14px. A highlighted list row is
 `none`, `vertical` (default), `both`. Same border, ring and invalid styling
 as Input. `variant`: `default` (transparent), `filled` (card fill), with
 the same rule as Input: a textarea on a muted panel is `variant="filled"`,
-never `bg-card`. Three raw `<textarea>` elements stay, because each sits
-under an overlay it must line up with: the chat composer, PromptTextArea's
-variable highlighter and the chunk editor behind its line-number gutter.
+never `bg-card`. Two raw `<textarea>` elements stay, because each sits
+under an overlay it must line up with: the chat composer and PromptTextArea's
+variable highlighter.
+
+### Command (`ui/command.tsx`)
+
+`Command` is the list primitive (cmdk) behind comboboxes, pickers, the
+search palette and the source navigator; its `variant` is `default` or
+`palette` (the search palette's spacing, see Modal, not Dialog).
+`CommandInput`'s `variant` is `default`, the `h-9` row with a bottom border
+at the top of a popover or palette list, or `field`, the 38px pill of a
+list that sits on the page (a source view's navigator filter, see Page
+chrome and Source views); nothing else hand-frames it. `CommandList` caps
+itself at `max-h-75` and scrolls; a list that already scrolls inside its
+host (a `Modal mobileVariant="sheet"` body) passes `max-h-none` so there is
+one scroller. `CommandItem` rows are `cursor-default` like Select and menu
+items, highlight `bg-accent` and mark the open item `checked`
+(`bg-secondary`); don't add `cursor-pointer`. cmdk highlights the first row
+by default, which reads as hover. A list used as navigation, where a current
+item exists (the source navigator), starts the highlight on that item, or on
+a value that matches no row while nothing is open
+(`tree/SourceNavigator`'s `NO_HIGHLIGHT`); a search-then-pick list keeps
+cmdk's first-row highlight.
 
 ### FormField (`ui/form-field.tsx`)
 
@@ -533,7 +570,9 @@ as its only child. The label sits on the field's border (12px muted), and
 line: `card` (the default: forms in cards, modals and `outline` panels),
 `background` (fields straight on a page or in a `subtle` panel), `muted`
 (fields on a muted panel). Never pass a background class for it. It rests inside an empty, unfocused
-`Input` or `Textarea` and moves up on focus; on a `SelectTrigger`, combobox,
+`Input` or `Textarea` at the field's own text size (16px, 14px from `md`;
+14px on an `sm` Input), where the text starts (40px in beside a `leftIcon`),
+and moves up to the 12px border label on focus; on a `SelectTrigger`, combobox,
 `MultiSelect`, number field or `Dropzone` it stays on the border. It turns
 red (`text-destructive`) with an `error`, and dims while `disabled`. Under
 the field come a muted `text-xs` hint and a red `text-xs` error
@@ -557,7 +596,7 @@ FormField with no single box to sit on: a list of checkboxes, several
 controls in a row, a loading or error line in place of the field. Controls
 whose label sits beside them (Switch, Checkbox, radio) use `SettingRow` or
 an inline `Label`, not FormField. An editing surface that fills its area
-(the chat composer, the chunk and wiki editors, editing a sent question) and
+(the chat composer, the source edit drawer's field, editing a sent question) and
 bare repeated rows in a list have no visible label and must have an
 `aria-label`. A row box that is a small form (a workflow condition case or
 state assignment) is not a bare row: each of its fields has a floating
@@ -686,7 +725,8 @@ art, page / panel / popover), `illustration` `no-files | none` (a "no
 results" line is `size="xs" illustration="none"`), `title`, `description`
 (plain `muted-foreground`), `action`. A page or panel whose fetch failed is
 `EmptyState tone="destructive" illustration="none"` with a `Retry` action
-(`t('retry')`): a red `CircleAlert`, a red title, `role="alert"`. Never a bare
+(`t('retry')`, an `outline sm pill` Button at every EmptyState size): a red
+`CircleAlert`, a red title, `role="alert"`. Never a bare
 `text-destructive` paragraph.
 
 ### Progress (`ui/progress.tsx`)
@@ -833,12 +873,15 @@ Sources adds its count and a right chevron, and opens the All sources sheet.
 an ellipsis. Pages pass only its width (`w-[16ch]`, `max-w-[32ch]`) and a
 `title` with the full text; never `truncate` or typography. Give every
 current crumb a width cap so a long name cannot push the row past the
-screen. A crumb that runs a handler instead of navigating is
+screen. It carries the link's focus ring: after a crumb step, PathHeader
+moves focus to the new current crumb (`tabIndex={-1}`) so keyboard focus
+never drops to the page. A crumb that runs a handler instead of navigating is
 `BreadcrumbLink asChild` around a `<button type="button">`; the link carries
-the focus ring. The current crumb is never a disabled button. The path row above a
-source's file tree and chunk viewer is `components/tree/PathHeader`
-(back button, chevron crumbs, the last capped at `max-w-[32ch]`, actions on
-the right); don't hand-roll a `/`-separated path.
+the focus ring. Parent crumbs cap at `max-w-[16ch]` with `truncate` on the
+button itself (a parent with no handler is a plain truncating `<span>`, never
+a disabled button). The current crumb is never a disabled button. The header of
+every source view is `components/tree/PathHeader` (see Source views); don't
+hand-roll a `/`-separated path.
 
 ### ListRow and DescriptionList (`ui/list-row.tsx`, `ui/description-list.tsx`)
 
@@ -849,6 +892,11 @@ bordered list for one). Rows are `px-4 py-3`, the title `text-sm
 font-medium`. `interactive` (with `asChild` around a `<Link>` or `<button>`)
 hovers to `bg-accent` and draws an inset focus ring. An icon square in
 `leading` is a plain `bg-muted text-muted-foreground size-8 rounded-md` span.
+In a narrow side panel (the graph node panel's relationships) rows are
+`size="sm"`: `px-2 py-1.5`, `gap-2.5`, `rounded-md` and top-aligned so a small
+leading mark (a `GraphTypeDot` with `mt-1.5`) sits on the title line. They go
+in a plain `<ul className="-mx-2">`, not `ListRows` (no divide rules), and
+are `interactive asChild` around a `<button>` like the others.
 
 Key/value rows are `DescriptionList` + `DescriptionItem`, never a hand-rolled
 `flex` of label and value. `layout="columns"` (default) is an 8rem label
@@ -860,9 +908,24 @@ right-aligns the values (a phone card; `columns={2}` for a stats dialog).
 ### Pagination (`ui/pagination.tsx`)
 
 The pager under a table, tile grid or list: "Page N of M" and four chevron
-`IconButton`s. `pageSize` adds the Rows per page select; `summary` puts a
+`IconButton`s. `pageSize` adds the Rows per page select (`pageSizeLabel`
+renames it when the items aren't rows: the chunk grid's "Chunks per page",
+with `pageSizeOptions={[12, 24, 48]}` so a full page fills 2, 3 or 4
+columns); `summary` puts a
 count on the left ("1,024 users"). `labels="text"` swaps the chevrons for
-Previous / Next buttons. Don't hand-roll a Previous / Next row.
+Previous / Next buttons. Don't hand-roll a Previous / Next row. With a page
+size select, keep the pager while the total exceeds the smallest option, not
+the current page size, so picking a bigger size never hides the way back
+("Page 1 of 1", chevrons off). Counts and numbers in the UI format on the app
+language: `formatCount` (`utils/dateTimeUtils`, `Intl` on `intlLocale()`), never
+`toLocaleString()` or a raw `{{count}}`; plural keys get the number as `count`
+and the formatted text as its own param. The one exception is a headline
+total that can reach tens of thousands (the chunk count in the Chunks byline
+and embedded toolbar): it may use `abbreviateCount` (`components/chunkUtils`,
+`Intl` compact notation: "12K", "12 тыс.", "1.2万"; grouped digits where the
+language has no short form). Counts in tables, pagers and inline text use
+`formatCount`. Lists of names join with
+`Intl.ListFormat`, never a hard-coded `', '`.
 
 ### Page chrome: SectionShell, PageToolbar, SearchInput
 
@@ -881,8 +944,13 @@ a limit warning), then `divider` (a `Separator`). With no `search` the intro
 moves into the row's left slot (`max-w-2xl`) beside the action. A page search
 is `components/SearchInput`: the 38px pill (`size="sm"` for 32px) with a
 search icon and a floating `label` on `labelSurface="background"` (its
-default); a placeholder-only search is named by its placeholder. The chunk viewer's and file tree's searches stay `CommandInput` in
-their frame, because their results are `CommandItem`s.
+default); a placeholder-only search is named by its placeholder. A source
+view's navigator filter is a `CommandInput variant="field"` (the same 38px
+pill, text 40px in, the ring on the frame), because its rows are
+`CommandItem`s (see Source views and Command). `CommandInput`'s `default` variant is the
+`h-9` row with a bottom border at the top of a popover or palette list; the
+wrapper carries `data-variant` for styling from the parent. Nothing else
+hand-frames a `CommandInput`.
 
 An agent's tabs (Overview, Logs, Schedules) share one header,
 `agents/components/AgentPageToolbar` on top of `PageToolbar`, under
@@ -940,6 +1008,116 @@ New Chat is `SquarePen` everywhere: the phone bar, the sidebar's New Chat row
 and the collapsed rail. `Plus` means "add an item to this list", not "start
 a chat".
 
+### Source views (`components/tree/`, `WikiViewer`, `components/graph/`, `GraphView`)
+
+Every source view (a file or connector tree, a one-document chunk list, a
+wiki, a knowledge graph) is one shell:
+
+- **Header**: `PathHeader`, 16px (`gap-4`) above the content in every
+  source view, crumbs and no back button: Sources (leaves the source view),
+  the source, its folders, the open file and the open chunk ("Chunk 12"),
+  each opening its level, the last one current. A wiki's open page is not a
+  crumb: its crumbs stop at the source, and the page is marked in the
+  navigator and named by its path in the reader's meta. Up one level is
+  a crumb, as on the Tools and Teams detail pages (`DetailBreadcrumb`); the
+  phone's `SectionBackLink` above the title is the only arrow, and it leaves
+  the section. Crumbs never take `text-primary`; parents are muted like any
+  crumb, truncate at `max-w-[16ch]` with a `title`, and the row stays on one
+  line (`flex-nowrap`). A tree embedded in another source view (a graph
+  source's Files tab) draws no Sources crumb and reports its crumbs to the
+  host (`onCrumbsChange`), whose header shows them while that tab is open. The
+  file table has no `..` row. `badge` is the source kind as a `neutral` Badge with a 12px lucide
+  icon (Living wiki, Knowledge graph, a connector's provider; plain uploads
+  have none); `byline` is one muted `text-sm` line of counts ("33 files ·
+  11,420 tokens", "12 pages · 8,111 tokens · …", "371 entities · 1,172
+  relationships"), where a kind that needs explaining adds one sentence. No
+  explainer box. Actions on the right: Test retrieval (`outline field pill`)
+  and the kind's one primary action (Add file, Sync).
+- **Navigator**: `SourceNavigator`, a `w-64` column shown only when there is
+  more than one thing to open (files, wiki pages). A filter `CommandInput
+variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
+  walk from the field into the list; the open item is `checked`. Files are a
+  tree (folders expand, a folder opens its table on the right and expands,
+  24px of indent per level to depth 4 and 12px per level below it, every row
+  with its path as `title`); wiki pages are grouped under their top folder as
+  `CommandGroup` headings, labelled by title or by file name in sentence case
+  (`wikiPageLabel`). Typing flattens the list to matching leaves with their
+  full parent path as a muted second line. The column caps its list at
+  `max-h-[70svh]`. Below `lg` it is a `combobox field pill`
+  that opens the same list in a bottom sheet, uncapped (the sheet body
+  scrolls). A source with one file opens
+  straight on its chunk list, and a wiki with one page on its reader at full
+  width: no navigator, no table.
+- **Reader**: `ReaderPanel`, the content you read (a wiki page, an open
+  chunk): a `subtle` Card with `padding="none"`, its meta (muted 12px lines)
+  left and its actions right in a `min-h-14 px-6` header row, a `Separator`,
+  then the body at `px-6 py-5`. The body is always rendered markdown,
+  `components/SourceMarkdown` (the chat answer's headings and tables, lists
+  outside the text); raw text is never the reading view. Actions: an open
+  chunk's previous / next (`IconButton ghost-muted icon-sm pill`, and the
+  arrow keys), then Edit (`outline sm pill`, `Pencil` first) and an
+  `ActionMenu size="toolbar"` (Copy text; a chunk's also has Delete, a
+  destructive item). A wiki page has Edit (editors only) and the same menu
+  with Copy text, and no previous / next; the navigator walks them.
+- **Read in the page, edit in a drawer**: Edit and Add chunk open
+  `SourceEditSheet`, a right `Sheet size="wide"` (a working surface): title
+  and a mono description (path, version, tokens), then any `fields` edited
+  with the content (a chunk's Title, a `FormField` + `Input` with
+  `labelSurface="background"` and the hint "The name answers cite this
+  chunk by."; Add prefills it with the title the file's chunks already use,
+  else the file's name), Write · Preview
+  (`ui/tabs variant="underline"`; Preview renders the draft with
+  `SourceMarkdown`), one filling `font-mono` Textarea, then Cancel (`ghost lg
+pill`) and Save (`default lg pill`, off until the draft or a field changes, and while the draft is blank). The drawer
+  edits a copy: closing with changes asks "Discard your unsaved changes?". A
+  save result stays in the drawer as an Alert above the field (a wiki
+  conflict `warning`, forbidden and failures `destructive`); success closes
+  it and the page re-renders behind. Never edit in place in the reader.
+- **Chunk grid**: `SearchInput` ("Search chunks"), then Add chunk at the end.
+  The count is in the header's byline; only a chunk list inside a file tree,
+  whose byline is the tree's totals, repeats it as muted meta beside the
+  search; tiles show `chunkPreviewText` (heading markers and dot
+  leaders removed, display only) and `#n · tokens` in `CardFooter`.
+- **Graph**: under the header, `ui/tabs variant="underline"` Graph · Entities
+  · Files (Files is the embedded file tree; a source with no folder structure
+  shows its embedded chunk list there instead, as the plain view does). A tab's own action goes in the
+  header's action row after Test retrieval, only while that tab is open (the
+  Files tab's Add file or Sync, portalled through `TreeBrowser`'s
+  `actionsTarget`), as on the agent pages; the embedded tree draws no row of
+  its own. The Graph tab's toolbar holds the
+  entity search (a Popover + Command over the server's `/graph/nodes?q=`),
+  the phrase "Show top [50 | 100 | 250] by connections" (muted `text-sm`
+  words, the `ToggleGroup xs` alone in its muted track) and the legend, which
+  is the type filter (`ToggleGroup type="multiple" xs` in its own muted track,
+  a colour dot per item). The surface is one `subtle` Card, `padding="none"`, at `h-[70svh]`;
+  the canvas controls (`graph/GraphCanvasControls`) are the workflow
+  builder's `CanvasControls` strip without React Flow or Undo / Redo; change
+  the two together. Type colours come from `graph/GraphTypeDot`
+  (`GraphTypeDot`, `GraphTypeBadge`, `GraphSeriesDot`), never a hand-picked
+  hue; the node panel docks
+  inside it only while a node is selected (a bottom Sheet on phones), as
+  `GraphNodePanelDock`: a `border-l` column at `w-80`, `xl:w-2/5` capped at
+  `max-w-xl` (the detail drawer's 576px). Its header is the workflow node
+  panel's (`px-4 py-3`, the close `ghost-muted icon-sm`); in the phone bottom
+  Sheet (`handle`) the panel passes `showClose={false}`, so there's no X and the
+  scrim closes it. The Entities tab is
+  the same frame: toolbar (`SearchInput` with a `label`, the type Select),
+  then the `h-[70svh]` Card holding the `Table` (no `TableContainer`, it
+  scrolls inside) and the same dock, the open entity's row `selected`, and the
+  pager under the frame. The canvas labels only the ten biggest hubs, the
+  hovered node and the selection with its neighbours, and dims everything
+  unconnected to the selection to 15%. The panel lists the node's
+  relationships, one row per neighbour with its normalised edge labels
+  (`groupRelationships`), each a button that selects that neighbour, then its
+  source chunks as `filled sm interactive` tiles. A tile opens a read drawer
+  (`Sheet size="detail"`, one record) with the chunk rendered and the entity's
+  name marked in the brand tint (`bg-secondary`), and Open in Files and Edit
+  (the same `SourceEditSheet`) in its footer; Cancel or Discard in that edit
+  drawer returns to the read drawer, Save closes both, and closing it leaves
+  the node selected. The relationship list is capped server-side: its heading
+  counts the true total (`relationships_total`) and, when the list is partial,
+  a muted `text-xs` line says how many are shown.
+
 ### Chat answer column
 
 The answer column never scrolls sideways. Its boxes, from AnswerFlow down to
@@ -961,7 +1139,7 @@ columns (`lg:grid-cols-3`): their header row holds an initial, the name, a
 role badge and a chevron. Stat rows: `grid grid-cols-2 gap-4 md:grid-cols-4`
 (five tiles: `md:grid-cols-3 lg:grid-cols-5`; a dialog: `grid-cols-3`). Text
 tiles whose body is the content (chunks) follow their container, since the
-same list renders beside a file-search column: `grid grid-cols-1 gap-4
+same list renders beside the source navigator: `grid grid-cols-1 gap-4
 sm:grid-cols-[repeat(auto-fit,minmax(min(400px,100%),1fr))]`. A
 grid inside a Modal keeps its own column counts, because breakpoints follow
 the window, not the dialog.
@@ -1166,12 +1344,17 @@ this menu from `DropdownMenu`, and don't declare a local option type.
 
 ### Table, Label, dialog text
 
-Every table is `ui/table`; never a raw `<table>` (enforced) or a table
-utility class (the chat's markdown tables are the one exception, see Approved
-exceptions). The header row is dense by
+Every table is `ui/table`, markdown tables included (`markdownTables` renders
+its parts); never a raw `<table>` (enforced) or a table utility class. The header row is dense by
 default (`px-2 py-1 lg:px-3 text-sm font-normal text-foreground`, 28px, on
 `TableHead`'s sticky `bg-muted` strip). A `TableRow` hovers (`bg-accent`,
-pointer) only when it has an `onClick`; a read-only row does not. Use
+pointer) only when it has an `onClick`; a read-only row does not. `selected`
+marks the row whose detail is open beside the table (the graph's Entities):
+`bg-secondary`, the brand tint of an open navigator item, kept on hover, with
+`aria-current`. Use
+A number column (sizes, tokens, counts) is `align="right"` with
+`tabular-nums` on its cells, header included in the alignment, whatever the
+column order (the file table, the graph's Entities). Use
 `TableContainer` for the bordered, scrolling frame; a table that already sits
 in a frame renders `Table` alone. `Table` keeps a 600px minimum so wide
 tables scroll sideways; a narrow one inside a panel passes
@@ -1215,7 +1398,7 @@ runs under the tab bar, and the app shell can be dragged and bounce. ESLint
   dropdown's `max-h-[calc(100dvh-200px)]`, `Modal`'s `85dvh`).
 - **`svh`** (the smallest viewport, steady): a fixed-size panel inside a page
   that scrolls (the Logs panel's `h-[55svh]`, a list's `max-h-[45svh]`, the
-  chunk editor's `min-h`), so it doesn't resize while Safari's bars slide in
+  graph surface's `h-[70svh]`, the source edit drawer's `min-h`), so it doesn't resize while Safari's bars slide in
   and out.
 - **`max-h-sheet`**: every bottom sheet (see Modal, not Dialog).
 - A row or control has a fixed height (`h-12`), never a share of the viewport.
@@ -1246,7 +1429,11 @@ leading-tight font-semibold`. `DialogTitle` and `SheetTitle` default to it;
   a heading: `text-sm text-muted-foreground`.
 - **Markdown**: every renderer spreads `markdownHeadings` from
   `lib/markdown.tsx` (h1 20px, h2 18px, h3 16px, semibold, `mt-4|3 mb-2`);
-  don't declare a local heading map.
+  don't declare a local heading map. Tables are `markdownTables` from the same
+  file: the `ui/table` parts in a `TableContainer` (the frame scrolls
+  sideways, `minWidth="min-w-0"` so a narrow table shrinks), so a table in a
+  chat answer, a wiki page, a chunk, a note or a preview looks like every
+  other table. Every markdown renderer spreads it.
 - **Mono**: ids, keys and code snippets are `font-mono text-xs`; code fields
   (textareas) follow the field size; code blocks follow the Card recipe
   (see Card). A preview of text a person or a model wrote (a trace's query
@@ -1325,7 +1512,9 @@ shows.
   keyboard open the trigger did have focus and still gets it back. Don't pass
   `onCloseAutoFocus` from app code to remember focus yourself (ESLint rejects
   it); the primitive already does. `onOpenAutoFocus` with `preventDefault()`
-  is still how a phone picker keeps the keyboard down (`MultiSelectPopover`).
+  is still how a phone picker keeps the keyboard down (`MultiSelectPopover`),
+  and how a phone panel sheet opens without a focus ring on its first control
+  (the graph node panel's bottom Sheet).
   A dialog panel is a `tabIndex=-1` focus target that Radix can focus, so it
   carries `outline-none`: Safari draws its own blue `outline: auto` there and
   ignores our `outline-color`. Any new focusable container needs the same.
@@ -1348,10 +1537,7 @@ shadow-lg` in both themes: the knob is white on any track, and a white knob
   panels and have none. Outside `ui/` the only shadows are: the workflow
   canvas nodes (`shadow-md`, `hover:shadow-lg`: a node lifts off the canvas
   while you drag it); the workflow builder's publish-error panel, which
-  floats over the canvas at popover elevation (`shadow-md`, `z-20`); the
-  chunk viewer's and file tree's search result
-  lists (`shadow-md`, in-page `z-20`, their results are `CommandItem`s inside
-  the search frame); the sliding panel in `navigation/SidebarLevel.tsx`,
+  floats over the canvas at popover elevation (`shadow-md`, `z-20`); the sliding panel in `navigation/SidebarLevel.tsx`,
   which casts a horizontal shadow while it slides; and the Hero model
   picker's menu (both Approved exceptions). Don't add new ones: a floating panel is a `Popover`,
   `DropdownMenu` or `Modal`, which carry their own shadow and stacking; never
@@ -1408,7 +1594,6 @@ list stays reviewable.
 | `admin/Overview.tsx`                                                | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
 | `settings/PairDeviceModal.tsx`                                      | `shadcn/no-restyle`             | The install link in Pair a remote machine sits in a 12px hint (`text-xs font-normal`, `self-start` in its column). One disable.                                                                                                                                                                                                                                                                                                                                                                 |
 | `agents/workflow/WorkflowBuilder.tsx`                               | `shadcn/no-restyle`             | The publish-error Alert floats over the canvas with its close button in the top-right corner, so it pads `pr-10` to keep a long title clear of the button. One disable.                                                                                                                                                                                                                                                                                                                         |
-| `conversation/MarkdownAnswer.tsx`                                   | `no-restricted-syntax`          | Markdown answer tables render the model's own table markup with its own styling, so they stay a raw `<table>`.                                                                                                                                                                                                                                                                                                                                                                                  |
 
 Note that a multi-line reason has to be a `/* ... */` block comment;
 consecutive `//` lines only disable the next comment line, not the code.
