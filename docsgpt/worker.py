@@ -2186,14 +2186,15 @@ def _with_connection_credentials(source_data, connection_id: str):
 
     S3 and Reddit sources made from a connection keep their keys on the
     connection only, never in ``sources.remote_data``. Returns None when the
-    connection is gone or needs reconnecting.
+    connection is gone, needs reconnecting, or its connector is turned off.
     """
     from docsgpt.connectors import service
     from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 
     with db_readonly() as conn:
         row = ConnectorSessionsRepository(conn).get(str(connection_id))
-    if row is None:
+        enabled = row is not None and service.connector_enabled(conn, row)
+    if row is None or not enabled:
         return None
     try:
         credentials = service.get_credentials(row)
@@ -2235,9 +2236,10 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
         source_id: The source to sync.
 
     Returns:
-        ``{"status": "success" | "paused" | "skipped"}`` plus the ingest result.
+        ``{"status": "success" | "paused" | "disabled" | "skipped"}`` plus
+        the ingest result.
     """
-    from docsgpt.connectors.service import ConnectionUnavailable, normalize_status
+    from docsgpt.connectors.service import ConnectionUnavailable, connector_enabled, normalize_status
     from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 
     with db_readonly() as conn:
@@ -2256,8 +2258,11 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             if source and source.get("connection_id")
             else None
         )
+        enabled = connection is not None and connector_enabled(conn, connection)
     if not source or not connection:
         return {"status": "skipped"}
+    if not enabled:
+        return {"status": "disabled"}
     if normalize_status(connection) != "connected":
         return {"status": "paused"}
     remote_data = source.get("remote_data") or {}

@@ -219,6 +219,44 @@ class TestScheduledSync:
         assert result == {"status": "paused"}
         ingest.assert_not_called()
 
+    def test_disabled_connector_is_not_synced(self, pg_conn):
+        from docsgpt import worker
+        from docsgpt.storage.db.repositories.connector_policies import ConnectorPoliciesRepository
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth",
+                          secrets={"token_info": {"access_token": "a"}})
+        source = pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name, type, sync_frequency, connection_id, remote_data) "
+            "VALUES ('alice', 'Drive', 'connector:file', 'weekly', CAST(:c AS uuid), "
+            "'{\"provider\": \"google_drive\"}') RETURNING id"
+        ), {"c": cid}).scalar()
+        ConnectorPoliciesRepository(pg_conn).upsert("google_drive", enabled=False)
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        with patch.object(worker, "db_readonly", _yield), patch.object(worker, "ingest_connector") as ingest:
+            result = worker.sync_connector_source(MagicMock(), str(source))
+        assert result == {"status": "disabled"}
+        ingest.assert_not_called()
+
+    def test_disabled_connector_gives_remote_sync_no_credentials(self, pg_conn):
+        from docsgpt import worker
+        from docsgpt.storage.db.repositories.connector_policies import ConnectorPoliciesRepository
+
+        cid = _connection(pg_conn, provider="s3", auth_kind="api_key",
+                          secrets={"credentials": {"aws_access_key_id": "AKIA", "aws_secret_access_key": "s"}})
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        with patch.object(worker, "db_readonly", _yield):
+            assert worker._with_connection_credentials({"bucket": "b"}, cid)["aws_access_key_id"] == "AKIA"
+            ConnectorPoliciesRepository(pg_conn).upsert("s3", enabled=False)
+            assert worker._with_connection_credentials({"bucket": "b"}, cid) is None
+
     def test_sync_runs_as_the_connection_without_a_browser(self, pg_conn):
         from docsgpt import worker
 

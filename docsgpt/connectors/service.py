@@ -1200,6 +1200,20 @@ def load_policies(conn) -> dict[str, dict]:
     return policies
 
 
+def connector_enabled(conn, row: dict) -> bool:
+    """Whether an admin left on the connector a connection row belongs to.
+
+    Args:
+        conn: Open database connection.
+        row: A ``connector_sessions`` row.
+
+    Returns:
+        False when the connector (or custom MCP servers) is turned off.
+    """
+    key = catalog.connector_key_for_row(row)
+    return (load_policies(conn).get(key) or {}).get("enabled") is not False
+
+
 def ensure_connector_allowed(conn, connector_key: Optional[str]) -> None:
     """Refuse a new connection to a connector an admin turned off.
 
