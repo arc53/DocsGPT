@@ -426,8 +426,8 @@ class ConnectionToolPermissions(Resource):
             row = _owned(conn, connection_id, user_id)
             if row is None:
                 return _not_found()
-            tool = service.set_tool_permissions(conn, user_id, tool_id, permissions)
-            if tool is None or str(tool.get("connection_id")) != connection_id:
+            tool = service.set_tool_permissions(conn, user_id, connection_id, tool_id, permissions)
+            if tool is None:
                 return _not_found()
             payload = service.serialize_tool(tool)
         return make_response(jsonify({"success": True, "tool": payload}), 200)

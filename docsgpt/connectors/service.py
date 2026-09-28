@@ -1154,14 +1154,28 @@ def remove_connection(conn, row: dict, *, sources: str = "keep", tools: str = "d
     return linked_sources if sources == "delete" else []
 
 
-def set_tool_permissions(conn, user_id: str, tool_id: str, permissions: dict) -> Optional[dict]:
-    """Apply ``{action: always | ask | off}`` to a tool the user owns."""
+def set_tool_permissions(
+    conn, user_id: str, connection_id: str, tool_id: str, permissions: dict,
+) -> Optional[dict]:
+    """Apply ``{action: always | ask | off}`` to a tool the user owns.
+
+    Args:
+        conn: Open database connection.
+        user_id: The caller, who must own the tool.
+        connection_id: The connection the tool must belong to.
+        tool_id: The tool to update.
+        permissions: Action name to ``always``, ``ask`` or ``off``.
+
+    Returns:
+        The updated tool, or None (nothing written) when the tool is not the
+        user's or belongs to another connection.
+    """
     from docsgpt.connectors.permissions import apply_permission
     from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
     tools = UserToolsRepository(conn)
     tool = tools.get_any(tool_id, user_id)
-    if tool is None or tool.get("user_id") != user_id:
+    if tool is None or tool.get("user_id") != user_id or str(tool.get("connection_id")) != connection_id:
         return None
     actions = [
         apply_permission(action, permissions[action.get("name")]) if action.get("name") in permissions else action

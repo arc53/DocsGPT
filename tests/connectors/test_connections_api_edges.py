@@ -128,6 +128,21 @@ class TestToolPermissions:
                          body={"permissions": {"telegram_send_message": "off"}}, args=(cid, tool_id))
         assert resp.status_code == 404
 
+    def test_tool_of_another_connection_is_left_unchanged(self, app, pg_conn):  # noqa: F811
+        from sqlalchemy import text
+
+        from docsgpt.api.connector.connections import ConnectionToolPermissions
+
+        cid = _connection(pg_conn, secrets={"credentials": {"token": "t"}})
+        other = _connection(pg_conn, account_label="…zzzz", secrets={"credentials": {"token": "u"}})
+        tool_id = self._tool(pg_conn, other)
+        with _db(pg_conn):
+            _call(app, ConnectionToolPermissions, "put", "/p",
+                  body={"permissions": {"telegram_send_message": "off"}}, args=(cid, tool_id))
+        actions = pg_conn.execute(text("SELECT actions FROM user_tools WHERE id = CAST(:t AS uuid)"),
+                                  {"t": tool_id}).scalar()
+        assert actions[0]["active"] is True
+
 
 class TestRefreshTools:
     def test_returns_the_diff(self, app, pg_conn):  # noqa: F811
