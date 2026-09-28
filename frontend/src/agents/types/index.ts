@@ -77,6 +77,8 @@ export type GuardrailsConfig = {
 
 export type AgentConfig = {
   guardrails?: GuardrailsConfig;
+  /** `tool_id:action` writes on the owner's accounts API-key callers may run. */
+  api_write_allowlist?: string[];
 };
 
 export type GuardrailCheckInfo = {

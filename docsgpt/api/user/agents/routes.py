@@ -383,6 +383,27 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
     return kwargs
 
 
+def keep_owner_only_config(config: dict, existing_agent: dict, is_team_editor: bool) -> dict:
+    """Keep the parts of an agent's config only its owner may change.
+
+    ``api_write_allowlist`` lets anyone with the agent's API key act on the
+    owner's connected accounts, so a team editor's update keeps the stored
+    value whatever it sends.
+
+    Args:
+        config: The normalized config from the request.
+        existing_agent: The agent row being updated.
+        is_team_editor: The caller edits through a team share, not as owner.
+
+    Returns:
+        The config to store.
+    """
+    if not is_team_editor:
+        return config
+    stored = AgentConfig.parse(existing_agent.get("config")).api_write_allowlist
+    return {**config, "api_write_allowlist": stored}
+
+
 def normalize_agent_config(raw):
     """Validate an inbound ``config`` payload, returning the normalized dict.
 
@@ -1030,7 +1051,9 @@ class UpdateAgent(Resource):
                                 exc,
                             )
                             return _reject(INVALID_CONFIG_MESSAGE, user, field)
-                        update_fields["config"] = normalized_config or {}
+                        update_fields["config"] = keep_owner_only_config(
+                            normalized_config or {}, existing_agent, is_team_editor,
+                        )
                     elif field == "limited_token_mode":
                         raw_value = data.get("limited_token_mode", False)
                         bool_value = (

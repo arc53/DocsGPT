@@ -1558,7 +1558,13 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "Reset key",
-      "resetKeyConfirm": "Are you sure you want to reset the API key? The current key will stop working immediately and this action cannot be undone."
+      "resetKeyConfirm": "Are you sure you want to reset the API key? The current key will stop working immediately and this action cannot be undone.",
+      "apiWrites": {
+        "title": "Actions anyone with this key can take as you",
+        "description": "Nobody can approve an action in the widget or through the API, so changes on your connected accounts are blocked unless you allow them here.",
+        "item": "{{tool}}: {{action}}",
+        "saveFailed": "Could not save. Try again."
+      }
     },
     "importSpec": {
       "title": "Import API Specification",

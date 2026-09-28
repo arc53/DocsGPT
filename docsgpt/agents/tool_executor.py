@@ -447,6 +447,8 @@ class ToolExecutor:
         *,
         headless: bool = False,
         tool_allowlist: Optional[List[str]] = None,
+        external_caller: bool = False,
+        api_write_allowlist: Optional[List[str]] = None,
     ):
         self.user_api_key = user_api_key
         self.user = user
@@ -457,6 +459,11 @@ class ToolExecutor:
         self.headless = bool(headless)
         # Tool-instance ids pre-authorized for headless approval-gated execution.
         self.tool_allowlist: set = {str(x) for x in tool_allowlist} if tool_allowlist else set()
+        # Someone calling the agent with its API key (widget, API): the run
+        # uses the owner's accounts and nobody can approve, so writes on a
+        # connected account run only when the owner allowlisted them.
+        self.external_caller = bool(external_caller)
+        self.api_write_allowlist: set = {str(x) for x in api_write_allowlist or []}
         # Set by BaseAgent._prepare_tools when the agent has tool-stage controls.
         self.guardrail_engine = None
         self.tool_calls: List[Dict] = []
@@ -866,7 +873,7 @@ class ToolExecutor:
         # user connects, then continues, and the pending call resumes.
         resolved = self._resolve_connection(tool_data)
         if resolved is not None and not resolved.available:
-            if self.headless:
+            if self.headless or self.external_caller:
                 return {
                     "call_id": call_id,
                     "name": llm_name,
@@ -939,6 +946,33 @@ class ToolExecutor:
             from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
 
             require_approval = action_access(tool_data.get("name"), action_data) == ACCESS_WRITE
+
+        # An API-key caller writes on the owner's account only with the
+        # owner's say-so: nobody can approve in a widget, and "Always allow"
+        # was the owner's choice for themselves, not for anyone with the key.
+        if self.external_caller and resolved is not None:
+            from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
+
+            if action_access(tool_data.get("name"), action_data) == ACCESS_WRITE:
+                entry = f"{tool_data.get('id') or tool_id}:{action_name}"
+                if entry in self.api_write_allowlist:
+                    return None
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": (
+                        f"This agent can't take this action with {resolved.connector_name or 'the owner'}'s "
+                        "account through its API key. The owner can allow it in the agent's Access details."
+                    ),
+                    "error_type": "tool_not_allowed",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
 
         if require_approval:
             if self.headless:

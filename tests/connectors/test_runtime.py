@@ -351,3 +351,96 @@ class TestMcpServerMismatch:
             # Someone else's connection, or one that signs in another way, is not kept.
             assert _previous_connection(existing, same, "bob") is None
             assert _previous_connection(existing, {**same, "auth_type": "oauth"}, "alice") is None
+
+
+class TestExternalApiCallers:
+    """An agent called with its API key runs as the owner, and nobody can approve there."""
+
+    def _external(self, allowlist=None):
+        from docsgpt.agents.tool_executor import ToolExecutor
+
+        return ToolExecutor(user="alice", external_caller=True, api_write_allowlist=allowlist)
+
+    def test_owner_account_write_is_denied(self, pg_conn):
+        cid = _connection(pg_conn)
+        with _service_db(pg_conn):
+            pause = _pause(self._external(), _tool(cid))
+        assert pause["pause_type"] == "headless_denied"
+        assert pause["error_type"] == "tool_not_allowed"
+        assert "Access details" in pause["deny_reason"]
+
+    def test_even_always_allow_writes_are_denied(self, pg_conn):
+        cid = _connection(pg_conn)
+        tool = _tool(cid)
+        tool["actions"][0]["require_approval"] = False
+        with _service_db(pg_conn):
+            assert _pause(self._external(), tool)["pause_type"] == "headless_denied"
+
+    def test_allowlisted_write_runs(self, pg_conn):
+        cid = _connection(pg_conn)
+        with _service_db(pg_conn):
+            pause = _pause(self._external(["tool-1:telegram_send_message"]), _tool(cid))
+        assert pause is None
+
+    def test_allowlist_does_not_cover_other_actions(self, pg_conn):
+        cid = _connection(pg_conn)
+        with _service_db(pg_conn):
+            pause = _pause(self._external(["tool-1:telegram_send_image"]), _tool(cid))
+        assert pause["pause_type"] == "headless_denied"
+
+    def test_missing_connection_is_denied_not_paused(self, pg_conn):
+        """The widget cannot show a Connect card."""
+        cid = _connection(pg_conn, status="reconnect_needed")
+        with _service_db(pg_conn):
+            pause = _pause(self._external(), _tool(cid))
+        assert pause["pause_type"] == "headless_denied"
+        assert pause["error_type"] == "connection_required"
+
+    def test_the_owner_in_the_app_is_not_external(self, pg_conn):
+        cid = _connection(pg_conn)
+        with _service_db(pg_conn):
+            assert _pause(_executor(), _tool(cid)) is None
+
+
+class TestExternalCallerDetection:
+    def test_api_key_request_from_someone_else_is_external(self):
+        from docsgpt.api.answer.services.stream_processor import is_external_api_caller
+
+        assert is_external_api_caller({"api_key": "k"}, {"sub": "visitor"}, "alice") is True
+        assert is_external_api_caller({"api_key": "k"}, None, "alice") is True
+
+    def test_owner_previewing_their_agent_is_not_external(self):
+        from docsgpt.api.answer.services.stream_processor import is_external_api_caller
+
+        assert is_external_api_caller({"api_key": "k"}, {"sub": "alice"}, "alice") is False
+        assert is_external_api_caller({}, {"sub": "visitor"}, "alice") is False
+
+
+class TestApiWriteAllowlistConfig:
+    def test_accepts_tool_action_pairs(self):
+        from docsgpt.guardrails.config import AgentConfig
+
+        config = AgentConfig.model_validate({"api_write_allowlist": ["tool-1:telegram_send_message"]})
+        assert config.api_write_allowlist == ["tool-1:telegram_send_message"]
+
+    def test_rejects_malformed_entries(self):
+        from docsgpt.guardrails.config import AgentConfig
+
+        with pytest.raises(Exception):
+            AgentConfig.model_validate({"api_write_allowlist": ["no-action-part"]})
+
+    def test_old_configs_still_parse(self):
+        from docsgpt.guardrails.config import AgentConfig
+
+        assert AgentConfig.parse({"guardrails": {}}).api_write_allowlist == []
+
+
+class TestAllowlistOwnership:
+    def test_team_editor_cannot_change_the_allowlist(self):
+        from docsgpt.api.user.agents.routes import keep_owner_only_config
+
+        existing = {"config": {"api_write_allowlist": ["t:a"]}}
+        sent = {"guardrails": {"controls": []}, "api_write_allowlist": ["t:a", "t:b"]}
+        assert keep_owner_only_config(sent, existing, True)["api_write_allowlist"] == ["t:a"]
+        assert keep_owner_only_config(sent, existing, False)["api_write_allowlist"] == ["t:a", "t:b"]
+        assert keep_owner_only_config({}, {"config": None}, True) == {"api_write_allowlist": []}

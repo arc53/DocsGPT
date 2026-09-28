@@ -29,6 +29,7 @@ from docsgpt.core.model_utils import (
     validate_model_id,
 )
 from docsgpt.core.settings import settings
+from docsgpt.guardrails.config import AgentConfig
 from sqlalchemy import text as sql_text
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
@@ -50,6 +51,25 @@ from docsgpt.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def is_external_api_caller(data: Dict[str, Any], decoded_token: Optional[Dict], owner: Optional[str]) -> bool:
+    """Whether a request calls an agent with its API key on someone else's behalf.
+
+    Widget and API requests carry the agent's key and run as its owner. The
+    owner previewing their own agent in the app sends the key too, but is
+    signed in as that owner. In local mode without auth everyone is the same
+    user, so there is no one else to tell apart.
+
+    Args:
+        data: The request body.
+        decoded_token: The caller's token before the key's owner replaces it.
+        owner: The agent owner's user id.
+    """
+    if not data.get("api_key"):
+        return False
+    caller = (decoded_token or {}).get("sub")
+    return not caller or caller != owner
 
 
 def _clamp_chunks(value: int) -> int:
@@ -954,6 +974,13 @@ class StreamProcessor:
             )
 
             # Set identity context
+            owner = self._agent_data.get("user")
+            self.agent_config["external_api_caller"] = is_external_api_caller(
+                self.data, self.decoded_token, owner,
+            )
+            self.agent_config["api_write_allowlist"] = AgentConfig.parse(
+                self._agent_data.get("config")
+            ).api_write_allowlist
             if self.data.get("api_key"):
                 # External API key: use the key owner's identity
                 self.initial_user_id = self._agent_data.get("user")
@@ -1632,6 +1659,8 @@ class StreamProcessor:
             user=self.initial_user_id,
             decoded_token=self.decoded_token,
             agent_id=agent_id,
+            external_caller=bool(agent_config.get("external_api_caller")),
+            api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id
         # Restore client tools so they stay available for subsequent LLM calls
@@ -1809,6 +1838,8 @@ class StreamProcessor:
             user=user,
             decoded_token=self.decoded_token,
             agent_id=self.agent_id,
+            external_caller=bool(self.agent_config.get("external_api_caller")),
+            api_write_allowlist=self.agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = self.conversation_id
         # Pass client-side tools so they get merged in get_tools()

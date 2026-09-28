@@ -1546,6 +1546,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         modalState={agentDetails}
         setModalState={setAgentDetails}
         onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
+        onConfigChange={(config) => setAgent((prev) => ({ ...prev, config }))}
       />
       {shareModalOpen && agent.id && (
         <ShareToTeamModal

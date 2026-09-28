@@ -1538,7 +1538,13 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "重置密钥",
-      "resetKeyConfirm": "确定要重置 API 密钥吗？当前密钥将立即停止工作，此操作无法撤销。"
+      "resetKeyConfirm": "确定要重置 API 密钥吗？当前密钥将立即停止工作，此操作无法撤销。",
+      "apiWrites": {
+        "title": "持有此密钥的任何人都能以你的身份执行的操作",
+        "description": "在小组件或 API 中无人能批准操作，因此除非你在此允许，否则对已连接账号的更改都会被阻止。",
+        "item": "{{tool}}：{{action}}",
+        "saveFailed": "无法保存。请重试。"
+      }
     },
     "importSpec": {
       "title": "导入 API 规范",

@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import { Agent } from '../agents/types';
+import ApiWriteAllowlist from '../agents/ApiWriteAllowlist';
+import { Agent, type AgentConfig } from '../agents/types';
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
 import { Button } from '../components/ui/button';
@@ -22,6 +23,8 @@ type AgentDetailsModalProps = {
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   onKeyRegenerated?: (key: string) => void;
+  /** The agent's config after its API-key write allowlist changed. */
+  onConfigChange?: (config: AgentConfig) => void;
 };
 
 export default function AgentDetailsModal({
@@ -30,6 +33,7 @@ export default function AgentDetailsModal({
   modalState,
   setModalState,
   onKeyRegenerated,
+  onConfigChange,
 }: AgentDetailsModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -220,6 +224,12 @@ export default function AgentDetailsModal({
                 <Button type="button" variant="outline-primary" shape="pill">
                   {t('modals.agentDetails.generate')}
                 </Button>
+              )}
+              {apiKey && (
+                <ApiWriteAllowlist
+                  agent={agent}
+                  onConfigChange={onConfigChange}
+                />
               )}
             </div>
             <div className="flex flex-col gap-3">
