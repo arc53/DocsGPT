@@ -1373,6 +1373,7 @@
     "attachments": {
       "attach": "Anhängen",
       "remove": "Anhang entfernen",
+      "uploadFailed": "Upload fehlgeschlagen. Die Datei konnte nicht gelesen werden oder die Verbindung wurde unterbrochen.",
       "attached": "Anhang",
       "failed": "Fehlgeschlagen",
       "attachment": "Anhang"

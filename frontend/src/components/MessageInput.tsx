@@ -51,6 +51,7 @@ import {
   ToolsTrigger,
 } from './message-input';
 import { useArmedSend } from './message-input/armedSend';
+import { guardUploadStall } from './message-input/uploadStallGuard';
 import { cannotReadAttachment } from './message-input/attachmentReadability';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
@@ -555,6 +556,7 @@ export default function MessageInput({
       const files = supported;
 
       const apiHost = envVar('VITE_API_HOST');
+      const uploadFailedMessage = t('conversation.attachments.uploadFailed');
 
       if (files.length > 1) {
         const formData = new FormData();
@@ -830,20 +832,29 @@ export default function MessageInput({
           }
         };
 
-        xhr.onerror = () => {
-          console.error('Upload network error');
-          Object.values(indexToUiId).forEach((id) =>
-            dispatch(
-              updateAttachment({
-                id,
-                updates: { status: 'failed' },
-              }),
-            ),
-          );
-        };
+        // No response at all (status 0): a file the browser couldn't read,
+        // a dropped connection, or a stall the guard aborted.
+        xhr.onerror =
+          xhr.onabort =
+          xhr.ontimeout =
+            () => {
+              console.error('Upload network error');
+              Object.values(indexToUiId).forEach((id) =>
+                dispatch(
+                  updateAttachment({
+                    id,
+                    updates: {
+                      status: 'failed',
+                      errorMessage: uploadFailedMessage,
+                    },
+                  }),
+                ),
+              );
+            };
 
         xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
         if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        guardUploadStall(xhr);
         xhr.send(formData);
         return;
       }
@@ -951,17 +962,24 @@ export default function MessageInput({
           }
         };
 
-        xhr.onerror = () => {
-          dispatch(
-            updateAttachment({
-              id: uniqueId,
-              updates: { status: 'failed' },
-            }),
-          );
-        };
+        xhr.onerror =
+          xhr.onabort =
+          xhr.ontimeout =
+            () => {
+              dispatch(
+                updateAttachment({
+                  id: uniqueId,
+                  updates: {
+                    status: 'failed',
+                    errorMessage: uploadFailedMessage,
+                  },
+                }),
+              );
+            };
 
         xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
         if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        guardUploadStall(xhr);
         xhr.send(formData);
       });
     },
