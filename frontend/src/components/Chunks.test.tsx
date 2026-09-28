@@ -507,6 +507,8 @@ describe('Chunks', () => {
     await act(async () => buttonByText('modals.chunk.save')!.click());
     expect(drawer()).toBeNull();
     expect(container.querySelector('h2')?.textContent).toBe('Rewritten');
+    expect(container.textContent).toContain('chunkPositionUnplaced');
+    expect(buttonByLabel('settings.sources.nextChunk')!.disabled).toBe(true);
   });
 
   it('deleting the only chunk on the last page lands on the page before', async () => {
@@ -789,7 +791,7 @@ describe('Chunks', () => {
     expect(container.querySelector('h1')?.textContent).toBe('Second');
   });
 
-  it('an edited chunk the store moved off the probed positions keeps what is shown', async () => {
+  it('an edited chunk the store moved off the probed positions keeps its text but not its place', async () => {
     serveStore(1);
     await render({ embedded: true });
     const tiles = container.querySelectorAll<HTMLButtonElement>(
@@ -799,7 +801,14 @@ describe('Chunks', () => {
     service.getDocumentChunks.mockClear();
     await editOpenChunk('# First edited');
     expect(container.querySelector('h1')?.textContent).toBe('First edited');
-    expect(position()).toEqual([1, 3]);
+    // Its position is unknown: no number is claimed and paging is off, so
+    // previous / next can't step from a place the chunk no longer holds.
+    expect(container.textContent).not.toMatch(/chunkPosition \{/);
+    expect(container.textContent).toContain('chunkPositionUnplaced');
+    expect(buttonByLabel('settings.sources.previousChunk')!.disabled).toBe(
+      true,
+    );
+    expect(buttonByLabel('settings.sources.nextChunk')!.disabled).toBe(true);
     // Only the open and last positions are probed: the whole filtered list
     // (one page of `total`) is never fetched.
     const sizes = service.getDocumentChunks.mock.calls.map(

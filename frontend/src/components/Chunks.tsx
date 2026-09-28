@@ -111,6 +111,9 @@ const Chunks: React.FC<ChunksProps> = ({
   const [openChunk, setOpenChunk] = useState<ChunkType | null>(null);
   // The open chunk's position in the whole filtered list (1-based).
   const [openPosition, setOpenPosition] = useState(0);
+  // Set when a save leaves the open chunk off every probed position: its
+  // place in the list is unknown, so position labels and paging are off.
+  const [positionLost, setPositionLost] = useState(false);
   // A previous / next fetch in flight.
   const [stepping, setStepping] = useState(false);
   const stepRef = useRef(0);
@@ -197,6 +200,7 @@ const Chunks: React.FC<ChunksProps> = ({
       if (chunk) {
         setOpenChunk(chunk);
         setOpenPosition(position);
+        setPositionLost(false);
       }
     } catch (error) {
       console.error(error);
@@ -214,7 +218,10 @@ const Chunks: React.FC<ChunksProps> = ({
    * position (the chunk stayed), then the last one (a store that re-adds the
    * copy at the end). Each probe matches by id, so no store ordering is
    * assumed. When neither holds it (moved elsewhere, or a search it no longer
-   * matches), what is shown stays: the whole filtered list is never fetched.
+   * matches), the saved text stays but its position is unknown, so the
+   * position labels drop the number and previous / next are off until the
+   * reader closes; the whole filtered list is never fetched. A failed or
+   * superseded probe leaves what is shown.
    *
    * @param chunk The chunk just saved, with its new id.
    */
@@ -237,6 +244,7 @@ const Chunks: React.FC<ChunksProps> = ({
       setTotalChunks(total);
       setOpenChunk(stored);
       setOpenPosition(at);
+      setPositionLost(false);
     };
     try {
       const here = await fetchPage(openPosition, 1);
@@ -248,12 +256,17 @@ const Chunks: React.FC<ChunksProps> = ({
         show(stored, openPosition, total);
         return;
       }
-      if (total < 1) return;
-      if (total === openPosition) return;
-      const last = await fetchPage(total, 1);
-      if (!last) return;
-      const lastChunk: ChunkType | undefined = last.chunks?.[0];
-      if (lastChunk?.doc_id === chunk.doc_id) show(lastChunk, total, total);
+      if (total >= 1 && total !== openPosition) {
+        const last = await fetchPage(total, 1);
+        if (!last) return;
+        const lastChunk: ChunkType | undefined = last.chunks?.[0];
+        if (lastChunk?.doc_id === chunk.doc_id) {
+          show(lastChunk, total, total);
+          return;
+        }
+      }
+      setTotalChunks(total);
+      setPositionLost(true);
     } catch (error) {
       console.error(error);
     }
@@ -296,6 +309,7 @@ const Chunks: React.FC<ChunksProps> = ({
   const showChunk = (chunk: ChunkType, position: number) => {
     setOpenChunk(chunk);
     setOpenPosition(position);
+    setPositionLost(false);
   };
 
   /**
@@ -459,8 +473,10 @@ const Chunks: React.FC<ChunksProps> = ({
     setPage(1);
   }, [path]);
 
-  const canGoPrevious = !!openChunk && !stepping && openPosition > 1;
-  const canGoNext = !!openChunk && !stepping && openPosition < totalChunks;
+  const canGoPrevious =
+    !!openChunk && !stepping && !positionLost && openPosition > 1;
+  const canGoNext =
+    !!openChunk && !stepping && !positionLost && openPosition < totalChunks;
 
   // ← / → walk the chunks while nothing else owns the keys.
   const goToChunkRef = useRef(goToChunk);
@@ -490,7 +506,13 @@ const Chunks: React.FC<ChunksProps> = ({
           onSelect: openChunk ? () => closeChunk() : undefined,
         },
         ...(openChunk
-          ? [{ label: t('settings.sources.chunkCrumb', { n: openPosition }) }]
+          ? [
+              {
+                label: positionLost
+                  ? t('settings.sources.chunkCrumbUnplaced')
+                  : t('settings.sources.chunkCrumb', { n: openPosition }),
+              },
+            ]
           : []),
       ]}
       byline={
@@ -609,11 +631,15 @@ const Chunks: React.FC<ChunksProps> = ({
     <ReaderPanel
       meta={
         <span>
-          {t('settings.sources.chunkPosition', {
-            n: openPosition,
-            total: totalChunks,
-            tokens: formatChunkTokens(chunk.metadata),
-          })}
+          {positionLost
+            ? t('settings.sources.chunkPositionUnplaced', {
+                tokens: formatChunkTokens(chunk.metadata),
+              })
+            : t('settings.sources.chunkPosition', {
+                n: openPosition,
+                total: totalChunks,
+                tokens: formatChunkTokens(chunk.metadata),
+              })}
         </span>
       }
       actions={
@@ -723,14 +749,20 @@ const Chunks: React.FC<ChunksProps> = ({
             : t('settings.sources.addChunk')
         }
         description={
-          editing
-            ? t('settings.sources.editChunkDescription', {
-                file: fileLabel,
-                n: openPosition,
-                tokens: formatChunkTokens(openChunk?.metadata),
-                interpolation: { escapeValue: false },
-              })
-            : fileLabel || undefined
+          !editing
+            ? fileLabel || undefined
+            : positionLost
+              ? t('settings.sources.editChunkDescriptionUnplaced', {
+                  file: fileLabel,
+                  tokens: formatChunkTokens(openChunk?.metadata),
+                  interpolation: { escapeValue: false },
+                })
+              : t('settings.sources.editChunkDescription', {
+                  file: fileLabel,
+                  n: openPosition,
+                  tokens: formatChunkTokens(openChunk?.metadata),
+                  interpolation: { escapeValue: false },
+                })
         }
         value={draft}
         onChange={setDraft}
