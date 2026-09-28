@@ -75,6 +75,8 @@ interface CloudFilePickerProps {
     selectedFolderIds?: string[],
   ) => void;
   onDisconnect?: () => void;
+  /** Called with the first item's name when the selection goes from empty to one. */
+  onFirstPickName?: (name: string) => void;
   provider: string;
   token: string | null;
   initialSelectedFiles?: string[];
@@ -84,6 +86,7 @@ interface CloudFilePickerProps {
 export const FilePicker: React.FC<CloudFilePickerProps> = ({
   onSelectionChange,
   onDisconnect,
+  onFirstPickName,
   provider,
   token,
   initialSelectedFiles = [],
@@ -404,6 +407,14 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   };
 
   const handleFileSelect = (fileId: string, isFolder: boolean) => {
+    if (
+      selectedFiles.length === 0 &&
+      selectedFolders.length === 0 &&
+      onFirstPickName
+    ) {
+      const picked = files.find((file) => file.id === fileId);
+      if (picked) onFirstPickName(picked.name);
+    }
     if (isFolder) {
       const newSelectedFolders = selectedFolders.includes(fileId)
         ? selectedFolders.filter((id) => id !== fileId)

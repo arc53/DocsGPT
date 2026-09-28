@@ -33,11 +33,14 @@ interface PickerFile {
 interface GoogleDrivePickerProps {
   token: string | null;
   onSelectionChange: (fileIds: string[], folderIds?: string[]) => void;
+  /** Called with the first item's name when the selection goes from empty to one. */
+  onFirstPickName?: (name: string) => void;
 }
 
 const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
   token,
   onSelectionChange,
+  onFirstPickName,
 }) => {
   const { t } = useTranslation();
   const [selectedFiles, setSelectedFiles] = useState<PickerFile[]>([]);
@@ -191,6 +194,13 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
               );
               return [...prevFolders, ...uniqueNewFolders];
             });
+            if (
+              selectedFiles.length === 0 &&
+              selectedFolders.length === 0 &&
+              docs.length > 0
+            ) {
+              onFirstPickName?.(docs[0].name);
+            }
             onSelectionChange(
               [...selectedFiles, ...newFiles].map((file) => file.id),
               [...selectedFolders, ...newFolders].map((folder) => folder.id),

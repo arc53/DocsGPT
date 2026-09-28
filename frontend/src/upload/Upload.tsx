@@ -1,4 +1,4 @@
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, CircleAlert } from 'lucide-react';
 import { envVar } from '@/env';
 import { cn } from '@/lib/utils';
 import { useCallback, useEffect, useState } from 'react';
@@ -28,6 +28,16 @@ import { Textarea } from '../components/ui/textarea';
 import { Modal } from '../components/ui/modal';
 import { Separator } from '../components/ui/separator';
 import { OptionCard } from '../components/ui/option-card';
+import { SectionHeader } from '../components/ui/section-header';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import {
+  loadConnectors,
+  selectConnections,
+  selectConnectorCatalog,
+  selectConnectorsLoaded,
+} from '../connectors/connectorsSlice';
+import type { AppDispatch } from '../store';
 import { ActiveState, Doc } from '../models/misc';
 
 import { getDocs } from '../preferences/preferenceApi';
@@ -38,10 +48,12 @@ import {
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import {
+  CONNECTION_INGESTORS,
   IngestorDefaultConfigs,
   IngestorFormSchemas,
   getIngestorSchema,
   IngestorOption,
+  UPLOAD_AND_WEB_INGESTORS,
 } from '../upload/types/ingestor';
 import { addUploadTask, updateUploadTask } from './uploadSlice';
 
@@ -65,6 +77,7 @@ function Upload({
   close,
   onSuccessfulUpload = () => undefined,
   selectUploadedDoc = true,
+  initialIngestor,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
@@ -79,9 +92,14 @@ function Upload({
    * uploading never repoints the conversation the user left open.
    */
   selectUploadedDoc?: boolean;
+  /** Open straight on this source type's form (Connect from a connector card). */
+  initialIngestor?: IngestorType;
 }) {
   const token = useSelector(selectToken);
   const selectedDocs = useSelector(selectSelectedDocs);
+  const connectorCatalog = useSelector(selectConnectorCatalog);
+  const connections = useSelector(selectConnections);
+  const connectorsLoaded = useSelector(selectConnectorsLoaded);
 
   const [files, setfiles] = useState<File[]>(receivedFile);
   const [activeTab, setActiveTab] = useState<boolean>(true);
@@ -334,6 +352,7 @@ function Upload({
               setSelectedFiles(selectedFileIds);
               setSelectedFolders(selectedFolderIds);
             }}
+            onFirstPickName={prefillName}
             provider={ingestor.type as unknown as string}
             token={token}
             initialSelectedFiles={selectedFiles}
@@ -341,7 +360,9 @@ function Upload({
           />
         );
       case 'google_drive_picker':
-        return (
+        // Google's own picker needs the client id in the browser; without it
+        // the server-side file browser lists the same Drive.
+        return envVar('VITE_GOOGLE_CLIENT_ID') ? (
           <GoogleDrivePicker
             key={field.name}
             onSelectionChange={(
@@ -351,7 +372,24 @@ function Upload({
               setSelectedFiles(selectedFileIds);
               setSelectedFolders(selectedFolderIds);
             }}
+            onFirstPickName={prefillName}
             token={token}
+          />
+        ) : (
+          <FilePicker
+            key={field.name}
+            onSelectionChange={(
+              selectedFileIds: string[],
+              selectedFolderIds: string[] = [],
+            ) => {
+              setSelectedFiles(selectedFileIds);
+              setSelectedFolders(selectedFolderIds);
+            }}
+            onFirstPickName={prefillName}
+            provider="google_drive"
+            token={token}
+            initialSelectedFiles={selectedFiles}
+            initialSelectedFolders={selectedFolders}
           />
         );
       case 'share_point_picker':
@@ -365,6 +403,7 @@ function Upload({
               setSelectedFiles(selectedFileIds);
               setSelectedFolders(selectedFolderIds);
             }}
+            onFirstPickName={prefillName}
             provider="share_point"
             token={token}
             initialSelectedFiles={selectedFiles}
@@ -382,6 +421,7 @@ function Upload({
               setSelectedFiles(selectedFileIds);
               setSelectedFolders(selectedFolderIds);
             }}
+            onFirstPickName={prefillName}
             provider="confluence"
             token={token}
             initialSelectedFiles={selectedFiles}
@@ -402,17 +442,39 @@ function Upload({
   const [nameTouched, setNameTouched] = useState(false);
 
   const { t } = useTranslation();
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const store = useStore<RootState>();
 
-  const ingestorOptions: IngestorOption[] = IngestorFormSchemas.filter(
-    (schema) => (schema.validate ? schema.validate() : true),
-  ).map((schema) => ({
-    label: schema.label,
-    value: schema.key,
-    icon: schema.icon,
-    heading: schema.heading,
-  }));
+  useEffect(() => {
+    if (!connectorsLoaded) dispatch(loadConnectors({ token }));
+  }, [connectorsLoaded, dispatch, token]);
+
+  useEffect(() => {
+    if (initialIngestor) handleIngestorTypeChange(initialIngestor);
+    // Only the type the modal opened with; later picks are the user's.
+  }, []);
+
+  /** The name field follows the first picked item until the user edits it. */
+  const prefillName = (name: string) => {
+    if (nameTouched || !name) return;
+    setIngestor((prev) => (prev.name ? prev : { ...prev, name }));
+  };
+
+  const connectorFor = (type: IngestorType | null) =>
+    type && CONNECTION_INGESTORS.includes(type)
+      ? connectorCatalog.find((c) => c.sync_ingestor === type)
+      : undefined;
+  const selectedConnector = connectorFor(ingestor.type);
+  const needsSetup = !!selectedConnector && !selectedConnector.available;
+
+  const ingestorOptions: IngestorOption[] = IngestorFormSchemas.map(
+    (schema) => ({
+      label: schema.label,
+      value: schema.key,
+      icon: schema.icon,
+      heading: schema.heading,
+    }),
+  );
 
   const resetUploaderState = useCallback(() => {
     setIngestor({ type: null, name: '', config: {} });
@@ -923,6 +985,7 @@ function Upload({
     if (!isPrescreenConfigValid(retrievalOptions)) return true;
 
     if (!ingestor.type) return true;
+    if (needsSetup) return true;
     const ingestorSchemaForValidation = getIngestorSchema(
       ingestor.type as IngestorType,
     );
@@ -1026,28 +1089,109 @@ function Upload({
     }
   };
 
+  const connectionTileState = (type: IngestorType) => {
+    const connector = connectorFor(type);
+    if (!connector) return undefined;
+    if (!connector.available)
+      return t('settings.connectors.status.needsAdminSetup');
+    const accounts = connections.filter(
+      (c) => c.connector_key === connector.key && c.status === 'connected',
+    );
+    if (accounts.length === 1)
+      return t('modals.uploadDoc.tileConnectedAs', {
+        account: accounts[0].account_label,
+        interpolation: { escapeValue: false },
+      });
+    if (accounts.length > 1)
+      return t('settings.connectors.status.connectedCount', {
+        count: accounts.length,
+      });
+    return t('settings.connectors.status.connect');
+  };
+
   const renderIngestorSelection = () => {
+    const optionsFor = (types: IngestorType[]) =>
+      types
+        .map((type) => ingestorOptions.find((o) => o.value === type))
+        .filter((option): option is IngestorOption => !!option);
     return (
-      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-        {ingestorOptions.map((option) => (
-          <OptionCard
-            key={option.value}
-            icon={
-              <img
-                src={option.icon}
-                alt={option.label}
-                className="size-6 dark:invert"
-              />
-            }
-            title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
-            onClick={() =>
-              handleIngestorTypeChange(option.value as IngestorType)
-            }
+      <div className="flex w-full flex-col gap-6">
+        <section className="flex flex-col gap-3">
+          <SectionHeader
+            as="h3"
+            size="sm"
+            title={t('modals.uploadDoc.groupUploadWeb')}
           />
-        ))}
+          <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+            {optionsFor(UPLOAD_AND_WEB_INGESTORS).map((option) => (
+              <OptionCard
+                key={option.value}
+                icon={
+                  <img
+                    src={option.icon}
+                    alt=""
+                    className="size-6 dark:invert"
+                  />
+                }
+                title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
+                onClick={() => handleIngestorTypeChange(option.value)}
+              />
+            ))}
+          </div>
+        </section>
+        <section className="flex flex-col gap-3">
+          <SectionHeader
+            as="h3"
+            size="sm"
+            title={t('modals.uploadDoc.groupConnection')}
+          />
+          <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+            {optionsFor(CONNECTION_INGESTORS).map((option) => {
+              const connector = connectorFor(option.value);
+              return (
+                <OptionCard
+                  key={option.value}
+                  icon={
+                    <ConnectorIcon
+                      icon={connector?.icon ?? option.value}
+                      className="size-6"
+                    />
+                  }
+                  title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
+                  description={connectionTileState(option.value)}
+                  onClick={() => handleIngestorTypeChange(option.value)}
+                />
+              );
+            })}
+          </div>
+        </section>
       </div>
     );
   };
+
+  const renderSetupNotice = () =>
+    selectedConnector && needsSetup ? (
+      <Alert variant="warning">
+        <CircleAlert />
+        <AlertTitle>
+          {t('settings.connectors.status.needsAdminSetup')}
+        </AlertTitle>
+        <AlertDescription>
+          <div className="flex flex-col gap-2">
+            {selectedConnector.missing_settings.length > 0 ? (
+              <>
+                <span>{t('settings.connectors.setupSettings')}</span>
+                <code className="font-mono text-xs wrap-anywhere">
+                  {selectedConnector.missing_settings.join(', ')}
+                </code>
+              </>
+            ) : (
+              <span>{t('settings.connectors.askAdmin')}</span>
+            )}
+          </div>
+        </AlertDescription>
+      </Alert>
+    ) : null;
   return (
     <Modal
       open={true}
@@ -1114,8 +1258,8 @@ function Upload({
                   required={true}
                   className="w-full"
                 />
-                {renderFormFields()}
-                {ingestor.type !== 'wiki' && (
+                {needsSetup ? renderSetupNotice() : renderFormFields()}
+                {ingestor.type !== 'wiki' && !needsSetup && (
                   <RetrievalOptions
                     value={retrievalOptions}
                     onChange={setRetrievalOptions}

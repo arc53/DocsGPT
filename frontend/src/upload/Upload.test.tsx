@@ -5,8 +5,29 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+const connectorsState = vi.hoisted(() => ({
+  catalog: [] as Record<string, unknown>[],
+  connections: [] as Record<string, unknown>[],
+}));
+
 vi.mock('react-redux', () => ({
-  useSelector: () => null,
+  useSelector: (selector: (state: unknown) => unknown) => {
+    const state = {
+      preference: { token: null, selectedDocs: [] },
+      connectors: {
+        catalog: connectorsState.catalog,
+        connections: connectorsState.connections,
+        loaded: true,
+        loading: false,
+        failed: false,
+      },
+    };
+    try {
+      return selector(state);
+    } catch {
+      return null;
+    }
+  },
   useDispatch: () => vi.fn(),
   useStore: () => ({ getState: () => ({}) }),
 }));
@@ -82,6 +103,70 @@ describe('Upload source-type tiles', () => {
     expect(document.body.textContent).toContain(
       'modals.uploadDoc.ingestors.crawler.heading',
     );
+  });
+
+  it('groups upload and web apart from connections', async () => {
+    await render();
+    expect(document.body.textContent).toContain(
+      'modals.uploadDoc.groupUploadWeb',
+    );
+    expect(document.body.textContent).toContain(
+      'modals.uploadDoc.groupConnection',
+    );
+  });
+
+  it('shows connector tiles even when the server is not set up', async () => {
+    connectorsState.catalog = [
+      {
+        key: 'google_drive',
+        icon: 'drive',
+        sync_ingestor: 'google_drive',
+        available: false,
+        missing_settings: ['GOOGLE_CLIENT_ID'],
+      },
+    ];
+    await render();
+    const drive = tiles().find((tile) =>
+      tile.textContent?.includes(
+        'modals.uploadDoc.ingestors.google_drive.label',
+      ),
+    );
+    expect(drive).toBeDefined();
+    expect(drive!.textContent).toContain(
+      'settings.connectors.status.needsAdminSetup',
+    );
+    await act(async () => drive!.click());
+    expect(document.body.textContent).toContain('GOOGLE_CLIENT_ID');
+    connectorsState.catalog = [];
+  });
+
+  it('names the connected account on a connection tile', async () => {
+    connectorsState.catalog = [
+      {
+        key: 'confluence',
+        icon: 'confluence',
+        sync_ingestor: 'confluence',
+        available: true,
+        missing_settings: [],
+      },
+    ];
+    connectorsState.connections = [
+      {
+        id: 'c1',
+        connector_key: 'confluence',
+        status: 'connected',
+        account_label: 'alex@example.com',
+      },
+    ];
+    await render();
+    const confluence = tiles().find((tile) =>
+      tile.textContent?.includes('modals.uploadDoc.ingestors.confluence.label'),
+    );
+    expect(confluence!.textContent).toContain(
+      'modals.uploadDoc.tileConnectedAs',
+    );
+    connectorsState.catalog = [];
+    connectorsState.connections = [];
   });
 
   it('leaves the disabled Train button on the default variant', async () => {

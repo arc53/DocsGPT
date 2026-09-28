@@ -1,4 +1,3 @@
-import { envVar } from '@/env';
 import CrawlerIcon from '../../assets/crawler.svg';
 import FileUploadIcon from '../../assets/file_upload.svg';
 import UrlIcon from '../../assets/url.svg';
@@ -63,9 +62,24 @@ export interface IngestorSchema {
   label: string;
   icon: string;
   heading: string;
-  validate?: () => boolean;
   fields: FormField[];
 }
+
+/** Add Source groups: what needs no account, and what comes from a connection. */
+export const UPLOAD_AND_WEB_INGESTORS: IngestorType[] = [
+  'local_file',
+  'url',
+  'crawler',
+  'github',
+  'wiki',
+];
+export const CONNECTION_INGESTORS: IngestorType[] = [
+  'google_drive',
+  'share_point',
+  'confluence',
+  's3',
+  'reddit',
+];
 
 export const IngestorFormSchemas: IngestorSchema[] = [
   {
@@ -175,10 +189,6 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     label: 'Google Drive',
     icon: DriveIcon,
     heading: 'Upload from Google Drive',
-    validate: () => {
-      const googleClientId = envVar('VITE_GOOGLE_CLIENT_ID');
-      return !!googleClientId;
-    },
     fields: [
       {
         name: 'files',
@@ -243,10 +253,6 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     label: 'Share Point',
     icon: SharePoint,
     heading: 'Upload from Share Point',
-    validate: () => {
-      const sharePointClientId = envVar('VITE_SHARE_POINT_CLIENT_ID');
-      return !!sharePointClientId;
-    },
     fields: [
       {
         name: 'files',
@@ -261,10 +267,6 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     label: 'Confluence',
     icon: ConfluenceIcon,
     heading: 'Upload from Confluence',
-    validate: () => {
-      const confluenceClientId = envVar('VITE_CONFLUENCE_CLIENT_ID');
-      return !!confluenceClientId;
-    },
     fields: [
       {
         name: 'files',
