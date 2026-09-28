@@ -42,6 +42,10 @@ vi.mock('../../api/services/userService', () => ({
         chunks: state.chunks,
       }),
     })),
+    updateChunk: vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ chunk_id: 'c1' }),
+    })),
   },
 }));
 
@@ -249,6 +253,40 @@ describe('TreeBrowser', () => {
 
     await clickCrumb('readme.md');
     expect(tile()).not.toBeNull();
+    expect(crumbs()).toEqual([SOURCES, 'Contracts', 'readme.md']);
+  });
+
+  it('a saved chunk whose place is unknown keeps an unnumbered crumb', async () => {
+    state.chunks = [{ doc_id: 'c1', text: '# Rates', metadata: {} }];
+    await render(NESTED);
+    await openRow('readme.md');
+    await act(async () => tile()!.click());
+    const button = (text: string) =>
+      Array.from(document.body.querySelectorAll('button')).find(
+        (el) => el.textContent?.trim() === text,
+      )!;
+    await act(async () => button('modals.chunk.edit').click());
+    // After the save, the probed positions no longer hold the chunk.
+    state.chunks = [];
+    const field = document.body.querySelector<HTMLTextAreaElement>(
+      '[role="dialog"] textarea',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )!.set!.call(field, '# Rates edited');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => button('modals.chunk.save').click());
+    expect(crumbs()).toEqual([
+      SOURCES,
+      'Contracts',
+      'readme.md',
+      'settings.sources.chunkCrumbUnplaced',
+    ]);
+
+    await clickCrumb('readme.md');
     expect(crumbs()).toEqual([SOURCES, 'Contracts', 'readme.md']);
   });
 

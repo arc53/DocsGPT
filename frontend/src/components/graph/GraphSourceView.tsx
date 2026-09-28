@@ -13,7 +13,10 @@ import { useSelector } from 'react-redux';
 import userService from '../../api/services/userService';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatCount } from '../../utils/dateTimeUtils';
-import Chunks, { type ChunksController } from '../Chunks';
+import Chunks, {
+  type ChunksController,
+  type OpenChunkPosition,
+} from '../Chunks';
 import ConnectorTree from '../ConnectorTree';
 import FileTree from '../FileTree';
 import GraphView, { type GraphLoadStatus } from '../GraphView';
@@ -80,9 +83,8 @@ export default function GraphSourceView({
   // header shows it while that tab is open.
   const [filesCrumbs, setFilesCrumbs] = useState<Crumb[]>([]);
   // A flat source's open chunk (its crumb), reported by the chunk list.
-  const [openChunkPosition, setOpenChunkPosition] = useState<number | null>(
-    null,
-  );
+  const [openChunkPosition, setOpenChunkPosition] =
+    useState<OpenChunkPosition>(null);
   const chunksControllerRef = useRef<ChunksController | null>(null);
 
   useEffect(() => {
@@ -157,7 +159,10 @@ export default function GraphSourceView({
     ...(openChunkPosition !== null
       ? [
           {
-            label: t('settings.sources.chunkCrumb', { n: openChunkPosition }),
+            label:
+              openChunkPosition === 'unplaced'
+                ? t('settings.sources.chunkCrumbUnplaced')
+                : t('settings.sources.chunkCrumb', { n: openChunkPosition }),
           },
         ]
       : []),

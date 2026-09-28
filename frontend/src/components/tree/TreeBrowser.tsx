@@ -17,7 +17,10 @@ import { Eye, File, Folder } from 'lucide-react';
 import { Button } from '../ui/button';
 import { EmptyState } from '../ui/empty-state';
 import { useLoaderState } from '../../hooks';
-import Chunks, { type ChunksController } from '../Chunks';
+import Chunks, {
+  type ChunksController,
+  type OpenChunkPosition,
+} from '../Chunks';
 import PathHeader, { type Crumb } from './PathHeader';
 import SourceNavigator from './SourceNavigator';
 import SkeletonLoader from '../SkeletonLoader';
@@ -207,9 +210,8 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   } | null>(null);
   const mountedRef = useRef(true);
   // The open file's open chunk (its crumb), reported by Chunks.
-  const [openChunkPosition, setOpenChunkPosition] = useState<number | null>(
-    null,
-  );
+  const [openChunkPosition, setOpenChunkPosition] =
+    useState<OpenChunkPosition>(null);
   const chunksControllerRef = useRef<ChunksController | null>(null);
 
   useEffect(
@@ -587,7 +589,10 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
     ...(chunkOpen
       ? [
           {
-            label: t('settings.sources.chunkCrumb', { n: openChunkPosition }),
+            label:
+              openChunkPosition === 'unplaced'
+                ? t('settings.sources.chunkCrumbUnplaced')
+                : t('settings.sources.chunkCrumb', { n: openChunkPosition }),
           },
         ]
       : []),

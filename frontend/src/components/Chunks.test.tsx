@@ -495,7 +495,8 @@ describe('Chunks', () => {
       ok: true,
       json: async () => ({ chunk_id: 'c1-new' }),
     }));
-    await render({ embedded: true });
+    const onOpenChunkChange = vi.fn();
+    await render({ embedded: true, onOpenChunkChange });
     await act(async () => tile()!.click());
     await act(async () => buttonByText('modals.chunk.edit')!.click());
     // After the save, the open position holds nothing (or another chunk).
@@ -509,6 +510,8 @@ describe('Chunks', () => {
     expect(container.querySelector('h2')?.textContent).toBe('Rewritten');
     expect(container.textContent).toContain('chunkPositionUnplaced');
     expect(buttonByLabel('settings.sources.nextChunk')!.disabled).toBe(true);
+    // An embedding host draws the crumb: still open, but with no number.
+    expect(onOpenChunkChange).toHaveBeenLastCalledWith('unplaced');
   });
 
   it('deleting the only chunk on the last page lands on the page before', async () => {

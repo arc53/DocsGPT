@@ -73,13 +73,13 @@ vi.mock('../Chunks', async () => {
     default: (props: {
       embedded?: boolean;
       documentId: string;
-      onOpenChunkChange?: (position: number | null) => void;
+      onOpenChunkChange?: (position: number | 'unplaced' | null) => void;
       controllerRef?: { current: { closeChunk: () => boolean } | null };
     }) => {
-      const [open, setOpen] = useState(false);
+      const [open, setOpen] = useState<false | 2 | 'unplaced'>(false);
       const { onOpenChunkChange, controllerRef } = props;
       useEffect(() => {
-        onOpenChunkChange?.(open ? 2 : null);
+        onOpenChunkChange?.(open || null);
       }, [open, onOpenChunkChange]);
       if (controllerRef) {
         controllerRef.current = {
@@ -92,8 +92,11 @@ vi.mock('../Chunks', async () => {
       return (
         <div data-testid="chunks" data-doc={props.documentId}>
           {props.embedded ? 'embedded' : 'page'}
-          <button type="button" onClick={() => setOpen(true)}>
+          <button type="button" onClick={() => setOpen(2)}>
             OPEN CHUNK
+          </button>
+          <button type="button" onClick={() => setOpen('unplaced')}>
+            LOSE PLACE
           </button>
         </div>
       );
@@ -462,6 +465,22 @@ describe('GraphSourceView', () => {
       ),
     ).find((b) => b.textContent === 'Key Accounts')!;
     await act(async () => source.click());
+    expect(crumbs()).toEqual(['settings.sources.label', 'Key Accounts']);
+
+    // A saved chunk whose place is unknown keeps an unnumbered crumb, and the
+    // source crumb still closes it.
+    await act(async () => buttonByText('LOSE PLACE')!.click());
+    expect(crumbs()).toEqual([
+      'settings.sources.label',
+      'Key Accounts',
+      'settings.sources.chunkCrumbUnplaced',
+    ]);
+    const again = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="breadcrumb-link"]',
+      ),
+    ).find((b) => b.textContent === 'Key Accounts')!;
+    await act(async () => again.click());
     expect(crumbs()).toEqual(['settings.sources.label', 'Key Accounts']);
   });
 
