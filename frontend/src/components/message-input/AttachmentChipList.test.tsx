@@ -78,16 +78,35 @@ describe('AttachmentChipList failed chip', () => {
       vi.advanceTimersByTime(500);
     });
 
+    // The full name, since two long names can truncate to the same text.
     expect(tooltip()?.textContent).toContain(
-      'Upload failed. The file could not be read.',
+      'scan.pdf: Upload failed. The file could not be read.',
     );
   });
 
-  it('keeps the reason available to screen readers', async () => {
+  it('announces failures in a persistent polite live region', async () => {
+    await render([att({ status: 'uploading', errorMessage: undefined })]);
+    const region = container.querySelector('[role="status"]');
+    expect(region?.textContent).toBe('');
+
     await render([att()]);
 
-    const srOnly = container.querySelector('.sr-only');
-    expect(srOnly?.textContent).toBe(
+    // Same node, updated in place, so screen readers announce the change.
+    expect(container.querySelector('[role="status"]')).toBe(region);
+    expect(region?.textContent).toBe(
+      'scan.pdf: Upload failed. The file could not be read.',
+    );
+  });
+
+  it('describes the focusable remove button with the reason', async () => {
+    await render([att()]);
+
+    const remove = container.querySelector(
+      'button[aria-label="conversation.attachments.remove"]',
+    )!;
+    const describedBy = remove.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toBe(
       'Upload failed. The file could not be read.',
     );
   });

@@ -1,4 +1,5 @@
 import { Paperclip, TriangleAlert, X } from 'lucide-react';
+import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Attachment } from '../../upload/uploadSlice';
@@ -30,6 +31,9 @@ export default function AttachmentChipList({
   modelName,
 }: AttachmentChipListProps) {
   const { t } = useTranslation();
+  const reasonIdPrefix = useId();
+  const failureReasonOf = (attachment: Attachment) =>
+    attachment.errorMessage ?? t('conversation.attachments.failed');
 
   // Not a failure: the file is kept and still sends. It only warns that the
   // model picked right now would receive nothing it can read.
@@ -43,11 +47,11 @@ export default function AttachmentChipList({
         {attachments.map((attachment) => {
           const failed = attachment.status === 'failed';
           // A failed file never blocks the send (it is dropped then), so its
-          // reason stays out of the way: the chip's warning icon marks it, and
-          // the reason is a hover tooltip plus screen-reader text.
-          const failureReason = failed
-            ? (attachment.errorMessage ?? t('conversation.attachments.failed'))
-            : null;
+          // reason stays out of the way: the chip's warning icon marks it, the
+          // reason is a hover tooltip, and it describes the remove button (the
+          // chip's one focusable control) for keyboard and screen readers.
+          const failureReason = failed ? failureReasonOf(attachment) : null;
+          const reasonId = `${reasonIdPrefix}-${attachment.id}`;
           const chip = (
             <div
               key={attachment.id}
@@ -119,7 +123,9 @@ export default function AttachmentChipList({
                 {attachment.fileName}
               </span>
               {failureReason && (
-                <span className="sr-only">{failureReason}</span>
+                <span id={reasonId} hidden>
+                  {failureReason}
+                </span>
               )}
 
               <IconButton
@@ -128,6 +134,7 @@ export default function AttachmentChipList({
                 size="icon-xs"
                 shape="pill"
                 className="ml-1.5"
+                aria-describedby={failureReason ? reasonId : undefined}
                 onClick={() => {
                   onRemove(attachment.id);
                 }}
@@ -140,10 +147,24 @@ export default function AttachmentChipList({
           return (
             <Tooltip key={attachment.id}>
               <TooltipTrigger asChild>{chip}</TooltipTrigger>
-              <TooltipContent>{failureReason}</TooltipContent>
+              <TooltipContent>
+                {attachment.fileName}: {failureReason}
+              </TooltipContent>
             </Tooltip>
           );
         })}
+      </div>
+
+      {/* Always mounted, so a chip turning failed is announced: the reason
+          itself is only on hover, which a screen reader never sees. */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {attachments
+          .filter((attachment) => attachment.status === 'failed')
+          .map(
+            (attachment) =>
+              `${attachment.fileName}: ${failureReasonOf(attachment)}`,
+          )
+          .join(' ')}
       </div>
 
       {unreadable.length > 0 && (
