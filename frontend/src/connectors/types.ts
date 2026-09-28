@@ -1,7 +1,9 @@
 export type ConnectorCategory =
   | 'files'
   | 'knowledge'
+  | 'projects'
   | 'dev'
+  | 'business'
   | 'messaging'
   | 'database'
   | 'search'

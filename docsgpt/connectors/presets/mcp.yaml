@@ -24,7 +24,7 @@
   name: Linear
   description: Find, create and update Linear issues and projects.
   icon: linear
-  category: dev
+  category: projects
   mcp_url: https://mcp.linear.app/mcp
   auth_kind: mcp_oauth
   capabilities: [read, write]
@@ -34,7 +34,7 @@
   name: Jira & Confluence
   description: Search and update Jira issues and Confluence pages.
   icon: atlassian
-  category: dev
+  category: projects
   # Shown on the Confluence card, next to syncing pages into Knowledge.
   part_of: confluence
   mcp_url: https://mcp.atlassian.com/v1/mcp
@@ -56,7 +56,7 @@
   name: Asana
   description: Find and update Asana tasks and projects.
   icon: asana
-  category: knowledge
+  category: projects
   mcp_url: https://mcp.asana.com/v2/mcp
   auth_kind: mcp_oauth
   capabilities: [read, write]
@@ -66,7 +66,7 @@
   name: Stripe
   description: Look up customers, payments and subscriptions in Stripe.
   icon: stripe
-  category: dev
+  category: business
   mcp_url: https://mcp.stripe.com
   auth_kind: mcp_oauth
   capabilities: [read, write]

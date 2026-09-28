@@ -19,7 +19,7 @@ import yaml
 
 from docsgpt.core.settings import settings
 
-CATEGORIES = ("files", "knowledge", "dev", "messaging", "database", "search", "custom")
+CATEGORIES = ("files", "knowledge", "projects", "dev", "business", "messaging", "database", "search", "custom")
 AUTH_KINDS = ("oauth", "mcp_oauth", "api_key", "none", "mcp")
 PUBLISHERS = ("built_in", "preset", "custom")
 
@@ -153,7 +153,7 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
     ConnectorDefinition(
         key="google_drive",
         name="Google Drive",
-        description="Sync Docs, Sheets and PDFs into Sources.",
+        description="Sync Docs, Sheets and PDFs into Knowledge.",
         icon="drive",
         category="files",
         auth_kind="oauth",
@@ -166,7 +166,7 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
     ConnectorDefinition(
         key="share_point",
         name="SharePoint",
-        description="Sync files from SharePoint sites and OneDrive into Sources.",
+        description="Sync files from SharePoint sites and OneDrive into Knowledge.",
         icon="sharepoint",
         category="files",
         auth_kind="oauth",
@@ -179,7 +179,7 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
     ConnectorDefinition(
         key="confluence",
         name="Confluence",
-        description="Sync Confluence spaces and pages into Sources.",
+        description="Sync Confluence spaces and pages into Knowledge.",
         icon="confluence",
         category="knowledge",
         auth_kind="oauth",
@@ -192,7 +192,7 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
     ConnectorDefinition(
         key="s3",
         name="Amazon S3",
-        description="Sync documents from an S3 bucket into Sources.",
+        description="Sync documents from an S3 bucket into Knowledge.",
         icon="s3",
         category="files",
         auth_kind="api_key",
@@ -214,9 +214,9 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
     ConnectorDefinition(
         key="reddit",
         name="Reddit",
-        description="Sync Reddit posts that match your searches into Sources.",
+        description="Sync Reddit posts that match your searches into Knowledge.",
         icon="reddit",
-        category="knowledge",
+        category="search",
         auth_kind="api_key",
         capabilities=("sync",),
         credential_fields=(

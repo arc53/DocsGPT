@@ -625,7 +625,39 @@ export default function Sources({
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
           ) : !currentDocuments?.length ? (
-            <EmptyState title={t('settings.sources.noData')} />
+            searchTerm ? (
+              <EmptyState title={t('settings.sources.noResults')} />
+            ) : (
+              // Nothing yet: the two ways in, side by side.
+              <EmptyState
+                title={t('settings.sources.noData')}
+                description={t('settings.sources.emptyHint')}
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button
+                      type="button"
+                      shape="pill"
+                      onClick={() => {
+                        setIsOnboarding(false);
+                        setModalState('ACTIVE');
+                      }}
+                    >
+                      {t('settings.sources.addSource')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      shape="pill"
+                      onClick={() =>
+                        navigate('/settings/connectors?capability=sync')
+                      }
+                    >
+                      {t('settings.sources.connectService')}
+                    </Button>
+                  </div>
+                }
+              />
+            )
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {currentDocuments.map((document, index) => {
