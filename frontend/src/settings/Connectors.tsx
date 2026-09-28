@@ -209,9 +209,9 @@ export default function Connectors() {
       <ConnectionDrawer
         connector={openConnector}
         onClose={closeDrawer}
-        onConnect={(connector) => {
+        onConnect={(connector, options) => {
           closeDrawer();
-          launch(connector);
+          launch(connector, options);
         }}
       />
       {modals}

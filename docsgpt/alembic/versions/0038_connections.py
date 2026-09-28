@@ -347,13 +347,29 @@ def _link_api_key_tools(bind) -> None:
 
 def _downgrade_credentials() -> None:
     """Decrypt the envelopes back into the pre-0038 plaintext columns."""
+
+    from sqlalchemy import text
+
+
+    bind = op.get_bind()
+    has_envelope = bind.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'connector_sessions' AND column_name = 'encrypted_credentials'"
+        )
+    ).first()
+    if has_envelope is not None:
+        _decrypt_back(bind)
+    _restore_account_index()
+
+
+def _decrypt_back(bind) -> None:
     import json
 
     from sqlalchemy import text
 
     from docsgpt.security.encryption import CredentialDecryptionError, decrypt_json
 
-    bind = op.get_bind()
     # Tools keep their v1 secrets; connections made only for them go away.
     bind.execute(text("UPDATE user_tools SET connection_id = NULL WHERE connection_id IN "
                       "(SELECT id FROM connector_sessions WHERE auth_kind = 'api_key')"))
@@ -384,6 +400,9 @@ def _downgrade_credentials() -> None:
                 "id": row.id,
             },
         )
+
+
+def _restore_account_index() -> None:
     # Several accounts per provider cannot survive the old unique index: keep
     # the most recently updated one.
     op.execute(

@@ -600,8 +600,9 @@ overlay. The app has one
 `ToastViewport`, mounted in `App.tsx`; it is the live region
 (`role="status"`, `aria-live="polite"`) and the fixed stack, so `Toast`
 cards carry no role and no toast renders its own rail or positioning. Top
-to bottom it holds `TeamNotificationToast`, `ToolApprovalToast`,
-`UploadToast` and `ActionToast`, and it moves to the bottom-left while the
+to bottom it holds `TeamNotificationToast`, `ConnectionHealthToast` (a
+connection that needs reconnecting, with a Reconnect action),
+`ToolApprovalToast`, `UploadToast` and `ActionToast`, and it moves to the bottom-left while the
 workflow Preview drawer is open. A new toast component returns only its
 `Toast` cards and is added to that viewport. A page that reports the result
 of an action (the admin Users actions) dispatches

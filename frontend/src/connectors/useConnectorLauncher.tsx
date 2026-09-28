@@ -2,28 +2,46 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
+import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
-import ConfigToolModal from '../modals/ConfigToolModal';
 import MCPServerModal from '../modals/MCPServerModal';
 import type { AvailableToolType } from '../modals/types';
 import type { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
-import Upload from '../upload/Upload';
-import type { IngestorType } from '../upload/types/ingestor';
+import ConnectWizard, { type WizardMode } from './ConnectWizard';
 import { loadConnectors } from './connectorsSlice';
 import type { ConnectorDefinition } from './types';
 
-type Launch =
-  | { kind: 'source'; ingestor: IngestorType }
-  | { kind: 'tool'; tool: AvailableToolType }
-  | { kind: 'mcp'; server?: Record<string, unknown> }
+export type LaunchOptions = {
+  /** `connect` a new account, `reconnect` one, or `sync` more from one. */
+  mode?: Exclude<WizardMode, 'done'>;
+  connectionId?: string;
+  /** An existing MCP tool to reconnect through the MCP server form. */
+  mcpServer?: Record<string, unknown>;
+};
+
+type Active =
+  | {
+      kind: 'wizard';
+      connector: ConnectorDefinition;
+      mode: WizardMode;
+      connectionId?: string;
+    }
+  | {
+      kind: 'mcp';
+      connector: ConnectorDefinition;
+      server?: Record<string, unknown>;
+    }
   | null;
 
+const isMcp = (connector: ConnectorDefinition) =>
+  connector.auth_kind === 'mcp' || connector.auth_kind === 'mcp_oauth';
+
 /**
- * One way to start connecting any catalog entry, used by every entry point
- * (the Connectors page, Add Source, Add Tool). Returns `launch` and the
- * modals it drives; render `modals` once where the hook is used.
+ * The one way to start connecting a catalog entry, used by every entry point
+ * (the Connectors page and drawer, Add Source, Add Tool, the chat's Connect
+ * card). Returns `launch` and the modals it drives; render `modals` once.
  */
 export default function useConnectorLauncher({
   onConnected,
@@ -31,52 +49,43 @@ export default function useConnectorLauncher({
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
-  const [active, setActive] = useState<Launch>(null);
+  const [active, setActive] = useState<Active>(null);
 
-  const finish = useCallback(() => {
-    setActive(null);
+  const refresh = useCallback(() => {
     dispatch(loadConnectors({ token }));
     onConnected?.();
   }, [dispatch, token, onConnected]);
 
   const launch = useCallback(
-    async (connector: ConnectorDefinition) => {
-      if (connector.sync_ingestor) {
-        setActive({
-          kind: 'source',
-          ingestor: connector.sync_ingestor as IngestorType,
-        });
-        return;
-      }
-      if (
-        connector.auth_kind === 'mcp' ||
-        connector.auth_kind === 'mcp_oauth'
-      ) {
+    async (connector: ConnectorDefinition, options: LaunchOptions = {}) => {
+      if (isMcp(connector)) {
         setActive({
           kind: 'mcp',
-          server: connector.mcp_url
-            ? {
-                displayName: connector.name,
-                server_url: connector.mcp_url,
-                auth_type:
-                  connector.auth_kind === 'mcp_oauth' ? 'oauth' : 'none',
-                preset: true,
-              }
-            : undefined,
+          connector,
+          server:
+            options.mcpServer ??
+            (connector.mcp_url
+              ? {
+                  displayName: connector.name,
+                  server_url: connector.mcp_url,
+                  auth_type:
+                    connector.auth_kind === 'mcp_oauth' ? 'oauth' : 'none',
+                  oauth_scopes: connector.oauth_scopes.join(', '),
+                  preset: true,
+                }
+              : undefined),
         });
         return;
       }
-      const templateName = connector.tool_templates[0];
-      if (!templateName) return;
-      const response = await userService.getAvailableTools(token);
-      const data = await response.json();
-      const tool = (data.data as AvailableToolType[] | undefined)?.find(
-        (candidate) => candidate.name === templateName,
-      );
-      if (!tool) return;
-      if (Object.keys(tool.configRequirements ?? {}).length === 0) {
-        // The OpenAPI connector: create the empty API tool and open it so
-        // the user can import a spec (today's API Tool flow).
+      if (connector.key === 'custom_openapi') {
+        // An OpenAPI tool starts empty; its spec import is today's API Tool
+        // screen on the Tools page.
+        const response = await userService.getAvailableTools(token);
+        const data = await response.json();
+        const tool = (data.data as AvailableToolType[] | undefined)?.find(
+          (candidate) => candidate.name === 'api_tool',
+        );
+        if (!tool) return;
         const created = await userService.createTool(
           {
             name: tool.name,
@@ -94,43 +103,62 @@ export default function useConnectorLauncher({
         }
         return;
       }
-      setActive({ kind: 'tool', tool });
+      setActive({
+        kind: 'wizard',
+        connector,
+        mode: options.mode ?? 'connect',
+        connectionId: options.connectionId,
+      });
     },
     [navigate, token],
   );
 
-  const close = (state: ActiveState) => {
+  const afterMcpSave = async () => {
+    if (active?.kind !== 'mcp') return;
+    const connector = active.connector;
+    const list = await connectorsService.listConnections(token);
+    refresh();
+    const connections = (list?.connections ?? []) as {
+      id: string;
+      connector_key: string;
+      updated_at: string | null;
+    }[];
+    // The newest connection for this connector is the one just saved.
+    const saved = connections
+      .filter((c) => c.connector_key === connector.key)
+      .sort((a, b) =>
+        (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
+      )[0];
+    setActive(
+      saved
+        ? { kind: 'wizard', connector, mode: 'done', connectionId: saved.id }
+        : null,
+    );
+  };
+
+  const closeMcp = (state: ActiveState) => {
     if (state === 'INACTIVE') setActive(null);
   };
 
   const modals: ReactNode = (
     <>
-      {active?.kind === 'source' && (
-        <Upload
-          receivedFile={[]}
-          setModalState={close}
-          isOnboarding={false}
-          renderTab={null}
-          close={() => setActive(null)}
-          initialIngestor={active.ingestor}
-          onSuccessfulUpload={finish}
-          selectUploadedDoc={false}
-        />
-      )}
-      {active?.kind === 'tool' && (
-        <ConfigToolModal
-          modalState="ACTIVE"
-          setModalState={close}
-          tool={active.tool}
-          getUserTools={finish}
+      {active?.kind === 'wizard' && (
+        <ConnectWizard
+          connector={active.connector}
+          mode={active.mode}
+          connectionId={active.connectionId}
+          onClose={() => {
+            setActive(null);
+            refresh();
+          }}
         />
       )}
       {active?.kind === 'mcp' && (
         <MCPServerModal
           modalState="ACTIVE"
-          setModalState={close}
+          setModalState={closeMcp}
           server={active.server}
-          onServerSaved={finish}
+          onServerSaved={afterMcpSave}
         />
       )}
     </>

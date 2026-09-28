@@ -1,4 +1,3 @@
-import { getSessionToken } from '../../utils/providerUtils';
 import apiClient, { throttledApiClient } from '../client';
 import endpoints from '../endpoints';
 
@@ -277,24 +276,15 @@ const userService = {
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
   getMCPAuthStatus: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
-  syncConnector: (
-    docId: string,
+  // The source's own connection syncs it; no browser token is involved.
+  syncConnector: (docId: string, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.SYNC_CONNECTOR, { source_id: docId }, token),
+  getConnectorAuthUrl: (
     provider: string,
     token: string | null,
-  ): Promise<any> => {
-    const sessionToken = getSessionToken(provider);
-    return apiClient.post(
-      endpoints.USER.SYNC_CONNECTOR,
-      {
-        source_id: docId,
-        session_token: sessionToken,
-        provider: provider,
-      },
-      token,
-    );
-  },
-  getConnectorAuthUrl: (provider: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.CONNECTOR_AUTH(provider), token),
+    connectionId?: string,
+  ): Promise<any> =>
+    apiClient.get(endpoints.USER.CONNECTOR_AUTH(provider, connectionId), token),
   getConnectorFiles: (
     data: any,
     token: string | null,
@@ -306,28 +296,6 @@ const userService = {
       token,
       {},
       signal,
-    ),
-  validateConnectorSession: (
-    provider: string,
-    token: string | null,
-  ): Promise<any> =>
-    apiClient.post(
-      endpoints.USER.CONNECTOR_VALIDATE_SESSION,
-      {
-        provider,
-        session_token: getSessionToken(provider),
-      },
-      token,
-    ),
-  disconnectConnector: (
-    provider: string,
-    sessionToken: string,
-    token: string | null,
-  ): Promise<any> =>
-    apiClient.post(
-      endpoints.USER.CONNECTOR_DISCONNECT,
-      { provider, session_token: sessionToken },
-      token,
     ),
   textToSpeech: (
     text: string,

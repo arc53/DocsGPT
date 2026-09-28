@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import { setConnectorsEnabled } from '../connectors/connectorsSlice';
+import { claimLegacySessionTokens } from '../utils/providerUtils';
 import {
   getDocs,
   getConversations,
@@ -45,9 +47,18 @@ export default function useDataInitializer(isAuthLoading: boolean) {
             stt: config?.stt_available !== false,
           }),
         );
+        // A backend from before connectors has no flag: hide the page.
+        dispatch(setConnectorsEnabled(config?.connectors_enabled === true));
       })
       .catch(() => undefined);
   }, [dispatch]);
+
+  // Connector sign-ins used to leave a session token in localStorage. Link
+  // each one to its server-side connection once, then forget it.
+  useEffect(() => {
+    if (isAuthLoading) return;
+    claimLegacySessionTokens(token);
+  }, [isAuthLoading, token]);
 
   // Initialize documents
   useEffect(() => {

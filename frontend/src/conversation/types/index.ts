@@ -22,4 +22,16 @@ export type ToolCallsType = {
   // Remote-device tool calls carry the device id so the approval UI can
   // offer a "don't ask again" sticky-pattern action without a lookup.
   device_id?: string;
+  // A connection-backed tool whose account needs signing in pauses on a
+  // Connect card instead of an approval. Never carries an account or secret.
+  connection_required?: {
+    connector_key: string | null;
+    connector_name: string | null;
+    status: 'missing' | 'reconnect_needed' | 'disconnected' | 'error' | string;
+  };
+  // Which connection a tool call used, for the connector's logo and name on
+  // its chip (never an account or a secret).
+  connector_key?: string | null;
+  connector_name?: string | null;
+  access?: 'read' | 'write' | null;
 };

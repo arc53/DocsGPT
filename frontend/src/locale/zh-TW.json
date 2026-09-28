@@ -1087,17 +1087,83 @@
         "toolOn": "開啟",
         "toolOff": "關閉",
         "accountMenu": "帳號操作",
-        "disconnect": "中斷連線"
+        "disconnect": "中斷連線",
+        "keyEnding": "結尾為 {{hint}} 的金鑰",
+        "syncMore": "同步更多內容",
+        "refreshTools": "重新整理工具",
+        "noSources": "尚未從此連線同步任何內容。",
+        "remove": "移除",
+        "refreshed": "工具已重新整理：新增 {{added}} 個，移除 {{removed}} 個。",
+        "refreshFailed": "無法重新整理工具。"
       },
       "permission": {
         "always": "一律允許",
         "ask": "需要核准",
-        "off": "關閉"
+        "off": "關閉",
+        "label": "{{action}} 的權限"
       },
       "disconnect": {
         "title": "要中斷 {{name}} 的連線嗎？",
         "body_zero": "在重新連線之前，此連線的工具將無法使用。",
         "body_other": "你的 {{count}} 個來源會保留內容，但會停止同步。在重新連線之前，此連線的工具將無法使用。"
+      },
+      "fields": {
+        "token": "API 金鑰",
+        "aws_access_key_id": "存取金鑰 ID",
+        "aws_secret_access_key": "秘密存取金鑰",
+        "region": "區域",
+        "endpoint_url": "自訂端點 URL",
+        "client_id": "用戶端 ID",
+        "client_secret": "用戶端密鑰",
+        "user_agent": "User agent",
+        "bucket": "儲存貯體",
+        "prefix": "路徑前綴",
+        "search_queries": "搜尋詞",
+        "number_posts": "貼文數量",
+        "telegram_token": "機器人權杖",
+        "ntfy_token": "存取權杖",
+        "postgres_token": "連線字串",
+        "brave_token": "API 金鑰"
+      },
+      "wizard": {
+        "connectTitle": "連線 {{name}}",
+        "reconnectTitle": "重新連線 {{name}}",
+        "signIn": "登入 {{name}}",
+        "chooseWhatToSync": "選擇要同步的內容",
+        "skip": "暫時略過",
+        "syncFrequency": "同步",
+        "doneTitle": "{{name}} 已連線",
+        "doneSummary": "已以 {{account}} 連線。{{sources}}同步中，{{tools}}已就緒。",
+        "doneSummaryNone": "已以 {{account}} 連線。",
+        "sourcesCount_other": "{{count}} 個來源",
+        "toolsCount_other": "{{count}} 個工具",
+        "toolsHeading": "工具（{{count}}）",
+        "tryInChat": "在聊天中試試",
+        "done": "完成",
+        "connectFailed": "無法連線。請檢查資料後再試一次。",
+        "syncFailed": "無法開始同步。請再試一次。",
+        "connectedWithKey": "已使用結尾為 {{hint}} 的金鑰連線。",
+        "doneCounts": "{{sources}}同步中，{{tools}}已就緒。",
+        "doneSources": "{{sources}}同步中。",
+        "doneTools": "{{tools}}已就緒。"
+      },
+      "remove": {
+        "title": "要移除 {{name}} 嗎？",
+        "description": "儲存的登入資訊將被刪除。請選擇如何處理此連線提供的內容。",
+        "sourcesLabel_other": "它的 {{count}} 個來源",
+        "keepSources": "保留內容（停止同步）",
+        "deleteSources": "刪除",
+        "toolsLabel_other": "它的 {{count}} 個工具",
+        "deleteTools": "刪除",
+        "keepTools": "保留並關閉",
+        "failed": "無法移除此連線。請再試一次。"
+      },
+      "health": {
+        "reconnect": "重新連線 {{name}} 以繼續同步。"
+      },
+      "error": {
+        "decrypt": "無法解密已儲存的憑證。請重新連線以繼續。",
+        "defaultKey": "管理員必須先設定 ENCRYPTION_SECRET_KEY，才能連線服務。"
       }
     }
   },
@@ -1254,7 +1320,8 @@
       },
       "groupUploadWeb": "上傳和網頁",
       "groupConnection": "來自連線",
-      "tileConnectedAs": "已以 {{account}} 連線"
+      "tileConnectedAs": "已以 {{account}} 連線",
+      "newCredentials": "輸入新的憑證"
     },
     "createAPIKey": {
       "label": "建立新的 API 金鑰",
@@ -1568,7 +1635,12 @@
       "approveAlways": "核准，不再詢問",
       "deny": "拒絕",
       "details": "詳細資料",
-      "denyReasonPlaceholder": "拒絕原因（選填）…"
+      "denyReasonPlaceholder": "拒絕原因（選填）…",
+      "connectTitle": "此工具需要你的 {{name}} 帳號。",
+      "connect": "連線 {{name}}",
+      "continue": "繼續",
+      "skip": "略過",
+      "thisService": "此服務"
     },
     "research": {
       "title": "研究",
@@ -2258,7 +2330,8 @@
     "shared": "共用",
     "connectTo": "連接到 {{provider}}",
     "sessionExpiredFor": "工作階段已過期。請重新連接到 {{provider}}。",
-    "selectFilesFrom": "從 {{provider}} 選擇檔案"
+    "selectFilesFrom": "從 {{provider}} 選擇檔案",
+    "account": "帳號"
   },
   "actionButtons": {
     "openNewChat": "開啟新聊天",

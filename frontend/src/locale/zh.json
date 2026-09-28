@@ -1087,17 +1087,83 @@
         "toolOn": "开启",
         "toolOff": "关闭",
         "accountMenu": "账号操作",
-        "disconnect": "断开连接"
+        "disconnect": "断开连接",
+        "keyEnding": "以 {{hint}} 结尾的密钥",
+        "syncMore": "同步更多内容",
+        "refreshTools": "刷新工具",
+        "noSources": "尚未从此连接同步任何内容。",
+        "remove": "移除",
+        "refreshed": "工具已刷新：新增 {{added}} 个，移除 {{removed}} 个。",
+        "refreshFailed": "无法刷新工具。"
       },
       "permission": {
         "always": "始终允许",
         "ask": "需要批准",
-        "off": "关闭"
+        "off": "关闭",
+        "label": "{{action}} 的权限"
       },
       "disconnect": {
         "title": "断开 {{name}}？",
         "body_zero": "在重新连接之前，此连接的工具将无法使用。",
         "body_other": "你的 {{count}} 个来源会保留内容，但将停止同步。在重新连接之前，此连接的工具将无法使用。"
+      },
+      "fields": {
+        "token": "API 密钥",
+        "aws_access_key_id": "访问密钥 ID",
+        "aws_secret_access_key": "秘密访问密钥",
+        "region": "区域",
+        "endpoint_url": "自定义端点 URL",
+        "client_id": "客户端 ID",
+        "client_secret": "客户端密钥",
+        "user_agent": "User agent",
+        "bucket": "存储桶",
+        "prefix": "路径前缀",
+        "search_queries": "搜索词",
+        "number_posts": "帖子数量",
+        "telegram_token": "机器人令牌",
+        "ntfy_token": "访问令牌",
+        "postgres_token": "连接字符串",
+        "brave_token": "API 密钥"
+      },
+      "wizard": {
+        "connectTitle": "连接 {{name}}",
+        "reconnectTitle": "重新连接 {{name}}",
+        "signIn": "登录 {{name}}",
+        "chooseWhatToSync": "选择要同步的内容",
+        "skip": "暂时跳过",
+        "syncFrequency": "同步",
+        "doneTitle": "{{name}} 已连接",
+        "doneSummary": "已作为 {{account}} 连接。{{sources}}正在同步，{{tools}}已就绪。",
+        "doneSummaryNone": "已作为 {{account}} 连接。",
+        "sourcesCount_other": "{{count}} 个来源",
+        "toolsCount_other": "{{count}} 个工具",
+        "toolsHeading": "工具（{{count}}）",
+        "tryInChat": "在聊天中试试",
+        "done": "完成",
+        "connectFailed": "无法连接。请检查信息后重试。",
+        "syncFailed": "无法开始同步。请重试。",
+        "connectedWithKey": "已使用以 {{hint}} 结尾的密钥连接。",
+        "doneCounts": "{{sources}}正在同步，{{tools}}已就绪。",
+        "doneSources": "{{sources}}正在同步。",
+        "doneTools": "{{tools}}已就绪。"
+      },
+      "remove": {
+        "title": "移除 {{name}}？",
+        "description": "保存的登录信息将被删除。请选择如何处理此连接提供的内容。",
+        "sourcesLabel_other": "它的 {{count}} 个来源",
+        "keepSources": "保留内容（停止同步）",
+        "deleteSources": "删除",
+        "toolsLabel_other": "它的 {{count}} 个工具",
+        "deleteTools": "删除",
+        "keepTools": "保留并关闭",
+        "failed": "无法移除此连接。请重试。"
+      },
+      "health": {
+        "reconnect": "重新连接 {{name}} 以继续同步。"
+      },
+      "error": {
+        "decrypt": "无法解密保存的凭据。请重新连接以继续。",
+        "defaultKey": "管理员必须先设置 ENCRYPTION_SECRET_KEY，才能连接服务。"
       }
     }
   },
@@ -1254,7 +1320,8 @@
       },
       "groupUploadWeb": "上传和网页",
       "groupConnection": "来自连接",
-      "tileConnectedAs": "已作为 {{account}} 连接"
+      "tileConnectedAs": "已作为 {{account}} 连接",
+      "newCredentials": "输入新的凭据"
     },
     "createAPIKey": {
       "label": "创建新的 API 密钥",
@@ -1568,7 +1635,12 @@
       "approveAlways": "批准，不再询问",
       "deny": "拒绝",
       "details": "详情",
-      "denyReasonPlaceholder": "拒绝原因（可选）…"
+      "denyReasonPlaceholder": "拒绝原因（可选）…",
+      "connectTitle": "此工具需要你的 {{name}} 账号。",
+      "connect": "连接 {{name}}",
+      "continue": "继续",
+      "skip": "跳过",
+      "thisService": "此服务"
     },
     "research": {
       "title": "研究",
@@ -2258,7 +2330,8 @@
     "shared": "共享",
     "connectTo": "连接到 {{provider}}",
     "sessionExpiredFor": "会话已过期。请重新连接到 {{provider}}。",
-    "selectFilesFrom": "从 {{provider}} 选择文件"
+    "selectFilesFrom": "从 {{provider}} 选择文件",
+    "account": "账号"
   },
   "actionButtons": {
     "openNewChat": "打开新聊天",

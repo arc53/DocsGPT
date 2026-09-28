@@ -49,7 +49,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
     setSyncProgress(0);
 
     try {
-      const response = await userService.syncConnector(docId, provider, token);
+      const response = await userService.syncConnector(docId, token);
       const data = await response.json();
 
       if (data.success) {

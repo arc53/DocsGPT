@@ -11,7 +11,6 @@ import type { RootState } from '../store';
 import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
 import type { Model } from '../models/types';
-import { getSessionToken } from '../utils/providerUtils';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { FormField as UiFormField } from '../components/ui/form-field';
@@ -113,6 +112,9 @@ function Upload({
   // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+  // The connection (account) the source syncs from. Pickers report it; S3
+  // and Reddit pick it here ('' means "enter new credentials").
+  const [connectionId, setConnectionId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,11 +157,39 @@ function Upload({
     if (!ingestorSchema) return null;
     const schema: FormField[] = ingestorSchema.fields;
 
-    const generalFields = schema.filter((field: FormField) => !field.advanced);
+    const generalFields = schema.filter(
+      (field: FormField) =>
+        !field.advanced && !(usingSavedKeys && credentialKeys.has(field.name)),
+    );
     const advancedFields = schema.filter((field: FormField) => field.advanced);
 
     return (
       <div className="flex flex-col gap-5">
+        {keyAccounts.length > 0 && (
+          <UiFormField label={t('filePicker.account')}>
+            <Select
+              value={connectionId ?? 'new'}
+              onValueChange={(value) => setConnectionId(value)}
+            >
+              <SelectTrigger className="w-full" size="field" shape="pill">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {keyAccounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {t('settings.connectors.detail.keyEnding', {
+                      hint: account.account_label,
+                      interpolation: { escapeValue: false },
+                    })}
+                  </SelectItem>
+                ))}
+                <SelectItem value="new">
+                  {t('modals.uploadDoc.newCredentials')}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </UiFormField>
+        )}
         <div className="flex flex-col gap-5">
           {generalFields.map((field: FormField) => renderField(field))}
         </div>
@@ -353,6 +383,7 @@ function Upload({
               setSelectedFolders(selectedFolderIds);
             }}
             onFirstPickName={prefillName}
+            onConnectionChange={setConnectionId}
             provider={ingestor.type as unknown as string}
             token={token}
             initialSelectedFiles={selectedFiles}
@@ -373,6 +404,7 @@ function Upload({
               setSelectedFolders(selectedFolderIds);
             }}
             onFirstPickName={prefillName}
+            onConnectionChange={setConnectionId}
             token={token}
           />
         ) : (
@@ -386,6 +418,7 @@ function Upload({
               setSelectedFolders(selectedFolderIds);
             }}
             onFirstPickName={prefillName}
+            onConnectionChange={setConnectionId}
             provider="google_drive"
             token={token}
             initialSelectedFiles={selectedFiles}
@@ -404,6 +437,7 @@ function Upload({
               setSelectedFolders(selectedFolderIds);
             }}
             onFirstPickName={prefillName}
+            onConnectionChange={setConnectionId}
             provider="share_point"
             token={token}
             initialSelectedFiles={selectedFiles}
@@ -422,6 +456,7 @@ function Upload({
               setSelectedFolders(selectedFolderIds);
             }}
             onFirstPickName={prefillName}
+            onConnectionChange={setConnectionId}
             provider="confluence"
             token={token}
             initialSelectedFiles={selectedFiles}
@@ -466,6 +501,30 @@ function Upload({
       : undefined;
   const selectedConnector = connectorFor(ingestor.type);
   const needsSetup = !!selectedConnector && !selectedConnector.available;
+  // S3 and Reddit keep their keys on a connection: once an account is
+  // chosen the key fields go away ("enter secrets once").
+  const keyAccounts =
+    selectedConnector?.auth_kind === 'api_key'
+      ? connections.filter(
+          (c) =>
+            c.connector_key === selectedConnector.key &&
+            c.status === 'connected',
+        )
+      : [];
+  const credentialKeys = new Set(
+    (selectedConnector?.credential_fields ?? []).map((f) => f.key),
+  );
+  const usingSavedKeys =
+    keyAccounts.length > 0 && !!connectionId && connectionId !== 'new';
+
+  useEffect(() => {
+    if (selectedConnector?.auth_kind === 'api_key') {
+      setConnectionId(keyAccounts[0]?.id ?? 'new');
+    } else {
+      setConnectionId(null);
+    }
+    // Reset only when the source type changes.
+  }, [ingestor.type]);
 
   const ingestorOptions: IngestorOption[] = IngestorFormSchemas.map(
     (schema) => ({
@@ -798,15 +857,20 @@ function Upload({
       hasSharePointPicker ||
       hasConfluencePicker
     ) {
-      const sessionToken = getSessionToken(ingestor.type as string);
       configData = {
         provider: ingestor.type as string,
-        session_token: sessionToken,
+        connection_id: connectionId,
         file_ids: selectedFiles,
         folder_ids: selectedFolders,
       };
     }
 
+    if (usingSavedKeys) {
+      configData = Object.fromEntries(
+        Object.entries(configData).filter(([key]) => !credentialKeys.has(key)),
+      );
+      configData.connection_id = connectionId;
+    }
     formData.append('data', JSON.stringify(configData));
 
     const apiHost: string = envVar('VITE_API_HOST');
@@ -1028,6 +1092,7 @@ function Upload({
     if (!ingestorSchemaForFields) return false;
     const formFields: FormField[] = ingestorSchemaForFields.fields;
     for (const field of formFields) {
+      if (usingSavedKeys && credentialKeys.has(field.name)) continue;
       if (field.required) {
         // Validate only required fields
         const value =

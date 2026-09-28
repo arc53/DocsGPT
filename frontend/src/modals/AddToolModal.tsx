@@ -1,7 +1,7 @@
 import { ArrowRight, Plus } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import userService from '../api/services/userService';
@@ -12,7 +12,13 @@ import { Card, CardDescription, CardTitle } from '../components/ui/card';
 import { Modal } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
 import { useLoaderState } from '../hooks';
+import {
+  loadConnectors,
+  selectConnectorCatalog,
+} from '../connectors/connectorsSlice';
+import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import PairDeviceModal from '../settings/PairDeviceModal';
+import type { AppDispatch } from '../store';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import ConfigToolModal from './ConfigToolModal';
@@ -35,6 +41,11 @@ export default function AddToolModal({
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  const dispatch = useDispatch<AppDispatch>();
+  const catalog = useSelector(selectConnectorCatalog);
+  const { launch, modals: connectModals } = useConnectorLauncher({
+    onConnected: getUserTools,
+  });
   const [availableTools, setAvailableTools] = React.useState<
     AvailableToolType[]
   >([]);
@@ -69,6 +80,15 @@ export default function AddToolModal({
     if (tool.name === 'remote_device') {
       setModalState('INACTIVE');
       setPairModalState('ACTIVE');
+      return;
+    }
+    // A service's tool is added by connecting the service: the key goes on
+    // a connection and the tool is created with write actions needing
+    // approval.
+    const connector = catalog.find((c) => c.key === tool.connector_key);
+    if (tool.group === 'service' && connector) {
+      setModalState('INACTIVE');
+      launch(connector);
       return;
     }
     if (Object.keys(tool.configRequirements).length === 0) {
@@ -108,7 +128,10 @@ export default function AddToolModal({
   };
 
   React.useEffect(() => {
-    if (modalState === 'ACTIVE') getAvailableTools();
+    if (modalState === 'ACTIVE') {
+      getAvailableTools();
+      dispatch(loadConnectors({ token }));
+    }
   }, [modalState]);
 
   return (
@@ -210,6 +233,7 @@ export default function AddToolModal({
         tool={selectedTool}
         getUserTools={getUserTools}
       />
+      {connectModals}
       <PairDeviceModal
         modalState={pairModalState}
         setModalState={setPairModalState}

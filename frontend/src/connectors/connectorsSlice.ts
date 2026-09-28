@@ -1,9 +1,15 @@
-import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
+import {
+  createAsyncThunk,
+  createSlice,
+  type PayloadAction,
+} from '@reduxjs/toolkit';
 
 import connectorsService from '../api/services/connectorsService';
 import type { Connection, ConnectorDefinition } from './types';
 
 export type ConnectorsState = {
+  /** False when the backend predates connectors (`/api/config`). */
+  enabled: boolean;
   catalog: ConnectorDefinition[];
   connections: Connection[];
   loading: boolean;
@@ -12,6 +18,7 @@ export type ConnectorsState = {
 };
 
 const initialState: ConnectorsState = {
+  enabled: true,
   catalog: [],
   connections: [],
   loading: false,
@@ -44,7 +51,11 @@ export const loadConnectors = createAsyncThunk<
 const connectorsSlice = createSlice({
   name: 'connectors',
   initialState,
-  reducers: {},
+  reducers: {
+    setConnectorsEnabled(state, action: PayloadAction<boolean>) {
+      state.enabled = action.payload;
+    },
+  },
   extraReducers: (builder) => {
     builder
       .addCase(loadConnectors.pending, (state) => {
@@ -64,7 +75,12 @@ const connectorsSlice = createSlice({
   },
 });
 
+export const { setConnectorsEnabled } = connectorsSlice.actions;
+
 type RootLike = { connectors: ConnectorsState };
+
+export const selectConnectorsEnabled = (state: RootLike) =>
+  state.connectors?.enabled !== false;
 
 export const selectConnectorCatalog = (state: RootLike) =>
   state.connectors.catalog;

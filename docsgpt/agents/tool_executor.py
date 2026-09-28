@@ -1649,7 +1649,7 @@ class ToolExecutor:
     # Keys the client needs that are not part of the fixed shape below. They are
     # small and optional, and are copied only when present so an ordinary tool
     # call does not grow null columns in every persisted row.
-    _PRESERVED_TOOL_CALL_KEYS = ("artifacts", "device_id")
+    _PRESERVED_TOOL_CALL_KEYS = ("artifacts", "device_id", "connector_key", "connector_name", "access")
 
     def get_truncated_tool_calls(self) -> List[Dict]:
         """Project tool calls into the shape that is streamed and persisted.

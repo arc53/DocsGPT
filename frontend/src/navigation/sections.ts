@@ -42,6 +42,8 @@ export type SectionItem = {
   adminOnly?: boolean;
   /** Jumps to a different section rather than navigating within this one. */
   leavesSection?: boolean;
+  /** Hidden when the backend reports this feature off (`/api/config`). */
+  feature?: 'connectors';
 };
 
 /** Items sharing a heading in the nav. */
@@ -121,6 +123,7 @@ export const SETTINGS_SECTION: Section = {
           path: '/settings/connectors',
           labelKey: 'settings.connectors.label',
           icon: Plug,
+          feature: 'connectors',
         },
         {
           key: 'tools',
@@ -355,12 +358,22 @@ export function getSectionItems(
 /** Groups with admin-only entries removed, dropping any group left empty. */
 export function getVisibleGroups(
   section: Section,
-  { isAdmin = true }: { isAdmin?: boolean } = {},
+  {
+    isAdmin = true,
+    features = {},
+  }: {
+    isAdmin?: boolean;
+    features?: Partial<Record<NonNullable<SectionItem['feature']>, boolean>>;
+  } = {},
 ): SectionGroup[] {
   return section.groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !item.adminOnly || isAdmin),
+      items: group.items.filter(
+        (item) =>
+          (!item.adminOnly || isAdmin) &&
+          (!item.feature || features[item.feature] !== false),
+      ),
     }))
     .filter((group) => group.items.length > 0);
 }

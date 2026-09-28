@@ -1087,17 +1087,83 @@
         "toolOn": "オン",
         "toolOff": "オフ",
         "accountMenu": "アカウントの操作",
-        "disconnect": "切断"
+        "disconnect": "切断",
+        "keyEnding": "末尾が {{hint}} のキー",
+        "syncMore": "さらに同期する",
+        "refreshTools": "ツールを更新",
+        "noSources": "この接続からはまだ何も同期されていません。",
+        "remove": "削除",
+        "refreshed": "ツールを更新しました: {{added}} 件追加、{{removed}} 件削除。",
+        "refreshFailed": "ツールを更新できませんでした。"
       },
       "permission": {
         "always": "常に許可",
         "ask": "承認が必要",
-        "off": "オフ"
+        "off": "オフ",
+        "label": "{{action}} の権限"
       },
       "disconnect": {
         "title": "{{name}} を切断しますか？",
         "body_zero": "この接続のツールは、再接続するまで使えなくなります。",
         "body_other": "{{count}} 件のソースはコンテンツを保持しますが、同期は停止します。この接続のツールは、再接続するまで使えなくなります。"
+      },
+      "fields": {
+        "token": "API キー",
+        "aws_access_key_id": "アクセスキー ID",
+        "aws_secret_access_key": "シークレットアクセスキー",
+        "region": "リージョン",
+        "endpoint_url": "カスタムエンドポイント URL",
+        "client_id": "クライアント ID",
+        "client_secret": "クライアントシークレット",
+        "user_agent": "ユーザーエージェント",
+        "bucket": "バケット",
+        "prefix": "パスのプレフィックス",
+        "search_queries": "検索クエリ",
+        "number_posts": "投稿数",
+        "telegram_token": "ボットトークン",
+        "ntfy_token": "アクセストークン",
+        "postgres_token": "接続文字列",
+        "brave_token": "API キー"
+      },
+      "wizard": {
+        "connectTitle": "{{name}} に接続",
+        "reconnectTitle": "{{name}} に再接続",
+        "signIn": "{{name}} にサインイン",
+        "chooseWhatToSync": "同期する内容を選択",
+        "skip": "今はスキップ",
+        "syncFrequency": "同期",
+        "doneTitle": "{{name}} に接続しました",
+        "doneSummary": "{{account}} として接続しました。{{sources}}を同期中、{{tools}}を利用できます。",
+        "doneSummaryNone": "{{account}} として接続しました。",
+        "sourcesCount_other": "{{count}} 件のソース",
+        "toolsCount_other": "{{count}} 個のツール",
+        "toolsHeading": "ツール ({{count}})",
+        "tryInChat": "チャットで試す",
+        "done": "完了",
+        "connectFailed": "接続できませんでした。入力内容を確認して、もう一度お試しください。",
+        "syncFailed": "同期を開始できませんでした。もう一度お試しください。",
+        "connectedWithKey": "末尾が {{hint}} のキーで接続しました。",
+        "doneCounts": "{{sources}}を同期中、{{tools}}を利用できます。",
+        "doneSources": "{{sources}}を同期中です。",
+        "doneTools": "{{tools}}を利用できます。"
+      },
+      "remove": {
+        "title": "{{name}} を削除しますか？",
+        "description": "保存されたサインイン情報は削除されます。この接続から提供されているものをどうするか選んでください。",
+        "sourcesLabel_other": "{{count}} 件のソース",
+        "keepSources": "コンテンツを保持（同期を停止）",
+        "deleteSources": "削除",
+        "toolsLabel_other": "{{count}} 個のツール",
+        "deleteTools": "削除",
+        "keepTools": "保持してオフにする",
+        "failed": "接続を削除できませんでした。もう一度お試しください。"
+      },
+      "health": {
+        "reconnect": "同期を続けるには {{name}} を再接続してください。"
+      },
+      "error": {
+        "decrypt": "保存された認証情報を復号できませんでした。続行するには再接続してください。",
+        "defaultKey": "サービスを接続する前に、管理者が ENCRYPTION_SECRET_KEY を設定する必要があります。"
       }
     }
   },
@@ -1254,7 +1320,8 @@
       },
       "groupUploadWeb": "アップロードとウェブ",
       "groupConnection": "接続から",
-      "tileConnectedAs": "{{account}} として接続中"
+      "tileConnectedAs": "{{account}} として接続中",
+      "newCredentials": "新しい認証情報を入力"
     },
     "createAPIKey": {
       "label": "新しいAPIキーを作成",
@@ -1568,7 +1635,12 @@
       "approveAlways": "承認し、今後は確認しない",
       "deny": "拒否",
       "details": "詳細",
-      "denyReasonPlaceholder": "拒否の理由（任意）…"
+      "denyReasonPlaceholder": "拒否の理由（任意）…",
+      "connectTitle": "このツールには {{name}} アカウントが必要です。",
+      "connect": "{{name}} に接続",
+      "continue": "続行",
+      "skip": "スキップ",
+      "thisService": "このサービス"
     },
     "research": {
       "title": "リサーチ",
@@ -2258,7 +2330,8 @@
     "shared": "共有",
     "connectTo": "{{provider}}に接続",
     "sessionExpiredFor": "セッションが期限切れです。{{provider}}に再接続してください。",
-    "selectFilesFrom": "{{provider}}からファイルを選択"
+    "selectFilesFrom": "{{provider}}からファイルを選択",
+    "account": "アカウント"
   },
   "actionButtons": {
     "openNewChat": "新しいチャットを開く",

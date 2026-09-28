@@ -1094,18 +1094,88 @@
         "toolOn": "On",
         "toolOff": "Off",
         "accountMenu": "Account actions",
-        "disconnect": "Disconnect"
+        "disconnect": "Disconnect",
+        "keyEnding": "Key ending {{hint}}",
+        "syncMore": "Sync more content",
+        "refreshTools": "Refresh tools",
+        "noSources": "Nothing synced from this connection yet.",
+        "remove": "Remove",
+        "refreshed": "Tools refreshed: {{added}} added, {{removed}} removed.",
+        "refreshFailed": "Could not refresh the tools."
       },
       "permission": {
         "always": "Always allow",
         "ask": "Needs approval",
-        "off": "Off"
+        "off": "Off",
+        "label": "Permission for {{action}}"
       },
       "disconnect": {
         "title": "Disconnect {{name}}?",
         "body_zero": "Tools from this connection stop working until you reconnect.",
         "body_one": "Your source keeps its content but stops syncing. Tools from this connection stop working until you reconnect.",
         "body_other": "Your {{count}} sources keep their content but stop syncing. Tools from this connection stop working until you reconnect."
+      },
+      "fields": {
+        "token": "API key",
+        "aws_access_key_id": "Access key ID",
+        "aws_secret_access_key": "Secret access key",
+        "region": "Region",
+        "endpoint_url": "Custom endpoint URL",
+        "client_id": "Client ID",
+        "client_secret": "Client secret",
+        "user_agent": "User agent",
+        "bucket": "Bucket",
+        "prefix": "Path prefix",
+        "search_queries": "Search queries",
+        "number_posts": "Number of posts",
+        "telegram_token": "Bot token",
+        "ntfy_token": "Access token",
+        "postgres_token": "Connection string",
+        "brave_token": "API key"
+      },
+      "wizard": {
+        "connectTitle": "Connect {{name}}",
+        "reconnectTitle": "Reconnect {{name}}",
+        "signIn": "Sign in to {{name}}",
+        "chooseWhatToSync": "Choose what to sync",
+        "skip": "Skip for now",
+        "syncFrequency": "Sync",
+        "doneTitle": "{{name}} is connected",
+        "doneSummary": "Connected as {{account}}. {{sources}} syncing, {{tools}} ready.",
+        "doneSummaryNone": "Connected as {{account}}.",
+        "sourcesCount_one": "{{count}} source",
+        "sourcesCount_other": "{{count}} sources",
+        "toolsCount_one": "{{count}} tool",
+        "toolsCount_other": "{{count}} tools",
+        "toolsHeading": "Tools ({{count}})",
+        "tryInChat": "Try it in chat",
+        "done": "Done",
+        "connectFailed": "Could not connect. Check the details and try again.",
+        "syncFailed": "Could not start the sync. Try again.",
+        "connectedWithKey": "Connected with the key ending {{hint}}.",
+        "doneCounts": "{{sources}} syncing, {{tools}} ready.",
+        "doneSources": "{{sources}} syncing.",
+        "doneTools": "{{tools}} ready."
+      },
+      "remove": {
+        "title": "Remove {{name}}?",
+        "description": "The stored sign-in is deleted. Choose what happens to what this connection feeds.",
+        "sourcesLabel_one": "Its source",
+        "sourcesLabel_other": "Its {{count}} sources",
+        "keepSources": "Keep content (stop syncing)",
+        "deleteSources": "Delete",
+        "toolsLabel_one": "Its tool",
+        "toolsLabel_other": "Its {{count}} tools",
+        "deleteTools": "Delete",
+        "keepTools": "Keep, turned off",
+        "failed": "Could not remove the connection. Try again."
+      },
+      "health": {
+        "reconnect": "Reconnect {{name}} to keep syncing."
+      },
+      "error": {
+        "decrypt": "Stored credentials could not be decrypted. Reconnect to continue.",
+        "defaultKey": "An admin must set ENCRYPTION_SECRET_KEY before services can be connected."
       }
     }
   },
@@ -1262,7 +1332,8 @@
       },
       "groupUploadWeb": "Upload and web",
       "groupConnection": "From a connection",
-      "tileConnectedAs": "Connected as {{account}}"
+      "tileConnectedAs": "Connected as {{account}}",
+      "newCredentials": "Enter new credentials"
     },
     "createAPIKey": {
       "label": "Create New API Key",
@@ -1588,7 +1659,12 @@
       "approveAlways": "Approve, don't ask again",
       "deny": "Deny",
       "details": "Details",
-      "denyReasonPlaceholder": "Optional reason for denying…"
+      "denyReasonPlaceholder": "Optional reason for denying…",
+      "connectTitle": "This tool needs your {{name}} account.",
+      "connect": "Connect {{name}}",
+      "continue": "Continue",
+      "skip": "Skip",
+      "thisService": "this service"
     },
     "research": {
       "title": "Research",
@@ -2300,7 +2376,8 @@
     "shared": "Shared",
     "connectTo": "Connect to {{provider}}",
     "sessionExpiredFor": "Session expired. Please reconnect to {{provider}}.",
-    "selectFilesFrom": "Select Files from {{provider}}"
+    "selectFilesFrom": "Select Files from {{provider}}",
+    "account": "Account"
   },
   "actionButtons": {
     "openNewChat": "Open New Chat",

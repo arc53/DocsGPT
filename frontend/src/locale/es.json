@@ -1088,18 +1088,88 @@
         "toolOn": "Activada",
         "toolOff": "Desactivada",
         "accountMenu": "Acciones de la cuenta",
-        "disconnect": "Desconectar"
+        "disconnect": "Desconectar",
+        "keyEnding": "Clave que termina en {{hint}}",
+        "syncMore": "Sincronizar más contenido",
+        "refreshTools": "Actualizar herramientas",
+        "noSources": "Aún no se ha sincronizado nada desde esta conexión.",
+        "remove": "Eliminar",
+        "refreshed": "Herramientas actualizadas: {{added}} añadidas, {{removed}} eliminadas.",
+        "refreshFailed": "No se pudieron actualizar las herramientas."
       },
       "permission": {
         "always": "Permitir siempre",
         "ask": "Requiere aprobación",
-        "off": "Desactivada"
+        "off": "Desactivada",
+        "label": "Permiso para {{action}}"
       },
       "disconnect": {
         "title": "¿Desconectar {{name}}?",
         "body_zero": "Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
         "body_one": "Tu fuente conserva su contenido pero deja de sincronizarse. Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
         "body_other": "Tus {{count}} fuentes conservan su contenido pero dejan de sincronizarse. Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla."
+      },
+      "fields": {
+        "token": "Clave de API",
+        "aws_access_key_id": "ID de clave de acceso",
+        "aws_secret_access_key": "Clave de acceso secreta",
+        "region": "Región",
+        "endpoint_url": "URL de endpoint personalizada",
+        "client_id": "ID de cliente",
+        "client_secret": "Secreto de cliente",
+        "user_agent": "User agent",
+        "bucket": "Bucket",
+        "prefix": "Prefijo de ruta",
+        "search_queries": "Consultas de búsqueda",
+        "number_posts": "Número de publicaciones",
+        "telegram_token": "Token del bot",
+        "ntfy_token": "Token de acceso",
+        "postgres_token": "Cadena de conexión",
+        "brave_token": "Clave de API"
+      },
+      "wizard": {
+        "connectTitle": "Conectar {{name}}",
+        "reconnectTitle": "Reconectar {{name}}",
+        "signIn": "Iniciar sesión en {{name}}",
+        "chooseWhatToSync": "Elige qué sincronizar",
+        "skip": "Omitir por ahora",
+        "syncFrequency": "Sincronizar",
+        "doneTitle": "{{name}} está conectado",
+        "doneSummary": "Conectado como {{account}}. {{sources}} sincronizando, {{tools}} listas.",
+        "doneSummaryNone": "Conectado como {{account}}.",
+        "sourcesCount_one": "{{count}} fuente",
+        "sourcesCount_other": "{{count}} fuentes",
+        "toolsCount_one": "{{count}} herramienta",
+        "toolsCount_other": "{{count}} herramientas",
+        "toolsHeading": "Herramientas ({{count}})",
+        "tryInChat": "Probar en el chat",
+        "done": "Listo",
+        "connectFailed": "No se pudo conectar. Revisa los datos e inténtalo de nuevo.",
+        "syncFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo.",
+        "connectedWithKey": "Conectado con la clave que termina en {{hint}}.",
+        "doneCounts": "{{sources}} sincronizando, {{tools}} listas.",
+        "doneSources": "{{sources}} sincronizando.",
+        "doneTools": "{{tools}} listas."
+      },
+      "remove": {
+        "title": "¿Eliminar {{name}}?",
+        "description": "Se borra el inicio de sesión guardado. Elige qué pasa con lo que alimenta esta conexión.",
+        "sourcesLabel_one": "Su fuente",
+        "sourcesLabel_other": "Sus {{count}} fuentes",
+        "keepSources": "Conservar el contenido (dejar de sincronizar)",
+        "deleteSources": "Eliminar",
+        "toolsLabel_one": "Su herramienta",
+        "toolsLabel_other": "Sus {{count}} herramientas",
+        "deleteTools": "Eliminar",
+        "keepTools": "Conservar, desactivadas",
+        "failed": "No se pudo eliminar la conexión. Inténtalo de nuevo."
+      },
+      "health": {
+        "reconnect": "Reconecta {{name}} para seguir sincronizando."
+      },
+      "error": {
+        "decrypt": "No se pudieron descifrar las credenciales guardadas. Reconecta para continuar.",
+        "defaultKey": "Un administrador debe definir ENCRYPTION_SECRET_KEY antes de poder conectar servicios."
       }
     }
   },
@@ -1256,7 +1326,8 @@
       },
       "groupUploadWeb": "Subida y web",
       "groupConnection": "Desde una conexión",
-      "tileConnectedAs": "Conectado como {{account}}"
+      "tileConnectedAs": "Conectado como {{account}}",
+      "newCredentials": "Introducir credenciales nuevas"
     },
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",
@@ -1572,7 +1643,12 @@
       "approveAlways": "Aprobar y no volver a preguntar",
       "deny": "Denegar",
       "details": "Detalles",
-      "denyReasonPlaceholder": "Motivo del rechazo (opcional)…"
+      "denyReasonPlaceholder": "Motivo del rechazo (opcional)…",
+      "connectTitle": "Esta herramienta necesita tu cuenta de {{name}}.",
+      "connect": "Conectar {{name}}",
+      "continue": "Continuar",
+      "skip": "Omitir",
+      "thisService": "este servicio"
     },
     "research": {
       "title": "Investigación",
@@ -2265,7 +2341,8 @@
     "shared": "Compartido",
     "connectTo": "Conectar a {{provider}}",
     "sessionExpiredFor": "Sesión expirada. Por favor, reconecte a {{provider}}.",
-    "selectFilesFrom": "Seleccionar archivos de {{provider}}"
+    "selectFilesFrom": "Seleccionar archivos de {{provider}}",
+    "account": "Cuenta"
   },
   "actionButtons": {
     "openNewChat": "Abrir nuevo chat",

@@ -11,7 +11,9 @@ import { Button } from './ui/button';
 
 interface ConnectorAuthProps {
   provider: string;
-  onSuccess: (data: { session_token: string; user_email: string }) => void;
+  /** Reconnect this connection (the same account) rather than add one. */
+  connectionId?: string;
+  onSuccess: (data: { connection_id: string; user_email: string }) => void;
   onError: (error: string) => void;
   label?: string;
   isConnected?: boolean;
@@ -22,6 +24,7 @@ interface ConnectorAuthProps {
 
 const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   provider,
+  connectionId,
   onSuccess,
   onError,
   label,
@@ -76,7 +79,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
       cleanup();
       authWindowRef.current = null;
       onSuccess({
-        session_token: event.data.session_token,
+        connection_id: event.data.connection_id,
         user_email:
           event.data.user_email ||
           t('modals.uploadDoc.connectors.auth.connectedUser'),
@@ -120,6 +123,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
         const authResponse = await userService.getConnectorAuthUrl(
           provider,
           token,
+          connectionId,
         );
         if (!mountedRef.current) {
           authWindow.close();

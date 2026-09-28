@@ -47,6 +47,7 @@ import {
 } from '../preferences/preferenceSlice';
 import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
+import ConnectToolCallBar from './ConnectToolCallBar';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
@@ -473,10 +474,17 @@ const ConversationBubble = forwardRef<
             onOpenArtifact={onOpenArtifact}
             renderApproval={(toolCall: ToolCallsType) => (
               <div className="animate-in fade-in mt-4 mr-5 ml-6 duration-160 ease-out motion-reduce:animate-none">
-                <ToolCallApprovalBar
-                  toolCall={toolCall}
-                  onToolAction={onToolAction}
-                />
+                {toolCall.connection_required ? (
+                  <ConnectToolCallBar
+                    toolCall={toolCall}
+                    onToolAction={onToolAction}
+                  />
+                ) : (
+                  <ToolCallApprovalBar
+                    toolCall={toolCall}
+                    onToolAction={onToolAction}
+                  />
+                )}
               </div>
             )}
             renderWikiWrite={(toolCall: ToolCallsType, isLive: boolean) => (

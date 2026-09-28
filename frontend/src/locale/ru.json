@@ -1128,12 +1128,20 @@
         "toolOn": "Вкл.",
         "toolOff": "Выкл.",
         "accountMenu": "Действия с аккаунтом",
-        "disconnect": "Отключить"
+        "disconnect": "Отключить",
+        "keyEnding": "Ключ, оканчивающийся на {{hint}}",
+        "syncMore": "Синхронизировать ещё",
+        "refreshTools": "Обновить инструменты",
+        "noSources": "Из этого подключения пока ничего не синхронизировано.",
+        "remove": "Удалить",
+        "refreshed": "Инструменты обновлены: добавлено {{added}}, удалено {{removed}}.",
+        "refreshFailed": "Не удалось обновить инструменты."
       },
       "permission": {
         "always": "Всегда разрешать",
         "ask": "Нужно одобрение",
-        "off": "Выкл."
+        "off": "Выкл.",
+        "label": "Разрешение для {{action}}"
       },
       "disconnect": {
         "title": "Отключить {{name}}?",
@@ -1142,6 +1150,76 @@
         "body_few": "Ваши {{count}} источника сохранят контент, но перестанут синхронизироваться. Инструменты из этого подключения перестанут работать, пока вы не переподключитесь.",
         "body_many": "Ваши {{count}} источников сохранят контент, но перестанут синхронизироваться. Инструменты из этого подключения перестанут работать, пока вы не переподключитесь.",
         "body_other": "Ваши {{count}} источника сохранят контент, но перестанут синхронизироваться. Инструменты из этого подключения перестанут работать, пока вы не переподключитесь."
+      },
+      "fields": {
+        "token": "API-ключ",
+        "aws_access_key_id": "ID ключа доступа",
+        "aws_secret_access_key": "Секретный ключ доступа",
+        "region": "Регион",
+        "endpoint_url": "Свой URL эндпоинта",
+        "client_id": "ID клиента",
+        "client_secret": "Секрет клиента",
+        "user_agent": "User agent",
+        "bucket": "Бакет",
+        "prefix": "Префикс пути",
+        "search_queries": "Поисковые запросы",
+        "number_posts": "Количество постов",
+        "telegram_token": "Токен бота",
+        "ntfy_token": "Токен доступа",
+        "postgres_token": "Строка подключения",
+        "brave_token": "API-ключ"
+      },
+      "wizard": {
+        "connectTitle": "Подключить {{name}}",
+        "reconnectTitle": "Переподключить {{name}}",
+        "signIn": "Войти в {{name}}",
+        "chooseWhatToSync": "Выберите, что синхронизировать",
+        "skip": "Пока пропустить",
+        "syncFrequency": "Синхронизация",
+        "doneTitle": "{{name}} подключён",
+        "doneSummary": "Подключено как {{account}}. Синхронизируется: {{sources}}, готово: {{tools}}.",
+        "doneSummaryNone": "Подключено как {{account}}.",
+        "sourcesCount_one": "{{count}} источник",
+        "sourcesCount_few": "{{count}} источника",
+        "sourcesCount_many": "{{count}} источников",
+        "sourcesCount_other": "{{count}} источника",
+        "toolsCount_one": "{{count}} инструмент",
+        "toolsCount_few": "{{count}} инструмента",
+        "toolsCount_many": "{{count}} инструментов",
+        "toolsCount_other": "{{count}} инструмента",
+        "toolsHeading": "Инструменты ({{count}})",
+        "tryInChat": "Попробовать в чате",
+        "done": "Готово",
+        "connectFailed": "Не удалось подключиться. Проверьте данные и попробуйте ещё раз.",
+        "syncFailed": "Не удалось запустить синхронизацию. Попробуйте ещё раз.",
+        "connectedWithKey": "Подключено ключом, оканчивающимся на {{hint}}.",
+        "doneCounts": "Синхронизируется: {{sources}}, готово: {{tools}}.",
+        "doneSources": "Синхронизируется: {{sources}}.",
+        "doneTools": "Готово: {{tools}}."
+      },
+      "remove": {
+        "title": "Удалить {{name}}?",
+        "description": "Сохранённый вход будет удалён. Выберите, что станет с тем, что даёт это подключение.",
+        "sourcesLabel_one": "Его источник",
+        "sourcesLabel_few": "Его {{count}} источника",
+        "sourcesLabel_many": "Его {{count}} источников",
+        "sourcesLabel_other": "Его {{count}} источника",
+        "keepSources": "Оставить контент (остановить синхронизацию)",
+        "deleteSources": "Удалить",
+        "toolsLabel_one": "Его инструмент",
+        "toolsLabel_few": "Его {{count}} инструмента",
+        "toolsLabel_many": "Его {{count}} инструментов",
+        "toolsLabel_other": "Его {{count}} инструмента",
+        "deleteTools": "Удалить",
+        "keepTools": "Оставить выключенными",
+        "failed": "Не удалось удалить подключение. Попробуйте ещё раз."
+      },
+      "health": {
+        "reconnect": "Переподключите {{name}}, чтобы синхронизация продолжилась."
+      },
+      "error": {
+        "decrypt": "Не удалось расшифровать сохранённые учётные данные. Переподключитесь, чтобы продолжить.",
+        "defaultKey": "Администратор должен задать ENCRYPTION_SECRET_KEY, прежде чем можно будет подключать сервисы."
       }
     }
   },
@@ -1298,7 +1376,8 @@
       },
       "groupUploadWeb": "Загрузка и веб",
       "groupConnection": "Из подключения",
-      "tileConnectedAs": "Подключено как {{account}}"
+      "tileConnectedAs": "Подключено как {{account}}",
+      "newCredentials": "Ввести новые учётные данные"
     },
     "createAPIKey": {
       "label": "Создать новый API ключ",
@@ -1618,7 +1697,12 @@
       "approveAlways": "Одобрить и больше не спрашивать",
       "deny": "Отклонить",
       "details": "Подробности",
-      "denyReasonPlaceholder": "Причина отказа (необязательно)…"
+      "denyReasonPlaceholder": "Причина отказа (необязательно)…",
+      "connectTitle": "Этому инструменту нужен ваш аккаунт {{name}}.",
+      "connect": "Подключить {{name}}",
+      "continue": "Продолжить",
+      "skip": "Пропустить",
+      "thisService": "этот сервис"
     },
     "research": {
       "title": "Исследование",
@@ -2325,7 +2409,8 @@
     "shared": "Общие",
     "connectTo": "Подключиться к {{provider}}",
     "sessionExpiredFor": "Сеанс истек. Пожалуйста, переподключитесь к {{provider}}.",
-    "selectFilesFrom": "Выберите файлы из {{provider}}"
+    "selectFilesFrom": "Выберите файлы из {{provider}}",
+    "account": "Аккаунт"
   },
   "actionButtons": {
     "openNewChat": "Открыть новый чат",

@@ -1,9 +1,11 @@
 import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 
+import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
 import { getVisibleGroups, type Section, type SectionItem } from './sections';
 import { useSidebarLevel } from './SidebarLevelProvider';
 
@@ -35,7 +37,11 @@ export default function SectionNav({
 }: SectionNavProps) {
   const { t } = useTranslation();
   const { goToLevel } = useSidebarLevel();
-  const groups = getVisibleGroups(section, { isAdmin });
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const groups = getVisibleGroups(section, {
+    isAdmin,
+    features: { connectors: connectorsEnabled },
+  });
   const sectionTitle = section.title ?? t(section.titleKey);
 
   const renderItem = (item: SectionItem) => {

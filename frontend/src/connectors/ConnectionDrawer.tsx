@@ -3,6 +3,8 @@ import {
   ExternalLink,
   Plus,
   RefreshCw,
+  RotateCw,
+  Trash2,
   Unplug,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -14,26 +16,31 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { ActionMenu } from '../components/ui/dropdown-menu';
+import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
+import { FormField } from '../components/ui/form-field';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
 import { Sheet, SheetContent, SheetTitle } from '../components/ui/sheet';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConfirmationModal from '../modals/ConfirmationModal';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import { formatDateTime } from '../utils/dateTimeUtils';
 import { CapabilityBadges } from './ConnectorCard';
 import ConnectorIcon from './ConnectorIcon';
-import { selectConnections, loadConnectors } from './connectorsSlice';
+import { loadConnectors, selectConnections } from './connectorsSlice';
 import { connectorDescription, connectorName } from './i18n';
+import ToolPermissions from './ToolPermissions';
 import type {
   ConnectionDetail,
   ConnectionStatus,
-  ConnectionTool,
   ConnectorDefinition,
 } from './types';
+import type { LaunchOptions } from './useConnectorLauncher';
 
 const STATUS_VARIANT: Record<
   ConnectionStatus,
@@ -46,82 +53,176 @@ const STATUS_VARIANT: Record<
   pending: 'neutral',
 };
 
-const PERMISSION_VARIANT = {
-  always: 'success',
-  ask: 'warning',
-  off: 'neutral',
-} as const;
-
-function ToolActions({ tool }: { tool: ConnectionTool }) {
+/** "Connected as …", or the key hint for pasted credentials. */
+function useAccountTitle() {
   const { t } = useTranslation();
-  const groups = (['read', 'write'] as const)
-    .map((access) => ({
-      access,
-      actions: tool.actions.filter((action) => action.access === access),
-    }))
-    .filter((group) => group.actions.length > 0);
+  return (detail: ConnectionDetail) =>
+    detail.auth_kind === 'api_key'
+      ? t('settings.connectors.detail.keyEnding', {
+          hint: detail.account_label,
+          interpolation: { escapeValue: false },
+        })
+      : t('settings.connectors.detail.connectedAs', {
+          account: detail.account_label,
+          interpolation: { escapeValue: false },
+        });
+}
+
+function RemoveConnectionModal({
+  detail,
+  name,
+  onClose,
+  onRemoved,
+}: {
+  detail: ConnectionDetail;
+  name: string;
+  onClose: () => void;
+  onRemoved: () => void;
+}) {
+  const { t } = useTranslation();
+  const token = useSelector(selectToken);
+  const [sources, setSources] = useState<'keep' | 'delete'>('keep');
+  const [tools, setTools] = useState<'keep' | 'delete'>('delete');
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const remove = () => {
+    setPending(true);
+    setFailed(false);
+    connectorsService
+      .remove(detail.id, { sources, tools }, token)
+      .then((data) => {
+        if (!data?.success) throw new Error('remove failed');
+        onRemoved();
+      })
+      .catch(() => setFailed(true))
+      .finally(() => setPending(false));
+  };
+
   return (
-    <Card padding="sm" className="gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-foreground min-w-0 truncate text-sm font-medium">
-          {tool.display_name}
-        </span>
-        <Badge variant={tool.status ? 'success' : 'neutral'}>
-          {tool.status
-            ? t('settings.connectors.detail.toolOn')
-            : t('settings.connectors.detail.toolOff')}
-        </Badge>
+    <Modal
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={t('settings.connectors.remove.title', {
+        name,
+        interpolation: { escapeValue: false },
+      })}
+      description={t('settings.connectors.remove.description')}
+      footer={
+        <ModalActions
+          cancelLabel={t('cancel')}
+          onCancel={onClose}
+          submitLabel={t('settings.connectors.detail.remove')}
+          onSubmit={remove}
+          pending={pending}
+          destructive
+        />
+      }
+    >
+      <div className="flex flex-col gap-6">
+        {failed && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertDescription>
+              {t('settings.connectors.remove.failed')}
+            </AlertDescription>
+          </Alert>
+        )}
+        {detail.sources.length > 0 && (
+          <FormField
+            float={false}
+            label={t('settings.connectors.remove.sourcesLabel', {
+              count: detail.sources.length,
+            })}
+          >
+            <ToggleGroup
+              type="single"
+              value={sources}
+              onValueChange={(value) =>
+                value && setSources(value as 'keep' | 'delete')
+              }
+            >
+              <ToggleGroupItem value="keep">
+                {t('settings.connectors.remove.keepSources')}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="delete">
+                {t('settings.connectors.remove.deleteSources')}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </FormField>
+        )}
+        {detail.tools.length > 0 && (
+          <FormField
+            float={false}
+            label={t('settings.connectors.remove.toolsLabel', {
+              count: detail.tools.length,
+            })}
+          >
+            <ToggleGroup
+              type="single"
+              value={tools}
+              onValueChange={(value) =>
+                value && setTools(value as 'keep' | 'delete')
+              }
+            >
+              <ToggleGroupItem value="delete">
+                {t('settings.connectors.remove.deleteTools')}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="keep">
+                {t('settings.connectors.remove.keepTools')}
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </FormField>
+        )}
       </div>
-      {groups.map((group) => (
-        <div key={group.access} className="flex flex-col gap-2">
-          <SectionHeader
-            as="h4"
-            size="sm"
-            title={t(`settings.connectors.capability.${group.access}`)}
-          />
-          <ul className="flex flex-col gap-2">
-            {group.actions.map((action) => (
-              <li
-                key={action.name}
-                className="flex items-center justify-between gap-3"
-              >
-                <span
-                  className="text-foreground min-w-0 truncate font-mono text-xs"
-                  title={action.description || action.name}
-                >
-                  {action.name}
-                </span>
-                <Badge variant={PERMISSION_VARIANT[action.permission]}>
-                  {t(`settings.connectors.permission.${action.permission}`)}
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </Card>
+    </Modal>
   );
 }
 
 function AccountSection({
+  connector,
   detail,
   onReconnect,
   onDisconnect,
+  onRemove,
+  onSyncMore,
+  onRefreshTools,
 }: {
+  connector: ConnectorDefinition;
   detail: ConnectionDetail;
-  onReconnect: () => void;
+  onReconnect: (detail: ConnectionDetail) => void;
   onDisconnect: (detail: ConnectionDetail) => void;
+  onRemove: (detail: ConnectionDetail) => void;
+  onSyncMore: (detail: ConnectionDetail) => void;
+  onRefreshTools: (detail: ConnectionDetail) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const accountTitle = useAccountTitle();
+  const [refreshing, setRefreshing] = useState(false);
+  const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
+  const isMcp = detail.tools.some((tool) => tool.name === 'mcp_tool');
+  const menu: MenuOption[] = [];
+  if (detail.status !== 'disconnected') {
+    menu.push({
+      icon: Unplug,
+      label: t('settings.connectors.detail.disconnect'),
+      onClick: () => onDisconnect(detail),
+      variant: 'destructive',
+    });
+  }
+  menu.push({
+    icon: Trash2,
+    label: t('settings.connectors.detail.remove'),
+    onClick: () => onRemove(detail),
+    variant: 'destructive',
+  });
+
   return (
     <div className="flex flex-col gap-6">
       <Card padding="none">
         <ListRows>
           <ListRow
-            title={t('settings.connectors.detail.connectedAs', {
-              account: detail.account_label,
-              interpolation: { escapeValue: false },
-            })}
+            title={accountTitle(detail)}
             description={
               detail.last_error ? (
                 <span title={detail.last_error}>{detail.last_error}</span>
@@ -137,66 +238,77 @@ function AccountSection({
                     type="button"
                     size="xs"
                     variant="outline"
-                    onClick={onReconnect}
+                    onClick={() => onReconnect(detail)}
                   >
                     <RefreshCw />
                     {t('settings.connectors.status.reconnect')}
                   </Button>
                 )}
-                {detail.status !== 'disconnected' && (
-                  <ActionMenu
-                    triggerLabel={t('settings.connectors.detail.accountMenu')}
-                    options={[
-                      {
-                        icon: Unplug,
-                        label: t('settings.connectors.detail.disconnect'),
-                        onClick: () => onDisconnect(detail),
-                        variant: 'destructive',
-                      },
-                    ]}
-                  />
-                )}
+                <ActionMenu
+                  triggerLabel={t('settings.connectors.detail.accountMenu')}
+                  options={menu}
+                />
               </div>
             }
           />
         </ListRows>
       </Card>
-      {detail.sources.length > 0 && (
+      {canSync && (
         <section className="flex flex-col gap-2">
           <SectionHeader
             as="h3"
             size="xs"
             title={t('settings.connectors.detail.sources')}
+            actions={
+              detail.status === 'connected' ? (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="-mr-3"
+                  onClick={() => onSyncMore(detail)}
+                >
+                  <Plus />
+                  {t('settings.connectors.detail.syncMore')}
+                </Button>
+              ) : undefined
+            }
           />
-          <Card padding="none">
-            <ListRows>
-              {detail.sources.map((source) => (
-                <ListRow
-                  key={source.id}
-                  title={source.name}
-                  description={
-                    source.last_sync
-                      ? t('settings.connectors.detail.lastSync', {
-                          date: formatDateTime(source.last_sync),
-                          frequency: t(
-                            `settings.sources.syncFrequency.${source.sync_frequency}`,
-                            { defaultValue: source.sync_frequency },
-                          ),
-                          interpolation: { escapeValue: false },
-                        })
-                      : undefined
-                  }
-                  trailing={
-                    source.sync_state === 'paused_reconnect' ? (
-                      <Badge variant="warning">
-                        {t('settings.connectors.detail.paused')}
-                      </Badge>
-                    ) : undefined
-                  }
-                />
-              ))}
-            </ListRows>
-          </Card>
+          {detail.sources.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              {t('settings.connectors.detail.noSources')}
+            </p>
+          ) : (
+            <Card padding="none">
+              <ListRows>
+                {detail.sources.map((source) => (
+                  <ListRow
+                    key={source.id}
+                    title={source.name}
+                    description={
+                      source.last_sync
+                        ? t('settings.connectors.detail.lastSync', {
+                            date: formatDateTime(source.last_sync),
+                            frequency: t(
+                              `settings.sources.syncFrequency.${source.sync_frequency}`,
+                              { defaultValue: source.sync_frequency },
+                            ),
+                            interpolation: { escapeValue: false },
+                          })
+                        : undefined
+                    }
+                    trailing={
+                      source.sync_state === 'paused_reconnect' ? (
+                        <Badge variant="warning">
+                          {t('settings.connectors.detail.paused')}
+                        </Badge>
+                      ) : undefined
+                    }
+                  />
+                ))}
+              </ListRows>
+            </Card>
+          )}
         </section>
       )}
       {detail.tools.length > 0 && (
@@ -205,9 +317,39 @@ function AccountSection({
             as="h3"
             size="xs"
             title={t('settings.connectors.detail.tools')}
+            actions={
+              isMcp && detail.status === 'connected' ? (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="-mr-3"
+                  loading={refreshing}
+                  onClick={() => {
+                    setRefreshing(true);
+                    onRefreshTools(detail).finally(() => setRefreshing(false));
+                  }}
+                >
+                  <RotateCw />
+                  {t('settings.connectors.detail.refreshTools')}
+                </Button>
+              ) : undefined
+            }
           />
           {detail.tools.map((tool) => (
-            <ToolActions key={tool.id} tool={tool} />
+            <div key={tool.id} className="flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-foreground min-w-0 truncate text-sm font-medium">
+                  {tool.display_name}
+                </span>
+                <Badge variant={tool.status ? 'success' : 'neutral'}>
+                  {tool.status
+                    ? t('settings.connectors.detail.toolOn')
+                    : t('settings.connectors.detail.toolOff')}
+                </Badge>
+              </div>
+              <ToolPermissions connectionId={detail.id} tool={tool} />
+            </div>
           ))}
         </section>
       )}
@@ -217,7 +359,8 @@ function AccountSection({
 
 /**
  * Everything about one connector: its accounts, the sources each syncs and
- * the tools each provides. Opens from a Connectors page card.
+ * the tools each provides, with their permissions. Opens from a Connectors
+ * page card.
  */
 export default function ConnectionDrawer({
   connector,
@@ -226,7 +369,7 @@ export default function ConnectionDrawer({
 }: {
   connector: ConnectorDefinition | null;
   onClose: () => void;
-  onConnect: (connector: ConnectorDefinition) => void;
+  onConnect: (connector: ConnectorDefinition, options?: LaunchOptions) => void;
 }) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -239,15 +382,18 @@ export default function ConnectionDrawer({
   const [toDisconnect, setToDisconnect] = useState<ConnectionDetail | null>(
     null,
   );
+  const [toRemove, setToRemove] = useState<ConnectionDetail | null>(null);
 
   const accountIds = connections
     .filter((connection) => connection.connector_key === connector?.key)
-    .map((connection) => connection.id)
+    .map((connection) => `${connection.id}:${connection.status}`)
     .join(',');
 
   useEffect(() => {
     if (!connector) return;
-    const ids = accountIds ? accountIds.split(',') : [];
+    const ids = accountIds
+      ? accountIds.split(',').map((entry) => entry.split(':')[0])
+      : [];
     let cancelled = false;
     setLoading(true);
     setFailed(false);
@@ -280,6 +426,45 @@ export default function ConnectionDrawer({
     });
   };
 
+  const reconnect = (detail: ConnectionDetail) => {
+    if (!connector) return;
+    const mcpTool = detail.tools.find((tool) => tool.name === 'mcp_tool');
+    onConnect(connector, {
+      mode: 'reconnect',
+      connectionId: detail.id,
+      mcpServer:
+        mcpTool && detail.server_url
+          ? {
+              id: mcpTool.id,
+              displayName: mcpTool.display_name,
+              server_url: detail.server_url,
+              auth_type: detail.auth_kind === 'mcp_oauth' ? 'oauth' : 'none',
+            }
+          : undefined,
+    });
+  };
+
+  const refreshTools = async (detail: ConnectionDetail) => {
+    const data = await connectorsService.refreshTools(detail.id, token);
+    dispatch(
+      showActionToast(
+        data?.success
+          ? {
+              variant: 'success',
+              message: t('settings.connectors.detail.refreshed', {
+                added: data.added?.length ?? 0,
+                removed: data.removed?.length ?? 0,
+              }),
+            }
+          : {
+              variant: 'destructive',
+              message: t('settings.connectors.detail.refreshFailed'),
+            },
+      ),
+    );
+    refresh();
+  };
+
   if (!connector) return null;
   const name = connectorName(t, connector);
 
@@ -307,6 +492,15 @@ export default function ConnectionDrawer({
               {connectorDescription(t, connector)}
             </p>
             <CapabilityBadges capabilities={connector.capabilities} />
+
+            {connector.publisher === 'custom' && (
+              <Alert variant="warning" role="note">
+                <CircleAlert />
+                <AlertDescription>
+                  {t('settings.connectors.unverified')}
+                </AlertDescription>
+              </Alert>
+            )}
 
             {connector.needs_setup && (
               <Alert variant="warning">
@@ -368,7 +562,7 @@ export default function ConnectionDrawer({
                   ) : undefined
                 }
               />
-              {loading ? (
+              {loading && details.length === 0 ? (
                 <LoadingState fill="block" />
               ) : failed ? (
                 <EmptyState
@@ -408,9 +602,18 @@ export default function ConnectionDrawer({
                   {details.map((detail) => (
                     <AccountSection
                       key={detail.id}
+                      connector={connector}
                       detail={detail}
-                      onReconnect={() => onConnect(connector)}
+                      onReconnect={reconnect}
                       onDisconnect={setToDisconnect}
+                      onRemove={setToRemove}
+                      onSyncMore={(d) =>
+                        onConnect(connector, {
+                          mode: 'sync',
+                          connectionId: d.id,
+                        })
+                      }
+                      onRefreshTools={refreshTools}
                     />
                   ))}
                 </div>
@@ -433,6 +636,17 @@ export default function ConnectionDrawer({
         submitLabel={t('settings.connectors.detail.disconnect')}
         variant="destructive"
       />
+      {toRemove && (
+        <RemoveConnectionModal
+          detail={toRemove}
+          name={name}
+          onClose={() => setToRemove(null)}
+          onRemoved={() => {
+            setToRemove(null);
+            refresh();
+          }}
+        />
+      )}
     </>
   );
 }
