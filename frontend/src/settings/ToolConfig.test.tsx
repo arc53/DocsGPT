@@ -185,6 +185,28 @@ describe('ToolConfig', () => {
     expect(alert?.className).toContain('text-destructive');
   });
 
+  it('shows a save the server refused as failed', async () => {
+    updateTool.mockResolvedValue({ ok: false, status: 400 });
+    await render({ ...userTool, customName: '' });
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="settings.tools.customNamePlaceholder"]',
+    );
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(name, 'Renamed');
+      name?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      buttonByText('settings.tools.save')?.click();
+    });
+    expect(
+      container.querySelector<HTMLElement>('[role="alert"]')?.textContent,
+    ).toBe('settings.tools.saveFailed');
+  });
+
   it('renders the API tool header actions as outline-primary pills', async () => {
     await render(apiTool);
     for (const label of [

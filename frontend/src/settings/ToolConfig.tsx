@@ -257,12 +257,10 @@ export default function ToolConfig({
       actions: 'actions' in tool ? tool.actions : [],
       status: tool.status,
     };
-    if (tool.id) {
-      await userService.updateTool({ id: tool.id, ...payload }, token);
-      return;
-    }
-    const response = await userService.createTool(payload, token);
-    if (!response.ok) throw new Error('create failed');
+    const response = tool.id
+      ? await userService.updateTool({ id: tool.id, ...payload }, token)
+      : await userService.createTool(payload, token);
+    if (!response.ok) throw new Error('save failed');
   };
 
   const handleSaveChanges = async () => {
