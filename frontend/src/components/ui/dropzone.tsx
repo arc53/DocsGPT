@@ -19,9 +19,20 @@ const dropzoneVariants = cva(
       size: {
         default: 'px-6 py-10',
         compact: 'flex-row justify-start px-4 py-3 text-left',
+        // An 88px square beside a form's fields (an agent's avatar): the icon
+        // and a one-word label, or the picked image filling it.
+        // 64px and icon-only on a phone (beside the Name field), 88px from sm.
+        tile: 'size-16 shrink-0 gap-1 rounded-2xl p-2',
       },
+      // Only for size tile. responsive grows to 88px from sm; fixed stays
+      // 64px at every width, for a tile in a narrow drawer, where the
+      // breakpoint follows the window, not the drawer.
+      tileSize: { responsive: '', fixed: '' },
     },
-    defaultVariants: { size: 'default' },
+    compoundVariants: [
+      { size: 'tile', tileSize: 'responsive', class: 'sm:size-22' },
+    ],
+    defaultVariants: { size: 'default', tileSize: 'responsive' },
   },
 );
 
@@ -32,6 +43,7 @@ const dropzoneIconVariants = cva(
       size: {
         default: 'size-12 [&>svg]:size-6',
         compact: 'size-8 [&>svg]:size-4',
+        tile: 'size-8 [&>svg]:size-4',
       },
     },
     defaultVariants: { size: 'default' },
@@ -47,8 +59,16 @@ type DropzoneProps = {
   maxFiles?: number;
   maxSize?: number;
   disabled?: boolean;
-  /** Compact fits inside forms and modals; default is the full-height target. */
-  size?: 'default' | 'compact';
+  /**
+   * Compact fits inside forms and modals; default is the full-height target;
+   * tile is an 88px square that shows only the icon and the title.
+   */
+  size?: 'default' | 'compact' | 'tile';
+  /**
+   * A tile's width: `responsive` (64px on a phone, 88px with its title from
+   * sm) or `fixed` (64px and icon-only everywhere, for a narrow drawer).
+   */
+  tileSize?: 'responsive' | 'fixed';
   /** Main line. Defaults to the generic upload prompt. */
   title?: React.ReactNode;
   /** Secondary line for accepted types and limits, e.g. ".yaml, up to 5 MB". */
@@ -76,6 +96,7 @@ function Dropzone({
   maxSize,
   disabled = false,
   size = 'default',
+  tileSize = 'responsive',
   title = 'Click to upload or drag and drop',
   description,
   icon,
@@ -108,27 +129,43 @@ function Dropzone({
         aria-describedby={field['aria-describedby']}
         data-slot="dropzone"
         data-size={size}
+        data-tile-size={size === 'tile' ? tileSize : undefined}
         data-disabled={disabled || undefined}
         data-drag-active={isDragActive || undefined}
         data-drag-reject={isDragReject || undefined}
-        className={dropzoneVariants({ size })}
+        className={cn(dropzoneVariants({ size, tileSize }))}
       >
         <input {...getInputProps({ id: field.id })} />
-        {children ?? (
-          <>
-            <span className={dropzoneIconVariants({ size })}>
-              {icon ?? <CloudUpload />}
-            </span>
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-sm font-medium">{title}</span>
-              {description ? (
-                <span className="text-muted-foreground text-xs">
-                  {description}
-                </span>
-              ) : null}
-            </span>
-          </>
-        )}
+        {children ??
+          (size === 'tile' ? (
+            <>
+              <span className={dropzoneIconVariants({ size })}>
+                {icon ?? <CloudUpload />}
+              </span>
+              <span
+                className={cn(
+                  'text-muted-foreground sr-only text-xs',
+                  tileSize === 'responsive' && 'sm:not-sr-only',
+                )}
+              >
+                {title}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className={dropzoneIconVariants({ size })}>
+                {icon ?? <CloudUpload />}
+              </span>
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-sm font-medium">{title}</span>
+                {description ? (
+                  <span className="text-muted-foreground text-xs">
+                    {description}
+                  </span>
+                ) : null}
+              </span>
+            </>
+          ))}
       </div>
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
     </div>

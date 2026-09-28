@@ -6,6 +6,7 @@ import type {
   ScheduleResponse,
   ScheduleRunListResponse,
   ScheduleRunResponse,
+  ScheduleStats,
   ScheduleUpdatePayload,
 } from '../../agents/types/schedule';
 
@@ -25,6 +26,23 @@ const schedulesService = {
       token,
     );
     return (await json(r)) as ScheduleListResponse;
+  },
+
+  statsForAgent: async (
+    agentId: string,
+    token: string | null,
+    days = 30,
+  ): Promise<ScheduleStats> => {
+    const r = await apiClient.get(
+      endpoints.USER.AGENT_SCHEDULE_STATS(agentId, days),
+      token,
+    );
+    // The error body ({success: false, message}) is not stats: reject so the
+    // caller shows "—" instead of empty totals.
+    if (!(r as Response).ok) {
+      throw new Error(`Schedule stats failed: ${(r as Response).status}`);
+    }
+    return (await json(r)) as ScheduleStats;
   },
 
   create: async (

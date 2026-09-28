@@ -1,5 +1,6 @@
 import { ChevronDown, X } from 'lucide-react';
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -57,6 +58,7 @@ export function MultiSelect({
   modal = false,
   id,
 }: MultiSelectProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const control = useFormFieldControl<{
     id?: string;
@@ -146,7 +148,9 @@ export function MultiSelect({
                 })}
                 {selected.length > 2 && (
                   <span className="text-muted-foreground text-xs">
-                    +{selected.length - 2} more
+                    {t('components.multiSelect.more', {
+                      count: selected.length - 2,
+                    })}
                   </span>
                 )}
               </>
@@ -173,7 +177,6 @@ export function MultiSelect({
                     key={option.value}
                     value={option.label}
                     onSelect={() => handleSelect(option.value)}
-                    className="cursor-pointer"
                   >
                     {/* Visual only: the row is the control (cmdk handles the
                         click and Enter), so the box takes no focus or events. */}

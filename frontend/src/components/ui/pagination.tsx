@@ -28,6 +28,8 @@ type PaginationProps = {
   onPageChange: (page: number) => void;
   /** Shows the "Rows per page" select. */
   pageSize?: number;
+  /** Names the page-size select when the items aren't rows ("Chunks per page"). */
+  pageSizeLabel?: string;
   pageSizeOptions?: number[];
   onPageSizeChange?: (size: number) => void;
   /** A count on the left ("1,024 users"); the row then spreads to both ends. */
@@ -43,6 +45,7 @@ function Pagination({
   pageCount,
   onPageChange,
   pageSize,
+  pageSizeLabel,
   pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
   onPageSizeChange,
   summary,
@@ -50,6 +53,7 @@ function Pagination({
   className,
 }: PaginationProps) {
   const { t } = useTranslation();
+  const sizeLabel = pageSizeLabel ?? t('pagination.rowsPerPage');
   const atStart = page <= 1;
   const atEnd = page >= pageCount;
   const goTo = (next: number) =>
@@ -70,14 +74,12 @@ function Pagination({
       <div className="flex items-center gap-4">
         {pageSize !== undefined ? (
           <div className="flex items-center gap-2">
-            <span className="text-foreground">
-              {t('pagination.rowsPerPage')}:
-            </span>
+            <span className="text-foreground">{sizeLabel}:</span>
             <Select
               value={String(pageSize)}
               onValueChange={(value) => onPageSizeChange?.(Number(value))}
             >
-              <SelectTrigger size="sm" aria-label={t('pagination.rowsPerPage')}>
+              <SelectTrigger size="sm" aria-label={sizeLabel}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

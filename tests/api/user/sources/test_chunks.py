@@ -49,6 +49,56 @@ class TestResolveSource:
         assert got is not None
         assert str(got["id"]) == str(src["id"])
 
+    def test_team_viewer_can_read(self, pg_conn):
+        from docsgpt.api.user.sources.chunks import _resolve_source
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        owner, viewer = "u-resolve-owner", "u-resolve-viewer"
+        src = _seed_source(pg_conn, user=owner)
+        team = TeamsRepository(pg_conn).create("Acme", "acme-chunks", owner)
+        TeamMembersRepository(pg_conn).add_member(team["id"], viewer, role="team_member")
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", str(src["id"]), owner_id=owner, granted_by=owner,
+            access_level="viewer",
+        )
+        with _patch_db(pg_conn):
+            got = _resolve_source(str(src["id"]), viewer)
+            stranger = _resolve_source(str(src["id"]), "u-resolve-stranger")
+        assert got is not None
+        assert str(got["id"]) == str(src["id"])
+        assert stranger is None
+
+
+class TestChunkMatchesPath:
+    @pytest.mark.parametrize("metadata, path", [
+        ({"source": "/a/b/file.txt"}, "b/file.txt"),
+        ({"source": "file.txt"}, "file.txt"),
+        ({"source": "https://x.io/guides/setup", "file_path": "guides/setup.md"}, "guides/setup.md"),
+        ({"source": "https://github.com/o/r/blob/main/web/app.py", "title": "web/app.py"}, "web/app.py"),
+        ({"source": "s3://bkt/docs/a.pdf", "key": "docs/a.pdf", "title": "a.pdf"}, "docs/a.pdf"),
+        # Web and Reddit chunks carry no file_path/key: the tree keys them by title.
+        ({"source": "https://docs.docsgpt.cloud/", "title": "Home - DocsGPT"}, "Home - DocsGPT"),
+        ({"source": "https://reddit.com/r/x/comments/1", "title": "A post"}, "A post"),
+    ])
+    def test_matches(self, metadata, path):
+        from docsgpt.api.user.sources.chunks import _chunk_matches_path
+        assert _chunk_matches_path(metadata, path)
+
+    @pytest.mark.parametrize("metadata, path", [
+        ({"source": "/other.txt"}, "b/file.txt"),
+        # Suffixes only match at a path boundary.
+        ({"source": "docs/data.md"}, "a.md"),
+        # Title only stands in for remote chunks the tree could not key by file_path/key.
+        ({"source": "docs/readme.md", "title": "Readme"}, "Readme"),
+        ({"source": "s3://bkt/docs/a.pdf", "key": "docs/a.pdf", "title": "Report"}, "Report"),
+        ({"source": "https://x.io/a", "file_path": "a.md", "title": "A"}, "A"),
+    ])
+    def test_rejects(self, metadata, path):
+        from docsgpt.api.user.sources.chunks import _chunk_matches_path
+        assert not _chunk_matches_path(metadata, path)
+
 
 class TestGetChunks:
     def test_returns_401_unauthenticated(self, app):
@@ -139,6 +189,35 @@ class TestGetChunks:
             return_value=fake_store,
         ), app.test_request_context(
             f"/api/get_chunks?id={src['id']}&path=b/file.txt"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = GetChunks().get()
+        assert response.status_code == 200
+        assert response.json["total"] == 1
+
+    def test_filters_title_keyed_web_page(self, app, pg_conn):
+        # Single-URL sources ingested before WebLoader set ``file_path`` key
+        # their only tree file by the page title; opening it must still list
+        # the page's chunks without a re-ingest.
+        from docsgpt.api.user.sources.chunks import GetChunks
+
+        user = "u-path-web"
+        src = _seed_source(pg_conn, user=user)
+
+        fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [
+            {"text": "home", "metadata": {
+                "source": "https://docs.docsgpt.cloud/",
+                "title": "Home - DocsGPT Documentation",
+            }},
+        ]
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store",
+            return_value=fake_store,
+        ), app.test_request_context(
+            f"/api/get_chunks?id={src['id']}&path=Home - DocsGPT Documentation"
         ):
             from flask import request
             request.decoded_token = {"sub": user}
@@ -523,8 +602,7 @@ class TestUpdateChunk:
                 "metadata": {"title": "T"},
             }
         ]
-        fake_store.add_chunk.return_value = "new-chunk-id"
-        fake_store.delete_chunk.return_value = True
+        fake_store.update_chunk.return_value = "chunk-123"
 
         with _patch_db(pg_conn), patch(
             "docsgpt.api.user.sources.chunks.get_vector_store",
@@ -541,4 +619,231 @@ class TestUpdateChunk:
             request.decoded_token = {"sub": user}
             response = UpdateChunk().put()
         assert response.status_code == 200
-        assert response.json["chunk_id"] == "new-chunk-id"
+        assert response.json == {
+            "message": "Chunk updated successfully",
+            "chunk_id": "chunk-123",
+            "original_chunk_id": "chunk-123",
+        }
+        fake_store.update_chunk.assert_called_once()
+        chunk_id, new_text, new_metadata = fake_store.update_chunk.call_args[0]
+        assert (chunk_id, new_text) == ("chunk-123", "new text")
+        assert new_metadata["title"] == "T"
+        assert new_metadata["token_count"] > 0
+        fake_store.add_chunk.assert_not_called()
+        fake_store.delete_chunk.assert_not_called()
+
+    def test_update_failure_returns_500(self, app, pg_conn):
+        from docsgpt.api.user.sources.chunks import UpdateChunk
+
+        user = "u-upd-fail"
+        src = _seed_source(pg_conn, user=user)
+        fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [
+            {"doc_id": "chunk-123", "text": "old", "metadata": {}}
+        ]
+        fake_store.update_chunk.side_effect = RuntimeError("embed down")
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store",
+            return_value=fake_store,
+        ), app.test_request_context(
+            "/api/update_chunk", method="PUT",
+            json={"id": str(src["id"]), "chunk_id": "chunk-123", "text": "new"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateChunk().put()
+        assert response.status_code == 500
+        assert response.json == {"error": "Failed to update chunk - addition failed"}
+
+
+    def test_invalid_metadata_keys_return_400(self, app, pg_conn):
+        from docsgpt.api.user.sources.chunks import UpdateChunk
+        from docsgpt.vectorstore.base import InvalidChunkMetadataError
+
+        user = "u-upd-bad-meta"
+        src = _seed_source(pg_conn, user=user)
+        fake_store = MagicMock()
+        fake_store.get_chunks.return_value = [
+            {"doc_id": "chunk-123", "text": "old", "metadata": {}}
+        ]
+        fake_store.update_chunk.side_effect = InvalidChunkMetadataError(
+            "Metadata key 'a.b' is not allowed"
+        )
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store",
+            return_value=fake_store,
+        ), app.test_request_context(
+            "/api/update_chunk", method="PUT",
+            json={
+                "id": str(src["id"]),
+                "chunk_id": "chunk-123",
+                "metadata": {"a.b": 1},
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateChunk().put()
+        assert response.status_code == 400
+        # Generic message; the offending key is only logged.
+        assert response.json == {"error": "Invalid metadata"}
+
+
+class TestUpdateChunkGraphLinks:
+    """A store that re-ids an edited chunk must take the graph links with it."""
+
+    def _put(self, app, pg_conn, src, user, graph_store, fake_store=None):
+        from docsgpt.api.user.sources.chunks import UpdateChunk
+
+        if fake_store is None:
+            fake_store = MagicMock()
+            # The base fallback: the edit comes back under a new id.
+            fake_store.update_chunk.return_value = "chunk-new"
+        fake_store.get_chunks.return_value = [
+            {"doc_id": "chunk-old", "text": "old", "metadata": {}}
+        ]
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store",
+            return_value=fake_store,
+        ), patch(
+            "docsgpt.graphrag.store.GraphStore", return_value=graph_store
+        ), app.test_request_context(
+            "/api/update_chunk", method="PUT",
+            json={"id": str(src["id"]), "chunk_id": "chunk-old", "text": "new"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return UpdateChunk().put()
+
+    def _graph_source(self, pg_conn, user):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.source_config import SourceConfig
+
+        return SourcesRepository(pg_conn).create(
+            "g", user_id=user, config=SourceConfig.parse({}).graph_enabled()
+        )
+
+    def test_graphrag_source_remaps_links_to_the_new_chunk(self, app, pg_conn):
+        user = "u-upd-graph"
+        src = self._graph_source(pg_conn, user)
+        graph_store = MagicMock()
+
+        response = self._put(app, pg_conn, src, user, graph_store)
+
+        assert response.status_code == 200
+        graph_store.remap_chunk.assert_called_once_with(
+            str(src["id"]), "chunk-old", "chunk-new"
+        )
+
+    def test_classic_source_skips_the_graph(self, app, pg_conn):
+        user = "u-upd-classic"
+        src = _seed_source(pg_conn, user=user)
+        graph_store = MagicMock()
+
+        response = self._put(app, pg_conn, src, user, graph_store)
+
+        assert response.status_code == 200
+        graph_store.remap_chunk.assert_not_called()
+
+    def test_remap_failure_keeps_the_saved_edit(self, app, pg_conn):
+        user = "u-upd-graph-fail"
+        src = self._graph_source(pg_conn, user)
+        graph_store = MagicMock()
+        graph_store.remap_chunk.side_effect = RuntimeError("boom")
+
+        response = self._put(app, pg_conn, src, user, graph_store)
+
+        assert response.status_code == 200
+        assert response.json["chunk_id"] == "chunk-new"
+
+    def test_in_place_update_skips_the_graph_remap(self, app, pg_conn):
+        user = "u-upd-graph-inplace"
+        src = self._graph_source(pg_conn, user)
+        graph_store = MagicMock()
+        fake_store = MagicMock()
+        fake_store.update_chunk.return_value = "chunk-old"
+
+        response = self._put(app, pg_conn, src, user, graph_store, fake_store)
+
+        assert response.status_code == 200
+        assert response.json["chunk_id"] == "chunk-old"
+        assert response.json["original_chunk_id"] == "chunk-old"
+        graph_store.remap_chunk.assert_not_called()
+
+    def test_default_fallback_store_remaps_to_the_new_id(self, app, pg_conn):
+        """A store without its own update (e.g. Milvus) re-adds and re-ids."""
+        from docsgpt.vectorstore.base import BaseVectorStore
+
+        class _FallbackStore(BaseVectorStore):
+            def __init__(self):
+                super().__init__()
+                self.deleted = []
+
+            def search(self, *args, **kwargs):
+                return []
+
+            def add_texts(self, texts, metadatas=None, *args, **kwargs):
+                return []
+
+            def get_chunks(self):
+                return [{"doc_id": "chunk-old", "text": "old", "metadata": {}}]
+
+            def add_chunk(self, text, metadata=None):
+                return "chunk-new"
+
+            def delete_chunk(self, chunk_id):
+                self.deleted.append(chunk_id)
+                return True
+
+        user = "u-upd-graph-fallback"
+        src = self._graph_source(pg_conn, user)
+        graph_store = MagicMock()
+        store = _FallbackStore()
+        store_proxy = MagicMock(wraps=store)
+
+        response = self._put(app, pg_conn, src, user, graph_store, store_proxy)
+
+        assert response.status_code == 200
+        assert response.json["chunk_id"] == "chunk-new"
+        assert store.deleted == ["chunk-old"]
+        graph_store.remap_chunk.assert_called_once_with(
+            str(src["id"]), "chunk-old", "chunk-new"
+        )
+
+    def test_default_fallback_failed_delete_returns_500_without_duplicate(self, app, pg_conn):
+        """A failed old-chunk delete rolls the new chunk back and fails the request."""
+        from docsgpt.vectorstore.base import BaseVectorStore
+
+        class _FallbackStore(BaseVectorStore):
+            def __init__(self):
+                super().__init__()
+                self.deleted = []
+
+            def search(self, *args, **kwargs):
+                return []
+
+            def add_texts(self, texts, metadatas=None, *args, **kwargs):
+                return []
+
+            def get_chunks(self):
+                return [{"doc_id": "chunk-old", "text": "old", "metadata": {}}]
+
+            def add_chunk(self, text, metadata=None):
+                return "chunk-new"
+
+            def delete_chunk(self, chunk_id):
+                self.deleted.append(chunk_id)
+                return chunk_id != "chunk-old"
+
+        user = "u-upd-graph-fallback-fail"
+        src = self._graph_source(pg_conn, user)
+        graph_store = MagicMock()
+        store = _FallbackStore()
+        store_proxy = MagicMock(wraps=store)
+
+        response = self._put(app, pg_conn, src, user, graph_store, store_proxy)
+
+        assert response.status_code == 500
+        assert store.deleted == ["chunk-old", "chunk-new"]
+        graph_store.remap_chunk.assert_not_called()

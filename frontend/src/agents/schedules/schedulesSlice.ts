@@ -333,12 +333,17 @@ const schedulesSlice = createSlice({
 export const { applyEvent, resetSchedules } = schedulesSlice.actions;
 export default schedulesSlice.reducer;
 
+// Shared fallbacks: a fresh [] per call would change identity on every render
+// and re-run any effect that depends on the selected list.
+const NO_SCHEDULES: Schedule[] = [];
+const NO_RUNS: ScheduleRun[] = [];
+
 export const selectSchedulesForAgent = (
   state: { schedules: SchedulesState },
   agentId: string,
-): Schedule[] => state.schedules.byAgent[agentId] ?? [];
+): Schedule[] => state.schedules.byAgent[agentId] ?? NO_SCHEDULES;
 
 export const selectRunsForSchedule = (
   state: { schedules: SchedulesState },
   scheduleId: string,
-): ScheduleRun[] => state.schedules.runsBySchedule[scheduleId] ?? [];
+): ScheduleRun[] => state.schedules.runsBySchedule[scheduleId] ?? NO_RUNS;

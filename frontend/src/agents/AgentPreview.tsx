@@ -1,7 +1,8 @@
-import { MessageSquare } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+
+import { EmptyState } from '@/components/ui/empty-state';
 
 import MessageInput from '../components/MessageInput';
 import ConversationMessages from '../conversation/ConversationMessages';
@@ -13,7 +14,6 @@ import {
   fetchPreviewAnswer,
   handlePreviewAbort,
   resendQuery,
-  resetPreview,
   selectPreviewQueries,
   selectPreviewStatus,
 } from './agentPreviewSlice';
@@ -96,12 +96,13 @@ export default function AgentPreview() {
     }
   };
 
+  // Closing the drawer unmounts the preview: stop a stream in flight, but
+  // keep the chat. The page that hosts the drawer decides when it starts
+  // over (New chat, a save, leaving the page).
   useEffect(() => {
-    dispatch(resetPreview());
     return () => {
       if (fetchStream.current) fetchStream.current.abort();
       handlePreviewAbort();
-      dispatch(resetPreview());
     };
   }, [dispatch]);
 
@@ -115,13 +116,12 @@ export default function AgentPreview() {
     <div className="relative h-full w-full">
       <div className="scrollbar-overlay absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:w-full! [&>div>div]:max-w-none!">
         {queries.length === 0 ? (
-          <section className="flex h-full flex-col items-center justify-center">
-            <div className="bg-muted mb-2 flex size-14 shrink-0 items-center justify-center rounded-xl">
-              <MessageSquare className="text-muted-foreground size-6" />
-            </div>
-            <p className="text-foreground text-sm font-medium">
-              {t('agents.preview.emptyTitle')}
-            </p>
+          <section className="flex h-full items-center justify-center">
+            <EmptyState
+              size="sm"
+              illustration="none"
+              title={t('agents.preview.emptyTitle')}
+            />
           </section>
         ) : (
           <ConversationMessages

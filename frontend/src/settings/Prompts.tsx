@@ -12,6 +12,7 @@ import {
   CommandList,
 } from '../components/ui/command';
 import { Button } from '../components/ui/button';
+import { FormField } from '../components/ui/form-field';
 import { IconButton } from '../components/ui/icon-button';
 import {
   Popover,
@@ -35,9 +36,13 @@ type ExtendedPromptProps = PromptProps & {
   title?: string;
   /**
    * `row` (Settings → General): a SettingRow whose label names the picker.
-   * `heading` (the agent form): the title is a section heading above it.
+   * `heading`: the title is a section heading above it.
+   * `field` (the agent form): the title is the picker's floating FormField
+   * label, like the fields around it.
    */
-  titleAs?: 'row' | 'heading';
+  titleAs?: 'row' | 'heading' | 'field';
+  /** The surface behind a `field` picker, for its label's notch. */
+  labelSurface?: 'card' | 'background' | 'muted';
   /** The row's muted description, for `titleAs="row"`. */
   description?: string;
   dropdownProps?: PromptsDropdownProps;
@@ -54,6 +59,7 @@ export default function Prompts({
   description,
   dropdownProps = {},
   showAddButton = true,
+  labelSurface = 'card',
 }: ExtendedPromptProps) {
   const token = useSelector(selectToken);
   const { t } = useTranslation();
@@ -448,6 +454,21 @@ export default function Prompts({
             {addButton}
           </div>
         </SettingRow>
+      ) : titleAs === 'field' ? (
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <FormField
+              id={pickerId}
+              label={titleText}
+              labelSurface={labelSurface}
+              className="min-w-0 flex-1"
+            >
+              {picker}
+            </FormField>
+            {editButton}
+          </div>
+          {addButton}
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           <SectionHeader as="h2" title={titleText} />

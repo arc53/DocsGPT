@@ -111,6 +111,7 @@
       "preLoaded": "プリロード済み",
       "private": "プライベート",
       "sync": "同期",
+      "syncDone": "完了",
       "syncNow": "今すぐ同期",
       "syncing": "同期中...",
       "reingest": "再インデックス",
@@ -131,14 +132,10 @@
         "selectPage": "ページを選択して内容を表示します。",
         "edit": "編集",
         "save": "保存",
-        "cancel": "キャンセル",
         "saveFailed": "ページを保存できませんでした。もう一度お試しください。",
         "forbidden": "このページを編集する権限がありません。",
         "conflict": "このページは開いた後に変更されたため、再読み込みされました。あなたの編集内容は下にあります。再適用して、もう一度保存してください。",
         "editPlaceholder": "Markdownでページを記述…",
-        "livingTitle": "リビングWiki。",
-        "livingExplainer": "エージェントが編集可能なソースです。エージェントの作業中にページが読み書きされ、デフォルトでエージェント検索ツールを通じてエージェントに公開されます。",
-        "livingExplainerEditable": "このソースを使用するすべてのエージェントが編集できます。",
         "stamp": {
           "editedBy": "{{who}}が編集",
           "agent": "エージェント",
@@ -168,7 +165,17 @@
             "forbidden": "このソースを変換する権限がありません。",
             "conflict": "このソースはまだインデックス作成中です。完了してから変換してください。"
           }
-        }
+        },
+        "badge": "リビングWiki",
+        "byline_other": "{{pages}} ページ · {{tokens}} トークン",
+        "explainer": "エージェントは作業しながらこれらのページを読み、書き換えます。",
+        "explainerEditable": "エージェントは作業しながらこれらのページを読み、書き換えます。このソースを使うエージェントは誰でも編集できます。",
+        "home": "ホーム",
+        "filterPages": "ページを絞り込む",
+        "pagesTitle": "ページ",
+        "loadFailed": "Wikiページを読み込めませんでした。",
+        "pageLoadFailed": "このページを読み込めませんでした。",
+        "editTitle": "ページを編集"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -201,13 +208,51 @@
         "view": {
           "action": "グラフを表示",
           "title": "ナレッジグラフ",
-          "explainer": "ノードはエンティティ、エッジはその関係を表します。ノードをクリックすると、説明と抽出元のチャンクが表示されます。",
-          "stats": "{{nodes}}件のエンティティ · {{edges}}件の関係",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "グラフはまだありません。抽出が実行中の可能性があります。",
           "selectNode": "ノードを選択すると詳細が表示されます。",
-          "linkedChunks": "リンクされたチャンク",
           "noChunks": "このエンティティにリンクされたチャンクはありません。",
-          "close": "閉じる"
+          "close": "閉じる",
+          "tabs": {
+            "graph": "グラフ",
+            "entities": "エンティティ",
+            "files": "ファイル"
+          },
+          "findEntity": "エンティティを検索",
+          "entityName": "名前",
+          "noEntities": "エンティティが見つかりません",
+          "showTop": "上位を表示",
+          "byConnections": "（接続数順）",
+          "typeFilter": "種類で絞り込む",
+          "otherTypes": "その他: {{types}}",
+          "otherTypesMore_other": "他{{formatted}}件",
+          "untyped": "種類なし",
+          "loadFailed": "グラフを読み込めませんでした。",
+          "entitiesLoadFailed": "エンティティを読み込めませんでした。",
+          "nodeLoadFailed": "このエンティティを読み込めませんでした。",
+          "loadingNode": "エンティティを読み込み中",
+          "connections": "接続数",
+          "mentionedIn": "出現箇所",
+          "showMore": "もっと見る",
+          "showLess": "表示を減らす",
+          "relationships": "関係",
+          "relationshipsCapped_other": "{{total}}件の関係のうち、強い順に{{shown}}件を表示しています。",
+          "noRelationships": "このエンティティには関係がありません。",
+          "relatedTo": "関連",
+          "showAll": "すべて表示（{{formatted}}件）",
+          "showFewer": "表示を減らす",
+          "sourceChunks": "ソースチャンク",
+          "showInGraph": "グラフで表示",
+          "allTypes": "すべての種類",
+          "chunkCount_other": "{{formatted}}件のチャンク",
+          "entityCount_other": "{{formatted}}件のエンティティ",
+          "relationshipCount_other": "{{formatted}}件の関係",
+          "chunk": "チャンク",
+          "chunkMeta": "{{file}} · {{tokens}} トークン",
+          "chunkTokens": "{{tokens}} トークン",
+          "openInFiles": "ファイルで開く",
+          "editChunk": "チャンクを編集",
+          "chunkSaved": "チャンクを保存しました"
         }
       },
       "testRetrieval": {
@@ -239,14 +284,11 @@
       "shareWithTeam": "チームと共有",
       "deleteWarning": "\"{{name}}\"を削除してもよろしいですか？",
       "confirmDelete": "このファイルを削除してもよろしいですか？この操作は元に戻せません。",
-      "backToAll": "すべてのソースに戻る",
-      "back": "戻る",
       "chunks": "チャンク",
       "noChunks": "チャンクが見つかりません",
       "noChunksAlt": "チャンクが見つかりません",
       "goToSources": "ソースへ移動",
       "uploadNew": "新規アップロード",
-      "searchFiles": "ファイルを検索...",
       "noResults": "結果が見つかりません",
       "fileName": "名前",
       "tokens": "トークン",
@@ -353,7 +395,40 @@
           "forbidden": "このソースの設定を編集する権限がありません。",
           "saveFailed": "設定の保存に失敗しました。もう一度お試しください。"
         }
-      }
+      },
+      "chunkErrors": {
+        "add": "チャンクを追加できませんでした",
+        "save": "チャンクを保存できませんでした",
+        "delete": "チャンクを削除できませんでした",
+        "load": "チャンクを読み込めませんでした"
+      },
+      "chunkPosition": "チャンク {{n}} / {{total}} · {{tokens}} トークン",
+      "chunkCrumb": "チャンク {{n}}",
+      "chunkCrumbUnplaced": "編集済みチャンク",
+      "chunkPositionUnplaced": "編集済みチャンク · {{tokens}} トークン",
+      "editChunkDescriptionUnplaced": "{{file}} · 編集済みチャンク · {{tokens}} トークン",
+      "chunkTileMeta": "#{{n}} · {{tokens}} トークン",
+      "copyText": "テキストをコピー",
+      "chunkTitleHint": "回答がこのチャンクを引用するときの名前です。",
+      "files": "ファイル",
+      "filesLoadError": "ファイルを読み込めませんでした",
+      "filesByline_other": "{{files}} ファイル · {{tokens}} トークン",
+      "filterFiles": "ファイルを絞り込む",
+      "searchChunks": "チャンクを検索",
+      "chunkCount_other": "{{formatted}} 件のチャンク",
+      "editor": {
+        "write": "編集",
+        "preview": "プレビュー",
+        "previewEmpty": "プレビューする内容がまだありません。",
+        "cancel": "キャンセル",
+        "close": "閉じる",
+        "discardMessage": "保存されていない変更を破棄しますか?",
+        "discard": "破棄"
+      },
+      "editChunk": "チャンクを編集",
+      "editChunkDescription": "{{file}} · チャンク {{n}} · {{tokens}} トークン",
+      "previousChunk": "前のチャンク",
+      "nextChunk": "次のチャンク"
     },
     "analytics": {
       "label": "分析",
@@ -1017,7 +1092,9 @@
       "start": "チャットを開始する",
       "name": "名前",
       "choose": "ファイルを選択",
-      "info": "25MBまでの.pdf、.txt、.rst、.csv、.xlsx、.xlsm、.xlsb、.xls、.ods、.docx、.docm、.doc、.odt、.rtf、.md、.html、.xhtml、.png、.jpg、.jpeg、.epub、.json、.pptx、.pptm、.ppt、.pps、.ppsx、.ppsm、.pot、.odp、.zipファイルをアップロードしてください",
+      "dropzoneText": "クリックしてアップロード、またはドラッグ＆ドロップ",
+      "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、画像、音声、EPUB、JSON、ZIP（各 25 MB まで）",
+      "filesRejected": "追加されませんでした（25 MB を超えているか、未対応の形式です）: {{files}}",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
       "train": "トレーニング",
@@ -1248,7 +1325,6 @@
       "promptText": "プロンプトテキスト",
       "save": "保存",
       "close": "閉じる",
-      "cancel": "キャンセル",
       "delete": "削除",
       "deleteConfirmation": "このチャンクを削除してもよろしいですか？"
     },
@@ -1344,7 +1420,8 @@
     "firstPage": "最初のページ",
     "previousPage": "前のページ",
     "nextPage": "次のページ",
-    "lastPage": "最後のページ"
+    "lastPage": "最後のページ",
+    "chunksPerPage": "1ページあたりのチャンク数"
   },
   "conversation": {
     "copy": "コピー",
@@ -1565,15 +1642,16 @@
         "moreActions": "その他のアクション"
       },
       "sections": {
-        "meta": "メタ",
-        "source": "ソース",
         "prompt": "プロンプト",
         "tools": "ツール",
         "agentType": "エージェントタイプ",
         "models": "モデル",
         "advanced": "詳細設定",
         "guardrails": "Guardrails",
-        "preview": "プレビュー"
+        "preview": "プレビュー",
+        "basics": "基本情報",
+        "knowledge": "ナレッジと動作",
+        "model": "モデル"
       },
       "placeholders": {
         "agentName": "エージェント名",
@@ -1618,7 +1696,11 @@
         "research": "リサーチ"
       },
       "labels": {
-        "defaultModel": "デフォルトモデル"
+        "defaultModel": "デフォルトモデル",
+        "name": "名前",
+        "description": "説明",
+        "sources": "ソース",
+        "avatar": "アバター"
       },
       "advanced": {
         "jsonSchema": "JSON応答スキーマ",
@@ -1633,7 +1715,10 @@
         "systemPromptOverrideDescription": "v1 API呼び出し元がこのエージェントのシステムプロンプトを置き換えることを許可します"
       },
       "preview": {
-        "publishedPreview": "公開されたエージェントはここでプレビューできます"
+        "savedVersion": "保存済みバージョン",
+        "publishTitle": "公開してプレビュー",
+        "publishDescription": "プレビューは公開済みのエージェントとチャットします。下書きは公開するまで非公開のままです。",
+        "unsavedChanges": "保存されていない変更があります。保存するまで、プレビューは保存済みのバージョンを使います。"
       },
       "dangerZone": {
         "heading": "危険ゾーン",
@@ -1695,6 +1780,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "エージェントを設定し、公開するとチャットできます。"
+      },
+      "status": {
+        "published": "公開済み"
       }
     },
     "logs": {
@@ -1705,7 +1796,6 @@
     },
     "schedules": {
       "title": "エージェントスケジュール",
-      "heading": "スケジュール",
       "newRecurring": "新しいスケジュール",
       "closeForm": "フォームを閉じる",
       "edit": "編集",
@@ -1801,8 +1891,6 @@
         "output": "出力",
         "truncated": "（切り詰め）"
       },
-      "timezoneMeta": "タイムゾーン: {{timezone}}",
-      "nextRunMeta": "次回: {{time}}",
       "toolCard": {
         "cancelFailed": "キャンセルに失敗しました",
         "taskCancelled": "予約タスクをキャンセルしました。",
@@ -1845,7 +1933,28 @@
       "runLog": {
         "when": "日時",
         "details": "詳細",
-        "empty": "このスケジュールの実行記録はまだありません。"
+        "empty": "このスケジュールの実行記録はまだありません。",
+        "duration": "所要時間"
+      },
+      "actions": "スケジュールの操作",
+      "cancelTask": "タスクをキャンセル",
+      "failureStreak_one": "{{count}}回連続で失敗",
+      "failureStreak_other": "{{count}}回連続で失敗",
+      "meta": {
+        "nextRun": "次回実行: {{time}}",
+        "runsAt": "実行日時: {{time}}",
+        "lastRun": "前回実行: {{time}}"
+      },
+      "stats": {
+        "active": "有効なスケジュール",
+        "nextRun": "次回実行",
+        "runs": "実行回数（過去{{days}}日）",
+        "tokens": "{{tokens}} トークン",
+        "failed": "失敗（過去{{days}}日）",
+        "latestFailure": "最新: {{status}}、{{date}}",
+        "paused_one": "{{count}}件一時停止中",
+        "paused_other": "{{count}}件一時停止中",
+        "overdue": "期限超過"
       }
     },
     "shared": {
@@ -1924,15 +2033,8 @@
         "saveFailed": "ワークフローを保存できませんでした",
         "defaultDescription": "ワークフローエージェント: {{name}}",
         "newWorkflow": "新しいワークフロー",
-        "editDetails": "ワークフローの詳細を編集",
-        "workflowName": "ワークフロー名",
         "workflowNamePlaceholder": "ワークフロー名を入力",
         "workflowDescriptionPlaceholder": "このワークフローの内容を説明してください",
-        "agentImageAlt": "エージェント画像",
-        "currentImage": "現在の画像",
-        "agentImage": "エージェント画像",
-        "agentImageHint": "画像の変更は次回の保存時に反映されます。",
-        "done": "完了",
         "unablePreview": "ワークフローをプレビューできません",
         "unableSave": "ワークフローを保存できません",
         "unablePublish": "ワークフローを公開できません",
@@ -1942,6 +2044,22 @@
         "setStateHint": "ワークフロー変数を変更",
         "conditionHint": "条件分岐",
         "codeHint": "サンドボックスでコードを実行",
+        "paletteHint": "キャンバスにドラッグするか、クリックして追加します。",
+        "nodeActions": "ノードの操作",
+        "duplicateNode": "複製",
+        "copyNodeId": "ノード ID をコピー",
+        "knowledge": "ナレッジ",
+        "output": "出力",
+        "streamToUserDescription": "このノードの回答を生成中にチャットへ表示します",
+        "advancedSettings": "詳細設定",
+        "conditionMode": "条件モード",
+        "branchName": "分岐名",
+        "variable": "変数",
+        "value": "値",
+        "valueCel": "値 (CEL)",
+        "addCondition": "条件を追加",
+        "assignment": "割り当て {{index}}",
+        "addAssignment": "割り当てを追加",
         "startNode": "開始ノード",
         "endNode": "終了ノード",
         "stateTitle": "グローバル変数を設定",
@@ -1970,7 +2088,7 @@
         "invalidSchema": "無効な JSON スキーマ: {{error}}",
         "noteContent": "メモの内容",
         "noteContentPlaceholder": "メモの内容を入力",
-        "stateIntro": "ワークフローの状態変数に値を割り当てます",
+        "stateIntro": "ワークフローの状態変数に値を割り当てます。",
         "assignValue": "値を割り当て",
         "celHint": "Common Expression Language でカスタム式を作成します。状態は名前だけで参照します（<code>query</code>）。<code>{{braced}}</code> ではありません。",
         "learnMore": "詳細",
@@ -1981,6 +2099,8 @@
         "caseNamePlaceholder": "ケース名（任意）",
         "variablePlaceholder": "変数",
         "valuePlaceholder": "値",
+        "operator": "演算子",
+        "examplePlaceholder": "例: {{example}}",
         "opContains": "含む",
         "opStartsWith": "で始まる",
         "conditionPlaceholder": "条件を入力（例: query.contains(\"refund\")）",
@@ -1992,7 +2112,11 @@
         "cannotDeleteStart": "開始ノードは削除できません",
         "deleteNode": "ノードを削除",
         "deleteConfirm": "「{{name}}」を削除してもよろしいですか？",
-        "deleteConfirmUnnamed": "このワークフローエージェントを削除してもよろしいですか？"
+        "deleteConfirmUnnamed": "このワークフローエージェントを削除してもよろしいですか？",
+        "detailsTitle": "ワークフローの詳細",
+        "detailsDescription": "エージェントカードに表示される名前、説明、画像です。",
+        "unsavedChanges": "未保存の変更",
+        "editDetailsMenu": "詳細を編集"
       },
       "validation": {
         "nameRequired": "ワークフロー名は必須です",
@@ -2085,7 +2209,10 @@
         "searchPlaceholder": "変数を検索...",
         "empty": "変数が見つかりません",
         "addContext": "コンテキストを追加"
-      }
+      },
+      "zoomIn": "拡大",
+      "zoomOut": "縮小",
+      "fitView": "全体を表示"
     },
     "typeModal": {
       "title": "新しいエージェントを作成",
@@ -2135,6 +2262,10 @@
     },
     "profile": {
       "avatarAlt": "ユーザーのアバター"
+    },
+    "multiSelect": {
+      "more_one": "他{{count}}件",
+      "more_other": "他{{count}}件"
     }
   },
   "pageNotFound": {

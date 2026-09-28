@@ -127,12 +127,14 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
           // onClick when the user interacts inside the modal.
           onClick={(event) => event.stopPropagation()}
           className={cn(
-            'bg-card text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out shadow-modal fixed z-50 duration-200 outline-none',
+            'bg-card text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 duration-200 outline-none',
             isMobileSheet
-              ? // The shared bottom-sheet shape; pb-safe clears the iPhone
-                // home indicator and keeps 1rem under the footer elsewhere.
-                `${sheetBottomShape} pb-safe flex w-full flex-col gap-3 px-4`
+              ? // The shared bottom-sheet shape and the sheet elevation;
+                // pb-safe clears the iPhone home indicator and keeps 1rem
+                // under the footer elsewhere.
+                `${sheetBottomShape} pb-safe flex w-full flex-col gap-3 px-4 shadow-lg`
               : cn(
+                  'shadow-modal',
                   'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 top-1/2 left-1/2 flex max-h-[85dvh] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-2xl p-8',
                   SIZE_CLASSES[size],
                   className,

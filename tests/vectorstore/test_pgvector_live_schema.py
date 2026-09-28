@@ -216,6 +216,39 @@ class TestStoreRoundTrip:
         assert store._connection is None
 
 
+class TestUpdateChunkInPlace:
+    def test_update_keeps_id_and_list_position(self, live_dsn, stub_embeddings):
+        ensure_vector_schema()
+        store = _store(live_dsn)
+        ids = store.add_texts(
+            ["first", "second", "third"],
+            [{"source": "a.txt"}, {"source": "b.txt"}, {"source": "c.txt"}],
+        )
+
+        # Rewrite the first row: an UPDATE writes a new tuple at the heap's
+        # end, which an unordered scan would return last.
+        assert store.update_chunk(ids[0], "first edited", {"source": "a2.txt"}) == ids[0]
+
+        chunks = store.get_chunks()
+        assert [c["doc_id"] for c in chunks] == ids
+        assert chunks[0]["text"] == "first edited"
+        assert chunks[0]["metadata"] == {"source": "a2.txt", "source_id": "live-source"}
+        store.close()
+
+    def test_update_of_another_sources_chunk_is_refused(self, live_dsn, stub_embeddings):
+        ensure_vector_schema()
+        owner = _store(live_dsn, source_id="owner")
+        (chunk_id,) = owner.add_texts(["mine"], [{}])
+
+        intruder = _store(live_dsn, source_id="intruder")
+        with pytest.raises(KeyError):
+            intruder.update_chunk(chunk_id, "hijack", {})
+        intruder.close()
+
+        assert owner.get_chunks()[0]["text"] == "mine"
+        owner.close()
+
+
 class TestWritePathSafetyNet:
     """A process that never ran the boot hook must still be able to ingest.
 

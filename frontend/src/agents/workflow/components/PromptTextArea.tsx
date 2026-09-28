@@ -337,6 +337,8 @@ interface PromptTextAreaProps {
   placeholder?: string;
   rows?: number;
   label?: string;
+  /** Surface behind the field, for the floating label's notch. */
+  labelSurface?: 'card' | 'background' | 'muted';
 }
 
 export default function PromptTextArea({
@@ -348,6 +350,7 @@ export default function PromptTextArea({
   placeholder,
   rows = 4,
   label,
+  labelSurface = 'card',
 }: PromptTextAreaProps) {
   const { t } = useTranslation();
   const textareaId = useId();
@@ -442,7 +445,7 @@ export default function PromptTextArea({
   // so typing keeps filtering it.
   const field = (
     <PopoverAnchor asChild>
-      <div className="border-border focus-within:ring-ring bg-card relative rounded-xl border transition-shadow focus-within:ring-2">
+      <div className="border-border focus-within:border-ring focus-within:ring-ring/50 relative rounded-xl border transition-shadow focus-within:ring-3">
         <div
           ref={overlayRef}
           aria-hidden
@@ -525,7 +528,7 @@ export default function PromptTextArea({
       }}
     >
       {label ? (
-        <FormField label={label} id={textareaId}>
+        <FormField label={label} id={textareaId} labelSurface={labelSurface}>
           {field}
         </FormField>
       ) : (

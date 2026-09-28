@@ -40,7 +40,7 @@ import {
 import ConversationTile from './conversation/ConversationTile';
 import { useMediaQuery } from './hooks';
 import useTokenAuth from './hooks/useTokenAuth';
-import { cn } from './lib/utils';
+import { cn, overlayScrim } from './lib/utils';
 import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
 import SearchConversationsModal from './modals/SearchConversationsModal';
@@ -402,7 +402,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     <>
       {isMobile && navOpen && (
         <div
-          className="fixed inset-0 z-20 bg-black opacity-50 transition-opacity duration-300"
+          className={cn(
+            'animate-in fade-in-0 fixed inset-0 z-20',
+            overlayScrim,
+          )}
           onClick={() => setNavOpen(false)}
         />
       )}

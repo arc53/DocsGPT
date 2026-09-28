@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
 
@@ -16,15 +16,25 @@ const mockState = {
     prompts: [],
     agentFolders: [],
   },
+  agentPreview: { queries: [], status: 'idle' },
 };
+
+const mocks = vi.hoisted(() => {
+  const jsonResponse = (body: unknown, ok = true) =>
+    Promise.resolve({ ok, json: () => Promise.resolve(body) });
+  return {
+    jsonResponse,
+    dispatch: vi.fn(),
+    getAgent: vi.fn(() => jsonResponse({})),
+    createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
+  };
+});
+const { jsonResponse } = mocks;
 
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) => selector(mockState),
-  useDispatch: () => vi.fn(),
+  useDispatch: () => mocks.dispatch,
 }));
-
-const jsonResponse = (body: unknown, ok = true) =>
-  Promise.resolve({ ok, json: () => Promise.resolve(body) });
 
 vi.mock('../api/services/userService', () => ({
   default: {
@@ -40,8 +50,8 @@ vi.mock('../api/services/userService', () => ({
         ],
       }),
     getAgentFolders: () => jsonResponse({ folders: [] }),
-    getAgent: () => jsonResponse({}),
-    createAgent: () => jsonResponse({ message: 'Name is taken' }, false),
+    getAgent: mocks.getAgent,
+    createAgent: mocks.createAgent,
     updateAgent: () => jsonResponse({}),
     deleteAgent: () => jsonResponse({}),
     createPrompt: () => jsonResponse({}),
@@ -95,9 +105,22 @@ vi.mock('../modals/AgentDetailsModal', () => ({ default: () => null }));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
 vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
 vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
-vi.mock('../navigation/SectionPills', () => ({ default: () => null }));
+vi.mock('../navigation/SectionPills', () => ({
+  default: () => <div data-testid="section-pills" />,
+}));
 vi.mock('../navigation/SectionPageHeader', () => ({
-  CurrentSectionHeader: () => null,
+  CurrentSectionHeader: ({
+    title,
+    titleAction,
+  }: {
+    title?: React.ReactNode;
+    titleAction?: React.ReactNode;
+  }) => (
+    <div>
+      {title ? <h1>{title}</h1> : null}
+      {titleAction}
+    </div>
+  ),
 }));
 vi.mock('../components/FileUpload', () => ({ FileUpload: () => null }));
 vi.mock('../components/SourcesPopoverFooter', () => ({ default: () => null }));
@@ -132,6 +155,9 @@ describe('NewAgent form', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    mocks.dispatch.mockClear();
+    mocks.getAgent.mockClear();
+    mocks.createAgent.mockClear();
   });
 
   const render = async () => {
@@ -182,33 +208,176 @@ describe('NewAgent form', () => {
     }
   });
 
-  it('titles each form panel with a SectionHeader spaced by the panel gap', async () => {
+  // A1a: three grouped sections instead of six one-field panels.
+  it('groups the form into Basics, Knowledge and behaviour, and Model', async () => {
     await render();
     const titles = Array.from(
       container.querySelectorAll('[data-slot="section-header"] > h2'),
     ).map((h) => h.textContent);
-    expect(titles).toEqual(
+    expect(titles).toEqual([
+      'agents.form.sections.basics',
+      'agents.form.sections.knowledge',
+      'agents.form.sections.model',
+    ]);
+    const basics = Array.from(
+      container.querySelectorAll('[data-slot="section-header"]'),
+    ).find((h) => h.textContent === 'agents.form.sections.basics')!;
+    expect(basics.parentElement!.className.split(' ')).toEqual(
+      expect.arrayContaining(['flex', 'flex-col', 'gap-5']),
+    );
+  });
+
+  // On a phone the avatar sits beside Name and Description spans the row;
+  // from sm the avatar spans both rows beside the fields.
+  it('lays Basics out as avatar beside Name, Description full width on a phone', async () => {
+    await render();
+    const name = container.querySelector(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    const grid = name.closest('.grid')!;
+    expect(grid.className).toContain('grid-cols-[auto_1fr]');
+    const description = container
+      .querySelector(
+        'textarea[placeholder="agents.form.placeholders.describeAgent"]',
+      )!
+      .closest('[data-slot="form-field"]')!;
+    expect(description.className).toContain('col-span-2');
+    expect(description.className).toContain('sm:col-start-2');
+  });
+
+  it('labels every picker with a floating label', async () => {
+    await render();
+    const labels = Array.from(
+      container.querySelectorAll('[data-slot="form-field-label"]'),
+    ).map((l) => l.textContent);
+    expect(labels).toEqual(
       expect.arrayContaining([
-        'agents.form.sections.meta',
-        'agents.form.sections.source',
+        'agents.form.labels.name',
+        'agents.form.labels.description',
+        'agents.form.labels.sources',
         'agents.form.sections.tools',
         'agents.form.sections.agentType',
         'agents.form.sections.models',
       ]),
     );
-    const meta = Array.from(
-      container.querySelectorAll('[data-slot="section-header"]'),
-    ).find((h) => h.textContent === 'agents.form.sections.meta')!;
-    expect(meta.parentElement!.className.split(' ')).toEqual(
-      expect.arrayContaining(['flex', 'flex-col', 'gap-5']),
+  });
+
+  it('puts Sources beside Tools in a two-up field grid', async () => {
+    await render();
+    const [sources, tools] = Array.from(
+      container.querySelectorAll('[data-testid="picker"] > button'),
     );
-    expect((meta.nextElementSibling as HTMLElement).className).not.toContain(
-      'mt-5',
+    const grid = sources.closest('.grid')!;
+    expect(grid.className).toContain('sm:grid-cols-2');
+    expect(grid.contains(tools)).toBe(true);
+  });
+
+  it('titles the new-agent page and puts its actions in the agent toolbar', async () => {
+    await render();
+    expect(container.querySelector('h1')?.textContent).toBe('agents.newAgent');
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    expect(toolbar.textContent).toContain('agents.form.byline.new');
+    expect(toolbar.contains(buttonByText('agents.form.buttons.publish'))).toBe(
+      true,
     );
   });
 
-  // Decision 64: the Advanced header is a section-toggle with a leading
-  // lucide chevron; the panel draws the focus ring.
+  // Before publishing, Preview can only say "Publish to preview", so it is a
+  // ⋯ item beside the title rather than a toolbar button.
+  it('drops the New agent title once the agent is saved', async () => {
+    await render();
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-1' }),
+    );
+    await act(async () =>
+      buttonByText('agents.form.buttons.saveDraft').click(),
+    );
+    expect(container.querySelector('h1')?.textContent).not.toBe(
+      'agents.newAgent',
+    );
+  });
+
+  // The preview talks to the saved agent; Redux must hold that snapshot, not
+  // the unsaved form, or the preview picks up an unsaved model.
+  it('keeps the preview on the saved agent while editing a published one', async () => {
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Saved name',
+        description: 'Saved description',
+        status: 'published',
+        agent_type: 'classic',
+        prompt_id: 'default',
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, 'Unsaved name'));
+
+    const pushed = mocks.dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((a) => a?.type === 'preference/setSelectedAgent' && a.payload);
+    expect(pushed.length).toBeGreaterThan(0);
+    for (const action of pushed) {
+      expect(action.payload.name).toBe('Saved name');
+    }
+  });
+
+  it('offers Preview from the title-row menu until the agent is published', async () => {
+    await render();
+    const toolbar = container.querySelector('[data-slot="page-toolbar"]')!;
+    expect(
+      Array.from(toolbar.querySelectorAll('button')).some((b) =>
+        b.textContent?.includes('agents.form.sections.preview'),
+      ),
+    ).toBe(false);
+    const menu = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="agents.form.buttons.moreActions"]',
+    )!;
+    expect(menu.getAttribute('data-size')).toBe('icon');
+    // Beside the page title, not in the toolbar row.
+    expect(menu.closest('[data-slot="page-toolbar"]')).toBeNull();
+    expect(menu.parentElement!.querySelector('h1')).not.toBeNull();
+    await act(async () => {
+      menu.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+    });
+    const preview = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent === 'agents.form.sections.preview')!;
+    await act(async () => preview.click());
+    const sheet = document.querySelector('[data-slot="sheet-content"]')!;
+    expect(sheet.textContent).toContain('agents.form.preview.publishTitle');
+  });
+
+  it('stretches the main button on a phone', async () => {
+    await render();
+    const publish = buttonByText('agents.form.buttons.publish');
+    expect(publish.className).toContain('flex-1');
+    expect(publish.className).toContain('sm:flex-none');
+  });
+
+  // The sidebar (and the agent card's menu) already switch between an
+  // agent's pages, so the pages carry no pill row.
+  it('has no destination pills', async () => {
+    await render();
+    expect(container.querySelector('[data-testid="section-pills"]')).toBeNull();
+  });
+
   it('renders the Advanced header as a section-toggle', async () => {
     await render();
     const toggle = buttonByText('agents.form.sections.advanced');
@@ -221,7 +390,7 @@ describe('NewAgent form', () => {
     expect(toggle.querySelectorAll('svg')).toHaveLength(1);
     expect(toggle.querySelector('h2')).toBeNull();
     expect(toggle.parentElement!.tagName).toBe('H2');
-    const panel = toggle.closest('.bg-card')!;
+    const panel = toggle.closest('[data-slot="card"]')!;
     expect(panel.className).toContain(
       'has-[[data-variant=section-toggle]:focus-visible]:ring-3',
     );
@@ -265,11 +434,14 @@ describe('NewAgent form', () => {
 
   it('renders Save draft and Publish as pill button variants', async () => {
     await render();
+    // A4: one purple button per page; every header button is field pill.
     const draft = buttonByText('agents.form.buttons.saveDraft');
-    expect(draft.getAttribute('data-variant')).toBe('outline-primary');
+    expect(draft.getAttribute('data-variant')).toBe('outline');
+    expect(draft.getAttribute('data-size')).toBe('field');
     expect(draft.getAttribute('data-shape')).toBe('pill');
     const publish = buttonByText('agents.form.buttons.publish');
     expect(publish.getAttribute('data-variant')).toBe('default');
+    expect(publish.getAttribute('data-size')).toBe('field');
     expect(publish.getAttribute('data-shape')).toBe('pill');
     expect(publish.disabled).toBe(true);
   });
@@ -283,6 +455,7 @@ describe('NewAgent form', () => {
     await act(async () => setNativeValue(name, 'Support bot'));
     const cancel = buttonByText('agents.form.buttons.cancel');
     expect(cancel.getAttribute('data-variant')).toBe('ghost');
+    expect(cancel.getAttribute('data-size')).toBe('field');
     expect(cancel.getAttribute('data-shape')).toBe('pill');
   });
 
@@ -327,12 +500,37 @@ describe('NewAgent form', () => {
     expect(valid.querySelector('svg.lucide-circle-check')).not.toBeNull();
   });
 
-  it('shows the preview placeholder illustration as decorative images', async () => {
+  // Card surfaces: the form is a place, so each section is a subtle panel
+  // straight on the page, with no muted panel around the form.
+  it('draws each form section as a subtle panel on the page', async () => {
     await render();
-    const images = container.querySelectorAll('img[alt=""]');
-    expect(images).toHaveLength(2);
-    for (const img of images) {
-      expect(img.getAttribute('aria-hidden')).toBe('true');
+    const titles = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="section-header"]'),
+    );
+    expect(titles.length).toBeGreaterThan(0);
+    for (const title of titles) {
+      const panel = title.closest<HTMLElement>('[data-slot="card"]')!;
+      expect(panel.dataset.variant).toBe(
+        title.closest('[data-tone="destructive"]')
+          ? panel.dataset.variant
+          : 'subtle',
+      );
+    }
+    const advanced = buttonByText('agents.form.sections.advanced');
+    const panel = advanced.closest<HTMLElement>('[data-slot="card"]')!;
+    expect(panel.dataset.variant).toBe('subtle');
+    expect(panel.dataset.padding).toBe('lg');
+    expect(container.querySelector('.bg-muted.rounded-2xl')).toBeNull();
+  });
+
+  it('notches floating labels on the page background', async () => {
+    await render();
+    const labels = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="form-field-label"]'),
+    );
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) {
+      expect(label.className).toContain('bg-background');
     }
   });
 });

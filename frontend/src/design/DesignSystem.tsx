@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Pencil,
   Pin,
+  Play,
   Plus,
   Search,
   Settings,
@@ -34,6 +35,8 @@ import {
   Trash2,
   Undo2,
   Redo2,
+  File,
+  Folder,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -173,7 +176,45 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TimePicker } from '@/components/ui/time-picker';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import AgentPreviewSheet from '../agents/components/AgentPreviewSheet';
+import type { WorkflowNode } from '../agents/types/workflow';
+import {
+  ExecutionDetails,
+  RunArtifactsSection,
+} from '../agents/workflow/WorkflowPreview';
+import type { WorkflowExecutionStep } from '../agents/workflow/workflowPreviewSlice';
 import { useDarkTheme } from '../hooks';
+
+// Sample run for the Agent preview drawer example.
+const DEMO_WORKFLOW_NODES = [
+  { id: 'd1', type: 'agent', title: 'Find expiring certificates' },
+  { id: 'd2', type: 'state', title: 'Set region' },
+  { id: 'd3', type: 'agent', title: 'Draft reminders' },
+] as unknown as WorkflowNode[];
+
+const DEMO_WORKFLOW_STEPS = [
+  {
+    nodeId: 'd1',
+    nodeType: 'agent',
+    nodeTitle: 'Find expiring certificates',
+    status: 'completed',
+    output: 'Three carriers have certificates expiring before 31 October.',
+  },
+  {
+    nodeId: 'd2',
+    nodeType: 'state',
+    nodeTitle: 'Set region',
+    status: 'completed',
+    stateDelta: { region: 'EU', carriers: ['Halvorsen', 'Nordline'] },
+  },
+  {
+    nodeId: 'd3',
+    nodeType: 'agent',
+    nodeTitle: 'Draft reminders',
+    status: 'failed',
+    error: 'The email tool timed out after 30 s.',
+  },
+] as unknown as WorkflowExecutionStep[];
 
 /**
  * Dev-only style guide, served at /design. It renders every component in
@@ -422,6 +463,8 @@ export default function DesignSystem() {
   const [agentType, setAgentType] = useState<'classic' | 'workflow'>('classic');
   const [toolOn, setToolOn] = useState(false);
   const [sectionOpen, setSectionOpen] = useState(false);
+  const [agentPreviewOpen, setAgentPreviewOpen] = useState(false);
+  const [demoStepsOpen, setDemoStepsOpen] = useState(true);
   const [scopes, setScopes] = useState<string[]>(['agents:read']);
   const [tokenLimit, setTokenLimit] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -856,10 +899,10 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Section panel toggle"
-            code='<div className="has-[[data-variant=section-toggle]:focus-visible]:ring-3 …"><Button variant="section-toggle" size="sm" aria-expanded>'
+            code='<Card variant="subtle" padding="lg"><Button variant="section-toggle" size="sm" aria-expanded> (Card draws the focus ring)'
           >
-            <div className="bg-muted max-w-md rounded-2xl p-4">
-              <div className="bg-card has-[[data-variant=section-toggle]:focus-visible]:ring-ring/50 rounded-2xl px-6 py-3 has-[[data-variant=section-toggle]:focus-visible]:ring-3 has-[[data-variant=section-toggle]:focus-visible]:ring-inset">
+            <div className="max-w-md">
+              <Card variant="subtle" padding="lg">
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="section-toggle"
@@ -878,11 +921,11 @@ export default function DesignSystem() {
                   <Badge variant="destructive">1 needs setup</Badge>
                 </div>
                 {sectionOpen && (
-                  <p className="text-muted-foreground mt-2 text-sm">
+                  <p className="text-muted-foreground text-sm">
                     Run the selected checks on this agent&apos;s runs.
                   </p>
                 )}
-              </div>
+              </Card>
             </div>
           </Example>
           <Example
@@ -1102,25 +1145,44 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Action menu"
-            code="<ActionMenu options triggerLabel />"
+            code='<ActionMenu options triggerLabel /> on a tile · size="toolbar" in a page header'
           >
-            <div className="bg-muted hover:bg-accent relative h-24 w-48 rounded-2xl p-4 text-sm">
-              <span className="font-semibold">Vendor Due Diligence</span>
-              <ActionMenu
-                triggerLabel="Agent actions"
-                className="absolute top-3 right-3"
-                options={[
-                  { icon: Pencil, label: 'Edit', onClick: () => {} },
-                  { icon: Copy, label: 'Duplicate', onClick: () => {} },
-                  { icon: Pin, label: 'Pin agent', onClick: () => {} },
-                  {
-                    icon: Trash2,
-                    label: 'Delete',
-                    variant: 'destructive',
-                    onClick: () => {},
-                  },
-                ]}
-              />
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="bg-muted hover:bg-accent relative h-24 w-48 rounded-2xl p-4 text-sm">
+                <span className="font-semibold">Vendor Due Diligence</span>
+                <ActionMenu
+                  triggerLabel="Agent actions"
+                  className="absolute top-3 right-3"
+                  options={[
+                    { icon: Pencil, label: 'Edit', onClick: () => {} },
+                    { icon: Copy, label: 'Duplicate', onClick: () => {} },
+                    { icon: Pin, label: 'Pin agent', onClick: () => {} },
+                    {
+                      icon: Trash2,
+                      label: 'Delete',
+                      variant: 'destructive',
+                      onClick: () => {},
+                    },
+                  ]}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="field" shape="pill">
+                  <Play />
+                  Preview
+                </Button>
+                <Button size="field" shape="pill">
+                  Save
+                </Button>
+                <ActionMenu
+                  size="toolbar"
+                  triggerLabel="More actions"
+                  options={[
+                    { label: 'Access details', onClick: () => {} },
+                    { label: 'Share with team', onClick: () => {} },
+                  ]}
+                />
+              </div>
             </div>
           </Example>
           <Example title="States" code="disabled · asChild">
@@ -1536,14 +1598,14 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Subtle surface and paddings"
-            code='<Card variant="subtle"> on bg-muted · tone="destructive" · padding="lg" · padding="none"'
+            code='<Card variant="subtle"> a place on the page · tone="destructive" · padding="lg" · padding="none"'
           >
-            <div className="bg-muted grid items-start gap-4 rounded-2xl p-4 md:grid-cols-2">
+            <div className="grid items-start gap-4 md:grid-cols-2">
               <Card variant="subtle" padding="lg">
                 <CardTitle>Subtle</CardTitle>
                 <CardDescription>
-                  subtle is a bordered background-coloured box on a muted page;
-                  lg pads it 24px.
+                  subtle is a place: a bordered panel on the page background
+                  (form sections, charts, logs); lg pads it 24px.
                 </CardDescription>
               </Card>
               <Card tone="destructive" padding="lg">
@@ -1643,6 +1705,34 @@ export default function DesignSystem() {
             </Card>
           </Example>
           <Example
+            title="Dense rows (side panel)"
+            code='<ul className="-mx-2"><ListRow size="sm" interactive asChild leading title description>'
+          >
+            <ul className="-mx-2 flex max-w-80 flex-col">
+              {[
+                ['Oslo Freight Terminal', 'operates · ships via', 'bg-chart-2'],
+                ['Meridian Freight Group', 'contracted by', 'bg-chart-1'],
+              ].map(([name, meta, dot]) => (
+                <ListRow
+                  key={name}
+                  size="sm"
+                  interactive
+                  asChild
+                  leading={
+                    <span
+                      aria-hidden="true"
+                      className={`mt-1.5 size-2 shrink-0 rounded-full ${dot}`}
+                    />
+                  }
+                  title={name}
+                  description={meta}
+                >
+                  <button type="button" />
+                </ListRow>
+              ))}
+            </ul>
+          </Example>
+          <Example
             title="Key/value rows"
             code='<DescriptionList layout="columns | justified" size="sm | xs"><DescriptionItem label mono>'
           >
@@ -1668,7 +1758,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Pager"
-            code='<Pagination page pageCount onPageChange pageSize? summary? labels="icons | text">'
+            code='<Pagination page pageCount onPageChange pageSize? pageSizeLabel? summary? labels="icons | text">'
           >
             <div className="flex flex-col gap-4">
               <Pagination
@@ -1683,6 +1773,15 @@ export default function DesignSystem() {
                 pageCount={5}
                 onPageChange={setPagerPage}
                 summary="1,024 users"
+              />
+              <Pagination
+                page={pagerPage}
+                pageCount={9}
+                onPageChange={setPagerPage}
+                pageSize={12}
+                pageSizeOptions={[12, 24, 48]}
+                pageSizeLabel="Chunks per page"
+                onPageSizeChange={() => undefined}
               />
             </div>
           </Example>
@@ -2069,8 +2168,8 @@ export default function DesignSystem() {
           intro="Click-or-drag file target used by imports and uploads. Colours follow the drag state; pass accept and limits and describe them in the second line."
         >
           <Example
-            title="Default and compact"
-            code='<Dropzone accept={…} description="…" size="compact">'
+            title="Default, compact and tile"
+            code='<Dropzone accept={…} description="…" size="compact | tile">'
           >
             <div className="grid gap-6 md:grid-cols-2">
               <Dropzone
@@ -2101,6 +2200,29 @@ export default function DesignSystem() {
                   title="With an error"
                   error="Only .yaml or .yml files are supported"
                 />
+                <div className="flex items-center gap-3">
+                  <Dropzone
+                    size="tile"
+                    onDrop={(files) => setDropped(files.map((f) => f.name))}
+                    title="Avatar"
+                  />
+                  <span className="text-muted-foreground text-xs">
+                    size=&quot;tile&quot;: the agent&apos;s avatar beside its
+                    name and description.
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Dropzone
+                    size="tile"
+                    tileSize="fixed"
+                    onDrop={(files) => setDropped(files.map((f) => f.name))}
+                    title="Avatar"
+                  />
+                  <span className="text-muted-foreground text-xs">
+                    tileSize=&quot;fixed&quot;: 64px and icon-only at every
+                    width, for a narrow drawer.
+                  </span>
+                </div>
                 <p className="text-muted-foreground text-xs">
                   Last drop:{' '}
                   {dropped.length ? dropped.join(', ') : 'nothing yet'}
@@ -2540,6 +2662,35 @@ export default function DesignSystem() {
               </Table>
             </TableContainer>
           </Example>
+          <Example
+            title="Clickable rows, one open beside the table"
+            code="<TableRow selected onClick={…}>"
+          >
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableHeader>Entity</TableHeader>
+                    <TableHeader align="right">Connections</TableHeader>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {TABLE_ROWS.map((row, index) => (
+                    <TableRow
+                      key={row.name}
+                      selected={index === 1}
+                      onClick={() => undefined}
+                    >
+                      <TableCell className="font-medium">{row.name}</TableCell>
+                      <TableCell align="right" className="tabular-nums">
+                        {row.runs}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Example>
         </Section>
 
         <Section
@@ -2549,7 +2700,7 @@ export default function DesignSystem() {
         >
           <Example
             title="Modal and sheet"
-            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SheetContent side="right | left | top"> · <SheetContent side="bottom" handle>'
+            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SheetContent side="right" size="default | detail | wide"> · <SheetContent side="left | top"> · <SheetContent side="bottom" handle>'
           >
             <div className="flex flex-wrap items-center gap-3">
               <Button variant="outline" onClick={() => setModalOpen(true)}>
@@ -2588,9 +2739,38 @@ export default function DesignSystem() {
                 </SheetTrigger>
                 <SheetContent side="right">
                   <SheetHeader>
+                    <SheetTitle>Sources</SheetTitle>
+                    <SheetDescription>
+                      size=&quot;default&quot; (384px): a companion list read
+                      beside the chat.
+                    </SheetDescription>
+                  </SheetHeader>
+                </SheetContent>
+              </Sheet>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline">Detail sheet</Button>
+                </SheetTrigger>
+                <SheetContent side="right" size="detail">
+                  <SheetHeader>
                     <SheetTitle>Run details</SheetTitle>
                     <SheetDescription>
-                      Started 09:30, finished 09:31, 3 tools called.
+                      size=&quot;detail&quot; (576px, full width on a phone):
+                      one record&apos;s fields.
+                    </SheetDescription>
+                  </SheetHeader>
+                </SheetContent>
+              </Sheet>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline">Wide sheet</Button>
+                </SheetTrigger>
+                <SheetContent side="right" size="wide">
+                  <SheetHeader>
+                    <SheetTitle>Trace</SheetTitle>
+                    <SheetDescription>
+                      size=&quot;wide&quot; (600 / 700 / 800px): a working
+                      surface such as a trace or an agent preview.
                     </SheetDescription>
                   </SheetHeader>
                 </SheetContent>
@@ -2621,6 +2801,34 @@ export default function DesignSystem() {
                   </SheetHeader>
                 </SheetContent>
               </Sheet>
+              <Button
+                variant="outline"
+                onClick={() => setAgentPreviewOpen(true)}
+                data-testid="ds-agent-preview"
+              >
+                Agent preview
+              </Button>
+              <AgentPreviewSheet
+                open={agentPreviewOpen}
+                onOpenChange={setAgentPreviewOpen}
+                title="Preview"
+                description="Carrier compliance workflow · Checks certificates weekly"
+                running
+              >
+                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto py-4">
+                  <ExecutionDetails
+                    steps={DEMO_WORKFLOW_STEPS}
+                    nodes={DEMO_WORKFLOW_NODES}
+                    isOpen={demoStepsOpen}
+                    onToggle={() => setDemoStepsOpen(!demoStepsOpen)}
+                  />
+                  <RunArtifactsSection
+                    workflowRunId="demo"
+                    isOpen={false}
+                    onToggle={() => undefined}
+                  />
+                </div>
+              </AgentPreviewSheet>
               <Sheet>
                 <SheetTrigger asChild>
                   <Button variant="outline">Open bottom sheet</Button>
@@ -2911,6 +3119,26 @@ export default function DesignSystem() {
                   </CommandList>
                 </Command>
               </div>
+            </div>
+          </Example>
+          <Example
+            title="Filter field over a list (source navigator)"
+            code='<CommandInput variant="field" placeholder="Filter files" />'
+          >
+            <div className="flex w-64 flex-col gap-2">
+              <Command className="contents">
+                <CommandInput variant="field" placeholder="Filter files" />
+                <CommandList>
+                  <CommandItem>
+                    <Folder />
+                    carriers
+                  </CommandItem>
+                  <CommandItem checked>
+                    <File />
+                    rate-card-2026.pdf
+                  </CommandItem>
+                </CommandList>
+              </Command>
             </div>
           </Example>
           <Example

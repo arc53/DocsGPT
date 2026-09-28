@@ -5,9 +5,7 @@ import { NodeProps } from 'reactflow';
 
 import { CodeNodeConfig } from '../../types/workflow';
 import { BaseNode } from './BaseNode';
-
-// Variable names are the user's own text: React escapes on render.
-const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
+import OutputVariableLine from './OutputVariableLine';
 
 type CodeNodeData = {
   title?: string;
@@ -46,18 +44,7 @@ const CodeNode = ({ data, selected }: NodeProps<CodeNodeData>) => {
           </div>
         )}
         {config.output_variable && (
-          <div
-            className="text-muted-foreground truncate text-xs"
-            title={t('agents.workflow.nodes.output', {
-              ...NO_ESCAPE,
-              variable: config.output_variable,
-            })}
-          >
-            {t('agents.workflow.nodes.output', {
-              ...NO_ESCAPE,
-              variable: config.output_variable,
-            })}
-          </div>
+          <OutputVariableLine variable={config.output_variable} />
         )}
       </div>
     </BaseNode>

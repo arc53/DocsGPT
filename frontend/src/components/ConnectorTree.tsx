@@ -1,14 +1,16 @@
 import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import { Check, RefreshCw } from 'lucide-react';
+import { Check, Cloud, RefreshCw } from 'lucide-react';
 
 import userService from '../api/services/userService';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import type { Crumb } from './tree/PathHeader';
 import TreeBrowser from './tree/TreeBrowser';
 import type { TreeBrowserController } from './tree/types';
 import { useReingestSseWaiter } from './tree/useReingestWait';
@@ -19,6 +21,38 @@ interface ConnectorTreeProps {
   onBackToDocuments: () => void;
   /** Extra header control, rendered left of the Sync button. */
   headerAction?: React.ReactNode;
+  /**
+   * Inside another source view (the graph source's Files tab): no Sources
+   * crumb, badge or byline, and no headerAction; Sync stays.
+   */
+  embedded?: boolean;
+  /** Embedded only: the host header's action slot (see TreeBrowser). */
+  actionsTarget?: HTMLElement | null;
+  /** A file to open once the structure loads (path, file name or display name). */
+  initialPath?: string;
+  /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
+  onCrumbsChange?: (crumbs: Crumb[]) => void;
+}
+
+// Provider names are brand names, so they are not translated.
+const PROVIDER_LABELS: Record<string, string> = {
+  google_drive: 'Google Drive',
+  share_point: 'SharePoint',
+  confluence: 'Confluence',
+};
+
+/**
+ * The display name of a connector provider: a known brand name, else the raw
+ * id with underscores as spaces, title-cased ("box_sync" → "Box Sync").
+ */
+export function providerLabel(provider: string): string {
+  const known = PROVIDER_LABELS[provider.toLowerCase()];
+  if (known) return known;
+  return provider
+    .split('_')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 const ConnectorTree: React.FC<ConnectorTreeProps> = ({
@@ -26,6 +60,10 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   sourceName,
   onBackToDocuments,
   headerAction,
+  embedded = false,
+  actionsTarget,
+  initialPath,
+  onCrumbsChange,
 }) => {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -106,20 +144,13 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
 
   const topRightAction = (
     <>
-      {headerAction}
+      {embedded ? null : headerAction}
       <Button
         type="button"
         size="field"
         shape="pill"
         onClick={() => setSyncConfirmationModal('ACTIVE')}
         disabled={isSyncing}
-        title={
-          isSyncing
-            ? `${t('settings.sources.syncing')} ${syncProgress}%`
-            : syncDone
-              ? 'Done'
-              : t('settings.sources.sync')
-        }
       >
         {syncDone ? (
           <Check />
@@ -133,7 +164,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         {isSyncing
           ? `${syncProgress}%`
           : syncDone
-            ? 'Done'
+            ? t('settings.sources.syncDone')
             : t('settings.sources.sync')}
       </Button>
     </>
@@ -155,6 +186,18 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       docId={docId}
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
+      embedded={embedded}
+      onCrumbsChange={onCrumbsChange}
+      actionsTarget={actionsTarget}
+      initialPath={initialPath}
+      badge={
+        sourceProvider ? (
+          <Badge variant="neutral">
+            <Cloud />
+            {providerLabel(sourceProvider)}
+          </Badge>
+        ) : undefined
+      }
       columnOrder="tokens-first"
       sortEntries
       controllerRef={controllerRef}

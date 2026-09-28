@@ -1,3 +1,5 @@
+import type { NavigatorNode } from './tree/navigatorUtils';
+
 export interface WikiPageNode {
   path: string;
   title?: string | null;
@@ -64,4 +66,79 @@ export async function saveWikiPage(
   }
   if (response.status === 403) return { status: 'forbidden' };
   return { status: 'error' };
+}
+
+const ROOT_INDEX = /^\/?index\.md$/i;
+
+/**
+ * The name a wiki page shows in the pages column: its stored title, else its
+ * file name without `.md`, dashes and underscores as spaces, in sentence case.
+ * The root `index.md` is the wiki's home page.
+ *
+ * @param page The page (only `path` and `title` are read).
+ * @param homeLabel The translated name of the root index page.
+ * @returns The label.
+ */
+export function wikiPageLabel(
+  page: Pick<WikiPageNode, 'path' | 'title'>,
+  homeLabel = 'Home',
+): string {
+  const title = page.title?.trim();
+  if (title) return title;
+  if (ROOT_INDEX.test(page.path)) return homeLabel;
+  const file = page.path.split('/').filter(Boolean).pop() ?? page.path;
+  const words = file.replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim();
+  if (!words) return page.path;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Group wiki pages for the navigator: pages at the root first (the home page
+ * leading), then one group per top-level folder holding every page under it.
+ *
+ * @param pages The wiki's pages.
+ * @param homeLabel The translated name of the root index page.
+ * @returns Navigator nodes whose leaf ids are the page paths.
+ */
+export function buildWikiNavigator(
+  pages: Pick<WikiPageNode, 'path' | 'title'>[],
+  homeLabel = 'Home',
+): NavigatorNode[] {
+  const roots: NavigatorNode[] = [];
+  const groups = new Map<string, NavigatorNode[]>();
+  for (const page of pages) {
+    const parts = page.path.split('/').filter(Boolean);
+    const leaf: NavigatorNode = {
+      id: page.path,
+      kind: 'leaf',
+      label: wikiPageLabel(page, homeLabel),
+      path: page.path,
+    };
+    if (parts.length <= 1) {
+      roots.push(leaf);
+    } else {
+      const list = groups.get(parts[0]) ?? [];
+      list.push(leaf);
+      groups.set(parts[0], list);
+    }
+  }
+  const isHome = (node: NavigatorNode) => ROOT_INDEX.test(node.path);
+  roots.sort(
+    (a, b) =>
+      Number(isHome(b)) - Number(isHome(a)) || a.label.localeCompare(b.label),
+  );
+  const folders = [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, children]): NavigatorNode => {
+      children.sort((a, b) => a.path.localeCompare(b.path));
+      return {
+        id: `folder:/${name}`,
+        kind: 'folder',
+        label: name,
+        path: `/${name}`,
+        count: children.length,
+        children,
+      };
+    });
+  return [...roots, ...folders];
 }

@@ -29,11 +29,7 @@ export default function RunDetailDrawer({
   if (!run) return null;
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent
-        side="right"
-        className="sm:max-w-xl"
-        aria-describedby={undefined}
-      >
+      <SheetContent side="right" size="detail" aria-describedby={undefined}>
         {/* The sheet owns no padding of its own; the body sets it. */}
         <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
           <SheetTitle>{t('agents.schedules.runDetails.title')}</SheetTitle>
@@ -78,14 +74,12 @@ export default function RunDetailDrawer({
                     : t('agents.schedules.runDetails.error')
                 }
               />
-              <Card
-                variant="filled"
-                padding="sm"
-                className="max-h-48 overflow-y-auto"
-              >
-                <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-                  {run.error}
-                </pre>
+              <Card variant="filled" padding="sm">
+                <div className="scrollbar-overlay max-h-48 overflow-y-auto">
+                  <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+                    {run.error}
+                  </pre>
+                </div>
               </Card>
             </section>
           )}

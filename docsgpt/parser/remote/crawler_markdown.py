@@ -1,13 +1,12 @@
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
-from docsgpt.parser.remote.base import BaseRemote
+from docsgpt.parser.remote.base import BaseRemote, dedupe_virtual_paths, normalize_page_url, url_to_virtual_path
 from docsgpt.core.url_validation import validate_url, SSRFError
 from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
 import re
 from markdownify import markdownify
 from docsgpt.parser.schema.base import Document
 import tldextract
-import os
 
 # The bundled public-suffix snapshot is enough for domain matching; the
 # default extractor would fetch the live list on first use and cache it on
@@ -38,7 +37,8 @@ class CrawlerLoader(BaseRemote):
             print(f"URL validation failed: {e}")
             return []
 
-        # Keep track of visited URLs to avoid revisiting the same page
+        # Keep track of visited pages to avoid revisiting the same page. Keyed
+        # by normalize_page_url, so fragment and query-order variants are one.
         visited_urls = set()
 
         # Determine the base domain for link filtering using tldextract
@@ -50,9 +50,10 @@ class CrawlerLoader(BaseRemote):
             current_url = urls_to_visit.pop()
 
             # Skip if already visited
-            if current_url in visited_urls:
+            page_key = normalize_page_url(current_url)
+            if page_key in visited_urls:
                 continue
-            visited_urls.add(current_url)
+            visited_urls.add(page_key)
 
             # Fetch the page content
             html_content = self._fetch_page(current_url)
@@ -85,13 +86,15 @@ class CrawlerLoader(BaseRemote):
             filtered_links = self._filter_links(new_links, base_domain)
 
             # Add any new, not-yet-visited links to the queue
-            urls_to_visit.update(link for link in filtered_links if link not in visited_urls)
+            urls_to_visit.update(
+                link for link in filtered_links if normalize_page_url(link) not in visited_urls
+            )
 
             # If we've reached the limit, stop crawling
             if self.limit is not None and len(visited_urls) >= self.limit:
                 break
 
-        return documents
+        return dedupe_virtual_paths(documents)
 
     def _fetch_page(self, url):
         try:
@@ -124,7 +127,13 @@ class CrawlerLoader(BaseRemote):
         soup = BeautifulSoup(html_content, 'html.parser')
         links = []
         for a in soup.find_all('a', href=True):
-            full_url = urljoin(current_url, a['href'])
+            # A malformed href (``http://[bad``) makes urljoin or the later
+            # parse raise; skip that link rather than abort the crawl.
+            try:
+                full_url = urljoin(current_url, a['href'])
+                normalize_page_url(full_url)
+            except ValueError:
+                continue
             links.append((full_url, a.text.strip()))
         return links
 
@@ -160,28 +169,5 @@ class CrawlerLoader(BaseRemote):
         return filtered
 
     def _url_to_virtual_path(self, url):
-        """
-        Convert a URL to a virtual file path ending with .md.
-
-        Examples:
-            https://docs.docsgpt.cloud/ -> index.md
-            https://docs.docsgpt.cloud/guides/setup -> guides/setup.md
-            https://docs.docsgpt.cloud/guides/setup/ -> guides/setup.md
-            https://example.com/page.html -> page.md
-        """
-        parsed = urlparse(url)
-        path = parsed.path.strip("/")
-
-        if not path:
-            return "index.md"
-
-        # Remove common file extensions and add .md
-        base, ext = os.path.splitext(path)
-        if ext.lower() in [".html", ".htm", ".php", ".asp", ".aspx", ".jsp"]:
-            path = base
-
-        # Ensure path ends with .md
-        if not path.endswith(".md"):
-            path = path + ".md"
-
-        return path
+        """Convert a URL to a virtual ``.md`` path; see ``url_to_virtual_path``."""
+        return url_to_virtual_path(url)

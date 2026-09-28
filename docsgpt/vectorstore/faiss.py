@@ -306,6 +306,58 @@ class FaissStore(BaseVectorStore):
         self._save_to_storage()
         return ids[0]
 
+    def update_chunk(self, chunk_id: str, text: str, metadata: Dict[str, Any]) -> str:
+        """Replace a chunk in place, keeping its id and its place in the docstore.
+
+        The new vector is computed before anything changes, so a failed embed
+        leaves the chunk as it was. Its old row is removed from the index and
+        the new vector appended; the row mapping is renumbered to match, and
+        the docstore entry is replaced where it stands so :meth:`get_chunks`
+        keeps its order. Saved to storage once.
+
+        Args:
+            chunk_id: Id of the chunk to replace.
+            text: The chunk's new text.
+            metadata: The chunk's complete new metadata.
+
+        Returns:
+            ``chunk_id``, unchanged.
+
+        Raises:
+            KeyError: If ``chunk_id`` is not in this index.
+            ValueError: If the new vector's width does not match the index.
+        """
+        if chunk_id not in self.documents:
+            raise KeyError(f"Chunk id not found in index: {chunk_id}")
+        rows_by_id = {doc_id: row for row, doc_id in self.index_to_docstore_id.items()}
+        if chunk_id not in rows_by_id:
+            raise KeyError(f"Chunk id has no row in the FAISS index: {chunk_id}")
+
+        vector = np.array(self.embeddings.embed_documents([text]), dtype=np.float32)
+        if vector.ndim != 2 or vector.shape != (1, self.index.d):
+            raise ValueError(
+                f"Embedding for chunk {chunk_id} has shape {vector.shape}, "
+                f"expected (1, {self.index.d})"
+            )
+
+        row = rows_by_id[chunk_id]
+        self.index.remove_ids(np.array([row], dtype=np.int64))
+        self.index.add(vector)
+        # remove_ids compacts the index and add appends, so the edited chunk's
+        # vector is now the last row; renumber as delete_index does.
+        remaining = [
+            doc_id
+            for current_row, doc_id in sorted(self.index_to_docstore_id.items())
+            if current_row != row
+        ]
+        self.index_to_docstore_id = dict(enumerate(remaining + [chunk_id]))
+        self.documents[chunk_id] = {
+            "page_content": text,
+            "metadata": dict(metadata or {}),
+        }
+        self._save_to_storage()
+        return chunk_id
+
     def delete_chunk(self, chunk_id: str) -> bool:
         """Delete a chunk and save to storage."""
         self.delete_index([chunk_id])

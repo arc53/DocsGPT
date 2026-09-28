@@ -111,6 +111,7 @@
       "preLoaded": "Vorgeladen",
       "private": "Privat",
       "sync": "Synchronisieren",
+      "syncDone": "Fertig",
       "syncNow": "Jetzt synchronisieren",
       "syncing": "Synchronisiere...",
       "reingest": "Erneut indexieren",
@@ -131,14 +132,10 @@
         "selectPage": "Wähle eine Seite aus, um ihren Inhalt anzuzeigen.",
         "edit": "Bearbeiten",
         "save": "Speichern",
-        "cancel": "Abbrechen",
         "saveFailed": "Die Seite konnte nicht gespeichert werden. Bitte versuche es erneut.",
         "forbidden": "Du hast keine Berechtigung, diese Seite zu bearbeiten.",
         "conflict": "Diese Seite wurde seit dem Öffnen geändert und neu geladen. Deine Änderungen stehen unten – übernimm sie erneut und speichere noch einmal.",
         "editPlaceholder": "Schreibe die Seite in Markdown…",
-        "livingTitle": "Lebendiges Wiki.",
-        "livingExplainer": "Eine von Agenten bearbeitbare Quelle: Seiten werden gelesen und umgeschrieben, während Agenten arbeiten, und sie ist Agenten standardmäßig über das agentische Suchwerkzeug zugänglich.",
-        "livingExplainerEditable": "Jeder Agent, der diese Quelle verwendet, kann sie bearbeiten.",
         "stamp": {
           "editedBy": "Bearbeitet von {{who}}",
           "agent": "Agent",
@@ -168,7 +165,18 @@
             "forbidden": "Du hast keine Berechtigung, diese Quelle umzuwandeln.",
             "conflict": "Diese Quelle wird noch indexiert. Warte, bis der Vorgang abgeschlossen ist, bevor du sie umwandelst."
           }
-        }
+        },
+        "badge": "Lebendes Wiki",
+        "byline_one": "{{pages}} Seite · {{tokens}} Tokens",
+        "byline_other": "{{pages}} Seiten · {{tokens}} Tokens",
+        "explainer": "Agenten lesen und überarbeiten diese Seiten bei ihrer Arbeit.",
+        "explainerEditable": "Agenten lesen und überarbeiten diese Seiten bei ihrer Arbeit; jeder Agent, der diese Quelle nutzt, kann sie bearbeiten.",
+        "home": "Startseite",
+        "filterPages": "Seiten filtern",
+        "pagesTitle": "Seiten",
+        "loadFailed": "Die Wiki-Seiten konnten nicht geladen werden.",
+        "pageLoadFailed": "Diese Seite konnte nicht geladen werden.",
+        "editTitle": "Seite bearbeiten"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -201,13 +209,56 @@
         "view": {
           "action": "Graph anzeigen",
           "title": "Wissensgraph",
-          "explainer": "Knoten sind Entitäten, Kanten ihre Beziehungen. Klicke auf einen Knoten, um seine Beschreibung und die Chunks zu sehen, aus denen er extrahiert wurde.",
-          "stats": "{{nodes}} Entitäten · {{edges}} Beziehungen",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "Noch kein Graph – die Extraktion läuft möglicherweise noch.",
           "selectNode": "Wähle einen Knoten aus, um seine Details zu sehen.",
-          "linkedChunks": "Verknüpfte Chunks",
           "noChunks": "Keine verknüpften Chunks für diese Entität.",
-          "close": "Schließen"
+          "close": "Schließen",
+          "tabs": {
+            "graph": "Graph",
+            "entities": "Entitäten",
+            "files": "Dateien"
+          },
+          "findEntity": "Entität suchen",
+          "entityName": "Name",
+          "noEntities": "Keine Entitäten gefunden",
+          "showTop": "Top anzeigen",
+          "byConnections": "nach Verbindungen",
+          "typeFilter": "Nach Typ filtern",
+          "otherTypes": "Sonstige: {{types}}",
+          "otherTypesMore_one": "{{formatted}} weitere",
+          "otherTypesMore_other": "{{formatted}} weitere",
+          "untyped": "Ohne Typ",
+          "loadFailed": "Der Graph konnte nicht geladen werden.",
+          "entitiesLoadFailed": "Die Entitäten konnten nicht geladen werden.",
+          "nodeLoadFailed": "Diese Entität konnte nicht geladen werden.",
+          "loadingNode": "Entität wird geladen",
+          "connections": "Verbindungen",
+          "mentionedIn": "Erwähnt in",
+          "showMore": "Mehr anzeigen",
+          "showLess": "Weniger anzeigen",
+          "relationships": "Beziehungen",
+          "relationshipsCapped_one": "Die {{shown}} stärksten von {{total}} Beziehung.",
+          "relationshipsCapped_other": "Die {{shown}} stärksten von {{total}} Beziehungen.",
+          "noRelationships": "Keine Beziehungen für diese Entität.",
+          "relatedTo": "verbunden mit",
+          "showAll": "Alle {{formatted}} anzeigen",
+          "showFewer": "Weniger anzeigen",
+          "sourceChunks": "Quell-Chunks",
+          "showInGraph": "Im Graph zeigen",
+          "allTypes": "Alle Typen",
+          "chunkCount_one": "{{formatted}} Chunk",
+          "chunkCount_other": "{{formatted}} Chunks",
+          "entityCount_one": "{{formatted}} Entität",
+          "entityCount_other": "{{formatted}} Entitäten",
+          "relationshipCount_one": "{{formatted}} Beziehung",
+          "relationshipCount_other": "{{formatted}} Beziehungen",
+          "chunk": "Chunk",
+          "chunkMeta": "{{file}} · {{tokens}} Tokens",
+          "chunkTokens": "{{tokens}} Tokens",
+          "openInFiles": "In Dateien öffnen",
+          "editChunk": "Chunk bearbeiten",
+          "chunkSaved": "Chunk gespeichert"
         }
       },
       "testRetrieval": {
@@ -240,14 +291,11 @@
       "shareWithTeam": "Mit Team teilen",
       "deleteWarning": "Bist du sicher, dass du \"{{name}}\" löschen möchtest?",
       "confirmDelete": "Bist du sicher, dass du diese Datei löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
-      "backToAll": "Zurück zu allen Quellen",
-      "back": "Zurück",
       "chunks": "Chunks",
       "noChunks": "Keine Chunks gefunden",
       "noChunksAlt": "Keine Chunks gefunden",
       "goToSources": "Zu den Quellen",
       "uploadNew": "Neu hochladen",
-      "searchFiles": "Dateien suchen...",
       "noResults": "Keine Ergebnisse gefunden",
       "fileName": "Name",
       "tokens": "Tokens",
@@ -354,7 +402,42 @@
           "forbidden": "Du hast keine Berechtigung, die Konfiguration dieser Quelle zu bearbeiten.",
           "saveFailed": "Konfiguration konnte nicht gespeichert werden. Bitte versuche es erneut."
         }
-      }
+      },
+      "chunkErrors": {
+        "add": "Der Chunk konnte nicht hinzugefügt werden",
+        "save": "Der Chunk konnte nicht gespeichert werden",
+        "delete": "Der Chunk konnte nicht gelöscht werden",
+        "load": "Die Chunks konnten nicht geladen werden"
+      },
+      "chunkPosition": "Chunk {{n}} von {{total}} · {{tokens}} Tokens",
+      "chunkCrumb": "Chunk {{n}}",
+      "chunkCrumbUnplaced": "Bearbeiteter Chunk",
+      "chunkPositionUnplaced": "Bearbeiteter Chunk · {{tokens}} Tokens",
+      "editChunkDescriptionUnplaced": "{{file}} · bearbeiteter Chunk · {{tokens}} Tokens",
+      "chunkTileMeta": "#{{n}} · {{tokens}} Tokens",
+      "copyText": "Text kopieren",
+      "chunkTitleHint": "Der Name, unter dem Antworten diesen Chunk zitieren.",
+      "files": "Dateien",
+      "filesLoadError": "Die Dateien konnten nicht geladen werden",
+      "filesByline_one": "{{files}} Datei · {{tokens}} Tokens",
+      "filesByline_other": "{{files}} Dateien · {{tokens}} Tokens",
+      "filterFiles": "Dateien filtern",
+      "searchChunks": "Chunks durchsuchen",
+      "chunkCount_one": "{{formatted}} Chunk",
+      "chunkCount_other": "{{formatted}} Chunks",
+      "editor": {
+        "write": "Schreiben",
+        "preview": "Vorschau",
+        "previewEmpty": "Noch nichts für die Vorschau.",
+        "cancel": "Abbrechen",
+        "close": "Schließen",
+        "discardMessage": "Ungespeicherte Änderungen verwerfen?",
+        "discard": "Verwerfen"
+      },
+      "editChunk": "Chunk bearbeiten",
+      "editChunkDescription": "{{file}} · Chunk {{n}} · {{tokens}} Tokens",
+      "previousChunk": "Vorheriger Chunk",
+      "nextChunk": "Nächster Chunk"
     },
     "analytics": {
       "label": "Analytik",
@@ -1018,7 +1101,9 @@
       "start": "Chat starten",
       "name": "Name",
       "choose": "Dateien auswählen",
-      "info": "Bitte lade .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip hoch (max. 25 MB)",
+      "dropzoneText": "Zum Hochladen klicken oder per Drag & Drop ablegen",
+      "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, Bilder, Audio, EPUB, JSON oder ZIP, jeweils bis zu 25 MB",
+      "filesRejected": "Nicht hinzugefügt (größer als 25 MB oder kein unterstützter Dateityp): {{files}}",
       "uploadedFiles": "Hochgeladene Dateien",
       "cancel": "Abbrechen",
       "train": "Trainieren",
@@ -1249,7 +1334,6 @@
       "promptText": "Prompt-Text",
       "save": "Speichern",
       "close": "Schließen",
-      "cancel": "Abbrechen",
       "delete": "Löschen",
       "deleteConfirmation": "Bist du sicher, dass du diesen Chunk löschen möchtest?"
     },
@@ -1346,7 +1430,8 @@
     "firstPage": "Erste Seite",
     "previousPage": "Vorherige Seite",
     "nextPage": "Nächste Seite",
-    "lastPage": "Letzte Seite"
+    "lastPage": "Letzte Seite",
+    "chunksPerPage": "Chunks pro Seite"
   },
   "conversation": {
     "copy": "Kopieren",
@@ -1569,15 +1654,16 @@
         "moreActions": "Weitere Aktionen"
       },
       "sections": {
-        "meta": "Meta",
-        "source": "Quelle",
         "prompt": "Prompt",
         "tools": "Werkzeuge",
         "agentType": "Agententyp",
         "models": "Modelle",
         "advanced": "Erweitert",
         "guardrails": "Guardrails",
-        "preview": "Vorschau"
+        "preview": "Vorschau",
+        "basics": "Grundlagen",
+        "knowledge": "Wissen und Verhalten",
+        "model": "Modell"
       },
       "placeholders": {
         "agentName": "Agentenname",
@@ -1622,7 +1708,11 @@
         "research": "Recherche"
       },
       "labels": {
-        "defaultModel": "Standardmodell"
+        "defaultModel": "Standardmodell",
+        "name": "Name",
+        "description": "Beschreibung",
+        "sources": "Quellen",
+        "avatar": "Avatar"
       },
       "advanced": {
         "jsonSchema": "JSON-Antwortschema",
@@ -1637,7 +1727,10 @@
         "systemPromptOverrideDescription": "Erlaubt v1-API-Aufrufern, den System-Prompt dieses Agenten zu ersetzen"
       },
       "preview": {
-        "publishedPreview": "Veröffentlichte Agenten können hier in der Vorschau angezeigt werden"
+        "savedVersion": "gespeicherte Version",
+        "publishTitle": "Zum Testen veröffentlichen",
+        "publishDescription": "Die Vorschau chattet mit dem veröffentlichten Agenten. Entwürfe bleiben privat, bis Sie sie veröffentlichen.",
+        "unsavedChanges": "Sie haben ungespeicherte Änderungen. Die Vorschau nutzt die gespeicherte Version, bis Sie speichern."
       },
       "dangerZone": {
         "heading": "Gefahrenzone",
@@ -1700,6 +1793,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "Richten Sie den Agenten ein und veröffentlichen Sie ihn, um mit ihm zu chatten."
+      },
+      "status": {
+        "published": "Veröffentlicht"
       }
     },
     "logs": {
@@ -1710,7 +1809,6 @@
     },
     "schedules": {
       "title": "Agenten-Zeitpläne",
-      "heading": "Zeitpläne",
       "newRecurring": "Neuer Zeitplan",
       "closeForm": "Formular schließen",
       "edit": "Bearbeiten",
@@ -1806,8 +1904,6 @@
         "output": "Ausgabe",
         "truncated": "(gekürzt)"
       },
-      "timezoneMeta": "Zeitzone: {{timezone}}",
-      "nextRunMeta": "nächster Lauf: {{time}}",
       "toolCard": {
         "cancelFailed": "Abbrechen fehlgeschlagen",
         "taskCancelled": "Geplante Aufgabe abgebrochen.",
@@ -1850,7 +1946,28 @@
       "runLog": {
         "when": "Wann",
         "details": "Details",
-        "empty": "Für diesen Zeitplan wurden noch keine Läufe aufgezeichnet."
+        "empty": "Für diesen Zeitplan wurden noch keine Läufe aufgezeichnet.",
+        "duration": "Dauer"
+      },
+      "actions": "Aktionen für den Zeitplan",
+      "cancelTask": "Aufgabe abbrechen",
+      "failureStreak_one": "{{count}} Fehlschlag in Folge",
+      "failureStreak_other": "{{count}} Fehlschläge in Folge",
+      "meta": {
+        "nextRun": "Nächster Lauf {{time}}",
+        "runsAt": "Läuft am {{time}}",
+        "lastRun": "Letzter Lauf {{time}}"
+      },
+      "stats": {
+        "active": "Aktive Zeitpläne",
+        "nextRun": "Nächster Lauf",
+        "runs": "Läufe, letzte {{days}} Tage",
+        "tokens": "{{tokens}} Tokens",
+        "failed": "Fehlgeschlagen, letzte {{days}} Tage",
+        "latestFailure": "Zuletzt: {{status}}, {{date}}",
+        "paused_one": "{{count}} pausiert",
+        "paused_other": "{{count}} pausiert",
+        "overdue": "Überfällig"
       }
     },
     "shared": {
@@ -1929,15 +2046,8 @@
         "saveFailed": "Workflow konnte nicht gespeichert werden",
         "defaultDescription": "Workflow-Agent: {{name}}",
         "newWorkflow": "Neuer Workflow",
-        "editDetails": "Workflow-Details bearbeiten",
-        "workflowName": "Workflow-Name",
         "workflowNamePlaceholder": "Workflow-Namen eingeben",
         "workflowDescriptionPlaceholder": "Beschreibe, was dieser Workflow macht",
-        "agentImageAlt": "Agentenbild",
-        "currentImage": "Aktuelles Bild",
-        "agentImage": "Agentenbild",
-        "agentImageHint": "Bildänderungen werden beim nächsten Speichern übernommen.",
-        "done": "Fertig",
         "unablePreview": "Workflow-Vorschau nicht möglich",
         "unableSave": "Workflow kann nicht gespeichert werden",
         "unablePublish": "Workflow kann nicht veröffentlicht werden",
@@ -1947,6 +2057,22 @@
         "setStateHint": "Workflow-Variablen ändern",
         "conditionHint": "Bedingte Verzweigung",
         "codeHint": "Code in einer Sandbox ausführen",
+        "paletteHint": "Auf die Arbeitsfläche ziehen oder zum Hinzufügen klicken.",
+        "nodeActions": "Knotenaktionen",
+        "duplicateNode": "Duplizieren",
+        "copyNodeId": "Knoten-ID kopieren",
+        "knowledge": "Wissen",
+        "output": "Ausgabe",
+        "streamToUserDescription": "Die Antwort dieses Knotens beim Schreiben im Chat anzeigen",
+        "advancedSettings": "Erweiterte Einstellungen",
+        "conditionMode": "Bedingungsmodus",
+        "branchName": "Name des Zweigs",
+        "variable": "Variable",
+        "value": "Wert",
+        "valueCel": "Wert (CEL)",
+        "addCondition": "Bedingung hinzufügen",
+        "assignment": "Zuweisung {{index}}",
+        "addAssignment": "Zuweisung hinzufügen",
         "startNode": "Startknoten",
         "endNode": "Endknoten",
         "stateTitle": "Globale Variablen setzen",
@@ -1975,7 +2101,7 @@
         "invalidSchema": "Ungültiges JSON-Schema: {{error}}",
         "noteContent": "Notizinhalt",
         "noteContentPlaceholder": "Notizinhalt eingeben",
-        "stateIntro": "Den Zustandsvariablen des Workflows Werte zuweisen",
+        "stateIntro": "Den Zustandsvariablen des Workflows Werte zuweisen.",
         "assignValue": "Wert zuweisen",
         "celHint": "Erstelle mit der Common Expression Language einen eigenen Ausdruck. Verweise auf den Zustand mit dem reinen Namen (<code>query</code>), nicht <code>{{braced}}</code>.",
         "learnMore": "Mehr erfahren",
@@ -1986,6 +2112,8 @@
         "caseNamePlaceholder": "Fallname (optional)",
         "variablePlaceholder": "Variable",
         "valuePlaceholder": "Wert",
+        "operator": "Operator",
+        "examplePlaceholder": "z. B. {{example}}",
         "opContains": "enthält",
         "opStartsWith": "beginnt",
         "conditionPlaceholder": "Bedingung eingeben, z. B. query.contains(\"refund\")",
@@ -1997,7 +2125,11 @@
         "cannotDeleteStart": "Startknoten kann nicht gelöscht werden",
         "deleteNode": "Knoten löschen",
         "deleteConfirm": "Möchtest du „{{name}}“ wirklich löschen?",
-        "deleteConfirmUnnamed": "Möchtest du diesen Workflow-Agenten wirklich löschen?"
+        "deleteConfirmUnnamed": "Möchtest du diesen Workflow-Agenten wirklich löschen?",
+        "detailsTitle": "Workflow-Details",
+        "detailsDescription": "Name, Beschreibung und Bild, die auf der Agentenkarte angezeigt werden.",
+        "unsavedChanges": "Nicht gespeicherte Änderungen",
+        "editDetailsMenu": "Details bearbeiten"
       },
       "validation": {
         "nameRequired": "Workflow-Name ist erforderlich",
@@ -2090,7 +2222,10 @@
         "searchPlaceholder": "Variablen suchen...",
         "empty": "Keine Variablen gefunden",
         "addContext": "Kontext hinzufügen"
-      }
+      },
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "fitView": "Ansicht anpassen"
     },
     "typeModal": {
       "title": "Neuen Agenten erstellen",
@@ -2141,6 +2276,10 @@
     },
     "profile": {
       "avatarAlt": "Benutzeravatar"
+    },
+    "multiSelect": {
+      "more_one": "+{{count}} weitere",
+      "more_other": "+{{count}} weitere"
     }
   },
   "pageNotFound": {

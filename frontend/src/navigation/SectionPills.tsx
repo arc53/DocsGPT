@@ -15,9 +15,10 @@ import { useSectionContext } from './useSectionContext';
  *
  * Sections whose destinations are separate pages (settings, admin) use
  * `SectionIndexPage` instead. This is for sections whose destinations are
- * views of the page you are already on — the agent list's filters, an
- * agent's own pages — where bouncing out to a menu to switch would be worse
- * than a row of pills.
+ * views of the page you are already on — the agent list's filters — where
+ * bouncing out to a menu to switch would be worse than a row of pills. An
+ * agent's own pages don't use it: the sidebar and the agent tile's menu
+ * already move between them.
  */
 export default function SectionPills({ className }: { className?: string }) {
   const { t } = useTranslation();

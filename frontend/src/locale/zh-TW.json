@@ -111,6 +111,7 @@
       "preLoaded": "預載入",
       "private": "私人",
       "sync": "同步",
+      "syncDone": "完成",
       "syncNow": "立即同步",
       "syncing": "同步中...",
       "reingest": "重新索引",
@@ -131,14 +132,10 @@
         "selectPage": "選擇頁面以查看其內容。",
         "edit": "編輯",
         "save": "儲存",
-        "cancel": "取消",
         "saveFailed": "無法儲存頁面。請再試一次。",
         "forbidden": "您沒有編輯此頁面的權限。",
         "conflict": "此頁面在您開啟後已變更，並已重新載入。您的編輯內容如下——請重新套用後再次儲存。",
         "editPlaceholder": "以 Markdown 撰寫頁面…",
-        "livingTitle": "動態 Wiki。",
-        "livingExplainer": "可由代理編輯的來源：代理工作時會讀取並改寫頁面，且預設透過代理搜尋工具向代理開放。",
-        "livingExplainerEditable": "任何使用此來源的代理都可以編輯它。",
         "stamp": {
           "editedBy": "由 {{who}} 編輯",
           "agent": "代理",
@@ -168,7 +165,17 @@
             "forbidden": "您沒有轉換此來源的權限。",
             "conflict": "此來源仍在索引中。請等候完成後再轉換。"
           }
-        }
+        },
+        "badge": "動態 Wiki",
+        "byline_other": "{{pages}} 個頁面 · {{tokens}} 個 token",
+        "explainer": "代理在工作時會閱讀並改寫這些頁面。",
+        "explainerEditable": "代理在工作時會閱讀並改寫這些頁面；任何使用此來源的代理都可以編輯它。",
+        "home": "首頁",
+        "filterPages": "篩選頁面",
+        "pagesTitle": "頁面",
+        "loadFailed": "無法載入 Wiki 頁面。",
+        "pageLoadFailed": "無法載入此頁面。",
+        "editTitle": "編輯頁面"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -201,13 +208,51 @@
         "view": {
           "action": "查看圖譜",
           "title": "知識圖譜",
-          "explainer": "節點代表實體，邊代表它們之間的關係。點擊節點可查看其描述及擷取來源的區塊。",
-          "stats": "{{nodes}} 個實體 · {{edges}} 個關係",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "尚無圖譜——擷取可能仍在進行中。",
           "selectNode": "選擇節點以查看其詳細資訊。",
-          "linkedChunks": "關聯區塊",
           "noChunks": "此實體沒有關聯的區塊。",
-          "close": "關閉"
+          "close": "關閉",
+          "tabs": {
+            "graph": "圖譜",
+            "entities": "實體",
+            "files": "檔案"
+          },
+          "findEntity": "尋找實體",
+          "entityName": "名稱",
+          "noEntities": "找不到實體",
+          "showTop": "顯示前",
+          "byConnections": "（依連結數）",
+          "typeFilter": "依類型篩選",
+          "otherTypes": "其他：{{types}}",
+          "otherTypesMore_other": "另外 {{formatted}} 個",
+          "untyped": "無類型",
+          "loadFailed": "無法載入圖譜。",
+          "entitiesLoadFailed": "無法載入實體。",
+          "nodeLoadFailed": "無法載入此實體。",
+          "loadingNode": "正在載入實體",
+          "connections": "連結數",
+          "mentionedIn": "出現於",
+          "showMore": "顯示更多",
+          "showLess": "收合",
+          "relationships": "關係",
+          "relationshipsCapped_other": "顯示 {{total}} 個關係中最強的 {{shown}} 個。",
+          "noRelationships": "此實體沒有關係。",
+          "relatedTo": "相關",
+          "showAll": "顯示全部 {{formatted}} 個",
+          "showFewer": "收合",
+          "sourceChunks": "來源區塊",
+          "showInGraph": "在圖譜中顯示",
+          "allTypes": "所有類型",
+          "chunkCount_other": "{{formatted}} 個區塊",
+          "entityCount_other": "{{formatted}} 個實體",
+          "relationshipCount_other": "{{formatted}} 個關係",
+          "chunk": "區塊",
+          "chunkMeta": "{{file}} · {{tokens}} Token",
+          "chunkTokens": "{{tokens}} Token",
+          "openInFiles": "在檔案中開啟",
+          "editChunk": "編輯區塊",
+          "chunkSaved": "區塊已儲存"
         }
       },
       "testRetrieval": {
@@ -239,14 +284,11 @@
       "shareWithTeam": "與團隊分享",
       "deleteWarning": "您確定要刪除 \"{{name}}\" 嗎？",
       "confirmDelete": "您確定要刪除此檔案嗎？此操作無法復原。",
-      "backToAll": "返回所有來源",
-      "back": "返回",
       "chunks": "文本塊",
       "noChunks": "未找到文本塊",
       "noChunksAlt": "未找到文本塊",
       "goToSources": "前往來源",
       "uploadNew": "上傳新文件",
-      "searchFiles": "搜尋檔案...",
       "noResults": "未找到結果",
       "fileName": "名稱",
       "tokens": "Token",
@@ -353,7 +395,40 @@
           "forbidden": "您沒有編輯此來源設定的權限。",
           "saveFailed": "儲存設定失敗。請再試一次。"
         }
-      }
+      },
+      "chunkErrors": {
+        "add": "無法新增文本塊",
+        "save": "無法儲存文本塊",
+        "delete": "無法刪除文本塊",
+        "load": "無法載入文本塊"
+      },
+      "chunkPosition": "第 {{n}} 個文本塊，共 {{total}} 個 · {{tokens}} Token",
+      "chunkCrumb": "第 {{n}} 個文本塊",
+      "chunkCrumbUnplaced": "已編輯的文本塊",
+      "chunkPositionUnplaced": "已編輯的文本塊 · {{tokens}} Token",
+      "editChunkDescriptionUnplaced": "{{file}} · 已編輯的文本塊 · {{tokens}} Token",
+      "chunkTileMeta": "#{{n}} · {{tokens}} Token",
+      "copyText": "複製文字",
+      "chunkTitleHint": "回答引用此文本塊時使用的名稱。",
+      "files": "檔案",
+      "filesLoadError": "無法載入檔案",
+      "filesByline_other": "{{files}} 個檔案 · {{tokens}} Token",
+      "filterFiles": "篩選檔案",
+      "searchChunks": "搜尋文本塊",
+      "chunkCount_other": "{{formatted}} 個文本塊",
+      "editor": {
+        "write": "編輯",
+        "preview": "預覽",
+        "previewEmpty": "目前沒有可預覽的內容。",
+        "cancel": "取消",
+        "close": "關閉",
+        "discardMessage": "要捨棄未儲存的變更嗎？",
+        "discard": "捨棄"
+      },
+      "editChunk": "編輯文本塊",
+      "editChunkDescription": "{{file}} · 第 {{n}} 個文本塊 · {{tokens}} Token",
+      "previousChunk": "上一個文本塊",
+      "nextChunk": "下一個文本塊"
     },
     "analytics": {
       "label": "分析",
@@ -1017,7 +1092,9 @@
       "start": "開始對話",
       "name": "名稱",
       "choose": "選擇檔案",
-      "info": "請上傳限制為25MB的.pdf、.txt、.rst、.csv、.xlsx、.xlsm、.xlsb、.xls、.ods、.docx、.docm、.doc、.odt、.rtf、.md、.html、.xhtml、.png、.jpg、.jpeg、.epub、.json、.pptx、.pptm、.ppt、.pps、.ppsx、.ppsm、.pot、.odp、.zip檔案",
+      "dropzoneText": "點擊上傳或拖放檔案",
+      "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、圖片、音訊、EPUB、JSON 或 ZIP，每個最大 25 MB",
+      "filesRejected": "未新增（超過 25 MB 或不支援的類型）：{{files}}",
       "uploadedFiles": "已上傳檔案",
       "cancel": "取消",
       "train": "訓練",
@@ -1248,7 +1325,6 @@
       "promptText": "提示文字",
       "save": "儲存",
       "close": "關閉",
-      "cancel": "取消",
       "delete": "刪除",
       "deleteConfirmation": "您確定要刪除此區塊嗎？"
     },
@@ -1344,7 +1420,8 @@
     "firstPage": "第一頁",
     "previousPage": "上一頁",
     "nextPage": "下一頁",
-    "lastPage": "最後一頁"
+    "lastPage": "最後一頁",
+    "chunksPerPage": "每頁文本塊數"
   },
   "conversation": {
     "copy": "複製",
@@ -1565,15 +1642,16 @@
         "moreActions": "更多操作"
       },
       "sections": {
-        "meta": "中繼資料",
-        "source": "來源",
         "prompt": "提示詞",
         "tools": "工具",
         "agentType": "代理類型",
         "models": "模型",
         "advanced": "進階",
         "guardrails": "Guardrails",
-        "preview": "預覽"
+        "preview": "預覽",
+        "basics": "基本資訊",
+        "knowledge": "知識與行為",
+        "model": "模型"
       },
       "placeholders": {
         "agentName": "代理名稱",
@@ -1618,7 +1696,11 @@
         "research": "研究"
       },
       "labels": {
-        "defaultModel": "預設模型"
+        "defaultModel": "預設模型",
+        "name": "名稱",
+        "description": "描述",
+        "sources": "來源",
+        "avatar": "頭像"
       },
       "advanced": {
         "jsonSchema": "JSON回應架構",
@@ -1633,7 +1715,10 @@
         "systemPromptOverrideDescription": "允許 v1 API 呼叫者替換此代理的系統提示詞"
       },
       "preview": {
-        "publishedPreview": "已發佈的代理可以在此處預覽"
+        "savedVersion": "已儲存版本",
+        "publishTitle": "發佈後即可預覽",
+        "publishDescription": "預覽會與已發佈的代理對話。草稿在發佈前會保持私密。",
+        "unsavedChanges": "你有未儲存的變更。儲存之前，預覽會使用已儲存的版本。"
       },
       "dangerZone": {
         "heading": "危險區域",
@@ -1695,6 +1780,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "設定好代理後發佈，即可與它對話。"
+      },
+      "status": {
+        "published": "已發佈"
       }
     },
     "logs": {
@@ -1705,7 +1796,6 @@
     },
     "schedules": {
       "title": "代理排程",
-      "heading": "排程",
       "newRecurring": "新增排程",
       "closeForm": "關閉表單",
       "edit": "編輯",
@@ -1801,8 +1891,6 @@
         "output": "輸出",
         "truncated": "（已截斷）"
       },
-      "timezoneMeta": "時區：{{timezone}}",
-      "nextRunMeta": "下次：{{time}}",
       "toolCard": {
         "cancelFailed": "取消失敗",
         "taskCancelled": "已取消排程工作。",
@@ -1845,7 +1933,28 @@
       "runLog": {
         "when": "時間",
         "details": "詳細資料",
-        "empty": "此排程尚無執行紀錄。"
+        "empty": "此排程尚無執行紀錄。",
+        "duration": "時長"
+      },
+      "actions": "排程操作",
+      "cancelTask": "取消任務",
+      "failureStreak_one": "連續失敗 {{count}} 次",
+      "failureStreak_other": "連續失敗 {{count}} 次",
+      "meta": {
+        "nextRun": "下次執行：{{time}}",
+        "runsAt": "執行時間：{{time}}",
+        "lastRun": "上次執行：{{time}}"
+      },
+      "stats": {
+        "active": "啟用中的排程",
+        "nextRun": "下次執行",
+        "runs": "執行次數（近 {{days}} 天）",
+        "tokens": "{{tokens}} 個權杖",
+        "failed": "失敗（近 {{days}} 天）",
+        "latestFailure": "最近：{{status}}，{{date}}",
+        "paused_one": "{{count}} 個已暫停",
+        "paused_other": "{{count}} 個已暫停",
+        "overdue": "已逾期"
       }
     },
     "shared": {
@@ -1924,15 +2033,8 @@
         "saveFailed": "無法儲存工作流程",
         "defaultDescription": "工作流程代理：{{name}}",
         "newWorkflow": "新增工作流程",
-        "editDetails": "編輯工作流程詳細資料",
-        "workflowName": "工作流程名稱",
         "workflowNamePlaceholder": "輸入工作流程名稱",
         "workflowDescriptionPlaceholder": "描述此工作流程的用途",
-        "agentImageAlt": "代理圖片",
-        "currentImage": "目前圖片",
-        "agentImage": "代理圖片",
-        "agentImageHint": "圖片更新將於下次儲存時生效。",
-        "done": "完成",
         "unablePreview": "無法預覽工作流程",
         "unableSave": "無法儲存工作流程",
         "unablePublish": "無法發佈工作流程",
@@ -1942,6 +2044,22 @@
         "setStateHint": "修改工作流程變數",
         "conditionHint": "條件分支",
         "codeHint": "在沙箱中執行程式碼",
+        "paletteHint": "拖曳到畫布上，或點擊新增。",
+        "nodeActions": "節點操作",
+        "duplicateNode": "複製",
+        "copyNodeId": "複製節點 ID",
+        "knowledge": "知識",
+        "output": "輸出",
+        "streamToUserDescription": "在生成過程中將此節點的回答顯示在聊天中",
+        "advancedSettings": "進階設定",
+        "conditionMode": "條件模式",
+        "branchName": "分支名稱",
+        "variable": "變數",
+        "value": "值",
+        "valueCel": "值 (CEL)",
+        "addCondition": "新增條件",
+        "assignment": "指定 {{index}}",
+        "addAssignment": "新增指定",
         "startNode": "開始節點",
         "endNode": "結束節點",
         "stateTitle": "設定全域變數",
@@ -1970,7 +2088,7 @@
         "invalidSchema": "JSON Schema 無效：{{error}}",
         "noteContent": "備註內容",
         "noteContentPlaceholder": "輸入備註內容",
-        "stateIntro": "為工作流程的狀態變數指定值",
+        "stateIntro": "為工作流程的狀態變數指定值。",
         "assignValue": "指定值",
         "celHint": "使用 Common Expression Language 撰寫自訂運算式。直接以名稱參照狀態（<code>query</code>），而非 <code>{{braced}}</code>。",
         "learnMore": "瞭解更多",
@@ -1981,6 +2099,8 @@
         "caseNamePlaceholder": "分支名稱（選填）",
         "variablePlaceholder": "變數",
         "valuePlaceholder": "值",
+        "operator": "運算子",
+        "examplePlaceholder": "例如 {{example}}",
         "opContains": "包含",
         "opStartsWith": "開頭為",
         "conditionPlaceholder": "輸入條件，例如 query.contains(\"refund\")",
@@ -1992,7 +2112,11 @@
         "cannotDeleteStart": "無法刪除開始節點",
         "deleteNode": "刪除節點",
         "deleteConfirm": "確定要刪除「{{name}}」嗎？",
-        "deleteConfirmUnnamed": "確定要刪除此工作流程代理嗎？"
+        "deleteConfirmUnnamed": "確定要刪除此工作流程代理嗎？",
+        "detailsTitle": "工作流程詳細資料",
+        "detailsDescription": "顯示在代理卡片上的名稱、說明和圖片。",
+        "unsavedChanges": "未儲存的變更",
+        "editDetailsMenu": "編輯詳細資料"
       },
       "validation": {
         "nameRequired": "工作流程名稱為必填",
@@ -2085,7 +2209,10 @@
         "searchPlaceholder": "搜尋變數...",
         "empty": "找不到變數",
         "addContext": "新增內容"
-      }
+      },
+      "zoomIn": "放大",
+      "zoomOut": "縮小",
+      "fitView": "符合檢視"
     },
     "typeModal": {
       "title": "建立新代理",
@@ -2135,6 +2262,10 @@
     },
     "profile": {
       "avatarAlt": "使用者頭像"
+    },
+    "multiSelect": {
+      "more_one": "另外 {{count}} 個",
+      "more_other": "另外 {{count}} 個"
     }
   },
   "pageNotFound": {

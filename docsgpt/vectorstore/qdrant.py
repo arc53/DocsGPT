@@ -206,6 +206,50 @@ class QdrantStore(BaseVectorStore):
         ids = self.add_texts([text], [metadata or {}])
         return ids[0]
 
+    def update_chunk(self, chunk_id: str, text: str, metadata: Dict[str, Any]) -> str:
+        """Overwrite a chunk's point in place, keeping its id.
+
+        Upserting the same id replaces the vector and payload; ``scroll``
+        orders by point id, so the chunk also keeps its place in
+        :meth:`get_chunks`. The payload has the shape :meth:`add_texts` writes.
+
+        Args:
+            chunk_id: Id of the point to replace.
+            text: The chunk's new text.
+            metadata: The chunk's complete new metadata; ``source_id`` is
+                stamped on it for source scoping.
+
+        Returns:
+            ``chunk_id``, unchanged.
+
+        Raises:
+            KeyError: If this source has no point with that id.
+        """
+        records = self._client.retrieve(
+            collection_name=self._collection,
+            ids=[chunk_id],
+            with_payload=True,
+            with_vectors=False,
+        )
+        payload = (records[0].payload or {}) if records else {}
+        if (payload.get("metadata") or {}).get("source_id") != self._source_id:
+            raise KeyError(f"Chunk {chunk_id} not found for source {self._source_id}")
+
+        vector = self._embeddings.embed_documents([text])[0]
+        payload_metadata = dict(metadata or {})
+        payload_metadata["source_id"] = self._source_id
+        self._client.upsert(
+            collection_name=self._collection,
+            points=[
+                self._models.PointStruct(
+                    id=chunk_id,
+                    vector=vector,
+                    payload={"page_content": text, "metadata": payload_metadata},
+                )
+            ],
+        )
+        return chunk_id
+
     def delete_chunk(self, chunk_id: str) -> bool:
         """Delete a single chunk by id."""
         try:

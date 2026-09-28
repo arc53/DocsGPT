@@ -444,6 +444,197 @@ class TestGraphStoreLive:
         finally:
             store.delete_by_source(source_id)
 
+    def _seed_typed_graph(self, store, source_id):
+        """Six nodes whose types spell ``person`` three ways, plus edges for degree."""
+        ids = {
+            "ada": store.upsert_node(source_id, "Ada Lovelace", "ada lovelace", "Person"),
+            "alan": store.upsert_node(source_id, "Alan Turing", "alan turing", "Person"),
+            "grace": store.upsert_node(source_id, "Grace Hopper", "grace hopper", "PERSON"),
+            "babbage": store.upsert_node(source_id, "Babbage", "babbage", "per son"),
+            "acme": store.upsert_node(source_id, "Acme_Corp", "acme_corp", "org"),
+            "sure": store.upsert_node(source_id, "100%_Sure", "100%_sure"),
+        }
+        # Degrees: ada 3, alan 2, acme 2, grace 1, babbage 0, sure 0.
+        store.add_edge(source_id, ids["ada"], ids["alan"], "knows")
+        store.add_edge(source_id, ids["ada"], ids["acme"], "works_at")
+        store.add_edge(source_id, ids["grace"], ids["ada"], "cites")
+        store.add_edge(source_id, ids["alan"], ids["acme"], "works_at")
+        store.set_node_degrees(source_id)
+        return ids
+
+    def test_list_nodes_filters_pages_and_counts(self, store, source_id):
+        try:
+            ids = self._seed_typed_graph(store, source_id)
+
+            everything = store.list_nodes(source_id)
+            assert everything["total"] == 6
+            ordered = [n["id"] for n in everything["nodes"]]
+            assert ordered[0] == ids["ada"]
+            # Degree DESC, then id: alan and acme tie on 2.
+            assert set(ordered[1:3]) == {ids["alan"], ids["acme"]}
+            assert ordered[1:3] == sorted(ordered[1:3])
+            first = everything["nodes"][0]
+            assert set(first) == {"id", "name", "type", "degree", "doc_freq"}
+            assert first["degree"] == 3 and first["doc_freq"] == 1
+
+            by_name = store.list_nodes(source_id, query="ADA")
+            assert [n["id"] for n in by_name["nodes"]] == [ids["ada"]]
+            assert by_name["total"] == 1
+
+            # ``%`` and ``_`` are literals, not wildcards.
+            assert [n["id"] for n in store.list_nodes(source_id, query="%")["nodes"]] == [
+                ids["sure"]
+            ]
+            underscored = store.list_nodes(source_id, query="_")
+            assert {n["id"] for n in underscored["nodes"]} == {ids["acme"], ids["sure"]}
+
+            people = store.list_nodes(source_id, type_key="person")
+            assert people["total"] == 4
+            assert {n["id"] for n in people["nodes"]} == {
+                ids["ada"], ids["alan"], ids["grace"], ids["babbage"]
+            }
+
+            untyped = store.list_nodes(source_id, type_key="")
+            assert [n["id"] for n in untyped["nodes"]] == [ids["sure"]]
+
+            both = store.list_nodes(source_id, query="a", type_key="person")
+            assert both["total"] == 4
+
+            page = store.list_nodes(source_id, type_key="person", offset=1, limit=2)
+            assert page["total"] == 4
+            assert [n["id"] for n in page["nodes"]] == [
+                n["id"] for n in people["nodes"][1:3]
+            ]
+            beyond = store.list_nodes(source_id, offset=50, limit=10)
+            assert beyond == {"nodes": [], "total": 6}
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_node_type_facets_fold_spellings_into_one_key(self, store, source_id):
+        try:
+            self._seed_typed_graph(store, source_id)
+
+            facets = store.node_type_facets(source_id)
+
+            assert facets == [
+                {"key": "person", "label": "Person", "count": 4},
+                {"key": "org", "label": "org", "count": 1},
+                {"key": "", "label": None, "count": 1},
+            ]
+            assert store.node_type_facets(str(uuid.uuid4())) == []
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_count_edges(self, store, source_id):
+        try:
+            assert store.count_edges(source_id) == 0
+            self._seed_typed_graph(store, source_id)
+            assert store.count_edges(source_id) == 4
+            assert store.count_edges(str(uuid.uuid4())) == 0
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_node_detail_lists_relationships_in_both_directions(self, store, source_id):
+        try:
+            ids = self._seed_typed_graph(store, source_id)
+            # ``add_edge`` drops self-loops, so plant one directly: the reader
+            # must skip it too.
+            conn = store._get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO graph_edges (id, source_id, src_node_id, dst_node_id, type) "
+                    "VALUES (%s, %s, %s, %s, 'self');",
+                    (str(uuid.uuid4()), source_id, ids["ada"], ids["ada"]),
+                )
+            conn.commit()
+
+            detail = store.get_node_detail(source_id, ids["ada"])
+
+            assert detail["name"] == "Ada Lovelace"
+            assert "chunks" in detail
+            rels = detail["relationships"]
+            assert len(rels) == 3
+            # Neighbour degree DESC, then neighbour id: alan and acme tie on 2.
+            assert [r["id"] for r in rels[:2]] == sorted([ids["alan"], ids["acme"]])
+            by_id = {r["id"]: r for r in rels}
+            assert by_id[ids["alan"]] == {
+                "id": ids["alan"], "name": "Alan Turing", "type": "Person",
+                "degree": 2, "edge_type": "knows", "direction": "out",
+            }
+            assert by_id[ids["acme"]]["edge_type"] == "works_at"
+            assert by_id[ids["acme"]]["direction"] == "out"
+            assert rels[2] == {
+                "id": ids["grace"], "name": "Grace Hopper", "type": "PERSON",
+                "degree": 1, "edge_type": "cites", "direction": "in",
+            }
+
+            assert detail["relationships_total"] == 3
+
+            lonely = store.get_node_detail(source_id, ids["babbage"])
+            assert lonely["relationships"] == []
+            assert lonely["relationships_total"] == 0
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_node_detail_counts_every_relationship_past_the_cap(
+        self, store, source_id, monkeypatch
+    ):
+        try:
+            ids = self._seed_typed_graph(store, source_id)
+            conn = store._get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO graph_edges (id, source_id, src_node_id, dst_node_id, type) "
+                    "VALUES (%s, %s, %s, %s, 'self');",
+                    (str(uuid.uuid4()), source_id, ids["ada"], ids["ada"]),
+                )
+            conn.commit()
+            monkeypatch.setattr(store_module, "MAX_NODE_RELATIONSHIPS", 2)
+
+            detail = store.get_node_detail(source_id, ids["ada"])
+
+            # The list stops at the cap; the total counts both directions and
+            # still skips the self-loop.
+            assert len(detail["relationships"]) == 2
+            assert detail["relationships_total"] == 3
+        finally:
+            store.delete_by_source(source_id)
+
+    def test_remap_chunk_moves_every_link_to_the_new_id(self, store, source_id):
+        try:
+            ada = store.upsert_node(source_id, "Ada", "ada")
+            alan = store.upsert_node(source_id, "Alan", "alan")
+            store.link_node_chunk(source_id, ada, "old")
+            store.link_node_chunk(source_id, alan, "keep")
+            store.add_edge(
+                source_id, ada, alan, "knows", source_chunk_ids=["keep", "old"]
+            )
+            store.mark_chunk(source_id, "old", "done")
+            other = str(uuid.uuid4())
+            other_node = store.upsert_node(other, "Ada", "ada")
+            store.link_node_chunk(other, other_node, "old")
+
+            store.remap_chunk(source_id, "old", "new")
+
+            links = store.get_chunk_ids_for_nodes(source_id, [ada, alan])
+            assert links == {ada: ["new"], alan: ["keep"]}
+            conn = store._get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT source_chunk_ids FROM graph_edges WHERE source_id = %s;",
+                    (source_id,),
+                )
+                assert cursor.fetchone()[0] == ["keep", "new"]
+            conn.rollback()
+            assert store.pending_chunks(source_id, ["old", "new"]) == ["old"]
+            # Another source's link to the same chunk id is left alone.
+            assert store.get_chunk_ids_for_nodes(other, [other_node]) == {
+                other_node: ["old"]
+            }
+        finally:
+            store.delete_by_source(source_id)
+            store.delete_by_source(other)
+
     def test_checkpoint_pending_and_mark(self, store, source_id):
         try:
             all_chunks = ["c1", "c2", "c3"]
@@ -647,6 +838,238 @@ class TestGraphStoreParameterization:
         # An empty node fetch short-circuits; only the node query ran, and the
         # limit is clamped to the hard cap before binding.
         assert params == (sid, GRAPH_OVERVIEW_MAX_LIMIT)
+
+    def test_count_edges_binds_source(self):
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchone.return_value = [7]
+        sid = str(uuid.uuid4())
+
+        assert store.count_edges(sid) == 7
+
+        sql, params = cursor.execute.call_args.args
+        assert "FROM graph_edges" in sql
+        assert "source_id = %s" in sql
+        assert sid not in sql
+        assert params == (sid,)
+
+    def test_count_edges_failure_reports_zero(self):
+        store, cursor = self._store_with_mock_conn()
+        cursor.execute.side_effect = RuntimeError("relation does not exist")
+
+        assert store.count_edges(str(uuid.uuid4())) == 0
+
+    def test_count_edges_has_no_strict_mode(self):
+        import inspect
+
+        assert "strict" not in inspect.signature(GraphStore.count_edges).parameters
+
+    def test_list_nodes_binds_values_and_escapes_the_pattern(self):
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchone.return_value = [0]
+        cursor.fetchall.side_effect = [[("Person",), ("person",), ("Org",)], []]
+        sid = str(uuid.uuid4())
+        query = "50%_a\\b"
+
+        result = store.list_nodes(
+            sid, query=query, type_key="person", offset=40, limit=10_000
+        )
+
+        assert result == {"nodes": [], "total": 0}
+        pattern = "%50\\%\\_a\\\\b%"
+        types_sql, types_params = cursor.execute.call_args_list[0].args
+        assert "DISTINCT type" in types_sql
+        assert types_params == (sid,)
+        for call in cursor.execute.call_args_list[1:]:
+            sql, params = call.args
+            assert sid not in sql
+            assert query not in sql
+            assert "person" not in sql
+            assert "ILIKE %s" in sql
+            assert "type = ANY(%s)" in sql
+            assert params[:3] == (sid, pattern, ["Person", "person"])
+        count_sql, count_params = cursor.execute.call_args_list[1].args
+        assert "count(*)" in count_sql
+        page_sql, page_params = cursor.execute.call_args_list[-1].args
+        assert "ORDER BY degree DESC, id" in page_sql
+        # The page size is clamped to the hard cap before binding.
+        assert page_params[3:] == (store_module.GRAPH_NODE_LIST_MAX_LIMIT, 40)
+
+    def test_list_nodes_without_filters_binds_only_the_source(self):
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchone.return_value = [0]
+        sid = str(uuid.uuid4())
+
+        store.list_nodes(sid, query="  ", offset=-5, limit=0)
+
+        count_sql, count_params = cursor.execute.call_args_list[0].args
+        assert "ILIKE" not in count_sql
+        assert "regexp_replace" not in count_sql
+        assert count_params == (sid,)
+        _, page_params = cursor.execute.call_args_list[-1].args
+        assert page_params == (sid, 1, 0)
+
+    def test_list_nodes_failure_propagates(self):
+        store, cursor = self._store_with_mock_conn()
+        cursor.execute.side_effect = RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
+            store.list_nodes("sid")
+        cursor.close.assert_called_once()
+
+    def test_list_nodes_empty_graph_returns_empty(self):
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchone.return_value = [0]
+        cursor.fetchall.return_value = []
+
+        assert store.list_nodes("sid") == {"nodes": [], "total": 0}
+
+    def test_node_type_facets_bind_source(self):
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchall.return_value = [("Person", 4), (None, 1)]
+        sid = str(uuid.uuid4())
+
+        facets = store.node_type_facets(sid)
+
+        sql, params = cursor.execute.call_args.args
+        assert sid not in sql
+        assert params == (sid,)
+        assert facets == [
+            {"key": "person", "label": "Person", "count": 4},
+            {"key": "", "label": None, "count": 1},
+        ]
+
+    def test_node_type_facets_failure_propagates(self):
+        store, cursor = self._store_with_mock_conn()
+        cursor.execute.side_effect = RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
+            store.node_type_facets("sid")
+        cursor.close.assert_called_once()
+
+    def test_node_type_facets_empty_graph_returns_empty(self):
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchall.return_value = []
+
+        assert store.node_type_facets("sid") == []
+
+    def test_node_detail_relationships_bind_ids_and_cap(self):
+        store, cursor = self._store_with_mock_conn()
+        sid = str(uuid.uuid4())
+        nid = str(uuid.uuid4())
+        other = str(uuid.uuid4())
+        cursor.fetchone.return_value = (nid, "Ada", "person", "d", 1, 1)
+        cursor.fetchall.side_effect = [
+            [(other, "Alan", "person", 2, "knows", "out")],  # relationships
+            [],  # chunk ids
+        ]
+
+        detail = store.get_node_detail(sid, nid)
+
+        assert detail["relationships"] == [
+            {"id": other, "name": "Alan", "type": "person", "degree": 2,
+             "edge_type": "knows", "direction": "out"},
+        ]
+        rel_call = next(
+            c for c in cursor.execute.call_args_list if "direction" in c.args[0]
+        )
+        sql, params = rel_call.args
+        assert sid not in sql and nid not in sql
+        assert "src_node_id <> e.dst_node_id" in sql
+        assert sid in params and nid in params
+        assert params[-1] == store_module.MAX_NODE_RELATIONSHIPS == 300
+        # Under the cap the list is the whole set: no COUNT query.
+        assert detail["relationships_total"] == 1
+        assert not any(
+            "COUNT(*)" in c.args[0] for c in cursor.execute.call_args_list
+        )
+
+    def test_node_detail_counts_relationships_when_capped(self, monkeypatch):
+        store, cursor = self._store_with_mock_conn()
+        monkeypatch.setattr(store_module, "MAX_NODE_RELATIONSHIPS", 2)
+        sid = str(uuid.uuid4())
+        nid = str(uuid.uuid4())
+        rel = (str(uuid.uuid4()), "Alan", "person", 2, "knows", "out")
+        cursor.fetchone.side_effect = [
+            (nid, "Ada", "person", "d", 1, 1),  # the node
+            (1204,),  # relationships total
+        ]
+        cursor.fetchall.side_effect = [[rel, rel], []]
+
+        detail = store.get_node_detail(sid, nid)
+
+        assert len(detail["relationships"]) == 2
+        assert detail["relationships_total"] == 1204
+        count_sql, count_params = next(
+            c.args for c in cursor.execute.call_args_list if "COUNT(*)" in c.args[0]
+        )
+        assert sid not in count_sql and nid not in count_sql
+        assert "src_node_id <> e.dst_node_id" in count_sql
+        assert "LIMIT" not in count_sql
+        assert sid in count_params and nid in count_params
+
+    def test_node_detail_total_falls_back_when_the_count_fails(self, monkeypatch):
+        store, cursor = self._store_with_mock_conn()
+        monkeypatch.setattr(store_module, "MAX_NODE_RELATIONSHIPS", 1)
+        sid = str(uuid.uuid4())
+        nid = str(uuid.uuid4())
+        cursor.fetchone.return_value = (nid, "Ada", "person", "d", 1, 1)
+        cursor.fetchall.side_effect = [
+            [(str(uuid.uuid4()), "Alan", "person", 2, "knows", "out")],
+            [],
+        ]
+
+        def execute(sql, params=None):
+            if "COUNT(*)" in sql:
+                raise RuntimeError("boom")
+
+        cursor.execute.side_effect = execute
+
+        detail = store.get_node_detail(sid, nid)
+
+        assert detail["relationships_total"] == 1
+        assert len(detail["relationships"]) == 1
+
+    def test_remap_chunk_binds_ids_under_the_source_lock(self):
+        store, cursor = self._store_with_mock_conn()
+        store._write_with_reconnect = lambda write: write(store._connection)
+        sid = str(uuid.uuid4())
+
+        store.remap_chunk(sid, "old-id", "new-id")
+
+        calls = cursor.execute.call_args_list
+        assert "pg_advisory_xact_lock" in calls[0].args[0]
+        tables = ["graph_node_chunks", "graph_edges", "graph_ingest_progress"]
+        for table in tables:
+            sql, params = next(c.args for c in calls if table in c.args[0])
+            assert sid not in sql and "old-id" not in sql and "new-id" not in sql
+            assert {sid, "old-id", "new-id"} <= set(params)
+        store._connection.commit.assert_called_once()
+
+    def test_node_detail_survives_a_relationships_failure(self):
+        # A failed relationships read degrades to an empty list; the node and
+        # its chunks still come back instead of the whole detail 404ing.
+        store, cursor = self._store_with_mock_conn()
+        conn = store._connection
+        sid = str(uuid.uuid4())
+        nid = str(uuid.uuid4())
+        cursor.fetchone.return_value = (nid, "Ada", "person", "d", 1, 1)
+
+        def execute(sql, params=None):
+            if "direction" in sql:
+                raise RuntimeError("boom")
+
+        cursor.execute.side_effect = execute
+        cursor.fetchall.return_value = []
+
+        detail = store.get_node_detail(sid, nid)
+
+        assert detail is not None
+        assert detail["name"] == "Ada"
+        assert detail["relationships"] == []
+        assert detail["relationships_total"] == 0
+        assert detail["chunks"] == []
+        # The aborted transaction is rolled back before the chunk read reuses it.
+        assert conn.rollback.call_count >= 2
 
     def test_upsert_node_binds_all_values(self):
         store, cursor = self._store_with_mock_conn()
@@ -1028,6 +1451,14 @@ class TestGraphSchemaIsBootOwned:
             lambda s: s.get_chunk_ids_for_nodes("sid", ["n"]),
             lambda s: s.pending_chunks("sid", ["c1"]),
             lambda s: s.get_progress("sid"),
+            lambda s: s.count_edges("sid"),
+            # list_nodes now surfaces query errors, so feed it a numeric count row.
+            lambda s: (
+                setattr(s._get_connection().cursor(), "fetchone", lambda: [0]),
+                s.list_nodes("sid", query="a", type_key="person"),
+            ),
+            lambda s: s.node_type_facets("sid"),
+            lambda s: s.get_node_detail("sid", "n"),
         ],
         ids=[
             "count_nodes",
@@ -1039,6 +1470,10 @@ class TestGraphSchemaIsBootOwned:
             "get_chunk_ids_for_nodes",
             "pending_chunks",
             "get_progress",
+            "count_edges",
+            "list_nodes",
+            "node_type_facets",
+            "get_node_detail",
         ],
     )
     def test_reads_never_create_tables(self, call):
@@ -1546,3 +1981,182 @@ class TestApplyChunkIsReplaySafe:
             assert node["doc_freq"] == 2
         finally:
             store.delete_by_source(source_id)
+
+
+@pytest.mark.unit
+class TestGraphTypeKey:
+    """The Python type key must match the frontend's."""
+
+    @pytest.mark.parametrize(
+        "raw, key",
+        [
+            ("Person", "person"),
+            ("PERSON", "person"),
+            ("per son", "person"),
+            ("Org-Unit_2", "orgunit2"),
+            ("", ""),
+            (None, ""),
+            ("---", ""),
+        ],
+    )
+    def test_key(self, raw, key):
+        assert store_module.graph_type_key(raw) == key
+        # Non-ASCII types fold the same way the frontend's ``\p{L}\p{N}`` does.
+        assert store_module.graph_type_key("Ком-пания") == "компания"
+        assert store_module.graph_type_key("人 物") == "人物"
+
+
+@pytest.mark.integration
+class TestTypeKeysOnACLocaleDatabase:
+    """Type keys must not depend on the database's ``LC_CTYPE``.
+
+    Managed Postgres commonly runs ``C``: there ``lower()`` leaves Cyrillic
+    alone and ``[:alnum:]`` matches ASCII only, so a key computed in SQL folds
+    ``Компания`` to ``""``. Only the columns these reads touch are created, so
+    the test runs without the pgvector extension.
+    """
+
+    @pytest.fixture
+    def c_store(self, postgresql):
+        import psycopg
+
+        base = _ephemeral_dsn(postgresql.info)
+        dbname = f"graph_c_{uuid.uuid4().hex[:8]}"
+        with psycopg.connect(base, autocommit=True) as admin:
+            admin.execute(
+                f"CREATE DATABASE {dbname} TEMPLATE template0 ENCODING 'UTF8' "
+                "LC_COLLATE 'C' LC_CTYPE 'C';"
+            )
+        dsn = base.rsplit("/", 1)[0] + f"/{dbname}"
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute(
+                """
+                CREATE TABLE graph_nodes (
+                    id UUID PRIMARY KEY, source_id UUID NOT NULL, name TEXT,
+                    normalized_name TEXT, type TEXT, description TEXT,
+                    degree INT DEFAULT 0, doc_freq INT DEFAULT 0
+                );
+                """
+            )
+        store = GraphStore(connection_string=dsn)
+        store._pool_max_size = 0
+        try:
+            yield store, dsn
+        finally:
+            store.close()
+            with psycopg.connect(base, autocommit=True) as admin:
+                admin.execute(f"DROP DATABASE IF EXISTS {dbname} WITH (FORCE);")
+
+    def test_non_ascii_types_facet_and_filter(self, c_store):
+        import psycopg
+
+        store, dsn = c_store
+        sid, other = str(uuid.uuid4()), str(uuid.uuid4())
+        rows = [
+            (sid, "a", "Компания", 5),
+            (sid, "b", "Компания", 4),
+            (sid, "c", "компания", 3),
+            (sid, "d", "人物", 2),
+            (sid, "e", "人 物", 1),
+            (sid, "f", None, 0),
+            (sid, "g", "---", 0),
+            (sid, "h", "Person", 0),
+            (other, "x", "Компания", 9),
+        ]
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            for source, name, type_, degree in rows:
+                conn.execute(
+                    "INSERT INTO graph_nodes (id, source_id, name, normalized_name, "
+                    "type, degree) VALUES (%s, %s, %s, %s, %s, %s);",
+                    (str(uuid.uuid4()), source, name, name, type_, degree),
+                )
+
+        assert store.node_type_facets(sid) == [
+            {"key": "компания", "label": "Компания", "count": 3},
+            {"key": "人物", "label": "人 物", "count": 2},
+            {"key": "", "label": None, "count": 2},
+            {"key": "person", "label": "Person", "count": 1},
+        ]
+        companies = store.list_nodes(sid, type_key="компания")
+        assert companies["total"] == 3
+        assert [n["name"] for n in companies["nodes"]] == ["a", "b", "c"]
+        assert store.list_nodes(sid, type_key="人物")["total"] == 2
+        untyped = store.list_nodes(sid, type_key="")
+        assert sorted(n["name"] for n in untyped["nodes"]) == ["f", "g"]
+        assert store.list_nodes(sid, type_key="person", query="h")["total"] == 1
+        assert store.list_nodes(sid, type_key="missing") == {"nodes": [], "total": 0}
+
+
+@pytest.mark.unit
+class TestTypeKeyFoldingInPython:
+    """Facets and the type filter fold raw types with ``graph_type_key``."""
+
+    def _store(self):
+        store = GraphStore.__new__(GraphStore)
+        cursor = MagicMock()
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        store._connection = conn
+        store._get_connection = lambda: conn
+        store._tables_ensured = True
+        return store, cursor
+
+    def test_facets_group_raw_types_and_pick_the_label(self):
+        store, cursor = self._store()
+        cursor.fetchall.return_value = [
+            ("Компания", 2), ("компания", 2), ("КОМПАНИЯ", 1),
+            (None, 1), ("---", 3), ("人物", 5),
+        ]
+        sid = str(uuid.uuid4())
+
+        facets = store.node_type_facets(sid)
+
+        sql_text, params = cursor.execute.call_args.args
+        assert "GROUP BY type" in sql_text
+        assert "regexp_replace" not in sql_text
+        assert params == (sid,)
+        # Most frequent spelling wins; a tie goes to the alphabetically first.
+        assert facets == [
+            {"key": "компания", "label": "Компания", "count": 5},
+            {"key": "人物", "label": "人物", "count": 5},
+            {"key": "", "label": None, "count": 4},
+        ]
+
+    def test_type_filter_binds_the_matching_raw_types(self):
+        store, cursor = self._store()
+        cursor.fetchall.side_effect = [
+            [("Компания",), ("компания",), ("Person",), (None,)],
+            [],
+        ]
+        cursor.fetchone.return_value = [3]
+        sid = str(uuid.uuid4())
+
+        result = store.list_nodes(sid, type_key="компания")
+
+        assert result == {"nodes": [], "total": 3}
+        distinct_sql, distinct_params = cursor.execute.call_args_list[0].args
+        assert "DISTINCT type" in distinct_sql
+        assert distinct_params == (sid,)
+        count_sql, count_params = cursor.execute.call_args_list[1].args
+        assert "type = ANY(%s)" in count_sql
+        assert "IS NULL" not in count_sql
+        assert count_params == (sid, ["Компания", "компания"])
+
+    def test_untyped_filter_includes_null_and_types_that_fold_to_empty(self):
+        store, cursor = self._store()
+        cursor.fetchall.side_effect = [[("---",), ("Person",), (None,)], []]
+        cursor.fetchone.return_value = [2]
+        sid = str(uuid.uuid4())
+
+        store.list_nodes(sid, type_key="")
+
+        count_sql, count_params = cursor.execute.call_args_list[1].args
+        assert "type IS NULL OR type = ANY(%s)" in count_sql
+        assert count_params == (sid, ["---"])
+
+    def test_unknown_type_key_short_circuits(self):
+        store, cursor = self._store()
+        cursor.fetchall.return_value = [("Person",)]
+
+        assert store.list_nodes("sid", type_key="org") == {"nodes": [], "total": 0}
+        assert cursor.execute.call_count == 1

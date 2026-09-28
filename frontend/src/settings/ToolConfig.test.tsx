@@ -351,7 +351,7 @@ describe('ToolConfig', () => {
     });
   });
 
-  it('renders the API property tables from the ui/table parts with 50px delete columns', async () => {
+  it('renders the API property tables from the ui/table parts with 40px delete columns', async () => {
     await render(apiTool);
     await act(async () => {
       (
@@ -373,7 +373,7 @@ describe('ToolConfig', () => {
       .querySelector('table button[data-variant="ghost-destructive"]')
       ?.closest('td');
     expect(deleteCell?.dataset.slot).toBe('table-cell');
-    expect(deleteCell?.style.getPropertyValue('--cell-width')).toBe('50px');
+    expect(deleteCell?.style.getPropertyValue('--cell-width')).toBe('40px');
     expect(deleteCell?.className).toContain('text-center');
     expect(deleteCell?.className).not.toMatch(/p-0|!/);
   });

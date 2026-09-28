@@ -39,7 +39,48 @@ MAX_SUBGRAPH_EDGES = 2000
 GRAPH_OVERVIEW_DEFAULT_LIMIT = 100
 GRAPH_OVERVIEW_MAX_LIMIT = 250
 
+GRAPH_NODE_LIST_DEFAULT_LIMIT = 25
+GRAPH_NODE_LIST_MAX_LIMIT = 100
+# Highest 1-based page the node-list route accepts. Keeps ``OFFSET`` (at most
+# ~1e8 rows at the max page size) far inside Postgres' bigint range, so a huge
+# ``page`` query arg yields an empty page with the real total, not an error.
+GRAPH_NODE_LIST_MAX_PAGE = 1_000_000
+
+MAX_NODE_RELATIONSHIPS = 300
+
 PGVECTOR_SOURCE_COLUMN = "source_id"
+
+def graph_type_key(type_value: Optional[str]) -> str:
+    """Return the grouping key for a node type.
+
+    ``"Person"``, ``"PERSON"`` and ``"per son"`` all fold to ``"person"``, so
+    the extractor's inconsistent spellings land in one facet. Computed in
+    Python on purpose, never in SQL: ``lower()`` and ``[:alnum:]`` follow the
+    database's ``LC_CTYPE``, and on a ``C``-locale database (common on managed
+    Postgres) they fold every Cyrillic or CJK type to ``""``. Must agree with
+    the frontend, which filters and colours by this key with
+    ``/[^\\p{L}\\p{N}]/gu`` and ``toLowerCase``.
+
+    Args:
+        type_value: The raw node type, possibly ``None`` or empty.
+
+    Returns:
+        str: The lower-cased type with non-alphanumerics removed; ``""`` for a
+        missing type.
+    """
+    return "".join(ch for ch in (type_value or "").lower() if ch.isalnum())
+
+
+def _escape_like(value: str) -> str:
+    """Escape ``value`` so ``LIKE``/``ILIKE`` treats it as a literal.
+
+    Args:
+        value: Raw user text.
+
+    Returns:
+        str: ``value`` with ``\\``, ``%`` and ``_`` backslash-escaped.
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _safe_identifier(name: str) -> str:
@@ -857,6 +898,174 @@ class GraphStore:
             cursor.close()
             conn.rollback()
 
+    def count_edges(self, source_id: str) -> int:
+        """Number of edges for a source.
+
+        Args:
+            source_id: Source whose edges to count.
+
+        Returns:
+            int: The edge count, or ``0`` when the query fails.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT count(*) FROM graph_edges WHERE source_id = %s;",
+                (source_id,),
+            )
+            return int(cursor.fetchone()[0])
+        except Exception as e:
+            logging.error(f"Error counting edges: {e}")
+            return 0
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def list_nodes(
+        self,
+        source_id: str,
+        query: Optional[str] = None,
+        type_key: Optional[str] = None,
+        offset: int = 0,
+        limit: int = GRAPH_NODE_LIST_DEFAULT_LIMIT,
+    ) -> Dict[str, Any]:
+        """One page of a source's nodes, highest degree first, with the match count.
+
+        Args:
+            source_id: Source whose nodes to list.
+            query: Case-insensitive substring of the node name; ``%``, ``_``
+                and ``\\`` match literally. Blank means no name filter.
+            type_key: Only nodes whose :func:`graph_type_key` equals this;
+                ``""`` selects untyped nodes and ``None`` applies no filter.
+            offset: Rows to skip (floored at 0).
+            limit: Page size, clamped to ``1..GRAPH_NODE_LIST_MAX_LIMIT``.
+
+        Returns:
+            dict: ``{"nodes": [{id, name, type, degree, doc_freq}], "total": int}``
+            where ``total`` counts every match, not just this page. A source
+            with no graph yields ``{"nodes": [], "total": 0}``.
+
+        Raises:
+            Exception: Any query failure, so a caller never mistakes a broken
+                query for an empty graph.
+        """
+        limit = max(1, min(int(limit), GRAPH_NODE_LIST_MAX_LIMIT))
+        offset = max(0, int(offset))
+        clauses = ["source_id = %s"]
+        params: List[Any] = [source_id]
+        clean = (query or "").strip()
+        if clean:
+            clauses.append("name ILIKE %s ESCAPE '\\'")
+            params.append(f"%{_escape_like(clean)}%")
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            if type_key is not None:
+                # The key is folded in Python (see ``graph_type_key``), so the
+                # filter matches the raw spellings whose key equals it.
+                cursor.execute(
+                    "SELECT DISTINCT type FROM graph_nodes WHERE source_id = %s;",
+                    (source_id,),
+                )
+                raw_types = sorted(
+                    row[0]
+                    for row in cursor.fetchall()
+                    if row[0] is not None and graph_type_key(row[0]) == type_key
+                )
+                if type_key == "":
+                    clauses.append("(type IS NULL OR type = ANY(%s))")
+                elif not raw_types:
+                    return {"nodes": [], "total": 0}
+                else:
+                    clauses.append("type = ANY(%s)")
+                params.append(raw_types)
+            where = " AND ".join(clauses)
+            cursor.execute(
+                f"SELECT count(*) FROM graph_nodes WHERE {where};", tuple(params)
+            )
+            total = int(cursor.fetchone()[0])
+            cursor.execute(
+                f"""
+                SELECT id, name, type, degree, doc_freq
+                FROM graph_nodes
+                WHERE {where}
+                ORDER BY degree DESC, id
+                LIMIT %s OFFSET %s;
+                """,
+                (*params, limit, offset),
+            )
+            nodes = [
+                {
+                    "id": str(row[0]),
+                    "name": row[1],
+                    "type": row[2],
+                    "degree": row[3],
+                    "doc_freq": row[4],
+                }
+                for row in cursor.fetchall()
+            ]
+            return {"nodes": nodes, "total": total}
+        finally:
+            cursor.close()
+            conn.rollback()
+
+    def node_type_facets(self, source_id: str) -> List[Dict[str, Any]]:
+        """Node counts per type key over every node of a source.
+
+        Spellings that share a :func:`graph_type_key` are folded into one
+        facet labelled with the most frequent spelling (ties go to the
+        alphabetically first). Untyped nodes form the ``""`` facet with a
+        ``None`` label.
+
+        Args:
+            source_id: Source whose node types to count.
+
+        Returns:
+            list: ``[{"key", "label", "count"}]`` sorted by count descending,
+            then label. Empty for a source with no graph.
+
+        Raises:
+            Exception: Any query failure, so a caller never mistakes a broken
+                query for an empty graph.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            # Group by the raw spelling only; the key is folded in Python so it
+            # does not depend on the database locale (see ``graph_type_key``).
+            cursor.execute(
+                """
+                SELECT type, count(*)
+                FROM graph_nodes
+                WHERE source_id = %s
+                GROUP BY type;
+                """,
+                (source_id,),
+            )
+            rows = cursor.fetchall()
+        finally:
+            cursor.close()
+            conn.rollback()
+        spellings: Dict[str, List[tuple]] = {}
+        for raw_type, n in rows:
+            spellings.setdefault(graph_type_key(raw_type), []).append(
+                (int(n), raw_type)
+            )
+        facets = []
+        for key, variants in spellings.items():
+            label = None
+            if key:
+                # Most frequent spelling; a tie goes to the alphabetically first.
+                label = min(variants, key=lambda v: (-v[0], v[1]))[1]
+            facets.append(
+                {"key": key, "label": label, "count": sum(v[0] for v in variants)}
+            )
+        facets.sort(
+            key=lambda f: (-f["count"], f["label"] is None, f["label"] or "")
+        )
+        return facets
+
     def count_nodes_many(self, source_ids: List[str]) -> Dict[str, int]:
         """Node counts for several sources in one round trip.
 
@@ -1390,11 +1599,26 @@ class GraphStore:
     def get_node_detail(
         self, source_id: str, node_id: str, max_chunks: int = 20
     ) -> Optional[Dict[str, Any]]:
-        """A node's full record plus a bounded list of its linked chunks.
+        """A node's full record, its relationships and a bounded list of its chunks.
 
-        Returns ``None`` when the node does not belong to the source. Chunk texts
-        are read from the co-located pgvector table; at most ``max_chunks`` are
-        returned so a hub node never streams an unbounded payload.
+        Chunk texts are read from the co-located pgvector table; at most
+        ``max_chunks`` are returned so a hub node never streams an unbounded
+        payload. ``relationships`` holds every edge touching the node in either
+        direction (self-loops skipped), joined to the other endpoint, strongest
+        neighbour first and capped at ``MAX_NODE_RELATIONSHIPS``;
+        ``relationships_total`` is how many such edges there are, so a capped
+        list can say what it leaves out.
+
+        Args:
+            source_id: Source the node must belong to.
+            node_id: The node's id.
+            max_chunks: Most linked chunks to return.
+
+        Returns:
+            dict | None: ``{id, name, type, description, degree, doc_freq,
+            relationships: [{id, name, type, degree, edge_type, direction}],
+            relationships_total, chunks: [{chunk_id, text, metadata}]}``; ``None`` when the node does
+            not belong to the source or the read fails.
         """
         conn = self._get_connection()
         try:
@@ -1421,6 +1645,15 @@ class GraphStore:
                 "degree": row[4],
                 "doc_freq": row[5],
             }
+            relationships = self._node_relationships(conn, source_id, node_id)
+            node["relationships"] = relationships
+            node["relationships_total"] = (
+                self._node_relationships_total(
+                    conn, source_id, node_id, len(relationships)
+                )
+                if len(relationships) >= MAX_NODE_RELATIONSHIPS
+                else len(relationships)
+            )
 
             chunk_ids = self.get_chunk_ids_for_nodes(source_id, [node_id]).get(
                 str(node_id), []
@@ -1442,6 +1675,107 @@ class GraphStore:
             return None
         finally:
             conn.rollback()
+
+    def _node_relationships(
+        self, conn, source_id: str, node_id: str
+    ) -> List[Dict[str, Any]]:
+        """Edges touching ``node_id``, joined to the neighbour at the other end.
+
+        Args:
+            conn: Open connection; the caller owns the transaction.
+            source_id: Source the edges and neighbours must belong to.
+            node_id: The node whose relationships to read.
+
+        Returns:
+            list: ``[{id, name, type, degree, edge_type, direction}]`` where
+            ``direction`` is ``"out"`` when the node is the edge's source,
+            ordered by neighbour degree descending, neighbour id, edge type.
+            Empty when the read fails (the transaction is rolled back).
+        """
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT o.id, o.name, o.type, o.degree, e.type,
+                       CASE WHEN e.src_node_id = %s THEN 'out' ELSE 'in' END AS direction
+                FROM graph_edges e
+                JOIN graph_nodes o
+                  ON o.id = CASE WHEN e.src_node_id = %s
+                                 THEN e.dst_node_id ELSE e.src_node_id END
+                WHERE e.source_id = %s
+                  AND (e.src_node_id = %s OR e.dst_node_id = %s)
+                  AND e.src_node_id <> e.dst_node_id
+                  AND o.source_id = %s
+                ORDER BY o.degree DESC, o.id, e.type
+                LIMIT %s;
+                """,
+                (
+                    node_id, node_id, source_id, node_id, node_id, source_id,
+                    MAX_NODE_RELATIONSHIPS,
+                ),
+            )
+            return [
+                {
+                    "id": str(row[0]),
+                    "name": row[1],
+                    "type": row[2],
+                    "degree": row[3],
+                    "edge_type": row[4],
+                    "direction": row[5],
+                }
+                for row in cursor.fetchall()
+            ]
+        except Exception as e:
+            # Degrade to no relationships rather than failing the whole node
+            # detail; roll back so the caller's chunk read can reuse ``conn``.
+            logging.error(f"Error reading node relationships: {e}")
+            conn.rollback()
+            return []
+        finally:
+            cursor.close()
+
+    def _node_relationships_total(
+        self, conn, source_id: str, node_id: str, fallback: int
+    ) -> int:
+        """How many edges ``_node_relationships`` would return without its cap.
+
+        Same filters as the list: either direction, self-loops skipped, the
+        neighbour in the same source.
+
+        Args:
+            conn: Open connection; the caller owns the transaction.
+            source_id: Source the edges and neighbours must belong to.
+            node_id: The node whose relationships to count.
+            fallback: What to return when the count fails (the list's length).
+
+        Returns:
+            int: The edge count, or ``fallback`` when the read fails (the
+            transaction is rolled back).
+        """
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM graph_edges e
+                JOIN graph_nodes o
+                  ON o.id = CASE WHEN e.src_node_id = %s
+                                 THEN e.dst_node_id ELSE e.src_node_id END
+                WHERE e.source_id = %s
+                  AND (e.src_node_id = %s OR e.dst_node_id = %s)
+                  AND e.src_node_id <> e.dst_node_id
+                  AND o.source_id = %s;
+                """,
+                (node_id, source_id, node_id, node_id, source_id),
+            )
+            row = cursor.fetchone()
+            return int(row[0]) if row else fallback
+        except Exception as e:
+            logging.error(f"Error counting node relationships: {e}")
+            conn.rollback()
+            return fallback
+        finally:
+            cursor.close()
 
     def set_node_degrees(self, source_id: str):
         """Recompute every node's degree from its incident edges for a source.
@@ -1500,6 +1834,74 @@ class GraphStore:
             except Exception as e:
                 _safe_rollback(conn)
                 logging.error(f"Error marking chunk: {e}")
+                raise
+            finally:
+                cursor.close()
+
+        return self._write_with_reconnect(_write)
+
+    def remap_chunk(self, source_id: str, old_chunk_id: str, new_chunk_id: str) -> None:
+        """Point every graph reference to a chunk at its replacement id.
+
+        A chunk edit re-adds the chunk under a new id and deletes the old row,
+        so without this the node links, edge provenance and extraction
+        checkpoint would all name a chunk that no longer exists. The graph
+        itself is not re-extracted from the edited text.
+
+        Args:
+            source_id: Source the chunk belongs to.
+            old_chunk_id: The id the graph currently references.
+            new_chunk_id: The id of the chunk that replaced it.
+
+        Raises:
+            Exception: The underlying write failure, after a rollback.
+        """
+        self._ensure_tables_once()
+        old_id, new_id = str(old_chunk_id), str(new_chunk_id)
+
+        def _write(conn):
+            cursor = conn.cursor()
+            try:
+                _lock_source(cursor, source_id)
+                cursor.execute(
+                    """
+                    UPDATE graph_node_chunks SET chunk_id = %s
+                    WHERE source_id = %s AND chunk_id = %s;
+                    """,
+                    (new_id, source_id, old_id),
+                )
+                # Rewrite the matching element in place, keeping array order.
+                cursor.execute(
+                    """
+                    UPDATE graph_edges
+                    SET source_chunk_ids = (
+                        SELECT jsonb_agg(
+                            CASE WHEN t.v #>> '{}' = %s THEN to_jsonb(%s::text) ELSE t.v END
+                            ORDER BY t.ord
+                        )
+                        FROM jsonb_array_elements(source_chunk_ids)
+                             WITH ORDINALITY AS t(v, ord)
+                    )
+                    WHERE source_id = %s
+                      AND jsonb_typeof(source_chunk_ids) = 'array'
+                      AND EXISTS (
+                          SELECT 1 FROM jsonb_array_elements(source_chunk_ids) AS s(v)
+                          WHERE s.v #>> '{}' = %s
+                      );
+                    """,
+                    (old_id, new_id, source_id, old_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE graph_ingest_progress SET chunk_id = %s
+                    WHERE source_id = %s AND chunk_id = %s;
+                    """,
+                    (new_id, source_id, old_id),
+                )
+                conn.commit()
+            except Exception as e:
+                _safe_rollback(conn)
+                logging.error(f"Error remapping graph chunk: {e}")
                 raise
             finally:
                 cursor.close()

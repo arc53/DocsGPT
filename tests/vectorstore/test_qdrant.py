@@ -181,3 +181,80 @@ class TestQdrantClientKwargs:
         assert kwargs["url"] == "http://qdrant:6333"
         assert kwargs["api_key"] == "secret"
         assert "location" not in kwargs
+
+
+@pytest.mark.unit
+class TestQdrantUpdateChunk:
+    def test_keeps_id_and_position(self, populated):
+        before = populated.get_chunks()
+        target = before[1]["doc_id"]
+
+        returned = populated.update_chunk(target, "Redis caches things.", {"source": "cache.txt"})
+
+        assert returned == target
+        after = populated.get_chunks()
+        assert [c["doc_id"] for c in after] == [c["doc_id"] for c in before]
+        assert after[1]["text"] == "Redis caches things."
+        assert after[1]["metadata"] == {"source": "cache.txt", "source_id": "src-A"}
+
+    def test_replaces_the_vector(self, populated):
+        target = next(
+            c["doc_id"] for c in populated.get_chunks() if c["metadata"]["source"] == "geo.txt"
+        )
+
+        populated.update_chunk(target, "Celery workers are busy.", {"source": "geo.txt"})
+
+        hits = populated.search_with_scores("celery", k=3)
+        assert sorted(doc.page_content for doc, score in hits if score > 0.99) == [
+            "Celery runs background tasks.",
+            "Celery workers are busy.",
+        ]
+        assert not any("Paris" in doc.page_content for doc, _ in hits)
+
+    def test_payload_shape_matches_add_texts(self, populated):
+        target = populated.get_chunks()[0]["doc_id"]
+
+        populated.update_chunk(target, "Redis caches things.", {"source": "cache.txt"})
+
+        record = populated._client.retrieve(
+            populated._collection, ids=[target], with_payload=True
+        )[0]
+        assert record.payload == {
+            "page_content": "Redis caches things.",
+            "metadata": {"source": "cache.txt", "source_id": "src-A"},
+        }
+
+    def test_embedding_failure_leaves_the_point_untouched(self, populated):
+        before = populated.get_chunks()
+        target = before[0]["doc_id"]
+
+        with patch.object(
+            populated._embeddings, "embed_documents", side_effect=RuntimeError("embed down")
+        ):
+            with pytest.raises(RuntimeError):
+                populated.update_chunk(target, "Redis caches things.", {})
+
+        assert populated.get_chunks() == before
+
+    def test_unknown_id_raises(self, populated):
+        import uuid
+
+        with pytest.raises(KeyError):
+            populated.update_chunk(str(uuid.uuid4()), "text", {})
+        assert len(populated.get_chunks()) == 3
+
+    def test_other_sources_point_is_refused(self, populated):
+        from docsgpt.vectorstore.qdrant import QdrantStore
+
+        with patch(
+            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
+            return_value=_FakeEmbeddings(),
+        ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
+            _settings(mock_settings)
+            other = QdrantStore(source_id="src-B", embeddings_key="k")
+        other._client = populated._client
+        target = populated.get_chunks()[0]["doc_id"]
+
+        with pytest.raises(KeyError):
+            other.update_chunk(target, "hijack", {})
+        assert populated.get_chunks()[0]["text"] != "hijack"

@@ -50,6 +50,20 @@ describe('ActionMenu', () => {
     expect(trigger().querySelector('svg')).not.toBeNull();
   });
 
+  // A page header or toolbar: the trigger matches the icon buttons beside
+  // 38px buttons on a plain surface, not a highlighted row.
+  it('renders a 36px ghost-muted trigger with size="toolbar"', async () => {
+    await render(
+      <ActionMenu
+        options={options()}
+        triggerLabel="More actions"
+        size="toolbar"
+      />,
+    );
+    expect(trigger().getAttribute('data-variant')).toBe('ghost-muted');
+    expect(trigger().getAttribute('data-size')).toBe('icon');
+  });
+
   it('passes layout classes, disabled and a test id to the trigger', async () => {
     await render(
       <ActionMenu

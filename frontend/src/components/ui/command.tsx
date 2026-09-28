@@ -9,7 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { cn } from '@/lib/utils';
+import { cva, type VariantProps } from 'class-variance-authority';
+
+import { cn, fieldFrame } from '@/lib/utils';
 
 // The search-palette spacing: a 48px input row and roomier rows. Shared by
 // CommandDialog and any palette rendered elsewhere (e.g. in a bottom sheet),
@@ -74,16 +76,38 @@ function CommandDialog({
   );
 }
 
+const commandInputWrapperVariants = cva('flex items-center', {
+  variants: {
+    variant: {
+      // The row at the top of a popover or palette list.
+      default: 'h-9 gap-2 border-b px-3',
+      // A filter field over a list the arrow keys walk into (a source view's
+      // navigator): SearchInput's 38px pill, text 40px in, the focus ring on
+      // the frame while the input has keyboard focus.
+      field: `${fieldFrame} has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-ring/50 h-9.5 gap-3 rounded-full px-3 has-[input:focus-visible]:ring-3`,
+    },
+  },
+  defaultVariants: { variant: 'default' },
+});
+
 function CommandInput({
   className,
+  variant = 'default',
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+}: React.ComponentProps<typeof CommandPrimitive.Input> &
+  VariantProps<typeof commandInputWrapperVariants>) {
   return (
     <div
       data-slot="command-input-wrapper"
-      className="flex h-9 items-center gap-2 border-b px-3"
+      data-variant={variant}
+      className={commandInputWrapperVariants({ variant })}
     >
-      <SearchIcon className="size-4 shrink-0 opacity-50" />
+      <SearchIcon
+        className={cn(
+          'size-4 shrink-0',
+          variant === 'field' ? 'text-muted-foreground' : 'opacity-50',
+        )}
+      />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(

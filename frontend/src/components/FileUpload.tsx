@@ -21,7 +21,11 @@ interface FileUploadProps {
   showPreview?: boolean;
   previewSize?: number;
   /** `compact` is a one-row target for forms and panels. */
-  size?: 'default' | 'compact';
+  size?: 'default' | 'compact' | 'tile';
+  /** A tile's width; `fixed` keeps it 64px in a narrow drawer. */
+  tileSize?: 'responsive' | 'fixed';
+  /** An image already saved (an agent's avatar), shown in a tile until a new one is picked. */
+  currentImage?: string;
 
   children?: React.ReactNode;
   /** Layout classes only; the Dropzone owns colours, border and radius. */
@@ -53,6 +57,8 @@ export const FileUpload = ({
   showPreview = false,
   previewSize = 80,
   size = 'default',
+  tileSize,
+  currentImage,
   children,
   className,
   uploadText,
@@ -196,8 +202,36 @@ export const FileUpload = ({
 
   // With a preview, the image takes the icon's place; the text block mirrors
   // the Dropzone's own title/description layout.
+  // A tile shows the picked image (with Remove) or the saved one filling it.
+  const tileImage = preview ?? currentImage;
+  const tileContent =
+    size === 'tile' && showPreview && tileImage ? (
+      <span className="relative size-full">
+        <img
+          src={tileImage}
+          alt={t('components.fileUpload.preview')}
+          className="size-full rounded-xl object-cover"
+        />
+        {preview ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRemove();
+            }}
+            className="bg-primary hover:bg-primary/90 absolute -top-2 -right-2 rounded-full p-1 transition-colors"
+            aria-label={t('components.fileUpload.remove')}
+          >
+            <X className="text-primary-foreground size-3" />
+          </button>
+        ) : null}
+      </span>
+    ) : undefined;
+
   const previewContent =
-    showPreview && preview ? (
+    size === 'tile' ? (
+      tileContent
+    ) : showPreview && preview ? (
       <>
         {renderPreview()}
         <span className="flex min-w-0 flex-col gap-0.5">
@@ -225,6 +259,7 @@ export const FileUpload = ({
       maxSize={maxSize}
       disabled={disabled}
       size={size}
+      tileSize={tileSize}
       title={title}
       description={description}
       icon={<ImageUp />}

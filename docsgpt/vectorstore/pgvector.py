@@ -637,7 +637,7 @@ class PGVectorStore(BaseVectorStore):
             select_query = f"""
             SELECT id, {self._text_column}, {self._metadata_column}
             FROM {self._table_name}
-            WHERE source_id = %s;
+            WHERE source_id = %s ORDER BY id;
             """
             cursor.execute(select_query, (self._source_id,))
             results = cursor.fetchall()
@@ -700,6 +700,58 @@ class PGVectorStore(BaseVectorStore):
         except Exception as e:
             conn.rollback()
             logging.error(f"Error adding chunk: {e}")
+            raise
+        finally:
+            cursor.close()
+
+    def update_chunk(self, chunk_id: str, text: str, metadata: Dict[str, Any]) -> str:
+        """Rewrite a chunk's row in place, keeping its id.
+
+        One ``UPDATE`` scoped to this source. The embedding is computed first,
+        so a failed embed writes nothing. ``get_chunks`` orders by id, so the
+        chunk also keeps its place in the list.
+
+        Args:
+            chunk_id: Id of the chunk to replace.
+            text: The chunk's new text.
+            metadata: The chunk's complete new metadata; ``source_id`` is
+                stamped on it as :meth:`add_chunk` does.
+
+        Returns:
+            ``chunk_id``, unchanged.
+
+        Raises:
+            KeyError: If this source has no chunk with that id.
+            ValueError: If no embedding could be generated.
+        """
+        final_metadata = dict(metadata or {})
+        final_metadata["source_id"] = self._source_id
+
+        embeddings = self._embedding.embed_documents([text])
+        if not embeddings:
+            raise ValueError("Could not generate embedding for chunk")
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        try:
+            update_query = f"""
+            UPDATE {self._table_name}
+            SET {self._text_column} = %s, {self._vector_column} = %s, {self._metadata_column} = %s
+            WHERE id = %s AND source_id = %s;
+            """
+            cursor.execute(
+                update_query,
+                (text, embeddings[0], Jsonb(final_metadata), int(chunk_id), self._source_id),
+            )
+            if cursor.rowcount == 0:
+                raise KeyError(f"Chunk {chunk_id} not found for source {self._source_id}")
+            conn.commit()
+            return str(chunk_id)
+
+        except Exception as e:
+            conn.rollback()
+            logging.error(f"Error updating chunk: {e}")
             raise
         finally:
             cursor.close()

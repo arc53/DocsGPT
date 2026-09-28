@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-import { cn } from '@/lib/utils';
+import { cn, focusRing } from '@/lib/utils';
 
 type TableProps = React.ComponentProps<'table'> & {
   /** A min-width class; the table scrolls inside TableContainer below it. */
@@ -110,20 +110,43 @@ function TableBody({ className, ...props }: React.ComponentProps<'tbody'>) {
   );
 }
 
+/**
+ * A table row. With `onClick` the whole row is the target, so it also takes
+ * focus and opens with Enter or Space for keyboard users. `selected` marks the
+ * row whose detail is open beside the table, with the brand tint of an open
+ * navigator item (`CommandItem checked`), so it never reads as hover.
+ */
 function TableRow({
   className,
   onClick,
+  onKeyDown,
+  selected = false,
   ...props
-}: React.ComponentProps<'tr'>) {
+}: React.ComponentProps<'tr'> & { selected?: boolean }) {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTableRowElement>) => {
+    onKeyDown?.(event);
+    // Keys on a control inside the row belong to that control.
+    if (event.defaultPrevented || event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      event.currentTarget.click();
+    }
+  };
   return (
     <tr
       data-slot="table-row"
+      data-selected={selected ? '' : undefined}
+      aria-current={selected ? 'true' : undefined}
       className={cn(
         'border-border border-b',
-        onClick && 'hover:bg-accent cursor-pointer transition-colors',
+        onClick &&
+          `hover:bg-accent cursor-pointer transition-colors outline-none ${focusRing}`,
+        selected && 'bg-secondary text-secondary-foreground hover:bg-secondary',
         className,
       )}
       onClick={onClick}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? handleKeyDown : onKeyDown}
       {...props}
     />
   );

@@ -7,8 +7,8 @@ import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
 import Analytics from '../settings/Analytics';
 import Logs from '../settings/Logs';
-import { formatDateTime } from '../utils/dateTimeUtils';
 import SectionShell from '../navigation/SectionShell';
+import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import GuardrailEvents from './components/GuardrailEvents';
 import { Agent } from './types';
 
@@ -39,26 +39,16 @@ export default function AgentLogs() {
   }, [agentId, token]);
 
   return (
-    <SectionShell pills>
-      <div className="flex flex-col gap-3">
-        {agent && (
-          <div className="flex flex-col gap-1">
-            <p className="text-foreground">{agent.name}</p>
-            <p className="text-muted-foreground text-xs">
-              {agent.last_used_at
-                ? t('agents.logs.lastUsedAt') +
-                  ' ' +
-                  formatDateTime(agent.last_used_at)
-                : t('agents.logs.noUsageHistory')}
-            </p>
-          </div>
-        )}
-      </div>
+    <SectionShell>
+      {agent && (
+        <AgentPageToolbar
+          name={agent.name}
+          meta={<LastUsedMeta lastUsedAt={agent.last_used_at} />}
+        />
+      )}
       {agentId && (
         <>
-          <div className="mt-8">
-            <Analytics agentId={agentId} />
-          </div>
+          <Analytics agentId={agentId} />
           <GuardrailEvents agentId={agentId} />
           <div className="mt-8">
             <Logs

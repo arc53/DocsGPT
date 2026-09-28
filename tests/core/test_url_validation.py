@@ -259,3 +259,22 @@ class TestValidateUrlExtended:
     def test_allows_localhost_ip_with_flag(self):
         result = validate_url("http://10.0.0.1", allow_localhost=True)
         assert result == "http://10.0.0.1"
+
+
+class TestValidateUrlMalformed:
+    """A URL ``urlparse`` cannot parse fails validation instead of escaping."""
+
+    def test_unclosed_ipv6_bracket_raises_ssrf_error(self):
+        with pytest.raises(SSRFError) as exc_info:
+            validate_url("http://[bad")
+        assert "invalid url" in str(exc_info.value).lower()
+
+    def test_unclosed_ipv6_bracket_without_scheme_raises_ssrf_error(self):
+        with pytest.raises(SSRFError):
+            validate_url("[bad")
+
+    def test_safe_variant_reports_failure(self):
+        is_valid, url, error = validate_url_safe("http://[bad")
+        assert is_valid is False
+        assert url == "http://[bad"
+        assert error

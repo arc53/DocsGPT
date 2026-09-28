@@ -18,7 +18,7 @@ export default function AttachFileButton({ onChange }: AttachFileButtonProps) {
           user with auto-translate on rage-clicked a dead Attach button until
           they reloaded. Keep the composer's controls out of the translator. */}
       <label translate="no" className="cursor-pointer justify-start">
-        <Paperclip />
+        <Paperclip className="size-3.5 sm:size-4" />
         <span className="text-foreground text-xs sm:text-sm">
           {t('conversation.attachments.attach')}
         </span>

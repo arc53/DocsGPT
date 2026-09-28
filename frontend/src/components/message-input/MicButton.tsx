@@ -44,7 +44,6 @@ export default function MicButton({
       shape="pill"
       onClick={onClick}
       aria-label={voiceButtonLabel}
-      title={voiceButtonLabel}
       disabled={loading || recordingState === 'transcribing'}
       className="justify-start"
     >

@@ -216,8 +216,10 @@ export default function GuardrailsSection({
   const instanceDisabled = catalog !== null && catalog.enabled === false;
 
   return (
-    <div
-      className="bg-card has-[[data-variant=section-toggle]:focus-visible]:ring-ring/50 rounded-2xl px-6 py-3 has-[[data-variant=section-toggle]:focus-visible]:ring-3 has-[[data-variant=section-toggle]:focus-visible]:ring-inset"
+    <Card
+      variant="subtle"
+      padding="lg"
+      className="gap-5"
       data-testid="guardrails-section"
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -265,7 +267,7 @@ export default function GuardrailsSection({
       </div>
 
       {expanded && (
-        <div className="mt-3 pb-3">
+        <div className="flex flex-col gap-5">
           {loadError && (
             <EmptyState
               tone="destructive"
@@ -286,22 +288,14 @@ export default function GuardrailsSection({
           )}
 
           {disabled && disabledNotice && (
-            <Alert
-              role="status"
-              className="mt-3"
-              data-testid="guardrails-read-only"
-            >
+            <Alert role="status" data-testid="guardrails-read-only">
               <Lock aria-hidden="true" className="size-4" />
               <AlertDescription>{disabledNotice}</AlertDescription>
             </Alert>
           )}
 
           {instanceDisabled && (
-            <Alert
-              variant="warning"
-              className="mt-3"
-              data-testid="guardrails-instance-disabled"
-            >
+            <Alert variant="warning" data-testid="guardrails-instance-disabled">
               <TriangleAlert aria-hidden="true" className="size-4" />
               <AlertDescription>
                 {t('agents.form.guardrails.instanceDisabled')}
@@ -310,7 +304,7 @@ export default function GuardrailsSection({
           )}
 
           {floorControls.size > 0 && (
-            <Alert variant="info" role="status" className="mt-3">
+            <Alert variant="info" role="status">
               <Info aria-hidden="true" className="size-4" />
               <AlertDescription>
                 {t('agents.form.guardrails.floorNotice', {
@@ -321,7 +315,6 @@ export default function GuardrailsSection({
           )}
 
           <SettingRow
-            className="mt-4"
             label={t('agents.form.guardrails.enable')}
             description={t('agents.form.guardrails.enableDescription')}
             htmlFor={enabledId}
@@ -337,45 +330,42 @@ export default function GuardrailsSection({
 
           {config.enabled && (
             <>
-              <div className="mt-5">
-                <FormField
-                  label={t('agents.form.guardrails.mode')}
-                  hint={
-                    config.mode === 'monitor_only'
-                      ? t('agents.form.guardrails.monitorHint')
-                      : undefined
+              <FormField
+                labelSurface="background"
+                label={t('agents.form.guardrails.mode')}
+                hint={
+                  config.mode === 'monitor_only'
+                    ? t('agents.form.guardrails.monitorHint')
+                    : undefined
+                }
+                disabled={disabled}
+              >
+                <Select
+                  value={config.mode}
+                  onValueChange={(mode) =>
+                    patch({ mode: mode as GuardrailsConfig['mode'] })
                   }
                   disabled={disabled}
                 >
-                  <Select
-                    value={config.mode}
-                    onValueChange={(mode) =>
-                      patch({ mode: mode as GuardrailsConfig['mode'] })
-                    }
-                    disabled={disabled}
+                  <SelectTrigger
+                    className="w-full"
+                    size="field"
+                    shape="pill"
+                    data-testid="guardrails-mode"
                   >
-                    <SelectTrigger
-                      className="w-full"
-                      size="field"
-                      shape="pill"
-                      data-testid="guardrails-mode"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(catalog?.modes ?? Object.keys(MODE_KEYS)).map(
-                        (mode) => (
-                          <SelectItem key={mode} value={mode}>
-                            {t(MODE_KEYS[mode] ?? mode)}
-                          </SelectItem>
-                        ),
-                      )}
-                    </SelectContent>
-                  </Select>
-                </FormField>
-              </div>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(catalog?.modes ?? Object.keys(MODE_KEYS)).map((mode) => (
+                      <SelectItem key={mode} value={mode}>
+                        {t(MODE_KEYS[mode] ?? mode)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
 
-              <div className="mt-5">
+              <div>
                 <p className="mb-3 text-sm font-medium">
                   {t('agents.form.guardrails.checks')}
                 </p>
@@ -426,7 +416,7 @@ export default function GuardrailsSection({
               </div>
 
               <FormField
-                className="mt-6"
+                labelSurface="background"
                 label={t('agents.form.guardrails.blockMessage')}
                 hint={t('agents.form.guardrails.blockMessageDescription')}
                 disabled={disabled}
@@ -442,7 +432,6 @@ export default function GuardrailsSection({
               </FormField>
 
               <SettingRow
-                className="mt-6"
                 label={t('agents.form.guardrails.failOpen')}
                 description={t('agents.form.guardrails.failOpenDescription')}
                 htmlFor={failOpenId}
@@ -457,7 +446,7 @@ export default function GuardrailsSection({
               </SettingRow>
 
               <FormField
-                className="mt-5"
+                labelSurface="background"
                 label={t('agents.form.guardrails.timeout')}
                 disabled={disabled}
               >
@@ -476,7 +465,7 @@ export default function GuardrailsSection({
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -597,7 +586,11 @@ function CheckCard({
   );
 
   return (
-    <Card padding="sm" data-testid={`guardrail-check-${info.name}`}>
+    <Card
+      variant="subtle"
+      padding="sm"
+      data-testid={`guardrail-check-${info.name}`}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <SectionHeader as="h4" size="xs" title={info.label} />

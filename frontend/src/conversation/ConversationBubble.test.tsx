@@ -147,7 +147,13 @@ describe('ConversationBubble', () => {
         'wrap-break-word',
       ]),
     );
-    const card = pre.parentElement!;
+    // The scroll cap sits on an inner scroller inside the Card's padding,
+    // so the scrollbar stays clear of the rounded corners.
+    const scroller = pre.parentElement!;
+    expect(scroller.className.split(' ')).toEqual(
+      expect.arrayContaining(['scrollbar-overlay', 'overflow-y-auto']),
+    );
+    const card = scroller.parentElement!;
     expect(card.getAttribute('data-slot')).toBe('card');
     expect(card.getAttribute('data-variant')).toBe('subtle');
     expect(card.getAttribute('data-padding')).toBe('sm');

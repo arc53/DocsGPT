@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Summarise @shadcn/lint warnings from ESLint JSON output.
+ * Summarise design-lint violations from ESLint JSON output: the @shadcn/lint
+ * rules and the DESIGN.md selectors under no-restricted-syntax
+ * (eslint/design-rules.js, eslint/card-surfaces.js, viewport heights).
  *
  *   npm run lint:design              rules × counts, then the 25 worst files
  *   npm run lint:design -- --rule no-raw-colors   files for one rule
@@ -26,10 +28,12 @@ const rows = [];
 for (const file of results) {
   const rel = file.filePath.replace(`${process.cwd()}/`, '');
   for (const m of file.messages) {
-    if (!m.ruleId?.startsWith('shadcn/')) continue;
+    const design =
+      m.ruleId?.startsWith('shadcn/') || m.ruleId === 'no-restricted-syntax';
+    if (!design) continue;
     rows.push({
       file: rel,
-      rule: m.ruleId.slice(7),
+      rule: m.ruleId.replace(/^shadcn\//, ''),
       line: m.line,
       msg: m.message,
     });
@@ -47,7 +51,7 @@ if (onlyFile) {
   const mine = rows.filter(
     (r) => r.file === onlyFile || r.file.endsWith(onlyFile),
   );
-  console.log(`${mine.length} design warnings in ${onlyFile}\n`);
+  console.log(`${mine.length} design violations in ${onlyFile}\n`);
   for (const r of mine.sort((a, b) => a.line - b.line)) {
     console.log(
       `${pad(r.line, 5)}  ${r.rule}\n       ${r.msg.split(' See frontend/DESIGN.md')[0]}\n`,
@@ -55,14 +59,14 @@ if (onlyFile) {
   }
 } else if (onlyRule) {
   const mine = rows.filter((r) => r.rule === onlyRule);
-  console.log(`${mine.length} warnings for shadcn/${onlyRule}\n`);
+  console.log(`${mine.length} violations of ${onlyRule}\n`);
   const byFile = new Map();
   for (const r of mine) byFile.set(r.file, (byFile.get(r.file) ?? 0) + 1);
   for (const [f, n] of [...byFile.entries()].sort((a, b) => b[1] - a[1]))
     console.log(`${pad(n, 5)}  ${f}`);
 } else {
   console.log(
-    `${rows.length} design warnings in ${new Set(rows.map((r) => r.file)).size} files\n`,
+    `${rows.length} design violations in ${new Set(rows.map((r) => r.file)).size} files\n`,
   );
   console.log('By rule:');
   for (const [rule, n] of count('rule')) console.log(`${pad(n, 5)}  ${rule}`);

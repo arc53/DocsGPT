@@ -59,7 +59,12 @@ function BreadcrumbPage({ className, ...props }: React.ComponentProps<'span'>) {
       role="link"
       aria-disabled="true"
       aria-current="page"
-      className={cn('text-foreground truncate font-normal', className)}
+      // Focusable from script only (tabIndex -1): PathHeader moves focus here
+      // after a crumb step, so it takes the link's ring.
+      className={cn(
+        `${focusRing} text-foreground truncate rounded-sm font-normal outline-none`,
+        className,
+      )}
       {...props}
     />
   );
