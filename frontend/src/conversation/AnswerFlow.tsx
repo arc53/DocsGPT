@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
 import CopyButton from '../components/CopyButton';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectorIconKey } from '../connectors/i18n';
 import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
 import { usePacedText } from '../hooks';
@@ -270,10 +272,17 @@ function InlineToolCallChip({
             isLive ? 'animate-pulse' : '',
           )}
         >
-          <ToolIcon
-            name={toolCall.tool_name}
-            className="text-muted-foreground size-4"
-          />
+          {toolCall.connector_key ? (
+            <ConnectorIcon
+              icon={connectorIconKey(toolCall.connector_key)}
+              className="text-muted-foreground size-4"
+            />
+          ) : (
+            <ToolIcon
+              name={toolCall.tool_name}
+              className="text-muted-foreground size-4"
+            />
+          )}
           <span className="bg-muted-foreground/50 hidden size-1.5 rounded-full only:block" />
         </span>
         <span

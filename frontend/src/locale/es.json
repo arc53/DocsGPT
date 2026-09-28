@@ -1066,7 +1066,13 @@
         "ntfy": "Envía notificaciones push mediante un servidor ntfy.",
         "postgres": "Lee el esquema y ejecuta SQL en una base de datos Postgres.",
         "custom_mcp": "Conecta cualquier servidor remoto de Model Context Protocol.",
-        "custom_openapi": "Importa una especificación OpenAPI y usa sus endpoints como herramientas."
+        "custom_openapi": "Importa una especificación OpenAPI y usa sus endpoints como herramientas.",
+        "mcp_notion": "Busca, lee y actualiza páginas y bases de datos de Notion.",
+        "mcp_linear": "Encuentra, crea y actualiza incidencias y proyectos de Linear.",
+        "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
+        "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
+        "mcp_asana": "Encuentra y actualiza tareas y proyectos de Asana.",
+        "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe."
       },
       "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",
       "noMatches": "Ningún conector coincide con tu búsqueda.",
@@ -1170,6 +1176,18 @@
       "error": {
         "decrypt": "No se pudieron descifrar las credenciales guardadas. Reconecta para continuar.",
         "defaultKey": "Un administrador debe definir ENCRYPTION_SECRET_KEY antes de poder conectar servicios."
+      },
+      "sharing": {
+        "owner": "Los miembros usan mi cuenta",
+        "member": "Cada miembro conecta su propia cuenta"
+      },
+      "share": {
+        "heading": "Qué cuenta usan los miembros del equipo",
+        "ownerWarning": "Los miembros del equipo actuarán como {{account}} en {{name}}.",
+        "confirmWrite": "Entiendo que los miembros del equipo pueden realizar acciones con mi cuenta.",
+        "memberNote": "Cada miembro conecta su propia cuenta de {{name}} antes de poder usar esta herramienta.",
+        "forced": "Un administrador eligió esto para todos los recursos compartidos de este conector.",
+        "saveFailed": "No se pudo guardar el cambio. Inténtalo de nuevo."
       }
     }
   },
@@ -1541,7 +1559,10 @@
       "noSourcesAvailable": "No hay fuentes disponibles",
       "selectedCount": "{{count}} fuentes seleccionadas",
       "groupOwn": "Tus fuentes",
-      "groupTeam": "Compartidas con el equipo"
+      "groupTeam": "Compartidas con el equipo",
+      "connectMore": "Conectar más",
+      "fromConnector": "De {{name}}",
+      "fromConnectorTitle": "De {{name}}: {{title}}"
     },
     "attachments": {
       "attach": "Adjuntar",
@@ -1582,7 +1603,9 @@
       "accessingMemory": "Accediendo a la memoria…",
       "runningCode": "Ejecutando código…",
       "creatingArtifact": "Creando un artefacto…",
-      "usingTool": "Usando {{tool}}…"
+      "usingTool": "Usando {{tool}}…",
+      "searchingConnector": "Buscando en {{name}}...",
+      "usingConnector": "Usando {{name}}..."
     },
     "toolChip": {
       "searchingWeb": "Buscado en la web · “{{query}}”",
@@ -1593,7 +1616,10 @@
       "accessingMemory": "Memoria consultada",
       "runningCode": "Código ejecutado",
       "creatingArtifact": "Artefacto creado",
-      "usingTool": "Usado {{tool}}"
+      "usingTool": "Usado {{tool}}",
+      "searchedConnector": "Buscó en {{name}}",
+      "readConnector": "Leyó de {{name}}",
+      "usedConnector": "Usó {{name}}: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Argumentos",
@@ -1783,7 +1809,8 @@
         "noOptionsMessage": "No hay herramientas disponibles",
         "groupBuiltin": "Integradas",
         "groupDefault": "Predeterminadas",
-        "groupCustom": "Personalizadas"
+        "groupCustom": "Personalizadas",
+        "groupConnection": "{{name}} · {{account}}"
       },
       "modelsPopup": {
         "title": "Seleccionar Modelos",

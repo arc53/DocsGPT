@@ -27,3 +27,27 @@ export const connectorName = (
         defaultValue: connector.name,
       })
     : connector.name;
+
+const BUILT_IN_ICONS: Record<string, string> = {
+  google_drive: 'drive',
+  share_point: 'sharepoint',
+  confluence: 'confluence',
+  s3: 's3',
+  reddit: 'reddit',
+  brave: 'tool_brave',
+  telegram: 'tool_telegram',
+  ntfy: 'tool_ntfy',
+  postgres: 'tool_postgres',
+};
+
+/**
+ * The catalog icon for a connector key, without the catalog: chat chips and
+ * citations render before (or without) the Connectors data. Presets are
+ * `mcp:<name>` with a `<name>` logo; a custom server falls back to a plug.
+ */
+export const connectorIconKey = (key: string | null | undefined) => {
+  if (!key) return 'plug';
+  if (BUILT_IN_ICONS[key]) return BUILT_IN_ICONS[key];
+  if (key.startsWith('mcp:')) return key.slice(4);
+  return 'plug';
+};

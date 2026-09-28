@@ -83,9 +83,20 @@ export default function Connectors() {
   const custom = catalog.filter((c) => c.publisher === 'custom');
   const openConnector = catalog.find((c) => c.key === openKey) ?? null;
 
+  // "Connect more" in the composer opens the connectors that can do what the
+  // picker is for: sync content, or give tools.
+  const capability = searchParams.get('capability');
+
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
     return catalog
+      .filter((connector) =>
+        capability === 'sync'
+          ? connector.capabilities.includes('sync')
+          : capability === 'tools'
+            ? connector.capabilities.some((c) => c !== 'sync')
+            : true,
+      )
       .filter((connector) => {
         if (filter === 'connected') return isConnected(connector);
         if (filter !== 'all') return connector.category === filter;
@@ -98,7 +109,7 @@ export default function Connectors() {
           connectorDescription(t, connector).toLowerCase().includes(query),
       )
       .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
-  }, [catalog, filter, search, t]);
+  }, [catalog, filter, search, t, capability]);
 
   const open = (connector: ConnectorDefinition) => {
     if (connector.state === 'available' || connector.state === 'custom') {

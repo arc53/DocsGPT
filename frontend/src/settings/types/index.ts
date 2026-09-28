@@ -170,6 +170,8 @@ export type UserToolType = {
   team_access?: 'viewer' | 'editor' | null;
   // The connection whose account or credentials the tool runs with.
   connection_id?: string | null;
+  // Whether team members use the owner's account or their own.
+  credential_mode?: 'owner' | 'member';
   config: {
     [key: string]: any;
   };
@@ -193,6 +195,8 @@ export type UserToolType = {
     };
     active: boolean;
     require_approval?: boolean;
+    // Read or write, set on tools that come from a connection.
+    access?: 'read' | 'write';
   }[];
 };
 

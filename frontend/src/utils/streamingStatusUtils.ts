@@ -41,6 +41,53 @@ const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
  */
 export type ToolActivity = { key: string; values?: Record<string, string> };
 
+const CONNECTOR_SEARCH_WORDS = /search|query|find|list/i;
+
+/**
+ * A call to a connection-backed tool, named after its service: "Searched
+ * Notion", "Read from Google Drive", "Used Linear: create issue". Reads that
+ * look up something search; other reads read; writes name their action.
+ */
+function describeConnectorCall(toolCall: ToolCallsType): ToolActivity | null {
+  const name = toolCall.connector_name;
+  if (!name) return null;
+  const action = toolCall.action_name ?? '';
+  if (toolCall.access === 'write') {
+    const readable = action
+      .replace(/^[a-z0-9]+[_-](?=[a-z])/i, (prefix) =>
+        // "linear_create_issue" and "notion-create-pages" drop the service
+        // prefix; a bare verb ("search") keeps its whole name.
+        name.toLowerCase().startsWith(prefix.slice(0, -1).toLowerCase())
+          ? ''
+          : prefix,
+      )
+      .replace(/[_-]+/g, ' ')
+      .trim()
+      .toLowerCase();
+    return { key: 'connectorWrite', values: { name, action: readable } };
+  }
+  if (CONNECTOR_SEARCH_WORDS.test(action))
+    return { key: 'connectorSearch', values: { name } };
+  return { key: 'connectorRead', values: { name } };
+}
+
+// Connector activities read differently while running and once done.
+const CONNECTOR_KEYS: Record<
+  'streamingStatus' | 'toolChip',
+  Record<string, string>
+> = {
+  streamingStatus: {
+    connectorSearch: 'searchingConnector',
+    connectorRead: 'usingConnector',
+    connectorWrite: 'usingConnector',
+  },
+  toolChip: {
+    connectorSearch: 'searchedConnector',
+    connectorRead: 'readConnector',
+    connectorWrite: 'usedConnector',
+  },
+};
+
 export function describeToolCall(toolCall: ToolCallsType): ToolActivity {
   const { tool_name, action_name, arguments: args } = toolCall;
   const query = typeof args?.query === 'string' ? args.query : undefined;
@@ -63,6 +110,8 @@ export function describeToolCall(toolCall: ToolCallsType): ToolActivity {
       return { key: 'readingPage', values: { target } };
     }
   }
+  const connector = describeConnectorCall(toolCall);
+  if (connector) return connector;
   if (action_name === 'run_code') return { key: 'runningCode' };
   if (ARTIFACT_ACTIONS.has(action_name)) return { key: 'creatingArtifact' };
   if (tool_name === 'internal_search') return { key: 'searchingKnowledge' };
@@ -84,7 +133,9 @@ function activityLabel(
   t: TFunction,
 ): string {
   const key =
-    activity.key === 'web' ? GENERIC_SEARCH_KEY[namespace] : activity.key;
+    activity.key === 'web'
+      ? GENERIC_SEARCH_KEY[namespace]
+      : (CONNECTOR_KEYS[namespace][activity.key] ?? activity.key);
   return t(
     `conversation.${namespace}.${key}`,
     activity.values ? { ...activity.values, ...NO_ESCAPE } : undefined,

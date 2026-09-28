@@ -1,4 +1,4 @@
-import { CircleAlert, Trash2 } from 'lucide-react';
+import { CircleAlert, Trash2, UserRound, UsersRound } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -9,7 +9,11 @@ import teamsService, {
   ResourceType,
   TeamMember,
 } from '../api/services/teamsService';
+import connectorsService from '../api/services/connectorsService';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Checkbox } from '../components/ui/checkbox';
+import { Label } from '../components/ui/label';
+import { OptionCard } from '../components/ui/option-card';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import {
@@ -41,10 +45,23 @@ import { AppDispatch } from '../store';
 import { decodeJwtPayload } from '../utils/jwtUtils';
 import { loadTeams, selectTeams } from './teamsSlice';
 
+/** A connection-backed tool: whose account shares of it run with. */
+export type ShareCredentials = {
+  toolId: string;
+  connectorName: string;
+  account: string;
+  mode: 'owner' | 'member';
+  /** Set when an admin forces one mode for every share of this connector. */
+  forcedMode?: 'owner' | 'member' | null;
+  /** Owner-mode shares of a tool with write actions need an explicit OK. */
+  hasWrites: boolean;
+};
+
 type Props = {
   resourceType: ResourceType;
   resourceId: string;
   resourceName?: string;
+  credentials?: ShareCredentials;
   onClose: () => void;
 };
 
@@ -84,6 +101,7 @@ export default function ShareToTeamModal({
   resourceType,
   resourceId,
   resourceName,
+  credentials,
   onClose,
 }: Props) {
   const { t } = useTranslation();
@@ -100,6 +118,27 @@ export default function ShareToTeamModal({
   const [shares, setShares] = useState<ResourceShare[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const [credentialMode, setCredentialMode] = useState<'owner' | 'member'>(
+    credentials?.forcedMode ?? credentials?.mode ?? 'owner',
+  );
+  const [writesConfirmed, setWritesConfirmed] = useState(false);
+  const needsWriteConfirm =
+    !!credentials && credentialMode === 'owner' && credentials.hasWrites;
+  const changeCredentialMode = (mode: 'owner' | 'member') => {
+    if (!credentials || mode === credentialMode) return;
+    const previous = credentialMode;
+    setCredentialMode(mode);
+    connectorsService
+      .setCredentialMode(credentials.toolId, mode, token)
+      .then((data) => {
+        if (!data?.success) throw new Error('save failed');
+      })
+      .catch(() => {
+        setCredentialMode(previous);
+        setActionError(t('settings.connectors.share.saveFailed'));
+      });
+  };
 
   // The access level applied to the next suggestion picked from the combobox.
   const [accessLevel, setAccessLevel] = useState<AccessLevel>('viewer');
@@ -508,6 +547,76 @@ export default function ShareToTeamModal({
         <p className="mt-6 text-sm">{t('settings.teams.share.noTeams')}</p>
       ) : (
         <>
+          {credentials && (
+            <section className="mt-6 flex flex-col gap-3">
+              <SectionHeader
+                as="h3"
+                size="xs"
+                title={t('settings.connectors.share.heading')}
+              />
+              <div
+                role="radiogroup"
+                aria-label={t('settings.connectors.share.heading')}
+                className="grid gap-3 sm:grid-cols-2"
+              >
+                {(['owner', 'member'] as const).map((mode) => (
+                  <OptionCard
+                    key={mode}
+                    icon={mode === 'owner' ? <UserRound /> : <UsersRound />}
+                    title={t(`settings.connectors.sharing.${mode}`)}
+                    selected={credentialMode === mode}
+                    disabled={
+                      !!credentials.forcedMode &&
+                      credentials.forcedMode !== mode
+                    }
+                    onClick={() => changeCredentialMode(mode)}
+                  />
+                ))}
+              </div>
+              {credentials.forcedMode && (
+                <p className="text-muted-foreground text-xs">
+                  {t('settings.connectors.share.forced')}
+                </p>
+              )}
+              {credentialMode === 'owner' ? (
+                <Alert variant="warning" role="note">
+                  <CircleAlert aria-hidden="true" />
+                  <AlertDescription>
+                    {t('settings.connectors.share.ownerWarning', {
+                      account: credentials.account,
+                      name: credentials.connectorName,
+                      interpolation: { escapeValue: false },
+                    })}
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  {t('settings.connectors.share.memberNote', {
+                    name: credentials.connectorName,
+                    interpolation: { escapeValue: false },
+                  })}
+                </p>
+              )}
+              {needsWriteConfirm && (
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="share-confirm-writes"
+                    checked={writesConfirmed}
+                    onCheckedChange={(checked) =>
+                      setWritesConfirmed(checked === true)
+                    }
+                  />
+                  <Label
+                    htmlFor="share-confirm-writes"
+                    className="text-sm font-normal"
+                  >
+                    {t('settings.connectors.share.confirmWrite')}
+                  </Label>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Add row: type-ahead combobox + access level select. */}
           <div className="mt-4 flex items-center gap-2">
             <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
@@ -517,7 +626,9 @@ export default function ShareToTeamModal({
                   variant="combobox"
                   role="combobox"
                   aria-expanded={pickerOpen}
-                  disabled={committing}
+                  disabled={
+                    committing || (needsWriteConfirm && !writesConfirmed)
+                  }
                   data-placeholder=""
                   className="min-w-0 flex-1 justify-start"
                 >

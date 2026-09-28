@@ -57,6 +57,12 @@ vi.mock('../api/services/devicesService', () => ({
   },
 }));
 
+vi.mock('../api/services/connectorsService', () => ({
+  default: {
+    listConnections: () => Promise.resolve({ connections: [] }),
+  },
+}));
+
 vi.mock('../api/services/modelService', () => ({
   default: {
     getModels: () => jsonResponse({ models: [] }),

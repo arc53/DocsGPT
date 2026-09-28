@@ -221,6 +221,13 @@ export const ADMIN_SECTION: Section = {
           icon: Gauge,
         },
         {
+          key: 'connectors',
+          path: '/admin/connectors',
+          labelKey: 'admin.tabs.connectors',
+          icon: Plug,
+          feature: 'connectors',
+        },
+        {
           key: 'audit',
           path: '/admin/audit',
           labelKey: 'admin.tabs.audit',

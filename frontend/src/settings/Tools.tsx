@@ -20,6 +20,7 @@ import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
   loadConnectors,
   selectConnections,
+  selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import { useLoaderState } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
@@ -28,7 +29,9 @@ import MCPServerModal from '../modals/MCPServerModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
-import ShareToTeamModal from '../teams/ShareToTeamModal';
+import ShareToTeamModal, {
+  type ShareCredentials,
+} from '../teams/ShareToTeamModal';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
@@ -38,6 +41,7 @@ export default function Tools() {
   const token = useSelector(selectToken);
   const dispatch = useDispatch<AppDispatch>();
   const connections = useSelector(selectConnections);
+  const catalog = useSelector(selectConnectorCatalog);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -63,6 +67,30 @@ export default function Tools() {
   const [mcpStatuses, setMcpStatuses] = React.useState<{
     [toolId: string]: string;
   }>({});
+
+  // A connection-backed tool shares its connection's account or asks each
+  // member to connect their own; the share dialog shows that choice.
+  const shareCredentials = (
+    tool: UserToolType,
+  ): ShareCredentials | undefined => {
+    const connection = tool.connection_id
+      ? connections.find((c) => c.id === tool.connection_id)
+      : undefined;
+    if (!connection) return undefined;
+    const policy = catalog.find(
+      (c) => c.key === connection.connector_key,
+    )?.credential_policy;
+    return {
+      toolId: tool.id,
+      connectorName: connection.name,
+      account: connection.account_label,
+      mode: tool.credential_mode === 'member' ? 'member' : 'owner',
+      forcedMode: policy === 'owner' || policy === 'member' ? policy : null,
+      hasWrites: (tool.actions ?? []).some(
+        (action) => action.access === 'write',
+      ),
+    };
+  };
 
   const handleDeleteTool = (tool: UserToolType) => {
     setToolToDelete(tool);
@@ -478,7 +506,11 @@ export default function Tools() {
               resourceType="tool"
               resourceId={toolToShare.id}
               resourceName={toolToShare.customName || toolToShare.displayName}
-              onClose={() => setToolToShare(null)}
+              credentials={shareCredentials(toolToShare)}
+              onClose={() => {
+                setToolToShare(null);
+                getUserTools();
+              }}
             />
           )}
         </div>

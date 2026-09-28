@@ -558,7 +558,12 @@ export default function MCPServerModal({
           ? t('settings.tools.mcp.reconnectServer', {
               defaultValue: 'Reconnect Server',
             })
-          : t('settings.tools.mcp.addServer')
+          : server?.preset
+            ? t('settings.connectors.wizard.connectTitle', {
+                name: server.displayName,
+                interpolation: { escapeValue: false },
+              })
+            : t('settings.tools.mcp.addServer')
       }
       size="lg"
       mobileVariant="sheet"

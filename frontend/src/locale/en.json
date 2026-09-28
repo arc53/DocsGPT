@@ -1072,7 +1072,13 @@
         "ntfy": "Send push notifications through an ntfy server.",
         "postgres": "Read the schema and run SQL against a Postgres database.",
         "custom_mcp": "Connect any remote Model Context Protocol server.",
-        "custom_openapi": "Import an OpenAPI spec and call its endpoints as tools."
+        "custom_openapi": "Import an OpenAPI spec and call its endpoints as tools.",
+        "mcp_notion": "Search, read and update Notion pages and databases.",
+        "mcp_linear": "Find, create and update Linear issues and projects.",
+        "mcp_atlassian": "Search and update Jira issues and Confluence pages.",
+        "mcp_sentry": "Look up Sentry issues, events and releases.",
+        "mcp_asana": "Find and update Asana tasks and projects.",
+        "mcp_stripe": "Look up customers, payments and subscriptions in Stripe."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
       "noMatches": "No connectors match your search.",
@@ -1176,6 +1182,18 @@
       "error": {
         "decrypt": "Stored credentials could not be decrypted. Reconnect to continue.",
         "defaultKey": "An admin must set ENCRYPTION_SECRET_KEY before services can be connected."
+      },
+      "sharing": {
+        "owner": "Team members use my account",
+        "member": "Each member connects their own account"
+      },
+      "share": {
+        "heading": "Whose account team members use",
+        "ownerWarning": "Team members will act as {{account}} on {{name}}.",
+        "confirmWrite": "I understand teammates can take actions with my account.",
+        "memberNote": "Each member connects their own {{name}} account before they can use this tool.",
+        "forced": "An admin chose this for every share of this connector.",
+        "saveFailed": "Could not save the change. Try again."
       }
     }
   },
@@ -1547,7 +1565,10 @@
       "noSourcesAvailable": "No sources available",
       "selectedCount": "{{count}} sources selected",
       "groupOwn": "Your sources",
-      "groupTeam": "Shared with team"
+      "groupTeam": "Shared with team",
+      "connectMore": "Connect more",
+      "fromConnector": "From {{name}}",
+      "fromConnectorTitle": "From {{name}}: {{title}}"
     },
     "attachments": {
       "attach": "Attach",
@@ -1593,7 +1614,9 @@
       "accessingMemory": "Accessing memory…",
       "runningCode": "Running code…",
       "creatingArtifact": "Creating an artifact…",
-      "usingTool": "Using {{tool}}…"
+      "usingTool": "Using {{tool}}…",
+      "searchingConnector": "Searching {{name}}...",
+      "usingConnector": "Using {{name}}..."
     },
     "toolChip": {
       "searchingWeb": "Searched the web · “{{query}}”",
@@ -1604,7 +1627,10 @@
       "accessingMemory": "Accessed memory",
       "runningCode": "Ran code",
       "creatingArtifact": "Created an artifact",
-      "usingTool": "Used {{tool}}"
+      "usingTool": "Used {{tool}}",
+      "searchedConnector": "Searched {{name}}",
+      "readConnector": "Read from {{name}}",
+      "usedConnector": "Used {{name}}: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Arguments",
@@ -1799,7 +1825,8 @@
         "noOptionsMessage": "No tools available",
         "groupBuiltin": "Built-in",
         "groupDefault": "Default",
-        "groupCustom": "Custom"
+        "groupCustom": "Custom",
+        "groupConnection": "{{name}} · {{account}}"
       },
       "modelsPopup": {
         "title": "Select Models",
@@ -2444,7 +2471,8 @@
       "admins": "Admins",
       "usage": "Usage",
       "quotas": "Quotas",
-      "audit": "Activity"
+      "audit": "Activity",
+      "connectors": "Connectors"
     },
     "quotas": {
       "unpriced": {
@@ -2452,6 +2480,9 @@
         "body": "These were used this {{period}} and recorded at $0: {{models}}. Use a token limit for them, or declare their rates in the model catalog.",
         "model": "{{model}} ({{tokens}} tokens)"
       }
+    },
+    "connectors": {
+      "defaultKey": "Set ENCRYPTION_SECRET_KEY before connecting services."
     }
   }
 }

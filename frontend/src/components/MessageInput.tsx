@@ -35,13 +35,18 @@ import {
   selectToken,
   setSelectedDocs,
 } from '../preferences/preferenceSlice';
-import type { RootState } from '../store';
+import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
 import ToolIcon from './ToolIcon';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import {
+  loadConnectors,
+  selectConnections,
+} from '../connectors/connectorsSlice';
 import {
   AttachFileButton,
   AttachmentChipList,
@@ -338,6 +343,7 @@ export default function MessageInput({
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [userTools, setUserTools] = useState<UserToolType[]>([]);
+  const connections = useSelector(selectConnections);
   const [toolsLoading, setToolsLoading] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -1561,14 +1567,39 @@ export default function MessageInput({
   }, [token]);
 
   useEffect(() => {
-    if (isToolsPopupOpen) fetchUserTools();
+    if (isToolsPopupOpen) {
+      fetchUserTools();
+      (dispatch as AppDispatch)(loadConnectors({ token }));
+    }
   }, [isToolsPopupOpen, fetchUserTools]);
 
-  const toolItems: MultiSelectPopoverItem[] = userTools.map((tool) => ({
-    id: tool.id,
-    label: tool.customName || tool.displayName,
-    icon: <ToolIcon name={tool.name} className="size-5" />,
-  }));
+  // Tools from a connected service sit under that service; the rest are
+  // built in. Groups only appear once some tool comes from a connection.
+  const toolConnection = (tool: UserToolType) =>
+    tool.connection_id
+      ? connections.find((c) => c.id === tool.connection_id)
+      : undefined;
+  const anyConnectedTool = userTools.some((tool) => toolConnection(tool));
+  const toolItems: MultiSelectPopoverItem[] = [...userTools]
+    .sort(
+      (a, b) =>
+        Number(Boolean(toolConnection(a))) - Number(Boolean(toolConnection(b))),
+    )
+    .map((tool) => {
+      const connection = toolConnection(tool);
+      return {
+        id: tool.id,
+        label: tool.customName || tool.displayName,
+        icon: connection ? (
+          <ConnectorIcon icon={connection.icon} className="size-5" />
+        ) : (
+          <ToolIcon name={tool.name} className="size-5" />
+        ),
+        group: anyConnectedTool
+          ? (connection?.name ?? t('settings.tools.groupBuiltIn'))
+          : undefined,
+      };
+    });
 
   const selectedToolIds = userTools
     .filter((tool) => tool.status)

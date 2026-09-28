@@ -1065,7 +1065,13 @@
         "ntfy": "通过 ntfy 服务器发送推送通知。",
         "postgres": "读取 Postgres 数据库的结构并执行 SQL。",
         "custom_mcp": "连接任意远程 Model Context Protocol 服务器。",
-        "custom_openapi": "导入 OpenAPI 规范，并将其端点作为工具调用。"
+        "custom_openapi": "导入 OpenAPI 规范，并将其端点作为工具调用。",
+        "mcp_notion": "搜索、阅读和更新 Notion 页面与数据库。",
+        "mcp_linear": "查找、创建和更新 Linear 问题与项目。",
+        "mcp_atlassian": "搜索和更新 Jira 问题与 Confluence 页面。",
+        "mcp_sentry": "查看 Sentry 问题、事件和发布版本。",
+        "mcp_asana": "查找和更新 Asana 任务与项目。",
+        "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。"
       },
       "empty": "尚未连接任何服务。连接一个服务以同步其内容，或为智能体提供新工具。",
       "noMatches": "没有与搜索匹配的连接器。",
@@ -1164,6 +1170,18 @@
       "error": {
         "decrypt": "无法解密保存的凭据。请重新连接以继续。",
         "defaultKey": "管理员必须先设置 ENCRYPTION_SECRET_KEY，才能连接服务。"
+      },
+      "sharing": {
+        "owner": "团队成员使用我的账号",
+        "member": "每位成员连接自己的账号"
+      },
+      "share": {
+        "heading": "团队成员使用谁的账号",
+        "ownerWarning": "团队成员将在 {{name}} 中以 {{account}} 的身份操作。",
+        "confirmWrite": "我了解团队成员可以使用我的账号执行操作。",
+        "memberNote": "每位成员需先连接自己的 {{name}} 账号才能使用此工具。",
+        "forced": "管理员已为此连接器的所有共享设定了此项。",
+        "saveFailed": "无法保存更改。请重试。"
       }
     }
   },
@@ -1533,7 +1551,10 @@
       "noSourcesAvailable": "没有可用的来源",
       "selectedCount": "已选择 {{count}} 个来源",
       "groupOwn": "我的来源",
-      "groupTeam": "团队共享"
+      "groupTeam": "团队共享",
+      "connectMore": "连接更多",
+      "fromConnector": "来自 {{name}}",
+      "fromConnectorTitle": "来自 {{name}}：{{title}}"
     },
     "attachments": {
       "attach": "附件",
@@ -1574,7 +1595,9 @@
       "accessingMemory": "正在访问记忆…",
       "runningCode": "正在运行代码…",
       "creatingArtifact": "正在创建工件…",
-      "usingTool": "正在使用 {{tool}}…"
+      "usingTool": "正在使用 {{tool}}…",
+      "searchingConnector": "正在搜索 {{name}}...",
+      "usingConnector": "正在使用 {{name}}..."
     },
     "toolChip": {
       "searchingWeb": "已搜索网络 · “{{query}}”",
@@ -1585,7 +1608,10 @@
       "accessingMemory": "已访问记忆",
       "runningCode": "已运行代码",
       "creatingArtifact": "已创建工件",
-      "usingTool": "已使用 {{tool}}"
+      "usingTool": "已使用 {{tool}}",
+      "searchedConnector": "已搜索 {{name}}",
+      "readConnector": "已从 {{name}} 读取",
+      "usedConnector": "已使用 {{name}}：{{action}}"
     },
     "inlineSteps": {
       "arguments": "参数",
@@ -1774,7 +1800,8 @@
         "noOptionsMessage": "没有可用的工具",
         "groupBuiltin": "内置",
         "groupDefault": "默认",
-        "groupCustom": "自定义"
+        "groupCustom": "自定义",
+        "groupConnection": "{{name}} · {{account}}"
       },
       "modelsPopup": {
         "title": "选择模型",

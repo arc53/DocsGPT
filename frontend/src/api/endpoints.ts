@@ -105,6 +105,9 @@ const endpoints = {
     CONNECTION_TOOL_PERMISSIONS: (id: string, toolId: string) =>
       `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/permissions`,
     CONNECTIONS_CLAIM: '/api/connections/claim',
+    TOOL_CREDENTIAL_MODE: (toolId: string) =>
+      `/api/connections/tools/${encodeURIComponent(toolId)}/credential-mode`,
+    ADMIN_CONNECTORS: '/api/admin/connectors',
     GET_CHUNKS: (
       docId: string,
       page: number,

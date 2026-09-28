@@ -10,7 +10,10 @@ type SourcesPopoverFooterProps = {
   onUploadClick: () => void;
 };
 
-/** Shared footer for source pickers: a link to the sources page and an upload shortcut. */
+/**
+ * Shared footer for source pickers: links to the sources page and to the
+ * connectors that can sync content, and an upload shortcut.
+ */
 export default function SourcesPopoverFooter({
   onNavigate,
   onUploadClick,
@@ -21,12 +24,20 @@ export default function SourcesPopoverFooter({
     // One row when it fits (link left, upload right); on a narrow sheet or a
     // long locale the button wraps under the link.
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <Button variant="link" size="inline" asChild>
-        <Link to="/settings/sources" onClick={onNavigate}>
-          {t('settings.sources.goToSources')}
-          <ArrowRight aria-hidden="true" className="size-3" />
-        </Link>
-      </Button>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Button variant="link" size="inline" asChild>
+          <Link to="/settings/sources" onClick={onNavigate}>
+            {t('settings.sources.goToSources')}
+            <ArrowRight aria-hidden="true" className="size-3" />
+          </Link>
+        </Button>
+        <Button variant="link" size="inline" asChild>
+          <Link to="/settings/connectors?capability=sync" onClick={onNavigate}>
+            {t('conversation.sources.connectMore')}
+            <ArrowRight aria-hidden="true" className="size-3" />
+          </Link>
+        </Button>
+      </div>
       <Button
         type="button"
         variant="outline-primary"

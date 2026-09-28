@@ -1065,7 +1065,13 @@
         "ntfy": "ntfy サーバー経由でプッシュ通知を送信します。",
         "postgres": "Postgres データベースのスキーマを読み取り、SQL を実行します。",
         "custom_mcp": "任意のリモート Model Context Protocol サーバーに接続します。",
-        "custom_openapi": "OpenAPI 仕様をインポートし、そのエンドポイントをツールとして呼び出します。"
+        "custom_openapi": "OpenAPI 仕様をインポートし、そのエンドポイントをツールとして呼び出します。",
+        "mcp_notion": "Notion のページやデータベースを検索、閲覧、更新します。",
+        "mcp_linear": "Linear の課題やプロジェクトを検索、作成、更新します。",
+        "mcp_atlassian": "Jira の課題と Confluence のページを検索、更新します。",
+        "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
+        "mcp_asana": "Asana のタスクやプロジェクトを検索、更新します。",
+        "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。"
       },
       "empty": "まだ何も接続されていません。サービスを接続すると、コンテンツを同期したり、エージェントに新しいツールを提供したりできます。",
       "noMatches": "検索に一致するコネクタはありません。",
@@ -1164,6 +1170,18 @@
       "error": {
         "decrypt": "保存された認証情報を復号できませんでした。続行するには再接続してください。",
         "defaultKey": "サービスを接続する前に、管理者が ENCRYPTION_SECRET_KEY を設定する必要があります。"
+      },
+      "sharing": {
+        "owner": "メンバーは自分のアカウントを使う",
+        "member": "各メンバーが自分のアカウントを接続する"
+      },
+      "share": {
+        "heading": "チームメンバーが使うアカウント",
+        "ownerWarning": "チームメンバーは {{name}} で {{account}} として操作します。",
+        "confirmWrite": "チームメンバーが自分のアカウントで操作を行えることを理解しました。",
+        "memberNote": "各メンバーは、このツールを使う前に自分の {{name}} アカウントを接続します。",
+        "forced": "このコネクタのすべての共有に対して管理者が設定しています。",
+        "saveFailed": "変更を保存できませんでした。もう一度お試しください。"
       }
     }
   },
@@ -1533,7 +1551,10 @@
       "noSourcesAvailable": "利用可能なソースがありません",
       "selectedCount": "{{count}} 件のソースを選択中",
       "groupOwn": "自分のソース",
-      "groupTeam": "チームと共有"
+      "groupTeam": "チームと共有",
+      "connectMore": "さらに接続",
+      "fromConnector": "{{name}} から",
+      "fromConnectorTitle": "{{name}} から: {{title}}"
     },
     "attachments": {
       "attach": "添付",
@@ -1574,7 +1595,9 @@
       "accessingMemory": "メモリにアクセス中…",
       "runningCode": "コードを実行中…",
       "creatingArtifact": "アーティファクトを作成中…",
-      "usingTool": "{{tool}} を使用中…"
+      "usingTool": "{{tool}} を使用中…",
+      "searchingConnector": "{{name}} を検索中...",
+      "usingConnector": "{{name}} を使用中..."
     },
     "toolChip": {
       "searchingWeb": "ウェブ検索済み · 「{{query}}」",
@@ -1585,7 +1608,10 @@
       "accessingMemory": "メモリにアクセス済み",
       "runningCode": "コード実行済み",
       "creatingArtifact": "アーティファクト作成済み",
-      "usingTool": "{{tool}} を使用済み"
+      "usingTool": "{{tool}} を使用済み",
+      "searchedConnector": "{{name}} を検索しました",
+      "readConnector": "{{name}} から読み取りました",
+      "usedConnector": "{{name}} を使用: {{action}}"
     },
     "inlineSteps": {
       "arguments": "引数",
@@ -1774,7 +1800,8 @@
         "noOptionsMessage": "利用可能なツールがありません",
         "groupBuiltin": "ビルトイン",
         "groupDefault": "デフォルト",
-        "groupCustom": "カスタム"
+        "groupCustom": "カスタム",
+        "groupConnection": "{{name}} · {{account}}"
       },
       "modelsPopup": {
         "title": "モデルを選択",

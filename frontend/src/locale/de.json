@@ -1066,7 +1066,13 @@
         "ntfy": "Push-Benachrichtigungen über einen ntfy-Server senden.",
         "postgres": "Schema lesen und SQL auf einer Postgres-Datenbank ausführen.",
         "custom_mcp": "Einen beliebigen Remote-Server für das Model Context Protocol verbinden.",
-        "custom_openapi": "Eine OpenAPI-Spezifikation importieren und ihre Endpunkte als Werkzeuge aufrufen."
+        "custom_openapi": "Eine OpenAPI-Spezifikation importieren und ihre Endpunkte als Werkzeuge aufrufen.",
+        "mcp_notion": "Notion-Seiten und -Datenbanken durchsuchen, lesen und aktualisieren.",
+        "mcp_linear": "Linear-Issues und -Projekte finden, anlegen und aktualisieren.",
+        "mcp_atlassian": "Jira-Issues und Confluence-Seiten durchsuchen und aktualisieren.",
+        "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
+        "mcp_asana": "Asana-Aufgaben und -Projekte finden und aktualisieren.",
+        "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
       "noMatches": "Keine Konnektoren passen zu deiner Suche.",
@@ -1170,6 +1176,18 @@
       "error": {
         "decrypt": "Die gespeicherten Zugangsdaten konnten nicht entschlüsselt werden. Verbinde neu, um fortzufahren.",
         "defaultKey": "Ein Admin muss ENCRYPTION_SECRET_KEY setzen, bevor Dienste verbunden werden können."
+      },
+      "sharing": {
+        "owner": "Teammitglieder nutzen mein Konto",
+        "member": "Jedes Mitglied verbindet sein eigenes Konto"
+      },
+      "share": {
+        "heading": "Welches Konto Teammitglieder nutzen",
+        "ownerWarning": "Teammitglieder handeln in {{name}} als {{account}}.",
+        "confirmWrite": "Ich verstehe, dass Teammitglieder mit meinem Konto Aktionen ausführen können.",
+        "memberNote": "Jedes Mitglied verbindet sein eigenes {{name}}-Konto, bevor es dieses Werkzeug nutzen kann.",
+        "forced": "Ein Admin hat das für alle Freigaben dieses Konnektors festgelegt.",
+        "saveFailed": "Die Änderung konnte nicht gespeichert werden. Versuche es erneut."
       }
     }
   },
@@ -1541,7 +1559,10 @@
       "noSourcesAvailable": "Keine Quellen verfügbar",
       "selectedCount": "{{count}} Quellen ausgewählt",
       "groupOwn": "Deine Quellen",
-      "groupTeam": "Mit dem Team geteilt"
+      "groupTeam": "Mit dem Team geteilt",
+      "connectMore": "Weitere verbinden",
+      "fromConnector": "Aus {{name}}",
+      "fromConnectorTitle": "Aus {{name}}: {{title}}"
     },
     "attachments": {
       "attach": "Anhängen",
@@ -1582,7 +1603,9 @@
       "accessingMemory": "Greife auf das Gedächtnis zu…",
       "runningCode": "Führe Code aus…",
       "creatingArtifact": "Erstelle ein Artefakt…",
-      "usingTool": "Verwende {{tool}}…"
+      "usingTool": "Verwende {{tool}}…",
+      "searchingConnector": "Durchsuche {{name}}...",
+      "usingConnector": "Nutze {{name}}..."
     },
     "toolChip": {
       "searchingWeb": "Im Web gesucht · „{{query}}“",
@@ -1593,7 +1616,10 @@
       "accessingMemory": "Auf Gedächtnis zugegriffen",
       "runningCode": "Code ausgeführt",
       "creatingArtifact": "Artefakt erstellt",
-      "usingTool": "{{tool}} verwendet"
+      "usingTool": "{{tool}} verwendet",
+      "searchedConnector": "{{name}} durchsucht",
+      "readConnector": "Aus {{name}} gelesen",
+      "usedConnector": "{{name}} genutzt: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Argumente",
@@ -1783,7 +1809,8 @@
         "noOptionsMessage": "Keine Werkzeuge verfügbar",
         "groupBuiltin": "Integriert",
         "groupDefault": "Standard",
-        "groupCustom": "Benutzerdefiniert"
+        "groupCustom": "Benutzerdefiniert",
+        "groupConnection": "{{name}} · {{account}}"
       },
       "modelsPopup": {
         "title": "Modelle auswählen",

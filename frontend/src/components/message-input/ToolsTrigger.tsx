@@ -38,12 +38,20 @@ export default function ToolsTrigger({
       emptyMessage={t('settings.tools.noToolsFound')}
       loading={loading}
       footer={
-        <Button variant="link" size="inline" asChild>
-          <a href="/settings/tools">
-            {t('settings.tools.manageTools')}
-            <ArrowRight aria-hidden="true" className="size-3" />
-          </a>
-        </Button>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Button variant="link" size="inline" asChild>
+            <a href="/settings/tools">
+              {t('settings.tools.manageTools')}
+              <ArrowRight aria-hidden="true" className="size-3" />
+            </a>
+          </Button>
+          <Button variant="link" size="inline" asChild>
+            <a href="/settings/connectors?capability=tools">
+              {t('conversation.sources.connectMore')}
+              <ArrowRight aria-hidden="true" className="size-3" />
+            </a>
+          </Button>
+        </div>
       }
       trigger={
         <Button

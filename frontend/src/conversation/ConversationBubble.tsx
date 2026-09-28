@@ -48,6 +48,8 @@ import {
 import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
 import ConnectToolCallBar from './ConnectToolCallBar';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectorIconKey } from '../connectors/i18n';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
@@ -66,7 +68,13 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     thought?: string;
-    sources?: { title: string; text: string; link: string }[];
+    sources?: {
+      title: string;
+      text: string;
+      link: string;
+      connector_key?: string | null;
+      connector_name?: string | null;
+    }[];
     toolCalls?: ToolCallsType[];
     /** Arrival order of the answer's parts; drives inline rendering. */
     segments?: AnswerSegment[];
@@ -369,6 +377,23 @@ const ConversationBubble = forwardRef<
                                 </p>
                               </a>
                             </Button>
+                          ) : source.connector_name ? (
+                            <div className="mt-3.5 flex flex-row items-center gap-1.5">
+                              <ConnectorIcon
+                                icon={connectorIconKey(source.connector_key)}
+                                className="text-muted-foreground size-4 shrink-0"
+                              />
+                              <p
+                                className="mt-0.5 truncate text-xs"
+                                title={source.title}
+                              >
+                                {t('conversation.sources.fromConnectorTitle', {
+                                  name: source.connector_name,
+                                  title: source.title,
+                                  interpolation: { escapeValue: false },
+                                })}
+                              </p>
+                            </div>
                           ) : (
                             <div className="mt-3.5 flex flex-row items-center gap-1.5">
                               <FileText className="text-muted-foreground size-4 shrink-0" />
@@ -665,7 +690,13 @@ function onActivateKey(
 }
 
 type AllSourcesProps = {
-  sources: { title: string; text: string; link?: string }[];
+  sources: {
+    title: string;
+    text: string;
+    link?: string;
+    connector_key?: string | null;
+    connector_name?: string | null;
+  }[];
 };
 
 function AllSources(sources: AllSourcesProps) {
@@ -718,6 +749,20 @@ function AllSources(sources: AllSourcesProps) {
                   <ExternalLink className="text-muted-foreground group-hover/card:text-primary ml-1 inline size-3" />
                 )}
               </p>
+              {source.connector_name && (
+                <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
+                  <ConnectorIcon
+                    icon={connectorIconKey(source.connector_key)}
+                    className="text-muted-foreground size-3.5 shrink-0"
+                  />
+                  <span className="truncate">
+                    {t('conversation.sources.fromConnector', {
+                      name: source.connector_name,
+                      interpolation: { escapeValue: false },
+                    })}
+                  </span>
+                </p>
+              )}
               <p className="text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word">
                 {source.text}
               </p>

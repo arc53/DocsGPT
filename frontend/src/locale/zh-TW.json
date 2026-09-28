@@ -1065,7 +1065,13 @@
         "ntfy": "透過 ntfy 伺服器傳送推播通知。",
         "postgres": "讀取 Postgres 資料庫的結構並執行 SQL。",
         "custom_mcp": "連接任何遠端 Model Context Protocol 伺服器。",
-        "custom_openapi": "匯入 OpenAPI 規格，並將其端點作為工具呼叫。"
+        "custom_openapi": "匯入 OpenAPI 規格，並將其端點作為工具呼叫。",
+        "mcp_notion": "搜尋、閱讀和更新 Notion 頁面與資料庫。",
+        "mcp_linear": "尋找、建立和更新 Linear 議題與專案。",
+        "mcp_atlassian": "搜尋和更新 Jira 議題與 Confluence 頁面。",
+        "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
+        "mcp_asana": "尋找和更新 Asana 任務與專案。",
+        "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。"
       },
       "empty": "尚未連線任何服務。連線一個服務以同步其內容，或為代理提供新工具。",
       "noMatches": "沒有符合搜尋的連接器。",
@@ -1164,6 +1170,18 @@
       "error": {
         "decrypt": "無法解密已儲存的憑證。請重新連線以繼續。",
         "defaultKey": "管理員必須先設定 ENCRYPTION_SECRET_KEY，才能連線服務。"
+      },
+      "sharing": {
+        "owner": "團隊成員使用我的帳號",
+        "member": "每位成員連線自己的帳號"
+      },
+      "share": {
+        "heading": "團隊成員使用誰的帳號",
+        "ownerWarning": "團隊成員將在 {{name}} 中以 {{account}} 的身分操作。",
+        "confirmWrite": "我了解團隊成員可以使用我的帳號執行操作。",
+        "memberNote": "每位成員須先連線自己的 {{name}} 帳號，才能使用此工具。",
+        "forced": "管理員已為此連接器的所有共用設定此項。",
+        "saveFailed": "無法儲存變更。請再試一次。"
       }
     }
   },
@@ -1533,7 +1551,10 @@
       "noSourcesAvailable": "沒有可用的來源",
       "selectedCount": "已選擇 {{count}} 個來源",
       "groupOwn": "我的來源",
-      "groupTeam": "團隊共享"
+      "groupTeam": "團隊共享",
+      "connectMore": "連線更多",
+      "fromConnector": "來自 {{name}}",
+      "fromConnectorTitle": "來自 {{name}}：{{title}}"
     },
     "attachments": {
       "attach": "附件",
@@ -1574,7 +1595,9 @@
       "accessingMemory": "正在存取記憶…",
       "runningCode": "正在執行程式碼…",
       "creatingArtifact": "正在建立 Artifact…",
-      "usingTool": "正在使用 {{tool}}…"
+      "usingTool": "正在使用 {{tool}}…",
+      "searchingConnector": "正在搜尋 {{name}}...",
+      "usingConnector": "正在使用 {{name}}..."
     },
     "toolChip": {
       "searchingWeb": "已搜尋網路 · 「{{query}}」",
@@ -1585,7 +1608,10 @@
       "accessingMemory": "已存取記憶",
       "runningCode": "已執行程式碼",
       "creatingArtifact": "已建立 Artifact",
-      "usingTool": "已使用 {{tool}}"
+      "usingTool": "已使用 {{tool}}",
+      "searchedConnector": "已搜尋 {{name}}",
+      "readConnector": "已從 {{name}} 讀取",
+      "usedConnector": "已使用 {{name}}：{{action}}"
     },
     "inlineSteps": {
       "arguments": "參數",
@@ -1774,7 +1800,8 @@
         "noOptionsMessage": "沒有可用的工具",
         "groupBuiltin": "內建",
         "groupDefault": "預設",
-        "groupCustom": "自訂"
+        "groupCustom": "自訂",
+        "groupConnection": "{{name}} · {{account}}"
       },
       "modelsPopup": {
         "title": "選擇模型",

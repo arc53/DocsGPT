@@ -45,6 +45,9 @@ import {
 } from '../components/MultiSelectPopover';
 import SourcesPopoverFooter from '../components/SourcesPopoverFooter';
 import ToolIcon from '../components/ToolIcon';
+import connectorsService from '../api/services/connectorsService';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import type { Connection } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -552,12 +555,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   useEffect(() => {
     const getTools = async () => {
-      const [toolsResponse, devicesResult] = await Promise.all([
-        userService.getUserTools(token),
-        // Tolerate failures here: the picker should still render the
-        // tool list even if /api/devices returns an error or 401.
-        devicesService.list(token).catch(() => ({ devices: [] })),
-      ]);
+      const [toolsResponse, devicesResult, connectionsResult] =
+        await Promise.all([
+          userService.getUserTools(token),
+          // Tolerate failures here: the picker should still render the
+          // tool list even if /api/devices returns an error or 401.
+          devicesService.list(token).catch(() => ({ devices: [] })),
+          connectorsService
+            .listConnections(token)
+            .catch(() => ({ connections: [] })),
+        ]);
+      const connectionsById = new Map<string, Connection>(
+        ((connectionsResult?.connections ?? []) as Connection[]).map((c) => [
+          c.id,
+          c,
+        ]),
+      );
       if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
       const data = await toolsResponse.json();
       // Hide workflow-only builtins (e.g. read_document) from the classic
@@ -576,19 +589,39 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           !Number.isNaN(seen) && Date.now() - seen < onlineWindowMs;
         devicesById.set(d.id, { online, last_seen_at: d.last_seen_at });
       });
-      // Group ordering: builtins -> defaults -> user tools (sorted via the
-      // MultiSelectPopover first-appearance grouping).
+      // Group ordering: builtins -> defaults -> one group per connection
+      // (the service and its account) -> custom tools, via the
+      // MultiSelectPopover first-appearance grouping.
+      const connectionOf = (tool: UserToolType) =>
+        tool.connection_id
+          ? connectionsById.get(tool.connection_id)
+          : undefined;
+      const rank = (tool: UserToolType) =>
+        tool.builtin ? 0 : tool.default ? 1 : connectionOf(tool) ? 2 : 3;
       const groupFor = (tool: UserToolType): string => {
         if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
         if (tool.default) return t('agents.form.toolsPopup.groupDefault');
+        const connection = connectionOf(tool);
+        if (connection)
+          return t('agents.form.toolsPopup.groupConnection', {
+            name: connection.name,
+            account: connection.account_label,
+            interpolation: { escapeValue: false },
+          });
         return t('agents.form.toolsPopup.groupCustom');
       };
-      const tools: MultiSelectPopoverItem[] = visibleTools.map(
-        (tool: UserToolType) => {
+      const tools: MultiSelectPopoverItem[] = [...visibleTools]
+        .sort((a, b) => rank(a) - rank(b))
+        .map((tool: UserToolType) => {
+          const connection = connectionOf(tool);
           const base: MultiSelectPopoverItem = {
             id: tool.id,
             label: getToolDisplayName(tool),
-            icon: <ToolIcon name={tool.name} className="size-5" />,
+            icon: connection ? (
+              <ConnectorIcon icon={connection.icon} className="size-5" />
+            ) : (
+              <ToolIcon name={tool.name} className="size-5" />
+            ),
             group: groupFor(tool),
           };
           if (tool.name === 'remote_device') {
@@ -607,8 +640,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             );
           }
           return base;
-        },
-      );
+        });
       const groupOrder = [
         t('agents.form.toolsPopup.groupBuiltin'),
         t('agents.form.toolsPopup.groupDefault'),
