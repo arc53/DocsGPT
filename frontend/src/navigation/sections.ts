@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   LayoutTemplate,
+  Plug,
   ScrollText,
   Settings2,
   ShieldCheck,
@@ -114,6 +115,12 @@ export const SETTINGS_SECTION: Section = {
           path: '/settings/sources',
           labelKey: 'settings.sources.label',
           icon: Database,
+        },
+        {
+          key: 'connectors',
+          path: '/settings/connectors',
+          labelKey: 'settings.connectors.label',
+          icon: Plug,
         },
         {
           key: 'tools',

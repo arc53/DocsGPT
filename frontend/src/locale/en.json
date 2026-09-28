@@ -101,7 +101,7 @@
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
-      "subtitle": "Upload and manage the documents and knowledge sources used to power your responses",
+      "subtitle": "Content DocsGPT can search and cite: uploads, websites, wikis and content synced from your connections.",
       "label": "Sources",
       "name": "Source Name",
       "date": "Vector Date",
@@ -359,7 +359,8 @@
           "forbidden": "You don't have permission to edit this source's config.",
           "saveFailed": "Failed to save config. Please try again."
         }
-      }
+      },
+      "paused": "Sync paused. Reconnect {{name}} to resume."
     },
     "analytics": {
       "label": "Analytics",
@@ -657,11 +658,11 @@
     },
     "tools": {
       "label": "Tools",
-      "subtitle": "Browse, connect, and configure the tools and integrations that power your agents",
+      "subtitle": "Actions your agents can take. Built-in tools live here. Tools from a connected service are grouped under that service.",
       "searchPlaceholder": "Search tools...",
       "addTool": "Add Tool",
       "noToolsFound": "No tools found",
-      "selectToolSetup": "Select a tool to set up",
+      "selectToolSetup": "Add a tool",
       "settingsIconAlt": "Settings icon",
       "configureToolAria": "Configure {{toolName}}",
       "toggleToolAria": "Toggle {{toolName}}",
@@ -673,8 +674,8 @@
       "builtIn": "Built-in",
       "authStatus": {
         "connected": "Connected",
-        "needsAuth": "Needs Auth",
-        "configured": "Configured"
+        "needsAuth": "Reconnect",
+        "configured": "Connected"
       },
       "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\"?",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
@@ -779,7 +780,11 @@
         "maxTimeout": "Maximum timeout is 300 seconds"
       },
       "headerValuePlaceholder": "e.g., application/json",
-      "toolIconTitle": "{{name}} icon"
+      "toolIconTitle": "{{name}} icon",
+      "groupBuiltIn": "Built in",
+      "groupService": "From a service",
+      "browseConnectors": "Looking for Notion, Linear or another service? Browse connectors",
+      "viaConnection": "via {{name}}"
     },
     "devices": {
       "label": "Devices",
@@ -1008,13 +1013,107 @@
           "subtitle": "The new secret for \"{{name}}\" is ready. The old one no longer works."
         }
       }
+    },
+    "connectors": {
+      "label": "Connectors",
+      "subtitle": "Connect DocsGPT to the services your team uses. A connection can sync content into Sources and give agents tools.",
+      "search": "Search connectors...",
+      "addCustom": "Add custom connector",
+      "custom": {
+        "custom_mcp": "MCP server",
+        "custom_openapi": "OpenAPI / REST"
+      },
+      "categoriesLabel": "Filter connectors by category",
+      "categories": {
+        "all": "All",
+        "connected": "Connected",
+        "files": "Files and docs",
+        "knowledge": "Knowledge bases",
+        "dev": "Developer tools",
+        "messaging": "Messaging",
+        "database": "Databases",
+        "search": "Search",
+        "custom": "Custom"
+      },
+      "capability": {
+        "sync": "Sync",
+        "read": "Read",
+        "write": "Write"
+      },
+      "status": {
+        "connect": "Connect",
+        "connected": "Connected",
+        "connectedCount": "{{count}} connected",
+        "reconnect": "Reconnect",
+        "needsAdminSetup": "Needs admin setup",
+        "disabledByAdmin": "Disabled by admin",
+        "custom": "Custom"
+      },
+      "connectionStatus": {
+        "connected": "Connected",
+        "reconnect_needed": "Reconnect needed",
+        "disconnected": "Disconnected",
+        "error": "Error",
+        "pending": "Waiting for sign-in"
+      },
+      "publisher": {
+        "built_in": "Built in",
+        "preset": "Preset",
+        "custom": "Custom"
+      },
+      "descriptions": {
+        "google_drive": "Sync Docs, Sheets and PDFs into Sources.",
+        "share_point": "Sync files from SharePoint sites and OneDrive into Sources.",
+        "confluence": "Sync Confluence spaces and pages into Sources.",
+        "s3": "Sync documents from an S3 bucket into Sources.",
+        "reddit": "Sync Reddit posts that match your searches into Sources.",
+        "brave": "Search the web and images with the Brave Search API.",
+        "telegram": "Send messages and images to a Telegram chat.",
+        "ntfy": "Send push notifications through an ntfy server.",
+        "postgres": "Read the schema and run SQL against a Postgres database.",
+        "custom_mcp": "Connect any remote Model Context Protocol server.",
+        "custom_openapi": "Import an OpenAPI spec and call its endpoints as tools."
+      },
+      "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
+      "noMatches": "No connectors match your search.",
+      "loadFailed": "Could not load connectors.",
+      "askAdmin": "Ask an admin to set this up.",
+      "setupSettings": "Set these server settings, then restart DocsGPT:",
+      "setupGuide": "Setup guide",
+      "unverified": "This server is not reviewed by DocsGPT. Only connect servers you trust.",
+      "detail": {
+        "accounts": "Accounts",
+        "connectedAs": "Connected as {{account}}",
+        "connectAnother": "Connect another account",
+        "sources": "Sources from this connection",
+        "tools": "Tools from this connection",
+        "noAccounts": "No account connected yet.",
+        "failed": "Could not load this connection.",
+        "lastSync": "Synced {{date}} · {{frequency}}",
+        "paused": "Sync paused",
+        "toolOn": "On",
+        "toolOff": "Off",
+        "accountMenu": "Account actions",
+        "disconnect": "Disconnect"
+      },
+      "permission": {
+        "always": "Always allow",
+        "ask": "Needs approval",
+        "off": "Off"
+      },
+      "disconnect": {
+        "title": "Disconnect {{name}}?",
+        "body_zero": "Tools from this connection stop working until you reconnect.",
+        "body_one": "Your source keeps its content but stops syncing. Tools from this connection stop working until you reconnect.",
+        "body_other": "Your {{count}} sources keep their content but stop syncing. Tools from this connection stop working until you reconnect."
+      }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "Upload new document",
+      "label": "Add a source",
       "select": "Choose how to upload your document to DocsGPT",
-      "selectSource": "Select the way to add your source",
+      "selectSource": "Add a source",
       "selectedFiles": "Selected Files",
       "noFilesSelected": "No files selected",
       "file": "Upload from device",
@@ -1027,7 +1126,7 @@
       "info": "Please upload .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip limited to 25mb",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
-      "train": "Train",
+      "train": "Add source",
       "create": "Create",
       "link": "Link",
       "urlLink": "URL Link",
@@ -1160,7 +1259,10 @@
         "region": "AWS Region",
         "endpointUrl": "Custom Endpoint URL (optional)",
         "initialContent": "Initial content (optional)"
-      }
+      },
+      "groupUploadWeb": "Upload and web",
+      "groupConnection": "From a connection",
+      "tileConnectedAs": "Connected as {{account}}"
     },
     "createAPIKey": {
       "label": "Create New API Key",
@@ -1196,8 +1298,8 @@
     "configTool": {
       "title": "Tool Config",
       "type": "Type",
-      "apiKeyLabel": "API Key / OAuth",
-      "apiKeyPlaceholder": "Enter API Key / OAuth",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "Enter API key",
       "addButton": "Add Tool",
       "closeButton": "Close",
       "customNamePlaceholder": "Enter custom name (optional)",

@@ -168,6 +168,8 @@ export type UserToolType = {
   // Access level when shared via a team: 'viewer' (use) or 'editor' (edit
   // actions; secrets stay owner-only). Null/absent for tools the caller owns.
   team_access?: 'viewer' | 'editor' | null;
+  // The connection whose account or credentials the tool runs with.
+  connection_id?: string | null;
   config: {
     [key: string]: any;
   };

@@ -554,7 +554,7 @@ export default function MCPServerModal({
         }
       }}
       title={
-        server
+        server?.id
           ? t('settings.tools.mcp.reconnectServer', {
               defaultValue: 'Reconnect Server',
             })
@@ -589,6 +589,14 @@ export default function MCPServerModal({
       }
     >
       <div className="flex flex-col gap-5">
+        {!server?.preset && (
+          <Alert variant="warning" role="note">
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>
+              {t('settings.connectors.unverified')}
+            </AlertDescription>
+          </Alert>
+        )}
         {server?.has_encrypted_credentials &&
           formData.auth_type !== 'oauth' && (
             <Alert variant="warning">

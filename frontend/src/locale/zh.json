@@ -97,7 +97,7 @@
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
-      "subtitle": "上传并管理您的回答所依赖的文档和知识来源",
+      "subtitle": "DocsGPT 可以搜索和引用的内容：上传的文件、网站、Wiki，以及从连接同步的内容。",
       "label": "来源",
       "name": "来源名称",
       "date": "向量日期",
@@ -353,7 +353,8 @@
           "forbidden": "您没有权限编辑此来源的配置。",
           "saveFailed": "保存配置失败，请重试。"
         }
-      }
+      },
+      "paused": "同步已暂停。重新连接 {{name}} 以继续。"
     },
     "analytics": {
       "label": "分析",
@@ -650,11 +651,11 @@
     },
     "tools": {
       "label": "工具",
-      "subtitle": "浏览、连接并配置驱动您的智能体的工具和集成",
+      "subtitle": "智能体可以执行的操作。内置工具在这里。已连接服务提供的工具归在该服务下。",
       "searchPlaceholder": "搜索工具...",
       "addTool": "添加工具",
       "noToolsFound": "未找到工具",
-      "selectToolSetup": "选择要设置的工具",
+      "selectToolSetup": "添加工具",
       "settingsIconAlt": "设置图标",
       "configureToolAria": "配置 {{toolName}}",
       "toggleToolAria": "切换 {{toolName}}",
@@ -666,8 +667,8 @@
       "builtIn": "内置",
       "authStatus": {
         "connected": "已连接",
-        "needsAuth": "需要认证",
-        "configured": "已配置"
+        "needsAuth": "重新连接",
+        "configured": "已连接"
       },
       "deleteWarning": "您确定要删除工具 \"{{toolName}}\" 吗？",
       "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
@@ -772,7 +773,11 @@
         "maxTimeout": "超时时间最长为 300 秒"
       },
       "headerValuePlaceholder": "例如：application/json",
-      "toolIconTitle": "{{name}} 图标"
+      "toolIconTitle": "{{name}} 图标",
+      "groupBuiltIn": "内置",
+      "groupService": "来自服务",
+      "browseConnectors": "在找 Notion、Linear 或其他服务？浏览连接器",
+      "viaConnection": "通过 {{name}}"
     },
     "devices": {
       "label": "设备",
@@ -1001,13 +1006,106 @@
           "subtitle": "“{{name}}”的新密钥已就绪，旧密钥已失效。"
         }
       }
+    },
+    "connectors": {
+      "label": "连接器",
+      "subtitle": "将 DocsGPT 连接到团队使用的服务。一个连接可以把内容同步到来源，也可以为智能体提供工具。",
+      "search": "搜索连接器...",
+      "addCustom": "添加自定义连接器",
+      "custom": {
+        "custom_mcp": "MCP 服务器",
+        "custom_openapi": "OpenAPI / REST"
+      },
+      "categoriesLabel": "按类别筛选连接器",
+      "categories": {
+        "all": "全部",
+        "connected": "已连接",
+        "files": "文件和文档",
+        "knowledge": "知识库",
+        "dev": "开发者工具",
+        "messaging": "消息",
+        "database": "数据库",
+        "search": "搜索",
+        "custom": "自定义"
+      },
+      "capability": {
+        "sync": "同步",
+        "read": "读取",
+        "write": "写入"
+      },
+      "status": {
+        "connect": "连接",
+        "connected": "已连接",
+        "connectedCount": "已连接 {{count}} 个",
+        "reconnect": "重新连接",
+        "needsAdminSetup": "需要管理员设置",
+        "disabledByAdmin": "已被管理员停用",
+        "custom": "自定义"
+      },
+      "connectionStatus": {
+        "connected": "已连接",
+        "reconnect_needed": "需要重新连接",
+        "disconnected": "已断开",
+        "error": "错误",
+        "pending": "等待登录"
+      },
+      "publisher": {
+        "built_in": "内置",
+        "preset": "预设",
+        "custom": "自定义"
+      },
+      "descriptions": {
+        "google_drive": "将文档、表格和 PDF 同步到来源。",
+        "share_point": "将 SharePoint 站点和 OneDrive 中的文件同步到来源。",
+        "confluence": "将 Confluence 空间和页面同步到来源。",
+        "s3": "将 S3 存储桶中的文档同步到来源。",
+        "reddit": "将符合搜索条件的 Reddit 帖子同步到来源。",
+        "brave": "使用 Brave Search API 搜索网页和图片。",
+        "telegram": "向 Telegram 聊天发送消息和图片。",
+        "ntfy": "通过 ntfy 服务器发送推送通知。",
+        "postgres": "读取 Postgres 数据库的结构并执行 SQL。",
+        "custom_mcp": "连接任意远程 Model Context Protocol 服务器。",
+        "custom_openapi": "导入 OpenAPI 规范，并将其端点作为工具调用。"
+      },
+      "empty": "尚未连接任何服务。连接一个服务以同步其内容，或为智能体提供新工具。",
+      "noMatches": "没有与搜索匹配的连接器。",
+      "loadFailed": "无法加载连接器。",
+      "askAdmin": "请让管理员完成设置。",
+      "setupSettings": "设置以下服务器配置，然后重启 DocsGPT：",
+      "setupGuide": "设置指南",
+      "unverified": "此服务器未经 DocsGPT 审核。请只连接你信任的服务器。",
+      "detail": {
+        "accounts": "账号",
+        "connectedAs": "已作为 {{account}} 连接",
+        "connectAnother": "连接其他账号",
+        "sources": "来自此连接的来源",
+        "tools": "来自此连接的工具",
+        "noAccounts": "尚未连接账号。",
+        "failed": "无法加载此连接。",
+        "lastSync": "已于 {{date}} 同步 · {{frequency}}",
+        "paused": "同步已暂停",
+        "toolOn": "开启",
+        "toolOff": "关闭",
+        "accountMenu": "账号操作",
+        "disconnect": "断开连接"
+      },
+      "permission": {
+        "always": "始终允许",
+        "ask": "需要批准",
+        "off": "关闭"
+      },
+      "disconnect": {
+        "title": "断开 {{name}}？",
+        "body_zero": "在重新连接之前，此连接的工具将无法使用。",
+        "body_other": "你的 {{count}} 个来源会保留内容，但将停止同步。在重新连接之前，此连接的工具将无法使用。"
+      }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "上传新文档",
+      "label": "添加来源",
       "select": "选择如何将文档上传到 DocsGPT",
-      "selectSource": "选择添加源的方式",
+      "selectSource": "添加来源",
       "selectedFiles": "已选择的文件",
       "noFilesSelected": "未选择文件",
       "file": "从设备上传",
@@ -1020,7 +1118,7 @@
       "info": "请上传限制为25MB的.pdf、.txt、.rst、.csv、.xlsx、.xlsm、.xlsb、.xls、.ods、.docx、.docm、.doc、.odt、.rtf、.md、.html、.xhtml、.png、.jpg、.jpeg、.epub、.json、.pptx、.pptm、.ppt、.pps、.ppsx、.ppsm、.pot、.odp、.zip文件",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
-      "train": "训练",
+      "train": "添加来源",
       "create": "创建",
       "link": "链接",
       "urlLink": "URL 链接",
@@ -1153,7 +1251,10 @@
         "region": "AWS 区域",
         "endpointUrl": "自定义端点 URL（可选）",
         "initialContent": "初始内容（可选）"
-      }
+      },
+      "groupUploadWeb": "上传和网页",
+      "groupConnection": "来自连接",
+      "tileConnectedAs": "已作为 {{account}} 连接"
     },
     "createAPIKey": {
       "label": "创建新的 API 密钥",
@@ -1189,8 +1290,8 @@
     "configTool": {
       "title": "工具配置",
       "type": "类型",
-      "apiKeyLabel": "API 密钥 / OAuth",
-      "apiKeyPlaceholder": "输入 API 密钥 / OAuth",
+      "apiKeyLabel": "API 密钥",
+      "apiKeyPlaceholder": "输入 API 密钥",
       "addButton": "添加工具",
       "closeButton": "关闭",
       "customNamePlaceholder": "Enter custom name (optional)",

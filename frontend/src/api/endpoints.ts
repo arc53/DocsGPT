@@ -87,6 +87,11 @@ const endpoints = {
     CONNECTOR_FILES: '/api/connectors/files',
     CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
     CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
+    CONNECTORS_CATALOG: '/api/connectors/catalog',
+    CONNECTIONS: '/api/connections',
+    CONNECTION: (id: string) => `/api/connections/${encodeURIComponent(id)}`,
+    CONNECTION_DISCONNECT: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/disconnect`,
     GET_CHUNKS: (
       docId: string,
       page: number,

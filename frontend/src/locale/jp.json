@@ -97,7 +97,7 @@
     },
     "sources": {
       "title": "ここでは、利用可能なすべてのソースファイルとアップロードしたファイルを管理できます。",
-      "subtitle": "レスポンスを機能させるドキュメントとナレッジソースをアップロードして管理",
+      "subtitle": "DocsGPT が検索・引用できるコンテンツ：アップロード、ウェブサイト、Wiki、接続から同期したコンテンツ。",
       "label": "ソース",
       "name": "ソース名",
       "date": "ベクトル日付",
@@ -353,7 +353,8 @@
           "forbidden": "このソースの設定を編集する権限がありません。",
           "saveFailed": "設定の保存に失敗しました。もう一度お試しください。"
         }
-      }
+      },
+      "paused": "同期を一時停止中です。再開するには {{name}} を再接続してください。"
     },
     "analytics": {
       "label": "分析",
@@ -650,11 +651,11 @@
     },
     "tools": {
       "label": "ツール",
-      "subtitle": "エージェントを強化するツールやインテグレーションを検索、接続、設定",
+      "subtitle": "エージェントが実行できる操作です。組み込みツールはここにあります。接続したサービスのツールは、そのサービスの下にまとめて表示されます。",
       "searchPlaceholder": "検索...",
       "addTool": "ツールを追加",
       "noToolsFound": "ツールが見つかりません",
-      "selectToolSetup": "設定するツールを選択してください",
+      "selectToolSetup": "ツールを追加",
       "settingsIconAlt": "設定アイコン",
       "configureToolAria": "{{toolName}}を設定",
       "toggleToolAria": "{{toolName}}を切り替え",
@@ -666,8 +667,8 @@
       "builtIn": "ビルトイン",
       "authStatus": {
         "connected": "接続済み",
-        "needsAuth": "要認証",
-        "configured": "設定済み"
+        "needsAuth": "再接続",
+        "configured": "接続済み"
       },
       "deleteWarning": "ツール \"{{toolName}}\" を削除してもよろしいですか？",
       "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
@@ -772,7 +773,11 @@
         "maxTimeout": "タイムアウトの上限は300秒です"
       },
       "headerValuePlaceholder": "例: application/json",
-      "toolIconTitle": "{{name}}のアイコン"
+      "toolIconTitle": "{{name}}のアイコン",
+      "groupBuiltIn": "組み込み",
+      "groupService": "サービスから",
+      "browseConnectors": "Notion、Linear などのサービスをお探しですか？コネクタを見る",
+      "viaConnection": "{{name}} 経由"
     },
     "devices": {
       "label": "デバイス",
@@ -1001,13 +1006,106 @@
           "subtitle": "「{{name}}」の新しいシークレットの準備ができました。以前のものは使用できません。"
         }
       }
+    },
+    "connectors": {
+      "label": "コネクタ",
+      "subtitle": "DocsGPT をチームで使っているサービスに接続します。接続ごとに、コンテンツをソースへ同期したり、エージェントにツールを提供したりできます。",
+      "search": "コネクタを検索...",
+      "addCustom": "カスタムコネクタを追加",
+      "custom": {
+        "custom_mcp": "MCP サーバー",
+        "custom_openapi": "OpenAPI / REST"
+      },
+      "categoriesLabel": "カテゴリでコネクタを絞り込む",
+      "categories": {
+        "all": "すべて",
+        "connected": "接続済み",
+        "files": "ファイルとドキュメント",
+        "knowledge": "ナレッジベース",
+        "dev": "開発者ツール",
+        "messaging": "メッセージ",
+        "database": "データベース",
+        "search": "検索",
+        "custom": "カスタム"
+      },
+      "capability": {
+        "sync": "同期",
+        "read": "読み取り",
+        "write": "書き込み"
+      },
+      "status": {
+        "connect": "接続",
+        "connected": "接続済み",
+        "connectedCount": "{{count}} 件接続済み",
+        "reconnect": "再接続",
+        "needsAdminSetup": "管理者の設定が必要",
+        "disabledByAdmin": "管理者により無効",
+        "custom": "カスタム"
+      },
+      "connectionStatus": {
+        "connected": "接続済み",
+        "reconnect_needed": "再接続が必要",
+        "disconnected": "切断済み",
+        "error": "エラー",
+        "pending": "サインイン待ち"
+      },
+      "publisher": {
+        "built_in": "組み込み",
+        "preset": "プリセット",
+        "custom": "カスタム"
+      },
+      "descriptions": {
+        "google_drive": "ドキュメント、スプレッドシート、PDF をソースに同期します。",
+        "share_point": "SharePoint サイトと OneDrive のファイルをソースに同期します。",
+        "confluence": "Confluence のスペースとページをソースに同期します。",
+        "s3": "S3 バケットのドキュメントをソースに同期します。",
+        "reddit": "検索に一致する Reddit の投稿をソースに同期します。",
+        "brave": "Brave Search API でウェブと画像を検索します。",
+        "telegram": "Telegram のチャットにメッセージや画像を送信します。",
+        "ntfy": "ntfy サーバー経由でプッシュ通知を送信します。",
+        "postgres": "Postgres データベースのスキーマを読み取り、SQL を実行します。",
+        "custom_mcp": "任意のリモート Model Context Protocol サーバーに接続します。",
+        "custom_openapi": "OpenAPI 仕様をインポートし、そのエンドポイントをツールとして呼び出します。"
+      },
+      "empty": "まだ何も接続されていません。サービスを接続すると、コンテンツを同期したり、エージェントに新しいツールを提供したりできます。",
+      "noMatches": "検索に一致するコネクタはありません。",
+      "loadFailed": "コネクタを読み込めませんでした。",
+      "askAdmin": "管理者に設定を依頼してください。",
+      "setupSettings": "次のサーバー設定を行い、DocsGPT を再起動してください：",
+      "setupGuide": "設定ガイド",
+      "unverified": "このサーバーは DocsGPT による確認を受けていません。信頼できるサーバーにのみ接続してください。",
+      "detail": {
+        "accounts": "アカウント",
+        "connectedAs": "{{account}} として接続中",
+        "connectAnother": "別のアカウントを接続",
+        "sources": "この接続のソース",
+        "tools": "この接続のツール",
+        "noAccounts": "まだアカウントが接続されていません。",
+        "failed": "この接続を読み込めませんでした。",
+        "lastSync": "{{date}} に同期 · {{frequency}}",
+        "paused": "同期を一時停止中",
+        "toolOn": "オン",
+        "toolOff": "オフ",
+        "accountMenu": "アカウントの操作",
+        "disconnect": "切断"
+      },
+      "permission": {
+        "always": "常に許可",
+        "ask": "承認が必要",
+        "off": "オフ"
+      },
+      "disconnect": {
+        "title": "{{name}} を切断しますか？",
+        "body_zero": "この接続のツールは、再接続するまで使えなくなります。",
+        "body_other": "{{count}} 件のソースはコンテンツを保持しますが、同期は停止します。この接続のツールは、再接続するまで使えなくなります。"
+      }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "新しい文書をアップロードする",
+      "label": "ソースを追加",
       "select": "ドキュメントを DocsGPT にアップロードする方法を選択します",
-      "selectSource": "ソースを追加する方法を選択してください",
+      "selectSource": "ソースを追加",
       "selectedFiles": "選択されたファイル",
       "noFilesSelected": "ファイルが選択されていません",
       "file": "デバイスからアップロード",
@@ -1020,7 +1118,7 @@
       "info": "25MBまでの.pdf、.txt、.rst、.csv、.xlsx、.xlsm、.xlsb、.xls、.ods、.docx、.docm、.doc、.odt、.rtf、.md、.html、.xhtml、.png、.jpg、.jpeg、.epub、.json、.pptx、.pptm、.ppt、.pps、.ppsx、.ppsm、.pot、.odp、.zipファイルをアップロードしてください",
       "uploadedFiles": "アップロードされたファイル",
       "cancel": "キャンセル",
-      "train": "トレーニング",
+      "train": "ソースを追加",
       "create": "作成",
       "link": "リンク",
       "urlLink": "URLリンク",
@@ -1153,7 +1251,10 @@
         "region": "AWS リージョン",
         "endpointUrl": "カスタムエンドポイント URL（任意）",
         "initialContent": "初期コンテンツ（任意）"
-      }
+      },
+      "groupUploadWeb": "アップロードとウェブ",
+      "groupConnection": "接続から",
+      "tileConnectedAs": "{{account}} として接続中"
     },
     "createAPIKey": {
       "label": "新しいAPIキーを作成",
@@ -1189,8 +1290,8 @@
     "configTool": {
       "title": "ツール設定",
       "type": "タイプ",
-      "apiKeyLabel": "APIキー / OAuth",
-      "apiKeyPlaceholder": "APIキー / OAuthを入力してください",
+      "apiKeyLabel": "API キー",
+      "apiKeyPlaceholder": "API キーを入力",
       "addButton": "ツールを追加",
       "closeButton": "閉じる",
       "customNamePlaceholder": "Enter custom name (optional)",

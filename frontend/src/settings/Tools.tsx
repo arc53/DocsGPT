@@ -1,7 +1,8 @@
 import { Pencil, RefreshCw, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
@@ -15,12 +16,18 @@ import { Card, CardDescription, CardTitle } from '../components/ui/card';
 import { Switch } from '../components/ui/switch';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import {
+  loadConnectors,
+  selectConnections,
+} from '../connectors/connectorsSlice';
 import { useLoaderState } from '../hooks';
 import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MCPServerModal from '../modals/MCPServerModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import type { AppDispatch } from '../store';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
@@ -29,6 +36,10 @@ import { APIToolType, UserToolType } from './types';
 export default function Tools() {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  const dispatch = useDispatch<AppDispatch>();
+  const connections = useSelector(selectConnections);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
@@ -236,7 +247,18 @@ export default function Tools() {
   React.useEffect(() => {
     getUserTools();
     fetchMcpStatuses();
+    dispatch(loadConnectors({ token }));
   }, []);
+
+  // The Connectors page creates an OpenAPI tool and sends its id here so
+  // the spec import opens straight away.
+  const openToolId = (location.state as { openToolId?: string } | null)
+    ?.openToolId;
+  React.useEffect(() => {
+    if (!openToolId) return;
+    handleToolAdded(openToolId);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [openToolId]);
   return (
     <div>
       {selectedTool ? (
@@ -363,6 +385,37 @@ export default function Tools() {
                             >
                               {tool.customName || tool.displayName}
                             </CardTitle>
+                            {(() => {
+                              const connection = tool.connection_id
+                                ? connections.find(
+                                    (c) => c.id === tool.connection_id,
+                                  )
+                                : undefined;
+                              if (!connection) return null;
+                              return (
+                                <Button
+                                  variant="link"
+                                  size="inline"
+                                  asChild
+                                  className="mt-1 max-w-full justify-start"
+                                >
+                                  <Link
+                                    to={`/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`}
+                                  >
+                                    <ConnectorIcon
+                                      icon={connection.icon}
+                                      className="size-3.5 shrink-0"
+                                    />
+                                    <span className="truncate">
+                                      {t('settings.tools.viaConnection', {
+                                        name: connection.name,
+                                        interpolation: { escapeValue: false },
+                                      })}
+                                    </span>
+                                  </Link>
+                                </Button>
+                              );
+                            })()}
                             <CardDescription
                               size="xs"
                               className="mt-1 line-clamp-4 max-h-24 overflow-hidden break-words"

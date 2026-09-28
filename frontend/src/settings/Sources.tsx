@@ -48,6 +48,13 @@ import {
 import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import {
+  loadConnectors,
+  selectConnections,
+  selectConnectorsLoaded,
+} from '../connectors/connectorsSlice';
+import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
 import GraphView from '../components/GraphView';
@@ -78,9 +85,15 @@ export default function Sources({
   handleDeleteDocument,
 }: DocumentsProps) {
   const { t } = useTranslation();
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const uploadTasks = useSelector(selectUploadTasks);
+  const connections = useSelector(selectConnections);
+  const connectorsLoaded = useSelector(selectConnectorsLoaded);
+
+  useEffect(() => {
+    if (!connectorsLoaded) dispatch(loadConnectors({ token }));
+  }, [connectorsLoaded, dispatch, token]);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 500);
@@ -620,6 +633,12 @@ export default function Sources({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {currentDocuments.map((document, index) => {
                 const docId = document.id ? document.id.toString() : '';
+                const connection = document.connectionId
+                  ? connections.find((c) => c.id === document.connectionId)
+                  : undefined;
+                const paused =
+                  connection?.status === 'reconnect_needed' ||
+                  connection?.status === 'disconnected';
 
                 return (
                   <div key={docId} className="relative">
@@ -670,6 +689,17 @@ export default function Sources({
                               : t('teamAccess.viewer')}
                           </Badge>
                         )}
+                        {connection && paused && (
+                          <Badge
+                            variant="warning"
+                            title={t('settings.sources.paused', {
+                              name: connection.name,
+                              interpolation: { escapeValue: false },
+                            })}
+                          >
+                            {t('settings.connectors.detail.paused')}
+                          </Badge>
+                        )}
                         {document.ingestStatus === 'failed' && (
                           <Badge variant="destructive">
                             {t('settings.sources.ingestFailed')}
@@ -713,6 +743,23 @@ export default function Sources({
                             );
                           })()}
                         <CardFooter className="flex-col items-start gap-1">
+                          {connection && (
+                            <span className="flex max-w-full min-w-0 items-center gap-2">
+                              <ConnectorIcon
+                                icon={connection.icon}
+                                className="text-muted-foreground size-3.5 shrink-0"
+                              />
+                              <span
+                                className="truncate"
+                                title={connection.account_label}
+                              >
+                                {t('settings.tools.viaConnection', {
+                                  name: connection.account_label,
+                                  interpolation: { escapeValue: false },
+                                })}
+                              </span>
+                            </span>
+                          )}
                           <span className="flex items-center gap-2">
                             <CalendarIcon className="size-3.5" />
                             {document.date ? formatDate(document.date) : ''}

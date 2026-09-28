@@ -97,7 +97,7 @@
     },
     "sources": {
       "title": "Hier kannst du alle verfügbaren Quelldateien verwalten, die dir zur Verfügung stehen und die du hochgeladen hast.",
-      "subtitle": "Dokumente und Wissensquellen hochladen und verwalten, die deine Antworten antreiben",
+      "subtitle": "Inhalte, die DocsGPT durchsuchen und zitieren kann: Uploads, Websites, Wikis und aus deinen Verbindungen synchronisierte Inhalte.",
       "label": "Quellen",
       "name": "Quellenname",
       "date": "Vektor-Datum",
@@ -354,7 +354,8 @@
           "forbidden": "Du hast keine Berechtigung, die Konfiguration dieser Quelle zu bearbeiten.",
           "saveFailed": "Konfiguration konnte nicht gespeichert werden. Bitte versuche es erneut."
         }
-      }
+      },
+      "paused": "Sync pausiert. Verbinde {{name}} neu, um fortzufahren."
     },
     "analytics": {
       "label": "Analytik",
@@ -651,11 +652,11 @@
     },
     "tools": {
       "label": "Werkzeuge",
-      "subtitle": "Werkzeuge und Integrationen durchsuchen, verbinden und konfigurieren, die deine Agenten antreiben",
+      "subtitle": "Aktionen, die deine Agenten ausführen können. Integrierte Werkzeuge findest du hier. Werkzeuge eines verbundenen Dienstes sind unter diesem Dienst gruppiert.",
       "searchPlaceholder": "Werkzeuge suchen...",
       "addTool": "Werkzeug hinzufügen",
       "noToolsFound": "Keine Werkzeuge gefunden",
-      "selectToolSetup": "Wähle ein Werkzeug zur Einrichtung",
+      "selectToolSetup": "Werkzeug hinzufügen",
       "settingsIconAlt": "Einstellungssymbol",
       "configureToolAria": "{{toolName}} konfigurieren",
       "toggleToolAria": "{{toolName}} umschalten",
@@ -667,8 +668,8 @@
       "builtIn": "Integriert",
       "authStatus": {
         "connected": "Verbunden",
-        "needsAuth": "Authentifizierung nötig",
-        "configured": "Konfiguriert"
+        "needsAuth": "Neu verbinden",
+        "configured": "Verbunden"
       },
       "deleteWarning": "Bist du sicher, dass du das Werkzeug \"{{toolName}}\" löschen möchtest?",
       "unsavedChanges": "Du hast ungespeicherte Änderungen, die verloren gehen, wenn du ohne Speichern verlässt.",
@@ -773,7 +774,11 @@
         "maxTimeout": "Das maximale Timeout beträgt 300 Sekunden"
       },
       "headerValuePlaceholder": "z. B. application/json",
-      "toolIconTitle": "{{name}}-Symbol"
+      "toolIconTitle": "{{name}}-Symbol",
+      "groupBuiltIn": "Integriert",
+      "groupService": "Aus einem Dienst",
+      "browseConnectors": "Suchst du Notion, Linear oder einen anderen Dienst? Konnektoren durchsuchen",
+      "viaConnection": "über {{name}}"
     },
     "devices": {
       "label": "Geräte",
@@ -1002,13 +1007,107 @@
           "subtitle": "Das neue Geheimnis für \"{{name}}\" ist bereit. Das alte funktioniert nicht mehr."
         }
       }
+    },
+    "connectors": {
+      "label": "Konnektoren",
+      "subtitle": "Verbinde DocsGPT mit den Diensten, die dein Team nutzt. Eine Verbindung kann Inhalte in Quellen synchronisieren und Agenten Werkzeuge geben.",
+      "search": "Konnektoren suchen...",
+      "addCustom": "Eigenen Konnektor hinzufügen",
+      "custom": {
+        "custom_mcp": "MCP-Server",
+        "custom_openapi": "OpenAPI / REST"
+      },
+      "categoriesLabel": "Konnektoren nach Kategorie filtern",
+      "categories": {
+        "all": "Alle",
+        "connected": "Verbunden",
+        "files": "Dateien und Dokumente",
+        "knowledge": "Wissensdatenbanken",
+        "dev": "Entwicklerwerkzeuge",
+        "messaging": "Nachrichten",
+        "database": "Datenbanken",
+        "search": "Suche",
+        "custom": "Eigene"
+      },
+      "capability": {
+        "sync": "Sync",
+        "read": "Lesen",
+        "write": "Schreiben"
+      },
+      "status": {
+        "connect": "Verbinden",
+        "connected": "Verbunden",
+        "connectedCount": "{{count}} verbunden",
+        "reconnect": "Neu verbinden",
+        "needsAdminSetup": "Admin-Einrichtung nötig",
+        "disabledByAdmin": "Vom Admin deaktiviert",
+        "custom": "Eigener"
+      },
+      "connectionStatus": {
+        "connected": "Verbunden",
+        "reconnect_needed": "Neu verbinden nötig",
+        "disconnected": "Getrennt",
+        "error": "Fehler",
+        "pending": "Wartet auf Anmeldung"
+      },
+      "publisher": {
+        "built_in": "Integriert",
+        "preset": "Vorlage",
+        "custom": "Eigener"
+      },
+      "descriptions": {
+        "google_drive": "Docs, Tabellen und PDFs in Quellen synchronisieren.",
+        "share_point": "Dateien aus SharePoint-Sites und OneDrive in Quellen synchronisieren.",
+        "confluence": "Confluence-Bereiche und -Seiten in Quellen synchronisieren.",
+        "s3": "Dokumente aus einem S3-Bucket in Quellen synchronisieren.",
+        "reddit": "Reddit-Beiträge zu deinen Suchen in Quellen synchronisieren.",
+        "brave": "Web und Bilder mit der Brave Search API durchsuchen.",
+        "telegram": "Nachrichten und Bilder an einen Telegram-Chat senden.",
+        "ntfy": "Push-Benachrichtigungen über einen ntfy-Server senden.",
+        "postgres": "Schema lesen und SQL auf einer Postgres-Datenbank ausführen.",
+        "custom_mcp": "Einen beliebigen Remote-Server für das Model Context Protocol verbinden.",
+        "custom_openapi": "Eine OpenAPI-Spezifikation importieren und ihre Endpunkte als Werkzeuge aufrufen."
+      },
+      "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
+      "noMatches": "Keine Konnektoren passen zu deiner Suche.",
+      "loadFailed": "Konnektoren konnten nicht geladen werden.",
+      "askAdmin": "Bitte einen Admin, dies einzurichten.",
+      "setupSettings": "Setze diese Servereinstellungen und starte DocsGPT neu:",
+      "setupGuide": "Einrichtungsanleitung",
+      "unverified": "Dieser Server wurde nicht von DocsGPT geprüft. Verbinde nur Server, denen du vertraust.",
+      "detail": {
+        "accounts": "Konten",
+        "connectedAs": "Verbunden als {{account}}",
+        "connectAnother": "Weiteres Konto verbinden",
+        "sources": "Quellen aus dieser Verbindung",
+        "tools": "Werkzeuge aus dieser Verbindung",
+        "noAccounts": "Noch kein Konto verbunden.",
+        "failed": "Diese Verbindung konnte nicht geladen werden.",
+        "lastSync": "Synchronisiert {{date}} · {{frequency}}",
+        "paused": "Sync pausiert",
+        "toolOn": "An",
+        "toolOff": "Aus",
+        "accountMenu": "Kontoaktionen",
+        "disconnect": "Trennen"
+      },
+      "permission": {
+        "always": "Immer erlauben",
+        "ask": "Freigabe nötig",
+        "off": "Aus"
+      },
+      "disconnect": {
+        "title": "{{name}} trennen?",
+        "body_zero": "Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest.",
+        "body_one": "Deine Quelle behält ihren Inhalt, wird aber nicht mehr synchronisiert. Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest.",
+        "body_other": "Deine {{count}} Quellen behalten ihren Inhalt, werden aber nicht mehr synchronisiert. Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest."
+      }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "Neues Dokument hochladen",
+      "label": "Quelle hinzufügen",
       "select": "Wähle, wie du dein Dokument zu DocsGPT hochladen möchtest",
-      "selectSource": "Wähle die Art, wie du deine Quelle hinzufügen möchtest",
+      "selectSource": "Quelle hinzufügen",
       "selectedFiles": "Ausgewählte Dateien",
       "noFilesSelected": "Keine Dateien ausgewählt",
       "file": "Vom Gerät hochladen",
@@ -1021,7 +1120,7 @@
       "info": "Bitte lade .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip hoch (max. 25 MB)",
       "uploadedFiles": "Hochgeladene Dateien",
       "cancel": "Abbrechen",
-      "train": "Trainieren",
+      "train": "Quelle hinzufügen",
       "create": "Erstellen",
       "link": "Link",
       "urlLink": "URL-Link",
@@ -1154,7 +1253,10 @@
         "region": "AWS-Region",
         "endpointUrl": "Benutzerdefinierte Endpunkt-URL (optional)",
         "initialContent": "Anfangsinhalt (optional)"
-      }
+      },
+      "groupUploadWeb": "Upload und Web",
+      "groupConnection": "Aus einer Verbindung",
+      "tileConnectedAs": "Verbunden als {{account}}"
     },
     "createAPIKey": {
       "label": "Neuen API-Schlüssel erstellen",
@@ -1190,8 +1292,8 @@
     "configTool": {
       "title": "Werkzeug-Konfiguration",
       "type": "Typ",
-      "apiKeyLabel": "API-Schlüssel / OAuth",
-      "apiKeyPlaceholder": "API-Schlüssel / OAuth eingeben",
+      "apiKeyLabel": "API-Schlüssel",
+      "apiKeyPlaceholder": "API-Schlüssel eingeben",
       "addButton": "Werkzeug hinzufügen",
       "closeButton": "Schließen",
       "customNamePlaceholder": "Benutzerdefinierten Namen eingeben (optional)",
