@@ -31,7 +31,9 @@ Backfill (idempotent, only fills NULLs or unconverted rows):
 5. API-key tools (Brave, Telegram, ntfy, PostgreSQL, custom MCP with a key,
    bearer token or basic auth) get one connection per distinct credential,
    re-encrypted into v2. The tool keeps its v1 copy for one release so a
-   rollback still works; the executor prefers the connection.
+   rollback still works; the executor prefers the connection. Downgrade
+   writes a v1 copy back to every tool on an API-key connection, including
+   tools added after the upgrade.
 6. ``token_info`` and the secret parts of ``session_data`` (``tokens``,
    ``client_info``) are encrypted into ``encrypted_credentials`` and removed
    from the plaintext columns. This needs ``ENCRYPTION_SECRET_KEY`` set to
@@ -386,9 +388,32 @@ def _decrypt_back(bind) -> None:
 
     from sqlalchemy import text
 
-    from docsgpt.security.encryption import CredentialDecryptionError, decrypt_json
+    from docsgpt.security.encryption import CredentialDecryptionError, decrypt_json, encrypt_credentials
 
-    # Tools keep their v1 secrets; connections made only for them go away.
+    # API-key connections go away, so their tools get a v1 copy back: tools
+    # added after the upgrade never had one, and a reconnect may have changed
+    # the key since the backfill.
+    linked = bind.execute(
+        text(
+            "SELECT t.id, t.user_id, c.encrypted_credentials FROM user_tools t "
+            "JOIN connector_sessions c ON c.id = t.connection_id "
+            "WHERE c.auth_kind = 'api_key' AND c.encrypted_credentials IS NOT NULL"
+        )
+    ).fetchall()
+    for row in linked:
+        try:
+            credentials = decrypt_json(row.encrypted_credentials, row.user_id).get("credentials")
+        except CredentialDecryptionError:
+            continue
+        if not credentials:
+            continue
+        bind.execute(
+            text(
+                "UPDATE user_tools SET config = COALESCE(config, '{}'::jsonb) "
+                "|| jsonb_build_object('encrypted_credentials', CAST(:blob AS text)) WHERE id = :id"
+            ),
+            {"blob": encrypt_credentials(credentials, row.user_id), "id": row.id},
+        )
     bind.execute(text("UPDATE user_tools SET connection_id = NULL WHERE connection_id IN "
                       "(SELECT id FROM connector_sessions WHERE auth_kind = 'api_key')"))
     bind.execute(text("DELETE FROM connector_sessions WHERE auth_kind = 'api_key'"))

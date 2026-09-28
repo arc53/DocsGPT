@@ -312,6 +312,37 @@ class TestMigration0038Credentials:
         assert api_rows == 0
         _run_alembic(url, "upgrade", "head")
 
+    def test_downgrade_keeps_secrets_of_tools_made_after_upgrade(self, pg_engine):
+        from docsgpt.security.encryption import decrypt_credentials, encrypt_json
+
+        url, _ = self._upgrade_with(pg_engine, _seed_secrets)
+        # A tool added through the wizard keeps its key only on the connection.
+        with pg_engine.begin() as conn:
+            connection_id = conn.execute(
+                text(
+                    "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status, "
+                    "account_label, encrypted_credentials, session_data) VALUES ('erin', 'ntfy', 'ntfy', "
+                    "'api_key', 'connected', '…9999', :blob, '{}'::jsonb) RETURNING id"
+                ),
+                {"blob": encrypt_json({"credentials": {"token": "ntfy-secret-9999"}}, "erin")},
+            ).scalar()
+            tool_id = conn.execute(
+                text("INSERT INTO user_tools (user_id, name, config, connection_id) "
+                     "VALUES ('erin', 'ntfy', CAST(:c AS jsonb), :cid) RETURNING id"),
+                {"c": json.dumps({"server_url": "https://ntfy.sh"}), "cid": connection_id},
+            ).scalar()
+        _run_alembic(url, "downgrade", _0037)
+        with pg_engine.connect() as conn:
+            config = conn.execute(text("SELECT config FROM user_tools WHERE id = :i"), {"i": tool_id}).scalar()
+        assert config["server_url"] == "https://ntfy.sh"
+        assert decrypt_credentials(config["encrypted_credentials"], "erin") == {"token": "ntfy-secret-9999"}
+        _run_alembic(url, "upgrade", "head")
+        with pg_engine.connect() as conn:
+            relinked = conn.execute(
+                text("SELECT connection_id FROM user_tools WHERE id = :i"), {"i": tool_id}
+            ).scalar()
+        assert relinked is not None
+
     def test_second_upgrade_is_a_no_op(self, pg_engine):
         from docsgpt.connectors.service import read_secrets
 
