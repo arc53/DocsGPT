@@ -1,5 +1,5 @@
 import { Plug } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -37,17 +37,22 @@ export default function ConnectToolCallBar({
   const catalog = useSelector(selectConnectorCatalog);
   const loaded = useSelector(selectConnectorsLoaded);
   const connections = useSelector(selectConnections);
-  const [connected, setConnected] = useState(false);
-  const { launch, modals } = useConnectorLauncher({
-    onConnected: () => setConnected(true),
-  });
+  // The launcher refreshes the store whenever its dialog closes, cancelled or
+  // not, so readiness comes from the connections themselves.
+  const { launch, modals } = useConnectorLauncher();
   const required = toolCall.connection_required;
   const connector = catalog.find((c) => c.key === required?.connector_key);
-  const ownConnection = required?.connection_id
-    ? connections.find((c) => c.id === required.connection_id)
-    : undefined;
-  // Connected here, or healthy again when the user comes back to the chat.
-  const ready = connected || ownConnection?.status === 'connected';
+  // A missing account is ready once one for the service works; an account
+  // that needed signing in again, once it works again.
+  const ready = required?.connection_id
+    ? connections.some(
+        (c) => c.id === required.connection_id && c.status === 'connected',
+      )
+    : connections.some(
+        (c) =>
+          c.connector_key === required?.connector_key &&
+          c.status === 'connected',
+      );
   const name =
     required?.connector_name ||
     connector?.name ||

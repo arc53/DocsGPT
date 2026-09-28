@@ -21,8 +21,14 @@ vi.mock('../api/services/connectorsService', () => ({
 }));
 
 const launch = vi.fn();
+const launcherOptions = vi.hoisted(() => ({
+  current: {} as { onConnected?: () => void },
+}));
 vi.mock('../connectors/useConnectorLauncher', () => ({
-  default: () => ({ launch, modals: null }),
+  default: (options: { onConnected?: () => void } = {}) => {
+    launcherOptions.current = options;
+    return { launch, modals: null };
+  },
 }));
 
 import connectorsReducer from '../connectors/connectorsSlice';
@@ -111,6 +117,22 @@ describe('ConnectToolCallBar', () => {
     Array.from(container.querySelectorAll('button')).find(
       (b) => b.textContent === text,
     )!;
+
+  it('a cancelled connect does not offer Continue', async () => {
+    await render(call('missing'), vi.fn(), { catalog: [] });
+    // The launcher reports every close, cancelled or not.
+    await act(async () => launcherOptions.current.onConnected?.());
+    expect(button('conversation.toolApproval.continue')).toBeUndefined();
+  });
+
+  it('offers Continue once an account for the service is connected', async () => {
+    await render(call('missing'), vi.fn(), {
+      connections: [
+        { id: 'c9', connector_key: 'mcp:notion', status: 'connected' },
+      ],
+    });
+    expect(button('conversation.toolApproval.continue')).toBeDefined();
+  });
 
   it('names the service it needs', async () => {
     await render(call('missing'));
