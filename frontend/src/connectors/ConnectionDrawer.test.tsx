@@ -186,6 +186,27 @@ describe('ConnectionDrawer', () => {
     ).toBe('success');
   });
 
+  it('says in plain words that an expired sign-in needs redoing', async () => {
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: {
+        ...DETAIL,
+        status: 'reconnect_needed',
+        last_error: 'invalid_grant: token expired',
+      },
+    });
+    await render();
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('settings.connectors.detail.expired');
+    expect(text).toContain('settings.connectors.detail.account');
+    expect(text).not.toContain('settings.connectors.detail.connectedAs');
+    // The provider's message stays available on hover, not as the sentence.
+    expect(text).not.toContain('invalid_grant');
+    expect(
+      document.body.querySelector('[title="invalid_grant: token expired"]'),
+    ).not.toBeNull();
+  });
+
   it('labels synced content as Knowledge from this connection', async () => {
     await render();
     expect(document.body.textContent).toContain(

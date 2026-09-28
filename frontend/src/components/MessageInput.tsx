@@ -44,9 +44,13 @@ import { type MultiSelectPopoverItem } from './MultiSelectPopover';
 import ToolIcon from './ToolIcon';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
+  connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
 } from '../connectors/connectorsSlice';
+import SignInAgainNotice, {
+  useSignInAgain,
+} from '../connectors/SignInAgainNotice';
 import {
   AttachFileButton,
   AttachmentChipList,
@@ -1566,6 +1570,10 @@ export default function MessageInput({
       .finally(() => setToolsLoading(false));
   }, [token]);
 
+  // Launched from the Tools picker; the modals live here because the picker
+  // closes when a sign-in opens.
+  const signInAgain = useSignInAgain({ onConnected: fetchUserTools });
+
   useEffect(() => {
     if (isToolsPopupOpen) {
       fetchUserTools();
@@ -1605,7 +1613,24 @@ export default function MessageInput({
               ? t('agents.form.toolsPopup.groupCustom')
               : t('settings.tools.groupBuiltIn')))
           : undefined,
+        descriptionNode: connectionNeedsSignIn(connection) ? (
+          <p className="text-warning text-xs">
+            {t('settings.connectors.health.signInAgain')}
+          </p>
+        ) : undefined,
       };
+    });
+  // Each broken connection once, with the tool it would re-sign (an MCP
+  // preset keeps its tool rather than gaining a second one).
+  const brokenConnections = connections
+    .filter(connectionNeedsSignIn)
+    .flatMap((connection) => {
+      const tools = userTools.filter(
+        (tool) => tool.connection_id === connection.id,
+      );
+      if (tools.length === 0) return [];
+      const mcpTool = tools.find((tool) => tool.name === 'mcp_tool');
+      return [{ connection, mcpToolId: mcpTool?.id }];
     });
 
   const selectedToolIds = userTools
@@ -1747,6 +1772,7 @@ export default function MessageInput({
 
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
+      {signInAgain.modals}
       {/* react-dropzone input (for drag/drop) */}
       <input {...getInputProps()} />
       <input
@@ -1850,6 +1876,22 @@ export default function MessageInput({
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
                 loading={toolsLoading}
+                notice={
+                  <SignInAgainNotice
+                    connections={brokenConnections.map(
+                      ({ connection }) => connection,
+                    )}
+                    onReconnect={(connection) => {
+                      setIsToolsPopupOpen(false);
+                      signInAgain.reconnect(
+                        connection,
+                        brokenConnections.find(
+                          (entry) => entry.connection.id === connection.id,
+                        )?.mcpToolId,
+                      );
+                    }}
+                  />
+                }
               />
             )}
             {ENABLE_VOICE_INPUT && sttAvailable && (

@@ -54,6 +54,10 @@ import SourcesPopoverFooter from '../components/SourcesPopoverFooter';
 import ToolIcon from '../components/ToolIcon';
 import connectorsService from '../api/services/connectorsService';
 import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectionNeedsSignIn } from '../connectors/connectorsSlice';
+import SignInAgainNotice, {
+  useSignInAgain,
+} from '../connectors/SignInAgainNotice';
 import type { Connection } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
@@ -165,6 +169,14 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [userTools, setUserTools] = useState<MultiSelectPopoverItem[]>([]);
   const [rawUserTools, setRawUserTools] = useState<UserToolType[]>([]);
+  // Connections behind the picker's tools that need signing in again.
+  const [brokenToolConnections, setBrokenToolConnections] = useState<
+    { connection: Connection; mcpToolId?: string }[]
+  >([]);
+  const [toolsReloadKey, setToolsReloadKey] = useState(0);
+  const signInAgain = useSignInAgain({
+    onConnected: () => setToolsReloadKey((key) => key + 1),
+  });
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
@@ -654,6 +666,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             ),
             group: groupFor(tool),
           };
+          if (connectionNeedsSignIn(connection)) {
+            base.descriptionNode = (
+              <p className="text-warning text-xs">
+                {t('settings.connectors.health.signInAgain')}
+              </p>
+            );
+          }
           if (tool.name === 'remote_device') {
             const deviceId = (tool.config?.device_id as string) || '';
             const meta = devicesById.get(deviceId);
@@ -673,6 +692,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         });
       setUserTools(tools);
       setRawUserTools(visibleTools);
+      setBrokenToolConnections(
+        Array.from(connectionsById.values())
+          .filter(connectionNeedsSignIn)
+          .flatMap((connection) => {
+            const own = visibleTools.filter(
+              (tool) => tool.connection_id === connection.id,
+            );
+            if (own.length === 0) return [];
+            return [
+              {
+                connection,
+                mcpToolId: own.find((tool) => tool.name === 'mcp_tool')?.id,
+              },
+            ];
+          }),
+      );
     };
     const getModels = async () => {
       const response = await modelService.getModels(token);
@@ -697,7 +732,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     };
     getTools();
     getModels();
-  }, [token, mode]);
+  }, [token, mode, toolsReloadKey]);
 
   // Validate folder_id from URL against user's folders
   useEffect(() => {
@@ -960,6 +995,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         />
       }
     >
+      {signInAgain.modals}
       {agent.agent_type === 'workflow' && <WorkflowBuilder />}
       <AgentPageToolbar
         intro={agent.id ? undefined : t('agents.form.byline.new')}
@@ -1120,6 +1156,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   'agents.form.toolsPopup.searchPlaceholder',
                 )}
                 emptyMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                footer={
+                  brokenToolConnections.length > 0 ? (
+                    <SignInAgainNotice
+                      connections={brokenToolConnections.map(
+                        ({ connection }) => connection,
+                      )}
+                      onReconnect={(connection) => {
+                        setIsToolsPopupOpen(false);
+                        signInAgain.reconnect(
+                          connection,
+                          brokenToolConnections.find(
+                            (entry) => entry.connection.id === connection.id,
+                          )?.mcpToolId,
+                        );
+                      }}
+                    />
+                  ) : undefined
+                }
                 trigger={
                   <Button
                     type="button"

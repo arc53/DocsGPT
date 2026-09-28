@@ -33,6 +33,10 @@ const mocks = vi.hoisted(() => {
 });
 const { jsonResponse } = mocks;
 
+vi.mock('../connectors/SignInAgainNotice', () => ({
+  default: () => null,
+  useSignInAgain: () => ({ reconnect: vi.fn(), modals: null }),
+}));
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) => selector(mockState),
   useDispatch: () => mocks.dispatch,

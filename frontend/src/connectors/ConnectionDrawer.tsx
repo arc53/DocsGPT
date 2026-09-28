@@ -63,7 +63,10 @@ const STATUS_VARIANT: Record<
   pending: 'neutral',
 };
 
-/** "Connected as …", or the key hint for pasted credentials. */
+/**
+ * "Connected as …", or the key hint for pasted credentials. A connection that
+ * is not working names its account without claiming it is connected.
+ */
 function useAccountTitle() {
   const { t } = useTranslation();
   return (detail: ConnectionDetail) =>
@@ -72,10 +75,26 @@ function useAccountTitle() {
           hint: detail.account_label,
           interpolation: { escapeValue: false },
         })
-      : t('settings.connectors.detail.connectedAs', {
-          account: detail.account_label,
-          interpolation: { escapeValue: false },
-        });
+      : t(
+          detail.status === 'connected'
+            ? 'settings.connectors.detail.connectedAs'
+            : 'settings.connectors.detail.account',
+          {
+            account: detail.account_label,
+            interpolation: { escapeValue: false },
+          },
+        );
+}
+
+/** What is wrong, in plain words rather than the provider's message. */
+function useProblem() {
+  const { t } = useTranslation();
+  return (detail: ConnectionDetail): string | null =>
+    detail.status === 'reconnect_needed'
+      ? t('settings.connectors.detail.expired')
+      : detail.status === 'error'
+        ? t('settings.connectors.detail.broken')
+        : detail.last_error;
 }
 
 function RemoveConnectionModal({
@@ -242,6 +261,7 @@ function AccountSection({
 }) {
   const { t } = useTranslation();
   const accountTitle = useAccountTitle();
+  const problem = useProblem();
   const [refreshing, setRefreshing] = useState(false);
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
   const isMcp = detail.tools.some((tool) => tool.name === 'mcp_tool');
@@ -261,43 +281,71 @@ function AccountSection({
     variant: 'destructive',
   });
 
+  // An expired or failing sign-in gets its own box under the account, with
+  // room to say what happened at any width.
+  const broken =
+    detail.status === 'reconnect_needed' || detail.status === 'error';
+
   return (
     <div className="flex flex-col gap-6">
-      <Card variant="subtle" padding="none">
-        <ListRows>
-          <ListRow
-            title={accountTitle(detail)}
-            description={
-              detail.last_error ? (
-                <span title={detail.last_error}>{detail.last_error}</span>
-              ) : undefined
-            }
-            trailing={
-              <div className="flex shrink-0 items-center gap-2">
-                <Badge variant={STATUS_VARIANT[detail.status]}>
-                  {t(`settings.connectors.connectionStatus.${detail.status}`)}
-                </Badge>
-                {detail.status !== 'connected' && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    shape="pill"
-                    variant="outline"
-                    onClick={() => onReconnect(detail)}
-                  >
-                    <RefreshCw />
-                    {t('settings.connectors.status.reconnect')}
-                  </Button>
-                )}
-                <ActionMenu
-                  triggerLabel={t('settings.connectors.detail.accountMenu')}
-                  options={menu}
-                />
-              </div>
-            }
-          />
-        </ListRows>
-      </Card>
+      <div className="flex flex-col gap-3">
+        <Card variant="subtle" padding="none">
+          <ListRows>
+            <ListRow
+              title={accountTitle(detail)}
+              description={
+                !broken && detail.last_error ? (
+                  <span title={detail.last_error}>{detail.last_error}</span>
+                ) : undefined
+              }
+              trailing={
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge variant={STATUS_VARIANT[detail.status]}>
+                    {t(`settings.connectors.connectionStatus.${detail.status}`)}
+                  </Badge>
+                  {!broken && detail.status !== 'connected' && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      shape="pill"
+                      variant="outline"
+                      onClick={() => onReconnect(detail)}
+                    >
+                      <RefreshCw />
+                      {t('settings.connectors.status.reconnect')}
+                    </Button>
+                  )}
+                  <ActionMenu
+                    triggerLabel={t('settings.connectors.detail.accountMenu')}
+                    options={menu}
+                  />
+                </div>
+              }
+            />
+          </ListRows>
+        </Card>
+        {broken && (
+          <Alert variant="warning">
+            <TriangleAlert />
+            {/* The provider's own message stays on hover, for debugging. */}
+            <AlertDescription title={detail.last_error ?? undefined}>
+              {problem(detail)}
+            </AlertDescription>
+            <div className="mt-2">
+              <Button
+                type="button"
+                size="sm"
+                shape="pill"
+                variant="outline"
+                onClick={() => onReconnect(detail)}
+              >
+                <RefreshCw />
+                {t('settings.connectors.status.reconnect')}
+              </Button>
+            </div>
+          </Alert>
+        )}
+      </div>
       {canSync && (
         <section className="flex flex-col gap-2">
           <SectionHeader
