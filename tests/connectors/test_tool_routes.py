@@ -221,3 +221,16 @@ class TestAvailableTools:
             names = {t["name"] for t in AvailableTools().get().get_json()["data"]}
         assert "telegram" not in names
         assert "brave" in names
+
+    def test_service_tools_use_the_connector_name(self, app, pg_conn):
+        """One name everywhere: "Telegram", not the tool's "Telegram Bot"."""
+        from docsgpt.api.user.tools.routes import AvailableTools
+
+        with _db(pg_conn), app.test_request_context("/api/available_tools"):
+            from flask import request
+
+            request.decoded_token = {"sub": "alice"}
+            tools = {t["name"]: t for t in AvailableTools().get().get_json()["data"]}
+        assert tools["telegram"]["displayName"] == "Telegram"
+        assert tools["ntfy"]["displayName"] == "ntfy"
+        assert tools["postgres"]["displayName"] == "PostgreSQL"

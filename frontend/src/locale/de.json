@@ -860,7 +860,7 @@
       "toolIconTitle": "{{name}}-Symbol",
       "groupBuiltIn": "Integriert",
       "groupService": "Aus einem Dienst",
-      "browseConnectors": "Suchst du Notion, Linear oder einen anderen Dienst? Konnektoren durchsuchen",
+      "browseConnectors": "Alle Konnektoren ansehen",
       "viaConnection": "über {{name}}"
     },
     "devices": {

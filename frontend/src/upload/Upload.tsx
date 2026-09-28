@@ -30,6 +30,7 @@ import { OptionCard } from '../components/ui/option-card';
 import { SectionHeader } from '../components/ui/section-header';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import ConnectorSetupNotice from '../connectors/ConnectorSetupNotice';
+import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { formatCount } from '../utils/dateTimeUtils';
 import {
   loadConnectors,
@@ -109,6 +110,12 @@ function Upload({
   const connections = useSelector(selectConnections);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  // A connection tile hands over to the connect wizard, the one flow every
+  // entry point uses; this modal steps aside and closes with it.
+  const [handedOver, setHandedOver] = useState(false);
+  const { launch, modals: connectModals } = useConnectorLauncher({
+    onConnected: () => close(),
+  });
 
   const [files, setfiles] = useState<File[]>(receivedFile);
   // Names of the files the last drop turned away (over the size limit or of
@@ -1263,7 +1270,24 @@ function Upload({
                       `modals.uploadDoc.ingestors.${option.value}.label`,
                     )}
                     description={connectionTileState(option.value)}
-                    onClick={() => handleIngestorTypeChange(option.value)}
+                    onClick={() => {
+                      if (connectorsEnabled && connector?.available) {
+                        const account = connections.find(
+                          (c) =>
+                            c.connector_key === connector.key &&
+                            c.status === 'connected',
+                        );
+                        setHandedOver(true);
+                        launch(
+                          connector,
+                          account
+                            ? { mode: 'sync', connectionId: account.id }
+                            : {},
+                        );
+                        return;
+                      }
+                      handleIngestorTypeChange(option.value);
+                    }}
                   />
                 );
               })}
@@ -1278,6 +1302,8 @@ function Upload({
     selectedConnector && needsSetup ? (
       <ConnectorSetupNotice connector={selectedConnector} />
     ) : null;
+  if (handedOver) return <>{connectModals}</>;
+
   return (
     <Modal
       open={true}

@@ -851,7 +851,7 @@
       "toolIconTitle": "{{name}}のアイコン",
       "groupBuiltIn": "組み込み",
       "groupService": "サービスから",
-      "browseConnectors": "Notion、Linear などのサービスをお探しですか？コネクタを見る",
+      "browseConnectors": "すべてのコネクタを見る",
       "viaConnection": "{{name}} 経由"
     },
     "devices": {

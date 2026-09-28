@@ -224,6 +224,8 @@ class AvailableTools(Resource):
                     )):
                         continue
                     group, connector_key = "service", definition.key
+                    # One name everywhere: the connector's, not the tool's own.
+                    name = definition.name
                 elif tool_name in _CUSTOM_CONNECTOR_TOOLS:
                     group, connector_key = "custom", _CUSTOM_CONNECTOR_TOOLS[tool_name]
                 else:

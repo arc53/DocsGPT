@@ -866,7 +866,7 @@
       "toolIconTitle": "{{name}} icon",
       "groupBuiltIn": "Built in",
       "groupService": "From a service",
-      "browseConnectors": "Looking for Notion, Linear or another service? Browse connectors",
+      "browseConnectors": "Browse all connectors",
       "viaConnection": "via {{name}}"
     },
     "devices": {

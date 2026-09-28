@@ -851,7 +851,7 @@
       "toolIconTitle": "{{name}} 圖示",
       "groupBuiltIn": "內建",
       "groupService": "來自服務",
-      "browseConnectors": "在找 Notion、Linear 或其他服務嗎？瀏覽連接器",
+      "browseConnectors": "瀏覽所有連接器",
       "viaConnection": "透過 {{name}}"
     },
     "devices": {

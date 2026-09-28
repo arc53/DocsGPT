@@ -38,6 +38,11 @@ vi.mock('../api/services/userService', () => ({
   },
 }));
 
+const launch = vi.hoisted(() => vi.fn());
+vi.mock('../connectors/useConnectorLauncher', () => ({
+  default: () => ({ launch, modals: null }),
+}));
+
 import Upload from './Upload';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -186,6 +191,34 @@ describe('Upload source-type tiles', () => {
     expect(confluence!.textContent).toContain(
       'modals.uploadDoc.tileConnectedAs',
     );
+    connectorsState.catalog = [];
+    connectorsState.connections = [];
+  });
+
+  it('hands a connection tile over to the connect wizard', async () => {
+    launch.mockClear();
+    const s3 = {
+      key: 's3',
+      icon: 's3',
+      sync_ingestor: 's3',
+      auth_kind: 'api_key',
+      available: true,
+      missing_settings: [],
+    };
+    connectorsState.catalog = [s3];
+    connectorsState.connections = [
+      { id: 'k1', connector_key: 's3', status: 'connected' },
+    ];
+    await render();
+    const tile = tiles().find((t) =>
+      t.textContent?.includes('ingestors.s3.label'),
+    )!;
+    await act(async () => tile.click());
+    // An existing account goes straight to choosing what to sync.
+    expect(launch).toHaveBeenCalledWith(s3, {
+      mode: 'sync',
+      connectionId: 'k1',
+    });
     connectorsState.catalog = [];
     connectorsState.connections = [];
   });

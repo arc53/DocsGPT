@@ -1580,11 +1580,15 @@ export default function MessageInput({
       ? connections.find((c) => c.id === tool.connection_id)
       : undefined;
   const anyConnectedTool = userTools.some((tool) => toolConnection(tool));
+  // Same groups as the agent builder: built in, one per service, then custom
+  // tools (an API tool, an MCP server with no connection).
+  const isCustomTool = (tool: UserToolType) =>
+    !toolConnection(tool) &&
+    (tool.name === 'api_tool' || tool.name === 'mcp_tool');
+  const toolRank = (tool: UserToolType) =>
+    toolConnection(tool) ? 1 : isCustomTool(tool) ? 2 : 0;
   const toolItems: MultiSelectPopoverItem[] = [...userTools]
-    .sort(
-      (a, b) =>
-        Number(Boolean(toolConnection(a))) - Number(Boolean(toolConnection(b))),
-    )
+    .sort((a, b) => toolRank(a) - toolRank(b))
     .map((tool) => {
       const connection = toolConnection(tool);
       return {
@@ -1596,7 +1600,10 @@ export default function MessageInput({
           <ToolIcon name={tool.name} className="size-5" />
         ),
         group: anyConnectedTool
-          ? (connection?.name ?? t('settings.tools.groupBuiltIn'))
+          ? (connection?.name ??
+            (isCustomTool(tool)
+              ? t('agents.form.toolsPopup.groupCustom')
+              : t('settings.tools.groupBuiltIn')))
           : undefined,
       };
     });

@@ -902,7 +902,7 @@
       "toolIconTitle": "Значок {{name}}",
       "groupBuiltIn": "Встроенные",
       "groupService": "Из сервиса",
-      "browseConnectors": "Ищете Notion, Linear или другой сервис? Смотрите коннекторы",
+      "browseConnectors": "Все коннекторы",
       "viaConnection": "через {{name}}"
     },
     "devices": {

@@ -28,6 +28,7 @@ import {
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import { useLoaderState } from '../hooks';
+import type { AvailableToolType } from '../modals/types';
 import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MCPServerModal from '../modals/MCPServerModal';
@@ -283,15 +284,43 @@ export default function Tools() {
     dispatch(loadConnectors({ token }));
   }, []);
 
-  // The Connectors page creates an OpenAPI tool and sends its id here so
-  // the spec import opens straight away.
-  const openToolId = (location.state as { openToolId?: string } | null)
-    ?.openToolId;
+  // The Connectors page opens a new OpenAPI tool here as an unsaved draft:
+  // the spec import opens straight away and the tool is created on save.
+  const routeState = location.state as {
+    openToolId?: string;
+    newApiTool?: boolean;
+  } | null;
+  const openToolId = routeState?.openToolId;
+  const newApiTool = routeState?.newApiTool;
   React.useEffect(() => {
     if (!openToolId) return;
     handleToolAdded(openToolId);
     navigate(location.pathname, { replace: true, state: null });
   }, [openToolId]);
+  React.useEffect(() => {
+    if (!newApiTool) return;
+    navigate(location.pathname, { replace: true, state: null });
+    userService
+      .getAvailableTools(token)
+      .then((res) => res.json())
+      .then((data) => {
+        const template = (data.data as AvailableToolType[] | undefined)?.find(
+          (candidate) => candidate.name === 'api_tool',
+        );
+        if (!template) return;
+        setSelectedTool({
+          id: '',
+          name: template.name,
+          displayName: template.displayName,
+          customName: '',
+          description: template.description,
+          config: {},
+          actions: template.actions,
+          status: true,
+        } as unknown as UserToolType);
+      })
+      .catch(() => undefined);
+  }, [newApiTool]);
   return (
     <div>
       {selectedTool ? (

@@ -245,6 +245,26 @@ export default function ToolConfig({
     });
   };
 
+  // Saves the tool; a draft without an id (a new OpenAPI tool) is created
+  // on its first save, so leaving without saving leaves nothing behind.
+  const persistTool = async (configToSave: Record<string, unknown>) => {
+    const payload = {
+      name: tool.name,
+      displayName: tool.displayName,
+      customName: customName,
+      description: tool.description,
+      config: configToSave,
+      actions: 'actions' in tool ? tool.actions : [],
+      status: tool.status,
+    };
+    if (tool.id) {
+      await userService.updateTool({ id: tool.id, ...payload }, token);
+      return;
+    }
+    const response = await userService.createTool(payload, token);
+    if (!response.ok) throw new Error('create failed');
+  };
+
   const handleSaveChanges = async () => {
     if (!validateConfig()) return;
     const configToSave = buildConfigToSave();
@@ -253,19 +273,7 @@ export default function ToolConfig({
     setSaveError('');
 
     try {
-      await userService.updateTool(
-        {
-          id: tool.id,
-          name: tool.name,
-          displayName: tool.displayName,
-          customName: customName,
-          description: tool.description,
-          config: configToSave,
-          actions: 'actions' in tool ? tool.actions : [],
-          status: tool.status,
-        },
-        token,
-      );
+      await persistTool(configToSave);
       setInitialState({
         customName,
         configValues: { ...configValues },
@@ -282,6 +290,11 @@ export default function ToolConfig({
   };
 
   const handleDelete = () => {
+    // A draft (a new OpenAPI tool not saved yet) has nothing to delete.
+    if (!tool.id) {
+      handleGoBack();
+      return;
+    }
     userService.deleteTool({ id: tool.id }, token).then(() => {
       handleGoBack();
     });
@@ -362,7 +375,8 @@ export default function ToolConfig({
           size="sm"
           shape="pill"
           onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges}
+          // A draft (no id yet) is saved to create it.
+          disabled={!hasUnsavedChanges && !!tool.id}
           loading={saving}
         >
           {t('settings.tools.save')}
@@ -768,19 +782,7 @@ export default function ToolConfig({
               setSaveError('');
 
               try {
-                await userService.updateTool(
-                  {
-                    id: tool.id,
-                    name: tool.name,
-                    displayName: tool.displayName,
-                    customName: customName,
-                    description: tool.description,
-                    config: configToSave,
-                    actions: 'actions' in tool ? tool.actions : [],
-                    status: tool.status,
-                  },
-                  token,
-                );
+                await persistTool(configToSave);
                 setShowUnsavedModal(false);
                 handleGoBack();
               } catch {

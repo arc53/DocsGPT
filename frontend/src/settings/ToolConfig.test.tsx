@@ -19,9 +19,11 @@ vi.mock('../modals/AddActionModal', () => ({ default: () => null }));
 vi.mock('../modals/ImportSpecModal', () => ({ default: () => null }));
 
 const updateTool = vi.fn();
+const createTool = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
     updateTool: (...args: unknown[]) => updateTool(...args),
+    createTool: (...args: unknown[]) => createTool(...args),
     deleteTool: () => Promise.resolve(),
   },
 }));
@@ -392,5 +394,15 @@ describe('ToolConfig', () => {
     expect(cancel?.dataset.variant).toBe('ghost');
     expect(cancel?.dataset.size).toBe('sm');
     expect(cancel?.dataset.shape).toBe('pill');
+  });
+
+  it('creates a draft OpenAPI tool on its first save, not before', async () => {
+    createTool.mockResolvedValue({ ok: true });
+    updateTool.mockClear();
+    await render({ ...apiTool, id: '' } as APIToolType);
+    expect(createTool).not.toHaveBeenCalled();
+    await act(async () => buttonByText('settings.tools.save')!.click());
+    expect(updateTool).not.toHaveBeenCalled();
+    expect(createTool.mock.calls[0][0]).toMatchObject({ name: 'api_tool' });
   });
 });

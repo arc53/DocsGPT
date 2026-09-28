@@ -8,7 +8,12 @@ import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
-import { Card, CardDescription, CardTitle } from '../components/ui/card';
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardTitle,
+} from '../components/ui/card';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
 import { useLoaderState } from '../hooks';
@@ -16,6 +21,10 @@ import {
   loadConnectors,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
+import { ConnectorStateBadge } from '../connectors/ConnectorCard';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectorDescription, connectorName } from '../connectors/i18n';
+import type { ConnectorDefinition } from '../connectors/types';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import PairDeviceModal from '../settings/PairDeviceModal';
 import type { AppDispatch } from '../store';
@@ -73,6 +82,30 @@ export default function AddToolModal({
         );
         setLoading(false);
       });
+  };
+
+  // Services come from the connector catalog (tool connectors and MCP
+  // presets): they are added by connecting the service, first in the list.
+  const services = catalog.filter(
+    (connector) =>
+      connector.publisher !== 'custom' &&
+      connector.available &&
+      connector.capabilities.some((c) => c === 'read' || c === 'write'),
+  );
+  const builtIn = availableTools.filter(
+    (tool) => (tool.group ?? 'built_in') === 'built_in',
+  );
+
+  const openService = (connector: ConnectorDefinition) => {
+    setModalState('INACTIVE');
+    // Already connected: its tools exist; open its drawer to manage them.
+    if (connector.connection_count > 0) {
+      navigate(
+        `/settings/connectors?connector=${encodeURIComponent(connector.key)}`,
+      );
+      return;
+    }
+    launch(connector);
   };
 
   const handleAddTool = (tool: AvailableToolType) => {
@@ -171,24 +204,60 @@ export default function AddToolModal({
               <SkeletonLoader component="addToolCards" count={6} />
             </div>
           ) : (
-            (['built_in', 'service'] as const).map((group) => {
-              const tools = availableTools.filter(
-                (tool) => (tool.group ?? 'built_in') === group,
-              );
-              if (tools.length === 0) return null;
-              return (
-                <section key={group} className="flex flex-col gap-3">
+            <>
+              {services.length > 0 && (
+                <section className="flex flex-col gap-3">
                   <SectionHeader
                     as="h3"
                     size="sm"
-                    title={
-                      group === 'built_in'
-                        ? t('settings.tools.groupBuiltIn')
-                        : t('settings.tools.groupService')
-                    }
+                    title={t('settings.tools.groupService')}
                   />
                   <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {tools.map((tool) => (
+                    {services.map((connector) => (
+                      <Card
+                        asChild
+                        key={connector.key}
+                        variant="outline"
+                        padding="lg"
+                        interactive
+                        className="h-44 w-full"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => openService(connector)}
+                          data-testid={`add-tool-service-${connector.key}`}
+                        >
+                          <ConnectorIcon
+                            icon={connector.icon}
+                            className="size-6"
+                          />
+                          <CardTitle
+                            title={connectorName(t, connector)}
+                            className="truncate"
+                          >
+                            {connectorName(t, connector)}
+                          </CardTitle>
+                          <CardDescription size="xs" className="line-clamp-2">
+                            {connectorDescription(t, connector)}
+                          </CardDescription>
+                          <CardFooter>
+                            <ConnectorStateBadge connector={connector} />
+                          </CardFooter>
+                        </button>
+                      </Card>
+                    ))}
+                  </div>
+                </section>
+              )}
+              {builtIn.length > 0 && (
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    as="h3"
+                    size="sm"
+                    title={t('settings.tools.groupBuiltIn')}
+                  />
+                  <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {builtIn.map((tool) => (
                       <Card
                         asChild
                         key={tool.name}
@@ -225,8 +294,8 @@ export default function AddToolModal({
                     ))}
                   </div>
                 </section>
-              );
-            })
+              )}
+            </>
           )}
         </div>
       </Modal>
