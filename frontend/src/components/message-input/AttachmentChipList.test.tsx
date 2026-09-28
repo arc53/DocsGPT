@@ -106,8 +106,9 @@ describe('AttachmentChipList failed chip', () => {
     )!;
     const describedBy = remove.getAttribute('aria-describedby');
     expect(describedBy).toBeTruthy();
+    // Named, since the button's own label doesn't say which file.
     expect(document.getElementById(describedBy!)?.textContent).toBe(
-      'Upload failed. The file could not be read.',
+      'scan.pdf: Upload failed. The file could not be read.',
     );
   });
 

@@ -124,7 +124,7 @@ export default function AttachmentChipList({
               </span>
               {failureReason && (
                 <span id={reasonId} hidden>
-                  {failureReason}
+                  {attachment.fileName}: {failureReason}
                 </span>
               )}
 
