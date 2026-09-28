@@ -16,7 +16,14 @@ import {
   ThumbsUp,
   ExternalLink,
 } from 'lucide-react';
-import { forwardRef, Fragment, useEffect, useRef, useState } from 'react';
+import {
+  forwardRef,
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
@@ -126,6 +133,7 @@ const ConversationBubble = forwardRef<
   const [shouldShowToggle, setShouldShowToggle] = useState(false);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const openSources = useCallback(() => setIsSidebarOpen(true), []);
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
@@ -279,15 +287,18 @@ const ConversationBubble = forwardRef<
       </div>
     );
   } else {
+    const showSources = !(
+      DisableSourceFE ||
+      type === 'ERROR' ||
+      sources?.length === 0 ||
+      sources?.some((source) => source.link === 'None')
+    );
     bubble = (
       <div
         ref={ref}
         className={cn('flex flex-wrap self-start', className, 'group flex-col')}
       >
-        {DisableSourceFE ||
-        type === 'ERROR' ||
-        sources?.length === 0 ||
-        sources?.some((source) => source.link === 'None')
+        {!showSources
           ? null
           : sources && (
               // Stretched, not shrink-to-fit: the grid below sizes off this box,
@@ -446,6 +457,10 @@ const ConversationBubble = forwardRef<
             toolCalls={toolCalls}
             segments={segments}
             isStreaming={isStreaming}
+            // A citation pill jumps to a source card, so an answer whose
+            // sources are not shown has nothing to cite.
+            sourceCount={showSources ? (sources?.length ?? 0) : 0}
+            onOpenSources={openSources}
             agentId={agentId}
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.

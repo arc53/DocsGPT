@@ -26,6 +26,9 @@ type AnswerFlowProps = {
   // Absent on reload, where the order is synthesized from the flat fields.
   segments?: AnswerSegment[];
   isStreaming?: boolean;
+  /** How many sources the answer can cite; see `MarkdownAnswer`. */
+  sourceCount?: number;
+  onOpenSources?: () => void;
   agentId?: string;
   /** Set when the bubble already carries its own progress UI (a research run). */
   suppressStatusLine?: boolean;
@@ -51,6 +54,8 @@ export default function AnswerFlow({
   toolCalls,
   segments,
   isStreaming,
+  sourceCount,
+  onOpenSources,
   agentId,
   suppressStatusLine,
   artifacts,
@@ -136,6 +141,8 @@ export default function AnswerFlow({
             <MarkdownAnswer
               content={message}
               isStreaming={isStreaming}
+              sourceCount={sourceCount}
+              onOpenSources={onOpenSources}
               artifacts={artifacts}
               turnArtifacts={turnArtifacts}
               onOpenArtifact={onOpenArtifact}
