@@ -17,6 +17,12 @@ export const connectorDescription = (
     defaultValue: connector.description,
   });
 
+/** An action's name in words: `get_triage_responsibility` → "Get triage responsibility". */
+export const actionTitle = (name: string) => {
+  const words = name.replace(/[_-]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
 /** The connector's name; only the two custom kinds have translated names. */
 export const connectorName = (
   t: TFunction,

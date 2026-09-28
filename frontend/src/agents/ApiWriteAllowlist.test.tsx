@@ -98,7 +98,7 @@ describe('ApiWriteAllowlist', () => {
     const labels = Array.from(container.querySelectorAll('label')).map(
       (l) => l.textContent,
     );
-    expect(labels).toEqual(['Telegram: telegram_send_message']);
+    expect(labels).toEqual(['Telegram: Telegram send message']);
     expect(
       container
         .querySelector('button[role="checkbox"]')!

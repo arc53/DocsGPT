@@ -10,6 +10,7 @@ import { SectionHeader } from '../components/ui/section-header';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { Agent, AgentConfig } from './types';
+import { actionTitle } from '../connectors/i18n';
 
 type WriteAction = {
   entry: string;
@@ -148,7 +149,7 @@ export default function ApiWriteAllowlist({
                 <Label htmlFor={id} className="font-normal">
                   {t('modals.agentDetails.apiWrites.item', {
                     tool: item.tool,
-                    action: item.action,
+                    action: actionTitle(item.action),
                     interpolation: { escapeValue: false },
                   })}
                 </Label>
