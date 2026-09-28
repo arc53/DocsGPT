@@ -158,9 +158,12 @@ def _mcp_policy_error(config: dict):
             403,
         )
     except Exception:
-        # The switch is an admin preference; when the policy table cannot be
-        # read, saving the tool (which needs the database) fails on its own.
+        # Fail closed: a server whose admin switch cannot be read is not contacted.
         current_app.logger.warning("Could not read connector policies", exc_info=True)
+        return make_response(
+            jsonify({"success": False, "error": "Could not check whether this MCP server is allowed"}),
+            503,
+        )
     return None
 
 

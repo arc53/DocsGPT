@@ -445,12 +445,14 @@ def _create_connected_tool(user, data, definition, tool_instance):
     config_requirements = tool_instance.get_config_requirements()
     public, secrets = connection_service.split_secrets(data.get("config") or {}, config_requirements)
     connection_id = data.get("connection_id")
-    if not connection_id:
-        validation_errors = _validate_config(data.get("config") or {}, config_requirements)
-        if validation_errors:
-            return make_response(
-                jsonify({"success": False, "message": "Validation failed", "errors": validation_errors}), 400,
-            )
+    # An existing connection supplies the secrets the request leaves out.
+    validation_errors = _validate_config(
+        data.get("config") or {}, config_requirements, has_existing_secrets=bool(connection_id),
+    )
+    if validation_errors:
+        return make_response(
+            jsonify({"success": False, "message": "Validation failed", "errors": validation_errors}), 400,
+        )
     try:
         with db_session() as conn:
             if connection_id:

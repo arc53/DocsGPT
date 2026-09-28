@@ -90,6 +90,18 @@ class TestCreateConnectedTool:
         assert resp.status_code == 200
         assert resp.get_json()["connection_id"] == first["connection_id"]
 
+    def test_existing_connection_path_still_validates_the_config(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import CreateTool
+
+        with _db(pg_conn):
+            first = _call(app, CreateTool, _telegram()).get_json()
+            with patch("docsgpt.api.user.tools.routes._validate_config",
+                       return_value={"timeout": "Timeout must be between 1 and 300"}) as validate:
+                resp = _call(app, CreateTool, _telegram(token="", connection_id=first["connection_id"]))
+        assert resp.status_code == 400
+        # The connection supplies the secret, so a missing key is not an error.
+        assert validate.call_args.kwargs["has_existing_secrets"] is True
+
     def test_someone_elses_connection_is_not_found(self, app, pg_conn):
         from docsgpt.api.user.tools.routes import CreateTool
 

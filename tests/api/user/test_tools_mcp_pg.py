@@ -7,6 +7,16 @@ import pytest
 from flask import Flask
 
 
+@pytest.fixture(autouse=True)
+def _mcp_servers_allowed():
+    """The admin switch fails closed without a database; these tests are not about it.
+
+    The policy itself is covered in ``tests/connectors``.
+    """
+    with patch("docsgpt.api.user.tools.mcp._mcp_policy_error", return_value=None):
+        yield
+
+
 @pytest.fixture
 def app():
     return Flask(__name__)

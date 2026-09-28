@@ -487,3 +487,16 @@ class TestMcpConnectionScope:
         config = {"transport_type": "http", "connection_id": "someone-elses-connection"}
         _sanitize_mcp_transport(config)
         assert "connection_id" not in config
+
+    def test_mcp_policy_check_fails_closed_when_unreadable(self):
+        """A server whose admin switch cannot be read is not contacted."""
+        from flask import Flask
+
+        from docsgpt.api.user.tools import mcp as mcp_routes
+
+        def _broken():
+            raise RuntimeError("database is down")
+
+        with Flask(__name__).app_context(), patch.object(mcp_routes, "db_readonly", _broken):
+            resp = mcp_routes._mcp_policy_error({"server_url": "https://mcp.linear.app/mcp"})
+        assert resp is not None and resp.status_code == 503
