@@ -279,15 +279,18 @@ const ConversationBubble = forwardRef<
       </div>
     );
   } else {
+    const showSources = !(
+      DisableSourceFE ||
+      type === 'ERROR' ||
+      sources?.length === 0 ||
+      sources?.some((source) => source.link === 'None')
+    );
     bubble = (
       <div
         ref={ref}
         className={cn('flex flex-wrap self-start', className, 'group flex-col')}
       >
-        {DisableSourceFE ||
-        type === 'ERROR' ||
-        sources?.length === 0 ||
-        sources?.some((source) => source.link === 'None')
+        {!showSources
           ? null
           : sources && (
               // Stretched, not shrink-to-fit: the grid below sizes off this box,
@@ -446,6 +449,9 @@ const ConversationBubble = forwardRef<
             toolCalls={toolCalls}
             segments={segments}
             isStreaming={isStreaming}
+            // A citation pill jumps to a source card, so an answer whose
+            // sources are not shown has nothing to cite.
+            sourceCount={showSources ? (sources?.length ?? 0) : 0}
             agentId={agentId}
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
