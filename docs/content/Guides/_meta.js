@@ -1,4 +1,8 @@
 export default {
+  "Connectors": {
+    "title": "🔌 Connectors",
+    "href": "/Guides/Connectors"
+  },
   "Customising-prompts": {
     "title": "️💻 Customising Prompts",
     "href": "/Guides/Customising-prompts"

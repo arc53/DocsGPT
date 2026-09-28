@@ -10,6 +10,10 @@ import { Steps } from 'nextra/components'
 
 Connect your SharePoint or OneDrive account to upload and process files directly as an external knowledge base. Supports Office files, PDFs, text files, CSVs, images, and more. Authentication is handled via Microsoft Entra ID (Azure AD) with automatic token refresh.
 
+<Callout type="info">
+Members connect this service from **Settings > Connectors**, and one sign-in serves every source that uses it. Admins can check what is still missing in **Admin > Connectors**. See [Connectors](/Guides/Connectors).
+</Callout>
+
 ## Setup
 
 <Steps>
@@ -18,8 +22,8 @@ Connect your SharePoint or OneDrive account to upload and process files directly
 
 1. Go to the [Azure Portal](https://portal.azure.com/) > **Microsoft Entra ID** > **App registrations** > **New registration**
 2. Set **Redirect URI** (Web) to:
-   - Local: `http://localhost:7091/api/connectors/callback?provider=share_point`
-   - Production: `https://yourdomain.com/api/connectors/callback?provider=share_point`
+   - Local: `http://localhost:7091/api/connectors/callback`
+   - Production: `https://yourdomain.com/api/connectors/callback` (the value of `CONNECTOR_REDIRECT_BASE_URI`, registered as-is)
 
 ### Step 2: Configure API Permissions
 
@@ -53,13 +57,13 @@ MICROSOFT_TENANT_ID=your-azure-ad-tenant-id
 
 ### Step 5: Restart and Use
 
-Restart your application, then go to the upload section in DocsGPT and select **SharePoint / OneDrive** as the source. You'll be redirected to Microsoft to sign in, then can browse and select files to process.
+Restart your application, then go to **Settings > Connectors** and pick **SharePoint**. You'll be redirected to Microsoft to sign in, then can browse and select files to process.
 
 </Steps>
 
 ## Troubleshooting
 
 - **Option not appearing** — Verify `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` are set, then restart.
-- **Authentication failed** — Check that the redirect URI matches exactly, including `?provider=share_point`.
+- **Authentication failed** — Check that the redirect URI matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters.
 - **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Permission denied** — Ensure admin consent is granted and the user has access to the target files.

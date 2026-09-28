@@ -1,0 +1,137 @@
+---
+title: Connectors
+description: Connect DocsGPT to the services your team uses. One connection can sync content into Sources and give agents tools, with credentials encrypted on the server.
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# Connectors
+
+A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Asana, Stripe), and any MCP server or OpenAPI spec you add yourself. A **connection** is one signed-in account or one saved API key for a connector.
+
+Connections are the single place credentials live. A synced source and an agent tool both point at a connection, so you sign in once, reconnect once when a token expires, and disconnect in one place.
+
+## Using connectors
+
+Open **Settings > Connectors**. Filters narrow the list by category, and **Connected** shows what you already use.
+
+1. Pick a connector. Services with OAuth open the provider's sign-in page in a pop-up; API-key services ask for the key.
+2. Choose what the connection sets up. File services offer a synced source (pick files or folders, then how often to sync: never, daily, weekly or monthly). Tool services create their tools right away.
+3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
+
+The **Add Source** and **Add Tool** dialogs, the composer's Sources and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use.
+
+Click a connected card to see its account, the sources and tools that use it, and to **Reconnect** or **Disconnect**. Disconnecting keeps a source's indexed content but stops its sync.
+
+### When a connection needs attention
+
+If a provider rejects a token that DocsGPT cannot refresh, the connection is marked **Reconnect needed**, its synced sources pause, and you get a notification. Reconnecting the same account resumes them. In a chat, a tool whose connection is missing or expired shows a **Connect** prompt instead of failing; the answer continues once you connect.
+
+### Sharing a tool with a team
+
+Sharing a tool that uses a connection asks whose account team members use:
+
+- **Team members use my account.** Everyone acts as your account on that service. When the tool can write, you confirm this before sharing, and a member's write actions always need approval.
+- **Each member connects their own account.** Members see a **Connect** prompt the first time they use the tool.
+
+Tools from OAuth MCP servers default to each member's own account. An admin can force one mode for a connector.
+
+### What answers show
+
+Tool calls name the service that ran them: "Searched Notion", "Read from Google Drive", "Used Linear: create issue". Citations from a synced source read "From Google Drive". Answers never show which account was used.
+
+## Admin setup
+
+Admins manage connectors in **Admin > Connectors**. It lists every connector with its status, how many connections use it, and:
+
+- **Enabled** turns a connector off for everyone. Members see it as turned off and cannot connect it, its tools stop working, and its sources stop syncing until you turn it back on. Existing connections are kept.
+- **Shared tools use** is **Let owners choose** (default), **Always the owner's account** or **Always each member's own account**.
+- **Allow custom MCP servers** controls whether members can add their own MCP servers. Presets are enabled one by one.
+- **Setup guide** on an OAuth connector shows the redirect URI to register and which server settings are still missing.
+
+A connector that needs server settings stays visible to members as **Needs admin setup** until the settings are present.
+
+### Encryption key
+
+Credentials are encrypted with a key derived from `ENCRYPTION_SECRET_KEY` and bound to the connection's owner. **Set your own value before anyone connects a service.**
+
+```env
+ENCRYPTION_SECRET_KEY=a-long-random-value
+```
+
+When authentication is on (`AUTH_TYPE` set), DocsGPT refuses to store new credentials while the key is the public default, and Admin > Connectors shows a warning. A single-user local install keeps working and logs a warning at startup.
+
+To rotate the key, move the old value to `ENCRYPTION_SECRET_KEY_PREVIOUS`, set the new one, restart the API and worker, then run:
+
+```bash
+docsgpt connectors reencrypt
+```
+
+The command prints how many connections it rewrote. Connections it cannot decrypt with either key are marked **Reconnect needed** for their owners. Once it has run, you can remove `ENCRYPTION_SECRET_KEY_PREVIOUS`.
+
+### Redirect URIs
+
+OAuth connectors return to one callback, set by `CONNECTOR_REDIRECT_BASE_URI` (default `http://127.0.0.1:7091/api/connectors/callback`). Register it with each provider exactly as set, without query parameters. MCP servers use `MCP_OAUTH_REDIRECT_URI`, which is derived from the same base when unset. Admin > Connectors shows both values with copy buttons.
+
+If the frontend runs on a different origin from the API, list it in `CONNECTOR_ALLOWED_ORIGINS` so the sign-in pop-up can hand the result back.
+
+### Google Drive
+
+<Steps>
+
+### Create OAuth credentials
+
+In the [Google Cloud Console](https://console.cloud.google.com/), enable the **Google Drive API**, then create an **OAuth client ID** of type **Web application**. Add the redirect URI from Admin > Connectors under **Authorized redirect URIs**.
+
+### Set the server settings
+
+```env
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+```
+
+To offer Google's own file picker, also build the frontend with `VITE_GOOGLE_CLIENT_ID` (and optionally `VITE_GOOGLE_PICKER_API_KEY`). Without them, members browse files in DocsGPT's picker.
+
+### Publish the app
+
+Publish the OAuth consent screen, or make it an **Internal** Workspace app.
+
+<Callout type="warning" emoji="⚠️">
+Apps left in **Testing** get refresh tokens that expire after seven days, which stops background sync.
+</Callout>
+
+</Steps>
+
+### SharePoint and OneDrive
+
+Register an app in [Microsoft Entra ID](https://entra.microsoft.com/) with a **Web** redirect URI from Admin > Connectors, create a client secret, and grant the delegated Microsoft Graph permissions `Files.Read`, `Sites.Read.All` and `User.Read`.
+
+```env
+MICROSOFT_CLIENT_ID=your-application-id
+MICROSOFT_CLIENT_SECRET=your-client-secret
+MICROSOFT_TENANT_ID=common   # or your tenant id for a single-tenant app
+```
+
+See [SharePoint / OneDrive](/Guides/Integrations/sharepoint-connector) for tenant options.
+
+### Confluence
+
+Create an **OAuth 2.0 (3LO)** app in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/), add the redirect URI from Admin > Connectors as its callback URL, and add the scopes `read:page:confluence`, `read:space:confluence`, `read:attachment:confluence` and `read:me`. See [Confluence](/Guides/Integrations/confluence-connector) for details.
+
+```env
+CONFLUENCE_CLIENT_ID=your-client-id
+CONFLUENCE_CLIENT_SECRET=your-client-secret
+```
+
+### Amazon S3
+
+S3 needs no server settings. Each member connects with an access key that can list and read the bucket (`s3:ListBucket`, `s3:GetObject`), then picks a bucket and optional path prefix. A custom endpoint URL connects S3-compatible storage such as MinIO or Cloudflare R2.
+
+### MCP presets
+
+Notion, Linear, Atlassian, Sentry, Asana and Stripe are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
+
+<Callout type="info">
+Background sync runs on the Celery worker and beat. Keep both running, as in the bundled Compose and Kubernetes files.
+</Callout>
