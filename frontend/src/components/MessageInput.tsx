@@ -51,6 +51,7 @@ import {
   ToolsTrigger,
 } from './message-input';
 import { useArmedSend } from './message-input/armedSend';
+import { guardUploadStall } from './message-input/uploadStallGuard';
 import { cannotReadAttachment } from './message-input/attachmentReadability';
 import { handleAbort } from '../conversation/conversationSlice';
 import {
@@ -555,6 +556,7 @@ export default function MessageInput({
       const files = supported;
 
       const apiHost = envVar('VITE_API_HOST');
+      const uploadFailedMessage = t('conversation.attachments.uploadFailed');
 
       if (files.length > 1) {
         const formData = new FormData();
@@ -830,20 +832,29 @@ export default function MessageInput({
           }
         };
 
-        xhr.onerror = () => {
-          console.error('Upload network error');
-          Object.values(indexToUiId).forEach((id) =>
-            dispatch(
-              updateAttachment({
-                id,
-                updates: { status: 'failed' },
-              }),
-            ),
-          );
-        };
+        // No response at all (status 0): a file the browser couldn't read,
+        // a dropped connection, or a stall the guard aborted.
+        xhr.onerror =
+          xhr.onabort =
+          xhr.ontimeout =
+            () => {
+              console.error('Upload network error');
+              Object.values(indexToUiId).forEach((id) =>
+                dispatch(
+                  updateAttachment({
+                    id,
+                    updates: {
+                      status: 'failed',
+                      errorMessage: uploadFailedMessage,
+                    },
+                  }),
+                ),
+              );
+            };
 
         xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
         if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        guardUploadStall(xhr);
         xhr.send(formData);
         return;
       }
@@ -951,17 +962,24 @@ export default function MessageInput({
           }
         };
 
-        xhr.onerror = () => {
-          dispatch(
-            updateAttachment({
-              id: uniqueId,
-              updates: { status: 'failed' },
-            }),
-          );
-        };
+        xhr.onerror =
+          xhr.onabort =
+          xhr.ontimeout =
+            () => {
+              dispatch(
+                updateAttachment({
+                  id: uniqueId,
+                  updates: {
+                    status: 'failed',
+                    errorMessage: uploadFailedMessage,
+                  },
+                }),
+              );
+            };
 
         xhr.open('POST', `${apiHost}${endpoints.USER.STORE_ATTACHMENT}`);
         if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        guardUploadStall(xhr);
         xhr.send(formData);
       });
     },
@@ -1578,17 +1596,30 @@ export default function MessageInput({
   };
 
   // When ``allowSendWithoutText`` is set, an attachment-only submit is
-  // permitted as long as at least one attachment exists; a still-pending
-  // one arms the send instead of submitting (see handleSubmit).
+  // permitted as long as at least one attachment can still go out; a
+  // still-pending one arms the send instead of submitting (see handleSubmit).
+  // A failed one doesn't count: it is dropped at submit time.
   const hasSubmittableContent =
-    Boolean(value.trim()) || (allowSendWithoutText && attachments.length > 0);
-  const canSubmit =
-    hasSubmittableContent &&
+    Boolean(value.trim()) ||
+    (allowSendWithoutText && attachments.some((a) => a.status !== 'failed'));
+  const composerIdle =
     !loading &&
     recordingState !== 'recording' &&
     recordingState !== 'transcribing';
+  const canSubmit = hasSubmittableContent && composerIdle;
 
   const submitNow = () => {
+    const failed = attachments.filter((a) => a.status === 'failed');
+    const hasContent =
+      Boolean(value.trim()) ||
+      (allowSendWithoutText &&
+        attachments.some((a) => a.status === 'completed'));
+    // An attachment-only send whose files all failed has nothing left to
+    // send; keep the failed chips so the user can see why.
+    if (!hasContent) return;
+    // A failed file will never succeed, so it must never cost the user their
+    // question: drop it and send with whatever did upload.
+    failed.forEach((a) => dispatch(removeAttachment(a.id)));
     onSubmit(value);
     setValue('');
     if (isTouch) {
@@ -1607,7 +1638,14 @@ export default function MessageInput({
     readiness: sendReadiness,
     arm: armSend,
     cancel: cancelArmedSend,
-  } = useArmedSend({ attachments, onFlush: submitNow });
+  } = useArmedSend({
+    attachments,
+    onFlush: submitNow,
+    // A queued send that settles while another answer streams would be
+    // refused by the consumer after the composer was already cleared; hold
+    // it until the composer can take a submit again.
+    canFlush: composerIdle,
+  });
 
   // Adopt a question queued outside the composer: seed the input, arm,
   // and hand the wait to the standard banner. If the attachments already
@@ -1621,9 +1659,10 @@ export default function MessageInput({
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    // Attachments still uploading/parsing (or failed) must never be
-    // silently dropped from the payload: hold the send in the composer
-    // until every attachment resolves, then flush automatically.
+    // Attachments still uploading/parsing must never be silently dropped
+    // from the payload: hold the send in the composer until every
+    // attachment resolves, then flush automatically. Failed ones don't hold
+    // it; submitNow drops them.
     if (sendReadiness.state !== 'ready') {
       armSend();
       return;
@@ -1720,16 +1759,6 @@ export default function MessageInput({
             >
               {t('conversation.attachments.cancelQueuedSend')}
             </Button>
-          </div>
-        )}
-        {sendArmed && sendReadiness.state === 'blocked' && (
-          <div
-            className="text-destructive px-2 pb-1 text-xs sm:px-3"
-            role="alert"
-          >
-            {t('conversation.attachments.sendBlockedByFailed', {
-              names: sendReadiness.failedNames.join(', '),
-            })}
           </div>
         )}
         {voiceError && (

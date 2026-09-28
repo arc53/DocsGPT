@@ -3,16 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Attachment } from '../../upload/uploadSlice';
 
 export type SendReadiness =
-  | { state: 'ready' }
-  | { state: 'waiting'; pendingCount: number }
-  | { state: 'blocked'; failedNames: string[] };
+  { state: 'ready' } | { state: 'waiting'; pendingCount: number };
 
+// A failed file never resolves, so it never holds the send: the composer
+// drops it at submit time and sends the question with whatever succeeded.
 export function getSendReadiness(attachments: Attachment[]): SendReadiness {
-  const failedNames = attachments
-    .filter((a) => a.status === 'failed')
-    .map((a) => a.fileName);
-  if (failedNames.length > 0) return { state: 'blocked', failedNames };
-
   const pendingCount = attachments.filter(
     (a) => a.status === 'uploading' || a.status === 'processing',
   ).length;
@@ -24,9 +19,13 @@ export function getSendReadiness(attachments: Attachment[]): SendReadiness {
 export function useArmedSend({
   attachments,
   onFlush,
+  canFlush = true,
 }: {
   attachments: Attachment[];
   onFlush: () => void;
+  // False while the composer can't take a submit (an answer is streaming):
+  // the armed send holds until it can, instead of flushing into a refusal.
+  canFlush?: boolean;
 }) {
   const [armed, setArmed] = useState(false);
   // Latest-closure ref so the flush submits the current composer value,
@@ -42,12 +41,12 @@ export function useArmedSend({
       flushedRef.current = false;
       return;
     }
-    if (readiness.state === 'ready' && !flushedRef.current) {
+    if (readiness.state === 'ready' && canFlush && !flushedRef.current) {
       flushedRef.current = true;
       setArmed(false);
       flushRef.current();
     }
-  }, [armed, readiness.state]);
+  }, [armed, readiness.state, canFlush]);
 
   const arm = useCallback(() => setArmed(true), []);
   const cancel = useCallback(() => setArmed(false), []);

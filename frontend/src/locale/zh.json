@@ -1445,6 +1445,7 @@
     "attachments": {
       "attach": "附件",
       "remove": "删除附件",
+      "uploadFailed": "上传失败。无法读取文件或连接已断开。",
       "attached": "附件",
       "failed": "失败",
       "attachment": "附件"

@@ -274,6 +274,24 @@ describe('fetchAnswer — attachment ids on the wire', () => {
       'c-2',
     ]);
   });
+  it('leaves a failed composer upload out of the fallback ids', async () => {
+    const store = makeStore();
+    store.dispatch(addQuery({ prompt: 'q' }));
+    store.dispatch(addAttachment(completedAtt));
+    store.dispatch(
+      addAttachment({
+        id: 'f-3',
+        fileName: 'broken.pdf',
+        progress: 0,
+        status: 'failed',
+        taskId: '',
+      }),
+    );
+
+    await store.dispatch(fetchAnswer({ question: 'q', indx: 0 }));
+
+    expect(vi.mocked(handleFetchAnswer).mock.calls[0][8]).toEqual(['srv-1']);
+  });
 });
 
 describe('fetchAnswer.rejected', () => {

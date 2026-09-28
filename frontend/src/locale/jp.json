@@ -1445,6 +1445,7 @@
     "attachments": {
       "attach": "添付",
       "remove": "添付ファイルを削除",
+      "uploadFailed": "アップロードに失敗しました。ファイルを読み取れなかったか、接続が切断されました。",
       "attached": "添付ファイル",
       "failed": "失敗",
       "attachment": "添付ファイル"
