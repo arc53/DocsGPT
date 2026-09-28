@@ -276,10 +276,12 @@ test.describe("tier-a · composer resilience", () => {
         .first()
         .setInputFiles(SMALL_FIXTURE_PATH);
 
-      // The failed chip explains itself before Send.
-      await expect(page.getByText(/upload failed/i)).toBeVisible({
-        timeout: 5_000,
-      });
+      // The failed chip is marked by its warning icon; the reason is a
+      // hover tooltip, not a line of text in the composer.
+      const failedIcon = page.getByLabel("Failed", { exact: true });
+      await expect(failedIcon).toBeVisible({ timeout: 5_000 });
+      await failedIcon.hover();
+      await expect(page.getByRole("tooltip")).toContainText(/upload failed/i);
 
       const question = "does this still send? e2e-failed-attachment";
       const textarea = page.locator("#message-input");
@@ -298,7 +300,8 @@ test.describe("tier-a · composer resilience", () => {
 
       // The question is in the thread; the chip and its reason are gone.
       await expect(page.getByText(question)).toBeVisible();
-      await expect(page.getByText(/upload failed/i)).toBeHidden();
+      await expect(failedIcon).toHaveCount(0);
+      await expect(page.getByText(/upload failed/i)).toHaveCount(0);
       await expect(page.getByText("notes.txt")).toBeHidden();
       await expect(textarea).toHaveValue("");
 

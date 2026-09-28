@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import type { Attachment } from '../../upload/uploadSlice';
 import { IconButton } from '../ui/icon-button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { cn } from '@/lib/utils';
 
 type AttachmentChipListProps = {
@@ -30,12 +31,6 @@ export default function AttachmentChipList({
 }: AttachmentChipListProps) {
   const { t } = useTranslation();
 
-  // A tooltip is the one place a touch user can never look, and this list is
-  // where a phone picker's unsupported file lands. Show the reason inline,
-  // as soon as it is known, rather than only once a send is attempted.
-  const failures = attachments.filter(
-    (attachment) => attachment.status === 'failed' && attachment.errorMessage,
-  );
   // Not a failure: the file is kept and still sends. It only warns that the
   // model picked right now would receive nothing it can read.
   const unreadable = modelName
@@ -46,7 +41,14 @@ export default function AttachmentChipList({
     <>
       <div className="flex flex-wrap gap-1.5 px-2 py-2 sm:gap-2 sm:px-3">
         {attachments.map((attachment) => {
-          return (
+          const failed = attachment.status === 'failed';
+          // A failed file never blocks the send (it is dropped then), so its
+          // reason stays out of the way: the chip's warning icon marks it, and
+          // the reason is a hover tooltip plus screen-reader text.
+          const failureReason = failed
+            ? (attachment.errorMessage ?? t('conversation.attachments.failed'))
+            : null;
+          const chip = (
             <div
               key={attachment.id}
               draggable={true}
@@ -62,11 +64,6 @@ export default function AttachmentChipList({
                   : 'opacity-100',
                 draggingId === attachment.id && 'ring-primary/30 ring-2',
               )}
-              title={
-                attachment.status === 'failed' && attachment.errorMessage
-                  ? `${attachment.fileName}: ${attachment.errorMessage}`
-                  : attachment.fileName
-              }
             >
               <div className="bg-primary mr-2 flex size-8 items-center justify-center rounded-md p-1">
                 {attachment.status === 'completed' && (
@@ -115,9 +112,15 @@ export default function AttachmentChipList({
                 )}
               </div>
 
-              <span className="max-w-[120px] truncate font-medium sm:max-w-[150px]">
+              <span
+                className="max-w-[120px] truncate font-medium sm:max-w-[150px]"
+                title={failed ? undefined : attachment.fileName}
+              >
                 {attachment.fileName}
               </span>
+              {failureReason && (
+                <span className="sr-only">{failureReason}</span>
+              )}
 
               <IconButton
                 label={t('conversation.attachments.remove')}
@@ -133,21 +136,15 @@ export default function AttachmentChipList({
               </IconButton>
             </div>
           );
+          if (!failureReason) return chip;
+          return (
+            <Tooltip key={attachment.id}>
+              <TooltipTrigger asChild>{chip}</TooltipTrigger>
+              <TooltipContent>{failureReason}</TooltipContent>
+            </Tooltip>
+          );
         })}
       </div>
-
-      {failures.length > 0 && (
-        <div
-          className="text-destructive flex flex-col gap-0.5 px-2 pb-1 text-xs sm:px-3"
-          role="alert"
-        >
-          {failures.map((attachment) => (
-            <span key={attachment.id}>
-              {attachment.fileName}: {attachment.errorMessage}
-            </span>
-          ))}
-        </div>
-      )}
 
       {unreadable.length > 0 && (
         <div
