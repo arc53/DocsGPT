@@ -31,7 +31,7 @@ export const everywhereSelectors = [
     'z-index comes from the stacking layers: z-10 sticky headers, z-20 in-page floating chrome, z-50 overlays, z-200 portalled floating lists. See DESIGN.md "Stacking".',
   ),
   ...inStrings(
-    '/(^|\\s)(focus|focus-visible|focus-within):ring-2(\\s|$)/',
+    '/(^|[\\s:-])(focus|focus-visible|focus-within):ring-2(\\s|$)/',
     'The focus ring is ring-3 ring-ring/50 on focus-visible (fields: focus-within on a frame the same way). ring-2 is only for selection rings. See DESIGN.md "Focus ring".',
   ),
   {
@@ -49,7 +49,7 @@ export const pageSelectors = [
     'Transition only the property that changes: transition-colors by default, transition-transform for chevrons, transition-shadow for a ring. See DESIGN.md "Motion".',
   ),
   ...inStrings(
-    '/(^|\\s)hover:scale-(?!x-|y-)/',
+    '/(^|[\\s:-])hover:scale-(?!x-|y-)/',
     'Hover is a fill, border or text-colour change, never a scale. See DESIGN.md "Motion".',
   ),
   ...inStrings(
@@ -82,8 +82,8 @@ export const pageSelectors = [
       'Every table is ui/table (Table, TableHead, TableRow…), never a raw <table>. See DESIGN.md "Table".',
   },
   ...[
-    'JSXOpeningElement[name.name="a"] > JSXAttribute[name.name="className"] Literal[value=/(^|\\s)(underline|text-primary)(\\s|$)/]',
-    'JSXOpeningElement[name.name="a"] > JSXAttribute[name.name="className"] TemplateElement[value.raw=/(^|\\s)(underline|text-primary)(\\s|$)/]',
+    'JSXOpeningElement[name.name="a"] > JSXAttribute[name.name="className"] Literal[value=/(^|[\\s:])(underline|text-primary)(\\s|$)/]',
+    'JSXOpeningElement[name.name="a"] > JSXAttribute[name.name="className"] TemplateElement[value.raw=/(^|[\\s:])(underline|text-primary)(\\s|$)/]',
   ].map((selector) => ({
     selector,
     message:

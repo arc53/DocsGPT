@@ -211,10 +211,10 @@ const Chunks: React.FC<ChunksProps> = ({
    * After a save, find the edited chunk in the store's current order and show
    * its stored copy (fresh metadata) at that position, so "n of total" and
    * previous / next follow the list as it now is. Checked in turn: the open
-   * position (the chunk stayed), the last one (a store that appends the new
-   * copy), then the whole filtered list. Each probe matches by id, so no
-   * store ordering is assumed. When the chunk is not in the list (a search
-   * it no longer matches), what is shown stays.
+   * position (the chunk stayed), then the last one (a store that re-adds the
+   * copy at the end). Each probe matches by id, so no store ordering is
+   * assumed. When neither holds it (moved elsewhere, or a search it no longer
+   * matches), what is shown stays: the whole filtered list is never fetched.
    *
    * @param chunk The chunk just saved, with its new id.
    */
@@ -249,25 +249,11 @@ const Chunks: React.FC<ChunksProps> = ({
         return;
       }
       if (total < 1) return;
-      if (total !== openPosition) {
-        const last = await fetchPage(total, 1);
-        if (!last) return;
-        const lastChunk: ChunkType | undefined = last.chunks?.[0];
-        if (lastChunk?.doc_id === chunk.doc_id) {
-          show(lastChunk, total, total);
-          return;
-        }
-      }
-      const all = await fetchPage(1, total);
-      if (!all) return;
-      const list: ChunkType[] = all.chunks ?? [];
-      const index = list.findIndex((c) => c.doc_id === chunk.doc_id);
-      if (index >= 0)
-        show(
-          list[index],
-          index + 1,
-          typeof all.total === 'number' ? all.total : total,
-        );
+      if (total === openPosition) return;
+      const last = await fetchPage(total, 1);
+      if (!last) return;
+      const lastChunk: ChunkType | undefined = last.chunks?.[0];
+      if (lastChunk?.doc_id === chunk.doc_id) show(lastChunk, total, total);
     } catch (error) {
       console.error(error);
     }
@@ -394,10 +380,11 @@ const Chunks: React.FC<ChunksProps> = ({
       if (!response.ok) throw new Error('Failed to update chunk');
       const data = await response.json().catch(() => ({}));
       closeSheet();
-      // The edit is saved under a new id. Show it straight away (its token
-      // count is recomputed server-side, so it is dropped until the reload),
-      // then find where the store now keeps it: the update re-adds the chunk,
-      // so it can move (FAISS appends it; pgvector has no ORDER BY).
+      // Show the edit straight away (its token count is recomputed
+      // server-side, so it is dropped until the reload), then find where the
+      // store now keeps it. Most stores (FAISS, MongoDB, pgvector, Qdrant)
+      // update in place: same id, same position. Only the base add-then-delete
+      // fallback (Milvus) saves it under a new id, which can move it.
       const edited: ChunkType = {
         ...chunk,
         doc_id: data.chunk_id ?? chunk.doc_id,

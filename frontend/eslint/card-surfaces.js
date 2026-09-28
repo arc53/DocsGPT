@@ -6,8 +6,11 @@
 // JSX tree as the `<Card variant="filled">`, not ones a child component
 // renders.
 
-const FILLED_CARD =
-  'JSXElement:has(> JSXOpeningElement[name.name="Card"]:has(> JSXAttribute[name.name="variant"][value.value="filled"]))';
+// `variant="filled"` or `variant={'filled'}`.
+const FILLED_VARIANT =
+  'JSXAttribute[name.name="variant"]:matches([value.value="filled"], [value.expression.value="filled"])';
+
+const FILLED_CARD = `JSXElement:has(> JSXOpeningElement[name.name="Card"]:has(> ${FILLED_VARIANT}))`;
 
 // `bg-muted` or `bg-muted/NN`, with any variant prefix, but not
 // `bg-muted-foreground`.
@@ -16,7 +19,7 @@ const BG_MUTED = '/(^|[\\s:])bg-muted([^-a-z]|$)/';
 /** @type {{ selector: string, message: string }[]} */
 export const cardSurfaceSelectors = [
   {
-    selector: `${FILLED_CARD} JSXElement > JSXOpeningElement[name.name="Card"] > JSXAttribute[name.name="variant"][value.value="filled"]`,
+    selector: `${FILLED_CARD} JSXElement > JSXOpeningElement[name.name="Card"] > ${FILLED_VARIANT}`,
     message:
       'A filled Card inside a filled Card is a fill on a fill. A well inside a tile needs a panel around it, or none. See DESIGN.md "Card surfaces".',
   },

@@ -1101,7 +1101,6 @@
       "dropzoneText": "Haz clic para subir o arrastra y suelta",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, imágenes, audio, EPUB, JSON o ZIP, hasta 25 MB cada uno",
       "filesRejected": "No se añadieron (más de 25 MB o tipo no admitido): {{files}}",
-      "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip limitados a 25MB",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Entrenar",

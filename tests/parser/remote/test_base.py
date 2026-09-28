@@ -5,6 +5,7 @@ import pytest
 from docsgpt.parser.remote.base import (
     MAX_QUERY_SEGMENT_LENGTH,
     dedupe_virtual_paths,
+    normalize_page_url,
     url_to_virtual_path,
 )
 from docsgpt.parser.schema.base import Document
@@ -131,3 +132,29 @@ class TestDedupeVirtualPaths:
 
         assert dedupe_virtual_paths([doc]) == [doc]
         assert "file_path" not in doc.extra_info
+
+
+@pytest.mark.unit
+class TestNormalizePageUrl:
+    def test_query_order_does_not_matter(self):
+        assert normalize_page_url("https://x.io/p?a=1&b=2") == normalize_page_url("https://x.io/p?b=2&a=1")
+
+    def test_fragment_is_dropped(self):
+        assert normalize_page_url("https://x.io/p?a=1#top") == normalize_page_url("https://x.io/p?a=1")
+
+    def test_distinct_queries_stay_distinct(self):
+        assert normalize_page_url("https://x.io/p?page=1") != normalize_page_url("https://x.io/p?page=2")
+
+    def test_blank_values_are_kept(self):
+        assert normalize_page_url("https://x.io/p?flag") != normalize_page_url("https://x.io/p")
+
+    def test_url_without_query_or_fragment_is_unchanged(self):
+        assert normalize_page_url("https://x.io/guides/setup") == "https://x.io/guides/setup"
+
+
+@pytest.mark.unit
+class TestDedupeReorderedQuery:
+    def test_reordered_query_is_one_page(self):
+        docs = [_doc("https://x.com/p?a=1&b=2"), _doc("https://x.com/p?b=2&a=1")]
+
+        assert _paths(dedupe_virtual_paths(docs)) == ["p__a=1&b=2.md", "p__a=1&b=2.md"]

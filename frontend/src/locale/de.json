@@ -1101,7 +1101,6 @@
       "dropzoneText": "Zum Hochladen klicken oder per Drag & Drop ablegen",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, Bilder, Audio, EPUB, JSON oder ZIP, jeweils bis zu 25 MB",
       "filesRejected": "Nicht hinzugefügt (größer als 25 MB oder kein unterstützter Dateityp): {{files}}",
-      "info": "Bitte lade .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip hoch (max. 25 MB)",
       "uploadedFiles": "Hochgeladene Dateien",
       "cancel": "Abbrechen",
       "train": "Trainieren",

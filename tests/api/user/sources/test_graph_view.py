@@ -282,6 +282,27 @@ class TestSourceGraphNodes:
             sid, query="ada", type_key="person", offset=200, limit=100
         )
 
+    def test_caps_search_query_length(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import SourceGraphNodes
+
+        user = "u-graph-nodes-long-q"
+        sid = _graphrag_source(pg_conn, user)
+        store = _node_list_store()
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.graphrag.store.GraphStore", return_value=store
+        ), app.test_request_context(
+            f"/api/sources/{sid}/graph/nodes?q=%20{'a' * 500}"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SourceGraphNodes().get(sid)
+
+        assert response.status_code == 200
+        store.list_nodes.assert_called_once_with(
+            sid, query="a" * 200, type_key=None, offset=0, limit=25
+        )
+
     @pytest.mark.parametrize(
         "qs, page, per_page",
         [

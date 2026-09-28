@@ -112,17 +112,22 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
     """
     if not url or not isinstance(url, str):
         raise SSRFError("No URL was provided.")
-    # Ensure URL has a scheme
-    if not urlparse(url).scheme:
-        url = "http://" + url
+    # ``urlparse`` and ``.hostname`` raise ValueError on malformed input such
+    # as an unclosed IPv6 bracket (``http://[bad``); callers only catch SSRFError.
+    try:
+        # Ensure URL has a scheme
+        if not urlparse(url).scheme:
+            url = "http://" + url
 
-    parsed = urlparse(url)
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+    except ValueError as e:
+        raise SSRFError(f"Invalid URL: {e}") from e
 
     # Check scheme
     if parsed.scheme not in ALLOWED_SCHEMES:
         raise SSRFError(f"URL scheme '{parsed.scheme}' is not allowed. Only HTTP(S) is permitted.")
 
-    hostname = parsed.hostname
     if not hostname:
         raise SSRFError("URL must have a valid hostname.")
 

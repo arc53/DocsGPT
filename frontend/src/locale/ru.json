@@ -1157,7 +1157,6 @@
       "dropzoneText": "Нажмите, чтобы загрузить, или перетащите файлы",
       "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, изображения, аудио, EPUB, JSON или ZIP, до 25 МБ каждый",
       "filesRejected": "Не добавлены (больше 25 МБ или неподдерживаемый формат): {{files}}",
-      "info": "Пожалуйста, загрузите файлы .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip размером до 25 МБ",
       "uploadedFiles": "Загруженные файлы",
       "cancel": "Отмена",
       "train": "Тренировка",

@@ -351,3 +351,16 @@ class TestWebLoaderDistinctPaths:
         assert [d.extra_info["file_path"] for d in result] == [
             "list__page=1.md", "list__page=2.md", "a-2.md", "a.md"
         ]
+
+
+@pytest.mark.unit
+class TestWebLoaderMalformedUrl:
+    @patch("docsgpt.core.url_validation.resolve_hostname", return_value="93.184.216.34")
+    @patch("docsgpt.parser.remote.web_loader.pinned_request")
+    def test_malformed_url_is_skipped_and_the_rest_ingest(self, mock_pinned_request, _mock_resolve, web_loader):
+        mock_pinned_request.side_effect = lambda *a, **k: _fake_response("<html><body>good</body></html>")
+
+        result = web_loader.load_data(["http://[bad", "https://x.io/good"])
+
+        assert [d.extra_info["source"] for d in result] == ["https://x.io/good"]
+        assert result[0].extra_info["file_path"] == "good.md"

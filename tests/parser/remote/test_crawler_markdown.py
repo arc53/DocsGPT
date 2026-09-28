@@ -204,3 +204,49 @@ def test_colliding_pages_get_distinct_file_paths(monkeypatch, _patch_markdownify
         "http://example.com/a.html": "a-2.md",
         "http://example.com/l?page=2": "l__page=2.md",
     }
+
+
+def test_reordered_query_and_fragment_variants_are_fetched_once(monkeypatch, _patch_markdownify):
+    root_html = (
+        "<html><head><title>Home</title></head><body>"
+        "<a href='/p?a=1&b=2'>P</a><a href='/p?b=2&a=1'>P2</a><a href='/p?a=1&b=2#top'>P3</a>"
+        "</body></html>"
+    )
+    page_html = "<html><body>p</body></html>"
+    responses = {
+        "http://example.com": DummyResponse(root_html),
+        "http://example.com/p?a=1&b=2": DummyResponse(page_html),
+        "http://example.com/p?b=2&a=1": DummyResponse(page_html),
+        "http://example.com/p?a=1&b=2#top": DummyResponse(page_html),
+    }
+    fetched = []
+
+    def side_effect(url):
+        fetched.append(url)
+        return responses[url]
+
+    _patch_pinned_request(monkeypatch, side_effect)
+
+    docs = CrawlerLoader(limit=10).load_data("http://example.com")
+
+    assert len(fetched) == 2
+    assert fetched[0] == "http://example.com"
+    # The page is fetched as a link wrote it, not as its normalized key.
+    assert fetched[1] in responses
+    assert len(docs) == 2
+
+
+def test_malformed_link_does_not_abort_the_crawl(monkeypatch, _patch_markdownify):
+    root_html = (
+        "<html><head><title>Home</title></head><body>"
+        "<a href='http://[bad'>Bad</a><a href='/good'>Good</a></body></html>"
+    )
+    responses = {
+        "http://example.com": DummyResponse(root_html),
+        "http://example.com/good": DummyResponse("<html><body>good</body></html>"),
+    }
+    _patch_pinned_request(monkeypatch, lambda url: responses[url])
+
+    docs = CrawlerLoader(limit=10).load_data("http://example.com")
+
+    assert {d.extra_info["source"] for d in docs} == {"http://example.com", "http://example.com/good"}

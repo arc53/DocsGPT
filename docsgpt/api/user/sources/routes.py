@@ -46,6 +46,9 @@ from docsgpt.vectorstore.vector_creator import VectorCreator
 
 WIKI_INDEX_PATH = "/index.md"
 
+# Longest graph-node search term forwarded to the store; longer input is truncated.
+_GRAPH_SEARCH_MAX_LEN = 200
+
 
 sources_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
@@ -1442,7 +1445,7 @@ class SourceGraphNodes(Resource):
                 GRAPH_NODE_LIST_MAX_LIMIT,
             ),
         )
-        query = (request.args.get("q") or "").strip() or None
+        query = (request.args.get("q") or "").strip()[:_GRAPH_SEARCH_MAX_LEN] or None
         type_key = request.args.get("type")
         try:
             with db_readonly() as conn:

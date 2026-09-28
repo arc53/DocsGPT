@@ -173,7 +173,8 @@ class ScheduleRunsRepository:
         """Aggregate run stats for an agent's owned schedules over a window.
 
         Only runs of schedules owned by ``user_id`` on ``agent_id`` whose
-        ``scheduled_for`` falls within the last ``days`` days are counted.
+        ``scheduled_for`` falls within the last ``days`` days are counted;
+        runs scheduled in the future are not.
 
         Args:
             agent_id: Agent UUID the schedules belong to.
@@ -198,6 +199,7 @@ class ScheduleRunsRepository:
                       AND s.user_id = :user_id
                       AND r.user_id = :user_id
                       AND r.scheduled_for >= now() - make_interval(days => :days)
+                      AND r.scheduled_for <= now()
                 ),
                 latest_failure AS (
                     SELECT scheduled_for, status, error_type

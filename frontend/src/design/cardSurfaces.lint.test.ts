@@ -29,6 +29,11 @@ describe('card surface lint: no fill on a fill', () => {
   it('rejects bg-muted on an element inside a filled tile, in cn() too', () => {
     expect(
       lint(
+        `<Card variant={'filled'}><div className="bg-muted px-4">x</div></Card>`,
+      ),
+    ).toHaveLength(1);
+    expect(
+      lint(
         `<Card variant="filled"><div className="bg-muted px-4">x</div></Card>`,
       ),
     ).toHaveLength(1);
@@ -45,11 +50,24 @@ describe('card surface lint: no fill on a fill', () => {
         `<Card variant="filled"><Card variant="filled" padding="sm">x</Card></Card>`,
       ),
     ).toHaveLength(1);
+    expect(
+      lint(
+        `<Card variant={'filled'}><Card variant="filled" padding="sm">x</Card></Card>`,
+      ),
+    ).toHaveLength(1);
+    expect(
+      lint(
+        `<Card variant="filled"><Card variant={'filled'} padding="sm">x</Card></Card>`,
+      ),
+    ).toHaveLength(1);
   });
 
   it('rejects a Skeleton without surface="muted" on a filled tile', () => {
     expect(
       lint(`<Card variant="filled"><Skeleton className="h-4" /></Card>`),
+    ).toHaveLength(1);
+    expect(
+      lint(`<Card variant={'filled'}><Skeleton className="h-4" /></Card>`),
     ).toHaveLength(1);
     expect(
       lint(

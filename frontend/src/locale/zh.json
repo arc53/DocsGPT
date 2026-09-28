@@ -1092,7 +1092,6 @@
       "dropzoneText": "点击上传或拖放文件",
       "dropzoneHint": "PDF、Word、Excel、PowerPoint、Markdown、HTML、图片、音频、EPUB、JSON 或 ZIP，每个最大 25 MB",
       "filesRejected": "未添加（超过 25 MB 或不支持的类型）：{{files}}",
-      "info": "请上传限制为25MB的.pdf、.txt、.rst、.csv、.xlsx、.xlsm、.xlsb、.xls、.ods、.docx、.docm、.doc、.odt、.rtf、.md、.html、.xhtml、.png、.jpg、.jpeg、.epub、.json、.pptx、.pptm、.ppt、.pps、.ppsx、.ppsm、.pot、.odp、.zip文件",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
       "train": "训练",

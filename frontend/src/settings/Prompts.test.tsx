@@ -93,6 +93,7 @@ describe('Prompts', () => {
     const row = container.querySelector('[data-slot="setting-row"]')!;
     const label = row.querySelector<HTMLLabelElement>('label')!;
     expect(label.textContent).toBe('settings.general.prompt');
+    expect(trigger.id).toBeTruthy();
     expect(label.htmlFor).toBe(trigger.id);
     expect(row.textContent).toContain('Used without an agent.');
     expect(trigger.hasAttribute('aria-label')).toBe(false);
@@ -140,6 +141,7 @@ describe('Prompts', () => {
     const trigger = container.querySelector<HTMLButtonElement>(
       'button[role="combobox"]',
     )!;
+    expect(trigger.id).toBeTruthy();
     expect(label.htmlFor).toBe(trigger.id);
     expect(trigger.hasAttribute('aria-label')).toBe(false);
     expect(trigger.className).toContain('w-full');

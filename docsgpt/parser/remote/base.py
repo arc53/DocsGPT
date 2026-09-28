@@ -4,7 +4,7 @@ import os
 import re
 from abc import abstractmethod
 from typing import Any, Dict, List
-from urllib.parse import parse_qsl, urldefrag, urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from docsgpt.parser.schema.base import Document
 from docsgpt.vectorstore.document_class import Document as VectorDocument
@@ -99,13 +99,44 @@ def url_to_virtual_path(url: str, include_host: bool = False) -> str:
 def spans_multiple_hosts(urls: List[str]) -> bool:
     """Return whether ``urls`` point at more than one host.
 
+    A URL ``urlparse`` rejects (an unclosed IPv6 bracket, say) is left out:
+    it fails validation and is never fetched, so it names no host here.
+
     Args:
         urls: Page URLs about to be ingested together.
 
     Returns:
         True when paths alone could collide and need a host prefix.
     """
-    return len({urlparse(u).netloc for u in urls}) > 1
+    hosts = set()
+    for url in urls:
+        try:
+            hosts.add(urlparse(url).netloc)
+        except ValueError:
+            continue
+    return len(hosts) > 1
+
+
+def normalize_page_url(url: str) -> str:
+    """Return the identity of the page ``url`` names, for deduplication.
+
+    The fragment is dropped (it names a spot on the same page) and the query
+    parameters are sorted, as ``_query_segment`` sorts them, so
+    ``/p?a=1&b=2`` and ``/p?b=2&a=1#top`` are one page. The result is a key
+    only; fetch the URL as it was written.
+
+    Args:
+        url: Page URL.
+
+    Returns:
+        The normalized URL.
+
+    Raises:
+        ValueError: If ``urlsplit`` cannot parse ``url``.
+    """
+    parts = urlsplit(url)
+    query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)))
+    return urlunsplit(parts._replace(query=query, fragment=""))
 
 
 def dedupe_virtual_paths(documents: List[Document]) -> List[Document]:
@@ -114,11 +145,13 @@ def dedupe_virtual_paths(documents: List[Document]) -> List[Document]:
     ``url_to_virtual_path`` folds some different URLs onto one path (``/a`` and
     ``/a.html`` are both ``a.md``), and the worker would then merge those pages
     into one tree entry. Within a path, the pages are ordered by URL (fragment
-    dropped): the first keeps the path and each later one gets ``-2``, ``-3``
-    and so on before ``.md``, skipping any path another page already has.
+    dropped, query parameters sorted; see ``normalize_page_url``): the first
+    keeps the path and each later one gets ``-2``, ``-3`` and so on before
+    ``.md``, skipping any path another page already has.
     Ordering by URL rather than by fetch order keeps the names stable across
     re-syncs of the same pages. Documents for the same URL (one page reached
-    via two fragments) are one page and keep one path.
+    via two fragments, or with its query parameters in another order) are one
+    page and keep one path.
 
     Args:
         documents: Loaded documents; each ``extra_info`` carries ``source``
@@ -133,7 +166,7 @@ def dedupe_virtual_paths(documents: List[Document]) -> List[Document]:
         path = info.get("file_path")
         if not path:
             continue
-        page = urldefrag(str(info.get("source") or path))[0]
+        page = normalize_page_url(str(info.get("source") or path))
         pages_by_path.setdefault(path, {}).setdefault(page, []).append(doc)
 
     taken = set(pages_by_path)

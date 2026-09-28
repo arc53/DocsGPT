@@ -789,18 +789,24 @@ describe('Chunks', () => {
     expect(container.querySelector('h1')?.textContent).toBe('Second');
   });
 
-  it('an edited chunk the store moved elsewhere is found by its id', async () => {
+  it('an edited chunk the store moved off the probed positions keeps what is shown', async () => {
     serveStore(1);
     await render({ embedded: true });
     const tiles = container.querySelectorAll<HTMLButtonElement>(
       'button[data-slot="card"]',
     );
-    await act(async () => tiles[2].click());
-    await editOpenChunk('# Third edited');
-    expect(container.querySelector('h1')?.textContent).toBe('Third edited');
-    expect(position()).toEqual([2, 3]);
-    await act(async () => buttonByLabel('settings.sources.nextChunk')!.click());
-    expect(container.querySelector('h1')?.textContent).toBe('Second');
+    await act(async () => tiles[0].click());
+    service.getDocumentChunks.mockClear();
+    await editOpenChunk('# First edited');
+    expect(container.querySelector('h1')?.textContent).toBe('First edited');
+    expect(position()).toEqual([1, 3]);
+    // Only the open and last positions are probed: the whole filtered list
+    // (one page of `total`) is never fetched.
+    const sizes = service.getDocumentChunks.mock.calls.map(
+      (call: unknown[]) => call[2],
+    );
+    expect(sizes).toContain(1);
+    expect(sizes).not.toContain(3);
   });
 
   it('an edited chunk that keeps its place stays put', async () => {

@@ -455,15 +455,29 @@ class BaseVectorStore(ABC):
 
         Returns:
             The id the updated chunk is stored under.
+
+        Raises:
+            RuntimeError: The old chunk could not be deleted. The new chunk is
+                deleted again (best effort) so no duplicate is left behind.
         """
         new_chunk_id = self.add_chunk(text, metadata)
-        if not self.delete_chunk(chunk_id):
-            logging.warning(
-                "Failed to delete old chunk %s, but new chunk %s was created",
-                chunk_id,
+        delete_error: Optional[Exception] = None
+        try:
+            deleted = self.delete_chunk(chunk_id)
+        except Exception as err:
+            deleted, delete_error = False, err
+        if deleted:
+            return new_chunk_id
+        try:
+            self.delete_chunk(new_chunk_id)
+        except Exception:
+            logging.error(
+                "Failed to roll back new chunk %s after old chunk %s could not be deleted",
                 new_chunk_id,
+                chunk_id,
+                exc_info=True,
             )
-        return new_chunk_id
+        raise RuntimeError(f"Failed to delete old chunk {chunk_id} during update") from delete_error
 
     def delete_chunks_by_source_path(self, path) -> int:
         """Delete every chunk whose ``metadata.source`` equals ``path``.

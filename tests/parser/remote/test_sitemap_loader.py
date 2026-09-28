@@ -351,3 +351,27 @@ class TestSitemapLoaderDistinctPaths:
             docs = loader.load_data("https://x.io/sitemap.xml")
 
         assert [d.extra_info["file_path"] for d in docs] == ["p__page=2.md", "p.md", "p-2.md"]
+
+
+@pytest.mark.unit
+class TestSitemapLoaderMalformedEntry:
+
+    @patch("docsgpt.core.url_validation.resolve_hostname", return_value="93.184.216.34")
+    @patch("docsgpt.parser.remote.sitemap_loader.pinned_request")
+    def test_malformed_entry_is_skipped_and_the_rest_ingest(self, mock_pinned_request, _mock_resolve):
+        loader = SitemapLoader()
+        response = MagicMock()
+        response.text = "Good body"
+        response.raise_for_status.return_value = None
+        mock_pinned_request.return_value = response
+
+        with patch.object(
+            loader, "_extract_urls",
+            return_value=["http://[bad", "https://example.com/good"],
+        ):
+            docs = loader.load_data("https://example.com/sitemap.xml")
+
+        assert [d.extra_info for d in docs] == [
+            {"source": "https://example.com/good", "file_path": "good.md"}
+        ]
+        mock_pinned_request.assert_called_once()

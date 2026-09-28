@@ -810,3 +810,40 @@ class TestUpdateChunkGraphLinks:
         graph_store.remap_chunk.assert_called_once_with(
             str(src["id"]), "chunk-old", "chunk-new"
         )
+
+    def test_default_fallback_failed_delete_returns_500_without_duplicate(self, app, pg_conn):
+        """A failed old-chunk delete rolls the new chunk back and fails the request."""
+        from docsgpt.vectorstore.base import BaseVectorStore
+
+        class _FallbackStore(BaseVectorStore):
+            def __init__(self):
+                super().__init__()
+                self.deleted = []
+
+            def search(self, *args, **kwargs):
+                return []
+
+            def add_texts(self, texts, metadatas=None, *args, **kwargs):
+                return []
+
+            def get_chunks(self):
+                return [{"doc_id": "chunk-old", "text": "old", "metadata": {}}]
+
+            def add_chunk(self, text, metadata=None):
+                return "chunk-new"
+
+            def delete_chunk(self, chunk_id):
+                self.deleted.append(chunk_id)
+                return chunk_id != "chunk-old"
+
+        user = "u-upd-graph-fallback-fail"
+        src = self._graph_source(pg_conn, user)
+        graph_store = MagicMock()
+        store = _FallbackStore()
+        store_proxy = MagicMock(wraps=store)
+
+        response = self._put(app, pg_conn, src, user, graph_store, store_proxy)
+
+        assert response.status_code == 500
+        assert store.deleted == ["chunk-old", "chunk-new"]
+        graph_store.remap_chunk.assert_not_called()

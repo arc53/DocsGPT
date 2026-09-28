@@ -283,3 +283,24 @@ class TestStatsForAgent:
         assert narrow["runs"] == 1
         assert narrow["failed"] == 0
         assert narrow["latest_failure"] is None
+
+    def test_future_runs_are_not_counted(self, pg_conn):
+        schedule_id, agent_id = _make_schedule(pg_conn)
+        _add_run(
+            pg_conn, schedule_id, "u1", agent_id, ago=timedelta(hours=1),
+            status="success", prompt_tokens=3, generated_tokens=4,
+        )
+        # Scheduled a day ahead: inside ``>= now() - days`` but not yet due.
+        _add_run(
+            pg_conn, schedule_id, "u1", agent_id, ago=-timedelta(days=1),
+            status="failed", prompt_tokens=500, generated_tokens=500,
+            error_type="agent_error",
+        )
+
+        stats = ScheduleRunsRepository(pg_conn).stats_for_agent(
+            agent_id, "u1", days=30,
+        )
+        assert stats["runs"] == 1
+        assert stats["failed"] == 0
+        assert stats["tokens"] == 7
+        assert stats["latest_failure"] is None
