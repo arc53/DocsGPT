@@ -16,6 +16,13 @@ const clone = (v: RetrievalOptionsValue): RetrievalOptionsValue =>
   JSON.parse(JSON.stringify(v));
 
 describe('configToOptions (lenient read)', () => {
+  it('defaults a source to 6 chunks, the backend default', () => {
+    // Equal to the backend's RetrievalConfig default, so a new upload is not
+    // read as a per-source override.
+    expect(DEFAULT_RETRIEVAL_OPTIONS.retrieval.chunks).toBe(6);
+    expect(configToOptions(undefined).retrieval.chunks).toBe(6);
+  });
+
   it('returns all defaults for an absent config', () => {
     expect(configToOptions(undefined)).toEqual(DEFAULT_RETRIEVAL_OPTIONS);
   });

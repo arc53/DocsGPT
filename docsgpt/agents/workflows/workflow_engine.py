@@ -429,7 +429,7 @@ class WorkflowEngine:
                     else {}
                 ),
                 "retriever_name": node_config.retriever or "classic",
-                "chunks": int(node_config.chunks) if node_config.chunks else 2,
+                "chunks": int(node_config.chunks) if node_config.chunks else 6,
                 "model_id": node_model_id,
                 "llm_name": node_llm_name,
                 "api_key": node_api_key,
@@ -1388,7 +1388,7 @@ class WorkflowEngine:
                 source={"active_docs": self._authorized_node_sources(node_config.sources)},
                 chat_history=[],
                 prompt="",
-                chunks=int(node_config.chunks) if node_config.chunks else 2,
+                chunks=int(node_config.chunks) if node_config.chunks else 6,
                 decoded_token=self.agent.decoded_token,
             )
             docs = retriever.search(query)

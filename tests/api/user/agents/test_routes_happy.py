@@ -426,6 +426,31 @@ class TestCreateAgent:
         agents = AgentsRepository(pg_conn).list_for_user(user)
         assert any(a["name"] == "My Draft Agent" for a in agents)
 
+    def test_agent_created_without_chunks_stores_the_default(self, app, pg_conn):
+        # With two sources, 2 left each one a single chunk, so the answer hung
+        # on which chunk won; 6 is the default now.
+        from docsgpt.api.user.agents.routes import CreateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-create-default-chunks"
+
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/create_agent",
+            method="POST",
+            json={
+                "name": "Handbook Bot",
+                "description": "d",
+                "agent_type": "classic",
+                "status": "draft",
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = CreateAgent().post()
+        assert response.status_code == 201
+        (agent,) = AgentsRepository(pg_conn).list_for_user(user)
+        assert agent["chunks"] == 6
+
 
 # ---------------------------------------------------------------------------
 # UpdateAgent — big method with many validation branches

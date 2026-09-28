@@ -1552,9 +1552,9 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     slug = _unique_slug(agents_repo, user, metadata.get("slug") or spec.get("name"), exclude_id=exclude_id)
 
     try:
-        chunks_value = int(spec["chunks"]) if spec.get("chunks") is not None else 2
+        chunks_value = int(spec["chunks"]) if spec.get("chunks") is not None else 6
     except (TypeError, ValueError):
-        chunks_value = 2
+        chunks_value = 6
 
     # YAML-authoritative fields — written even when the resolved value is None,
     # so a re-import can CLEAR models / json_schema / prompt-to-default. On

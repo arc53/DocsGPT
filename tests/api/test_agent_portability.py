@@ -176,6 +176,20 @@ def test_import_by_slug_idempotent(pg_conn):
     assert len(AgentsRepository(pg_conn).list_for_user(user)) == 1
 
 
+def test_import_without_chunks_uses_the_default(pg_conn):
+    user = "u_default_chunks"
+    result = apply_import(pg_conn, user, _doc(name="Plain Bot", _slug="plain-bot"))
+    agent = AgentsRepository(pg_conn).get(result["agent_id"], user)
+    assert agent["chunks"] == 6
+
+
+def test_import_keeps_explicit_chunks(pg_conn):
+    user = "u_explicit_chunks"
+    result = apply_import(pg_conn, user, _doc(name="Off Bot", _slug="off-bot", chunks=0))
+    agent = AgentsRepository(pg_conn).get(result["agent_id"], user)
+    assert agent["chunks"] == 0
+
+
 def test_import_missing_source_drafts_and_warns(pg_conn):
     user = "u_missing"
     doc = _doc(

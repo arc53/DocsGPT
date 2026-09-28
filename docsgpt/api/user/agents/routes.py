@@ -259,7 +259,7 @@ def _format_agent_output(
         ),
         "source": source_value,
         "sources": sources_list,
-        "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "2",
+        "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "6",
         "retriever": agent.get("retriever", "") or "",
         "prompt_id": str(agent["prompt_id"]) if agent.get("prompt_id") else "",
         "tools": agent.get("tools", []) or [],
@@ -743,7 +743,7 @@ class CreateAgent(Resource):
                 # For classic agents: default chunks/retriever if nothing else supplied.
                 if agent_type != "workflow":
                     if build_data.get("chunks") in (None, ""):
-                        build_data["chunks"] = 2
+                        build_data["chunks"] = 6
                     if (
                         not source_id_resolved
                         and not extra_source_ids
@@ -989,7 +989,7 @@ class UpdateAgent(Resource):
                     elif field == "chunks":
                         chunks_value = data.get("chunks")
                         if chunks_value in ("", None):
-                            update_fields["chunks"] = 2
+                            update_fields["chunks"] = 6
                         else:
                             try:
                                 chunks_int = int(chunks_value)

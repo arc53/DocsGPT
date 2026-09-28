@@ -74,7 +74,7 @@ def _ephemeral_agent_for_agentless(
         "user_id": user_id,
         "agent_type": "classic",
         "retriever": "classic",
-        "chunks": 2,
+        "chunks": 6,
         "prompt_id": "default",
         "source_id": None,
         "default_model_id": schedule.get("model_id") or "",

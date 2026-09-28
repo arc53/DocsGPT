@@ -1202,7 +1202,7 @@ class TestConfigureAgent:
         assert sp.retriever_config["chunks"] == 5
 
     @pytest.mark.unit
-    def test_configure_agent_invalid_chunks_defaults_to_2(self):
+    def test_configure_agent_invalid_chunks_uses_the_default(self):
         sp = self._make_sp()
         sp._resolve_agent_id = MagicMock(return_value="agent_id_1")
         sp._get_agent_key = MagicMock(return_value=("agent_key", False, None))
@@ -1220,7 +1220,7 @@ class TestConfigureAgent:
         sp._configure_agent()
         sp.model_id = "test-model"
         sp._configure_retriever()
-        assert sp.retriever_config["chunks"] == 2
+        assert sp.retriever_config["chunks"] == 6
 
 
 # ---- Additional coverage: _load_conversation_history ----

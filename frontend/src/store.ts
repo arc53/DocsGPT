@@ -38,7 +38,7 @@ const preloadedState: { preference: Preference } = {
       { name: 'creative', id: 'creative', type: 'public' },
       { name: 'strict', id: 'strict', type: 'public' },
     ],
-    chunks: JSON.parse(chunks ?? '2').toString(),
+    chunks: JSON.parse(chunks ?? '6').toString(),
     selectedDocs: getStoredRecentDocs(),
     conversations: {
       data: null,

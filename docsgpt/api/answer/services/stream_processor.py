@@ -698,7 +698,7 @@ class StreamProcessor:
                             "retriever": src_retriever or "classic",
                             "chunks": (
                                 src_chunks if src_chunks is not None
-                                else data.get("chunks", "2")
+                                else data.get("chunks", "6")
                             ),
                             # Per-source behaviour contract (lenient read).
                             "retrieval": SourceConfig.parse(
@@ -729,7 +729,7 @@ class StreamProcessor:
                         "retriever": src_retriever or "classic",
                         "chunks": (
                             src_chunks if src_chunks is not None
-                            else data.get("chunks", "2")
+                            else data.get("chunks", "6")
                         ),
                         "retrieval": SourceConfig.parse(
                             source_doc.get("config")
@@ -1056,7 +1056,7 @@ class StreamProcessor:
         )
 
         retriever_name = "classic"
-        chunks = 2
+        chunks = 6
 
         if self._agent_data is not None:
             # Agent-bound: agent wins, body's retriever/chunks are dropped.
@@ -1068,7 +1068,7 @@ class StreamProcessor:
                 except (ValueError, TypeError):
                     logger.warning(
                         f"Invalid agent chunks value: {self._agent_data['chunks']}, "
-                        "using default value 2"
+                        "using default value 6"
                     )
         else:
             if "retriever" in self.data:
@@ -1079,7 +1079,7 @@ class StreamProcessor:
                 except (ValueError, TypeError):
                     logger.warning(
                         f"Invalid request chunks value: {self.data['chunks']}, "
-                        "using default value 2"
+                        "using default value 6"
                     )
             # A source that configured its own retrieval knobs outranks the
             # request body: the owner tuned top-k for that corpus, a client
@@ -1893,7 +1893,7 @@ class StreamProcessor:
                 "retriever_name": self.retriever_config.get(
                     "retriever_name", "classic"
                 ),
-                "chunks": self.retriever_config.get("chunks", 2),
+                "chunks": self.retriever_config.get("chunks", 6),
                 "doc_token_limit": self.retriever_config.get(
                     "doc_token_limit", 50000
                 ),

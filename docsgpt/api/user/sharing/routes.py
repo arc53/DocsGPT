@@ -205,7 +205,7 @@ class ShareConversation(Resource):
 
                 if is_promptable:
                     prompt_id_raw = data.get("prompt_id", "default")
-                    chunks_raw = data.get("chunks", "2")
+                    chunks_raw = data.get("chunks", "6")
                     try:
                         chunks_int = int(chunks_raw) if chunks_raw not in (None, "") else None
                     except (TypeError, ValueError):
