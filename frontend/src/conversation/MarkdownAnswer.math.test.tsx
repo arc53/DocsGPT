@@ -51,7 +51,11 @@ afterEach(() => {
   container.remove();
 });
 
-type RenderOptions = { isStreaming?: boolean; sourceCount?: number };
+type RenderOptions = {
+  isStreaming?: boolean;
+  sourceCount?: number;
+  onOpenSources?: () => void;
+};
 
 function render(content: string, options: RenderOptions = {}) {
   act(() => root.render(<MarkdownAnswer content={content} {...options} />));
@@ -415,6 +419,39 @@ describe('citations', () => {
     render('Per [1].', { sourceCount: 0 });
     expect(citations()).toEqual([]);
     expect(container.textContent).toContain('[1]');
+  });
+});
+
+describe('citation pills', () => {
+  function click(label: string) {
+    const pill = Array.from(container.querySelectorAll('button')).find(
+      (node) => node.textContent === label,
+    );
+    act(() => pill?.click());
+  }
+
+  it('scrolls to the source card when it is shown', () => {
+    const card = document.createElement('div');
+    card.id = 'source-1';
+    card.scrollIntoView = vi.fn();
+    document.body.appendChild(card);
+    const onOpenSources = vi.fn();
+    try {
+      render('Per [2].', { sourceCount: 5, onOpenSources });
+      click('2');
+      expect(card.scrollIntoView).toHaveBeenCalled();
+      expect(onOpenSources).not.toHaveBeenCalled();
+    } finally {
+      card.remove();
+    }
+  });
+
+  it('opens the sources list for a source with no card', () => {
+    // Only the first three sources get a card; `[5]` has none to scroll to.
+    const onOpenSources = vi.fn();
+    render('Per [5].', { sourceCount: 5, onOpenSources });
+    click('5');
+    expect(onOpenSources).toHaveBeenCalledTimes(1);
   });
 });
 

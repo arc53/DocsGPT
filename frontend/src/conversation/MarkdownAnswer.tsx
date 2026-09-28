@@ -83,6 +83,7 @@ export default function MarkdownAnswer({
   artifacts: artifactsProp,
   turnArtifacts: turnArtifactsProp,
   onOpenArtifact,
+  onOpenSources,
 }: {
   content: string;
   isStreaming?: boolean;
@@ -100,6 +101,8 @@ export default function MarkdownAnswer({
   /** This turn's own artifacts; the filename fallback prefers them. */
   turnArtifacts?: SandboxArtifact[];
   onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+  /** Opens the full sources list, for a citation whose card is not shown. */
+  onOpenSources?: () => void;
 }) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
@@ -194,6 +197,9 @@ export default function MarkdownAnswer({
                     () => el.classList.remove('ring-3', 'ring-primary'),
                     2000,
                   );
+                } else {
+                  // Only the first few sources get a card to scroll to.
+                  onOpenSources?.();
                 }
               }}
               className="mx-0.5 h-5 min-w-5"
@@ -321,7 +327,7 @@ export default function MarkdownAnswer({
         return <td className="px-6 py-3">{children}</td>;
       },
     };
-  }, [t, isDarkTheme, artifacts, turnArtifacts, onOpenArtifact]);
+  }, [t, isDarkTheme, artifacts, turnArtifacts, onOpenArtifact, onOpenSources]);
 
   return (
     <>

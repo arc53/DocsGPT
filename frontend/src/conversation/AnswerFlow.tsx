@@ -28,6 +28,7 @@ type AnswerFlowProps = {
   isStreaming?: boolean;
   /** How many sources the answer can cite; see `MarkdownAnswer`. */
   sourceCount?: number;
+  onOpenSources?: () => void;
   agentId?: string;
   /** Set when the bubble already carries its own progress UI (a research run). */
   suppressStatusLine?: boolean;
@@ -54,6 +55,7 @@ export default function AnswerFlow({
   segments,
   isStreaming,
   sourceCount,
+  onOpenSources,
   agentId,
   suppressStatusLine,
   artifacts,
@@ -140,6 +142,7 @@ export default function AnswerFlow({
               content={message}
               isStreaming={isStreaming}
               sourceCount={sourceCount}
+              onOpenSources={onOpenSources}
               artifacts={artifacts}
               turnArtifacts={turnArtifacts}
               onOpenArtifact={onOpenArtifact}
