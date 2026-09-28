@@ -4,7 +4,7 @@ import concurrent.futures
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from fastmcp import Client
@@ -771,9 +771,36 @@ class DocsGPTOAuth(OAuthClientProvider):
             redirect_handler=self.redirect_handler,
             callback_handler=self.callback_handler,
         )
+        self.context.prepare_token_auth = self._one_client_authentication(self.context.prepare_token_auth)
 
         self.auth_url = None
         self.extracted_state = None
+
+    @staticmethod
+    def _one_client_authentication(prepare: Callable) -> Callable:
+        """Wrap the SDK's token-request auth so the client authenticates one way.
+
+        With ``client_secret_basic`` the SDK sets the Basic header but leaves
+        ``client_id`` in the body, which servers such as Linear reject as a
+        second method; RFC 6749 names the client in the body only when it does
+        not authenticate otherwise.
+
+        Args:
+            prepare: The SDK context's ``prepare_token_auth``.
+
+        Returns:
+            The same function, minus ``client_id`` in the body under Basic auth.
+        """
+
+        def prepare_token_auth(
+            data: dict[str, str], headers: dict[str, str] | None = None
+        ) -> tuple[dict[str, str], dict[str, str]]:
+            data, headers = prepare(data, headers)
+            if headers.get("Authorization", "").startswith("Basic "):
+                data = {k: v for k, v in data.items() if k != "client_id"}
+            return data, headers
+
+        return prepare_token_auth
 
     def _process_auth_url(self, authorization_url: str) -> tuple[str, str]:
         """Process authorization URL to extract state"""

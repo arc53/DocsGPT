@@ -172,3 +172,37 @@ def test_callback_hands_the_sdk_an_authorization_result():
     assert isinstance(result, AuthorizationCodeResult)
     assert (result.code, result.state, result.iss) == ("the-code", "st", "https://mcp.linear.app")
     redis_client.delete.assert_any_call("mcp_oauth:iss:st")
+
+
+@pytest.mark.parametrize(
+    "method, basic, body_client_id",
+    [("client_secret_basic", True, False), ("client_secret_post", False, True), ("none", False, True)],
+)
+def test_token_request_uses_one_client_authentication(method, basic, body_client_id):
+    """Linear registers clients for ``client_secret_basic`` and refuses a token
+    request that also names the client in the body; RFC 6749 wants one method."""
+    from mcp.shared.auth import OAuthClientInformationFull
+
+    from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+
+    oauth = DocsGPTOAuth(
+        mcp_url="https://mcp.linear.app/mcp",
+        redis_client=MagicMock(),
+        redirect_uri="https://example.com/callback",
+        user_id="user1",
+    )
+    oauth.context.client_info = OAuthClientInformationFull(
+        client_id="cid",
+        client_secret=None if method == "none" else "secret",
+        token_endpoint_auth_method=method,
+        redirect_uris=["https://example.com/callback"],
+    )
+
+    data, headers = oauth.context.prepare_token_auth(
+        {"grant_type": "authorization_code", "code": "c", "client_id": "cid"},
+        {"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    assert headers.get("Authorization", "").startswith("Basic ") is basic
+    assert ("client_id" in data) is body_client_id
+    assert data["code"] == "c"
