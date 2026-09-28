@@ -485,6 +485,9 @@ class ToolExecutor:
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
         # Filled by the LLMHandler.handle_tool_calls headless loop.
         self.headless_denials: List[Dict] = []
+        # Per-turn connection resolution for connection-backed tools, keyed
+        # by tool row id, so check_pause and execute share one lookup.
+        self._connections: Dict[str, Any] = {}
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -785,6 +788,33 @@ class ToolExecutor:
             return result
         return resolve_tool_result(result, decision)
 
+    def _resolve_connection(self, tool_data: Dict):
+        """The connection a connection-backed tool runs with this turn, or None."""
+        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+            return None
+        key = str(tool_data.get("id") or tool_data.get("connection_id"))
+        if key not in self._connections:
+            from docsgpt.connectors.resolve import resolve_connection
+
+            try:
+                self._connections[key] = resolve_connection(tool_data, self.user)
+            except Exception:
+                logger.exception("connection resolution failed for tool %s", key)
+                self._connections[key] = None
+        return self._connections[key]
+
+    @staticmethod
+    def _connection_payload(resolved) -> Dict:
+        """What the chat's Connect card needs; never an account or a secret."""
+        return {
+            "connector_key": resolved.connector_key,
+            "connector_name": resolved.connector_name,
+            "status": (
+                "missing" if resolved.row is None
+                else (resolved.row.get("status") or "reconnect_needed")
+            ),
+        }
+
     def check_pause(self, tools_dict: Dict, call, llm_class_name: str) -> Optional[Dict]:
         """Return a pending-action dict (approval / client / headless_denied) or None.
 
@@ -828,6 +858,41 @@ class ToolExecutor:
                 "llm_name": llm_name,
                 "arguments": arguments,
                 "pause_type": "requires_client_execution",
+                "thought_signature": getattr(call, "thought_signature", None),
+            }
+
+        # A tool whose connection needs signing in pauses on a Connect card
+        # (the approval card's connection variant) instead of failing; the
+        # user connects, then continues, and the pending call resumes.
+        resolved = self._resolve_connection(tool_data)
+        if resolved is not None and not resolved.available:
+            if self.headless:
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": (
+                        f"{resolved.connector_name or 'This service'} needs to be connected "
+                        "before this tool can run."
+                    ),
+                    "error_type": "connection_required",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
+            return {
+                "call_id": call_id,
+                "name": llm_name,
+                "tool_name": tool_data.get("name", "unknown"),
+                "tool_id": tool_id,
+                "action_name": action_name,
+                "llm_name": llm_name,
+                "arguments": arguments,
+                "pause_type": "awaiting_approval",
+                "connection_required": self._connection_payload(resolved),
                 "thought_signature": getattr(call, "thought_signature", None),
             }
 
@@ -1285,16 +1350,24 @@ class ToolExecutor:
                     target_dict[param] = value
 
         # Load tool (with caching)
-        tool = self._get_or_load_tool(
-            tool_data,
-            tool_id,
-            action_name,
-            headers=headers,
-            query_params=query_params,
-        )
+        from docsgpt.connectors.service import ConnectionUnavailable
+
+        connection_error = None
+        try:
+            tool = self._get_or_load_tool(
+                tool_data,
+                tool_id,
+                action_name,
+                headers=headers,
+                query_params=query_params,
+            )
+        except ConnectionUnavailable as exc:
+            tool, connection_error = None, str(exc)
 
         if tool is None:
-            error_message = (
+            error_message = connection_error and (
+                f"{connection_error}. Ask the user to connect it in Settings > Connectors, then try again."
+            ) or (
                 f"Failed to load tool '{tool_data.get('name')}' (tool_id key={tool_id}): missing 'id' on tool row."
             )
             logger.error(
@@ -1476,7 +1549,10 @@ class ToolExecutor:
             # silently decrypt-failing. Falls back to self.user for the
             # agentless path where the tool row carries no user_id.
             tool_owner = tool_data.get("user_id") or self.user
-            if tool_config.get("encrypted_credentials") and tool_owner:
+            resolved = self._resolve_connection(tool_data)
+            if resolved is not None:
+                self._apply_connection(tool_data, tool_id, tool_config, resolved)
+            elif tool_config.get("encrypted_credentials") and tool_owner:
                 if tool_owner != self.user:
                     # Credential delegation: the invoker is running a shared
                     # tool with the owner's secrets. Audit it (the agent-run
@@ -1539,6 +1615,36 @@ class ToolExecutor:
             self._loaded_tools[cache_key] = tool
 
         return tool
+
+    def _apply_connection(self, tool_data: Dict, tool_id: str, tool_config: Dict, resolved) -> None:
+        """Merge a connection's credentials into ``tool_config``.
+
+        Raises:
+            ConnectionUnavailable: The connection needs signing in again.
+        """
+        from docsgpt.connectors import service
+        from docsgpt.connectors.resolve import audit_delegation
+
+        if not resolved.available or resolved.row is None:
+            raise service.ConnectionUnavailable(
+                f"{resolved.connector_name or 'This service'} needs to be connected",
+                connection_id=resolved.connection_id,
+            )
+        audit_delegation(
+            resolved,
+            invoker=self.user,
+            resource_type="tool",
+            resource_id=str(tool_data.get("id") or tool_id),
+            agent_id=self.agent_id,
+        )
+        tool_config.pop("encrypted_credentials", None)
+        if (resolved.row.get("auth_kind") or "") in ("api_key", "none"):
+            credentials = service.get_credentials(resolved.row)
+            tool_config.update(credentials)
+            tool_config["auth_credentials"] = credentials
+        if tool_data.get("name") == "mcp_tool":
+            # MCP OAuth tokens are read by connection id inside the tool.
+            tool_config["connection_id"] = resolved.connection_id
 
     # Keys the client needs that are not part of the fixed shape below. They are
     # small and optional, and are copied only when present so an ordinary tool

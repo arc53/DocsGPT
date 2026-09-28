@@ -285,6 +285,28 @@ def _add_deploy_commands(commands) -> None:
     dev.set_defaults(func=_deploy("dev"), deploy=True)
 
 
+def _connectors(args: argparse.Namespace) -> int:
+    """``docsgpt connectors reencrypt``: move every credential onto the current key."""
+    if getattr(args, "connectors_action", None) != "reencrypt":
+        print("usage: docsgpt connectors reencrypt", file=sys.stderr)
+        return 2
+    from docsgpt.connectors.service import reencrypt_all
+
+    counts = reencrypt_all()
+    print(
+        f"docsgpt: re-encrypted {counts['rewritten']} connection(s), "
+        f"{counts['current']} already current, {counts['failed']} unreadable",
+        file=sys.stderr,
+    )
+    if counts["failed"]:
+        print(
+            "docsgpt: unreadable connections were marked 'Reconnect needed'; "
+            "their owners must reconnect them.",
+            file=sys.stderr,
+        )
+    return 1 if counts["failed"] else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docsgpt", description="DocsGPT: private AI for agents, assistants and search.")
     parser.add_argument("--version", action="version", version=f"docsgpt {__version__}")
@@ -314,6 +336,14 @@ def build_parser() -> argparse.ArgumentParser:
     migrate = commands.add_parser("migrate", help="create the database if needed and run the migrations")
     migrate.add_argument("--no-create", dest="create_db", action="store_false", help="fail instead of creating a missing database")
     migrate.set_defaults(func=_migrate)
+
+    connectors = commands.add_parser("connectors", help="manage stored connector credentials")
+    connector_actions = connectors.add_subparsers(dest="connectors_action", metavar="<action>")
+    connector_actions.add_parser(
+        "reencrypt",
+        help="rewrite every stored credential with ENCRYPTION_SECRET_KEY (after a key rotation)",
+    )
+    connectors.set_defaults(func=_connectors)
 
     for name, (module, help_text) in SCRIPTS.items():
         commands.add_parser(name, help=f"{help_text} (docsgpt.scripts.{module})", add_help=False)

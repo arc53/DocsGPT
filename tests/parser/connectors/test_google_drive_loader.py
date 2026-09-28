@@ -1,5 +1,6 @@
 """Tests for GoogleDriveLoader."""
 
+from tests.parser.connectors.token_patch import patch_tokens
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,7 +12,7 @@ def _make_loader(service=None):
     """Create a GoogleDriveLoader with mocked dependencies."""
     with patch("docsgpt.parser.connectors.google_drive.loader.GoogleDriveAuth") as MockAuth:
         mock_auth = MagicMock()
-        mock_auth.get_token_info_from_session.return_value = {
+        token_info = {
             "access_token": "at",
             "refresh_token": "rt",
         }
@@ -24,7 +25,8 @@ def _make_loader(service=None):
         MockAuth.return_value = mock_auth
 
         from docsgpt.parser.connectors.google_drive.loader import GoogleDriveLoader
-        loader = GoogleDriveLoader("session_tok")
+        with patch_tokens(token_info):
+            loader = GoogleDriveLoader("session_tok")
     return loader
 
 
@@ -51,7 +53,7 @@ class TestGoogleDriveLoaderInit:
     def test_init_service_failure_sets_none(self):
         with patch("docsgpt.parser.connectors.google_drive.loader.GoogleDriveAuth") as MockAuth:
             mock_auth = MagicMock()
-            mock_auth.get_token_info_from_session.return_value = {
+            token_info = {
                 "access_token": "at", "refresh_token": "rt"
             }
             mock_creds = MagicMock()
@@ -61,7 +63,8 @@ class TestGoogleDriveLoaderInit:
             MockAuth.return_value = mock_auth
 
             from docsgpt.parser.connectors.google_drive.loader import GoogleDriveLoader
-            loader = GoogleDriveLoader("st")
+            with patch_tokens(token_info):
+                loader = GoogleDriveLoader("st")
             assert loader.service is None
 
 

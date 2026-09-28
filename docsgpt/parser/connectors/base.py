@@ -6,7 +6,7 @@ interface for external knowledge base connectors.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from docsgpt.parser.schema.base import Document
 
@@ -88,18 +88,55 @@ class BaseConnectorLoader(ABC):
     Abstract base class for connector loaders.
     
     Defines the minimal interface that all connector loader
-    implementations must follow.
+    implementations must follow. A loader reads its OAuth tokens through
+    ``docsgpt.connectors.service`` from the connection it was built for,
+    either directly (``connection_id``, what background sync uses) or through
+    a legacy browser ``session_token`` that names the connection.
     """
-    
+
+    connection_id: Optional[str] = None
+
     @abstractmethod
-    def __init__(self, session_token: str):
+    def __init__(self, session_token: Optional[str] = None, *, connection_id: Optional[str] = None):
         """
         Initialize the connector loader.
         
         Args:
-            session_token: Authentication session token
+            session_token: Legacy browser session token naming the connection.
+            connection_id: The connection to read tokens from.
         """
         pass
+
+    @classmethod
+    def from_connection(cls, connection_id: str) -> "BaseConnectorLoader":
+        """Build a loader that reads its tokens from ``connection_id``."""
+        return cls(connection_id=connection_id)
+
+    def _load_token_info(
+        self, session_token: Optional[str], connection_id: Optional[str],
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Resolve the connection and return ``(connection_id, token_info)``.
+
+        Raises:
+            ValueError: The connection is missing or needs reconnecting.
+        """
+        from docsgpt.connectors import service
+
+        resolved = connection_id or service.connection_id_for_session_token(session_token)
+        self.connection_id = resolved
+        return resolved, service.get_valid_token_info(resolved)
+
+    def _refresh_rejected_token(self, access_token: Optional[str]) -> Dict[str, Any]:
+        """Token info after the provider answered 401 to ``access_token``.
+
+        Refreshes under the connection's row lock and persists the rotated
+        refresh token, or returns the token another worker already renewed.
+        """
+        from docsgpt.connectors import service
+
+        if not self.connection_id:
+            raise ValueError("Loader has no connection to refresh")
+        return service.get_valid_token_info(self.connection_id, rejected_access_token=access_token)
     
     @abstractmethod
     def load_data(self, inputs: Dict[str, Any]) -> List[Document]:

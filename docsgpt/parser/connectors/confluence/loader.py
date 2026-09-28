@@ -44,12 +44,8 @@ def _retry_on_auth_failure(func):
                     "Auth failure in %s, refreshing token and retrying", func.__name__
                 )
                 try:
-                    new_token_info = self.auth.refresh_access_token(self.refresh_token)
+                    new_token_info = self._refresh_rejected_token(self.access_token)
                     self.access_token = new_token_info["access_token"]
-                    self.refresh_token = new_token_info.get(
-                        "refresh_token", self.refresh_token
-                    )
-                    self._persist_refreshed_tokens(new_token_info)
                 except Exception as refresh_err:
                     raise ValueError(
                         f"Authentication failed and could not be refreshed: {refresh_err}"
@@ -62,13 +58,15 @@ def _retry_on_auth_failure(func):
 
 class ConfluenceLoader(BaseConnectorLoader):
 
-    def __init__(self, session_token: str):
+    def __init__(self, session_token: Optional[str] = None, *, connection_id: Optional[str] = None):
         self.auth = ConfluenceAuth()
         self.session_token = session_token
 
-        token_info = self.auth.get_token_info_from_session(session_token)
+        _, token_info = self._load_token_info(session_token, connection_id)
+        missing = [f for f in ("access_token", "cloud_id") if not token_info.get(f)]
+        if missing:
+            raise ValueError(f"Missing required token fields: {missing}")
         self.access_token = token_info["access_token"]
-        self.refresh_token = token_info["refresh_token"]
         self.cloud_id = token_info["cloud_id"]
 
         self.base_url = API_V2.format(cloud_id=self.cloud_id)
@@ -80,22 +78,6 @@ class ConfluenceLoader(BaseConnectorLoader):
             "Authorization": f"Bearer {self.access_token}",
             "Accept": "application/json",
         }
-
-    def _persist_refreshed_tokens(self, token_info: Dict[str, Any]) -> None:
-        try:
-            from docsgpt.storage.db.repositories.connector_sessions import (
-                ConnectorSessionsRepository,
-            )
-            from docsgpt.storage.db.session import db_session
-
-            sanitized = self.auth.sanitize_token_info(token_info)
-            with db_session() as conn:
-                repo = ConnectorSessionsRepository(conn)
-                session = repo.get_by_session_token(self.session_token)
-                if session:
-                    repo.update(str(session["id"]), {"token_info": sanitized})
-        except Exception as e:
-            logger.warning("Failed to persist refreshed tokens: %s", e)
 
     @_retry_on_auth_failure
     def load_data(self, inputs: Dict[str, Any]) -> List[Document]:

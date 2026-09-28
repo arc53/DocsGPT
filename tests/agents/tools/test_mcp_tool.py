@@ -1010,6 +1010,10 @@ class TestDBTokenStorage:
 
         monkeypatch.setattr(session_mod, "db_session", _yield)
         monkeypatch.setattr(session_mod, "db_readonly", _yield)
+        import docsgpt.connectors.service as service_mod
+
+        monkeypatch.setattr(service_mod, "db_session", _yield)
+        monkeypatch.setattr(service_mod, "db_readonly", _yield)
 
     def test_get_base_url(self):
         from docsgpt.agents.tools.mcp_tool import DBTokenStorage
@@ -1132,7 +1136,13 @@ class TestDBTokenStorage:
         # ``server_url`` must NOT be duplicated inside the JSONB blob.
         session_data = row["session_data"] or {}
         assert "server_url" not in session_data
-        assert session_data.get("tokens", {}).get("access_token") == "at"
+        # Tokens live only in the encrypted envelope, never in plaintext.
+        assert "tokens" not in session_data
+        assert row["encrypted_credentials"].startswith("v2:")
+        from docsgpt.connectors.service import read_secrets
+
+        assert read_secrets(row)["tokens"]["access_token"] == "at"
+        assert row["status"] == "connected"
 
     def test_clear_removes_row(self, monkeypatch, pg_conn):
         from mcp.shared.auth import OAuthToken

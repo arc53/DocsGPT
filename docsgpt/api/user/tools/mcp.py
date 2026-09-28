@@ -75,6 +75,43 @@ def _validate_mcp_server_url(config: dict) -> None:
         raise ValueError(f"Invalid server URL: {exc}") from exc
 
 
+def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
+    """The connection an MCP tool runs with; created on first save.
+
+    OAuth servers already have one (the sign-in stored its tokens there).
+    Key, bearer and basic auth store their secret on a connection; servers
+    with no auth get a credential-less connection so they still appear on
+    the Connectors page. Returns None when a multi-user install runs on the
+    default encryption key, which keeps the legacy per-tool secret.
+    """
+    from docsgpt.connectors import catalog, service
+
+    base = catalog.base_url(config.get("server_url"))
+    if not base:
+        return None
+    if auth_type == "oauth":
+        with db_readonly() as conn:
+            row = service._mcp_row(conn, user, base, None)
+        return str(row["id"]) if row else None
+    definition = catalog.get_definition("custom_mcp")
+    host = base.split("://")[-1]
+    try:
+        with db_session() as conn:
+            if auth_credentials:
+                row, _ = service.create_api_key_connection(
+                    conn, user, definition, auth_credentials, server_url=base, display_name=display_name,
+                )
+            else:
+                repo = ConnectorSessionsRepository(conn)
+                row = repo.find_account(user, "custom_mcp", server_url=base, account_label=host) or repo.create(
+                    user, "custom_mcp", connector_key="custom_mcp", auth_kind="none",
+                    display_name=display_name, account_label=host, server_url=base,
+                )
+    except service.EncryptionKeyNotConfigured:
+        return None
+    return str(row["id"]) if row else None
+
+
 @tools_mcp_ns.route("/mcp_server/test")
 class TestMCPServerConfig(Resource):
     @api.expect(
@@ -283,9 +320,19 @@ class MCPServerSave(Resource):
                 "redirect_uri",
             ]:
                 storage_config.pop(field, None)
-            transformed_actions = transform_actions(actions_metadata)
+            from docsgpt.connectors.permissions import apply_default_permissions
+
+            transformed_actions = apply_default_permissions(
+                "mcp_tool", transform_actions(actions_metadata),
+            )
 
             display_name = data["displayName"]
+            connection_id = _mcp_connection(
+                user, storage_config, auth_type, auth_credentials, display_name,
+            ) or (str(existing_doc["connection_id"]) if existing_doc and existing_doc.get("connection_id") else None)
+            if connection_id and auth_type != "oauth":
+                # The secret lives on the connection only.
+                storage_config.pop("encrypted_credentials", None)
             description = f"MCP Server: {storage_config.get('server_url', 'Unknown')}"
             status_bool = bool(data.get("status", True))
 
@@ -301,6 +348,7 @@ class MCPServerSave(Resource):
                             "config": storage_config,
                             "actions": transformed_actions,
                             "status": status_bool,
+                            "connection_id": connection_id,
                         },
                     )
                     saved_id = str(existing_doc["id"])
@@ -328,6 +376,7 @@ class MCPServerSave(Resource):
                                 "config": storage_config,
                                 "actions": transformed_actions,
                                 "status": status_bool,
+                                "connection_id": connection_id,
                             },
                         )
                         saved_id = str(existing_by_name["id"])
@@ -347,6 +396,7 @@ class MCPServerSave(Resource):
                             config_requirements={},
                             actions=transformed_actions,
                             status=status_bool,
+                            connection_id=connection_id,
                         )
                         saved_id = str(created["id"])
                         response_data = {
@@ -461,49 +511,33 @@ class MCPAuthStatus(Resource):
                         jsonify({"success": True, "statuses": {}}), 200
                     )
 
-                oauth_server_urls: dict = {}
+                from docsgpt.connectors import service
+
+                # Read from connection status alone: status checks never
+                # decrypt credentials.
                 statuses: dict = {}
                 for tool in mcp_tools:
                     tool_id = str(tool["id"])
                     config = tool.get("config") or {}
                     auth_type = config.get("auth_type", "none")
-                    if auth_type == "oauth":
-                        server_url = config.get("server_url", "")
-                        if server_url:
-                            parsed = urlparse(server_url)
-                            base_url = f"{parsed.scheme}://{parsed.netloc}"
-                            oauth_server_urls[tool_id] = base_url
+                    row = None
+                    if tool.get("connection_id"):
+                        row = sessions_repo.get(str(tool["connection_id"]))
+                    elif auth_type == "oauth" and config.get("server_url"):
+                        parsed = urlparse(config["server_url"])
+                        row = sessions_repo.get_by_user_provider(
+                            user, service.mcp_provider(f"{parsed.scheme}://{parsed.netloc}"),
+                        )
+                    if row is not None:
+                        connected = service.normalize_status(row) == service.STATUS_CONNECTED
+                        if auth_type == "oauth" or not connected:
+                            statuses[tool_id] = "connected" if connected else "needs_auth"
                         else:
-                            statuses[tool_id] = "needs_auth"
+                            statuses[tool_id] = "configured"
+                    elif auth_type == "oauth":
+                        statuses[tool_id] = "needs_auth"
                     else:
                         statuses[tool_id] = "configured"
-
-                if oauth_server_urls:
-                    # Look up a session per distinct base URL. MCP sessions
-                    # are stored with ``provider = "mcp:<server_url>"``
-                    # and the URL in ``server_url``; reuse the repo's
-                    # per-URL accessor rather than an ad-hoc $in query.
-                    url_has_tokens: dict = {}
-                    for base_url in set(oauth_server_urls.values()):
-                        session = sessions_repo.get_by_user_and_server_url(
-                            user, base_url,
-                        )
-                        tokens = (
-                            (session or {}).get("session_data", {}) or {}
-                        ).get("tokens", {}) or {}
-                        # MCP code also stashes tokens into token_info on
-                        # the row; consider either present as "connected".
-                        token_info = (session or {}).get("token_info") or {}
-                        url_has_tokens[base_url] = bool(
-                            tokens.get("access_token")
-                            or token_info.get("access_token")
-                        )
-
-                    for tool_id, base_url in oauth_server_urls.items():
-                        if url_has_tokens.get(base_url):
-                            statuses[tool_id] = "connected"
-                        else:
-                            statuses[tool_id] = "needs_auth"
 
             return make_response(jsonify({"success": True, "statuses": statuses}), 200)
         except Exception as e:

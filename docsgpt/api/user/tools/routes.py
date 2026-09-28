@@ -271,6 +271,10 @@ class GetTools(Resource):
                 ):
                     tool_copy["config"]["has_encrypted_credentials"] = True
                     tool_copy["config"].pop("encrypted_credentials", None)
+                if tool_copy.get("connection_id"):
+                    # The secret lives on the connection; the form must not
+                    # ask for it again.
+                    tool_copy.setdefault("config", {})["has_encrypted_credentials"] = True
                 tool_copy["ownership"] = ownership
                 return tool_copy
 
@@ -383,6 +387,11 @@ class CreateTool(Resource):
                 f"Error getting tool actions: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+        definition = definition_for_tool(data["name"])
+        if definition is not None:
+            connected = _create_connected_tool(user, data, definition, tool_instance)
+            if connected is not None:
+                return connected
         try:
             config_requirements = tool_instance.get_config_requirements()
             if config_requirements:
@@ -420,6 +429,74 @@ class CreateTool(Resource):
             current_app.logger.error(f"Error creating tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"id": new_id}), 200)
+
+
+def _create_connected_tool(user, data, definition, tool_instance):
+    """Create a service tool whose secret lives on a connection, not the tool.
+
+    Uses ``connection_id`` when given, otherwise stores the pasted secret on
+    a connection (reusing an identical one). Returns None to fall back to the
+    legacy path when a multi-user install still runs on the default key.
+    """
+    from docsgpt.connectors import catalog as connector_catalog
+    from docsgpt.connectors import service as connection_service
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    config_requirements = tool_instance.get_config_requirements()
+    public, secrets = connection_service.split_secrets(data.get("config") or {}, config_requirements)
+    connection_id = data.get("connection_id")
+    if not connection_id:
+        validation_errors = _validate_config(data.get("config") or {}, config_requirements)
+        if validation_errors:
+            return make_response(
+                jsonify({"success": False, "message": "Validation failed", "errors": validation_errors}), 400,
+            )
+    try:
+        with db_session() as conn:
+            if connection_id:
+                connection = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), user)
+                if connection is None or connector_catalog.connector_key_for_row(connection) != definition.key:
+                    return make_response(jsonify({"success": False, "message": "Connection not found"}), 404)
+            else:
+                connection, _ = connection_service.create_api_key_connection(conn, user, definition, secrets)
+            created = connection_service.create_tool_for_connection(
+                conn,
+                user,
+                connection,
+                template=data["name"],
+                display_name=data.get("customName") or data.get("displayName") or definition.name,
+                config=public,
+                status=bool(data.get("status", True)),
+            )
+    except connection_service.EncryptionKeyNotConfigured:
+        return None
+    except ValueError as err:
+        return make_response(jsonify({"success": False, "message": str(err)}), 400)
+    return make_response(jsonify({"id": str(created["id"]), "connection_id": str(connection["id"])}), 200)
+
+
+def _update_connection_secrets(conn, user, tool_doc, config, config_requirements):
+    """Write changed secrets onto the tool's connection; return the tool's public config.
+
+    Returns None when the caller does not own the connection (an editor on a
+    team share may change actions, never the owner's credentials).
+    """
+    from docsgpt.connectors import service as connection_service
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    public, secrets = connection_service.split_secrets(config or {}, config_requirements)
+    if secrets:
+        connection = ConnectorSessionsRepository(conn).get_for_user(str(tool_doc["connection_id"]), user)
+        if connection is None:
+            return None
+        stored = connection_service.read_secrets(connection)
+        credentials = {**(stored.get("credentials") or {}), **secrets}
+        connection_service.write_secrets(
+            conn, connection, {**stored, "credentials": credentials},
+            status=connection_service.STATUS_CONNECTED, last_error=None,
+        )
+        connection_service.resume_sources(conn, str(connection["id"]))
+    return public
 
 
 @tools_ns.route("/update_tool")
@@ -528,6 +605,17 @@ class UpdateTool(Resource):
                     )
                     existing_config = tool_doc.get("config", {}) or {}
                     has_existing_secrets = "encrypted_credentials" in existing_config
+                    if tool_doc.get("connection_id"):
+                        has_existing_secrets = True
+                        new_config = _update_connection_secrets(
+                            conn, user, tool_doc, data["config"], config_requirements,
+                        )
+                        if new_config is None:
+                            return make_response(
+                                jsonify({"success": False, "message": "Only the owner can change the credentials"}),
+                                403,
+                            )
+                        data = {**data, "config": new_config}
 
                     if config_requirements:
                         validation_errors = _validate_config(

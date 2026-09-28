@@ -231,6 +231,63 @@ class PaginatedSources(Resource):
             return make_response(jsonify({"success": False}), 400)
 
 
+def delete_source(user: str, doc: dict) -> bool:
+    """Delete a source's index, stored files and row. Returns whether it worked.
+
+    Args:
+        user: The owner deleting it.
+        doc: The source row, already authorised for ``user``.
+    """
+    storage = StorageCreator.get_storage()
+    resolved_id = str(doc["id"])
+    source_id = resolved_id
+
+    try:
+        if settings.VECTOR_STORE == "faiss":
+            index_path = f"indexes/{resolved_id}"
+            # index.pkl is the legacy sidecar; index.json the current one.
+            # Older sources have only the former, so clear whichever exist.
+            for index_file in ("index.faiss", "index.json", "index.pkl"):
+                if storage.file_exists(f"{index_path}/{index_file}"):
+                    storage.delete_file(f"{index_path}/{index_file}")
+        else:
+            vectorstore = VectorCreator.create_vectorstore(
+                settings.VECTOR_STORE, source_id=source_id
+            )
+            vectorstore.delete_index()
+        if "file_path" in doc and doc["file_path"]:
+            file_path = doc["file_path"]
+            if storage.is_directory(file_path):
+                files = storage.list_files(file_path)
+                for f in files:
+                    storage.delete_file(f)
+            else:
+                storage.delete_file(file_path)
+    except FileNotFoundError:
+        pass
+    except Exception as err:
+        current_app.logger.error(
+            f"Error deleting files and indexes: {err}", exc_info=True
+        )
+        return False
+    try:
+        with db_session() as conn:
+            SourcesRepository(conn).delete(resolved_id, user)
+            record_event(
+                conn,
+                "source.deleted",
+                actor=user,
+                source_id=resolved_id,
+                name=doc.get("name"),
+            )
+    except Exception as err:
+        current_app.logger.error(
+            f"Error deleting source row: {err}", exc_info=True
+        )
+        return False
+    return True
+
+
 @sources_ns.route("/delete_old")
 class DeleteOldIndexes(Resource):
     @api.doc(
@@ -255,51 +312,7 @@ class DeleteOldIndexes(Resource):
             return make_response(jsonify({"success": False}), 400)
         if not doc:
             return make_response(jsonify({"status": "not found"}), 404)
-        storage = StorageCreator.get_storage()
-        resolved_id = str(doc["id"])
-
-        try:
-            if settings.VECTOR_STORE == "faiss":
-                index_path = f"indexes/{resolved_id}"
-                # index.pkl is the legacy sidecar; index.json the current one.
-                # Older sources have only the former, so clear whichever exist.
-                for index_file in ("index.faiss", "index.json", "index.pkl"):
-                    if storage.file_exists(f"{index_path}/{index_file}"):
-                        storage.delete_file(f"{index_path}/{index_file}")
-            else:
-                vectorstore = VectorCreator.create_vectorstore(
-                    settings.VECTOR_STORE, source_id=resolved_id
-                )
-                vectorstore.delete_index()
-            if "file_path" in doc and doc["file_path"]:
-                file_path = doc["file_path"]
-                if storage.is_directory(file_path):
-                    files = storage.list_files(file_path)
-                    for f in files:
-                        storage.delete_file(f)
-                else:
-                    storage.delete_file(file_path)
-        except FileNotFoundError:
-            pass
-        except Exception as err:
-            current_app.logger.error(
-                f"Error deleting files and indexes: {err}", exc_info=True
-            )
-            return make_response(jsonify({"success": False}), 400)
-        try:
-            with db_session() as conn:
-                SourcesRepository(conn).delete(resolved_id, user)
-                record_event(
-                    conn,
-                    "source.deleted",
-                    actor=user,
-                    source_id=resolved_id,
-                    name=doc.get("name"),
-                )
-        except Exception as err:
-            current_app.logger.error(
-                f"Error deleting source row: {err}", exc_info=True
-            )
+        if not delete_source(user, doc):
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 

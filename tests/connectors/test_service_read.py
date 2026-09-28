@@ -242,7 +242,9 @@ class TestDisconnect:
         )
         repo = ConnectorSessionsRepository(pg_conn)
         service.disconnect(pg_conn, repo.get(mcp))
-        assert repo.get(mcp)["session_data"] == {"client_info": {"client_id": "c"}}
+        row = repo.get(mcp)
+        assert row["session_data"] == {}
+        assert service.read_secrets(row) == {"client_info": {"client_id": "c"}}
 
     def test_route_rejects_other_users(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionDisconnect

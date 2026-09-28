@@ -219,6 +219,8 @@ user_tools_table = Table(
     Column(
         "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="SET NULL"),
     ),
+    # Whose account a shared resource runs with: the owner's, or each member's.
+    Column("credential_mode", Text, nullable=False, server_default="owner"),
 )
 
 token_usage_table = Table(
@@ -344,6 +346,8 @@ sources_table = Table(
     Column(
         "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="SET NULL"),
     ),
+    # Whose account a shared resource runs with: the owner's, or each member's.
+    Column("credential_mode", Text, nullable=False, server_default="owner"),
 )
 
 agents_table = Table(
@@ -598,6 +602,12 @@ connector_sessions_table = Table(
     Column("account_label", Text),
     Column("auth_kind", Text),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Every secret of the connection, as one owner-bound v2 envelope.
+    Column("encrypted_credentials", Text),
+    Column("has_refresh_token", Boolean, nullable=False, server_default="false"),
+    Column("scopes", JSONB, nullable=False, server_default="[]"),
+    Column("last_error", Text),
+    Column("last_used_at", DateTime(timezone=True)),
 )
 
 

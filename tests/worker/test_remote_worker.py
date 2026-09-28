@@ -125,7 +125,8 @@ class TestSyncWorker:
         captured: list[dict] = []
 
         def _fake_sync(self, source_data, name_job, user, loader,
-                       sync_frequency, retriever, doc_id=None, directory="temp"):
+                       sync_frequency, retriever, doc_id=None, directory="temp",
+                       connection_id=None):
             captured.append({
                 "name_job": name_job,
                 "user": user,

@@ -31,12 +31,27 @@ logger = logging.getLogger(__name__)
 
 _mcp_clients_cache = {}
 
+_ANNOTATION_HINTS = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
+
+
+def _annotation_hints(annotations: Any) -> Dict[str, bool]:
+    """The boolean MCP tool annotation hints, from a model or a dict."""
+    if annotations is None:
+        return {}
+    if hasattr(annotations, "model_dump"):
+        annotations = annotations.model_dump()
+    if not isinstance(annotations, dict):
+        return {}
+    return {k: annotations[k] for k in _ANNOTATION_HINTS if isinstance(annotations.get(k), bool)}
+
 
 class MCPTool(Tool):
     """
     MCP Tool
     Connect to remote Model Context Protocol (MCP) servers to access dynamic tools and resources.
     """
+
+    connection_id: Optional[str] = None
 
     def __init__(self, config: Dict[str, Any], user_id: Optional[str] = None):
         """
@@ -76,6 +91,10 @@ class MCPTool(Tool):
         self.oauth_scopes = config.get("oauth_scopes", [])
         self.oauth_task_id = config.get("oauth_task_id", None)
         self.oauth_client_name = config.get("oauth_client_name", "DocsGPT-MCP")
+        # The connection whose OAuth tokens this tool uses. Set by the tool
+        # executor for connection-backed tools, so a shared tool in ``owner``
+        # mode signs in with its owner's account rather than the invoker's.
+        self.connection_id = config.get("connection_id")
         self.redirect_uri = self._resolve_redirect_uri(config.get("redirect_uri"))
         # Pulled out of ``config`` (rather than left in ``self.config``)
         # because it is a callable supplied by the OAuth worker — not
@@ -125,7 +144,9 @@ class MCPTool(Tool):
         auth_key = ""
         if self.auth_type == "oauth":
             scopes_str = ",".join(self.oauth_scopes) if self.oauth_scopes else "none"
-            oauth_identity = self.user_id or self.oauth_task_id or "anonymous"
+            # A connection-backed tool shares a client only with calls that
+            # use the same connection's tokens.
+            oauth_identity = self.connection_id or self.user_id or self.oauth_task_id or "anonymous"
             auth_key = (
                 f"oauth:{oauth_identity}:{self.oauth_client_name}:{scopes_str}:{self.redirect_uri}"
             )
@@ -165,6 +186,7 @@ class MCPTool(Tool):
                     redis_client=redis_client,
                     redirect_uri=self.redirect_uri,
                     user_id=self.user_id,
+                    connection_id=self.connection_id,
                 )
             else:
                 auth = DocsGPTOAuth(
@@ -175,6 +197,7 @@ class MCPTool(Tool):
                     task_id=self.oauth_task_id,
                     user_id=self.user_id,
                     redirect_publish=self.oauth_redirect_publish,
+                    connection_id=self.connection_id,
                 )
         elif self.auth_type == "bearer":
             token = self.auth_credentials.get(
@@ -245,6 +268,9 @@ class MCPTool(Tool):
                 }
                 if hasattr(tool, "inputSchema"):
                     tool_dict["inputSchema"] = tool.inputSchema
+                annotations = _annotation_hints(getattr(tool, "annotations", None))
+                if annotations:
+                    tool_dict["annotations"] = annotations
                 tools_dict.append(tool_dict)
             elif isinstance(tool, dict):
                 tools_dict.append(tool)
@@ -493,7 +519,7 @@ class MCPTool(Tool):
 
     def _test_oauth_connection(self) -> Dict:
         storage = DBTokenStorage(
-            server_url=self.server_url, user_id=self.user_id,
+            server_url=self.server_url, user_id=self.user_id, connection_id=self.connection_id,
         )
         loop = asyncio.new_event_loop()
         try:
@@ -580,6 +606,11 @@ class MCPTool(Tool):
                 "description": tool.get("description", ""),
                 "parameters": parameters_schema,
             }
+            # ``readOnlyHint`` / ``destructiveHint`` decide whether the action
+            # is a read (always allowed) or a write (needs approval).
+            annotations = _annotation_hints(tool.get("annotations"))
+            if annotations:
+                action["annotations"] = annotations
             actions.append(action)
         return actions
 
@@ -688,6 +719,7 @@ class DocsGPTOAuth(OAuthClientProvider):
         additional_client_metadata: dict[str, Any] | None = None,
         skip_redirect_validation: bool = False,
         redirect_publish=None,
+        connection_id: Optional[str] = None,
     ):
         self.redirect_uri = redirect_uri
         self.redis_client = redis_client
@@ -717,6 +749,7 @@ class DocsGPTOAuth(OAuthClientProvider):
             server_url=self.server_base_url,
             user_id=self.user_id,
             expected_redirect_uri=None if skip_redirect_validation else redirect_uri,
+            connection_id=connection_id,
         )
 
         super().__init__(
@@ -836,15 +869,26 @@ class NonInteractiveOAuth(DocsGPTOAuth):
 
 
 class DBTokenStorage(TokenStorage):
+    """MCP OAuth tokens and client registration, kept encrypted on the connection.
+
+    Reads and writes go through ``docsgpt.connectors.service``, which stores
+    them in the connection's owner-bound ``encrypted_credentials``. A tool
+    that runs with a specific connection (``owner`` mode on a shared tool)
+    passes its ``connection_id``; otherwise the invoking user's connection
+    for the server's base URL is used.
+    """
+
     def __init__(
         self,
         server_url: str,
         user_id: str,
         expected_redirect_uri: Optional[str] = None,
+        connection_id: Optional[str] = None,
     ):
         self.server_url = server_url
         self.user_id = user_id
         self.expected_redirect_uri = expected_redirect_uri
+        self.connection_id = connection_id
 
     @staticmethod
     def get_base_url(url: str) -> str:
@@ -855,26 +899,12 @@ class DBTokenStorage(TokenStorage):
         return f"mcp:{self.get_base_url(self.server_url)}"
 
     def _fetch_session_data(self) -> dict:
-        """Read the JSONB ``session_data`` blob for this MCP server row."""
-        from docsgpt.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
-        )
-        from docsgpt.storage.db.session import db_readonly
+        """The decrypted ``tokens`` / ``client_info`` for this MCP server."""
+        from docsgpt.connectors import service
 
-        base_url = self.get_base_url(self.server_url)
-        with db_readonly() as conn:
-            row = ConnectorSessionsRepository(conn).get_by_user_and_server_url(
-                self.user_id, base_url,
-            )
-        if not row:
-            return {}
-        data = row.get("session_data") or {}
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except ValueError:
-                return {}
-        return data if isinstance(data, dict) else {}
+        return service.read_mcp_secrets(
+            self.user_id, self.get_base_url(self.server_url), self.connection_id,
+        )
 
     async def get_tokens(self) -> OAuthToken | None:
         data = await asyncio.to_thread(self._fetch_session_data)
@@ -887,22 +917,19 @@ class DBTokenStorage(TokenStorage):
             return None
 
     def _merge(self, patch: dict) -> None:
-        """Shallow-merge ``patch`` into this row's ``session_data``.
+        """Merge ``patch`` into the connection's secrets; ``None`` drops a key."""
+        from docsgpt.connectors import service
 
-        Threads ``server_url`` through to the repository so it lands in
-        the scalar column — ``get_by_user_and_server_url`` needs that to
-        resolve the row (``NULL = 'https://...'`` is UNKNOWN in SQL).
-        """
-        from docsgpt.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
+        status = None
+        if patch.get("tokens"):
+            status = service.STATUS_CONNECTED
+        service.update_mcp_secrets(
+            self.user_id,
+            self.get_base_url(self.server_url),
+            patch,
+            connection_id=self.connection_id,
+            status=status,
         )
-        from docsgpt.storage.db.session import db_session
-
-        base_url = self.get_base_url(self.server_url)
-        with db_session() as conn:
-            ConnectorSessionsRepository(conn).merge_session_data(
-                self.user_id, self._pg_provider(), base_url, patch,
-            )
 
     def _delete(self) -> None:
         from docsgpt.storage.db.repositories.connector_sessions import (

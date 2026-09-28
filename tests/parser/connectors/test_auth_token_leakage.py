@@ -51,8 +51,7 @@ def _patches(session_return: Optional[Dict[str, Any]]):
     )
     return (
         patch(
-            "docsgpt.storage.db.repositories.connector_sessions."
-            "ConnectorSessionsRepository",
+            "docsgpt.connectors.service.ConnectorSessionsRepository",
             fake_repo_cls,
         ),
         patch(
@@ -88,57 +87,18 @@ class TestSessionTokenFingerprint:
         assert session_token_fingerprint("a") != session_token_fingerprint("b")
 
 
-class TestConfluenceAuthDoesNotLeakToken:
+class TestConnectionLookupDoesNotLeakToken:
+    """A session token that names no connection is reported by fingerprint only."""
 
     @pytest.mark.unit
     def test_invalid_session_does_not_interpolate_token(self) -> None:
-        from docsgpt.parser.connectors.confluence.auth import ConfluenceAuth
+        from docsgpt.connectors import service
 
-        auth = ConfluenceAuth.__new__(ConfluenceAuth)
         repo_patch, ctx_patch = _patches(None)
         with repo_patch, ctx_patch:
             with pytest.raises(ValueError) as excinfo:
-                auth.get_token_info_from_session(SECRET_TOKEN)
+                service.connection_id_for_session_token(SECRET_TOKEN)
 
-        message = str(excinfo.value)
-        assert SECRET_TOKEN not in message
-        assert session_token_fingerprint(SECRET_TOKEN) in message
-
-
-class TestGoogleDriveAuthDoesNotLeakToken:
-
-    @pytest.mark.unit
-    def test_invalid_session_does_not_interpolate_token(self) -> None:
-        from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
-
-        auth = GoogleDriveAuth.__new__(GoogleDriveAuth)
-        repo_patch, ctx_patch = _patches(None)
-        with repo_patch, ctx_patch:
-            with pytest.raises(ValueError) as excinfo:
-                auth.get_token_info_from_session(SECRET_TOKEN)
-
-        # The Google Drive module wraps the inner ValueError in a broad
-        # ``except Exception as e: raise ValueError(... {str(e)})`` block,
-        # so the outer message still carries the fingerprint from the
-        # inner raise but must never carry the raw token.
-        message = str(excinfo.value)
-        assert SECRET_TOKEN not in message
-        assert session_token_fingerprint(SECRET_TOKEN) in message
-
-
-class TestSharePointAuthDoesNotLeakToken:
-
-    @pytest.mark.unit
-    def test_invalid_session_does_not_interpolate_token(self) -> None:
-        from docsgpt.parser.connectors.share_point.auth import SharePointAuth
-
-        auth = SharePointAuth.__new__(SharePointAuth)
-        repo_patch, ctx_patch = _patches(None)
-        with repo_patch, ctx_patch:
-            with pytest.raises(ValueError) as excinfo:
-                auth.get_token_info_from_session(SECRET_TOKEN)
-
-        # SharePoint also wraps the inner ValueError. Same invariants.
         message = str(excinfo.value)
         assert SECRET_TOKEN not in message
         assert session_token_fingerprint(SECRET_TOKEN) in message

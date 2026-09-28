@@ -21,7 +21,11 @@ def _patch_db(conn, module="docsgpt.api.connector.routes"):
     def _yield():
         yield conn
 
-    with patch(f"{module}.db_session", _yield), patch(f"{module}.db_readonly", _yield):
+    with patch(f"{module}.db_session", _yield), patch(f"{module}.db_readonly", _yield), patch(
+        "docsgpt.api.connector.routes.db_readonly", _yield
+    ), patch("docsgpt.connectors.service.db_session", _yield), patch(
+        "docsgpt.connectors.service.db_readonly", _yield
+    ):
         yield
 
 

@@ -6,7 +6,6 @@ from urllib.parse import urlencode
 import requests
 
 from docsgpt.core.settings import settings
-from docsgpt.parser.connectors._auth_utils import session_token_fingerprint
 from docsgpt.parser.connectors.base import BaseConnectorAuth
 
 logger = logging.getLogger(__name__)
@@ -151,32 +150,6 @@ class ConfluenceAuth(BaseConnectorAuth):
             return now >= expiry_dt - datetime.timedelta(seconds=60)
         except Exception:
             return True
-
-    def get_token_info_from_session(self, session_token: str) -> Dict[str, Any]:
-        from docsgpt.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
-        )
-        from docsgpt.storage.db.session import db_readonly
-
-        with db_readonly() as conn:
-            session = ConnectorSessionsRepository(conn).get_by_session_token(
-                session_token
-            )
-        if not session:
-            raise ValueError(
-                f"Invalid session token ({session_token_fingerprint(session_token)})"
-            )
-
-        token_info = session.get("token_info")
-        if not token_info:
-            raise ValueError("Session missing token information")
-
-        required = ["access_token", "refresh_token", "cloud_id"]
-        missing = [f for f in required if not token_info.get(f)]
-        if missing:
-            raise ValueError(f"Missing required token fields: {missing}")
-
-        return token_info
 
     def sanitize_token_info(
         self, token_info: Dict[str, Any], **extra_fields

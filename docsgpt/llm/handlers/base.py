@@ -1240,6 +1240,10 @@ class LLMHandler(ABC):
                 # can wire the sticky "don't ask again" button.
                 if pause_info.get("device_id"):
                     pause_data["device_id"] = pause_info["device_id"]
+                # A connection-backed tool whose account needs signing in: the
+                # approval card becomes a Connect card.
+                if pause_info.get("connection_required"):
+                    pause_data["connection_required"] = pause_info["connection_required"]
                 trace_unexecuted_tool_call(call, pause_data)
                 yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)

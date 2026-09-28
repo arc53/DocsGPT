@@ -30,6 +30,10 @@ def _patch_db(conn):
         "docsgpt.api.connector.routes.db_session", _yield
     ), patch(
         "docsgpt.api.connector.routes.db_readonly", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_session", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_readonly", _yield
     ):
         yield
 
@@ -487,8 +491,10 @@ class TestConnectorSync:
     def test_returns_400_missing_fields(self, app):
         from docsgpt.api.connector.routes import ConnectorSync
 
+        # The source's own connection is used when none is named, so only
+        # the source id is required.
         with app.test_request_context(
-            "/api/connectors/sync", method="POST", json={"source_id": "x"}
+            "/api/connectors/sync", method="POST", json={}
         ):
             from flask import request
             request.decoded_token = {"sub": "u"}

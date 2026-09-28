@@ -67,7 +67,8 @@ class TestIngestRemoteTask:
 
         mock_worker.assert_called_once_with(
             ANY, {"url": "http://x"}, "job1", "user1", "web",
-            config=None, idempotency_key=None, source_id=None,
+            sync_frequency="never",
+            config=None, idempotency_key=None, source_id=None, connection_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -223,6 +224,7 @@ class TestIngestConnectorTask:
             "user1",
             "gdrive",
             session_token=None,
+            connection_id=None,
             file_ids=None,
             folder_ids=None,
             recursive=True,
@@ -248,6 +250,7 @@ class TestIngestConnectorTask:
             "user1",
             "sharepoint",
             session_token="tok",
+            connection_id=None,
             file_ids=["f1"],
             folder_ids=["d1"],
             recursive=False,
@@ -263,6 +266,7 @@ class TestIngestConnectorTask:
             "user1",
             "sharepoint",
             session_token="tok",
+            connection_id=None,
             file_ids=["f1"],
             folder_ids=["d1"],
             recursive=False,
