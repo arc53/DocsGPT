@@ -809,7 +809,10 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
 
     Signing in to an account that already has a connection updates that
     connection (and drops the pending placeholder), so reconnecting from any
-    entry point heals every source and tool of the account.
+    entry point heals every source and tool of the account. Reconnecting a
+    connection but signing in to a different account never rewrites it (its
+    sources and tools would silently run as the new account): the new
+    account gets its own connection and the original keeps its status.
 
     Args:
         conn: Open connection inside a transaction.
@@ -817,17 +820,27 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
         provider: ``google_drive``, ``share_point`` or ``confluence``.
         token_info: Sanitised token info from the provider.
         account: The account's email or name, shown as "Connected as".
+
+    Returns:
+        The connection now holding the sign-in.
     """
     import uuid
 
     repo = ConnectorSessionsRepository(conn)
     target = state_row
+    definition = catalog.get_definition(provider)
+    display_name = definition.name if definition else provider
     existing = repo.find_account(state_row["user_id"], provider, server_url=None, account_label=account)
     if existing is not None and str(existing["id"]) != str(state_row["id"]):
         target = existing
         if not has_credentials(state_row) and normalize_status(state_row) == STATUS_PENDING:
             repo.delete_by_id(str(state_row["id"]))
-    definition = catalog.get_definition(provider)
+    elif existing is None and state_row.get("account_label"):
+        # The row belongs to another account (a reconnect that signed in as someone else).
+        target = repo.create(
+            state_row["user_id"], provider, connector_key=provider, auth_kind="oauth",
+            display_name=display_name, account_label=account, status=STATUS_PENDING,
+        ) or repo.find_account(state_row["user_id"], provider, server_url=None, account_label=account)
     write_secrets(
         conn,
         target,
@@ -839,7 +852,7 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
         account_label=account,
         connector_key=provider,
         auth_kind="oauth",
-        display_name=definition.name if definition else provider,
+        display_name=display_name,
         last_error=None,
     )
     resume_sources(conn, str(target["id"]))

@@ -382,6 +382,37 @@ class TestOAuthCompletion:
         assert first["id"] != second["id"]
         assert len(service.list_connections(pg_conn, "alice")) == 2
 
+    def test_reconnect_as_the_same_account_heals_the_connection(self, pg_conn):
+        cid = _connection(pg_conn, status="reconnect_needed", secrets={"token_info": {"access_token": "old"}},
+                          account_label="a@example.com")
+        state_row = service.begin_oauth(pg_conn, "alice", "google_drive", cid)
+        row = service.complete_oauth(pg_conn, state_row, "google_drive", {"access_token": "new"}, "a@example.com")
+        assert str(row["id"]) == cid
+        assert row["status"] == "connected"
+
+    def test_reconnect_as_another_account_leaves_the_connection_alone(self, pg_conn):
+        cid = _connection(pg_conn, status="reconnect_needed", secrets={"token_info": {"access_token": "old"}},
+                          account_label="a@example.com")
+        source = _source(pg_conn, cid)
+        pg_conn.execute(
+            text("UPDATE sources SET metadata = '{\"sync_state\": \"paused_reconnect\"}' WHERE id = CAST(:i AS uuid)"),
+            {"i": source},
+        )
+        state_row = service.begin_oauth(pg_conn, "alice", "google_drive", cid)
+        row = service.complete_oauth(pg_conn, state_row, "google_drive", {"access_token": "b"}, "b@example.com")
+        assert str(row["id"]) != cid
+        assert row["account_label"] == "b@example.com"
+        assert row["status"] == "connected"
+        original = _row(pg_conn, cid)
+        assert original["account_label"] == "a@example.com"
+        assert original["user_email"] != "b@example.com"
+        assert original["status"] == "reconnect_needed"
+        assert service.read_secrets(original)["token_info"]["access_token"] == "old"
+        meta = pg_conn.execute(
+            text("SELECT metadata FROM sources WHERE id = CAST(:i AS uuid)"), {"i": source}
+        ).scalar()
+        assert meta["sync_state"] == "paused_reconnect"
+
     def test_reconnect_must_name_own_connection(self, pg_conn):
         cid = _connection(pg_conn, user="bob", secrets={})
         with pytest.raises(service.ConnectionUnavailable):
