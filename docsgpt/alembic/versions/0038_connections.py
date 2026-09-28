@@ -292,7 +292,12 @@ def _link_api_key_tools(bind) -> None:
 
     from sqlalchemy import text
 
-    from docsgpt.security.encryption import decrypt_credentials, encrypt_json
+    from docsgpt.security.encryption import (
+        CredentialDecryptionError,
+        decrypt_credentials,
+        decrypt_json,
+        encrypt_json,
+    )
 
     rows = bind.execute(
         text(
@@ -323,18 +328,32 @@ def _link_api_key_tools(bind) -> None:
             server_url = None
             connector_key = row.name
             display_name = _TOOL_CONNECTORS[row.name]
-        label = _credential_hint(credentials)
-        existing = bind.execute(
-            text(
-                """
-                SELECT id, encrypted_credentials FROM connector_sessions
-                WHERE user_id = :user_id AND provider = :provider
-                  AND COALESCE(server_url, '') = COALESCE(:server_url, '')
-                  AND COALESCE(account_label, '') = :label
-                """
-            ),
-            {"user_id": row.user_id, "provider": connector_key, "server_url": server_url, "label": label},
-        ).fetchone()
+        # The hint is not an identity: reuse a connection only when it holds
+        # the same credentials, and give a different key its own label.
+        hint = _credential_hint(credentials)
+        label, suffix = hint, 1
+        while True:
+            existing = bind.execute(
+                text(
+                    """
+                    SELECT id, encrypted_credentials FROM connector_sessions
+                    WHERE user_id = :user_id AND provider = :provider
+                      AND COALESCE(server_url, '') = COALESCE(:server_url, '')
+                      AND COALESCE(account_label, '') = :label
+                    """
+                ),
+                {"user_id": row.user_id, "provider": connector_key, "server_url": server_url, "label": label},
+            ).fetchone()
+            if existing is None:
+                break
+            try:
+                stored = decrypt_json(existing.encrypted_credentials or "", row.user_id).get("credentials")
+            except CredentialDecryptionError:
+                stored = None
+            if stored == credentials:
+                break
+            suffix += 1
+            label = f"{hint} ({suffix})"
         if existing is None:
             connection_id = bind.execute(
                 text(

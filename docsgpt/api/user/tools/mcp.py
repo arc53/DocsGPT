@@ -27,13 +27,16 @@ def _sanitize_mcp_transport(config):
     """Normalise and validate the transport_type field.
 
     Strips ``command`` / ``args`` keys that are only valid for local STDIO
-    transports and returns the cleaned transport type string.
+    transports, and ``connection_id``, which only the tool executor sets
+    (it picks whose MCP tokens the tool uses). Returns the cleaned
+    transport type string.
     """
     transport_type = (config.get("transport_type") or "auto").lower()
     if transport_type not in _ALLOWED_TRANSPORTS:
         raise ValueError(f"Unsupported transport_type: {transport_type}")
     config.pop("command", None)
     config.pop("args", None)
+    config.pop("connection_id", None)
     config["transport_type"] = transport_type
     return transport_type
 

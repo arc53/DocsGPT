@@ -249,6 +249,36 @@ class TestApiKeyConnections:
         assert created is False and again["id"] == row["id"]
         assert service.get_credentials(again) == {"token": "123456:ABCDEFG"}
 
+    def test_different_keys_with_the_same_hint_stay_apart(self, pg_conn):
+        """Two keys ending in the same four characters are two accounts, not one."""
+        from docsgpt.connectors import catalog
+
+        postgres = catalog.get_definition("postgres")
+        first, _ = service.create_api_key_connection(
+            pg_conn, "alice", postgres, {"token": "postgresql://ro@db-a/app"},
+        )
+        second, created = service.create_api_key_connection(
+            pg_conn, "alice", postgres, {"token": "postgresql://rw@db-b/app"},
+        )
+        assert created is True and second["id"] != first["id"]
+        assert second["account_label"] != first["account_label"]
+        assert service.get_credentials(_row(pg_conn, str(first["id"]))) == {"token": "postgresql://ro@db-a/app"}
+        again, created = service.create_api_key_connection(
+            pg_conn, "alice", postgres, {"token": "postgresql://rw@db-b/app"},
+        )
+        assert created is False and again["id"] == second["id"]
+
+    def test_same_label_different_key_does_not_overwrite(self, pg_conn):
+        from docsgpt.connectors import catalog
+
+        brave = catalog.get_definition("brave")
+        first, _ = service.create_api_key_connection(pg_conn, "alice", brave, {"token": "key-one-111111"}, label="Team")
+        second, created = service.create_api_key_connection(
+            pg_conn, "alice", brave, {"token": "key-two-222222"}, label="Team",
+        )
+        assert created is True and second["id"] != first["id"]
+        assert service.get_credentials(_row(pg_conn, str(first["id"]))) == {"token": "key-one-111111"}
+
     def test_missing_field(self, pg_conn):
         from docsgpt.connectors import catalog
 
@@ -418,3 +448,42 @@ class TestRevoke:
 
         with patch("requests.post", side_effect=requests.exceptions.Timeout()):
             assert not service.revoke_at_provider({"provider": "google_drive"}, {"token_info": {"access_token": "a"}})
+
+
+class TestMcpConnectionScope:
+    def _mcp(self, conn, user="alice", base="https://mcp.notion.com"):
+        return _connection(
+            conn, user=user, provider=f"mcp:{base}", auth_kind="mcp_oauth", server_url=base,
+            secrets={"tokens": {"access_token": f"{user}-mcp-token"}},
+        )
+
+    def test_reads_tokens_of_the_named_connection(self, pg_conn):
+        cid = self._mcp(pg_conn)
+        with _patch_service_db(pg_conn):
+            data = service.read_mcp_secrets("alice", "https://mcp.notion.com", cid)
+        assert data["tokens"]["access_token"] == "alice-mcp-token"
+
+    def test_connection_for_another_server_yields_nothing(self, pg_conn):
+        """A connection id never sends its tokens to a different server."""
+        cid = self._mcp(pg_conn)
+        with _patch_service_db(pg_conn):
+            assert service.read_mcp_secrets("alice", "https://attacker.example", cid) == {}
+
+    def test_writes_never_land_on_another_servers_connection(self, pg_conn):
+        cid = self._mcp(pg_conn)
+        with _patch_service_db(pg_conn):
+            row = service.update_mcp_secrets(
+                "alice", "https://attacker.example", {"tokens": {"access_token": "planted"}}, connection_id=cid,
+            )
+            assert str(row["id"]) != cid
+            assert service.read_mcp_secrets("alice", "https://mcp.notion.com", cid)["tokens"]["access_token"] == (
+                "alice-mcp-token"
+            )
+
+    def test_mcp_routes_drop_client_supplied_connection_id(self):
+        """Only the tool executor may pick the connection whose tokens a tool uses."""
+        from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport
+
+        config = {"transport_type": "http", "connection_id": "someone-elses-connection"}
+        _sanitize_mcp_transport(config)
+        assert "connection_id" not in config

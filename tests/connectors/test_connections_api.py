@@ -141,6 +141,26 @@ class TestSetupSync:
                          body={"sync": {"items": {}}}, args=[cid])
         assert resp.status_code == 400
 
+    def test_rejected_request_does_not_claim_its_idempotency_key(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionSetup
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth", secrets={"token_info": {}})
+        headers = {"Idempotency-Key": "setup-retry-1"}
+        with _db(pg_conn), patch("docsgpt.api.user.sources.upload.db_session", _yield), patch(
+            "docsgpt.api.user.tasks.ingest_connector_task.apply_async", return_value=MagicMock(id="t"),
+        ) as apply:
+            bad = _call(app, ConnectionSetup, "post", f"/api/connections/{cid}/setup",
+                        body={"sync": {"items": {}}}, headers=headers, args=[cid])
+            fixed = _call(app, ConnectionSetup, "post", f"/api/connections/{cid}/setup",
+                          body={"sync": {"items": {"folder_ids": ["f1"]}}}, headers=headers, args=[cid])
+        assert bad.status_code == 400
+        assert fixed.status_code == 200
+        apply.assert_called_once()
+
     def test_s3_keys_stay_on_the_connection(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionSetup
 
@@ -185,6 +205,23 @@ class TestReconnect:
         assert service.read_secrets(dict(row))["credentials"]["token"] == "new"
         meta = pg_conn.execute(text("SELECT metadata FROM sources WHERE user_id = 'alice'")).scalar()
         assert "sync_state" not in meta
+
+    def test_reconnect_recovers_undecryptable_credentials_without_a_second_write(self, app, pg_conn):
+        """After a lost key the reconnect replaces the blob; it must not flag the row it holds locked."""
+        from docsgpt.api.connector.connections import ConnectionReconnect
+
+        cid = _connection(pg_conn, status="reconnect_needed")
+        pg_conn.execute(text(
+            "UPDATE connector_sessions SET encrypted_credentials = :blob WHERE id = CAST(:c AS uuid)"
+        ), {"c": cid, "blob": encrypt_json({"credentials": {"token": "old"}}, "someone-else")})
+        with _db(pg_conn), patch.object(service, "mark_reconnect_needed") as flag:
+            resp = _call(app, ConnectionReconnect, "post", f"/api/connections/{cid}/reconnect",
+                         body={"credentials": {"token": "new"}}, args=[cid])
+        assert resp.status_code == 200
+        flag.assert_not_called()
+        row = pg_conn.execute(text("SELECT * FROM connector_sessions WHERE id = CAST(:c AS uuid)"),
+                              {"c": cid}).one()._mapping
+        assert service.read_secrets(dict(row))["credentials"] == {"token": "new"}
 
     def test_oauth_reconnect_returns_authorization_url(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionReconnect

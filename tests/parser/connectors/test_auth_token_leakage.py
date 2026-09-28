@@ -55,7 +55,7 @@ def _patches(session_return: Optional[Dict[str, Any]]):
             fake_repo_cls,
         ),
         patch(
-            "docsgpt.storage.db.session.db_readonly",
+            "docsgpt.connectors.service.db_readonly",
             lambda: _FakeReadonlyCtx(),
         ),
     )

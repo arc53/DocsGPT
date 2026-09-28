@@ -18,6 +18,7 @@ from docsgpt.api.user.authz import ROLE_ADMIN, has_role
 from docsgpt.connectors import catalog, service
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.security.encryption import CredentialDecryptionError
 
 _FREQUENCIES = ("never", "daily", "weekly", "monthly")
 
@@ -258,6 +259,39 @@ def _start_sync(user_id: str, row: dict, sync: dict):
     if frequency not in _FREQUENCIES:
         return ("Unknown sync frequency", 400)
     name = (sync.get("name") or "").strip() or definition.name
+    # Validate before claiming the idempotency key: a rejected request must
+    # leave the key free for the corrected retry.
+    if definition.auth_kind == "oauth":
+        file_ids = [str(i) for i in items.get("file_ids") or [] if i]
+        folder_ids = [str(i) for i in items.get("folder_ids") or [] if i]
+        if not file_ids and not folder_ids:
+            return ("Pick at least one file or folder", 400)
+        task_fn = ingest_connector_task
+        kwargs = {
+            "job_name": name,
+            "user": user_id,
+            "source_type": definition.sync_ingestor,
+            "connection_id": str(row["id"]),
+            "file_ids": file_ids,
+            "folder_ids": folder_ids,
+            "recursive": bool(items.get("recursive", True)),
+            "sync_frequency": frequency,
+        }
+    else:
+        fields = {f.key for f in definition.setup_fields}
+        source_data = {k: v for k, v in items.items() if k in fields and v not in (None, "")}
+        missing = [f.label for f in definition.setup_fields if f.required and f.key not in source_data]
+        if missing:
+            return (f"Missing: {', '.join(missing)}", 400)
+        task_fn = ingest_remote
+        kwargs = {
+            "source_data": source_data,
+            "job_name": name,
+            "user": user_id,
+            "loader": definition.sync_ingestor,
+            "connection_id": str(row["id"]),
+            "sync_frequency": frequency,
+        }
     idempotency_key, _ = _read_idempotency_key()
     scoped_key = _scoped_idempotency_key(idempotency_key, user_id)
     task_id = None
@@ -267,45 +301,9 @@ def _start_sync(user_id: str, row: dict, sync: dict):
             return {"id": cached.get("source_id"), "task_id": cached.get("task_id"), "name": name}
     source_id = str(_derive_source_id(scoped_key)) if scoped_key else str(uuid.uuid4())
     options = {"task_id": task_id} if task_id else {}
-    if definition.auth_kind == "oauth":
-        file_ids = [str(i) for i in items.get("file_ids") or [] if i]
-        folder_ids = [str(i) for i in items.get("folder_ids") or [] if i]
-        if not file_ids and not folder_ids:
-            return ("Pick at least one file or folder", 400)
-        task = ingest_connector_task.apply_async(
-            kwargs={
-                "job_name": name,
-                "user": user_id,
-                "source_type": definition.sync_ingestor,
-                "connection_id": str(row["id"]),
-                "file_ids": file_ids,
-                "folder_ids": folder_ids,
-                "recursive": bool(items.get("recursive", True)),
-                "sync_frequency": frequency,
-                "idempotency_key": scoped_key,
-                "source_id": source_id,
-            },
-            **options,
-        )
-    else:
-        fields = {f.key for f in definition.setup_fields}
-        source_data = {k: v for k, v in items.items() if k in fields and v not in (None, "")}
-        missing = [f.label for f in definition.setup_fields if f.required and f.key not in source_data]
-        if missing:
-            return (f"Missing: {', '.join(missing)}", 400)
-        task = ingest_remote.apply_async(
-            kwargs={
-                "source_data": source_data,
-                "job_name": name,
-                "user": user_id,
-                "loader": definition.sync_ingestor,
-                "connection_id": str(row["id"]),
-                "sync_frequency": frequency,
-                "idempotency_key": scoped_key,
-                "source_id": source_id,
-            },
-            **options,
-        )
+    task = task_fn.apply_async(
+        kwargs={**kwargs, "idempotency_key": scoped_key, "source_id": source_id}, **options,
+    )
     return {"id": source_id, "task_id": task_id or task.id, "name": name, "sync_frequency": frequency}
 
 
@@ -347,7 +345,13 @@ class ConnectionReconnect(Resource):
             service.ensure_can_store_credentials()
             with db_session() as conn:
                 locked = ConnectorSessionsRepository(conn).get_for_update(connection_id)
-                stored = service.load_secrets(locked) or {}
+                # read_secrets, not load_secrets: flagging an unreadable row
+                # would write it from a second transaction while this one
+                # holds its lock. The new credentials replace it anyway.
+                try:
+                    stored = service.read_secrets(locked)
+                except CredentialDecryptionError:
+                    stored = {}
                 merged = {**(stored.get("credentials") or {}), **{k: v for k, v in credentials.items() if v}}
                 service.write_secrets(
                     conn, locked, {**stored, "credentials": merged},

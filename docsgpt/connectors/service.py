@@ -647,6 +647,40 @@ def get_credentials(row: dict) -> dict:
     return dict(secrets.get("credentials") or {})
 
 
+def _api_key_account(
+    repo: ConnectorSessionsRepository,
+    user_id: str,
+    connector_key: str,
+    server_url: Optional[str],
+    label: str,
+    credentials: dict,
+) -> tuple[Optional[dict], str]:
+    """The connection holding exactly ``credentials``, or a free label for a new one.
+
+    A label (a hint of the key, or what the user typed) is not an identity:
+    two different keys can share it. A row under the label is reused only
+    when it holds the same credentials; otherwise the label gets a
+    ``(2)``, ``(3)`` suffix until it names a matching row or no row.
+
+    Returns:
+        ``(row, label)``: the row to reuse (None to create one) and its label.
+    """
+    from docsgpt.security.encryption import CredentialDecryptionError
+
+    candidate, suffix = label, 1
+    while True:
+        existing = repo.find_account(user_id, connector_key, server_url=server_url, account_label=candidate)
+        if existing is None:
+            return None, candidate
+        try:
+            if (read_secrets(existing).get("credentials") or {}) == credentials:
+                return existing, candidate
+        except CredentialDecryptionError:
+            pass
+        suffix += 1
+        candidate = f"{label} ({suffix})"
+
+
 def create_api_key_connection(
     conn,
     user_id: str,
@@ -689,9 +723,10 @@ def create_api_key_connection(
     ensure_can_store_credentials()
     ensure_connector_allowed(conn, definition.key)
     secret_values = {k: v for k, v in credentials.items() if (fields.get(k).secret if fields.get(k) else True)}
-    account_label = label or credential_hint(secret_values or credentials)
     repo = ConnectorSessionsRepository(conn)
-    existing = repo.find_account(user_id, definition.key, server_url=server_url, account_label=account_label)
+    existing, account_label = _api_key_account(
+        repo, user_id, definition.key, server_url, label or credential_hint(secret_values or credentials), credentials,
+    )
     if existing is not None:
         write_secrets(conn, existing, {"credentials": credentials}, status=STATUS_CONNECTED, last_error=None)
         resume_sources(conn, str(existing["id"]))
@@ -833,16 +868,16 @@ def resolve_request_connection(user_id: str, provider: Optional[str], data: dict
     """
     connection_id = data.get("connection_id")
     session_token = data.get("session_token")
+    if not connection_id and not session_token:
+        return None
     with db_readonly() as conn:
         repo = ConnectorSessionsRepository(conn)
         if connection_id:
             row = repo.get_for_user(str(connection_id), user_id)
-        elif session_token:
+        else:
             row = repo.get_by_session_token(session_token)
             if not owns_connector_session(row, user_id, provider):
                 return None
-        else:
-            return None
     if row is None:
         return None
     if provider and (row.get("provider") or "").lower() != provider.lower():
@@ -867,7 +902,13 @@ def _mcp_row(conn, user_id: str, base_url: str, connection_id: Optional[str], *,
 
     repo = ConnectorSessionsRepository(conn)
     if connection_id:
-        return repo.get_for_update(connection_id) if lock else repo.get(connection_id)
+        row = repo.get_for_update(connection_id) if lock else repo.get(connection_id)
+        # A connection's tokens only ever go to its own server. Ownership is
+        # checked where the id is chosen (the tool executor); clients cannot
+        # supply one (see ``_sanitize_mcp_transport``).
+        if row is None or row.get("provider") != mcp_provider(base_url):
+            return None
+        return row
     result = conn.execute(
         text(
             "SELECT * FROM connector_sessions WHERE user_id = :user_id AND provider = :provider "

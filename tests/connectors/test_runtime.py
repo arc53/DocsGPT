@@ -173,6 +173,17 @@ class TestExecutor:
         assert config["connection_id"] == cid
         assert "secret" not in str(config)
 
+    def test_stored_connection_id_in_config_is_ignored(self, pg_conn):
+        """Only a resolved connection reaches the tool; a config value never does."""
+        victim = _connection(pg_conn, user="victim", provider="mcp:https://m.example.com", auth_kind="mcp_oauth",
+                             server_url="https://m.example.com", secrets={"tokens": {"access_token": "v"}})
+        tool = {**_tool(None, name="mcp_tool"), "config": {"server_url": "https://m.example.com/mcp",
+                                                          "auth_type": "oauth", "connection_id": victim}}
+        with _service_db(pg_conn), patch("docsgpt.agents.tool_executor.ToolManager") as manager:
+            _executor()._get_or_load_tool(tool, "t1", "search")
+        config = manager.return_value.load_tool.call_args.kwargs["tool_config"]
+        assert "connection_id" not in config
+
 
 class TestScheduledSync:
     def test_connector_sources_with_a_connection_are_dispatched(self, pg_conn):

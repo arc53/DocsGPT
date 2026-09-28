@@ -272,6 +272,32 @@ class TestMigration0038Credentials:
             ).scalar()
             assert "encrypted_credentials" in config
 
+    def test_different_keys_with_the_same_hint_get_their_own_connections(self, pg_engine):
+        from docsgpt.connectors.service import read_secrets
+        from docsgpt.security.encryption import encrypt_credentials
+
+        def seed(conn):
+            ids = {}
+            for name, token in (("a", "111111:SAMEEND1"), ("b", "222222:SAMEEND1")):
+                ids[name] = conn.execute(
+                    text("INSERT INTO user_tools (user_id, name, config) VALUES ('frank', 'telegram', "
+                         "CAST(:c AS jsonb)) RETURNING id"),
+                    {"c": json.dumps({"encrypted_credentials": encrypt_credentials({"token": token}, "frank")})},
+                ).scalar()
+            return ids
+
+        _, ids = self._upgrade_with(pg_engine, seed)
+        with pg_engine.connect() as conn:
+            links = dict(conn.execute(
+                text("SELECT id, connection_id FROM user_tools WHERE user_id = 'frank'")
+            ).fetchall())
+            assert links[ids["a"]] != links[ids["b"]]
+            for name, token in (("a", "111111:SAMEEND1"), ("b", "222222:SAMEEND1")):
+                row = dict(conn.execute(
+                    text("SELECT * FROM connector_sessions WHERE id = :i"), {"i": links[ids[name]]}
+                ).one()._mapping)
+                assert read_secrets(row) == {"credentials": {"token": token}}
+
     def test_oauth_mcp_tools_keep_member_credentials(self, pg_engine):
         _, ids = self._upgrade_with(pg_engine, _seed_secrets)
         with pg_engine.connect() as conn:

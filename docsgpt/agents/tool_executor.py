@@ -1560,6 +1560,9 @@ class ToolExecutor:
                 tool_config["body_encoding_rules"] = action_config.get("body_encoding_rules", {})
         else:
             tool_config = tool_data["config"].copy() if tool_data["config"] else {}
+            # Whose MCP tokens a tool uses is decided by resolving its
+            # connection below, never by a value stored in its config.
+            tool_config.pop("connection_id", None)
             # Credentials are PBKDF2-bound to the tool OWNER's sub, not the
             # invoker's. Decrypt with the tool row's user_id so a team member
             # running an owner's shared tool authenticates with the owner's
