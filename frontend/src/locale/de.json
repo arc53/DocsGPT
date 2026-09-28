@@ -438,7 +438,9 @@
       "editChunkDescription": "{{file}} · Chunk {{n}} · {{tokens}} Tokens",
       "previousChunk": "Vorheriger Chunk",
       "nextChunk": "Nächster Chunk",
-      "paused": "Sync pausiert. Verbinde {{name}} neu, um fortzufahren."
+      "paused": "Sync pausiert. Verbinde {{name}} neu, um fortzufahren.",
+      "emptyHint": "Lade Dateien hoch, füge eine Website hinzu oder verbinde einen Dienst, um seine Inhalte zu synchronisieren.",
+      "connectService": "Dienst verbinden"
     },
     "analytics": {
       "label": "Analytik",
@@ -861,7 +863,8 @@
       "groupBuiltIn": "Integriert",
       "groupService": "Aus einem Dienst",
       "browseConnectors": "Alle Konnektoren ansehen",
-      "viaConnection": "über {{name}}"
+      "viaConnection": "über {{name}}",
+      "off": "Aus"
     },
     "devices": {
       "label": "Geräte",
@@ -1109,8 +1112,10 @@
         "dev": "Entwicklerwerkzeuge",
         "messaging": "Nachrichten",
         "database": "Datenbanken",
-        "search": "Suche",
-        "custom": "Eigene"
+        "search": "Suche & Web",
+        "custom": "Eigene",
+        "projects": "Projekte & Tickets",
+        "business": "Zahlungen & Business"
       },
       "capability": {
         "sync": "Sync",
@@ -1189,20 +1194,30 @@
         "syncStarted": "{{name}} wird synchronisiert…",
         "syncFailed": "Die Synchronisierung konnte nicht gestartet werden. Versuche es erneut.",
         "toolSwitch": "{{name}} an",
-        "toolSwitchFailed": "Das Werkzeug konnte nicht geändert werden. Versuche es erneut."
+        "toolSwitchFailed": "Das Werkzeug konnte nicht geändert werden. Versuche es erneut.",
+        "account": "Konto: {{account}}",
+        "expired": "Die Anmeldung ist abgelaufen. Verbinde neu, um diese Verbindung weiter zu nutzen.",
+        "broken": "Diese Verbindung funktioniert nicht mehr. Verbinde neu, um es erneut zu versuchen."
       },
       "permission": {
-        "always": "Immer erlauben",
-        "ask": "Freigabe nötig",
+        "always": "Erlauben",
+        "ask": "Vorher fragen",
         "off": "Aus",
         "label": "Berechtigung für {{action}}",
-        "saveFailed": "Die Berechtigung konnte nicht gespeichert werden. Versuche es erneut."
+        "saveFailed": "Die Berechtigung konnte nicht gespeichert werden. Versuche es erneut.",
+        "groupLabel": "Berechtigung für alles unter {{group}}",
+        "fold": "Aktionen ausblenden",
+        "hint": "Vorher fragen: Im Chat fragt DocsGPT dich, bevor die Aktion ausgeführt wird. Über die API oder das Widget eines Agenten kann niemand antworten, daher werden diese Aktionen abgelehnt, außer die API-Schreibfreigabe des Agenten enthält sie.",
+        "actionCount_one": "{{formatted}} Aktion",
+        "actionCount_other": "{{formatted}} Aktionen",
+        "customize_one": "Aktion einzeln festlegen",
+        "customize_other": "Alle {{formatted}} einzeln festlegen"
       },
       "disconnect": {
         "title": "{{name}} trennen?",
         "body_zero": "Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest.",
-        "body_one": "Deine Quelle behält ihren Inhalt, wird aber nicht mehr synchronisiert. Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest.",
-        "body_other": "Deine {{formatted}} Quellen behalten ihren Inhalt, werden aber nicht mehr synchronisiert. Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest.",
+        "body_one": "Das synchronisierte Element bleibt im Wissen, wird aber nicht mehr aktualisiert. Werkzeuge dieser Verbindung funktionieren erst nach dem Neuverbinden wieder.",
+        "body_other": "Die {{formatted}} synchronisierten Elemente bleiben im Wissen, werden aber nicht mehr aktualisiert. Werkzeuge dieser Verbindung funktionieren erst nach dem Neuverbinden wieder.",
         "failed": "Trennen fehlgeschlagen. Versuche es erneut."
       },
       "fields": {
@@ -1231,10 +1246,10 @@
         "skip": "Vorerst überspringen",
         "syncFrequency": "Sync",
         "doneTitle": "{{name}} ist verbunden",
-        "doneSummary": "Verbunden als {{account}}. {{sources}} werden synchronisiert, {{tools}} bereit.",
+        "doneSummary": "Verbunden als {{account}}. {{sources}} werden ins Wissen synchronisiert, {{tools}} bereit.",
         "doneSummaryNone": "Verbunden als {{account}}.",
-        "sourcesCount_one": "{{formatted}} Quelle",
-        "sourcesCount_other": "{{formatted}} Quellen",
+        "sourcesCount_one": "{{formatted}} Element",
+        "sourcesCount_other": "{{formatted}} Elemente",
         "toolsCount_one": "{{formatted}} Werkzeug",
         "toolsCount_other": "{{formatted}} Werkzeuge",
         "toolsHeading": "Werkzeuge ({{formatted}})",
@@ -1243,8 +1258,8 @@
         "connectFailed": "Verbindung fehlgeschlagen. Prüfe die Angaben und versuche es erneut.",
         "syncFailed": "Die Synchronisierung konnte nicht gestartet werden. Versuche es erneut.",
         "connectedWithKey": "Verbunden mit dem Schlüssel, der auf {{hint}} endet.",
-        "doneCounts": "{{sources}} werden synchronisiert, {{tools}} bereit.",
-        "doneSources": "{{sources}} werden synchronisiert.",
+        "doneCounts": "{{sources}} werden ins Wissen synchronisiert, {{tools}} bereit.",
+        "doneSources": "{{sources}} werden ins Wissen synchronisiert.",
         "doneTools": "{{tools}} bereit.",
         "waiting": "Schließe die Anmeldung bei {{name}} im geöffneten Fenster ab.",
         "openSignIn": "Anmeldung bei {{name}} öffnen"
@@ -1252,8 +1267,8 @@
       "remove": {
         "title": "{{name}} entfernen?",
         "description": "Die gespeicherte Anmeldung wird gelöscht. Wähle, was mit den Inhalten dieser Verbindung passiert.",
-        "sourcesLabel_one": "Ihre Quelle",
-        "sourcesLabel_other": "Ihre {{formatted}} Quellen",
+        "sourcesLabel_one": "Das Element, das sie ins Wissen synchronisiert hat",
+        "sourcesLabel_other": "Die {{formatted}} Elemente, die sie ins Wissen synchronisiert hat",
         "keepSources": "Inhalt behalten (Sync stoppen)",
         "deleteSources": "Löschen",
         "toolsLabel_one": "Ihr Werkzeug",
@@ -1264,12 +1279,14 @@
       },
       "health": {
         "reconnect": "Verbinde {{name}} neu, um weiter zu synchronisieren.",
-        "reconnectSources_one": "{{name}} neu verbinden: {{formatted}} Quelle ist pausiert",
-        "reconnectSources_other": "{{name}} neu verbinden: {{formatted}} Quellen sind pausiert",
+        "reconnectSources_one": "{{name}} neu verbinden: {{formatted}} Element wird nicht mehr ins Wissen synchronisiert",
+        "reconnectSources_other": "{{name}} neu verbinden: {{formatted}} Elemente werden nicht mehr ins Wissen synchronisiert",
         "reconnectTools": "{{name}} neu verbinden, damit Agenten es wieder nutzen können",
-        "reconnectBoth_one": "{{name}} neu verbinden: {{formatted}} Quelle ist pausiert und Agenten können es nicht nutzen",
-        "reconnectBoth_other": "{{name}} neu verbinden: {{formatted}} Quellen sind pausiert und Agenten können es nicht nutzen",
-        "navDot": "Eine Verbindung braucht Aufmerksamkeit"
+        "reconnectBoth_one": "{{name}} neu verbinden: {{formatted}} Element synchronisiert nicht mehr und Agenten können es nicht nutzen",
+        "reconnectBoth_other": "{{name}} neu verbinden: {{formatted}} Elemente synchronisieren nicht mehr und Agenten können es nicht nutzen",
+        "navDot": "Eine Verbindung braucht Aufmerksamkeit",
+        "signInAgain": "Erneut anmelden",
+        "pickerNotice": "Bei {{name}} musst du dich erneut anmelden."
       },
       "error": {
         "decrypt": "Die gespeicherten Zugangsdaten konnten nicht entschlüsselt werden. Verbinde neu, um fortzufahren.",
@@ -1454,10 +1471,11 @@
         "endpointUrl": "Benutzerdefinierte Endpunkt-URL (optional)",
         "initialContent": "Anfangsinhalt (optional)"
       },
-      "groupUploadWeb": "Upload und Web",
+      "groupUploadWeb": "Kein Konto nötig",
       "groupConnection": "Aus einer Verbindung",
       "tileConnectedAs": "Verbunden als {{account}}",
-      "newCredentials": "Neue Zugangsdaten eingeben"
+      "newCredentials": "Neue Zugangsdaten eingeben",
+      "tileNotConnected": "Nicht verbunden"
     },
     "createAPIKey": {
       "label": "Neuen API-Schlüssel erstellen",
@@ -1675,8 +1693,8 @@
       "view_more_one": "{{count}} weitere Quelle",
       "view_more_other": "{{count}} weitere Quellen",
       "noSourcesAvailable": "Noch kein Wissen",
-      "selectedCount": "{{count}} Quellen ausgewählt",
-      "groupOwn": "Deine Quellen",
+      "selectedCount": "{{count}} ausgewählt",
+      "groupOwn": "Deine",
       "groupTeam": "Mit dem Team geteilt",
       "connectMore": "Weitere verbinden",
       "fromConnector": "Aus {{name}}",

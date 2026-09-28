@@ -429,7 +429,9 @@
       "editChunkDescription": "{{file}} · チャンク {{n}} · {{tokens}} トークン",
       "previousChunk": "前のチャンク",
       "nextChunk": "次のチャンク",
-      "paused": "同期を一時停止中です。再開するには {{name}} を再接続してください。"
+      "paused": "同期を一時停止中です。再開するには {{name}} を再接続してください。",
+      "emptyHint": "ファイルをアップロードするか、ウェブサイトを追加するか、サービスを接続してコンテンツを同期しましょう。",
+      "connectService": "サービスを接続"
     },
     "analytics": {
       "label": "分析",
@@ -852,7 +854,8 @@
       "groupBuiltIn": "組み込み",
       "groupService": "サービスから",
       "browseConnectors": "すべてのコネクタを見る",
-      "viaConnection": "{{name}} 経由"
+      "viaConnection": "{{name}} 経由",
+      "off": "オフ"
     },
     "devices": {
       "label": "デバイス",
@@ -1100,8 +1103,10 @@
         "dev": "開発者ツール",
         "messaging": "メッセージ",
         "database": "データベース",
-        "search": "検索",
-        "custom": "カスタム"
+        "search": "検索とウェブ",
+        "custom": "カスタム",
+        "projects": "プロジェクトと課題",
+        "business": "決済とビジネス"
       },
       "capability": {
         "sync": "同期",
@@ -1180,19 +1185,27 @@
         "syncStarted": "{{name}} を同期しています…",
         "syncFailed": "同期を開始できませんでした。もう一度お試しください。",
         "toolSwitch": "{{name}} をオン",
-        "toolSwitchFailed": "ツールを変更できませんでした。もう一度お試しください。"
+        "toolSwitchFailed": "ツールを変更できませんでした。もう一度お試しください。",
+        "account": "アカウント: {{account}}",
+        "expired": "サインインの有効期限が切れました。この接続を使い続けるには再接続してください。",
+        "broken": "この接続は動作しなくなりました。再接続してもう一度お試しください。"
       },
       "permission": {
-        "always": "常に許可",
-        "ask": "承認が必要",
+        "always": "許可",
+        "ask": "事前に確認",
         "off": "オフ",
         "label": "{{action}} の権限",
-        "saveFailed": "権限を保存できませんでした。もう一度お試しください。"
+        "saveFailed": "権限を保存できませんでした。もう一度お試しください。",
+        "groupLabel": "{{group}} すべての権限",
+        "fold": "アクションを隠す",
+        "hint": "事前に確認: チャットでは、DocsGPT がアクションの実行前に確認します。エージェントの API やウィジェットでは誰も応答できないため、エージェントの API 書き込み許可リストに含まれていない限り、これらのアクションは拒否されます。",
+        "actionCount_other": "{{formatted}} 件のアクション",
+        "customize_other": "{{formatted}} 件を個別に設定"
       },
       "disconnect": {
         "title": "{{name}} を切断しますか？",
         "body_zero": "この接続のツールは、再接続するまで使えなくなります。",
-        "body_other": "{{formatted}} 件のソースはコンテンツを保持しますが、同期は停止します。この接続のツールは、再接続するまで使えなくなります。",
+        "body_other": "同期した {{formatted}} 件はナレッジに残りますが、更新されなくなります。この接続のツールは再接続するまで動作しません。",
         "failed": "切断できませんでした。もう一度お試しください。"
       },
       "fields": {
@@ -1221,9 +1234,9 @@
         "skip": "今はスキップ",
         "syncFrequency": "同期",
         "doneTitle": "{{name}} に接続しました",
-        "doneSummary": "{{account}} として接続しました。{{sources}}を同期中、{{tools}}を利用できます。",
+        "doneSummary": "{{account}} として接続しました。{{sources}} をナレッジに同期中、{{tools}} が利用可能です。",
         "doneSummaryNone": "{{account}} として接続しました。",
-        "sourcesCount_other": "{{formatted}} 件のソース",
+        "sourcesCount_other": "{{formatted}} 件",
         "toolsCount_other": "{{formatted}} 個のツール",
         "toolsHeading": "ツール ({{formatted}})",
         "tryInChat": "チャットで試す",
@@ -1231,8 +1244,8 @@
         "connectFailed": "接続できませんでした。入力内容を確認して、もう一度お試しください。",
         "syncFailed": "同期を開始できませんでした。もう一度お試しください。",
         "connectedWithKey": "末尾が {{hint}} のキーで接続しました。",
-        "doneCounts": "{{sources}}を同期中、{{tools}}を利用できます。",
-        "doneSources": "{{sources}}を同期中です。",
+        "doneCounts": "{{sources}} をナレッジに同期中、{{tools}} が利用可能です。",
+        "doneSources": "{{sources}} をナレッジに同期中です。",
         "doneTools": "{{tools}}を利用できます。",
         "waiting": "開いたウィンドウで {{name}} へのサインインを完了してください。",
         "openSignIn": "{{name}} のサインインを開く"
@@ -1240,7 +1253,7 @@
       "remove": {
         "title": "{{name}} を削除しますか？",
         "description": "保存されたサインイン情報は削除されます。この接続から提供されているものをどうするか選んでください。",
-        "sourcesLabel_other": "{{formatted}} 件のソース",
+        "sourcesLabel_other": "ナレッジに同期した {{formatted}} 件",
         "keepSources": "コンテンツを保持（同期を停止）",
         "deleteSources": "削除",
         "toolsLabel_other": "{{formatted}} 個のツール",
@@ -1250,10 +1263,12 @@
       },
       "health": {
         "reconnect": "同期を続けるには {{name}} を再接続してください。",
-        "reconnectSources_other": "{{name}} を再接続してください: {{formatted}} 件のソースが一時停止中です",
+        "reconnectSources_other": "{{name}} を再接続してください: {{formatted}} 件がナレッジへの同期を停止しています",
         "reconnectTools": "エージェントが再び使えるよう {{name}} を再接続してください",
-        "reconnectBoth_other": "{{name}} を再接続してください: {{formatted}} 件のソースが一時停止中で、エージェントも使えません",
-        "navDot": "接続に対応が必要です"
+        "reconnectBoth_other": "{{name}} を再接続してください: {{formatted}} 件の同期が停止し、エージェントも使えません",
+        "navDot": "接続に対応が必要です",
+        "signInAgain": "再度サインイン",
+        "pickerNotice": "{{name}} に再度サインインしてください。"
       },
       "error": {
         "decrypt": "保存された認証情報を復号できませんでした。続行するには再接続してください。",
@@ -1438,10 +1453,11 @@
         "endpointUrl": "カスタムエンドポイント URL（任意）",
         "initialContent": "初期コンテンツ（任意）"
       },
-      "groupUploadWeb": "アップロードとウェブ",
+      "groupUploadWeb": "アカウント不要",
       "groupConnection": "接続から",
       "tileConnectedAs": "{{account}} として接続中",
-      "newCredentials": "新しい認証情報を入力"
+      "newCredentials": "新しい認証情報を入力",
+      "tileNotConnected": "未接続"
     },
     "createAPIKey": {
       "label": "新しいAPIキーを作成",
@@ -1657,8 +1673,8 @@
       "link": "ソースリンク",
       "view_more": "さらに{{count}}個のソース",
       "noSourcesAvailable": "ナレッジはまだありません",
-      "selectedCount": "{{count}} 件のソースを選択中",
-      "groupOwn": "自分のソース",
+      "selectedCount": "{{count}} 件選択中",
+      "groupOwn": "あなたのもの",
       "groupTeam": "チームと共有",
       "connectMore": "さらに接続",
       "fromConnector": "{{name}} から",

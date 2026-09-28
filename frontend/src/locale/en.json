@@ -443,7 +443,9 @@
       "editChunkDescription": "{{file}} · chunk {{n}} · {{tokens}} tokens",
       "previousChunk": "Previous chunk",
       "nextChunk": "Next chunk",
-      "paused": "Sync paused. Reconnect {{name}} to resume."
+      "paused": "Sync paused. Reconnect {{name}} to resume.",
+      "emptyHint": "Upload files, add a website, or connect a service to sync its content.",
+      "connectService": "Connect a service"
     },
     "analytics": {
       "label": "Analytics",
@@ -867,7 +869,8 @@
       "groupBuiltIn": "Built in",
       "groupService": "From a service",
       "browseConnectors": "Browse all connectors",
-      "viaConnection": "via {{name}}"
+      "viaConnection": "via {{name}}",
+      "off": "Off"
     },
     "devices": {
       "label": "Devices",
@@ -1115,8 +1118,10 @@
         "dev": "Developer tools",
         "messaging": "Messaging",
         "database": "Databases",
-        "search": "Search",
-        "custom": "Custom"
+        "search": "Search & web",
+        "custom": "Custom",
+        "projects": "Projects & issues",
+        "business": "Payments & business"
       },
       "capability": {
         "sync": "Sync",
@@ -1195,20 +1200,30 @@
         "syncStarted": "Syncing {{name}}…",
         "syncFailed": "Could not start the sync. Try again.",
         "toolSwitch": "{{name}} on",
-        "toolSwitchFailed": "Could not change the tool. Try again."
+        "toolSwitchFailed": "Could not change the tool. Try again.",
+        "account": "Account: {{account}}",
+        "expired": "The sign-in expired. Reconnect to keep using this connection.",
+        "broken": "This connection stopped working. Reconnect to try again."
       },
       "permission": {
-        "always": "Always allow",
-        "ask": "Needs approval",
+        "always": "Allow",
+        "ask": "Ask first",
         "off": "Off",
         "label": "Permission for {{action}}",
-        "saveFailed": "Could not save the permission. Try again."
+        "saveFailed": "Could not save the permission. Try again.",
+        "groupLabel": "Permission for all of {{group}}",
+        "fold": "Hide actions",
+        "hint": "Ask first: in chat, DocsGPT asks you before running the action. Over an agent's API or widget nobody can answer, so those actions are refused unless the agent's API write allowlist includes them.",
+        "actionCount_one": "{{formatted}} action",
+        "actionCount_other": "{{formatted}} actions",
+        "customize_one": "Customize the action",
+        "customize_other": "Customize each of {{formatted}}"
       },
       "disconnect": {
         "title": "Disconnect {{name}}?",
         "body_zero": "Tools from this connection stop working until you reconnect.",
-        "body_one": "Your source keeps its content but stops syncing. Tools from this connection stop working until you reconnect.",
-        "body_other": "Your {{formatted}} sources keep their content but stop syncing. Tools from this connection stop working until you reconnect.",
+        "body_one": "The item it synced stays in Knowledge but stops updating. Tools from this connection stop working until you reconnect.",
+        "body_other": "The {{formatted}} items it synced stay in Knowledge but stop updating. Tools from this connection stop working until you reconnect.",
         "failed": "Could not disconnect. Try again."
       },
       "fields": {
@@ -1237,10 +1252,10 @@
         "skip": "Skip for now",
         "syncFrequency": "Sync",
         "doneTitle": "{{name}} is connected",
-        "doneSummary": "Connected as {{account}}. {{sources}} syncing, {{tools}} ready.",
+        "doneSummary": "Connected as {{account}}. {{sources}} syncing into Knowledge, {{tools}} ready.",
         "doneSummaryNone": "Connected as {{account}}.",
-        "sourcesCount_one": "{{formatted}} source",
-        "sourcesCount_other": "{{formatted}} sources",
+        "sourcesCount_one": "{{formatted}} item",
+        "sourcesCount_other": "{{formatted}} items",
         "toolsCount_one": "{{formatted}} tool",
         "toolsCount_other": "{{formatted}} tools",
         "toolsHeading": "Tools ({{formatted}})",
@@ -1249,8 +1264,8 @@
         "connectFailed": "Could not connect. Check the details and try again.",
         "syncFailed": "Could not start the sync. Try again.",
         "connectedWithKey": "Connected with the key ending {{hint}}.",
-        "doneCounts": "{{sources}} syncing, {{tools}} ready.",
-        "doneSources": "{{sources}} syncing.",
+        "doneCounts": "{{sources}} syncing into Knowledge, {{tools}} ready.",
+        "doneSources": "{{sources}} syncing into Knowledge.",
         "doneTools": "{{tools}} ready.",
         "waiting": "Finish signing in to {{name}} in the window that opened.",
         "openSignIn": "Open the {{name}} sign-in"
@@ -1258,8 +1273,8 @@
       "remove": {
         "title": "Remove {{name}}?",
         "description": "The stored sign-in is deleted. Choose what happens to what this connection feeds.",
-        "sourcesLabel_one": "Its source",
-        "sourcesLabel_other": "Its {{formatted}} sources",
+        "sourcesLabel_one": "The item it synced into Knowledge",
+        "sourcesLabel_other": "The {{formatted}} items it synced into Knowledge",
         "keepSources": "Keep content (stop syncing)",
         "deleteSources": "Delete",
         "toolsLabel_one": "Its tool",
@@ -1270,12 +1285,14 @@
       },
       "health": {
         "reconnect": "Reconnect {{name}} to keep syncing.",
-        "reconnectSources_one": "Reconnect {{name}}: {{formatted}} source is paused",
-        "reconnectSources_other": "Reconnect {{name}}: {{formatted}} sources are paused",
+        "reconnectSources_one": "Reconnect {{name}}: {{formatted}} item stopped syncing into Knowledge",
+        "reconnectSources_other": "Reconnect {{name}}: {{formatted}} items stopped syncing into Knowledge",
         "reconnectTools": "Reconnect {{name}} so agents can use it again",
-        "reconnectBoth_one": "Reconnect {{name}}: {{formatted}} source is paused and agents can't use it",
-        "reconnectBoth_other": "Reconnect {{name}}: {{formatted}} sources are paused and agents can't use it",
-        "navDot": "A connection needs attention"
+        "reconnectBoth_one": "Reconnect {{name}}: {{formatted}} item stopped syncing and agents can't use it",
+        "reconnectBoth_other": "Reconnect {{name}}: {{formatted}} items stopped syncing and agents can't use it",
+        "navDot": "A connection needs attention",
+        "signInAgain": "Sign in again",
+        "pickerNotice": "{{name}} needs you to sign in again."
       },
       "error": {
         "decrypt": "Stored credentials could not be decrypted. Reconnect to continue.",
@@ -1460,10 +1477,11 @@
         "endpointUrl": "Custom Endpoint URL (optional)",
         "initialContent": "Initial content (optional)"
       },
-      "groupUploadWeb": "Upload and web",
+      "groupUploadWeb": "No account needed",
       "groupConnection": "From a connection",
       "tileConnectedAs": "Connected as {{account}}",
-      "newCredentials": "Enter new credentials"
+      "newCredentials": "Enter new credentials",
+      "tileNotConnected": "Not connected"
     },
     "createAPIKey": {
       "label": "Create New API Key",
@@ -1681,8 +1699,8 @@
       "view_more_one": "{{count}} more source",
       "view_more_other": "{{count}} more sources",
       "noSourcesAvailable": "No knowledge yet",
-      "selectedCount": "{{count}} sources selected",
-      "groupOwn": "Your sources",
+      "selectedCount": "{{count}} selected",
+      "groupOwn": "Yours",
       "groupTeam": "Shared with team",
       "connectMore": "Connect more",
       "fromConnector": "From {{name}}",

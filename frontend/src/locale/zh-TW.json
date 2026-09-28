@@ -429,7 +429,9 @@
       "editChunkDescription": "{{file}} · 第 {{n}} 個文本塊 · {{tokens}} Token",
       "previousChunk": "上一個文本塊",
       "nextChunk": "下一個文本塊",
-      "paused": "同步已暫停。重新連線 {{name}} 以繼續。"
+      "paused": "同步已暫停。重新連線 {{name}} 以繼續。",
+      "emptyHint": "上傳檔案、新增網站，或連接一個服務來同步它的內容。",
+      "connectService": "連接服務"
     },
     "analytics": {
       "label": "分析",
@@ -852,7 +854,8 @@
       "groupBuiltIn": "內建",
       "groupService": "來自服務",
       "browseConnectors": "瀏覽所有連接器",
-      "viaConnection": "透過 {{name}}"
+      "viaConnection": "透過 {{name}}",
+      "off": "已關閉"
     },
     "devices": {
       "label": "裝置",
@@ -1100,8 +1103,10 @@
         "dev": "開發者工具",
         "messaging": "訊息",
         "database": "資料庫",
-        "search": "搜尋",
-        "custom": "自訂"
+        "search": "搜尋與網頁",
+        "custom": "自訂",
+        "projects": "專案與事項",
+        "business": "付款與商務"
       },
       "capability": {
         "sync": "同步",
@@ -1180,19 +1185,27 @@
         "syncStarted": "正在同步 {{name}}…",
         "syncFailed": "無法開始同步。請再試一次。",
         "toolSwitch": "{{name}} 開啟",
-        "toolSwitchFailed": "無法變更工具。請再試一次。"
+        "toolSwitchFailed": "無法變更工具。請再試一次。",
+        "account": "帳號：{{account}}",
+        "expired": "登入已過期。重新連線以繼續使用此連線。",
+        "broken": "此連線已停止運作。重新連線以再試一次。"
       },
       "permission": {
-        "always": "一律允許",
-        "ask": "需要核准",
+        "always": "允許",
+        "ask": "先詢問",
         "off": "關閉",
         "label": "{{action}} 的權限",
-        "saveFailed": "無法儲存權限。請再試一次。"
+        "saveFailed": "無法儲存權限。請再試一次。",
+        "groupLabel": "{{group}} 的全部權限",
+        "fold": "隱藏動作",
+        "hint": "先詢問：在聊天中，DocsGPT 會在執行動作前詢問你。透過代理的 API 或小工具時沒有人能回答，因此除非代理的 API 寫入允許清單包含這些動作，否則它們會被拒絕。",
+        "actionCount_other": "{{formatted}} 個動作",
+        "customize_other": "分別設定 {{formatted}} 個"
       },
       "disconnect": {
         "title": "要中斷 {{name}} 的連線嗎？",
         "body_zero": "在重新連線之前，此連線的工具將無法使用。",
-        "body_other": "你的 {{formatted}} 個來源會保留內容，但會停止同步。在重新連線之前，此連線的工具將無法使用。",
+        "body_other": "已同步的 {{formatted}} 項會保留在知識庫中，但不再更新。此連線的工具在重新連線前無法使用。",
         "failed": "無法中斷連線。請再試一次。"
       },
       "fields": {
@@ -1221,9 +1234,9 @@
         "skip": "暫時略過",
         "syncFrequency": "同步",
         "doneTitle": "{{name}} 已連線",
-        "doneSummary": "已以 {{account}} 連線。{{sources}}同步中，{{tools}}已就緒。",
+        "doneSummary": "已以 {{account}} 身分連線。{{sources}} 正在同步到知識庫，{{tools}} 已就緒。",
         "doneSummaryNone": "已以 {{account}} 連線。",
-        "sourcesCount_other": "{{formatted}} 個來源",
+        "sourcesCount_other": "{{formatted}} 項",
         "toolsCount_other": "{{formatted}} 個工具",
         "toolsHeading": "工具（{{formatted}}）",
         "tryInChat": "在聊天中試試",
@@ -1231,8 +1244,8 @@
         "connectFailed": "無法連線。請檢查資料後再試一次。",
         "syncFailed": "無法開始同步。請再試一次。",
         "connectedWithKey": "已使用結尾為 {{hint}} 的金鑰連線。",
-        "doneCounts": "{{sources}}同步中，{{tools}}已就緒。",
-        "doneSources": "{{sources}}同步中。",
+        "doneCounts": "{{sources}} 正在同步到知識庫，{{tools}} 已就緒。",
+        "doneSources": "{{sources}} 正在同步到知識庫。",
         "doneTools": "{{tools}}已就緒。",
         "waiting": "請在開啟的視窗中完成 {{name}} 登入。",
         "openSignIn": "開啟 {{name}} 登入"
@@ -1240,7 +1253,7 @@
       "remove": {
         "title": "要移除 {{name}} 嗎？",
         "description": "儲存的登入資訊將被刪除。請選擇如何處理此連線提供的內容。",
-        "sourcesLabel_other": "它的 {{formatted}} 個來源",
+        "sourcesLabel_other": "它同步到知識庫的 {{formatted}} 項",
         "keepSources": "保留內容（停止同步）",
         "deleteSources": "刪除",
         "toolsLabel_other": "它的 {{formatted}} 個工具",
@@ -1250,10 +1263,12 @@
       },
       "health": {
         "reconnect": "重新連線 {{name}} 以繼續同步。",
-        "reconnectSources_other": "請重新連線 {{name}}：{{formatted}} 個來源已暫停",
+        "reconnectSources_other": "重新連線 {{name}}：{{formatted}} 項已停止同步到知識庫",
         "reconnectTools": "請重新連線 {{name}}，讓代理可以再次使用它",
-        "reconnectBoth_other": "請重新連線 {{name}}：{{formatted}} 個來源已暫停，代理也無法使用它",
-        "navDot": "有連線需要處理"
+        "reconnectBoth_other": "重新連線 {{name}}：{{formatted}} 項已停止同步，代理也無法使用它",
+        "navDot": "有連線需要處理",
+        "signInAgain": "重新登入",
+        "pickerNotice": "{{name}} 需要你重新登入。"
       },
       "error": {
         "decrypt": "無法解密已儲存的憑證。請重新連線以繼續。",
@@ -1438,10 +1453,11 @@
         "endpointUrl": "自訂端點 URL（選填）",
         "initialContent": "初始內容（選填）"
       },
-      "groupUploadWeb": "上傳和網頁",
+      "groupUploadWeb": "不需帳號",
       "groupConnection": "來自連線",
       "tileConnectedAs": "已以 {{account}} 連線",
-      "newCredentials": "輸入新的憑證"
+      "newCredentials": "輸入新的憑證",
+      "tileNotConnected": "未連線"
     },
     "createAPIKey": {
       "label": "建立新的 API 金鑰",
@@ -1657,8 +1673,8 @@
       "link": "來源連結",
       "view_more": "查看更多 {{count}} 個來源",
       "noSourcesAvailable": "還沒有知識",
-      "selectedCount": "已選擇 {{count}} 個來源",
-      "groupOwn": "我的來源",
+      "selectedCount": "已選 {{count}} 個",
+      "groupOwn": "你的",
       "groupTeam": "團隊共享",
       "connectMore": "連線更多",
       "fromConnector": "來自 {{name}}",

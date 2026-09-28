@@ -429,7 +429,9 @@
       "editChunkDescription": "{{file}} · 第 {{n}} 个文本块 · {{tokens}} 个令牌",
       "previousChunk": "上一个文本块",
       "nextChunk": "下一个文本块",
-      "paused": "同步已暂停。重新连接 {{name}} 以继续。"
+      "paused": "同步已暂停。重新连接 {{name}} 以继续。",
+      "emptyHint": "上传文件、添加网站，或连接一个服务来同步它的内容。",
+      "connectService": "连接服务"
     },
     "analytics": {
       "label": "分析",
@@ -852,7 +854,8 @@
       "groupBuiltIn": "内置",
       "groupService": "来自服务",
       "browseConnectors": "浏览所有连接器",
-      "viaConnection": "通过 {{name}}"
+      "viaConnection": "通过 {{name}}",
+      "off": "已关闭"
     },
     "devices": {
       "label": "设备",
@@ -1100,8 +1103,10 @@
         "dev": "开发者工具",
         "messaging": "消息",
         "database": "数据库",
-        "search": "搜索",
-        "custom": "自定义"
+        "search": "搜索与网页",
+        "custom": "自定义",
+        "projects": "项目与事务",
+        "business": "支付与业务"
       },
       "capability": {
         "sync": "同步",
@@ -1180,19 +1185,27 @@
         "syncStarted": "正在同步 {{name}}…",
         "syncFailed": "无法开始同步。请重试。",
         "toolSwitch": "{{name}} 开启",
-        "toolSwitchFailed": "无法更改工具。请重试。"
+        "toolSwitchFailed": "无法更改工具。请重试。",
+        "account": "账号：{{account}}",
+        "expired": "登录已过期。重新连接以继续使用此连接。",
+        "broken": "此连接已停止工作。重新连接以再试一次。"
       },
       "permission": {
-        "always": "始终允许",
-        "ask": "需要批准",
+        "always": "允许",
+        "ask": "先询问",
         "off": "关闭",
         "label": "{{action}} 的权限",
-        "saveFailed": "无法保存权限。请重试。"
+        "saveFailed": "无法保存权限。请重试。",
+        "groupLabel": "{{group}} 的全部权限",
+        "fold": "隐藏操作",
+        "hint": "先询问：在聊天中，DocsGPT 会在执行操作前询问你。通过智能体的 API 或小组件时没有人能回答，因此除非智能体的 API 写入允许列表包含这些操作，否则它们会被拒绝。",
+        "actionCount_other": "{{formatted}} 个操作",
+        "customize_other": "分别设置 {{formatted}} 个"
       },
       "disconnect": {
         "title": "断开 {{name}}？",
         "body_zero": "在重新连接之前，此连接的工具将无法使用。",
-        "body_other": "你的 {{formatted}} 个来源会保留内容，但将停止同步。在重新连接之前，此连接的工具将无法使用。",
+        "body_other": "已同步的 {{formatted}} 项会保留在知识库中，但不再更新。此连接的工具在重新连接前无法使用。",
         "failed": "无法断开连接。请重试。"
       },
       "fields": {
@@ -1221,9 +1234,9 @@
         "skip": "暂时跳过",
         "syncFrequency": "同步",
         "doneTitle": "{{name}} 已连接",
-        "doneSummary": "已作为 {{account}} 连接。{{sources}}正在同步，{{tools}}已就绪。",
+        "doneSummary": "已以 {{account}} 身份连接。{{sources}} 正在同步到知识库，{{tools}} 已就绪。",
         "doneSummaryNone": "已作为 {{account}} 连接。",
-        "sourcesCount_other": "{{formatted}} 个来源",
+        "sourcesCount_other": "{{formatted}} 项",
         "toolsCount_other": "{{formatted}} 个工具",
         "toolsHeading": "工具（{{formatted}}）",
         "tryInChat": "在聊天中试试",
@@ -1231,8 +1244,8 @@
         "connectFailed": "无法连接。请检查信息后重试。",
         "syncFailed": "无法开始同步。请重试。",
         "connectedWithKey": "已使用以 {{hint}} 结尾的密钥连接。",
-        "doneCounts": "{{sources}}正在同步，{{tools}}已就绪。",
-        "doneSources": "{{sources}}正在同步。",
+        "doneCounts": "{{sources}} 正在同步到知识库，{{tools}} 已就绪。",
+        "doneSources": "{{sources}} 正在同步到知识库。",
         "doneTools": "{{tools}}已就绪。",
         "waiting": "请在打开的窗口中完成 {{name}} 登录。",
         "openSignIn": "打开 {{name}} 登录"
@@ -1240,7 +1253,7 @@
       "remove": {
         "title": "移除 {{name}}？",
         "description": "保存的登录信息将被删除。请选择如何处理此连接提供的内容。",
-        "sourcesLabel_other": "它的 {{formatted}} 个来源",
+        "sourcesLabel_other": "它同步到知识库的 {{formatted}} 项",
         "keepSources": "保留内容（停止同步）",
         "deleteSources": "删除",
         "toolsLabel_other": "它的 {{formatted}} 个工具",
@@ -1250,10 +1263,12 @@
       },
       "health": {
         "reconnect": "重新连接 {{name}} 以继续同步。",
-        "reconnectSources_other": "请重新连接 {{name}}：{{formatted}} 个来源已暂停",
+        "reconnectSources_other": "重新连接 {{name}}：{{formatted}} 项已停止同步到知识库",
         "reconnectTools": "请重新连接 {{name}}，让智能体可以再次使用它",
-        "reconnectBoth_other": "请重新连接 {{name}}：{{formatted}} 个来源已暂停，智能体也无法使用它",
-        "navDot": "有连接需要处理"
+        "reconnectBoth_other": "重新连接 {{name}}：{{formatted}} 项已停止同步，智能体也无法使用它",
+        "navDot": "有连接需要处理",
+        "signInAgain": "重新登录",
+        "pickerNotice": "{{name}} 需要你重新登录。"
       },
       "error": {
         "decrypt": "无法解密保存的凭据。请重新连接以继续。",
@@ -1438,10 +1453,11 @@
         "endpointUrl": "自定义端点 URL（可选）",
         "initialContent": "初始内容（可选）"
       },
-      "groupUploadWeb": "上传和网页",
+      "groupUploadWeb": "无需账号",
       "groupConnection": "来自连接",
       "tileConnectedAs": "已作为 {{account}} 连接",
-      "newCredentials": "输入新的凭据"
+      "newCredentials": "输入新的凭据",
+      "tileNotConnected": "未连接"
     },
     "createAPIKey": {
       "label": "创建新的 API 密钥",
@@ -1657,8 +1673,8 @@
       "link": "来源链接",
       "view_more": "还有{{count}}个来源",
       "noSourcesAvailable": "还没有知识",
-      "selectedCount": "已选择 {{count}} 个来源",
-      "groupOwn": "我的来源",
+      "selectedCount": "已选 {{count}} 个",
+      "groupOwn": "你的",
       "groupTeam": "团队共享",
       "connectMore": "连接更多",
       "fromConnector": "来自 {{name}}",

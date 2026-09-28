@@ -438,7 +438,9 @@
       "editChunkDescription": "{{file}} · fragmento {{n}} · {{tokens}} tokens",
       "previousChunk": "Fragmento anterior",
       "nextChunk": "Fragmento siguiente",
-      "paused": "Sincronización en pausa. Reconecta {{name}} para reanudarla."
+      "paused": "Sincronización en pausa. Reconecta {{name}} para reanudarla.",
+      "emptyHint": "Sube archivos, añade un sitio web o conecta un servicio para sincronizar su contenido.",
+      "connectService": "Conectar un servicio"
     },
     "analytics": {
       "label": "Analítica",
@@ -861,7 +863,8 @@
       "groupBuiltIn": "Integradas",
       "groupService": "De un servicio",
       "browseConnectors": "Ver todos los conectores",
-      "viaConnection": "mediante {{name}}"
+      "viaConnection": "mediante {{name}}",
+      "off": "Desactivada"
     },
     "devices": {
       "label": "Dispositivos",
@@ -1109,8 +1112,10 @@
         "dev": "Herramientas de desarrollo",
         "messaging": "Mensajería",
         "database": "Bases de datos",
-        "search": "Búsqueda",
-        "custom": "Personalizados"
+        "search": "Búsqueda y web",
+        "custom": "Personalizados",
+        "projects": "Proyectos e incidencias",
+        "business": "Pagos y negocio"
       },
       "capability": {
         "sync": "Sincronizar",
@@ -1189,20 +1194,30 @@
         "syncStarted": "Sincronizando {{name}}…",
         "syncFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo.",
         "toolSwitch": "{{name}} activado",
-        "toolSwitchFailed": "No se pudo cambiar la herramienta. Inténtalo de nuevo."
+        "toolSwitchFailed": "No se pudo cambiar la herramienta. Inténtalo de nuevo.",
+        "account": "Cuenta: {{account}}",
+        "expired": "El inicio de sesión caducó. Reconecta para seguir usando esta conexión.",
+        "broken": "Esta conexión dejó de funcionar. Reconecta para intentarlo de nuevo."
       },
       "permission": {
-        "always": "Permitir siempre",
-        "ask": "Requiere aprobación",
-        "off": "Desactivada",
+        "always": "Permitir",
+        "ask": "Preguntar antes",
+        "off": "Desactivado",
         "label": "Permiso para {{action}}",
-        "saveFailed": "No se pudo guardar el permiso. Inténtalo de nuevo."
+        "saveFailed": "No se pudo guardar el permiso. Inténtalo de nuevo.",
+        "groupLabel": "Permiso para todo en {{group}}",
+        "fold": "Ocultar acciones",
+        "hint": "Preguntar antes: en el chat, DocsGPT te pregunta antes de ejecutar la acción. En la API o el widget de un agente nadie puede responder, así que esas acciones se rechazan salvo que la lista de escrituras por API del agente las incluya.",
+        "actionCount_one": "{{formatted}} acción",
+        "actionCount_other": "{{formatted}} acciones",
+        "customize_one": "Ajustar la acción",
+        "customize_other": "Ajustar cada una de {{formatted}}"
       },
       "disconnect": {
         "title": "¿Desconectar {{name}}?",
         "body_zero": "Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
-        "body_one": "Tu fuente conserva su contenido pero deja de sincronizarse. Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
-        "body_other": "Tus {{formatted}} fuentes conservan su contenido pero dejan de sincronizarse. Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
+        "body_one": "El elemento que sincronizó sigue en Conocimiento, pero deja de actualizarse. Las herramientas de esta conexión dejan de funcionar hasta que reconectes.",
+        "body_other": "Los {{formatted}} elementos que sincronizó siguen en Conocimiento, pero dejan de actualizarse. Las herramientas de esta conexión dejan de funcionar hasta que reconectes.",
         "failed": "No se pudo desconectar. Inténtalo de nuevo."
       },
       "fields": {
@@ -1231,10 +1246,10 @@
         "skip": "Omitir por ahora",
         "syncFrequency": "Sincronizar",
         "doneTitle": "{{name}} está conectado",
-        "doneSummary": "Conectado como {{account}}. {{sources}} sincronizando, {{tools}} listas.",
+        "doneSummary": "Conectado como {{account}}. {{sources}} sincronizándose en Conocimiento, {{tools}} listas.",
         "doneSummaryNone": "Conectado como {{account}}.",
-        "sourcesCount_one": "{{formatted}} fuente",
-        "sourcesCount_other": "{{formatted}} fuentes",
+        "sourcesCount_one": "{{formatted}} elemento",
+        "sourcesCount_other": "{{formatted}} elementos",
         "toolsCount_one": "{{formatted}} herramienta",
         "toolsCount_other": "{{formatted}} herramientas",
         "toolsHeading": "Herramientas ({{formatted}})",
@@ -1243,8 +1258,8 @@
         "connectFailed": "No se pudo conectar. Revisa los datos e inténtalo de nuevo.",
         "syncFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo.",
         "connectedWithKey": "Conectado con la clave que termina en {{hint}}.",
-        "doneCounts": "{{sources}} sincronizando, {{tools}} listas.",
-        "doneSources": "{{sources}} sincronizando.",
+        "doneCounts": "{{sources}} sincronizándose en Conocimiento, {{tools}} listas.",
+        "doneSources": "{{sources}} sincronizándose en Conocimiento.",
         "doneTools": "{{tools}} listas.",
         "waiting": "Termina de iniciar sesión en {{name}} en la ventana que se abrió.",
         "openSignIn": "Abrir el inicio de sesión de {{name}}"
@@ -1252,8 +1267,8 @@
       "remove": {
         "title": "¿Eliminar {{name}}?",
         "description": "Se borra el inicio de sesión guardado. Elige qué pasa con lo que alimenta esta conexión.",
-        "sourcesLabel_one": "Su fuente",
-        "sourcesLabel_other": "Sus {{formatted}} fuentes",
+        "sourcesLabel_one": "El elemento que sincronizó en Conocimiento",
+        "sourcesLabel_other": "Los {{formatted}} elementos que sincronizó en Conocimiento",
         "keepSources": "Conservar el contenido (dejar de sincronizar)",
         "deleteSources": "Eliminar",
         "toolsLabel_one": "Su herramienta",
@@ -1264,12 +1279,14 @@
       },
       "health": {
         "reconnect": "Reconecta {{name}} para seguir sincronizando.",
-        "reconnectSources_one": "Vuelve a conectar {{name}}: {{formatted}} fuente está en pausa",
-        "reconnectSources_other": "Vuelve a conectar {{name}}: {{formatted}} fuentes están en pausa",
+        "reconnectSources_one": "Reconecta {{name}}: {{formatted}} elemento dejó de sincronizarse en Conocimiento",
+        "reconnectSources_other": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse en Conocimiento",
         "reconnectTools": "Vuelve a conectar {{name}} para que los agentes puedan usarlo de nuevo",
-        "reconnectBoth_one": "Vuelve a conectar {{name}}: {{formatted}} fuente está en pausa y los agentes no pueden usarlo",
-        "reconnectBoth_other": "Vuelve a conectar {{name}}: {{formatted}} fuentes están en pausa y los agentes no pueden usarlo",
-        "navDot": "Una conexión necesita atención"
+        "reconnectBoth_one": "Reconecta {{name}}: {{formatted}} elemento dejó de sincronizarse y los agentes no pueden usarlo",
+        "reconnectBoth_other": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse y los agentes no pueden usarlo",
+        "navDot": "Una conexión necesita atención",
+        "signInAgain": "Vuelve a iniciar sesión",
+        "pickerNotice": "{{name}} necesita que vuelvas a iniciar sesión."
       },
       "error": {
         "decrypt": "No se pudieron descifrar las credenciales guardadas. Reconecta para continuar.",
@@ -1454,10 +1471,11 @@
         "endpointUrl": "URL de endpoint personalizada (opcional)",
         "initialContent": "Contenido inicial (opcional)"
       },
-      "groupUploadWeb": "Subida y web",
+      "groupUploadWeb": "Sin cuenta",
       "groupConnection": "Desde una conexión",
       "tileConnectedAs": "Conectado como {{account}}",
-      "newCredentials": "Introducir credenciales nuevas"
+      "newCredentials": "Introducir credenciales nuevas",
+      "tileNotConnected": "Sin conectar"
     },
     "createAPIKey": {
       "label": "Crear Nueva Clave de API",
@@ -1675,8 +1693,8 @@
       "view_more_one": "Ver {{count}} fuente más",
       "view_more_other": "Ver {{count}} fuentes más",
       "noSourcesAvailable": "Aún no hay conocimiento",
-      "selectedCount": "{{count}} fuentes seleccionadas",
-      "groupOwn": "Tus fuentes",
+      "selectedCount": "{{count}} seleccionados",
+      "groupOwn": "Tuyos",
       "groupTeam": "Compartidas con el equipo",
       "connectMore": "Conectar más",
       "fromConnector": "De {{name}}",
