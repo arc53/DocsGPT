@@ -142,3 +142,33 @@ def test_oauth_resource_is_the_full_mcp_endpoint():
     assert check_resource_allowed(requested_resource=requested, configured_resource="https://mcp.linear.app")
     # Stored tokens stay keyed by the server's origin.
     assert oauth.context.storage.server_url == "https://mcp.linear.app"
+
+
+def test_callback_hands_the_sdk_an_authorization_result():
+    """The MCP SDK reads ``.code``, ``.state`` and the RFC 9207 ``.iss`` off the
+    callback's result; Linear advertises ``iss`` and refuses a sign-in without it."""
+    import asyncio
+
+    from mcp.shared.auth import AuthorizationCodeResult
+
+    from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+
+    stored = {
+        "mcp_oauth:code:st": b"the-code",
+        "mcp_oauth:iss:st": b"https://mcp.linear.app",
+    }
+    redis_client = MagicMock()
+    redis_client.get.side_effect = stored.get
+    oauth = DocsGPTOAuth(
+        mcp_url="https://mcp.linear.app/mcp",
+        redis_client=redis_client,
+        redirect_uri="https://example.com/callback",
+        user_id="user1",
+    )
+    oauth.extracted_state = "st"
+
+    result = asyncio.run(oauth.callback_handler())
+
+    assert isinstance(result, AuthorizationCodeResult)
+    assert (result.code, result.state, result.iss) == ("the-code", "st", "https://mcp.linear.app")
+    redis_client.delete.assert_any_call("mcp_oauth:iss:st")

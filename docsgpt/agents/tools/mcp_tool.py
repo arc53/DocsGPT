@@ -15,7 +15,12 @@ from fastmcp.client.transports import (
     StreamableHttpTransport,
 )
 from mcp.client.auth import OAuthClientProvider, TokenStorage
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.shared.auth import (
+    AuthorizationCodeResult,
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthToken,
+)
 from pydantic import AnyHttpUrl, ValidationError
 from redis import Redis
 
@@ -811,8 +816,13 @@ class DocsGPTOAuth(OAuthClientProvider):
                     exc_info=True,
                 )
 
-    async def callback_handler(self) -> tuple[str, str | None]:
-        """Wait for auth code from Redis using the state value."""
+    async def callback_handler(self) -> AuthorizationCodeResult:
+        """Wait for auth code from Redis using the state value.
+
+        Returns:
+            The code, the state it came back with, and the RFC 9207 issuer
+            when the authorization server sent one.
+        """
         if not self.redis_client or not self.extracted_state:
             raise Exception("Redis client or state not configured for OAuth")
         poll_interval = 1
@@ -825,15 +835,22 @@ class DocsGPTOAuth(OAuthClientProvider):
             if code_data:
                 code = code_data.decode()
                 returned_state = self.extracted_state
+                iss_key = f"{self.redis_prefix}iss:{self.extracted_state}"
+                iss_data = self.redis_client.get(iss_key)
 
                 self.redis_client.delete(code_key)
+                self.redis_client.delete(iss_key)
                 self.redis_client.delete(
                     f"{self.redis_prefix}auth_url:{self.extracted_state}"
                 )
                 self.redis_client.delete(
                     f"{self.redis_prefix}state:{self.extracted_state}"
                 )
-                return code, returned_state
+                return AuthorizationCodeResult(
+                    code=code,
+                    state=returned_state,
+                    iss=iss_data.decode() if iss_data else None,
+                )
             error_key = f"{self.redis_prefix}error:{self.extracted_state}"
             error_data = self.redis_client.get(error_key)
             if error_data:
@@ -869,7 +886,7 @@ class NonInteractiveOAuth(DocsGPTOAuth):
             "OAuth session expired — please re-authorize this MCP server in tool settings."
         )
 
-    async def callback_handler(self) -> tuple[str, str | None]:
+    async def callback_handler(self) -> AuthorizationCodeResult:
         raise Exception(
             "OAuth session expired — please re-authorize this MCP server in tool settings."
         )
@@ -1037,7 +1054,7 @@ class MCPOAuthManager:
         self.redis_prefix = redis_prefix
 
     def handle_oauth_callback(
-        self, state: str, code: str, error: Optional[str] = None
+        self, state: str, code: str, error: Optional[str] = None, iss: Optional[str] = None
     ) -> bool:
         """
         Handle OAuth callback from provider.
@@ -1046,6 +1063,7 @@ class MCPOAuthManager:
             state: The state parameter from OAuth callback
             code: The authorization code from OAuth callback
             error: Error message if OAuth failed
+            iss: The RFC 9207 issuer from the callback, if the server sent one
 
         Returns:
             True if successful, False otherwise
@@ -1057,6 +1075,9 @@ class MCPOAuthManager:
                 error_key = f"{self.redis_prefix}error:{state}"
                 self.redis_client.setex(error_key, 300, error)
                 raise Exception(f"OAuth error received: {error}")
+            # The issuer goes first: the waiting sign-in reads it once the code lands.
+            if iss:
+                self.redis_client.setex(f"{self.redis_prefix}iss:{state}", 300, iss)
             code_key = f"{self.redis_prefix}code:{state}"
             self.redis_client.setex(code_key, 300, code)
 

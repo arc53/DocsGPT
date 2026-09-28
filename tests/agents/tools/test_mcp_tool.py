@@ -840,6 +840,15 @@ class TestMCPOAuthManager:
         assert result is True
         mock_redis.setex.assert_called()
 
+    def test_handle_callback_keeps_the_issuer(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        mock_redis = MagicMock()
+        manager = MCPOAuthManager(mock_redis)
+
+        assert manager.handle_oauth_callback(state="s", code="c", iss="https://issuer.example") is True
+        mock_redis.setex.assert_any_call("mcp_oauth:iss:s", 300, "https://issuer.example")
+
     def test_handle_callback_no_redis(self):
         from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
 
@@ -2026,8 +2035,11 @@ class TestDocsGPTOAuthExtended:
         mock_db.__getitem__ = MagicMock(return_value=mock_collection)
 
         mock_redis = MagicMock()
-        # First get returns the code
-        mock_redis.get.return_value = b"auth_code_123"
+        stored = {
+            "mcp_oauth:code:mystate": b"auth_code_123",
+            "mcp_oauth:iss:mystate": b"https://auth.example.com",
+        }
+        mock_redis.get.side_effect = stored.get
 
         oauth = DocsGPTOAuth(
             mcp_url="https://mcp.example.com/api",
@@ -2043,9 +2055,11 @@ class TestDocsGPTOAuthExtended:
 
         loop = asyncio.new_event_loop()
         try:
-            code, state = loop.run_until_complete(oauth.callback_handler())
-            assert code == "auth_code_123"
-            assert state == "mystate"
+            # The MCP SDK reads ``.code``, ``.state`` and the RFC 9207 ``.iss``.
+            result = loop.run_until_complete(oauth.callback_handler())
+            assert result.code == "auth_code_123"
+            assert result.state == "mystate"
+            assert result.iss == "https://auth.example.com"
         finally:
             loop.close()
 

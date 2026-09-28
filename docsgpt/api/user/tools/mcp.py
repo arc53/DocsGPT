@@ -539,7 +539,7 @@ class MCPOAuthCallback(Resource):
                     "/api/connectors/callback-status?status=error&message=Internal+server+error:+Redis+not+available.&provider=mcp_tool"
                 )
             manager = MCPOAuthManager(redis_client)
-            success = manager.handle_oauth_callback(state, code, error)
+            success = manager.handle_oauth_callback(state, code, error, iss=request.args.get("iss"))
             if success:
                 return redirect(
                     "/api/connectors/callback-status?status=success&message=Authorization+code+received+successfully.+You+can+close+this+window.&provider=mcp_tool"

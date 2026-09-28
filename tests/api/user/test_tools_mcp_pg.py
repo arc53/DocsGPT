@@ -502,3 +502,23 @@ class TestMCPAuthStatus:
             request.decoded_token = None
             response = MCPAuthStatus().get()
         assert response.status_code == 401
+
+
+class TestMCPOAuthCallbackIssuer:
+    def test_passes_the_issuer_to_the_waiting_sign_in(self, app):
+        from docsgpt.api.user.tools.mcp import MCPOAuthCallback
+
+        manager = MagicMock()
+        manager.handle_oauth_callback.return_value = True
+        with patch(
+            "docsgpt.api.user.tools.mcp.get_redis_instance", return_value=MagicMock(),
+        ), patch(
+            "docsgpt.api.user.tools.mcp.MCPOAuthManager", return_value=manager,
+        ), app.test_request_context(
+            "/api/mcp_server/callback?code=c&state=s&iss=https%3A%2F%2Fmcp.linear.app",
+        ):
+            response = MCPOAuthCallback().get()
+        assert response.status_code == 302
+        manager.handle_oauth_callback.assert_called_once_with(
+            "s", "c", None, iss="https://mcp.linear.app",
+        )
