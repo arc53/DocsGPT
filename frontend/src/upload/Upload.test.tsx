@@ -169,6 +169,48 @@ describe('Upload source-type tiles', () => {
     connectorsState.connections = [];
   });
 
+  it('picks the saved account once connections finish loading', async () => {
+    connectorsState.catalog = [
+      {
+        key: 's3',
+        icon: 's3',
+        sync_ingestor: 's3',
+        auth_kind: 'api_key',
+        available: true,
+        missing_settings: [],
+        credential_fields: [
+          { key: 'aws_access_key_id', label: 'Access key ID', secret: false },
+        ],
+      },
+    ];
+    const props = {
+      receivedFile: [],
+      setModalState: vi.fn(),
+      isOnboarding: false,
+      renderTab: null,
+      close: vi.fn(),
+      initialIngestor: 's3' as const,
+    };
+    await act(async () => root.render(<Upload {...props} />));
+    const triggers = () =>
+      Array.from(
+        document.body.querySelectorAll('[data-slot="select-trigger"]'),
+      ).map((el) => el.textContent);
+    expect(triggers()).not.toContain('modals.uploadDoc.newCredentials');
+    connectorsState.connections = [
+      {
+        id: 'k1',
+        connector_key: 's3',
+        status: 'connected',
+        account_label: '…WXYZ',
+      },
+    ];
+    await act(async () => root.render(<Upload {...props} />));
+    expect(triggers()).toContain('settings.connectors.detail.keyEnding');
+    connectorsState.catalog = [];
+    connectorsState.connections = [];
+  });
+
   it('leaves the disabled Train button on the default variant', async () => {
     await render();
     const crawler = tiles().find((tile) =>

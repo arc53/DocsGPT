@@ -1,7 +1,7 @@
 import { ChevronLeft, CircleAlert, FileText } from 'lucide-react';
 import { envVar } from '@/env';
 import { cn } from '@/lib/utils';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import type { FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
@@ -179,7 +179,10 @@ function Upload({
           <UiFormField label={t('filePicker.account')}>
             <Select
               value={connectionId ?? 'new'}
-              onValueChange={(value) => setConnectionId(value)}
+              onValueChange={(value) => {
+                accountPicked.current = true;
+                setConnectionId(value);
+              }}
             >
               <SelectTrigger className="w-full" size="field" shape="pill">
                 <SelectValue />
@@ -538,14 +541,20 @@ function Upload({
   const usingSavedKeys =
     keyAccounts.length > 0 && !!connectionId && connectionId !== 'new';
 
+  // Default to the first saved account, also when the connections arrive
+  // after the modal opened on S3 or Reddit, but never over a choice the
+  // user made in the account picker.
+  const accountPicked = useRef(false);
+  const firstKeyAccount = keyAccounts[0]?.id;
   useEffect(() => {
-    if (selectedConnector?.auth_kind === 'api_key') {
-      setConnectionId(keyAccounts[0]?.id ?? 'new');
-    } else {
-      setConnectionId(null);
-    }
-    // Reset only when the source type changes.
+    accountPicked.current = false;
+    setConnectionId(null);
   }, [ingestor.type]);
+  useEffect(() => {
+    if (selectedConnector?.auth_kind !== 'api_key' || accountPicked.current)
+      return;
+    setConnectionId(firstKeyAccount ?? 'new');
+  }, [ingestor.type, selectedConnector?.auth_kind, firstKeyAccount]);
 
   const ingestorOptions: IngestorOption[] = IngestorFormSchemas.map(
     (schema) => ({

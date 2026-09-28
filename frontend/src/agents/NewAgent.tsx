@@ -636,7 +636,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         return t('agents.form.toolsPopup.groupCustom');
       };
       const tools: MultiSelectPopoverItem[] = [...visibleTools]
-        .sort((a, b) => rank(a) - rank(b))
+        .sort(
+          (a, b) =>
+            rank(a) - rank(b) ||
+            // Keeps each connection's tools together.
+            (rank(a) === 2 ? groupFor(a).localeCompare(groupFor(b)) : 0),
+        )
         .map((tool: UserToolType) => {
           const connection = connectionOf(tool);
           const base: MultiSelectPopoverItem = {
@@ -666,15 +671,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           }
           return base;
         });
-      const groupOrder = [
-        t('agents.form.toolsPopup.groupBuiltin'),
-        t('agents.form.toolsPopup.groupDefault'),
-        t('agents.form.toolsPopup.groupCustom'),
-      ];
-      tools.sort(
-        (a, b) =>
-          groupOrder.indexOf(a.group || '') - groupOrder.indexOf(b.group || ''),
-      );
       setUserTools(tools);
       setRawUserTools(visibleTools);
     };

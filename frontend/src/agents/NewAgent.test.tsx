@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => {
     dispatch: vi.fn(),
     getAgent: vi.fn(() => jsonResponse({})),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
+    tools: null as unknown[] | null,
+    connections: [] as unknown[],
   };
 });
 const { jsonResponse } = mocks;
@@ -40,7 +42,7 @@ vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: () =>
       jsonResponse({
-        tools: [
+        tools: mocks.tools ?? [
           {
             id: 'tool-1',
             name: 'remote_device',
@@ -69,7 +71,7 @@ vi.mock('../api/services/devicesService', () => ({
 
 vi.mock('../api/services/connectorsService', () => ({
   default: {
-    listConnections: () => Promise.resolve({ connections: [] }),
+    listConnections: () => Promise.resolve({ connections: mocks.connections }),
   },
 }));
 
@@ -93,7 +95,9 @@ vi.mock('../components/MultiSelectPopover', () => ({
     <div data-testid="picker">
       {trigger}
       {items.map((item) => (
-        <div key={item.id}>{item.descriptionNode}</div>
+        <div key={item.id} data-group={item.group}>
+          {item.descriptionNode}
+        </div>
       ))}
     </div>
   ),
@@ -164,6 +168,8 @@ describe('NewAgent form', () => {
     mocks.dispatch.mockClear();
     mocks.getAgent.mockClear();
     mocks.createAgent.mockClear();
+    mocks.tools = null;
+    mocks.connections = [];
   });
 
   const render = async () => {
@@ -249,6 +255,46 @@ describe('NewAgent form', () => {
       .closest('[data-slot="form-field"]')!;
     expect(description.className).toContain('col-span-2');
     expect(description.className).toContain('sm:col-start-2');
+  });
+
+  it('lists tool groups as built-in, default, one per connection, then custom', async () => {
+    mocks.tools = [
+      { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      {
+        id: 'linear',
+        name: 'mcp_tool',
+        display_name: 'Linear',
+        connection_id: 'c-lin',
+      },
+      { id: 'memory', name: 'memory', display_name: 'Memory', builtin: true },
+      {
+        id: 'notion',
+        name: 'mcp_tool',
+        display_name: 'Notion',
+        connection_id: 'c-not',
+      },
+      {
+        id: 'reader',
+        name: 'read_webpage',
+        display_name: 'Reader',
+        default: true,
+      },
+    ];
+    mocks.connections = [
+      { id: 'c-lin', name: 'Linear', account_label: 'a@x', icon: 'linear' },
+      { id: 'c-not', name: 'Notion', account_label: 'b@x', icon: 'notion' },
+    ];
+    await render();
+    const groups = Array.from(
+      container.querySelectorAll('[data-testid="picker"] [data-group]'),
+    ).map((item) => item.getAttribute('data-group'));
+    const order = groups.filter((g, i) => groups.indexOf(g) === i);
+    expect(order).toEqual([
+      'agents.form.toolsPopup.groupBuiltin',
+      'agents.form.toolsPopup.groupDefault',
+      'agents.form.toolsPopup.groupConnection',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
   });
 
   it('labels every picker with a floating label', async () => {
