@@ -1277,6 +1277,30 @@ class TestResolveRedirectUriExtended:
         })
         assert tool.redirect_uri == "https://custom.redirect/callback"
 
+    def test_setting_wins_over_the_redirect_the_page_sends(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        # A page opened on a plain-HTTP address sends its own origin; the
+        # operator's HTTPS callback is the one servers accept.
+        monkeypatch.setattr(settings, "MCP_OAUTH_REDIRECT_URI", "https://docs.example.com/api/mcp_server/callback")
+        tool = _make_tool({
+            "server_url": "https://mcp.example.com",
+            "auth_type": "none",
+            "redirect_uri": "http://10.0.0.5:7091/api/mcp_server/callback",
+        })
+        assert tool.redirect_uri == "https://docs.example.com/api/mcp_server/callback"
+
+    def test_page_redirect_used_without_the_setting(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "MCP_OAUTH_REDIRECT_URI", None, raising=False)
+        tool = _make_tool({
+            "server_url": "https://mcp.example.com",
+            "auth_type": "none",
+            "redirect_uri": "https://app.example.com/api/mcp_server/callback/",
+        })
+        assert tool.redirect_uri == "https://app.example.com/api/mcp_server/callback"
+
     def test_connector_redirect_base_uri_setting(self, monkeypatch):
         from docsgpt.core.settings import settings
 

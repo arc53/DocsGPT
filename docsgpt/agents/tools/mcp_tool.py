@@ -124,12 +124,15 @@ class MCPTool(Tool):
             raise ValueError(f"Invalid MCP server URL: {exc}") from exc
 
     def _resolve_redirect_uri(self, configured_redirect_uri: Optional[str]) -> str:
-        if configured_redirect_uri:
-            return configured_redirect_uri.rstrip("/")
-
+        # The operator's setting wins over the page's own origin: a page opened
+        # on a plain-HTTP address would otherwise register a callback that
+        # servers such as Linear refuse.
         explicit = settings.MCP_OAUTH_REDIRECT_URI
         if explicit:
             return explicit.rstrip("/")
+
+        if configured_redirect_uri:
+            return configured_redirect_uri.rstrip("/")
 
         connector_base = settings.CONNECTOR_REDIRECT_BASE_URI
         if connector_base:
