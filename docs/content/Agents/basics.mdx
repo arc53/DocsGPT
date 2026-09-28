@@ -33,7 +33,7 @@ When you create or configure an agent, you'll work with these key components:
 
 **Source:**
     * **Select source:** The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know."
-    * **Chunks per query:** A numerical value determining how many relevant text chunks from the selected source are sent to the LLM with each query. This helps manage context length and relevance.
+    * **Chunks:** How many relevant text chunks are sent to the LLM with each query, in total across the agent's sources (default 6). The agent form doesn't show it; set `chunks` when creating or updating the agent through the API, or in an imported agent YAML file (see [Agents API](/Agents/api)).
 
 **Prompt:**
 The main set of instructions or system [prompt](/Guides/Customising-prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond.

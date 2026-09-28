@@ -65,7 +65,7 @@ Common request body fields:
 | `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. |
 | `active_docs` | `string` or `string[]` | No | `/api/answer`, `/stream` | Overrides active docs when not using key-owned source config. |
 | `retriever` | `string` | No | `/api/answer`, `/stream` | Retriever type (for example `classic`). |
-| `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `2`. |
+| `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `6`: a total for the request, split across its sources. |
 | `isNoneDoc` | `boolean` | No | `/api/answer`, `/stream` | Skip document retrieval. |
 | `agent_id` | `string` | No | `/api/answer`, `/stream` | Alternative to `api_key` when using authenticated user context. |
 
