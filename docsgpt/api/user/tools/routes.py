@@ -22,7 +22,7 @@ from docsgpt.api.user.team_sharing import effective_write_owner, visible_with_ac
 from docsgpt.connectors.catalog import definition_for_tool
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
-from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.notes import NotesRepository
@@ -491,7 +491,11 @@ def _update_connection_secrets(conn, user, tool_doc, config, config_requirements
         connection = ConnectorSessionsRepository(conn).get_for_user(str(tool_doc["connection_id"]), user)
         if connection is None:
             return None
-        stored = connection_service.read_secrets(connection)
+        try:
+            stored = connection_service.read_secrets(connection)
+        except CredentialDecryptionError:
+            # Unreadable after a lost key: the new secret replaces it.
+            stored = {}
         credentials = {**(stored.get("credentials") or {}), **secrets}
         connection_service.write_secrets(
             conn, connection, {**stored, "credentials": credentials},
