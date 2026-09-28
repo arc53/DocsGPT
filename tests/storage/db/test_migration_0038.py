@@ -384,3 +384,14 @@ class TestMigration0038Credentials:
             ).scalar()
         assert read_secrets(drive)["token_info"]["access_token"] == "plain-at"
         assert count == 1
+
+
+def test_model_metadata_matches_the_policy_and_custom_model_columns():
+    """The SQLAlchemy tables mirror the migrations for both ``enabled`` columns."""
+    from docsgpt.storage.db.models import connector_policies_table, user_custom_models_table
+
+    policy_enabled = connector_policies_table.c.enabled
+    assert policy_enabled.nullable is True and policy_enabled.server_default is None
+    model_enabled = user_custom_models_table.c.enabled
+    assert model_enabled.nullable is False
+    assert str(model_enabled.server_default.arg) == "true"

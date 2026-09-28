@@ -1,5 +1,5 @@
 import { ExternalLink, Info, TriangleAlert } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
@@ -177,7 +177,10 @@ export default function Connectors() {
     load();
   }, [load]);
 
-  const save = async (body: {
+  // Saves run one after another: each response is a full snapshot, so an
+  // older one arriving last would otherwise put back a stale policy.
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const save = (body: {
     policies?: Record<string, { enabled?: boolean; credential_mode?: Policy }>;
     allow_custom_mcp?: boolean;
   }) => {
@@ -188,13 +191,16 @@ export default function Connectors() {
           message: 'Could not save the change.',
         }),
       );
-    try {
-      const next = await connectorsService.updateAdmin(body, token);
-      if (next?.success) setData(next);
-      else failed();
-    } catch {
-      failed();
-    }
+    saveQueue.current = saveQueue.current.then(async () => {
+      try {
+        const next = await connectorsService.updateAdmin(body, token);
+        if (next?.success) setData(next);
+        else failed();
+      } catch {
+        failed();
+      }
+    });
+    return saveQueue.current;
   };
 
   if (data === null && loading) return <LoadingState fill="block" />;

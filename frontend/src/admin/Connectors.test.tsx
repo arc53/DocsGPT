@@ -165,6 +165,43 @@ describe('Admin Connectors', () => {
     expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
   });
 
+  it('saves one change at a time so a late response cannot win', async () => {
+    getAdmin.mockResolvedValue(payload());
+    const pending: ((value: unknown) => void)[] = [];
+    updateAdmin.mockImplementation(
+      () => new Promise((resolve) => pending.push(resolve)),
+    );
+    await render();
+    const toggle = () =>
+      container.querySelector<HTMLButtonElement>(
+        '[aria-label="Google Drive enabled"]',
+      )!;
+    await act(async () => toggle().click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('#allow-custom-mcp')!.click(),
+    );
+    // The second save waits for the first.
+    expect(updateAdmin).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      pending[0](payload({ connectors: [connector({ enabled: false })] })),
+    );
+    expect(updateAdmin).toHaveBeenCalledTimes(2);
+    await act(async () =>
+      pending[1](
+        payload({
+          connectors: [connector({ enabled: false })],
+          allow_custom_mcp: false,
+        }),
+      ),
+    );
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+    expect(
+      container
+        .querySelector('#allow-custom-mcp')!
+        .getAttribute('aria-checked'),
+    ).toBe('false');
+  });
+
   it('offers a retry when loading fails', async () => {
     getAdmin.mockRejectedValue(new Error('offline'));
     await render();

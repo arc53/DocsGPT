@@ -86,6 +86,23 @@ class TestResolution:
         assert resolved.connection_id == bobs
         assert resolved.delegated is False
 
+    def test_member_with_several_accounts_uses_the_one_last_used(self, pg_conn):
+        from docsgpt.connectors.resolve import resolve_connection
+
+        owner = _connection(pg_conn)
+        older = _connection(pg_conn, user="bob")
+        pg_conn.execute(text(
+            "UPDATE connector_sessions SET account_label = 'bob-home', last_used_at = now() - interval '1 day' "
+            "WHERE id = CAST(:i AS uuid)"
+        ), {"i": older})
+        newer = _connection(pg_conn, user="bob")
+        pg_conn.execute(text(
+            "UPDATE connector_sessions SET last_used_at = now() WHERE id = CAST(:i AS uuid)"
+        ), {"i": newer})
+        with _service_db(pg_conn):
+            resolved = resolve_connection(_tool(owner, mode="member"), "bob")
+        assert resolved.available and resolved.connection_id == newer
+
     def test_member_mode_without_own_connection_is_unavailable(self, pg_conn):
         from docsgpt.connectors.resolve import resolve_connection
 

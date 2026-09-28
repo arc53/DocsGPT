@@ -9,6 +9,7 @@ credentials; callers read them from the resolved row through
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -107,17 +108,34 @@ def resolve_connection(resource: dict, invoker_user_id: Optional[str]) -> Option
 
 
 def _member_connection(repo: ConnectorSessionsRepository, owned: Optional[dict], invoker: str) -> Optional[dict]:
-    """The invoker's own connection to the service the owner's connection is for."""
+    """The invoker's own connection to the service the owner's connection is for.
+
+    A member with several connected accounts of that service gets the one
+    they used most recently (then the most recently connected): the account
+    they are working in, and the one a "Connect to continue" just added.
+    """
     if owned is None:
         return None
-    for row in repo.list_for_user(invoker):
-        if row.get("provider") != owned.get("provider"):
-            continue
-        if (row.get("server_url") or "") != (owned.get("server_url") or ""):
-            continue
-        if service.normalize_status(row) == service.STATUS_CONNECTED:
-            return row
-    return None
+    candidates = [
+        row for row in repo.list_for_user(invoker)
+        if row.get("provider") == owned.get("provider")
+        and (row.get("server_url") or "") == (owned.get("server_url") or "")
+        and service.normalize_status(row) == service.STATUS_CONNECTED
+    ]
+    if not candidates:
+        return None
+
+    def when(value) -> datetime:
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value)
+        if not isinstance(value, datetime):
+            return datetime.min.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    def recency(row: dict) -> tuple:
+        return tuple(when(row.get(field)) for field in ("last_used_at", "updated_at", "created_at"))
+
+    return max(candidates, key=recency)
 
 
 def audit_delegation(resolved: ResolvedConnection, *, invoker: Optional[str], resource_type: str,
