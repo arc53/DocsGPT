@@ -1370,6 +1370,7 @@
     "attachments": {
       "attach": "附件",
       "remove": "刪除附件",
+      "uploadFailed": "上傳失敗。無法讀取檔案或連線已中斷。",
       "attached": "附件",
       "failed": "失敗",
       "attachment": "附件"
