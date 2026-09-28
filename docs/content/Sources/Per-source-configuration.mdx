@@ -103,8 +103,10 @@ request**. The owner tuned top-k for that corpus, so a client cannot raise or
 lower it per call. Sources left at the default still let the request decide.
 
 `chunks` is a total for the request, not a count per source: a request with
-`chunks: 6` over three sources takes two chunks from each, and every
-attached source gets at least one. A source counts as configured when its stored
+`chunks: 6` over three sources takes two chunks from each. Every attached source
+still gets at least one chunk, so with more sources than `chunks` the answer
+receives one chunk per source (eight sources at `chunks: 6` return eight
+chunks). A source counts as configured when its stored
 value differs from the default, so a source saved while the default was `2`
 keeps `2` as its own setting.
 
