@@ -43,6 +43,25 @@ vi.mock('../connectors/useConnectorLauncher', () => ({
   default: () => ({ launch, modals: null }),
 }));
 
+// The file picker reports its default account and a pick as it mounts.
+vi.mock('../components/FilePicker', async () => {
+  const { useEffect } = await import('react');
+  return {
+    FilePicker: function Picker(props: {
+      onConnectionChange: (id: string | null) => void;
+      onSelectionChange: (files: string[], folders?: string[]) => void;
+      onFirstPickName: (name: string) => void;
+    }) {
+      useEffect(() => {
+        props.onConnectionChange('drive-1');
+        props.onSelectionChange(['file-1'], []);
+        props.onFirstPickName('Handbook');
+      }, []);
+      return null;
+    },
+  };
+});
+
 import Upload from './Upload';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -263,6 +282,52 @@ describe('Upload source-type tiles', () => {
     expect(triggers()).toContain('settings.connectors.detail.keyEnding');
     connectorsState.catalog = [];
     connectorsState.connections = [];
+  });
+
+  it("sends the picker's account, not one cleared by the type change", async () => {
+    connectorsState.catalog = [
+      {
+        key: 'google_drive',
+        icon: 'drive',
+        sync_ingestor: 'google_drive',
+        auth_kind: 'oauth',
+        available: true,
+        missing_settings: [],
+      },
+    ];
+    const sent: FormData[] = [];
+    class FakeXhr {
+      upload = { addEventListener() {} };
+      addEventListener() {}
+      open() {}
+      setRequestHeader() {}
+      send(body: FormData) {
+        sent.push(body);
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    await act(async () =>
+      root.render(
+        <Upload
+          receivedFile={[]}
+          setModalState={vi.fn()}
+          isOnboarding={false}
+          renderTab={null}
+          close={vi.fn()}
+          initialIngestor="google_drive"
+        />,
+      ),
+    );
+    const train = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'modals.uploadDoc.train',
+    )!;
+    await act(async () => train.click());
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(String(sent[0].get('data'))).connection_id).toBe(
+      'drive-1',
+    );
+    vi.unstubAllGlobals();
+    connectorsState.catalog = [];
   });
 
   it('leaves the disabled Train button on the default variant', async () => {

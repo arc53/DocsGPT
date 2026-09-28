@@ -557,10 +557,6 @@ function Upload({
   const accountPicked = useRef(false);
   const firstKeyAccount = keyAccounts[0]?.id;
   useEffect(() => {
-    accountPicked.current = false;
-    setConnectionId(null);
-  }, [ingestor.type]);
-  useEffect(() => {
     if (selectedConnector?.auth_kind !== 'api_key' || accountPicked.current)
       return;
     setConnectionId(firstKeyAccount ?? 'new');
@@ -1159,6 +1155,11 @@ function Upload({
     }));
   };
   const handleIngestorTypeChange = (type: IngestorType | null) => {
+    // The account resets with the type, here rather than in an effect: the
+    // new type's picker reports its default account as it mounts, and an
+    // effect would run after that and clear it.
+    accountPicked.current = false;
+    setConnectionId(null);
     if (type === null) {
       setIngestor({
         type: null,
@@ -1204,7 +1205,8 @@ function Upload({
         count: accounts.length,
         formatted: formatCount(accounts.length),
       });
-    return t('settings.connectors.status.connect');
+    // A status, not a button: the tile itself starts the connection.
+    return t('modals.uploadDoc.tileNotConnected');
   };
 
   // With the catalog loaded, members only see connections they can use:
