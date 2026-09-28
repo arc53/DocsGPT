@@ -1184,7 +1184,12 @@
         "noSources": "Aus dieser Verbindung wurde noch nichts synchronisiert.",
         "remove": "Entfernen",
         "refreshed": "Werkzeuge aktualisiert: {{added}} hinzugefügt, {{removed}} entfernt.",
-        "refreshFailed": "Die Werkzeuge konnten nicht aktualisiert werden."
+        "refreshFailed": "Die Werkzeuge konnten nicht aktualisiert werden.",
+        "syncNow": "Jetzt synchronisieren",
+        "syncStarted": "{{name}} wird synchronisiert…",
+        "syncFailed": "Die Synchronisierung konnte nicht gestartet werden. Versuche es erneut.",
+        "toolSwitch": "{{name}} an",
+        "toolSwitchFailed": "Das Werkzeug konnte nicht geändert werden. Versuche es erneut."
       },
       "permission": {
         "always": "Immer erlauben",
@@ -1292,7 +1297,8 @@
         "sync": "Synchronisiert ins Wissen",
         "read": "Schlägt nach",
         "write": "Führt Aktionen aus"
-      }
+      },
+      "manageConnection": "Verbindung verwalten"
     }
   },
   "modals": {

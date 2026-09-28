@@ -5,6 +5,7 @@ import {
   Eye,
   HardDrive,
   Network,
+  Plug,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -14,6 +15,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
@@ -90,6 +92,7 @@ export default function Sources({
   handleDeleteDocument,
 }: DocumentsProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const uploadTasks = useSelector(selectUploadTasks);
@@ -340,6 +343,23 @@ export default function Sources({
         variant: 'default',
       },
     ];
+
+    // Synced from a connection: its account, sync and other uses live on
+    // the connector's page.
+    const connection = document.connectionId
+      ? connections.find((c) => c.id === document.connectionId)
+      : undefined;
+    if (connection) {
+      actions.push({
+        icon: Plug,
+        label: t('settings.connectors.manageConnection'),
+        onClick: () =>
+          navigate(
+            `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`,
+          ),
+        variant: 'default',
+      });
+    }
 
     if (document.ingestStatus === 'failed') {
       actions.push({

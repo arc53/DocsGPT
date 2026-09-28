@@ -1190,7 +1190,12 @@
         "noSources": "Nothing synced from this connection yet.",
         "remove": "Remove",
         "refreshed": "Tools refreshed: {{added}} added, {{removed}} removed.",
-        "refreshFailed": "Could not refresh the tools."
+        "refreshFailed": "Could not refresh the tools.",
+        "syncNow": "Sync now",
+        "syncStarted": "Syncing {{name}}…",
+        "syncFailed": "Could not start the sync. Try again.",
+        "toolSwitch": "{{name}} on",
+        "toolSwitchFailed": "Could not change the tool. Try again."
       },
       "permission": {
         "always": "Always allow",
@@ -1298,7 +1303,8 @@
         "sync": "Syncs into Knowledge",
         "read": "Looks things up",
         "write": "Takes actions"
-      }
+      },
+      "manageConnection": "Manage connection"
     }
   },
   "modals": {

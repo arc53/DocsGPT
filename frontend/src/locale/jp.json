@@ -1175,7 +1175,12 @@
         "noSources": "この接続からはまだ何も同期されていません。",
         "remove": "削除",
         "refreshed": "ツールを更新しました: {{added}} 件追加、{{removed}} 件削除。",
-        "refreshFailed": "ツールを更新できませんでした。"
+        "refreshFailed": "ツールを更新できませんでした。",
+        "syncNow": "今すぐ同期",
+        "syncStarted": "{{name}} を同期しています…",
+        "syncFailed": "同期を開始できませんでした。もう一度お試しください。",
+        "toolSwitch": "{{name}} をオン",
+        "toolSwitchFailed": "ツールを変更できませんでした。もう一度お試しください。"
       },
       "permission": {
         "always": "常に許可",
@@ -1276,7 +1281,8 @@
         "sync": "ナレッジに同期",
         "read": "情報を調べる",
         "write": "操作を行う"
-      }
+      },
+      "manageConnection": "接続を管理"
     }
   },
   "modals": {

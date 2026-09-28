@@ -1,4 +1,4 @@
-import { Pencil, RefreshCw, Trash2, Users } from 'lucide-react';
+import { Pencil, Plug, RefreshCw, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -148,12 +148,19 @@ export default function Tools() {
 
   const getMenuOptions = (tool: UserToolType): MenuOption[] => {
     const options: MenuOption[] = [
-      {
-        icon: Pencil,
-        label: t('settings.tools.edit'),
-        onClick: () => handleSettingsClick(tool),
-        variant: 'default',
-      },
+      connectionOf(tool)
+        ? {
+            icon: Plug,
+            label: t('settings.connectors.manageConnection'),
+            onClick: () => handleSettingsClick(tool),
+            variant: 'default',
+          }
+        : {
+            icon: Pencil,
+            label: t('settings.tools.edit'),
+            onClick: () => handleSettingsClick(tool),
+            variant: 'default',
+          },
       {
         icon: Trash2,
         label: t('settings.tools.delete'),
@@ -234,7 +241,20 @@ export default function Tools() {
       });
   };
 
+  // A connected tool is managed on its connector's page (account, on/off,
+  // permissions); only other tools open the tool editor here.
+  const connectionOf = (tool: UserToolType) =>
+    tool.connection_id
+      ? connections.find((c) => c.id === tool.connection_id)
+      : undefined;
   const handleSettingsClick = (tool: UserToolType) => {
+    const connection = connectionOf(tool);
+    if (connection) {
+      navigate(
+        `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`,
+      );
+      return;
+    }
     setSelectedTool(tool);
   };
 

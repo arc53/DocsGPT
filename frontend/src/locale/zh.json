@@ -1175,7 +1175,12 @@
         "noSources": "尚未从此连接同步任何内容。",
         "remove": "移除",
         "refreshed": "工具已刷新：新增 {{added}} 个，移除 {{removed}} 个。",
-        "refreshFailed": "无法刷新工具。"
+        "refreshFailed": "无法刷新工具。",
+        "syncNow": "立即同步",
+        "syncStarted": "正在同步 {{name}}…",
+        "syncFailed": "无法开始同步。请重试。",
+        "toolSwitch": "{{name}} 开启",
+        "toolSwitchFailed": "无法更改工具。请重试。"
       },
       "permission": {
         "always": "始终允许",
@@ -1276,7 +1281,8 @@
         "sync": "同步到知识库",
         "read": "查找信息",
         "write": "执行操作"
-      }
+      },
+      "manageConnection": "管理连接"
     }
   },
   "modals": {

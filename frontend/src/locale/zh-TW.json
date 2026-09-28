@@ -1175,7 +1175,12 @@
         "noSources": "尚未從此連線同步任何內容。",
         "remove": "移除",
         "refreshed": "工具已重新整理：新增 {{added}} 個，移除 {{removed}} 個。",
-        "refreshFailed": "無法重新整理工具。"
+        "refreshFailed": "無法重新整理工具。",
+        "syncNow": "立即同步",
+        "syncStarted": "正在同步 {{name}}…",
+        "syncFailed": "無法開始同步。請再試一次。",
+        "toolSwitch": "{{name}} 開啟",
+        "toolSwitchFailed": "無法變更工具。請再試一次。"
       },
       "permission": {
         "always": "一律允許",
@@ -1276,7 +1281,8 @@
         "sync": "同步到知識庫",
         "read": "查詢資訊",
         "write": "執行操作"
-      }
+      },
+      "manageConnection": "管理連線"
     }
   },
   "modals": {

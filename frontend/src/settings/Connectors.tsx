@@ -88,7 +88,13 @@ export default function Connectors() {
   }, [dispatch, token]);
 
   const custom = catalog.filter((c) => c.publisher === 'custom');
-  const openConnector = catalog.find((c) => c.key === openKey) ?? null;
+  // A link to a part (a tool's "Manage connection") opens its parent's page.
+  const openTarget = catalog.find((c) => c.key === openKey);
+  const openConnector =
+    (openTarget?.part_of &&
+      catalog.find((c) => c.key === openTarget.part_of)) ||
+    openTarget ||
+    null;
 
   // One service offered two ways (Confluence sync and the Jira & Confluence
   // MCP actions) is one card. A part is shown on its own only when its

@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
+import userService from '../api/services/userService';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -23,6 +24,7 @@ import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
+import { Switch } from '../components/ui/switch';
 import {
   Sheet,
   SheetContent,
@@ -43,6 +45,8 @@ import { connectorDescription, connectorName } from './i18n';
 import ToolPermissions from './ToolPermissions';
 import type {
   ConnectionDetail,
+  ConnectionSource,
+  ConnectionTool,
   ConnectionStatus,
   ConnectorDefinition,
 } from './types';
@@ -187,6 +191,33 @@ function RemoveConnectionModal({
   );
 }
 
+/** A connection tool's on/off switch: the one place it is turned on or off. */
+function ToolSwitch({
+  tool,
+  onToggle,
+}: {
+  tool: ConnectionTool;
+  onToggle: (toolId: string, on: boolean) => Promise<boolean>;
+}) {
+  const { t } = useTranslation();
+  const [on, setOn] = useState(tool.status);
+  useEffect(() => setOn(tool.status), [tool.status]);
+  return (
+    <Switch
+      checked={on}
+      aria-label={t('settings.connectors.detail.toolSwitch', {
+        name: tool.display_name,
+        interpolation: { escapeValue: false },
+      })}
+      onCheckedChange={async (checked) => {
+        const next = checked === true;
+        setOn(next);
+        if (!(await onToggle(tool.id, next))) setOn(!next);
+      }}
+    />
+  );
+}
+
 function AccountSection({
   connector,
   detail,
@@ -195,6 +226,8 @@ function AccountSection({
   onRemove,
   onSyncMore,
   onRefreshTools,
+  onToggleTool,
+  onSyncNow,
 }: {
   connector: ConnectorDefinition;
   detail: ConnectionDetail;
@@ -203,6 +236,9 @@ function AccountSection({
   onRemove: (detail: ConnectionDetail) => void;
   onSyncMore: (detail: ConnectionDetail) => void;
   onRefreshTools: (detail: ConnectionDetail) => Promise<void>;
+  /** Turns a tool of this connection on or off for agents and chat. */
+  onToggleTool: (toolId: string, on: boolean) => Promise<boolean>;
+  onSyncNow: (source: ConnectionSource) => void;
 }) {
   const { t } = useTranslation();
   const accountTitle = useAccountTitle();
@@ -313,7 +349,17 @@ function AccountSection({
                         <Badge variant="warning">
                           {t('settings.connectors.detail.paused')}
                         </Badge>
-                      ) : undefined
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          shape="pill"
+                          onClick={() => onSyncNow(source)}
+                        >
+                          {t('settings.connectors.detail.syncNow')}
+                        </Button>
+                      )
                     }
                   />
                 ))}
@@ -353,13 +399,7 @@ function AccountSection({
                 as="h4"
                 size="xs"
                 title={tool.display_name}
-                actions={
-                  <Badge variant={tool.status ? 'success' : 'neutral'}>
-                    {tool.status
-                      ? t('settings.connectors.detail.toolOn')
-                      : t('settings.connectors.detail.toolOff')}
-                  </Badge>
-                }
+                actions={<ToolSwitch tool={tool} onToggle={onToggleTool} />}
               />
               <ToolPermissions
                 connectionId={detail.id}
@@ -480,6 +520,53 @@ export default function ConnectionDrawer({
             }
           : undefined,
     });
+  };
+
+  const toggleTool = async (toolId: string, on: boolean) => {
+    try {
+      const response = await userService.updateToolStatus(
+        { id: toolId, status: on },
+        token,
+      );
+      if (!response.ok) throw new Error('toggle failed');
+      return true;
+    } catch {
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('settings.connectors.detail.toolSwitchFailed'),
+        }),
+      );
+      return false;
+    }
+  };
+
+  const syncNow = async (source: ConnectionSource) => {
+    try {
+      // Drive, SharePoint and Confluence sources sync through the connector
+      // endpoint; S3 and Reddit through the remote-source one.
+      const response = source.type?.startsWith('connector')
+        ? await userService.syncConnector(source.id, token)
+        : await userService.syncSource({ source_id: source.id }, token);
+      const data = await response.json();
+      if (!data?.success) throw new Error('sync failed');
+      dispatch(
+        showActionToast({
+          variant: 'success',
+          message: t('settings.connectors.detail.syncStarted', {
+            name: source.name,
+            interpolation: { escapeValue: false },
+          }),
+        }),
+      );
+    } catch {
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('settings.connectors.detail.syncFailed'),
+        }),
+      );
+    }
   };
 
   const refreshTools = async (detail: ConnectionDetail) => {
@@ -617,6 +704,8 @@ export default function ConnectionDrawer({
                         })
                       }
                       onRefreshTools={refreshTools}
+                      onToggleTool={toggleTool}
+                      onSyncNow={syncNow}
                     />
                   ))}
                 </div>
@@ -660,6 +749,8 @@ export default function ConnectionDrawer({
                         onConnect(part, { mode: 'sync', connectionId: d.id })
                       }
                       onRefreshTools={refreshTools}
+                      onToggleTool={toggleTool}
+                      onSyncNow={syncNow}
                     />
                   ))}
                 </section>
