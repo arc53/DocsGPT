@@ -46,7 +46,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                 required=False, default="default", description="Prompt ID"
             ),
             "chunks": fields.Integer(
-                required=False, default=2, description="Number of chunks"
+                required=False, default=6, description="Number of chunks"
             ),
             "retriever": fields.String(required=False, description="Retriever type"),
             "api_key": fields.String(required=False, description="API key"),

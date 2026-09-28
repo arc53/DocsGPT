@@ -126,6 +126,15 @@ class TestChunksPrecedence:
         sp._configure_retriever()
         return sp.retriever_config["chunks"]
 
+    def test_default_applies_when_nothing_sets_chunks(self):
+        assert self._sp() == 6
+
+    def test_source_stored_at_the_old_default_counts_as_configured(self):
+        """Accepted when the default moved from 2 to 6: sources created while
+        the UI always sent the full config store ``chunks=2`` explicitly, and
+        stay a per-source setting of 2 rather than being migrated."""
+        assert self._sp(request_chunks="7", source_chunks=2) == 2
+
     def test_request_applies_when_source_is_unconfigured(self):
         assert self._sp(request_chunks="7") == 7
 
@@ -139,7 +148,7 @@ class TestChunksPrecedence:
             ("-5", 0),
             ("100000", 500),
             ("501", 500),
-            ("abc", 2),
+            ("abc", 6),
         ],
     )
     def test_request_chunks_is_clamped(self, sent, expected):

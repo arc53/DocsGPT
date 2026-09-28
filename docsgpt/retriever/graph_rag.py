@@ -195,7 +195,7 @@ class GraphRAGRetriever(BaseRetriever):
         source,
         chat_history=None,
         prompt="",
-        chunks=2,
+        chunks=6,
         doc_token_limit=50000,
         model_id="docsgpt-local",
         user_api_key=None,

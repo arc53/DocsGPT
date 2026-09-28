@@ -40,7 +40,7 @@ class TestParseLenient:
         r = RetrievalConfig()
         assert r.retriever == "classic"
         assert r.exposure == "prefetch"
-        assert r.chunks == 2
+        assert r.chunks == 6
         assert r.score_threshold is None
         assert r.rephrase_query is True
         assert r.reranker is None

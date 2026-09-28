@@ -36,7 +36,7 @@ class InternalSearchTool(Tool):
                 source=self.config.get("source", {}),
                 chat_history=[],
                 prompt="",
-                chunks=int(self.config.get("chunks", 2)),
+                chunks=int(self.config.get("chunks", 6)),
                 doc_token_limit=int(self.config.get("doc_token_limit", 50000)),
                 model_id=self.config.get("model_id", "docsgpt-local"),
                 model_user_id=self.config.get("model_user_id"),
@@ -464,7 +464,7 @@ def add_internal_search_tool(tools_dict: Dict, retriever_config: Dict) -> None:
 def build_internal_tool_config(
     source: Dict,
     retriever_name: str = "classic",
-    chunks: int = 2,
+    chunks: int = 6,
     doc_token_limit: int = 50000,
     sources: Optional[List[Dict]] = None,
     model_id: str = "docsgpt-local",

@@ -84,7 +84,7 @@ export const DEFAULT_RETRIEVAL_OPTIONS: RetrievalOptionsValue = {
   retrieval: {
     retriever: 'classic',
     exposure: 'prefetch',
-    chunks: 2,
+    chunks: 6,
     score_threshold: null,
     rephrase_query: true,
     prescreen: {

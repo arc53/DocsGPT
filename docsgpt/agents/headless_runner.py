@@ -153,7 +153,9 @@ def _run_agent_headless(
             source_active = str(src_row["id"])
             retriever_kind = src_row.get("retriever", retriever_kind)
     source = {"active_docs": source_active}
-    chunks = int(agent_config.get("chunks", 2) or 2)
+    # ``chunks=0`` switches retrieval off; only a missing value takes the default.
+    raw_chunks = agent_config.get("chunks")
+    chunks = 6 if raw_chunks in (None, "") else int(raw_chunks)
     prompt_id = agent_config.get("prompt_id", "default")
     user_api_key = agent_config.get("key")
     agent_id = _resolve_agent_id(agent_config)

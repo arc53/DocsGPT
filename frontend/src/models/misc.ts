@@ -43,7 +43,7 @@ export type SourceGraphRetrievalConfig = {
 export type SourceRetrievalConfig = {
   retriever?: string; // default 'classic' (only option for now)
   exposure?: RetrievalExposure; // default 'prefetch'
-  chunks?: number; // top-k, default 2
+  chunks?: number; // top-k, default 6
   score_threshold?: number | null; // default null
   rephrase_query?: boolean; // default true
   prescreen?: SourcePrescreenConfig | null; // null = off

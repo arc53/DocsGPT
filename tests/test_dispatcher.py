@@ -74,6 +74,22 @@ class TestDispatcherGrouping:
         assert "b" not in retrievals
 
 
+    def test_source_stored_at_the_old_default_is_an_override(self, _patch_llm_creator):
+        # Accepted when the default moved from 2 to 6: sources saved with the
+        # full config store chunks=2 and keep it as their own setting, while a
+        # new upload stores 6, the default, and takes the global path.
+        sources = [
+            {"id": "old", "retrieval": RetrievalConfig(chunks=2)},
+            {"id": "new", "retrieval": RetrievalConfig(chunks=6)},
+        ]
+        d = Dispatcher(source={"question": "q", "active_docs": ["old", "new"]}, sources=sources)
+        retrievals = d._groups[0]["retrievals"]
+        assert retrievals["old"].chunks == 2
+        assert "new" not in retrievals
+
+    def test_default_budget_is_six(self, _patch_llm_creator):
+        assert Dispatcher(source={"question": "q", "active_docs": ["a"]}).chunks == 6
+
     def test_graph_options_count_as_an_override(self, _patch_llm_creator):
         """A graph source that changes only its graph options still needs its
         config carried over: those options live on the per-source retrieval the

@@ -32,7 +32,7 @@ class ClassicRAG(BaseRetriever):
         source,
         chat_history=None,
         prompt="",
-        chunks=2,
+        chunks=6,
         doc_token_limit=50000,
         model_id="docsgpt-local",
         user_api_key=None,
@@ -54,9 +54,9 @@ class ClassicRAG(BaseRetriever):
                 self.chunks = int(chunks)
             except ValueError:
                 logger.warning(
-                    f"Invalid chunks value '{chunks}', using default value 2"
+                    f"Invalid chunks value '{chunks}', using default value 6"
                 )
-                self.chunks = 2
+                self.chunks = 6
         else:
             self.chunks = chunks
         user_id = decoded_token.get("sub") if decoded_token else "default"
@@ -405,7 +405,7 @@ class ClassicRAG(BaseRetriever):
 
         # ``chunks_per_source`` has a floor of 1 so no attached source is
         # starved, which means N sources always yield at least N documents —
-        # ``chunks=2`` across 4 sources returned 4, though ``chunks`` is
+        # ``chunks=6`` across 8 sources returned 8, though ``chunks`` is
         # documented as a top-k. Bound the overshoot to exactly that floor so
         # attaching more sources can no longer inflate the result without limit.
         # Ceiling on ``self.chunks`` (the actual fetch target), not

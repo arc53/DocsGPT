@@ -473,7 +473,7 @@ class TestConfigureRetriever:
         sp = StreamProcessor({}, {"sub": "u"})
         sp._configure_retriever()
         assert sp.retriever_config["retriever_name"] == "classic"
-        assert sp.retriever_config["chunks"] == 2
+        assert sp.retriever_config["chunks"] == 6
 
     def test_agent_overrides(self):
         from docsgpt.api.answer.services.stream_processor import (
@@ -519,7 +519,7 @@ class TestConfigureRetriever:
         sp._agent_data = {}
         sp._configure_retriever()
         assert sp.retriever_config["retriever_name"] == "classic"
-        assert sp.retriever_config["chunks"] == 2
+        assert sp.retriever_config["chunks"] == 6
 
     def test_invalid_agent_chunks_falls_back(self):
         from docsgpt.api.answer.services.stream_processor import (
@@ -528,7 +528,7 @@ class TestConfigureRetriever:
         sp = StreamProcessor({}, {"sub": "u"})
         sp._agent_data = {"chunks": "not-a-number"}
         sp._configure_retriever()
-        assert sp.retriever_config["chunks"] == 2
+        assert sp.retriever_config["chunks"] == 6
 
     def test_invalid_request_chunks_falls_back(self):
         from docsgpt.api.answer.services.stream_processor import (
@@ -536,7 +536,7 @@ class TestConfigureRetriever:
         )
         sp = StreamProcessor({"chunks": "abc"}, {"sub": "u"})
         sp._configure_retriever()
-        assert sp.retriever_config["chunks"] == 2
+        assert sp.retriever_config["chunks"] == 6
 
     def test_isnonedoc_without_api_key_sets_chunks_to_0(self):
         from docsgpt.api.answer.services.stream_processor import (

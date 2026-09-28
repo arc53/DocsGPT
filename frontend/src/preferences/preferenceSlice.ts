@@ -58,7 +58,7 @@ const initialState: Preference = {
     { name: 'creative', id: 'creative', type: 'public' },
     { name: 'strict', id: 'strict', type: 'public' },
   ],
-  chunks: '2',
+  chunks: '6',
   selectedDocs: [],
   sourceDocs: null,
   conversations: {

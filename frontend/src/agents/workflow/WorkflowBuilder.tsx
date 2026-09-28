@@ -329,7 +329,7 @@ function createEmptyWorkflowAgent(): Agent {
     description: '',
     image: '',
     source: '',
-    chunks: '2',
+    chunks: '6',
     retriever: '',
     prompt_id: '',
     tools: [],
