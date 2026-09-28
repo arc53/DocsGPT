@@ -209,6 +209,33 @@ describe('Connectors page', () => {
     expect(container.textContent).toContain('settings.connectors.empty');
   });
 
+  it('says when the composer narrowed the list, and clears it', async () => {
+    await render('/settings/connectors?capability=sync');
+    expect(container.textContent).toContain(
+      'settings.connectors.capabilityFilter.sync',
+    );
+    expect(card('telegram')).toBeNull();
+    const showAll = Array.from(container.querySelectorAll('button')).find(
+      (button) =>
+        button.textContent === 'settings.connectors.capabilityFilter.showAll',
+    )!;
+    await act(async () => showAll.click());
+    expect(container.textContent).not.toContain(
+      'settings.connectors.capabilityFilter.sync',
+    );
+    expect(card('telegram')).not.toBeNull();
+  });
+
+  it('only offers categories that have connectors', async () => {
+    await render();
+    const pills = Array.from(
+      container.querySelectorAll('[data-slot="toggle-group-item"]'),
+    ).map((item) => item.textContent);
+    expect(pills).toContain('settings.connectors.categories.all');
+    expect(pills).toContain('settings.connectors.categories.files');
+    expect(pills).not.toContain('settings.connectors.categories.database');
+  });
+
   it('shows a retry when the catalog fails to load', async () => {
     service.getCatalog.mockResolvedValue({ success: false });
     await render();

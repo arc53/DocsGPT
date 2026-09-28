@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
 import { Card } from '../components/ui/card';
@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type {
   ActionPermission,
@@ -24,20 +25,24 @@ const PERMISSIONS: ActionPermission[] = ['always', 'ask', 'off'];
 /**
  * One tool's actions, grouped Read and Write, each with Always allow /
  * Needs approval / Off. Changes save immediately; a failed save puts the
- * previous choice back.
+ * previous choice back and says so.
  */
 export default function ToolPermissions({
   connectionId,
   tool,
   onChange,
   readOnly = false,
+  variant = 'outline',
 }: {
   connectionId: string;
   tool: ConnectionTool;
   onChange?: (tool: ConnectionTool) => void;
   readOnly?: boolean;
+  /** The panel surface: `outline` in a modal, `subtle` in the drawer. */
+  variant?: 'outline' | 'subtle';
 }) {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [actions, setActions] = useState<ConnectionToolAction[]>(tool.actions);
 
@@ -53,7 +58,15 @@ export default function ToolPermissions({
         if (!data?.success) throw new Error('save failed');
         onChange?.(data.tool);
       })
-      .catch(() => setActions(previous));
+      .catch(() => {
+        setActions(previous);
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: t('settings.connectors.permission.saveFailed'),
+          }),
+        );
+      });
   };
 
   const groups = (['read', 'write'] as const)
@@ -64,7 +77,7 @@ export default function ToolPermissions({
     .filter((group) => group.actions.length > 0);
 
   return (
-    <Card padding="sm" className="gap-4">
+    <Card variant={variant} padding="sm" className="gap-4">
       {groups.map((group) => (
         <div key={group.access} className="flex flex-col gap-2">
           <SectionHeader

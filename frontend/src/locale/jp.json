@@ -1111,7 +1111,7 @@
       "status": {
         "connect": "接続",
         "connected": "接続済み",
-        "connectedCount": "{{count}} 件接続済み",
+        "connectedCount": "{{formatted}} 件接続済み",
         "reconnect": "再接続",
         "needsAdminSetup": "管理者の設定が必要",
         "disabledByAdmin": "管理者により無効",
@@ -1181,12 +1181,14 @@
         "always": "常に許可",
         "ask": "承認が必要",
         "off": "オフ",
-        "label": "{{action}} の権限"
+        "label": "{{action}} の権限",
+        "saveFailed": "権限を保存できませんでした。もう一度お試しください。"
       },
       "disconnect": {
         "title": "{{name}} を切断しますか？",
         "body_zero": "この接続のツールは、再接続するまで使えなくなります。",
-        "body_other": "{{count}} 件のソースはコンテンツを保持しますが、同期は停止します。この接続のツールは、再接続するまで使えなくなります。"
+        "body_other": "{{formatted}} 件のソースはコンテンツを保持しますが、同期は停止します。この接続のツールは、再接続するまで使えなくなります。",
+        "failed": "切断できませんでした。もう一度お試しください。"
       },
       "fields": {
         "token": "API キー",
@@ -1216,9 +1218,9 @@
         "doneTitle": "{{name}} に接続しました",
         "doneSummary": "{{account}} として接続しました。{{sources}}を同期中、{{tools}}を利用できます。",
         "doneSummaryNone": "{{account}} として接続しました。",
-        "sourcesCount_other": "{{count}} 件のソース",
-        "toolsCount_other": "{{count}} 個のツール",
-        "toolsHeading": "ツール ({{count}})",
+        "sourcesCount_other": "{{formatted}} 件のソース",
+        "toolsCount_other": "{{formatted}} 個のツール",
+        "toolsHeading": "ツール ({{formatted}})",
         "tryInChat": "チャットで試す",
         "done": "完了",
         "connectFailed": "接続できませんでした。入力内容を確認して、もう一度お試しください。",
@@ -1231,10 +1233,10 @@
       "remove": {
         "title": "{{name}} を削除しますか？",
         "description": "保存されたサインイン情報は削除されます。この接続から提供されているものをどうするか選んでください。",
-        "sourcesLabel_other": "{{count}} 件のソース",
+        "sourcesLabel_other": "{{formatted}} 件のソース",
         "keepSources": "コンテンツを保持（同期を停止）",
         "deleteSources": "削除",
-        "toolsLabel_other": "{{count}} 個のツール",
+        "toolsLabel_other": "{{formatted}} 個のツール",
         "deleteTools": "削除",
         "keepTools": "保持してオフにする",
         "failed": "接続を削除できませんでした。もう一度お試しください。"
@@ -1257,6 +1259,12 @@
         "memberNote": "各メンバーは、このツールを使う前に自分の {{name}} アカウントを接続します。",
         "forced": "このコネクタのすべての共有に対して管理者が設定しています。",
         "saveFailed": "変更を保存できませんでした。もう一度お試しください。"
+      },
+      "createFailed": "コネクタを追加できませんでした。もう一度お試しください。",
+      "capabilityFilter": {
+        "sync": "ソースにコンテンツを同期するコネクタを表示しています。",
+        "tools": "エージェントにツールを提供するコネクタを表示しています。",
+        "showAll": "すべて表示"
       }
     }
   },

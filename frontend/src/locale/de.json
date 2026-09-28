@@ -1120,7 +1120,7 @@
       "status": {
         "connect": "Verbinden",
         "connected": "Verbunden",
-        "connectedCount": "{{count}} verbunden",
+        "connectedCount": "{{formatted}} verbunden",
         "reconnect": "Neu verbinden",
         "needsAdminSetup": "Admin-Einrichtung nötig",
         "disabledByAdmin": "Vom Admin deaktiviert",
@@ -1190,13 +1190,15 @@
         "always": "Immer erlauben",
         "ask": "Freigabe nötig",
         "off": "Aus",
-        "label": "Berechtigung für {{action}}"
+        "label": "Berechtigung für {{action}}",
+        "saveFailed": "Die Berechtigung konnte nicht gespeichert werden. Versuche es erneut."
       },
       "disconnect": {
         "title": "{{name}} trennen?",
         "body_zero": "Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest.",
         "body_one": "Deine Quelle behält ihren Inhalt, wird aber nicht mehr synchronisiert. Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest.",
-        "body_other": "Deine {{count}} Quellen behalten ihren Inhalt, werden aber nicht mehr synchronisiert. Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest."
+        "body_other": "Deine {{formatted}} Quellen behalten ihren Inhalt, werden aber nicht mehr synchronisiert. Werkzeuge aus dieser Verbindung funktionieren erst wieder, wenn du neu verbindest.",
+        "failed": "Trennen fehlgeschlagen. Versuche es erneut."
       },
       "fields": {
         "token": "API-Schlüssel",
@@ -1226,11 +1228,11 @@
         "doneTitle": "{{name}} ist verbunden",
         "doneSummary": "Verbunden als {{account}}. {{sources}} werden synchronisiert, {{tools}} bereit.",
         "doneSummaryNone": "Verbunden als {{account}}.",
-        "sourcesCount_one": "{{count}} Quelle",
-        "sourcesCount_other": "{{count}} Quellen",
-        "toolsCount_one": "{{count}} Werkzeug",
-        "toolsCount_other": "{{count}} Werkzeuge",
-        "toolsHeading": "Werkzeuge ({{count}})",
+        "sourcesCount_one": "{{formatted}} Quelle",
+        "sourcesCount_other": "{{formatted}} Quellen",
+        "toolsCount_one": "{{formatted}} Werkzeug",
+        "toolsCount_other": "{{formatted}} Werkzeuge",
+        "toolsHeading": "Werkzeuge ({{formatted}})",
         "tryInChat": "Im Chat ausprobieren",
         "done": "Fertig",
         "connectFailed": "Verbindung fehlgeschlagen. Prüfe die Angaben und versuche es erneut.",
@@ -1244,11 +1246,11 @@
         "title": "{{name}} entfernen?",
         "description": "Die gespeicherte Anmeldung wird gelöscht. Wähle, was mit den Inhalten dieser Verbindung passiert.",
         "sourcesLabel_one": "Ihre Quelle",
-        "sourcesLabel_other": "Ihre {{count}} Quellen",
+        "sourcesLabel_other": "Ihre {{formatted}} Quellen",
         "keepSources": "Inhalt behalten (Sync stoppen)",
         "deleteSources": "Löschen",
         "toolsLabel_one": "Ihr Werkzeug",
-        "toolsLabel_other": "Ihre {{count}} Werkzeuge",
+        "toolsLabel_other": "Ihre {{formatted}} Werkzeuge",
         "deleteTools": "Löschen",
         "keepTools": "Behalten, ausgeschaltet",
         "failed": "Die Verbindung konnte nicht entfernt werden. Versuche es erneut."
@@ -1271,6 +1273,12 @@
         "memberNote": "Jedes Mitglied verbindet sein eigenes {{name}}-Konto, bevor es dieses Werkzeug nutzen kann.",
         "forced": "Ein Admin hat das für alle Freigaben dieses Konnektors festgelegt.",
         "saveFailed": "Die Änderung konnte nicht gespeichert werden. Versuche es erneut."
+      },
+      "createFailed": "Der Konnektor konnte nicht hinzugefügt werden. Versuche es erneut.",
+      "capabilityFilter": {
+        "sync": "Angezeigt werden Konnektoren, die Inhalte in Quellen synchronisieren.",
+        "tools": "Angezeigt werden Konnektoren, die Agenten Werkzeuge geben.",
+        "showAll": "Alle anzeigen"
       }
     }
   },

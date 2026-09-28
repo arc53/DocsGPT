@@ -16,6 +16,9 @@ vi.mock('../api/services/connectorsService', () => ({
   },
 }));
 
+import actionToastReducer, {
+  selectActionToast,
+} from '../notifications/actionToastSlice';
 import { prefSlice } from '../preferences/preferenceSlice';
 import Connectors from './Connectors';
 
@@ -79,10 +82,17 @@ describe('Admin Connectors', () => {
     container.remove();
   });
 
-  const render = async () => {
-    const store = configureStore({
-      reducer: { preference: prefSlice.reducer },
+  let store: ReturnType<typeof makeStore>;
+  const makeStore = () =>
+    configureStore({
+      reducer: {
+        preference: prefSlice.reducer,
+        actionToast: actionToastReducer,
+      },
     });
+
+  const render = async () => {
+    store = makeStore();
     await act(async () => {
       root.render(
         <Provider store={store}>
@@ -111,7 +121,9 @@ describe('Admin Connectors', () => {
   it('warns when credentials use the default encryption key', async () => {
     getAdmin.mockResolvedValue(payload({ default_encryption_key: true }));
     await render();
-    expect(container.textContent).toContain('admin.connectors.defaultKey');
+    expect(container.textContent).toContain(
+      'Set ENCRYPTION_SECRET_KEY before connecting services.',
+    );
     expect(container.textContent).toContain('docsgpt connectors reencrypt');
   });
 
@@ -138,7 +150,7 @@ describe('Admin Connectors', () => {
     ).toBe('false');
   });
 
-  it('shows an error and keeps the page when a save fails', async () => {
+  it('reports a failed save in a toast and keeps the page', async () => {
     getAdmin.mockResolvedValue(payload());
     updateAdmin.mockResolvedValue({ success: false });
     await render();
@@ -146,7 +158,10 @@ describe('Admin Connectors', () => {
       container.querySelector<HTMLButtonElement>('#allow-custom-mcp')!.click(),
     );
     expect(updateAdmin).toHaveBeenCalledWith({ allow_custom_mcp: false }, null);
-    expect(container.textContent).toContain('Could not save the change.');
+    expect(selectActionToast(store.getState())).toMatchObject({
+      variant: 'destructive',
+      message: 'Could not save the change.',
+    });
     expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
   });
 

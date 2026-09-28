@@ -1,14 +1,18 @@
-import { ExternalLink, TriangleAlert } from 'lucide-react';
+import { ExternalLink, Info, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
 import CopyButton from '../components/CopyButton';
+import PageToolbar from '../components/PageToolbar';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
@@ -31,6 +35,7 @@ import {
   TableRow,
 } from '../components/ui/table';
 import ConnectorIcon from '../connectors/ConnectorIcon';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { LoadError, fmtNumber } from './AdminUI';
 
@@ -105,23 +110,22 @@ function SetupGuide({
         </section>
         <section className="flex flex-col gap-2">
           <SectionHeader as="h3" size="xs" title="Server settings" />
-          <ul className="flex flex-col gap-2">
+          <DescriptionList layout="justified" size="xs">
             {connector.required_settings.map((setting) => (
-              <li
+              <DescriptionItem
                 key={setting.name}
-                className="flex items-center justify-between gap-3"
+                label={<code className="font-mono">{setting.name}</code>}
               >
-                <code className="font-mono text-xs">{setting.name}</code>
                 <Badge variant={setting.set ? 'success' : 'warning'}>
                   {setting.set ? 'Set' : 'Missing'}
                 </Badge>
-              </li>
+              </DescriptionItem>
             ))}
-          </ul>
+          </DescriptionList>
         </section>
         {connector.key === 'google_drive' && (
           <Alert variant="info" role="note">
-            <TriangleAlert />
+            <Info />
             <AlertDescription>
               Publish the Google OAuth app (or use an internal Workspace app).
               Apps left in Testing get refresh tokens that expire after seven
@@ -152,11 +156,10 @@ function SetupGuide({
  * server. English only, like the rest of the admin pages.
  */
 export default function Connectors() {
-  const { t } = useTranslation();
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [data, setData] = useState<AdminConnectorsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saveError, setSaveError] = useState(false);
   const [guide, setGuide] = useState<AdminConnector | null>(null);
 
   const load = useCallback(async () => {
@@ -178,13 +181,19 @@ export default function Connectors() {
     policies?: Record<string, { enabled?: boolean; credential_mode?: Policy }>;
     allow_custom_mcp?: boolean;
   }) => {
-    setSaveError(false);
+    const failed = () =>
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: 'Could not save the change.',
+        }),
+      );
     try {
       const next = await connectorsService.updateAdmin(body, token);
       if (next?.success) setData(next);
-      else setSaveError(true);
+      else failed();
     } catch {
-      setSaveError(true);
+      failed();
     }
   };
 
@@ -194,17 +203,14 @@ export default function Connectors() {
 
   return (
     <div className="flex flex-col gap-8">
-      <p className="text-muted-foreground text-sm">
-        Choose which connectors members can use and whose account a shared tool
-        runs with. A connector that still needs server settings starts turned
-        off and is hidden from members; it turns on once its settings are in
-        place, unless you switch it off.
-      </p>
+      <PageToolbar intro="Choose which connectors members can use and whose account a shared tool runs with. A connector that still needs server settings starts turned off and is hidden from members; it turns on once its settings are in place, unless you switch it off." />
 
       {data.default_encryption_key && (
         <Alert variant="destructive">
           <TriangleAlert />
-          <AlertTitle>{t('admin.connectors.defaultKey')}</AlertTitle>
+          <AlertTitle>
+            Set ENCRYPTION_SECRET_KEY before connecting services.
+          </AlertTitle>
           <AlertDescription>
             Stored credentials are encrypted with ENCRYPTION_SECRET_KEY, which
             still has its public default value. Set your own, keep the old one
@@ -214,12 +220,6 @@ export default function Connectors() {
             </code>
             .
           </AlertDescription>
-        </Alert>
-      )}
-      {saveError && (
-        <Alert variant="destructive">
-          <TriangleAlert />
-          <AlertDescription>Could not save the change.</AlertDescription>
         </Alert>
       )}
 
@@ -240,10 +240,10 @@ export default function Connectors() {
       </SettingRows>
 
       <section className="flex flex-col gap-3">
-        <SectionHeader title="Redirect URIs" />
-        <p className="text-muted-foreground text-sm">
-          Register these with each provider&apos;s OAuth app.
-        </p>
+        <SectionHeader
+          title="Redirect URIs"
+          description="Register these with each provider's OAuth app."
+        />
         <div className="grid grid-cols-1 gap-x-4 gap-y-3 lg:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <span className="text-muted-foreground text-xs">

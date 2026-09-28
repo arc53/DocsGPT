@@ -1,4 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
@@ -7,6 +8,7 @@ import userService from '../api/services/userService';
 import MCPServerModal from '../modals/MCPServerModal';
 import type { AvailableToolType } from '../modals/types';
 import type { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import ConnectWizard, { type WizardMode } from './ConnectWizard';
@@ -46,6 +48,7 @@ const isMcp = (connector: ConnectorDefinition) =>
 export default function useConnectorLauncher({
   onConnected,
 }: { onConnected?: () => void } = {}) {
+  const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
@@ -80,26 +83,34 @@ export default function useConnectorLauncher({
       if (connector.key === 'custom_openapi') {
         // An OpenAPI tool starts empty; its spec import is today's API Tool
         // screen on the Tools page.
-        const response = await userService.getAvailableTools(token);
-        const data = await response.json();
-        const tool = (data.data as AvailableToolType[] | undefined)?.find(
-          (candidate) => candidate.name === 'api_tool',
-        );
-        if (!tool) return;
-        const created = await userService.createTool(
-          {
-            name: tool.name,
-            displayName: tool.displayName,
-            description: tool.description,
-            config: {},
-            actions: tool.actions,
-            status: true,
-          },
-          token,
-        );
-        const body = await created.json();
-        if (body?.id) {
+        try {
+          const response = await userService.getAvailableTools(token);
+          const data = await response.json();
+          const tool = (data.data as AvailableToolType[] | undefined)?.find(
+            (candidate) => candidate.name === 'api_tool',
+          );
+          if (!tool) throw new Error('api_tool is not available');
+          const created = await userService.createTool(
+            {
+              name: tool.name,
+              displayName: tool.displayName,
+              description: tool.description,
+              config: {},
+              actions: tool.actions,
+              status: true,
+            },
+            token,
+          );
+          const body = await created.json();
+          if (!body?.id) throw new Error('create failed');
           navigate('/settings/tools', { state: { openToolId: body.id } });
+        } catch {
+          dispatch(
+            showActionToast({
+              variant: 'destructive',
+              message: t('settings.connectors.createFailed'),
+            }),
+          );
         }
         return;
       }
@@ -110,7 +121,7 @@ export default function useConnectorLauncher({
         connectionId: options.connectionId,
       });
     },
-    [navigate, token],
+    [dispatch, navigate, t, token],
   );
 
   const afterMcpSave = async () => {

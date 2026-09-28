@@ -17,6 +17,7 @@ import {
   selectConnections,
 } from '../connectors/connectorsSlice';
 import type { AppDispatch } from '../store';
+import ConnectorIcon from '../connectors/ConnectorIcon';
 import ConnectorAuth from './ConnectorAuth';
 import SkeletonLoader from './SkeletonLoader';
 import { Button } from './ui/button';
@@ -239,6 +240,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
           <ConnectorAuth
             provider="google_drive"
             label={t('modals.uploadDoc.connectors.googleDrive.connect')}
+            icon={<ConnectorIcon icon="drive" className="size-5" />}
             onSuccess={(data) => {
               setAuthError('');
               dispatch(loadConnectors({ token }));

@@ -1111,7 +1111,7 @@
       "status": {
         "connect": "連線",
         "connected": "已連線",
-        "connectedCount": "已連線 {{count}} 個",
+        "connectedCount": "已連線 {{formatted}} 個",
         "reconnect": "重新連線",
         "needsAdminSetup": "需要管理員設定",
         "disabledByAdmin": "已被管理員停用",
@@ -1181,12 +1181,14 @@
         "always": "一律允許",
         "ask": "需要核准",
         "off": "關閉",
-        "label": "{{action}} 的權限"
+        "label": "{{action}} 的權限",
+        "saveFailed": "無法儲存權限。請再試一次。"
       },
       "disconnect": {
         "title": "要中斷 {{name}} 的連線嗎？",
         "body_zero": "在重新連線之前，此連線的工具將無法使用。",
-        "body_other": "你的 {{count}} 個來源會保留內容，但會停止同步。在重新連線之前，此連線的工具將無法使用。"
+        "body_other": "你的 {{formatted}} 個來源會保留內容，但會停止同步。在重新連線之前，此連線的工具將無法使用。",
+        "failed": "無法中斷連線。請再試一次。"
       },
       "fields": {
         "token": "API 金鑰",
@@ -1216,9 +1218,9 @@
         "doneTitle": "{{name}} 已連線",
         "doneSummary": "已以 {{account}} 連線。{{sources}}同步中，{{tools}}已就緒。",
         "doneSummaryNone": "已以 {{account}} 連線。",
-        "sourcesCount_other": "{{count}} 個來源",
-        "toolsCount_other": "{{count}} 個工具",
-        "toolsHeading": "工具（{{count}}）",
+        "sourcesCount_other": "{{formatted}} 個來源",
+        "toolsCount_other": "{{formatted}} 個工具",
+        "toolsHeading": "工具（{{formatted}}）",
         "tryInChat": "在聊天中試試",
         "done": "完成",
         "connectFailed": "無法連線。請檢查資料後再試一次。",
@@ -1231,10 +1233,10 @@
       "remove": {
         "title": "要移除 {{name}} 嗎？",
         "description": "儲存的登入資訊將被刪除。請選擇如何處理此連線提供的內容。",
-        "sourcesLabel_other": "它的 {{count}} 個來源",
+        "sourcesLabel_other": "它的 {{formatted}} 個來源",
         "keepSources": "保留內容（停止同步）",
         "deleteSources": "刪除",
-        "toolsLabel_other": "它的 {{count}} 個工具",
+        "toolsLabel_other": "它的 {{formatted}} 個工具",
         "deleteTools": "刪除",
         "keepTools": "保留並關閉",
         "failed": "無法移除此連線。請再試一次。"
@@ -1257,6 +1259,12 @@
         "memberNote": "每位成員須先連線自己的 {{name}} 帳號，才能使用此工具。",
         "forced": "管理員已為此連接器的所有共用設定此項。",
         "saveFailed": "無法儲存變更。請再試一次。"
+      },
+      "createFailed": "無法新增連接器。請再試一次。",
+      "capabilityFilter": {
+        "sync": "正在顯示將內容同步到來源的連接器。",
+        "tools": "正在顯示為代理提供工具的連接器。",
+        "showAll": "顯示全部"
       }
     }
   },

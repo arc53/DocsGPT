@@ -13,6 +13,8 @@ import { formatDateTime } from '../utils/dateTimeUtils';
 import { useDispatch, useSelector } from 'react-redux';
 import connectorsService from '../api/services/connectorsService';
 import ConnectorAuth from '../components/ConnectorAuth';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectorIconKey } from '../connectors/i18n';
 import {
   loadConnectors,
   selectConnections,
@@ -453,7 +455,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
             value={activeConnectionId ?? undefined}
             onValueChange={switchAccount}
           >
-            <SelectTrigger size="field" className="w-full">
+            <SelectTrigger size="field" shape="pill" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -472,6 +474,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         label={t('filePicker.connectTo', {
           provider: getProviderConfig(provider).displayName,
         })}
+        icon={
+          <ConnectorIcon icon={connectorIconKey(provider)} className="size-5" />
+        }
         onSuccess={(data) => {
           setAuthError('');
           dispatch(loadConnectors({ token }));

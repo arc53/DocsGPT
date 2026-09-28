@@ -1111,7 +1111,7 @@
       "status": {
         "connect": "连接",
         "connected": "已连接",
-        "connectedCount": "已连接 {{count}} 个",
+        "connectedCount": "已连接 {{formatted}} 个",
         "reconnect": "重新连接",
         "needsAdminSetup": "需要管理员设置",
         "disabledByAdmin": "已被管理员停用",
@@ -1181,12 +1181,14 @@
         "always": "始终允许",
         "ask": "需要批准",
         "off": "关闭",
-        "label": "{{action}} 的权限"
+        "label": "{{action}} 的权限",
+        "saveFailed": "无法保存权限。请重试。"
       },
       "disconnect": {
         "title": "断开 {{name}}？",
         "body_zero": "在重新连接之前，此连接的工具将无法使用。",
-        "body_other": "你的 {{count}} 个来源会保留内容，但将停止同步。在重新连接之前，此连接的工具将无法使用。"
+        "body_other": "你的 {{formatted}} 个来源会保留内容，但将停止同步。在重新连接之前，此连接的工具将无法使用。",
+        "failed": "无法断开连接。请重试。"
       },
       "fields": {
         "token": "API 密钥",
@@ -1216,9 +1218,9 @@
         "doneTitle": "{{name}} 已连接",
         "doneSummary": "已作为 {{account}} 连接。{{sources}}正在同步，{{tools}}已就绪。",
         "doneSummaryNone": "已作为 {{account}} 连接。",
-        "sourcesCount_other": "{{count}} 个来源",
-        "toolsCount_other": "{{count}} 个工具",
-        "toolsHeading": "工具（{{count}}）",
+        "sourcesCount_other": "{{formatted}} 个来源",
+        "toolsCount_other": "{{formatted}} 个工具",
+        "toolsHeading": "工具（{{formatted}}）",
         "tryInChat": "在聊天中试试",
         "done": "完成",
         "connectFailed": "无法连接。请检查信息后重试。",
@@ -1231,10 +1233,10 @@
       "remove": {
         "title": "移除 {{name}}？",
         "description": "保存的登录信息将被删除。请选择如何处理此连接提供的内容。",
-        "sourcesLabel_other": "它的 {{count}} 个来源",
+        "sourcesLabel_other": "它的 {{formatted}} 个来源",
         "keepSources": "保留内容（停止同步）",
         "deleteSources": "删除",
-        "toolsLabel_other": "它的 {{count}} 个工具",
+        "toolsLabel_other": "它的 {{formatted}} 个工具",
         "deleteTools": "删除",
         "keepTools": "保留并关闭",
         "failed": "无法移除此连接。请重试。"
@@ -1257,6 +1259,12 @@
         "memberNote": "每位成员需先连接自己的 {{name}} 账号才能使用此工具。",
         "forced": "管理员已为此连接器的所有共享设定了此项。",
         "saveFailed": "无法保存更改。请重试。"
+      },
+      "createFailed": "无法添加连接器。请重试。",
+      "capabilityFilter": {
+        "sync": "正在显示将内容同步到来源的连接器。",
+        "tools": "正在显示为智能体提供工具的连接器。",
+        "showAll": "显示全部"
       }
     }
   },

@@ -1126,7 +1126,7 @@
       "status": {
         "connect": "Connect",
         "connected": "Connected",
-        "connectedCount": "{{count}} connected",
+        "connectedCount": "{{formatted}} connected",
         "reconnect": "Reconnect",
         "needsAdminSetup": "Needs admin setup",
         "disabledByAdmin": "Disabled by admin",
@@ -1196,13 +1196,15 @@
         "always": "Always allow",
         "ask": "Needs approval",
         "off": "Off",
-        "label": "Permission for {{action}}"
+        "label": "Permission for {{action}}",
+        "saveFailed": "Could not save the permission. Try again."
       },
       "disconnect": {
         "title": "Disconnect {{name}}?",
         "body_zero": "Tools from this connection stop working until you reconnect.",
         "body_one": "Your source keeps its content but stops syncing. Tools from this connection stop working until you reconnect.",
-        "body_other": "Your {{count}} sources keep their content but stop syncing. Tools from this connection stop working until you reconnect."
+        "body_other": "Your {{formatted}} sources keep their content but stop syncing. Tools from this connection stop working until you reconnect.",
+        "failed": "Could not disconnect. Try again."
       },
       "fields": {
         "token": "API key",
@@ -1232,11 +1234,11 @@
         "doneTitle": "{{name}} is connected",
         "doneSummary": "Connected as {{account}}. {{sources}} syncing, {{tools}} ready.",
         "doneSummaryNone": "Connected as {{account}}.",
-        "sourcesCount_one": "{{count}} source",
-        "sourcesCount_other": "{{count}} sources",
-        "toolsCount_one": "{{count}} tool",
-        "toolsCount_other": "{{count}} tools",
-        "toolsHeading": "Tools ({{count}})",
+        "sourcesCount_one": "{{formatted}} source",
+        "sourcesCount_other": "{{formatted}} sources",
+        "toolsCount_one": "{{formatted}} tool",
+        "toolsCount_other": "{{formatted}} tools",
+        "toolsHeading": "Tools ({{formatted}})",
         "tryInChat": "Try it in chat",
         "done": "Done",
         "connectFailed": "Could not connect. Check the details and try again.",
@@ -1250,11 +1252,11 @@
         "title": "Remove {{name}}?",
         "description": "The stored sign-in is deleted. Choose what happens to what this connection feeds.",
         "sourcesLabel_one": "Its source",
-        "sourcesLabel_other": "Its {{count}} sources",
+        "sourcesLabel_other": "Its {{formatted}} sources",
         "keepSources": "Keep content (stop syncing)",
         "deleteSources": "Delete",
         "toolsLabel_one": "Its tool",
-        "toolsLabel_other": "Its {{count}} tools",
+        "toolsLabel_other": "Its {{formatted}} tools",
         "deleteTools": "Delete",
         "keepTools": "Keep, turned off",
         "failed": "Could not remove the connection. Try again."
@@ -1277,6 +1279,12 @@
         "memberNote": "Each member connects their own {{name}} account before they can use this tool.",
         "forced": "An admin chose this for every share of this connector.",
         "saveFailed": "Could not save the change. Try again."
+      },
+      "createFailed": "Could not add the connector. Try again.",
+      "capabilityFilter": {
+        "sync": "Showing connectors that sync content into Sources.",
+        "tools": "Showing connectors that give agents tools.",
+        "showAll": "Show all"
       }
     }
   },
@@ -2616,9 +2624,6 @@
         "body": "These were used this {{period}} and recorded at $0: {{models}}. Use a token limit for them, or declare their rates in the model catalog.",
         "model": "{{model}} ({{tokens}} tokens)"
       }
-    },
-    "connectors": {
-      "defaultKey": "Set ENCRYPTION_SECRET_KEY before connecting services."
     }
   }
 }

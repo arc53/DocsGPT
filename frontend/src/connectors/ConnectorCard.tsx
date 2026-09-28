@@ -8,19 +8,10 @@ import {
   CardFooter,
   CardTitle,
 } from '../components/ui/card';
+import { formatCount } from '../utils/dateTimeUtils';
 import ConnectorIcon from './ConnectorIcon';
 import { connectorDescription, connectorName } from './i18n';
 import type { Capability, ConnectorDefinition } from './types';
-
-// Sync is blue, Read green, Write red: what the connection does to your data.
-const CAPABILITY_VARIANT: Record<
-  Capability,
-  'info' | 'success' | 'destructive'
-> = {
-  sync: 'info',
-  read: 'success',
-  write: 'destructive',
-};
 
 export function CapabilityBadges({
   capabilities,
@@ -31,7 +22,9 @@ export function CapabilityBadges({
   return (
     <div className="flex flex-wrap gap-1">
       {capabilities.map((capability) => (
-        <Badge key={capability} variant={CAPABILITY_VARIANT[capability]}>
+        // Capabilities are categories, not states: neutral, so the status
+        // hues stay free for the state badge (DESIGN.md "Colour tokens").
+        <Badge key={capability} variant="neutral">
           {t(`settings.connectors.capability.${capability}`)}
         </Badge>
       ))}
@@ -53,6 +46,7 @@ export function ConnectorStateBadge({
           {connector.connected_count > 1
             ? t('settings.connectors.status.connectedCount', {
                 count: connector.connected_count,
+                formatted: formatCount(connector.connected_count),
               })
             : t('settings.connectors.status.connected')}
         </Badge>

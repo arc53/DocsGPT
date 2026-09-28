@@ -27,6 +27,11 @@ import { Card, CardFooter, CardTitle } from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { Pagination } from '../components/ui/pagination';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
@@ -662,15 +667,19 @@ export default function Sources({
                           </Badge>
                         )}
                         {connection && paused && (
-                          <Badge
-                            variant="warning"
-                            title={t('settings.sources.paused', {
-                              name: connection.name,
-                              interpolation: { escapeValue: false },
-                            })}
-                          >
-                            {t('settings.connectors.detail.paused')}
-                          </Badge>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant="warning" tabIndex={0}>
+                                {t('settings.connectors.detail.paused')}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {t('settings.sources.paused', {
+                                name: connection.name,
+                                interpolation: { escapeValue: false },
+                              })}
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                         {document.ingestStatus === 'failed' && (
                           <Badge variant="destructive">
@@ -726,7 +735,7 @@ export default function Sources({
                                 title={connection.account_label}
                               >
                                 {t('settings.tools.viaConnection', {
-                                  name: connection.account_label,
+                                  name: connection.name,
                                   interpolation: { escapeValue: false },
                                 })}
                               </span>

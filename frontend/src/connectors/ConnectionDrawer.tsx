@@ -1,10 +1,10 @@
 import {
   CircleAlert,
-  ExternalLink,
   Plus,
   RefreshCw,
   RotateCw,
   Trash2,
+  TriangleAlert,
   Unplug,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
-import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
@@ -23,15 +23,21 @@ import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
-import { Sheet, SheetContent, SheetTitle } from '../components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from '../components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
-import { formatDateTime } from '../utils/dateTimeUtils';
+import { formatCount, formatDateTime } from '../utils/dateTimeUtils';
 import { CapabilityBadges } from './ConnectorCard';
 import ConnectorIcon from './ConnectorIcon';
+import ConnectorSetupNotice from './ConnectorSetupNotice';
 import { loadConnectors, selectConnections } from './connectorsSlice';
 import { connectorDescription, connectorName } from './i18n';
 import ToolPermissions from './ToolPermissions';
@@ -133,6 +139,7 @@ function RemoveConnectionModal({
             float={false}
             label={t('settings.connectors.remove.sourcesLabel', {
               count: detail.sources.length,
+              formatted: formatCount(detail.sources.length),
             })}
           >
             <ToggleGroup
@@ -156,6 +163,7 @@ function RemoveConnectionModal({
             float={false}
             label={t('settings.connectors.remove.toolsLabel', {
               count: detail.tools.length,
+              formatted: formatCount(detail.tools.length),
             })}
           >
             <ToggleGroup
@@ -219,7 +227,7 @@ function AccountSection({
 
   return (
     <div className="flex flex-col gap-6">
-      <Card padding="none">
+      <Card variant="subtle" padding="none">
         <ListRows>
           <ListRow
             title={accountTitle(detail)}
@@ -236,7 +244,8 @@ function AccountSection({
                 {detail.status !== 'connected' && (
                   <Button
                     type="button"
-                    size="xs"
+                    size="sm"
+                    shape="pill"
                     variant="outline"
                     onClick={() => onReconnect(detail)}
                   >
@@ -275,11 +284,13 @@ function AccountSection({
             }
           />
           {detail.sources.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              {t('settings.connectors.detail.noSources')}
-            </p>
+            <EmptyState
+              size="xs"
+              illustration="none"
+              title={t('settings.connectors.detail.noSources')}
+            />
           ) : (
-            <Card padding="none">
+            <Card variant="subtle" padding="none">
               <ListRows>
                 {detail.sources.map((source) => (
                   <ListRow
@@ -338,17 +349,23 @@ function AccountSection({
           />
           {detail.tools.map((tool) => (
             <div key={tool.id} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-foreground min-w-0 truncate text-sm font-medium">
-                  {tool.display_name}
-                </span>
-                <Badge variant={tool.status ? 'success' : 'neutral'}>
-                  {tool.status
-                    ? t('settings.connectors.detail.toolOn')
-                    : t('settings.connectors.detail.toolOff')}
-                </Badge>
-              </div>
-              <ToolPermissions connectionId={detail.id} tool={tool} />
+              <SectionHeader
+                as="h4"
+                size="xs"
+                title={tool.display_name}
+                actions={
+                  <Badge variant={tool.status ? 'success' : 'neutral'}>
+                    {tool.status
+                      ? t('settings.connectors.detail.toolOn')
+                      : t('settings.connectors.detail.toolOff')}
+                  </Badge>
+                }
+              />
+              <ToolPermissions
+                connectionId={detail.id}
+                tool={tool}
+                variant="subtle"
+              />
             </div>
           ))}
         </section>
@@ -420,10 +437,23 @@ export default function ConnectionDrawer({
 
   const confirmDisconnect = () => {
     if (!toDisconnect) return;
-    connectorsService.disconnect(toDisconnect.id, token).finally(() => {
-      setToDisconnect(null);
-      refresh();
-    });
+    connectorsService
+      .disconnect(toDisconnect.id, token)
+      .then((data) => {
+        if (!data?.success) throw new Error('disconnect failed');
+      })
+      .catch(() =>
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: t('settings.connectors.disconnect.failed'),
+          }),
+        ),
+      )
+      .finally(() => {
+        setToDisconnect(null);
+        refresh();
+      });
   };
 
   const reconnect = (detail: ConnectionDetail) => {
@@ -452,8 +482,8 @@ export default function ConnectionDrawer({
           ? {
               variant: 'success',
               message: t('settings.connectors.detail.refreshed', {
-                added: data.added?.length ?? 0,
-                removed: data.removed?.length ?? 0,
+                added: formatCount(data.added?.length ?? 0),
+                removed: formatCount(data.removed?.length ?? 0),
               }),
             }
           : {
@@ -474,11 +504,12 @@ export default function ConnectionDrawer({
         <SheetContent
           side="right"
           size="detail"
-          aria-describedby={undefined}
+          closeLabel={t('agents.close')}
           className="overflow-y-auto"
         >
           <div className="flex flex-col gap-6 p-6">
-            <div className="flex items-start gap-4 pr-8">
+            {/* pr-12 keeps the header clear of the close X. */}
+            <div className="flex items-start gap-4 pr-12">
               <span className="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
                 <ConnectorIcon icon={connector.icon} className="size-7" />
               </span>
@@ -489,14 +520,14 @@ export default function ConnectionDrawer({
                 </p>
               </div>
             </div>
-            <p className="text-muted-foreground text-sm">
+            <SheetDescription>
               {connectorDescription(t, connector)}
-            </p>
+            </SheetDescription>
             <CapabilityBadges capabilities={connector.capabilities} />
 
             {connector.publisher === 'custom' && (
               <Alert variant="warning" role="note">
-                <CircleAlert />
+                <TriangleAlert />
                 <AlertDescription>
                   {t('settings.connectors.unverified')}
                 </AlertDescription>
@@ -504,43 +535,7 @@ export default function ConnectionDrawer({
             )}
 
             {connector.needs_setup && (
-              <Alert variant="warning">
-                <CircleAlert />
-                <AlertTitle>
-                  {t('settings.connectors.status.needsAdminSetup')}
-                </AlertTitle>
-                <AlertDescription>
-                  <div className="flex flex-col gap-2">
-                    {connector.missing_settings.length > 0 ? (
-                      <>
-                        <span>{t('settings.connectors.setupSettings')}</span>
-                        <code className="font-mono text-xs wrap-anywhere">
-                          {connector.missing_settings.join(', ')}
-                        </code>
-                      </>
-                    ) : (
-                      <span>{t('settings.connectors.askAdmin')}</span>
-                    )}
-                    {connector.docs_url && (
-                      <Button
-                        variant="link"
-                        size="inline"
-                        asChild
-                        className="w-fit"
-                      >
-                        <a
-                          href={connector.docs_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {t('settings.connectors.setupGuide')}
-                          <ExternalLink />
-                        </a>
-                      </Button>
-                    )}
-                  </div>
-                </AlertDescription>
-              </Alert>
+              <ConnectorSetupNotice connector={connector} />
             )}
 
             <section className="flex flex-col gap-3">
@@ -575,6 +570,7 @@ export default function ConnectionDrawer({
                     <Button
                       variant="outline"
                       size="sm"
+                      shape="pill"
                       onClick={() => setReloadKey((key) => key + 1)}
                     >
                       {t('retry')}
@@ -599,7 +595,7 @@ export default function ConnectionDrawer({
                   }
                 />
               ) : (
-                <div className="flex flex-col gap-8">
+                <div className="flex flex-col gap-6">
                   {details.map((detail) => (
                     <AccountSection
                       key={detail.id}
@@ -630,6 +626,7 @@ export default function ConnectionDrawer({
         })}
         description={t('settings.connectors.disconnect.body', {
           count: toDisconnect?.source_count ?? 0,
+          formatted: formatCount(toDisconnect?.source_count ?? 0),
         })}
         modalState={toDisconnect ? 'ACTIVE' : 'INACTIVE'}
         setModalState={(state) => state === 'INACTIVE' && setToDisconnect(null)}

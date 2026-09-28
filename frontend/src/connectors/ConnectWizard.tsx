@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { envVar } from '@/env';
 import connectorsService from '../api/services/connectorsService';
-import ConnectorAuth from '../components/ConnectorAuth';
+import { useConnectorAuth } from '../components/ConnectorAuth';
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
 import {
@@ -37,6 +37,7 @@ import {
   setSelectedDocs,
 } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
+import { formatCount } from '../utils/dateTimeUtils';
 import ConnectorIcon from './ConnectorIcon';
 import CredentialForm, { credentialsComplete } from './CredentialForm';
 import { loadConnectors, selectConnections } from './connectorsSlice';
@@ -133,6 +134,14 @@ export default function ConnectWizard({
     }
     setStep(canSync ? 'setup' : 'done');
   };
+
+  const startSignIn = useConnectorAuth({
+    provider: connector.key,
+    connectionId:
+      mode === 'reconnect' ? (connectionId ?? undefined) : undefined,
+    onSuccess: (data) => afterSignIn(data.connection_id),
+    onError: setError,
+  });
 
   const submitCredentials = async () => {
     setPending(true);
@@ -253,9 +262,11 @@ export default function ConnectWizard({
           });
     const sourcesText = t('settings.connectors.wizard.sourcesCount', {
       count: sources.length,
+      formatted: formatCount(sources.length),
     });
     const toolsText = t('settings.connectors.wizard.toolsCount', {
       count: toolCount,
+      formatted: formatCount(toolCount),
     });
     const countsLine =
       sources.length && toolCount
@@ -289,20 +300,7 @@ export default function ConnectWizard({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {connector.auth_kind === 'oauth' ? (
-        <ConnectorAuth
-          provider={connector.key}
-          connectionId={
-            mode === 'reconnect' ? (connectionId ?? undefined) : undefined
-          }
-          label={t('settings.connectors.wizard.signIn', {
-            name,
-            interpolation: { escapeValue: false },
-          })}
-          onSuccess={(data) => afterSignIn(data.connection_id)}
-          onError={setError}
-        />
-      ) : (
+      {connector.auth_kind === 'oauth' ? null : (
         <CredentialForm
           connectorKey={connector.key}
           idPrefix={`connect-${connector.key}`}
@@ -393,6 +391,7 @@ export default function ConnectWizard({
               <AccordionTrigger>
                 {t('settings.connectors.wizard.toolsHeading', {
                   count: toolCount,
+                  formatted: formatCount(toolCount),
                 })}
               </AccordionTrigger>
               <AccordionContent>
@@ -433,7 +432,17 @@ export default function ConnectWizard({
 
   const footer =
     step === 'signin' ? (
-      connector.auth_kind === 'oauth' ? undefined : (
+      connector.auth_kind === 'oauth' ? (
+        <ModalActions
+          cancelLabel={t('cancel')}
+          onCancel={onClose}
+          submitLabel={t('settings.connectors.wizard.signIn', {
+            name,
+            interpolation: { escapeValue: false },
+          })}
+          onSubmit={startSignIn}
+        />
+      ) : (
         <ModalActions
           cancelLabel={t('cancel')}
           onCancel={onClose}

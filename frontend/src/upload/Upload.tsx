@@ -1,4 +1,4 @@
-import { ChevronLeft, CircleAlert, FileText } from 'lucide-react';
+import { ChevronLeft, FileText } from 'lucide-react';
 import { envVar } from '@/env';
 import { cn } from '@/lib/utils';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -28,8 +28,9 @@ import { Modal } from '../components/ui/modal';
 import { Separator } from '../components/ui/separator';
 import { OptionCard } from '../components/ui/option-card';
 import { SectionHeader } from '../components/ui/section-header';
-import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import ConnectorIcon from '../connectors/ConnectorIcon';
+import ConnectorSetupNotice from '../connectors/ConnectorSetupNotice';
+import { formatCount } from '../utils/dateTimeUtils';
 import {
   loadConnectors,
   selectConnections,
@@ -1194,6 +1195,7 @@ function Upload({
     if (accounts.length > 1)
       return t('settings.connectors.status.connectedCount', {
         count: accounts.length,
+        formatted: formatCount(accounts.length),
       });
     return t('settings.connectors.status.connect');
   };
@@ -1274,26 +1276,7 @@ function Upload({
 
   const renderSetupNotice = () =>
     selectedConnector && needsSetup ? (
-      <Alert variant="warning">
-        <CircleAlert />
-        <AlertTitle>
-          {t('settings.connectors.status.needsAdminSetup')}
-        </AlertTitle>
-        <AlertDescription>
-          <div className="flex flex-col gap-2">
-            {selectedConnector.missing_settings.length > 0 ? (
-              <>
-                <span>{t('settings.connectors.setupSettings')}</span>
-                <code className="font-mono text-xs wrap-anywhere">
-                  {selectedConnector.missing_settings.join(', ')}
-                </code>
-              </>
-            ) : (
-              <span>{t('settings.connectors.askAdmin')}</span>
-            )}
-          </div>
-        </AlertDescription>
-      </Alert>
+      <ConnectorSetupNotice connector={selectedConnector} />
     ) : null;
   return (
     <Modal

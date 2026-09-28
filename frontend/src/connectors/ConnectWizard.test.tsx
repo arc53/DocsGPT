@@ -26,22 +26,14 @@ vi.mock('../api/services/connectorsService', () => ({ default: service }));
 // The OAuth popup is covered by ConnectorAuth's own tests; here it only has
 // to report a finished sign-in.
 vi.mock('../components/ConnectorAuth', () => ({
-  default: ({
-    onSuccess,
-    label,
-  }: {
-    onSuccess: (data: { connection_id: string; user_email: string }) => void;
-    label: string;
-  }) => (
-    <button
-      type="button"
-      onClick={() =>
-        onSuccess({ connection_id: 'conn-drive', user_email: 'a@example.com' })
-      }
-    >
-      {label}
-    </button>
-  ),
+  useConnectorAuth:
+    ({
+      onSuccess,
+    }: {
+      onSuccess: (data: { connection_id: string; user_email: string }) => void;
+    }) =>
+    () =>
+      onSuccess({ connection_id: 'conn-drive', user_email: 'a@example.com' }),
 }));
 vi.mock('../components/FilePicker', () => ({
   FilePicker: ({

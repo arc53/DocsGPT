@@ -1,4 +1,10 @@
-import { CircleAlert, Trash2, UserRound, UsersRound } from 'lucide-react';
+import {
+  CircleAlert,
+  Trash2,
+  TriangleAlert,
+  UserRound,
+  UsersRound,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -580,7 +586,7 @@ export default function ShareToTeamModal({
               )}
               {credentialMode === 'owner' ? (
                 <Alert variant="warning" role="note">
-                  <CircleAlert aria-hidden="true" />
+                  <TriangleAlert aria-hidden="true" />
                   <AlertDescription>
                     {t('settings.connectors.share.ownerWarning', {
                       account: credentials.account,

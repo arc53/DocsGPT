@@ -1,15 +1,15 @@
-import { ArrowRight, Plus } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
 import { Card, CardDescription, CardTitle } from '../components/ui/card';
-import { Modal } from '../components/ui/modal';
+import { Modal, ModalActions } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
 import { useLoaderState } from '../hooks';
 import {
@@ -40,6 +40,7 @@ export default function AddToolModal({
   onDevicePaired?: (deviceId: string) => void;
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const token = useSelector(selectToken);
   const dispatch = useDispatch<AppDispatch>();
   const catalog = useSelector(selectConnectorCatalog);
@@ -141,6 +142,28 @@ export default function AddToolModal({
         onOpenChange={(o) => !o && setModalState('INACTIVE')}
         title={t('settings.tools.selectToolSetup')}
         size="xl"
+        footer={
+          <ModalActions
+            footerStart={
+              <Button variant="link" size="inline" asChild>
+                <Link
+                  to="/settings/connectors"
+                  onClick={() => setModalState('INACTIVE')}
+                >
+                  {t('settings.tools.browseConnectors')}
+                  <ArrowRight />
+                </Link>
+              </Button>
+            }
+            cancelLabel={t('cancel')}
+            onCancel={() => setModalState('INACTIVE')}
+            submitLabel={t('settings.connectors.addCustom')}
+            onSubmit={() => {
+              setModalState('INACTIVE');
+              navigate('/settings/connectors?filter=custom');
+            }}
+          />
+        }
       >
         <div className="flex flex-col gap-6">
           {loading ? (
@@ -205,26 +228,6 @@ export default function AddToolModal({
               );
             })
           )}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Button variant="link" size="inline" asChild>
-              <Link
-                to="/settings/connectors"
-                onClick={() => setModalState('INACTIVE')}
-              >
-                {t('settings.tools.browseConnectors')}
-                <ArrowRight className="size-3" />
-              </Link>
-            </Button>
-            <Button variant="outline-primary" shape="pill" size="sm" asChild>
-              <Link
-                to="/settings/connectors?filter=custom"
-                onClick={() => setModalState('INACTIVE')}
-              >
-                <Plus />
-                {t('settings.connectors.addCustom')}
-              </Link>
-            </Button>
-          </div>
         </div>
       </Modal>
       <ConfigToolModal

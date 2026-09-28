@@ -1120,7 +1120,7 @@
       "status": {
         "connect": "Conectar",
         "connected": "Conectado",
-        "connectedCount": "{{count}} conectadas",
+        "connectedCount": "{{formatted}} conectadas",
         "reconnect": "Reconectar",
         "needsAdminSetup": "Requiere configuración del administrador",
         "disabledByAdmin": "Desactivado por el administrador",
@@ -1190,13 +1190,15 @@
         "always": "Permitir siempre",
         "ask": "Requiere aprobación",
         "off": "Desactivada",
-        "label": "Permiso para {{action}}"
+        "label": "Permiso para {{action}}",
+        "saveFailed": "No se pudo guardar el permiso. Inténtalo de nuevo."
       },
       "disconnect": {
         "title": "¿Desconectar {{name}}?",
         "body_zero": "Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
         "body_one": "Tu fuente conserva su contenido pero deja de sincronizarse. Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
-        "body_other": "Tus {{count}} fuentes conservan su contenido pero dejan de sincronizarse. Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla."
+        "body_other": "Tus {{formatted}} fuentes conservan su contenido pero dejan de sincronizarse. Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
+        "failed": "No se pudo desconectar. Inténtalo de nuevo."
       },
       "fields": {
         "token": "Clave de API",
@@ -1226,11 +1228,11 @@
         "doneTitle": "{{name}} está conectado",
         "doneSummary": "Conectado como {{account}}. {{sources}} sincronizando, {{tools}} listas.",
         "doneSummaryNone": "Conectado como {{account}}.",
-        "sourcesCount_one": "{{count}} fuente",
-        "sourcesCount_other": "{{count}} fuentes",
-        "toolsCount_one": "{{count}} herramienta",
-        "toolsCount_other": "{{count}} herramientas",
-        "toolsHeading": "Herramientas ({{count}})",
+        "sourcesCount_one": "{{formatted}} fuente",
+        "sourcesCount_other": "{{formatted}} fuentes",
+        "toolsCount_one": "{{formatted}} herramienta",
+        "toolsCount_other": "{{formatted}} herramientas",
+        "toolsHeading": "Herramientas ({{formatted}})",
         "tryInChat": "Probar en el chat",
         "done": "Listo",
         "connectFailed": "No se pudo conectar. Revisa los datos e inténtalo de nuevo.",
@@ -1244,11 +1246,11 @@
         "title": "¿Eliminar {{name}}?",
         "description": "Se borra el inicio de sesión guardado. Elige qué pasa con lo que alimenta esta conexión.",
         "sourcesLabel_one": "Su fuente",
-        "sourcesLabel_other": "Sus {{count}} fuentes",
+        "sourcesLabel_other": "Sus {{formatted}} fuentes",
         "keepSources": "Conservar el contenido (dejar de sincronizar)",
         "deleteSources": "Eliminar",
         "toolsLabel_one": "Su herramienta",
-        "toolsLabel_other": "Sus {{count}} herramientas",
+        "toolsLabel_other": "Sus {{formatted}} herramientas",
         "deleteTools": "Eliminar",
         "keepTools": "Conservar, desactivadas",
         "failed": "No se pudo eliminar la conexión. Inténtalo de nuevo."
@@ -1271,6 +1273,12 @@
         "memberNote": "Cada miembro conecta su propia cuenta de {{name}} antes de poder usar esta herramienta.",
         "forced": "Un administrador eligió esto para todos los recursos compartidos de este conector.",
         "saveFailed": "No se pudo guardar el cambio. Inténtalo de nuevo."
+      },
+      "createFailed": "No se pudo añadir el conector. Inténtalo de nuevo.",
+      "capabilityFilter": {
+        "sync": "Se muestran los conectores que sincronizan contenido en Fuentes.",
+        "tools": "Se muestran los conectores que dan herramientas a los agentes.",
+        "showAll": "Mostrar todos"
       }
     }
   },

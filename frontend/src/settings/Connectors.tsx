@@ -15,6 +15,13 @@ import {
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConnectionDrawer from '../connectors/ConnectionDrawer';
 import ConnectorCard from '../connectors/ConnectorCard';
@@ -86,6 +93,21 @@ export default function Connectors() {
   // "Connect more" in the composer opens the connectors that can do what the
   // picker is for: sync content, or give tools.
   const capability = searchParams.get('capability');
+  const clearCapability = () => {
+    searchParams.delete('capability');
+    setSearchParams(searchParams, { replace: true });
+  };
+
+  // Only categories that have something in them (connectors that need admin
+  // setup are not listed, which can empty one).
+  const filters = FILTERS.filter(
+    (key) =>
+      key === 'all' ||
+      key === filter ||
+      (key === 'connected'
+        ? catalog.some(isConnected)
+        : catalog.some((connector) => connector.category === key)),
+  );
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -163,19 +185,57 @@ export default function Connectors() {
           </DropdownMenu>
         }
       >
-        <ToggleGroup
-          type="single"
-          value={filter}
-          onValueChange={(value) => value && setFilter(value as Filter)}
-          aria-label={t('settings.connectors.categoriesLabel')}
-          className="mb-6"
-        >
-          {FILTERS.map((key) => (
-            <ToggleGroupItem key={key} value={key}>
-              {t(`settings.connectors.categories.${key}`)}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <div className="mb-6 flex flex-col gap-3">
+          {/* Nine pills wrap to four lines on a phone: a Select there. */}
+          <ToggleGroup
+            type="single"
+            value={filter}
+            onValueChange={(value) => value && setFilter(value as Filter)}
+            aria-label={t('settings.connectors.categoriesLabel')}
+            className="hidden sm:flex"
+          >
+            {filters.map((key) => (
+              <ToggleGroupItem key={key} value={key}>
+                {t(`settings.connectors.categories.${key}`)}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          <div className="sm:hidden">
+            <Select
+              value={filter}
+              onValueChange={(value) => setFilter(value as Filter)}
+            >
+              <SelectTrigger
+                size="field"
+                shape="pill"
+                className="w-full"
+                aria-label={t('settings.connectors.categoriesLabel')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {filters.map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {t(`settings.connectors.categories.${key}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {(capability === 'sync' || capability === 'tools') && (
+            <p className="text-muted-foreground text-sm">
+              {t(`settings.connectors.capabilityFilter.${capability}`)}{' '}
+              <Button
+                type="button"
+                variant="link"
+                size="inline"
+                onClick={clearCapability}
+              >
+                {t('settings.connectors.capabilityFilter.showAll')}
+              </Button>
+            </p>
+          )}
+        </div>
       </PageToolbar>
 
       {!loaded && !failed ? (
@@ -191,6 +251,7 @@ export default function Connectors() {
             <Button
               variant="outline"
               size="sm"
+              shape="pill"
               onClick={() => dispatch(loadConnectors({ token }))}
             >
               {t('retry')}
@@ -198,13 +259,15 @@ export default function Connectors() {
           }
         />
       ) : visible.length === 0 ? (
-        <EmptyState
-          title={
-            filter === 'connected' && !search
-              ? t('settings.connectors.empty')
-              : t('settings.connectors.noMatches')
-          }
-        />
+        filter === 'connected' && !search ? (
+          <EmptyState title={t('settings.connectors.empty')} />
+        ) : (
+          <EmptyState
+            size="xs"
+            illustration="none"
+            title={t('settings.connectors.noMatches')}
+          />
+        )
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {visible.map((connector) => (

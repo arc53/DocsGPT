@@ -2,7 +2,7 @@ import { Pencil, RefreshCw, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
@@ -12,7 +12,12 @@ import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { Card, CardDescription, CardTitle } from '../components/ui/card';
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardTitle,
+} from '../components/ui/card';
 import { Switch } from '../components/ui/switch';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
@@ -413,37 +418,6 @@ export default function Tools() {
                             >
                               {tool.customName || tool.displayName}
                             </CardTitle>
-                            {(() => {
-                              const connection = tool.connection_id
-                                ? connections.find(
-                                    (c) => c.id === tool.connection_id,
-                                  )
-                                : undefined;
-                              if (!connection) return null;
-                              return (
-                                <Button
-                                  variant="link"
-                                  size="inline"
-                                  asChild
-                                  className="mt-1 max-w-full justify-start"
-                                >
-                                  <Link
-                                    to={`/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`}
-                                  >
-                                    <ConnectorIcon
-                                      icon={connection.icon}
-                                      className="size-3.5 shrink-0"
-                                    />
-                                    <span className="truncate">
-                                      {t('settings.tools.viaConnection', {
-                                        name: connection.name,
-                                        interpolation: { escapeValue: false },
-                                      })}
-                                    </span>
-                                  </Link>
-                                </Button>
-                              );
-                            })()}
                             <CardDescription
                               size="xs"
                               className="mt-1 line-clamp-4 max-h-24 overflow-hidden break-words"
@@ -453,6 +427,35 @@ export default function Tools() {
                             </CardDescription>
                           </div>
                         </div>
+                        {(() => {
+                          const connection = tool.connection_id
+                            ? connections.find(
+                                (c) => c.id === tool.connection_id,
+                              )
+                            : undefined;
+                          if (!connection) return null;
+                          // The same meta line as a Sources tile; mr-12 keeps
+                          // it clear of the status switch.
+                          return (
+                            <CardFooter>
+                              <span className="mr-12 flex min-w-0 items-center gap-2">
+                                <ConnectorIcon
+                                  icon={connection.icon}
+                                  className="size-3.5 shrink-0"
+                                />
+                                <span
+                                  className="truncate"
+                                  title={connection.account_label}
+                                >
+                                  {t('settings.tools.viaConnection', {
+                                    name: connection.name,
+                                    interpolation: { escapeValue: false },
+                                  })}
+                                </span>
+                              </span>
+                            </CardFooter>
+                          );
+                        })()}
                         <div className="absolute right-4 bottom-4">
                           <Switch
                             checked={tool.status}
