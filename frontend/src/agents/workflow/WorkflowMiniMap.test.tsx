@@ -103,8 +103,8 @@ describe('WorkflowMiniMap', () => {
     );
     expect(tokens(r.busy)).toEqual(
       expect.arrayContaining([
-        'hover:bg-primary/10',
-        'dark:hover:bg-primary/10',
+        'hover:bg-secondary',
+        'dark:hover:bg-secondary',
         'animate-pulse',
       ]),
     );
@@ -125,8 +125,8 @@ describe('WorkflowMiniMap', () => {
       expect.arrayContaining([
         'ring-2',
         'ring-primary',
-        'hover:bg-primary/10',
-        'dark:hover:bg-primary/10',
+        'hover:bg-secondary',
+        'dark:hover:bg-secondary',
       ]),
     );
     expect(done).not.toContain('hover:bg-accent');

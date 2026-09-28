@@ -15,6 +15,7 @@ import { renderMermaidDiagram } from './mermaidSecurity';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -357,18 +358,22 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                   >
                     -
                   </IconButton>
-                  <Button
-                    type="button"
-                    variant="link"
-                    size="inline"
-                    onClick={() => setZoomFactor(2)}
-                    title={t('mermaid.resetZoom')}
-                    /* eslint-disable-next-line shadcn/no-restyle --
-                       on the bg-black/70 zoom overlay, like its − / + siblings: keeps the overlay's white 12px regular */
-                    className="text-xs font-normal text-current"
-                  >
-                    {zoomFactor.toFixed(1)}x
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="inline"
+                        onClick={() => setZoomFactor(2)}
+                        /* eslint-disable-next-line shadcn/no-restyle --
+                           on the bg-black/70 zoom overlay, like its − / + siblings: keeps the overlay's white 12px regular */
+                        className="text-xs font-normal text-current"
+                      >
+                        {zoomFactor.toFixed(1)}x
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t('mermaid.resetZoom')}</TooltipContent>
+                  </Tooltip>
                   <IconButton
                     label={t('mermaid.increaseZoom')}
                     side="bottom"

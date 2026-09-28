@@ -12,12 +12,6 @@ export interface DirectoryStructure {
   [key: string]: FileNode;
 }
 
-export interface SearchResult {
-  name: string;
-  path: string;
-  isFile: boolean;
-}
-
 /**
  * Row context passed to consumers' getRowMenuOptions callbacks so they
  * can build per-row menus (e.g. add a Delete option for upload trees).

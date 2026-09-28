@@ -3,11 +3,14 @@ import { Handle, Position } from 'reactflow';
 
 import { cn } from '@/lib/utils';
 
+import { nodeToneClass, type WorkflowNodeType } from '../nodeTones';
+
 interface BaseNodeProps {
   title: string;
   children?: ReactNode;
   selected?: boolean;
-  type?: 'start' | 'end' | 'default' | 'state' | 'agent' | 'condition' | 'code';
+  /** The node type; picks the icon square's tone from the shared map. */
+  type: WorkflowNodeType;
   icon?: ReactNode;
   handles?: {
     source?: boolean;
@@ -15,47 +18,25 @@ interface BaseNodeProps {
   };
 }
 
+/**
+ * The pill every canvas node but Note and If / Else is drawn as: a tinted
+ * icon, the title, a muted meta block and the handles. Selected is the focus
+ * ring look (`border-primary ring-3 ring-ring/50`), with no scale, so the
+ * node stays put under the pointer.
+ */
 export const BaseNode: React.FC<BaseNodeProps> = ({
   title,
   children,
   selected,
-  type = 'default',
+  type,
   icon,
   handles = { source: true, target: true },
 }) => {
-  let bgColor = 'bg-card';
-  let borderColor = 'border-border';
-  let iconBg = 'bg-muted';
-  let iconColor = 'text-muted-foreground';
-
-  if (selected) {
-    borderColor = 'border-primary ring-2 ring-primary';
-  }
-
-  if (type === 'start') {
-    iconBg = 'bg-success/10';
-    iconColor = 'text-success';
-  } else if (type === 'end') {
-    iconBg = 'bg-destructive/10';
-    iconColor = 'text-destructive';
-  } else if (type === 'state') {
-    iconBg = 'bg-muted';
-    iconColor = 'text-muted-foreground';
-  } else if (type === 'condition') {
-    iconBg = 'bg-warning/10';
-    iconColor = 'text-warning';
-  } else if (type === 'code') {
-    iconBg = 'bg-info/10';
-    iconColor = 'text-info';
-  }
-
   return (
     <div
       className={cn(
-        'rounded-full border shadow-md transition hover:shadow-lg',
-        bgColor,
-        borderColor,
-        selected && 'scale-105',
+        'bg-card rounded-full border shadow-md transition hover:shadow-lg',
+        selected ? 'border-primary ring-ring/50 ring-3' : 'border-border',
         'max-w-[250px] min-w-[180px]',
       )}
     >
@@ -72,8 +53,7 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
         <div
           className={cn(
             'flex size-10 shrink-0 items-center justify-center rounded-full',
-            iconBg,
-            iconColor,
+            nodeToneClass(type),
           )}
         >
           {icon}

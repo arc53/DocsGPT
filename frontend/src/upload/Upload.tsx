@@ -1,9 +1,9 @@
-import { ChevronLeft, CircleAlert } from 'lucide-react';
+import { ChevronLeft, CircleAlert, FileText } from 'lucide-react';
 import { envVar } from '@/env';
 import { cn } from '@/lib/utils';
 import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
-import { useDropzone } from 'react-dropzone';
+import type { FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 
@@ -37,6 +37,10 @@ import {
   selectConnectorsLoaded,
 } from '../connectors/connectorsSlice';
 import type { AppDispatch } from '../store';
+import { Card } from '../components/ui/card';
+import { Dropzone } from '../components/ui/dropzone';
+import { ListRow, ListRows } from '../components/ui/list-row';
+import { formatBytes } from '../components/artifactViewUtils';
 import { ActiveState, Doc } from '../models/misc';
 
 import { getDocs } from '../preferences/preferenceApi';
@@ -67,6 +71,9 @@ import RetrievalOptions, {
   optionsToConfig,
   type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
+
+/** Per-file limit for local uploads (25 MB), enforced by the dropzone. */
+const MAX_UPLOAD_BYTES = 25000000;
 
 function Upload({
   receivedFile = [],
@@ -101,6 +108,9 @@ function Upload({
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
 
   const [files, setfiles] = useState<File[]>(receivedFile);
+  // Names of the files the last drop turned away (over the size limit or of
+  // an unaccepted type), shown under the dropzone.
+  const [rejectedFiles, setRejectedFiles] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<boolean>(true);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [retrievalOptions, setRetrievalOptions] =
@@ -341,34 +351,45 @@ function Upload({
         );
       case 'local_file_picker':
         return (
-          <div key={field.name}>
-            <div className="mb-3" {...getRootProps()}>
-              <span className="text-primary dark:text-muted-foreground border-border inline-block rounded-3xl border bg-transparent px-4 py-2 font-medium hover:cursor-pointer">
-                <input type="button" {...getInputProps()} />
-                {t('modals.uploadDoc.choose')}
-              </span>
-            </div>
-            <div className="mt-4 max-w-full">
-              <p className="text-foreground mb-3.5 text-sm font-medium">
-                {t('modals.uploadDoc.selectedFiles')}
-              </p>
-              <div className="max-w-full overflow-hidden">
-                {files.map((file) => (
-                  <p
-                    key={file.name}
-                    className="text-muted-foreground truncate"
-                    title={file.name}
-                  >
-                    {file.name}
-                  </p>
-                ))}
-                {files.length === 0 && (
-                  <p className="text-muted-foreground text-sm">
-                    {t('modals.uploadDoc.noFilesSelected')}
-                  </p>
-                )}
-              </div>
-            </div>
+          <div key={field.name} className="flex flex-col gap-3">
+            <Dropzone
+              onDrop={onDrop}
+              multiple
+              accept={FILE_UPLOAD_ACCEPT}
+              maxSize={MAX_UPLOAD_BYTES}
+              title={t('modals.uploadDoc.dropzoneText')}
+              description={t('modals.uploadDoc.dropzoneHint')}
+              error={
+                rejectedFiles.length > 0
+                  ? t('modals.uploadDoc.filesRejected', {
+                      files: rejectedFiles.join(', '),
+                      // React escapes the text; i18next must not do it twice.
+                      interpolation: { escapeValue: false },
+                    })
+                  : undefined
+              }
+            />
+            {files.length > 0 && (
+              <Card variant="outline" padding="none">
+                <ListRows>
+                  {files.map((file) => (
+                    <ListRow
+                      key={`${file.name}-${file.size}-${file.lastModified}`}
+                      leading={
+                        <span
+                          aria-hidden="true"
+                          className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                        >
+                          <FileText className="size-4" />
+                        </span>
+                      }
+                      title={<span title={file.name}>{file.name}</span>}
+                      description={formatBytes(file.size)}
+                    />
+                  ))}
+                </ListRows>
+              </Card>
+            )}
           </div>
         );
       case 'remote_file_picker':
@@ -538,6 +559,7 @@ function Upload({
   const resetUploaderState = useCallback(() => {
     setIngestor({ type: null, name: '', config: {} });
     setfiles([]);
+    setRejectedFiles([]);
     setSelectedFiles([]);
     setSelectedFolders([]);
     setShowAdvancedOptions(false);
@@ -701,8 +723,9 @@ function Upload({
   );
 
   const onDrop = useCallback(
-    (acceptedFiles: File[]) => {
+    (acceptedFiles: File[], rejections: FileRejection[] = []) => {
       setfiles(acceptedFiles);
+      setRejectedFiles(rejections.map((rejection) => rejection.file.name));
       const pickedName = acceptedFiles[0]?.name;
       if (!nameTouched && pickedName) {
         setIngestor((prev) => ({ ...prev, name: pickedName }));
@@ -721,8 +744,6 @@ function Upload({
     },
     [ingestor.type, nameTouched],
   );
-
-  const doNothing = () => undefined;
 
   const uploadFile = (clientTaskId: string) => {
     const formData = new FormData();
@@ -1028,16 +1049,6 @@ function Upload({
     handleClose();
   };
 
-  const { getRootProps, getInputProps } = useDropzone({
-    onDrop,
-    multiple: true,
-    onDragEnter: doNothing,
-    onDragOver: doNothing,
-    onDragLeave: doNothing,
-    maxSize: 25000000,
-    accept: FILE_UPLOAD_ACCEPT,
-  });
-
   const isUploadDisabled = (): boolean => {
     if (!activeTab) return true;
 
@@ -1136,6 +1147,7 @@ function Upload({
         config: {},
       });
       setfiles([]);
+      setRejectedFiles([]);
       setNameTouched(false);
       return;
     }
@@ -1151,6 +1163,7 @@ function Upload({
     // Clear files if switching away from local_file
     if (type !== 'local_file') {
       setfiles([]);
+      setRejectedFiles([]);
     }
   };
 

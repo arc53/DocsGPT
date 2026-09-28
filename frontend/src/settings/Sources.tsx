@@ -57,7 +57,7 @@ import {
 import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
-import GraphView from '../components/GraphView';
+import GraphSourceView from '../components/graph/GraphSourceView';
 import ConvertToWikiModal from './ConvertToWikiModal';
 import EnableGraphRAGModal from './EnableGraphRAGModal';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
@@ -520,9 +520,11 @@ export default function Sources({
           headerAction={testRetrievalAction}
         />
       ) : documentToView.config?.kind === 'graphrag' ? (
-        <GraphView
+        <GraphSourceView
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
+          sourceType={documentToView.type}
+          isNested={!!documentToView.isNested}
           onBackToDocuments={() => setDocumentToView(undefined)}
           headerAction={testRetrievalAction}
         />
@@ -582,7 +584,6 @@ export default function Sources({
               type="button"
               size="field"
               shape="pill"
-              title={t('settings.sources.addSource')}
               onClick={() => {
                 setIsOnboarding(false);
                 setModalState('ACTIVE');

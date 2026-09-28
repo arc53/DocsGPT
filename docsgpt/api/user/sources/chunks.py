@@ -7,10 +7,11 @@ from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
 from docsgpt.api.user.base import get_vector_store
-from docsgpt.api.user.team_sharing import effective_write_owner
+from docsgpt.api.user.team_sharing import can_access, effective_write_owner
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.utils import check_required_fields, num_tokens_from_string
+from docsgpt.vectorstore.base import InvalidChunkMetadataError
 
 sources_chunks_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
@@ -18,12 +19,18 @@ sources_chunks_ns = Namespace(
 
 
 def _resolve_source(doc_id: str, user: str):
-    """Resolve a source (UUID or legacy ObjectId) for the caller.
+    """Resolve a source (UUID or legacy ObjectId) the caller may READ.
 
-    Returns the row dict (with PG UUID in ``id``) or ``None`` if missing.
+    Read access = owner or any team grant (viewer/editor). Returns the row
+    dict (with PG UUID in ``id``) or ``None`` if missing or not visible.
     """
     with db_readonly() as conn:
-        return SourcesRepository(conn).get_any(doc_id, user)
+        doc = SourcesRepository(conn).get_any(doc_id, user)
+        if doc is not None:
+            return doc
+        if not can_access(conn, "source", doc_id, user):
+            return None
+        return SourcesRepository(conn).get_by_id(doc_id)
 
 
 def _resolve_source_for_write(doc_id: str, user: str):
@@ -43,6 +50,35 @@ def _resolve_source_for_write(doc_id: str, user: str):
         if not owner:
             return None
         return SourcesRepository(conn).get_any(doc_id, owner)
+
+
+def _remap_graph_chunk(doc: dict, old_chunk_id: str, new_chunk_id: str) -> None:
+    """Move a graphrag source's links from an edited chunk's old id to its new one.
+
+    Only needed when the store's ``update_chunk`` fell back to re-adding the
+    chunk under a new id (stores that update in place keep the id). Without
+    this the graph keeps pointing at the deleted row: the entity loses the
+    chunk and retrieval stops returning it. A failure is logged, not raised,
+    because the edit itself has already been saved.
+
+    Args:
+        doc: The resolved source row.
+        old_chunk_id: The edited chunk's previous id.
+        new_chunk_id: The id the edit was saved under.
+    """
+    from docsgpt.storage.db.source_config import SourceConfig
+
+    if SourceConfig.parse(doc.get("config")).kind != "graphrag":
+        return
+    try:
+        from docsgpt.graphrag.store import GraphStore
+
+        GraphStore().remap_chunk(str(doc["id"]), old_chunk_id, new_chunk_id)
+    except Exception as e:
+        current_app.logger.error(
+            f"Failed to remap graph links from chunk {old_chunk_id} to {new_chunk_id}: {e}",
+            exc_info=True,
+        )
 
 
 def _has_usable_token_count(metadata: dict) -> bool:
@@ -98,6 +134,38 @@ def _with_token_counts(chunks: list) -> list:
     return chunks
 
 
+def _path_ends_with(value: str, path: str) -> bool:
+    """Return whether ``value`` is ``path`` or ends with it at a ``/`` boundary.
+
+    A bare ``endswith`` let a root ``setup.md`` also claim the chunks of
+    ``guides/setup.md`` (and ``a.md`` those of ``data.md``).
+    """
+    return bool(value) and (value == path or value.endswith(f"/{path}"))
+
+
+def _chunk_matches_path(metadata: dict, path: str) -> bool:
+    """Return whether a chunk belongs to the tree file at ``path``.
+
+    Args:
+        metadata: The chunk's stored metadata.
+        path: The file's key path in the source's ``directory_structure``.
+
+    Returns:
+        True when the chunk's ``source`` or ``file_path`` names that file, or
+        when the worker could only have keyed it by title: a remote ingest
+        (web page, Reddit post) whose chunks carry no ``file_path`` or ``key``
+        (see ``remote_worker``). Sources ingested that way stay browsable
+        without a re-ingest.
+    """
+    source = metadata.get("source") or ""
+    file_path = metadata.get("file_path") or ""
+    if _path_ends_with(source, path) or _path_ends_with(file_path, path):
+        return True
+    if "://" in source and not file_path and not metadata.get("key"):
+        return metadata.get("title") == path
+    return False
+
+
 @sources_chunks_ns.route("/get_chunks")
 class GetChunks(Resource):
     @api.doc(
@@ -141,14 +209,8 @@ class GetChunks(Resource):
             for chunk in chunks:
                 metadata = chunk.get("metadata", {})
 
-                if path:
-                    chunk_source = metadata.get("source", "")
-                    chunk_file_path = metadata.get("file_path", "")
-                    source_match = chunk_source and chunk_source.endswith(path)
-                    file_path_match = chunk_file_path and chunk_file_path.endswith(path)
-
-                    if not (source_match or file_path_match):
-                        continue
+                if path and not _chunk_matches_path(metadata, path):
+                    continue
                 if search_term:
                     text_match = search_term in chunk.get("text", "").lower()
                     title_match = search_term in metadata.get("title", "").lower()
@@ -339,13 +401,11 @@ class UpdateChunk(Resource):
             if text is not None:
                 new_metadata["token_count"] = num_tokens_from_string(new_text)
             try:
-                new_chunk_id = store.add_chunk(new_text, new_metadata)
-
-                deleted = store.delete_chunk(chunk_id)
-                if not deleted:
-                    current_app.logger.warning(
-                        f"Failed to delete old chunk {chunk_id}, but new chunk {new_chunk_id} was created"
-                    )
+                # In place where the store supports it (same id, same list
+                # position); the base fallback re-adds under a new id.
+                new_chunk_id = store.update_chunk(chunk_id, new_text, new_metadata)
+                if new_chunk_id != chunk_id:
+                    _remap_graph_chunk(doc, chunk_id, new_chunk_id)
                 return make_response(
                     jsonify(
                         {
@@ -356,8 +416,13 @@ class UpdateChunk(Resource):
                     ),
                     200,
                 )
+            except InvalidChunkMetadataError as meta_error:
+                current_app.logger.warning(
+                    f"Rejected metadata for chunk {chunk_id}: {meta_error}"
+                )
+                return make_response(jsonify({"error": "Invalid metadata"}), 400)
             except Exception as add_error:
-                current_app.logger.error(f"Failed to add updated chunk: {add_error}")
+                current_app.logger.error(f"Failed to update chunk {chunk_id}: {add_error}")
                 return make_response(
                     jsonify({"error": "Failed to update chunk - addition failed"}), 500
                 )

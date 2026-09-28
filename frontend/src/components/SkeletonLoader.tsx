@@ -14,7 +14,6 @@ interface SkeletonLoaderProps {
     | 'logs'
     | 'fileTable'
     | 'chatbot'
-    | 'dropdown'
     | 'chunkCards'
     | 'sourceCards'
     | 'toolCards'
@@ -86,16 +85,6 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     </>
   );
 
-  const renderDropdown = () => (
-    <div className="animate-pulse">
-      <div className="bg-muted mb-2 h-4 w-24 rounded-sm"></div>
-      <div className="bg-muted flex h-14 w-[360px] items-center justify-between rounded-3xl px-4">
-        <div className="bg-muted-foreground/20 h-3 w-24 rounded-sm"></div>
-        <div className="bg-muted-foreground/20 size-3 rounded-sm"></div>
-      </div>
-    </div>
-  );
-
   const renderLogs = () => (
     <div className="flex w-full flex-col gap-px">
       {[...Array(8)].map((_, idx) => (
@@ -155,57 +144,44 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     </>
   );
 
+  // Renders inside a chart panel's 245px chart box: the panel is the Card,
+  // so only chart-shaped bars (tallest h-44 plus the x-axis, no wrapper).
   const renderAnalysis = () => (
-    <>
-      {[...Array(skeletonCount)].map((_, idx) => (
-        <div key={idx} className="bg-card w-full animate-pulse rounded-3xl p-6">
-          <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-4">
-              <div className="bg-muted h-4 w-1/3 rounded-sm"></div>
-              <div className="grid grid-cols-6 items-end gap-2">
-                <div className="bg-muted h-32 rounded-sm"></div>
-                <div className="bg-muted h-24 rounded-sm"></div>
-                <div className="bg-muted h-40 rounded-sm"></div>
-                <div className="bg-muted h-28 rounded-sm"></div>
-                <div className="bg-muted h-36 rounded-sm"></div>
-                <div className="bg-muted h-20 rounded-sm"></div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-4">
-              <div className="bg-muted h-4 w-1/4 rounded-sm"></div>
-              <div className="bg-muted h-32 rounded-sm"></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-muted h-4 w-full rounded-sm"></div>
-              <div className="bg-muted h-4 w-full rounded-sm"></div>
-            </div>
-          </div>
-        </div>
-      ))}
-    </>
+    <div className="flex h-full flex-col justify-end gap-3">
+      <div className="grid grid-cols-8 items-end gap-3">
+        <Skeleton className="h-20" />
+        <Skeleton className="h-32" />
+        <Skeleton className="h-24" />
+        <Skeleton className="h-40" />
+        <Skeleton className="h-28" />
+        <Skeleton className="h-36" />
+        <Skeleton className="h-16" />
+        <Skeleton className="h-44" />
+      </div>
+      <Skeleton className="h-3 w-full" />
+    </div>
   );
 
+  // Mirrors the chunk tile: a filled Card with text lines, then the token
+  // count in the footer.
   const renderChunkCards = () => (
     <>
       {Array.from({ length: count }).map((_, index) => (
-        <div
+        <Card
           key={`chunk-skel-${index}`}
-          className="border-border relative flex h-[197px] w-full max-w-[487px] animate-pulse flex-col overflow-hidden rounded-2xl border"
+          variant="filled"
+          padding="lg"
+          className="h-50 w-full justify-between"
         >
-          <div className="w-full">
-            <div className="border-border bg-muted flex w-full items-center justify-between border-b px-4 py-3">
-              <div className="bg-muted-foreground/20 h-4 w-20 rounded"></div>
-            </div>
-            <div className="flex flex-col gap-3 px-4 pt-4 pb-6">
-              <div className="bg-muted h-3 w-full rounded"></div>
-              <div className="bg-muted h-3 w-11/12 rounded"></div>
-              <div className="bg-muted h-3 w-5/6 rounded"></div>
-              <div className="bg-muted h-3 w-4/5 rounded"></div>
-              <div className="bg-muted h-3 w-3/4 rounded"></div>
-              <div className="bg-muted h-3 w-2/3 rounded"></div>
-            </div>
+          <div className="flex flex-col gap-3">
+            <Skeleton surface="muted" className="h-3 w-full" />
+            <Skeleton surface="muted" className="h-3 w-11/12" />
+            <Skeleton surface="muted" className="h-3 w-5/6" />
+            <Skeleton surface="muted" className="h-3 w-4/5" />
+            <Skeleton surface="muted" className="h-3 w-2/3" />
           </div>
-        </div>
+          <Skeleton surface="muted" className="h-3 w-20" />
+        </Card>
       ))}
     </>
   );
@@ -328,16 +304,20 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
     </>
   );
 
+  // Stands in for ConnectorAuth's success Alert: a bordered row box, and
+  // only the bars pulse.
   const renderConnectedState = () => (
-    <div className="mb-4">
-      <div className="bg-muted flex w-full animate-pulse items-center justify-between rounded-lg px-4 py-2">
-        <div className="flex items-center gap-2">
-          <div className="bg-muted-foreground/20 size-4 rounded"></div>
-          <div className="bg-muted-foreground/20 h-4 w-32 rounded"></div>
-        </div>
-        <div className="bg-muted-foreground/20 h-4 w-16 rounded"></div>
+    <Card
+      variant="outline"
+      padding="sm"
+      className="mb-4 flex-row items-center justify-between"
+    >
+      <div className="flex items-center gap-3">
+        <Skeleton className="size-4" />
+        <Skeleton className="h-4 w-48" />
       </div>
-    </div>
+      <Skeleton className="h-4 w-16" />
+    </Card>
   );
 
   const renderFilesSection = () => (
@@ -355,7 +335,6 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
   const componentMap = {
     fileTable: renderTable,
     chatbot: renderChatbot,
-    dropdown: renderDropdown,
     logs: renderLogs,
     default: renderDefault,
     analysis: renderAnalysis,

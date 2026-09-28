@@ -111,6 +111,7 @@
       "preLoaded": "Precargado",
       "private": "Privado",
       "sync": "Sincronizar",
+      "syncDone": "Listo",
       "syncNow": "Sincronizar ahora",
       "syncing": "Sincronizando...",
       "reingest": "Reindexar",
@@ -131,14 +132,10 @@
         "selectPage": "Selecciona una página para ver su contenido.",
         "edit": "Editar",
         "save": "Guardar",
-        "cancel": "Cancelar",
         "saveFailed": "No se pudo guardar la página. Inténtalo de nuevo.",
         "forbidden": "No tienes permiso para editar esta página.",
         "conflict": "Esta página cambió desde que la abriste y se ha recargado. Tus ediciones están abajo — vuelve a aplicarlas y guarda de nuevo.",
         "editPlaceholder": "Escribe la página en Markdown…",
-        "livingTitle": "Wiki viva.",
-        "livingExplainer": "Una fuente editable por agentes: las páginas se leen y reescriben mientras los agentes trabajan, y se expone a los agentes de forma predeterminada a través de la herramienta de búsqueda agéntica.",
-        "livingExplainerEditable": "Cualquier agente que use esta fuente puede editarla.",
         "stamp": {
           "editedBy": "Editado por {{who}}",
           "agent": "agente",
@@ -168,7 +165,18 @@
             "forbidden": "No tienes permiso para convertir esta fuente.",
             "conflict": "Esta fuente todavía se está indexando. Espera a que termine antes de convertirla."
           }
-        }
+        },
+        "badge": "Wiki vivo",
+        "byline_one": "{{pages}} página · {{tokens}} tokens",
+        "byline_other": "{{pages}} páginas · {{tokens}} tokens",
+        "explainer": "Los agentes leen y reescriben estas páginas mientras trabajan.",
+        "explainerEditable": "Los agentes leen y reescriben estas páginas mientras trabajan; cualquier agente que use esta fuente puede editarla.",
+        "home": "Inicio",
+        "filterPages": "Filtrar páginas",
+        "pagesTitle": "Páginas",
+        "loadFailed": "No se pudieron cargar las páginas del wiki.",
+        "pageLoadFailed": "No se pudo cargar esta página.",
+        "editTitle": "Editar página"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -201,13 +209,56 @@
         "view": {
           "action": "Ver grafo",
           "title": "Grafo de conocimiento",
-          "explainer": "Los nodos son entidades y las aristas son sus relaciones. Haz clic en un nodo para ver su descripción y los fragmentos de los que se extrajo.",
-          "stats": "{{nodes}} entidades · {{edges}} relaciones",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "Aún no hay grafo — la extracción puede seguir en curso.",
           "selectNode": "Selecciona un nodo para ver sus detalles.",
-          "linkedChunks": "Fragmentos vinculados",
           "noChunks": "No hay fragmentos vinculados para esta entidad.",
-          "close": "Cerrar"
+          "close": "Cerrar",
+          "tabs": {
+            "graph": "Grafo",
+            "entities": "Entidades",
+            "files": "Archivos"
+          },
+          "findEntity": "Buscar una entidad",
+          "entityName": "Nombre",
+          "noEntities": "No se encontraron entidades",
+          "showTop": "Mostrar los",
+          "byConnections": "por conexiones",
+          "typeFilter": "Filtrar por tipo",
+          "otherTypes": "Otros: {{types}}",
+          "otherTypesMore_one": "{{formatted}} más",
+          "otherTypesMore_other": "{{formatted}} más",
+          "untyped": "Sin tipo",
+          "loadFailed": "No se pudo cargar el grafo.",
+          "entitiesLoadFailed": "No se pudieron cargar las entidades.",
+          "nodeLoadFailed": "No se pudo cargar esta entidad.",
+          "loadingNode": "Cargando entidad",
+          "connections": "Conexiones",
+          "mentionedIn": "Mencionada en",
+          "showMore": "Mostrar más",
+          "showLess": "Mostrar menos",
+          "relationships": "Relaciones",
+          "relationshipsCapped_one": "Se muestran las {{shown}} más fuertes de {{total}} relación.",
+          "relationshipsCapped_other": "Se muestran las {{shown}} más fuertes de {{total}} relaciones.",
+          "noRelationships": "Esta entidad no tiene relaciones.",
+          "relatedTo": "relacionada con",
+          "showAll": "Mostrar las {{formatted}}",
+          "showFewer": "Mostrar menos",
+          "sourceChunks": "Fragmentos de origen",
+          "showInGraph": "Mostrar en el grafo",
+          "allTypes": "Todos los tipos",
+          "chunkCount_one": "{{formatted}} fragmento",
+          "chunkCount_other": "{{formatted}} fragmentos",
+          "entityCount_one": "{{formatted}} entidad",
+          "entityCount_other": "{{formatted}} entidades",
+          "relationshipCount_one": "{{formatted}} relación",
+          "relationshipCount_other": "{{formatted}} relaciones",
+          "chunk": "Fragmento",
+          "chunkMeta": "{{file}} · {{tokens}} tokens",
+          "chunkTokens": "{{tokens}} tokens",
+          "openInFiles": "Abrir en Archivos",
+          "editChunk": "Editar fragmento",
+          "chunkSaved": "Fragmento guardado"
         }
       },
       "testRetrieval": {
@@ -240,14 +291,11 @@
       "shareWithTeam": "Compartir con el equipo",
       "deleteWarning": "¿Estás seguro de que deseas eliminar \"{{name}}\"?",
       "confirmDelete": "¿Estás seguro de que deseas eliminar este archivo? Esta acción no se puede deshacer.",
-      "backToAll": "Volver a todas las fuentes",
-      "back": "Volver",
       "chunks": "Fragmentos",
       "noChunks": "No se encontraron fragmentos",
       "noChunksAlt": "No se encontraron fragmentos",
       "goToSources": "Ir a Fuentes",
       "uploadNew": "Subir nuevo",
-      "searchFiles": "Buscar archivos...",
       "noResults": "No se encontraron resultados",
       "fileName": "Nombre",
       "tokens": "Tokens",
@@ -355,6 +403,41 @@
           "saveFailed": "No se pudo guardar la configuración. Inténtalo de nuevo."
         }
       },
+      "chunkErrors": {
+        "add": "No se pudo añadir el fragmento",
+        "save": "No se pudo guardar el fragmento",
+        "delete": "No se pudo eliminar el fragmento",
+        "load": "No se pudieron cargar los fragmentos"
+      },
+      "chunkPosition": "Fragmento {{n}} de {{total}} · {{tokens}} tokens",
+      "chunkCrumb": "Fragmento {{n}}",
+      "chunkCrumbUnplaced": "Fragmento editado",
+      "chunkPositionUnplaced": "Fragmento editado · {{tokens}} tokens",
+      "editChunkDescriptionUnplaced": "{{file}} · fragmento editado · {{tokens}} tokens",
+      "chunkTileMeta": "#{{n}} · {{tokens}} tokens",
+      "copyText": "Copiar texto",
+      "chunkTitleHint": "El nombre con el que las respuestas citan este fragmento.",
+      "files": "Archivos",
+      "filesLoadError": "No se pudieron cargar los archivos",
+      "filesByline_one": "{{files}} archivo · {{tokens}} tokens",
+      "filesByline_other": "{{files}} archivos · {{tokens}} tokens",
+      "filterFiles": "Filtrar archivos",
+      "searchChunks": "Buscar fragmentos",
+      "chunkCount_one": "{{formatted}} fragmento",
+      "chunkCount_other": "{{formatted}} fragmentos",
+      "editor": {
+        "write": "Escribir",
+        "preview": "Vista previa",
+        "previewEmpty": "Aún no hay nada que mostrar.",
+        "cancel": "Cancelar",
+        "close": "Cerrar",
+        "discardMessage": "¿Descartar los cambios sin guardar?",
+        "discard": "Descartar"
+      },
+      "editChunk": "Editar fragmento",
+      "editChunkDescription": "{{file}} · fragmento {{n}} · {{tokens}} tokens",
+      "previousChunk": "Fragmento anterior",
+      "nextChunk": "Fragmento siguiente",
       "paused": "Sincronización en pausa. Reconecta {{name}} para reanudarla."
     },
     "analytics": {
@@ -1205,7 +1288,9 @@
       "start": "Comenzar a chatear",
       "name": "Nombre",
       "choose": "Seleccionar Archivos",
-      "info": "Por favor, sube archivos .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip limitados a 25MB",
+      "dropzoneText": "Haz clic para subir o arrastra y suelta",
+      "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, imágenes, audio, EPUB, JSON o ZIP, hasta 25 MB cada uno",
+      "filesRejected": "No se añadieron (más de 25 MB o tipo no admitido): {{files}}",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
       "train": "Añadir fuente",
@@ -1440,7 +1525,6 @@
       "promptText": "Texto del prompt",
       "save": "Guardar",
       "close": "Cerrar",
-      "cancel": "Cancelar",
       "delete": "Eliminar",
       "deleteConfirmation": "¿Estás seguro de que deseas eliminar este fragmento?"
     },
@@ -1537,7 +1621,8 @@
     "firstPage": "Primera página",
     "previousPage": "Página anterior",
     "nextPage": "Página siguiente",
-    "lastPage": "Última página"
+    "lastPage": "Última página",
+    "chunksPerPage": "Fragmentos por página"
   },
   "conversation": {
     "copy": "Copiar",
@@ -1773,15 +1858,16 @@
         "moreActions": "Más acciones"
       },
       "sections": {
-        "meta": "Meta",
-        "source": "Fuente",
         "prompt": "Prompt",
         "tools": "Herramientas",
         "agentType": "Tipo de agente",
         "models": "Modelos",
         "advanced": "Avanzado",
         "guardrails": "Guardrails",
-        "preview": "Vista previa"
+        "preview": "Vista previa",
+        "basics": "Básico",
+        "knowledge": "Conocimiento y comportamiento",
+        "model": "Modelo"
       },
       "placeholders": {
         "agentName": "Nombre del agente",
@@ -1827,7 +1913,11 @@
         "research": "Investigación"
       },
       "labels": {
-        "defaultModel": "Modelo Predeterminado"
+        "defaultModel": "Modelo Predeterminado",
+        "name": "Nombre",
+        "description": "Descripción",
+        "sources": "Fuentes",
+        "avatar": "Avatar"
       },
       "advanced": {
         "jsonSchema": "Esquema de respuesta JSON",
@@ -1842,7 +1932,10 @@
         "systemPromptOverrideDescription": "Permitir que los llamadores de la API v1 reemplacen el prompt del sistema de este agente"
       },
       "preview": {
-        "publishedPreview": "Los agentes publicados se pueden previsualizar aquí"
+        "savedVersion": "versión guardada",
+        "publishTitle": "Publica para probarlo",
+        "publishDescription": "La vista previa chatea con el agente publicado. Los borradores siguen siendo privados hasta que los publiques.",
+        "unsavedChanges": "Tienes cambios sin guardar. La vista previa usa la versión guardada hasta que guardes."
       },
       "dangerZone": {
         "heading": "Zona de peligro",
@@ -1905,6 +1998,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "Configura el agente y publícalo para chatear con él."
+      },
+      "status": {
+        "published": "Publicado"
       }
     },
     "logs": {
@@ -1915,7 +2014,6 @@
     },
     "schedules": {
       "title": "Programaciones del Agente",
-      "heading": "Programaciones",
       "newRecurring": "Nueva programación",
       "closeForm": "Cerrar formulario",
       "edit": "Editar",
@@ -2011,8 +2109,6 @@
         "output": "Salida",
         "truncated": "(truncada)"
       },
-      "timezoneMeta": "zona horaria: {{timezone}}",
-      "nextRunMeta": "próxima: {{time}}",
       "toolCard": {
         "cancelFailed": "No se pudo cancelar",
         "taskCancelled": "Tarea programada cancelada.",
@@ -2055,7 +2151,28 @@
       "runLog": {
         "when": "Cuándo",
         "details": "Detalles",
-        "empty": "Aún no hay ejecuciones registradas para esta programación."
+        "empty": "Aún no hay ejecuciones registradas para esta programación.",
+        "duration": "Duración"
+      },
+      "actions": "Acciones de la programación",
+      "cancelTask": "Cancelar tarea",
+      "failureStreak_one": "{{count}} fallo seguido",
+      "failureStreak_other": "{{count}} fallos seguidos",
+      "meta": {
+        "nextRun": "Próxima ejecución {{time}}",
+        "runsAt": "Se ejecuta el {{time}}",
+        "lastRun": "Última ejecución {{time}}"
+      },
+      "stats": {
+        "active": "Programaciones activas",
+        "nextRun": "Próxima ejecución",
+        "runs": "Ejecuciones, últimos {{days}} días",
+        "tokens": "{{tokens}} tokens",
+        "failed": "Fallidas, últimos {{days}} días",
+        "latestFailure": "Última: {{status}}, {{date}}",
+        "paused_one": "{{count}} en pausa",
+        "paused_other": "{{count}} en pausa",
+        "overdue": "Atrasada"
       }
     },
     "shared": {
@@ -2134,15 +2251,8 @@
         "saveFailed": "No se pudo guardar el flujo de trabajo",
         "defaultDescription": "Agente de flujo de trabajo: {{name}}",
         "newWorkflow": "Nuevo flujo de trabajo",
-        "editDetails": "Editar detalles del flujo de trabajo",
-        "workflowName": "Nombre del flujo de trabajo",
         "workflowNamePlaceholder": "Introduce el nombre del flujo de trabajo",
         "workflowDescriptionPlaceholder": "Describe qué hace este flujo de trabajo",
-        "agentImageAlt": "Imagen del agente",
-        "currentImage": "Imagen actual",
-        "agentImage": "Imagen del agente",
-        "agentImageHint": "Los cambios de imagen se incluyen la próxima vez que guardes.",
-        "done": "Listo",
         "unablePreview": "No se puede previsualizar el flujo de trabajo",
         "unableSave": "No se puede guardar el flujo de trabajo",
         "unablePublish": "No se puede publicar el flujo de trabajo",
@@ -2152,6 +2262,22 @@
         "setStateHint": "Modifica las variables del flujo de trabajo",
         "conditionHint": "Ramificación condicional",
         "codeHint": "Ejecuta código en un entorno aislado",
+        "paletteHint": "Arrástralo al lienzo o haz clic para añadirlo.",
+        "nodeActions": "Acciones del nodo",
+        "duplicateNode": "Duplicar",
+        "copyNodeId": "Copiar ID del nodo",
+        "knowledge": "Conocimiento",
+        "output": "Salida",
+        "streamToUserDescription": "Muestra la respuesta de este nodo en el chat mientras se escribe",
+        "advancedSettings": "Configuración avanzada",
+        "conditionMode": "Modo de condición",
+        "branchName": "Nombre de la rama",
+        "variable": "Variable",
+        "value": "Valor",
+        "valueCel": "Valor (CEL)",
+        "addCondition": "Añadir condición",
+        "assignment": "Asignación {{index}}",
+        "addAssignment": "Añadir asignación",
         "startNode": "Nodo de inicio",
         "endNode": "Nodo final",
         "stateTitle": "Establecer variables globales",
@@ -2180,7 +2306,7 @@
         "invalidSchema": "Esquema JSON no válido: {{error}}",
         "noteContent": "Contenido de la nota",
         "noteContentPlaceholder": "Introduce el contenido de la nota",
-        "stateIntro": "Asigna valores a las variables de estado del flujo de trabajo",
+        "stateIntro": "Asigna valores a las variables de estado del flujo de trabajo.",
         "assignValue": "Asignar valor",
         "celHint": "Usa Common Expression Language para crear una expresión personalizada. Haz referencia al estado por su nombre sin llaves (<code>query</code>), no <code>{{braced}}</code>.",
         "learnMore": "Más información",
@@ -2191,6 +2317,8 @@
         "caseNamePlaceholder": "Nombre del caso (opcional)",
         "variablePlaceholder": "Variable",
         "valuePlaceholder": "Valor",
+        "operator": "Operador",
+        "examplePlaceholder": "p. ej. {{example}}",
         "opContains": "contiene",
         "opStartsWith": "empieza",
         "conditionPlaceholder": "Introduce una condición, p. ej. query.contains(\"refund\")",
@@ -2202,7 +2330,11 @@
         "cannotDeleteStart": "No se puede eliminar el nodo de inicio",
         "deleteNode": "Eliminar nodo",
         "deleteConfirm": "¿Seguro que quieres eliminar «{{name}}»?",
-        "deleteConfirmUnnamed": "¿Seguro que quieres eliminar este agente de flujo de trabajo?"
+        "deleteConfirmUnnamed": "¿Seguro que quieres eliminar este agente de flujo de trabajo?",
+        "detailsTitle": "Detalles del flujo de trabajo",
+        "detailsDescription": "Nombre, descripción e imagen que se muestran en la tarjeta del agente.",
+        "unsavedChanges": "Cambios sin guardar",
+        "editDetailsMenu": "Editar detalles"
       },
       "validation": {
         "nameRequired": "El nombre del flujo de trabajo es obligatorio",
@@ -2295,7 +2427,10 @@
         "searchPlaceholder": "Buscar variables...",
         "empty": "No se encontraron variables",
         "addContext": "Añadir contexto"
-      }
+      },
+      "zoomIn": "Acercar",
+      "zoomOut": "Alejar",
+      "fitView": "Ajustar vista"
     },
     "typeModal": {
       "title": "Crear un agente nuevo",
@@ -2346,6 +2481,10 @@
     },
     "profile": {
       "avatarAlt": "Avatar del usuario"
+    },
+    "multiSelect": {
+      "more_one": "+{{count}} más",
+      "more_other": "+{{count}} más"
     }
   },
   "pageNotFound": {

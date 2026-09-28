@@ -1,22 +1,37 @@
-import { ArrowLeft, BookOpen } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import copy from 'copy-to-clipboard';
+import {
+  BookOpen,
+  CircleAlert,
+  Copy,
+  FileText,
+  Pencil,
+  TriangleAlert,
+} from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-
-import { markdownHeadings } from '@/lib/markdown';
-import { cn } from '@/lib/utils';
-
+import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
-import { formatRelative } from '../utils/dateTimeUtils';
+import { formatCount, formatRelative } from '../utils/dateTimeUtils';
 import { decodeJwtPayload } from '../utils/jwtUtils';
+import SourceMarkdown from './SourceMarkdown';
+import PathHeader from './tree/PathHeader';
+import ReaderPanel from './tree/ReaderPanel';
+import SourceEditSheet from './tree/SourceEditSheet';
+import SourceNavigator from './tree/SourceNavigator';
+import { Alert, AlertDescription } from './ui/alert';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { IconButton } from './ui/icon-button';
-import { Textarea } from './ui/textarea';
-import SkeletonLoader from './SkeletonLoader';
-import { WikiPageNode, provenanceKey, saveWikiPage } from './wikiViewerUtils';
+import { ActionMenu } from './ui/dropdown-menu';
+import { EmptyState } from './ui/empty-state';
+import { Skeleton } from './ui/skeleton';
+import {
+  WikiPageNode,
+  buildWikiNavigator,
+  provenanceKey,
+  saveWikiPage,
+} from './wikiViewerUtils';
 
 interface WikiViewerProps {
   docId: string;
@@ -27,30 +42,19 @@ interface WikiViewerProps {
   headerAction?: React.ReactNode;
 }
 
-const markdownComponents = {
-  ...markdownHeadings,
-  p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="mb-3">{children}</p>
-  ),
-  ul: ({ children }: { children?: React.ReactNode }) => (
-    <ul className="mb-3 list-inside list-disc pl-4">{children}</ul>
-  ),
-  ol: ({ children }: { children?: React.ReactNode }) => (
-    <ol className="mb-3 list-inside list-decimal pl-4">{children}</ol>
-  ),
-  a: ({ children, href }: { children?: React.ReactNode; href?: string }) => (
-    <Button variant="link" size="inline" asChild>
-      <a href={href} target="_blank" rel="noreferrer">
-        {children}
-      </a>
-    </Button>
-  ),
-  code: ({ children }: { children?: React.ReactNode }) => (
-    <code className="bg-accent rounded-md px-1.5 py-0.5 text-xs">
-      {children}
-    </code>
-  ),
-};
+type EditError = { kind: 'conflict' | 'forbidden' | 'failed' } | null;
+
+/** Bars in the reader body while a page loads. */
+function ReaderBars() {
+  return (
+    <div className="flex flex-col gap-3" data-testid="wiki-reader-loading">
+      <Skeleton className="h-6 w-1/3" />
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-11/12" />
+      <Skeleton className="h-4 w-4/5" />
+    </div>
+  );
+}
 
 const WikiViewer: React.FC<WikiViewerProps> = ({
   docId,
@@ -60,6 +64,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
   headerAction,
 }) => {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const currentUserSub = token
     ? ((decodeJwtPayload(token)?.sub as string | undefined) ?? null)
@@ -70,70 +75,108 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
   const [page, setPage] = useState<WikiPageNode | null>(null);
   const [content, setContent] = useState<string>('');
   const [loadingPages, setLoadingPages] = useState(true);
+  const [pagesFailed, setPagesFailed] = useState(false);
+  const [pagesAttempt, setPagesAttempt] = useState(0);
   const [loadingContent, setLoadingContent] = useState(false);
+  const [contentFailed, setContentFailed] = useState(false);
+  const [contentAttempt, setContentAttempt] = useState(0);
 
-  const [isEditing, setIsEditing] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [draft, setDraft] = useState<string>('');
   const [saving, setSaving] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<EditError>(null);
+
+  // The loads read the token through a ref: a refresh (setToken during SSE
+  // 401 recovery) is the same user, so it must not refetch, and above all not
+  // reset the page and close an open editor with its draft.
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
 
   useEffect(() => {
     let cancelled = false;
     setLoadingPages(true);
+    setPagesFailed(false);
     userService
-      .getWikiPages(docId, token)
-      .then((response) => response.json())
+      .getWikiPages(docId, tokenRef.current)
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
       .then((data) => {
         if (cancelled) return;
         const list: WikiPageNode[] = data?.pages ?? [];
         setPages(list);
-        if (list.length > 0) setSelectedPath(list[0].path);
+        setSelectedPath((prev) =>
+          prev && list.some((p) => p.path === prev)
+            ? prev
+            : (list[0]?.path ?? null),
+        );
       })
-      .catch((error) => console.error('Error loading wiki pages:', error))
+      .catch((error) => {
+        console.error('Error loading wiki pages:', error);
+        if (!cancelled) setPagesFailed(true);
+      })
       .finally(() => {
         if (!cancelled) setLoadingPages(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [docId, token]);
+  }, [docId, pagesAttempt]);
 
   useEffect(() => {
-    setIsEditing(false);
+    setEditorOpen(false);
     setEditError(null);
-    if (!selectedPath) {
-      setPage(null);
-      setContent('');
-      return;
-    }
+    setContentFailed(false);
+    // Drop the last page before the next loads, so a failed load never shows
+    // its stamp (editor, version) or its text under the new path.
+    setPage(null);
+    setContent('');
+    if (!selectedPath) return;
     let cancelled = false;
     setLoadingContent(true);
     userService
-      .getWikiPage(docId, selectedPath, token)
-      .then((response) => response.json())
+      .getWikiPage(docId, selectedPath, tokenRef.current)
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
       .then((data) => {
         if (cancelled) return;
         const node: WikiPageNode | null = data?.page ?? null;
         setPage(node);
         setContent((data?.page?.content as string) ?? '');
       })
-      .catch((error) => console.error('Error loading wiki page:', error))
+      .catch((error) => {
+        console.error('Error loading wiki page:', error);
+        if (!cancelled) setContentFailed(true);
+      })
       .finally(() => {
         if (!cancelled) setLoadingContent(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [docId, selectedPath, token]);
+  }, [docId, selectedPath, contentAttempt]);
+
+  const homeLabel = t('settings.sources.wiki.home');
+  const navigatorNodes = useMemo(
+    () => buildWikiNavigator(pages, homeLabel),
+    [pages, homeLabel],
+  );
+  const totalTokens = useMemo(
+    () => pages.reduce((sum, p) => sum + (p.token_count ?? 0), 0),
+    [pages],
+  );
 
   const startEditing = () => {
     setDraft(content);
     setEditError(null);
-    setIsEditing(true);
+    setEditorOpen(true);
   };
 
-  const cancelEditing = () => {
-    setIsEditing(false);
+  const closeEditor = () => {
+    setEditorOpen(false);
     setEditError(null);
   };
 
@@ -152,26 +195,38 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
       );
       switch (outcome.status) {
         case 'saved':
-          if (outcome.page) setPage(outcome.page);
+          if (outcome.page) {
+            const saved = outcome.page;
+            setPage(saved);
+            // The list feeds the byline's token total and the navigator's
+            // labels; keep its entry in step (the list carries no content).
+            setPages((list) =>
+              list.map((p) =>
+                p.path === selectedPath
+                  ? { ...p, ...saved, content: p.content }
+                  : p,
+              ),
+            );
+          }
           setContent(draft);
-          setIsEditing(false);
+          setEditorOpen(false);
           break;
         case 'conflict':
           if (outcome.page) {
             setPage(outcome.page);
             setContent(outcome.page.content ?? '');
           }
-          setEditError(t('settings.sources.wiki.conflict'));
+          setEditError({ kind: 'conflict' });
           break;
         case 'forbidden':
-          setEditError(t('settings.sources.wiki.forbidden'));
+          setEditError({ kind: 'forbidden' });
           break;
         default:
-          setEditError(t('settings.sources.wiki.saveFailed'));
+          setEditError({ kind: 'failed' });
       }
     } catch (error) {
       console.error('Error saving wiki page:', error);
-      setEditError(t('settings.sources.wiki.saveFailed'));
+      setEditError({ kind: 'failed' });
     } finally {
       setSaving(false);
     }
@@ -180,7 +235,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
   const provenanceLabel = (via?: string | null, by?: string | null): string =>
     t(`settings.sources.wiki.stamp.${provenanceKey(via, by, currentUserSub)}`);
 
-  const renderStamp = () => {
+  const stamp = (): string | null => {
     if (!page) return null;
     const who = provenanceLabel(page.updated_via, page.updated_by);
     const when = formatRelative(page.updated_at);
@@ -191,150 +246,243 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
         t('settings.sources.wiki.stamp.version', { version: page.version }),
       );
     }
+    return parts.join(' · ');
+  };
+
+  const explainer = canEdit
+    ? t('settings.sources.wiki.explainerEditable')
+    : t('settings.sources.wiki.explainer');
+  const byline = loadingPages
+    ? explainer
+    : `${t('settings.sources.wiki.byline', {
+        count: pages.length,
+        pages: formatCount(pages.length),
+        tokens: formatCount(totalTokens),
+      })} · ${explainer}`;
+
+  const renderEditError = () => {
+    if (!editError) return null;
+    if (editError.kind === 'conflict') {
+      return (
+        <Alert variant="warning">
+          <TriangleAlert />
+          <AlertDescription>
+            {t('settings.sources.wiki.conflict')}
+          </AlertDescription>
+        </Alert>
+      );
+    }
     return (
-      <p className="text-muted-foreground mb-3 text-xs">{parts.join(' · ')}</p>
+      <Alert variant="destructive">
+        <CircleAlert />
+        <AlertDescription>
+          {editError.kind === 'forbidden'
+            ? t('settings.sources.wiki.forbidden')
+            : t('settings.sources.wiki.saveFailed')}
+        </AlertDescription>
+      </Alert>
+    );
+  };
+
+  // The chunk reader's actions: Edit (editors only), then the toolbar ⋯.
+  const readerActions =
+    loadingContent || contentFailed ? null : (
+      <>
+        {canEdit ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            shape="pill"
+            onClick={startEditing}
+          >
+            <Pencil />
+            {t('settings.sources.wiki.edit')}
+          </Button>
+        ) : null}
+        <ActionMenu
+          size="toolbar"
+          triggerLabel={t('settings.sources.menuAlt')}
+          options={[
+            {
+              icon: Copy,
+              label: t('settings.sources.copyText'),
+              onClick: () => {
+                copy(content);
+                dispatch(
+                  showActionToast({
+                    variant: 'success',
+                    message: t('conversation.copied'),
+                  }),
+                );
+              },
+            },
+          ]}
+        />
+      </>
+    );
+
+  const readerMeta = selectedPath ? (
+    <>
+      <span className="font-mono wrap-anywhere">{selectedPath}</span>
+      {!loadingContent && !contentFailed && stamp() ? (
+        <span>{stamp()}</span>
+      ) : null}
+    </>
+  ) : null;
+
+  const readerBody = () => {
+    if (loadingContent) return <ReaderBars />;
+    if (contentFailed) {
+      return (
+        <EmptyState
+          size="xs"
+          tone="destructive"
+          illustration="none"
+          title={t('settings.sources.wiki.pageLoadFailed')}
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              shape="pill"
+              onClick={() => setContentAttempt((n) => n + 1)}
+            >
+              {t('retry')}
+            </Button>
+          }
+        />
+      );
+    }
+    return <SourceMarkdown content={content} />;
+  };
+
+  const renderBody = () => {
+    if (loadingPages) {
+      return (
+        <div
+          className="flex flex-col gap-4 lg:flex-row lg:gap-6"
+          data-testid="wiki-loading"
+        >
+          <div className="flex w-full shrink-0 flex-col gap-2 lg:w-64">
+            <Skeleton className="h-9.5 w-full" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-5/6" />
+            <Skeleton className="h-8 w-4/6" />
+            <Skeleton className="h-8 w-5/6" />
+          </div>
+          <ReaderPanel
+            className="min-w-0 flex-1"
+            meta={<Skeleton className="h-3 w-40" />}
+          >
+            <ReaderBars />
+          </ReaderPanel>
+        </div>
+      );
+    }
+    if (pagesFailed) {
+      return (
+        <EmptyState
+          tone="destructive"
+          illustration="none"
+          title={t('settings.sources.wiki.loadFailed')}
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              shape="pill"
+              onClick={() => setPagesAttempt((n) => n + 1)}
+            >
+              {t('retry')}
+            </Button>
+          }
+        />
+      );
+    }
+    if (pages.length === 0) {
+      return (
+        <EmptyState
+          size="xs"
+          illustration="none"
+          title={t('settings.sources.wiki.empty')}
+        />
+      );
+    }
+    const reader = selectedPath ? (
+      <ReaderPanel meta={readerMeta} actions={readerActions}>
+        {readerBody()}
+      </ReaderPanel>
+    ) : (
+      <EmptyState
+        size="xs"
+        illustration="none"
+        title={t('settings.sources.wiki.selectPage')}
+      />
+    );
+    // One page: nothing to choose between, so no navigator; the reader takes
+    // the full width, as TreeBrowser does for a one-file source.
+    if (pages.length === 1) return reader;
+    return (
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+        <SourceNavigator
+          nodes={navigatorNodes}
+          selectedId={selectedPath}
+          onSelect={(node) => {
+            if (node.kind === 'leaf') setSelectedPath(node.id);
+          }}
+          filterLabel={t('settings.sources.wiki.filterPages')}
+          emptyLabel={t('settings.sources.noResults')}
+          title={t('settings.sources.wiki.pagesTitle')}
+          folderMode="groups"
+          leafIcon={FileText}
+        />
+        <div className="min-w-0 flex-1">{reader}</div>
+      </div>
     );
   };
 
   return (
-    <div className="flex flex-col">
-      <div className="mb-4 flex items-center">
-        <IconButton
-          variant="outline"
-          size="icon-xs"
-          shape="pill"
-          className="mr-3"
-          onClick={onBackToDocuments}
-          label={t('settings.sources.backToAll')}
-          icon={ArrowLeft}
-          side="bottom"
+    <div className="flex flex-col gap-4">
+      <PathHeader
+        root={{
+          label: t('settings.sources.label'),
+          onSelect: onBackToDocuments,
+        }}
+        segments={[{ label: sourceName }]}
+        badge={
+          <Badge variant="neutral">
+            <BookOpen />
+            {t('settings.sources.wiki.badge')}
+          </Badge>
+        }
+        byline={byline}
+        actions={headerAction}
+      />
+      {renderBody()}
+      {canEdit && selectedPath ? (
+        <SourceEditSheet
+          open={editorOpen}
+          onClose={closeEditor}
+          title={t('settings.sources.wiki.editTitle')}
+          description={
+            page?.version != null
+              ? `${selectedPath} · ${t('settings.sources.wiki.stamp.version', {
+                  version: page.version,
+                })}`
+              : selectedPath
+          }
+          value={draft}
+          onChange={setDraft}
+          dirty={draft !== content}
+          onSave={handleSave}
+          saving={saving}
+          saveLabel={t('settings.sources.wiki.save')}
+          alert={renderEditError()}
+          fieldLabel={t('modals.chunk.bodyText')}
+          placeholder={t('settings.sources.wiki.editPlaceholder')}
         />
-        <span className="text-primary font-semibold wrap-break-word">
-          {sourceName}
-        </span>
-        {headerAction ? <div className="ml-auto">{headerAction}</div> : null}
-      </div>
-
-      <div className="bg-muted text-muted-foreground mb-4 flex items-start gap-2 rounded-xl px-4 py-3 text-xs">
-        <BookOpen className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        <p>
-          <span className="text-foreground font-medium">
-            {t('settings.sources.wiki.livingTitle')}
-          </span>{' '}
-          {t('settings.sources.wiki.livingExplainer')}
-          {canEdit && (
-            <> {t('settings.sources.wiki.livingExplainerEditable')}</>
-          )}
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-4 md:flex-row">
-        <div className="border-border md:w-64 md:shrink-0 md:border-r md:pr-4">
-          {loadingPages ? (
-            <SkeletonLoader count={3} />
-          ) : pages.length === 0 ? (
-            <p className="text-muted-foreground py-2 text-sm">
-              {t('settings.sources.wiki.empty')}
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {pages.map((p) => (
-                <li key={p.path}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPath(p.path)}
-                    className={cn(
-                      'w-full truncate rounded-lg px-3 py-2 text-left text-sm transition-colors',
-                      selectedPath === p.path
-                        ? 'bg-accent text-foreground'
-                        : 'text-muted-foreground hover:bg-accent',
-                    )}
-                    title={p.path}
-                  >
-                    {p.title || p.path}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          {loadingContent ? (
-            <SkeletonLoader count={4} />
-          ) : selectedPath ? (
-            <div className="flex flex-col">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                {renderStamp()}
-                {canEdit && !isEditing && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={startEditing}
-                  >
-                    {t('settings.sources.wiki.edit')}
-                  </Button>
-                )}
-              </div>
-
-              {editError && (
-                <p
-                  role="alert"
-                  className="border-border text-muted-foreground mb-3 rounded-md border px-3 py-2 text-xs"
-                >
-                  {editError}
-                </p>
-              )}
-
-              {isEditing ? (
-                <div className="flex flex-col gap-3">
-                  <Textarea
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    placeholder={t('settings.sources.wiki.editPlaceholder')}
-                    variant="filled"
-                    className="min-h-[320px] font-mono"
-                    aria-label={selectedPath}
-                  />
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleSave}
-                      loading={saving}
-                    >
-                      {t('settings.sources.wiki.save')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={cancelEditing}
-                      disabled={saving}
-                    >
-                      {t('settings.sources.wiki.cancel')}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <article className="text-foreground max-w-none text-sm leading-relaxed wrap-break-word">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={markdownComponents}
-                  >
-                    {content}
-                  </ReactMarkdown>
-                </article>
-              )}
-            </div>
-          ) : (
-            <p className="text-muted-foreground py-2 text-sm">
-              {t('settings.sources.wiki.selectPage')}
-            </p>
-          )}
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 };

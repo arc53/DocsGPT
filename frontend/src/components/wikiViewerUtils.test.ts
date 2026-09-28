@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { provenanceKey, saveWikiPage } from './wikiViewerUtils';
+import {
+  buildWikiNavigator,
+  provenanceKey,
+  saveWikiPage,
+  wikiPageLabel,
+} from './wikiViewerUtils';
+import { filterNavigatorLeaves } from './tree/navigatorUtils';
 
 const jsonResponse = (status: number, body: unknown): Response =>
   ({
@@ -114,5 +120,62 @@ describe('saveWikiPage', () => {
     );
 
     expect(outcome).toEqual({ status: 'error' });
+  });
+});
+
+describe('wikiPageLabel', () => {
+  it('prefers the stored title', () => {
+    expect(wikiPageLabel({ path: '/a/b.md', title: 'Hello' })).toBe('Hello');
+  });
+
+  it('turns a file name into sentence case', () => {
+    expect(
+      wikiPageLabel({ path: '/company/meeting-and-decision-norms.md' }),
+    ).toBe('Meeting and decision norms');
+    expect(wikiPageLabel({ path: '/people/leave_and_hours.md' })).toBe(
+      'Leave and hours',
+    );
+  });
+
+  it('calls the root index Home', () => {
+    expect(wikiPageLabel({ path: '/index.md' })).toBe('Home');
+    expect(wikiPageLabel({ path: '/sales/index.md' })).toBe('Index');
+  });
+});
+
+describe('buildWikiNavigator', () => {
+  it('puts root pages first (Home leading), then one group per top folder', () => {
+    const nodes = buildWikiNavigator([
+      { path: '/people/onboarding.md' },
+      { path: '/company/mission.md' },
+      { path: '/arc53.md' },
+      { path: '/index.md' },
+      { path: '/company/org/model.md' },
+    ]);
+    expect(nodes.map((n) => [n.kind, n.label])).toEqual([
+      ['leaf', 'Home'],
+      ['leaf', 'Arc53'],
+      ['folder', 'company'],
+      ['folder', 'people'],
+    ]);
+    expect(nodes[2].children!.map((n) => n.id)).toEqual([
+      '/company/mission.md',
+      '/company/org/model.md',
+    ]);
+    expect(nodes[2].count).toBe(2);
+  });
+
+  // A filter match's second line is the page's own folder, not only the top
+  // folder its group is named after.
+  it('gives each filter match its full parent path', () => {
+    const nodes = buildWikiNavigator([
+      { path: '/index.md' },
+      { path: '/contracts/europe/2026/hamburg-port-dues.md' },
+      { path: '/playbooks/hamburg-strike-plan.md' },
+    ]);
+    expect(
+      filterNavigatorLeaves(nodes, 'hamburg').map((m) => m.parentPath),
+    ).toEqual(['/contracts/europe/2026', '/playbooks']);
+    expect(filterNavigatorLeaves(nodes, 'index')[0].parentPath).toBe('');
   });
 });

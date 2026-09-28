@@ -43,6 +43,31 @@ describe('ArtifactSidebar', () => {
     container.remove();
   });
 
+  // Every Sheet closes with its built-in X (ghost-muted icon-sm, top-2
+  // right-2); the header only names the artifact.
+  it('closes the phone sheet with the built-in close button', async () => {
+    documentMock.mockResolvedValue({ ok: false, status: 500 });
+    legacyMock.mockRejectedValue(new Error('offline'));
+    await act(async () => {
+      root.render(
+        <ArtifactSidebar
+          isOpen
+          onClose={vi.fn()}
+          artifactId="a1"
+          conversationId="c1"
+          variant="overlay"
+        />,
+      );
+    });
+    const sheet = document.querySelector('[data-slot="sheet-content"]')!;
+    // One close: the Sheet's built-in X, named in the UI language.
+    const closes = sheet.querySelectorAll('button[aria-label="agents.close"]');
+    expect(closes).toHaveLength(1);
+    expect(closes[0].getAttribute('data-variant')).toBe('ghost-muted');
+    expect(sheet.querySelector('[aria-label="Close"]')).toBeNull();
+    expect(sheet.querySelector('[data-slot="sheet-title"]')).not.toBeNull();
+  });
+
   it('shows a failed load as an alert with Retry that refetches', async () => {
     documentMock.mockResolvedValue({ ok: false, status: 500 });
     legacyMock.mockRejectedValue(new Error('offline'));

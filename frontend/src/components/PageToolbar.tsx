@@ -37,7 +37,11 @@ export default function PageToolbar({
         ) : search ? (
           <div className="w-full max-w-md">{search}</div>
         ) : null}
-        {action ? <div className="shrink-0">{action}</div> : null}
+        {/* Spans the stacked row on a phone, so a caller can stretch its
+            main button; hugs its buttons from sm. */}
+        {action ? (
+          <div className="w-full shrink-0 sm:w-auto">{action}</div>
+        ) : null}
       </div>
       {children}
       {divider ? <Separator className="mb-8" /> : null}

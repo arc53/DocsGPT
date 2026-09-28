@@ -111,6 +111,7 @@
       "preLoaded": "Предзагруженный",
       "private": "Частный",
       "sync": "Синхронизация",
+      "syncDone": "Готово",
       "syncNow": "Синхронизировать сейчас",
       "syncing": "Синхронизация...",
       "reingest": "Переиндексировать",
@@ -131,14 +132,10 @@
         "selectPage": "Выберите страницу, чтобы просмотреть её содержимое.",
         "edit": "Редактировать",
         "save": "Сохранить",
-        "cancel": "Отмена",
         "saveFailed": "Не удалось сохранить страницу. Пожалуйста, попробуйте ещё раз.",
         "forbidden": "У вас нет прав на редактирование этой страницы.",
         "conflict": "Страница изменилась с момента открытия и была перезагружена. Ваши правки ниже — примените их заново и сохраните ещё раз.",
         "editPlaceholder": "Напишите страницу в Markdown…",
-        "livingTitle": "Живая вики.",
-        "livingExplainer": "Источник, редактируемый агентами: страницы читаются и переписываются по мере работы агентов, и по умолчанию источник доступен агентам через инструмент агентного поиска.",
-        "livingExplainerEditable": "Любой агент, использующий этот источник, может его редактировать.",
         "stamp": {
           "editedBy": "Изменено: {{who}}",
           "agent": "агент",
@@ -172,7 +169,20 @@
             "forbidden": "У вас нет прав на преобразование этого источника.",
             "conflict": "Источник ещё индексируется. Дождитесь завершения, прежде чем преобразовывать."
           }
-        }
+        },
+        "badge": "Живая вики",
+        "byline_one": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "byline_few": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "byline_many": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "byline_other": "Страниц: {{pages}} · токенов: {{tokens}}",
+        "explainer": "Агенты читают и переписывают эти страницы в ходе работы.",
+        "explainerEditable": "Агенты читают и переписывают эти страницы в ходе работы; любой агент, использующий этот источник, может его редактировать.",
+        "home": "Главная",
+        "filterPages": "Фильтр страниц",
+        "pagesTitle": "Страницы",
+        "loadFailed": "Не удалось загрузить страницы вики.",
+        "pageLoadFailed": "Не удалось загрузить эту страницу.",
+        "editTitle": "Редактировать страницу"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -211,13 +221,66 @@
         "view": {
           "action": "Просмотр графа",
           "title": "Граф знаний",
-          "explainer": "Узлы — это сущности, а рёбра — их связи. Нажмите на узел, чтобы увидеть его описание и фрагменты, из которых он был извлечён.",
-          "stats": "{{nodes}} сущностей · {{edges}} связей",
+          "stats": "{{entities}} · {{relationships}}",
           "empty": "Графа пока нет — извлечение, возможно, ещё выполняется.",
           "selectNode": "Выберите узел, чтобы увидеть подробности.",
-          "linkedChunks": "Связанные фрагменты",
           "noChunks": "Для этой сущности нет связанных фрагментов.",
-          "close": "Закрыть"
+          "close": "Закрыть",
+          "tabs": {
+            "graph": "Граф",
+            "entities": "Сущности",
+            "files": "Файлы"
+          },
+          "findEntity": "Найти сущность",
+          "entityName": "Название",
+          "noEntities": "Сущности не найдены",
+          "showTop": "Показать топ",
+          "byConnections": "по числу связей",
+          "typeFilter": "Фильтр по типу",
+          "otherTypes": "Прочие: {{types}}",
+          "otherTypesMore_one": "ещё {{formatted}}",
+          "otherTypesMore_few": "ещё {{formatted}}",
+          "otherTypesMore_many": "ещё {{formatted}}",
+          "otherTypesMore_other": "ещё {{formatted}}",
+          "untyped": "Без типа",
+          "loadFailed": "Не удалось загрузить граф.",
+          "entitiesLoadFailed": "Не удалось загрузить сущности.",
+          "nodeLoadFailed": "Не удалось загрузить эту сущность.",
+          "loadingNode": "Загрузка сущности",
+          "connections": "Связи",
+          "mentionedIn": "Упоминается в",
+          "showMore": "Показать больше",
+          "showLess": "Показать меньше",
+          "relationships": "Связи с сущностями",
+          "relationshipsCapped_one": "Показаны {{shown}} самых сильных из {{total}} связи.",
+          "relationshipsCapped_few": "Показаны {{shown}} самых сильных из {{total}} связей.",
+          "relationshipsCapped_many": "Показаны {{shown}} самых сильных из {{total}} связей.",
+          "relationshipsCapped_other": "Показаны {{shown}} самых сильных из {{total}} связи.",
+          "noRelationships": "У этой сущности нет связей.",
+          "relatedTo": "связана с",
+          "showAll": "Показать все ({{formatted}})",
+          "showFewer": "Показать меньше",
+          "sourceChunks": "Исходные фрагменты",
+          "showInGraph": "Показать на графе",
+          "allTypes": "Все типы",
+          "chunkCount_one": "{{formatted}} фрагменте",
+          "chunkCount_few": "{{formatted}} фрагментах",
+          "chunkCount_many": "{{formatted}} фрагментах",
+          "chunkCount_other": "{{formatted}} фрагментах",
+          "entityCount_one": "{{formatted}} сущность",
+          "entityCount_few": "{{formatted}} сущности",
+          "entityCount_many": "{{formatted}} сущностей",
+          "entityCount_other": "{{formatted}} сущности",
+          "relationshipCount_one": "{{formatted}} связь",
+          "relationshipCount_few": "{{formatted}} связи",
+          "relationshipCount_many": "{{formatted}} связей",
+          "relationshipCount_other": "{{formatted}} связи",
+          "chunk": "Фрагмент",
+          "chunkMeta": "{{file}} · токенов: {{tokens}}",
+          "chunkTokens": "токенов: {{tokens}}",
+          "openInFiles": "Открыть в файлах",
+          "editChunk": "Редактировать фрагмент",
+          "chunkSaved": "Фрагмент сохранён"
         }
       },
       "testRetrieval": {
@@ -252,14 +315,11 @@
       "shareWithTeam": "Поделиться с командой",
       "deleteWarning": "Вы уверены, что хотите удалить \"{{name}}\"?",
       "confirmDelete": "Вы уверены, что хотите удалить этот файл? Это действие нельзя отменить.",
-      "backToAll": "Вернуться ко всем источникам",
-      "back": "Назад",
       "chunks": "Фрагменты",
       "noChunks": "Фрагменты не найдены",
       "noChunksAlt": "Фрагменты не найдены",
       "goToSources": "Перейти к источникам",
       "uploadNew": "Загрузить новый",
-      "searchFiles": "Поиск файлов...",
       "noResults": "Результаты не найдены",
       "fileName": "Имя",
       "tokens": "Токены",
@@ -367,6 +427,45 @@
           "saveFailed": "Не удалось сохранить настройки. Пожалуйста, попробуйте ещё раз."
         }
       },
+      "chunkErrors": {
+        "add": "Не удалось добавить фрагмент",
+        "save": "Не удалось сохранить фрагмент",
+        "delete": "Не удалось удалить фрагмент",
+        "load": "Не удалось загрузить фрагменты"
+      },
+      "chunkPosition": "Фрагмент {{n}} из {{total}} · токенов: {{tokens}}",
+      "chunkCrumb": "Фрагмент {{n}}",
+      "chunkCrumbUnplaced": "Изменённый фрагмент",
+      "chunkPositionUnplaced": "Изменённый фрагмент · токенов: {{tokens}}",
+      "editChunkDescriptionUnplaced": "{{file}} · изменённый фрагмент · токенов: {{tokens}}",
+      "chunkTileMeta": "#{{n}} · токенов: {{tokens}}",
+      "copyText": "Копировать текст",
+      "chunkTitleHint": "Название, под которым ответы ссылаются на этот фрагмент.",
+      "files": "Файлы",
+      "filesLoadError": "Не удалось загрузить файлы",
+      "filesByline_one": "Файлов: {{files}} · токенов: {{tokens}}",
+      "filesByline_few": "Файлов: {{files}} · токенов: {{tokens}}",
+      "filesByline_many": "Файлов: {{files}} · токенов: {{tokens}}",
+      "filesByline_other": "Файлов: {{files}} · токенов: {{tokens}}",
+      "filterFiles": "Фильтр файлов",
+      "searchChunks": "Поиск по фрагментам",
+      "chunkCount_one": "{{formatted}} фрагмент",
+      "chunkCount_few": "{{formatted}} фрагмента",
+      "chunkCount_many": "{{formatted}} фрагментов",
+      "chunkCount_other": "{{formatted}} фрагмента",
+      "editor": {
+        "write": "Редактор",
+        "preview": "Предпросмотр",
+        "previewEmpty": "Пока нечего показать.",
+        "cancel": "Отмена",
+        "close": "Закрыть",
+        "discardMessage": "Отменить несохранённые изменения?",
+        "discard": "Отменить изменения"
+      },
+      "editChunk": "Редактировать фрагмент",
+      "editChunkDescription": "{{file}} · фрагмент {{n}} · токенов: {{tokens}}",
+      "previousChunk": "Предыдущий фрагмент",
+      "nextChunk": "Следующий фрагмент",
       "paused": "Синхронизация приостановлена. Переподключите {{name}}, чтобы продолжить."
     },
     "analytics": {
@@ -1255,7 +1354,9 @@
       "start": "Начать чат",
       "name": "Имя",
       "choose": "Выбрать файлы",
-      "info": "Пожалуйста, загрузите файлы .pdf, .txt, .rst, .csv, .xlsx, .xlsm, .xlsb, .xls, .ods, .docx, .docm, .doc, .odt, .rtf, .md, .html, .xhtml, .png, .jpg, .jpeg, .epub, .json, .pptx, .pptm, .ppt, .pps, .ppsx, .ppsm, .pot, .odp, .zip размером до 25 МБ",
+      "dropzoneText": "Нажмите, чтобы загрузить, или перетащите файлы",
+      "dropzoneHint": "PDF, Word, Excel, PowerPoint, Markdown, HTML, изображения, аудио, EPUB, JSON или ZIP, до 25 МБ каждый",
+      "filesRejected": "Не добавлены (больше 25 МБ или неподдерживаемый формат): {{files}}",
       "uploadedFiles": "Загруженные файлы",
       "cancel": "Отмена",
       "train": "Добавить источник",
@@ -1490,7 +1591,6 @@
       "promptText": "Текст подсказки",
       "save": "Сохранить",
       "close": "Закрыть",
-      "cancel": "Отмена",
       "delete": "Удалить",
       "deleteConfirmation": "Вы уверены, что хотите удалить этот фрагмент?"
     },
@@ -1589,7 +1689,8 @@
     "firstPage": "Первая страница",
     "previousPage": "Предыдущая страница",
     "nextPage": "Следующая страница",
-    "lastPage": "Последняя страница"
+    "lastPage": "Последняя страница",
+    "chunksPerPage": "Фрагментов на странице"
   },
   "conversation": {
     "copy": "Копировать",
@@ -1829,15 +1930,16 @@
         "moreActions": "Другие действия"
       },
       "sections": {
-        "meta": "Мета",
-        "source": "Источник",
         "prompt": "Промпт",
         "tools": "Инструменты",
         "agentType": "Тип агента",
         "models": "Модели",
         "advanced": "Расширенные",
         "guardrails": "Guardrails",
-        "preview": "Предпросмотр"
+        "preview": "Предпросмотр",
+        "basics": "Основное",
+        "knowledge": "Знания и поведение",
+        "model": "Модель"
       },
       "placeholders": {
         "agentName": "Имя агента",
@@ -1883,7 +1985,11 @@
         "research": "Исследование"
       },
       "labels": {
-        "defaultModel": "Модель по умолчанию"
+        "defaultModel": "Модель по умолчанию",
+        "name": "Имя",
+        "description": "Описание",
+        "sources": "Источники",
+        "avatar": "Аватар"
       },
       "advanced": {
         "jsonSchema": "Схема ответа JSON",
@@ -1898,7 +2004,10 @@
         "systemPromptOverrideDescription": "Разрешить вызовам API v1 заменять системный промпт этого агента"
       },
       "preview": {
-        "publishedPreview": "Опубликованные агенты можно просмотреть здесь"
+        "savedVersion": "сохранённая версия",
+        "publishTitle": "Опубликуйте, чтобы проверить",
+        "publishDescription": "Предпросмотр общается с опубликованным агентом. Черновики остаются приватными, пока вы их не опубликуете.",
+        "unsavedChanges": "Есть несохранённые изменения. Пока вы не сохраните, предпросмотр использует сохранённую версию."
       },
       "dangerZone": {
         "heading": "Опасная зона",
@@ -1963,6 +2072,12 @@
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
         }
+      },
+      "byline": {
+        "new": "Настройте агента и опубликуйте его, чтобы с ним общаться."
+      },
+      "status": {
+        "published": "Опубликован"
       }
     },
     "logs": {
@@ -1973,7 +2088,6 @@
     },
     "schedules": {
       "title": "Расписания агента",
-      "heading": "Расписания",
       "newRecurring": "Новое расписание",
       "closeForm": "Закрыть форму",
       "edit": "Редактировать",
@@ -2069,8 +2183,6 @@
         "output": "Результат",
         "truncated": "(обрезано)"
       },
-      "timezoneMeta": "часовой пояс: {{timezone}}",
-      "nextRunMeta": "следующий: {{time}}",
       "toolCard": {
         "cancelFailed": "Не удалось отменить",
         "taskCancelled": "Запланированная задача отменена.",
@@ -2115,7 +2227,32 @@
       "runLog": {
         "when": "Когда",
         "details": "Подробнее",
-        "empty": "Для этого расписания пока нет запусков."
+        "empty": "Для этого расписания пока нет запусков.",
+        "duration": "Длительность"
+      },
+      "actions": "Действия с расписанием",
+      "cancelTask": "Отменить задачу",
+      "failureStreak_one": "{{count}} сбой подряд",
+      "failureStreak_few": "{{count}} сбоя подряд",
+      "failureStreak_many": "{{count}} сбоев подряд",
+      "failureStreak_other": "{{count}} сбоя подряд",
+      "meta": {
+        "nextRun": "Следующий запуск {{time}}",
+        "runsAt": "Запуск {{time}}",
+        "lastRun": "Последний запуск {{time}}"
+      },
+      "stats": {
+        "active": "Активные расписания",
+        "nextRun": "Следующий запуск",
+        "runs": "Запуски за {{days}} дней",
+        "tokens": "{{tokens}} токенов",
+        "failed": "Сбои за {{days}} дней",
+        "latestFailure": "Последний: {{status}}, {{date}}",
+        "paused_one": "{{count}} приостановлено",
+        "paused_few": "{{count}} приостановлено",
+        "paused_many": "{{count}} приостановлено",
+        "paused_other": "{{count}} приостановлено",
+        "overdue": "Просрочено"
       }
     },
     "shared": {
@@ -2194,15 +2331,8 @@
         "saveFailed": "Не удалось сохранить рабочий процесс",
         "defaultDescription": "Агент рабочего процесса: {{name}}",
         "newWorkflow": "Новый рабочий процесс",
-        "editDetails": "Изменить сведения о рабочем процессе",
-        "workflowName": "Название рабочего процесса",
         "workflowNamePlaceholder": "Введите название рабочего процесса",
         "workflowDescriptionPlaceholder": "Опишите, что делает этот рабочий процесс",
-        "agentImageAlt": "Изображение агента",
-        "currentImage": "Текущее изображение",
-        "agentImage": "Изображение агента",
-        "agentImageHint": "Изменения изображения применятся при следующем сохранении.",
-        "done": "Готово",
         "unablePreview": "Не удалось запустить предпросмотр рабочего процесса",
         "unableSave": "Не удалось сохранить рабочий процесс",
         "unablePublish": "Не удалось опубликовать рабочий процесс",
@@ -2212,6 +2342,22 @@
         "setStateHint": "Изменение переменных рабочего процесса",
         "conditionHint": "Условное ветвление",
         "codeHint": "Запуск кода в песочнице",
+        "paletteHint": "Перетащите на холст или нажмите, чтобы добавить.",
+        "nodeActions": "Действия с узлом",
+        "duplicateNode": "Дублировать",
+        "copyNodeId": "Копировать ID узла",
+        "knowledge": "Знания",
+        "output": "Вывод",
+        "streamToUserDescription": "Показывать ответ этого узла в чате по мере написания",
+        "advancedSettings": "Дополнительные настройки",
+        "conditionMode": "Режим условия",
+        "branchName": "Название ветки",
+        "variable": "Переменная",
+        "value": "Значение",
+        "valueCel": "Значение (CEL)",
+        "addCondition": "Добавить условие",
+        "assignment": "Присваивание {{index}}",
+        "addAssignment": "Добавить присваивание",
         "startNode": "Начальный узел",
         "endNode": "Конечный узел",
         "stateTitle": "Задать глобальные переменные",
@@ -2240,7 +2386,7 @@
         "invalidSchema": "Некорректная JSON-схема: {{error}}",
         "noteContent": "Текст заметки",
         "noteContentPlaceholder": "Введите текст заметки",
-        "stateIntro": "Присвойте значения переменным состояния рабочего процесса",
+        "stateIntro": "Присвойте значения переменным состояния рабочего процесса.",
         "assignValue": "Присвоить значение",
         "celHint": "Используйте Common Expression Language, чтобы создать собственное выражение. Ссылайтесь на состояние по имени (<code>query</code>), а не <code>{{braced}}</code>.",
         "learnMore": "Подробнее",
@@ -2251,6 +2397,8 @@
         "caseNamePlaceholder": "Название варианта (необязательно)",
         "variablePlaceholder": "Переменная",
         "valuePlaceholder": "Значение",
+        "operator": "Оператор",
+        "examplePlaceholder": "напр. {{example}}",
         "opContains": "содержит",
         "opStartsWith": "начинается",
         "conditionPlaceholder": "Введите условие, например query.contains(\"refund\")",
@@ -2262,7 +2410,11 @@
         "cannotDeleteStart": "Начальный узел нельзя удалить",
         "deleteNode": "Удалить узел",
         "deleteConfirm": "Вы уверены, что хотите удалить «{{name}}»?",
-        "deleteConfirmUnnamed": "Вы уверены, что хотите удалить этого агента рабочего процесса?"
+        "deleteConfirmUnnamed": "Вы уверены, что хотите удалить этого агента рабочего процесса?",
+        "detailsTitle": "Сведения о рабочем процессе",
+        "detailsDescription": "Название, описание и изображение, которые показываются на карточке агента.",
+        "unsavedChanges": "Несохранённые изменения",
+        "editDetailsMenu": "Изменить сведения"
       },
       "validation": {
         "nameRequired": "Укажите название рабочего процесса",
@@ -2361,7 +2513,10 @@
         "searchPlaceholder": "Поиск переменных...",
         "empty": "Переменные не найдены",
         "addContext": "Добавить контекст"
-      }
+      },
+      "zoomIn": "Увеличить",
+      "zoomOut": "Уменьшить",
+      "fitView": "Уместить на экране"
     },
     "typeModal": {
       "title": "Создать нового агента",
@@ -2414,6 +2569,12 @@
     },
     "profile": {
       "avatarAlt": "Аватар пользователя"
+    },
+    "multiSelect": {
+      "more_one": "+ещё {{count}}",
+      "more_few": "+ещё {{count}}",
+      "more_many": "+ещё {{count}}",
+      "more_other": "+ещё {{count}}"
     }
   },
   "pageNotFound": {

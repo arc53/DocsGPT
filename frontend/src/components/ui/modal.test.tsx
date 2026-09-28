@@ -211,6 +211,9 @@ describe('Modal mobile sheet', () => {
       ]),
     );
     expect(sheet.className).not.toContain('env(');
+    // Every bottom sheet has the sheet elevation, like SheetContent.
+    expect(classes).toContain('shadow-lg');
+    expect(classes).not.toContain('shadow-modal');
     expect(sheet.firstElementChild!.getAttribute('data-slot')).toBe(
       'sheet-handle',
     );

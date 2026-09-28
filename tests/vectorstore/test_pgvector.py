@@ -486,3 +486,89 @@ class TestPGVectorPrecomputedQueryVector:
         store.search_with_scores("query", k=2, query_vector=None)
 
         mock_emb.embed_query.assert_called_once_with("query")
+
+
+@pytest.mark.unit
+class TestPGVectorStoreUpdateChunk:
+    def test_updates_the_row_in_place(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.4, 0.5]]
+        mock_cursor.rowcount = 1
+
+        with patch("docsgpt.vectorstore.pgvector.Jsonb", side_effect=lambda v: ("jsonb", v)):
+            returned = store.update_chunk("42", "new text", {"key": "val"})
+
+        assert returned == "42"
+        sql, params = mock_cursor.execute.call_args[0]
+        assert sql.strip().upper().startswith("UPDATE")
+        assert "WHERE id = %s AND source_id = %s" in sql
+        assert "INSERT" not in sql.upper() and "DELETE" not in sql.upper()
+        assert params == (
+            "new text",
+            [0.4, 0.5],
+            ("jsonb", {"key": "val", "source_id": "src1"}),
+            42,
+            "src1",
+        )
+        mock_emb.embed_documents.assert_called_once_with(["new text"])
+        mock_conn.commit.assert_called_once()
+
+    def test_does_not_mutate_the_callers_metadata(self):
+        store, _, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.4]]
+        mock_cursor.rowcount = 1
+        metadata = {"key": "val"}
+
+        store.update_chunk("42", "new text", metadata)
+
+        assert metadata == {"key": "val"}
+
+    def test_embedding_failure_writes_nothing(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store()
+        mock_emb.embed_documents.side_effect = RuntimeError("embed down")
+
+        with pytest.raises(RuntimeError):
+            store.update_chunk("42", "new text", {})
+
+        mock_cursor.execute.assert_not_called()
+        mock_conn.commit.assert_not_called()
+
+    def test_empty_embedding_raises_before_writing(self):
+        store, _, mock_cursor, mock_emb = _make_store()
+        mock_emb.embed_documents.return_value = []
+
+        with pytest.raises(ValueError, match="Could not generate embedding"):
+            store.update_chunk("42", "new text", {})
+        mock_cursor.execute.assert_not_called()
+
+    def test_missing_row_raises_and_rolls_back(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store()
+        mock_emb.embed_documents.return_value = [[0.4]]
+        mock_cursor.rowcount = 0
+
+        with pytest.raises(KeyError):
+            store.update_chunk("999", "new text", {})
+
+        mock_conn.commit.assert_not_called()
+        mock_conn.rollback.assert_called_once()
+
+    def test_db_error_rolls_back_and_raises(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store()
+        mock_emb.embed_documents.return_value = [[0.4]]
+        mock_cursor.execute.side_effect = RuntimeError("db down")
+
+        with pytest.raises(RuntimeError):
+            store.update_chunk("42", "new text", {})
+        mock_conn.rollback.assert_called_once()
+
+
+@pytest.mark.unit
+def test_get_chunks_orders_by_id():
+    """An UPDATE writes a new tuple, so an unordered scan could move the row."""
+    store, _, mock_cursor, _ = _make_store()
+    mock_cursor.fetchall.return_value = []
+
+    store.get_chunks()
+
+    sql = " ".join(mock_cursor.execute.call_args[0][0].split())
+    assert sql.endswith("WHERE source_id = %s ORDER BY id;")

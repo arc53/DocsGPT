@@ -201,6 +201,9 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/agents/<string:agent_id>/schedules", "GET"): _rule(
         "schedules:read", refs=(("agents", (VIEW, "agent_id")),), blocked_by=_NON_AGENT_FAMILIES
     ),
+    ("/api/agents/<string:agent_id>/schedules/stats", "GET"): _rule(
+        "schedules:read", refs=(("agents", (VIEW, "agent_id")),), blocked_by=_NON_AGENT_FAMILIES
+    ),
     ("/api/agents/<string:agent_id>/schedules", "POST"): _rule(
         "schedules:write", refs=(("agents", (VIEW, "agent_id")),), blocked_by=_NON_AGENT_FAMILIES
     ),
@@ -225,6 +228,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/sources/<string:source_id>/graph/node/<string:node_id>", "GET"): _rule(
         "sources:read", (VIEW, "source_id")
     ),
+    ("/api/sources/<string:source_id>/graph/nodes", "GET"): _rule("sources:read", (VIEW, "source_id")),
     # Ingestion and attachment extraction both report through this poll.
     ("/api/task_status", "GET"): _rule(any_of=("sources:read", "sources:write", "chat:run"), open=True),
     ("/api/upload", "POST"): _rule("sources:write"),

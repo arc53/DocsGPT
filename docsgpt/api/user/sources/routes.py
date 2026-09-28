@@ -46,6 +46,9 @@ from docsgpt.vectorstore.vector_creator import VectorCreator
 
 WIKI_INDEX_PATH = "/index.md"
 
+# Longest graph-node search term forwarded to the store; longer input is truncated.
+_GRAPH_SEARCH_MAX_LEN = 200
+
 
 sources_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
@@ -566,7 +569,7 @@ class DirectoryStructure(Resource):
             return make_response(jsonify({"error": "Document ID is required"}), 400)
         try:
             with db_readonly() as conn:
-                doc = SourcesRepository(conn).get_any(doc_id, user)
+                doc = _resolve_readable_source(conn, doc_id, user)
             if not doc:
                 return make_response(
                     jsonify({"error": "Document not found or access denied"}), 404
@@ -1268,18 +1271,50 @@ class EnableSourceGraphRAG(Resource):
         )
 
 
-def _graph_overview_payload(source_id, limit):
-    """Return a bounded ``{nodes, edges}`` overview for a graphrag source.
+def _graph_overview_payload(source_id: str, limit: int) -> dict:
+    """Return a bounded ``{nodes, edges, stats}`` overview for a graphrag source.
 
     An empty graph (extraction pending/capped/failed) yields empty lists rather
-    than an error, mirroring the ClassicRAG degradation guarantee.
+    than an error, mirroring the ClassicRAG degradation guarantee, and skips
+    the overview query entirely. ``stats`` carries the whole graph's totals,
+    not the bounded overview's.
+
+    Args:
+        source_id: The resolved source id.
+        limit: Requested overview size; the store clamps it.
+
+    Returns:
+        dict: ``{"nodes": [...], "edges": [...], "stats": {"nodes": int,
+        "edges": int}}``.
     """
     from docsgpt.graphrag.store import GraphStore
 
     store = GraphStore()
-    if store.count_nodes(source_id) == 0:
-        return {"nodes": [], "edges": []}
-    return store.get_graph_overview(source_id, limit)
+    node_count = store.count_nodes(source_id)
+    if node_count == 0:
+        return {"nodes": [], "edges": [], "stats": {"nodes": 0, "edges": 0}}
+    overview = store.get_graph_overview(source_id, limit)
+    return {
+        "nodes": overview["nodes"],
+        "edges": overview["edges"],
+        "stats": {"nodes": node_count, "edges": store.count_edges(source_id)},
+    }
+
+
+def _int_arg(name: str, default: int) -> int:
+    """Read an integer query arg, falling back to ``default`` when unparsable.
+
+    Args:
+        name: Query-string parameter name.
+        default: Value used when the arg is missing or not an integer.
+
+    Returns:
+        int: The parsed value or ``default``.
+    """
+    try:
+        return int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        return default
 
 
 @sources_ns.route("/sources/<string:source_id>/graph")
@@ -1331,6 +1366,142 @@ class SourceGraph(Resource):
                     "success": True,
                     "nodes": overview["nodes"],
                     "edges": overview["edges"],
+                    "stats": overview["stats"],
+                }
+            ),
+            200,
+        )
+
+
+def _graph_node_page(
+    source_id: str,
+    query: str | None,
+    type_key: str | None,
+    page: int,
+    per_page: int,
+) -> tuple[dict, list]:
+    """Return ``(listing, type_facets)`` for one page of a source's graph nodes.
+
+    A graph store that is not configured, or whose tables do not exist yet
+    (no graph has ever been built on this deployment), yields an empty page,
+    matching :func:`_graph_overview_payload`. Every other failure propagates,
+    so a broken query is never shown as an empty graph.
+
+    Args:
+        source_id: The resolved source id.
+        query: Name substring filter, or ``None``.
+        type_key: Type key filter, or ``None`` for no filter.
+        page: 1-based page, already clamped.
+        per_page: Page size, already clamped.
+
+    Returns:
+        tuple: ``({"nodes": [...], "total": int}, [{"key", "label", "count"}])``.
+
+    Raises:
+        Exception: Any store failure other than a missing store or schema.
+    """
+    import psycopg
+
+    from docsgpt.graphrag.store import GraphStore
+
+    empty = ({"nodes": [], "total": 0}, [])
+    try:
+        store = GraphStore()
+    except (ValueError, ImportError) as err:
+        current_app.logger.info("Graph store unavailable, listing no nodes: %s", err)
+        return empty
+    try:
+        listing = store.list_nodes(
+            source_id,
+            query=query,
+            type_key=type_key,
+            offset=(page - 1) * per_page,
+            limit=per_page,
+        )
+        types = store.node_type_facets(source_id)
+    except psycopg.errors.UndefinedTable as err:
+        current_app.logger.info("Graph tables missing, listing no nodes: %s", err)
+        return empty
+    return listing, types
+
+
+@sources_ns.route("/sources/<string:source_id>/graph/nodes")
+class SourceGraphNodes(Resource):
+    @api.doc(
+        description="Paged, searchable list of a graphrag source's nodes, "
+        "highest degree first, plus type facets over all its nodes (read "
+        "access: owner or shared). Query params: q (name substring), type "
+        "(type key), page (1-based), per_page (1-100, default 25)."
+    )
+    def get(self, source_id: str):
+        """List one page of a source's graph nodes with type facets.
+
+        Args:
+            source_id: The source id from the URL.
+
+        Returns:
+            Response: ``{success, nodes, total, page, per_page, types}``, or
+            401/404/400 on missing auth, no read access or a failure. ``page``
+            is clamped to ``1..GRAPH_NODE_LIST_MAX_PAGE`` and ``per_page`` to
+            ``1..GRAPH_NODE_LIST_MAX_LIMIT``. A graph store that is not
+            configured or has no tables yet reads as an empty page, like the
+            overview; any other store query failure is a 400, never an empty
+            200.
+        """
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        from docsgpt.graphrag.store import (
+            GRAPH_NODE_LIST_DEFAULT_LIMIT,
+            GRAPH_NODE_LIST_MAX_LIMIT,
+            GRAPH_NODE_LIST_MAX_PAGE,
+        )
+
+        page = max(1, min(_int_arg("page", 1), GRAPH_NODE_LIST_MAX_PAGE))
+        per_page = max(
+            1,
+            min(
+                _int_arg("per_page", GRAPH_NODE_LIST_DEFAULT_LIMIT),
+                GRAPH_NODE_LIST_MAX_LIMIT,
+            ),
+        )
+        query = (request.args.get("q") or "").strip()[:_GRAPH_SEARCH_MAX_LEN] or None
+        type_key = request.args.get("type")
+        try:
+            with db_readonly() as conn:
+                doc = _resolve_readable_source(conn, source_id, user)
+                if doc is None:
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}),
+                        404,
+                    )
+                resolved_source_id = str(doc["id"])
+        except Exception as err:
+            current_app.logger.error(
+                f"Error resolving source {source_id} for graph nodes: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        try:
+            listing, types = _graph_node_page(
+                resolved_source_id, query, type_key, page, per_page
+            )
+        except Exception as err:
+            current_app.logger.error(
+                f"Error listing graph nodes for {source_id}: {err}",
+                exc_info=True,
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(
+            jsonify(
+                {
+                    "success": True,
+                    "nodes": listing["nodes"],
+                    "total": listing["total"],
+                    "page": page,
+                    "per_page": per_page,
+                    "types": types,
                 }
             ),
             200,

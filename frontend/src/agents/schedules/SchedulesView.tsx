@@ -4,26 +4,38 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
 import userService from '../../api/services/userService';
+import { Plus } from 'lucide-react';
+
+import { Badge } from '@/components/ui/badge';
+import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
-import { SectionHeader } from '@/components/ui/section-header';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import schedulesService from '../../api/services/schedulesService';
+import StatCard from '../../components/StatCard';
 import { Button } from '../../components/ui/button';
+import { Card } from '../../components/ui/card';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
 import { selectToken } from '../../preferences/preferenceSlice';
 import type { AppDispatch, RootState } from '../../store';
-import { formatDateTime } from '../../utils/dateTimeUtils';
+import { formatTokens } from '../../settings/traces/traceUtils';
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatRelative,
+} from '../../utils/dateTimeUtils';
+import AgentPageToolbar, { LastUsedMeta } from '../components/AgentPageToolbar';
 import SectionShell from '../../navigation/SectionShell';
 import type { Agent } from '../types';
 import type {
   Schedule,
   ScheduleCreatePayload,
   ScheduleRun,
+  ScheduleStats,
 } from '../types/schedule';
 import RunDetailDrawer from './RunDetailDrawer';
-import RunLog from './RunLog';
 import ScheduleFormModal from './ScheduleFormModal';
-import ScheduleStatusBadge from './StatusBadge';
-import { formatCron } from './cronBuilder';
+import ScheduleRow from './ScheduleRow';
 import {
   createSchedule,
   deleteSchedule,
@@ -38,9 +50,8 @@ import {
 // must not escape them first.
 const NO_ESCAPE = { interpolation: { escapeValue: false } } as const;
 
-const formatTimestamp = (value?: string | null): string => {
-  return value ? formatDateTime(value) : '—';
-};
+// The stat row's window, in days.
+const STATS_DAYS = 30;
 
 /** Standalone Schedules page for an agent: list, create, edit, pause, run, delete. */
 export default function SchedulesView() {
@@ -65,6 +76,28 @@ export default function SchedulesView() {
   const schedules = useSelector((state: RootState) =>
     selectSchedulesForAgent(state, agentId ?? ''),
   );
+  // undefined while loading, null when the stats request failed.
+  const [stats, setStats] = useState<ScheduleStats | null | undefined>(
+    undefined,
+  );
+
+  // Refresh the totals whenever the list changes (a run finished, a
+  // schedule was paused or removed): the SSE feed updates `schedules`.
+  useEffect(() => {
+    if (!agentId) return;
+    let cancelled = false;
+    schedulesService
+      .statsForAgent(agentId, token, STATS_DAYS)
+      .then((next) => {
+        if (!cancelled) setStats(next);
+      })
+      .catch(() => {
+        if (!cancelled) setStats(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId, token, schedules]);
 
   useEffect(() => {
     if (!agentId) return;
@@ -151,218 +184,165 @@ export default function SchedulesView() {
     }
   };
 
+  const activeCount = schedules.filter((s) => s.status === 'active').length;
+  const pausedCount = schedules.filter((s) => s.status === 'paused').length;
+  const nextRunAt = schedules
+    .filter((s) => s.status === 'active' && s.next_run_at)
+    .map((s) => s.next_run_at as string)
+    .sort()[0];
+  // A next run in the past means the scheduler hasn't picked it up yet.
+  const nextRunOverdue =
+    Boolean(nextRunAt) && Date.parse(nextRunAt as string) < Date.now();
+  const statsLoading = stats === undefined;
+  const failedCount = stats?.failed ?? 0;
+  const latestFailure = stats?.latest_failure;
+
+  const newScheduleButton = (
+    <Button type="button" size="field" shape="pill" onClick={openCreate}>
+      <Plus />
+      {t('agents.schedules.newRecurring')}
+    </Button>
+  );
+
+  const renderList = (list: Schedule[], emptyKey: string) =>
+    list.length === 0 ? (
+      <Card variant="subtle" padding="lg">
+        <EmptyState
+          size="sm"
+          illustration="none"
+          title={t(emptyKey)}
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              shape="pill"
+              onClick={openCreate}
+            >
+              <Plus />
+              {t('agents.schedules.newRecurring')}
+            </Button>
+          }
+        />
+      </Card>
+    ) : (
+      <ul className="flex flex-col gap-3">
+        {list.map((schedule) => (
+          <li key={schedule.id}>
+            <ScheduleRow
+              schedule={schedule}
+              expanded={expanded === schedule.id}
+              onToggleRuns={(id) => setExpanded(expanded === id ? null : id)}
+              onEdit={openEdit}
+              onSetPaused={(target, paused) =>
+                dispatch(
+                  setSchedulePaused({
+                    id: target.id,
+                    action: paused ? 'pause' : 'resume',
+                    token,
+                  }),
+                )
+              }
+              onRunNow={(target) =>
+                dispatch(runScheduleNow({ id: target.id, token }))
+              }
+              onDelete={requestDelete}
+              onSelectRun={(run) => setActiveRun(run)}
+            />
+          </li>
+        ))}
+      </ul>
+    );
+
   return (
-    <SectionShell pills>
-      <div className="flex flex-col gap-3">
-        {agent && (
-          <div className="flex flex-col gap-1">
-            <p className="text-foreground">{agent.name}</p>
-            <p className="text-muted-foreground text-xs">
-              {agent.last_used_at
-                ? t('agents.logs.lastUsedAt') +
-                  ' ' +
-                  formatDateTime(agent.last_used_at)
-                : t('agents.logs.noUsageHistory')}
-            </p>
-          </div>
-        )}
-      </div>
+    <SectionShell>
+      {agent && (
+        <AgentPageToolbar
+          name={agent.name}
+          meta={<LastUsedMeta lastUsedAt={agent.last_used_at} />}
+          actions={newScheduleButton}
+        />
+      )}
       {loadingAgent ? (
         <LoadingState fill="block" />
       ) : (
         agent && (
-          <div className="flex flex-col gap-4 p-4">
-            <SectionHeader
-              title={t('agents.schedules.heading')}
-              actions={
-                <Button type="button" size="sm" onClick={openCreate}>
-                  {t('agents.schedules.newRecurring')}
-                </Button>
-              }
-            />
-            <section className="flex flex-col gap-2">
-              <SectionHeader
-                as="h3"
-                size="sm"
-                title={`${t('agents.schedules.recurring')} (${recurring.length})`}
+          <div className="flex flex-col gap-8">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <StatCard
+                label={t('agents.schedules.stats.active')}
+                value={activeCount}
+                sub={
+                  pausedCount > 0
+                    ? t('agents.schedules.stats.paused', {
+                        count: pausedCount,
+                      })
+                    : undefined
+                }
               />
-              {recurring.length === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  {t('agents.schedules.noRecurring')}
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-3">
-                  {recurring.map((schedule) => (
-                    <li
-                      key={schedule.id}
-                      className="border-border bg-card rounded-lg border p-3"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold">
-                              {schedule.name ||
-                                schedule.instruction.slice(0, 80)}
-                            </p>
-                            <ScheduleStatusBadge status={schedule.status} />
-                          </div>
-                          <p className="text-muted-foreground text-xs">
-                            {formatCron(schedule.cron, t)} ·{' '}
-                            {t('agents.schedules.timezoneMeta', {
-                              ...NO_ESCAPE,
-                              timezone: schedule.timezone,
-                            })}{' '}
-                            ·{' '}
-                            {t('agents.schedules.nextRunMeta', {
-                              ...NO_ESCAPE,
-                              time: formatTimestamp(schedule.next_run_at),
-                            })}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            type="button"
-                            variant="outline-primary"
-                            size="sm"
-                            shape="pill"
-                            onClick={() => openEdit(schedule)}
-                          >
-                            {t('agents.schedules.edit')}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline-primary"
-                            size="sm"
-                            shape="pill"
-                            onClick={() =>
-                              dispatch(
-                                setSchedulePaused({
-                                  id: schedule.id,
-                                  action:
-                                    schedule.status === 'active'
-                                      ? 'pause'
-                                      : 'resume',
-                                  token,
-                                }),
-                              )
-                            }
-                          >
-                            {schedule.status === 'active'
-                              ? t('agents.schedules.pause')
-                              : t('agents.schedules.resume')}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline-primary"
-                            size="sm"
-                            shape="pill"
-                            onClick={() =>
-                              dispatch(
-                                runScheduleNow({ id: schedule.id, token }),
-                              )
-                            }
-                          >
-                            {t('agents.schedules.runNow')}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="destructive-outline"
-                            size="sm"
-                            shape="pill"
-                            onClick={() => requestDelete(schedule)}
-                          >
-                            {t('agents.schedules.delete')}
-                          </Button>
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="link"
-                        size="xs"
-                        onClick={() =>
-                          setExpanded(
-                            expanded === schedule.id ? null : schedule.id,
-                          )
-                        }
-                        className="mt-0.5 -ml-2"
-                      >
-                        {expanded === schedule.id
-                          ? t('agents.schedules.hideRuns')
-                          : t('agents.schedules.showRuns')}
-                      </Button>
-                      {expanded === schedule.id && (
-                        <div className="mt-2">
-                          <RunLog
-                            scheduleId={schedule.id}
-                            onSelect={(run) => setActiveRun(run)}
-                          />
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-            <section className="flex flex-col gap-2">
-              <SectionHeader
-                as="h3"
-                size="sm"
-                title={`${t('agents.schedules.oneTime')} (${oneTime.length})`}
+              <StatCard
+                label={t('agents.schedules.stats.nextRun')}
+                value={
+                  !nextRunAt
+                    ? '—'
+                    : nextRunOverdue
+                      ? t('agents.schedules.stats.overdue')
+                      : formatRelative(nextRunAt, { future: true })
+                }
+                valueTone={nextRunOverdue ? 'warning' : undefined}
+                sub={nextRunAt ? formatDateTime(nextRunAt) : undefined}
               />
-              {oneTime.length === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  {t('agents.schedules.noOneTime')}
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {oneTime.map((schedule) => (
-                    <li
-                      key={schedule.id}
-                      className="border-border bg-card rounded-lg border p-3 text-sm"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold">
-                              {schedule.name ||
-                                schedule.instruction.slice(0, 80)}
-                            </p>
-                            <ScheduleStatusBadge status={schedule.status} />
-                          </div>
-                          <p className="text-muted-foreground text-xs">
-                            runs at {formatTimestamp(schedule.run_at)}
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          {schedule.status === 'active' && (
-                            <Button
-                              type="button"
-                              variant="outline-primary"
-                              size="sm"
-                              shape="pill"
-                              onClick={() => openEdit(schedule)}
-                            >
-                              {t('agents.schedules.edit')}
-                            </Button>
-                          )}
-                          {schedule.status === 'active' && (
-                            <Button
-                              type="button"
-                              variant="destructive-outline"
-                              size="sm"
-                              shape="pill"
-                              onClick={() => requestDelete(schedule)}
-                            >
-                              {t('agents.schedules.cancel')}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+              <StatCard
+                label={t('agents.schedules.stats.runs', { days: STATS_DAYS })}
+                value={stats ? stats.runs : '—'}
+                loading={statsLoading}
+                sub={
+                  stats
+                    ? t('agents.schedules.stats.tokens', {
+                        tokens: formatTokens(stats.tokens),
+                      })
+                    : undefined
+                }
+              />
+              <StatCard
+                label={t('agents.schedules.stats.failed', {
+                  days: STATS_DAYS,
+                })}
+                value={stats ? failedCount : '—'}
+                loading={statsLoading}
+                tone={failedCount > 0 ? 'destructive' : 'default'}
+                valueTone={failedCount > 0 ? 'destructive' : undefined}
+                sub={
+                  latestFailure
+                    ? t('agents.schedules.stats.latestFailure', {
+                        ...NO_ESCAPE,
+                        status: t(
+                          `agents.schedules.status.${latestFailure.status}`,
+                        ),
+                        date: formatDateOnly(latestFailure.scheduled_for),
+                      })
+                    : undefined
+                }
+              />
+            </div>
+            <Tabs defaultValue="recurring">
+              <TabsList variant="underline">
+                <TabsTrigger value="recurring" variant="underline">
+                  {t('agents.schedules.recurring')}
+                  <Badge variant="neutral">{recurring.length}</Badge>
+                </TabsTrigger>
+                <TabsTrigger value="once" variant="underline">
+                  {t('agents.schedules.oneTime')}
+                  <Badge variant="neutral">{oneTime.length}</Badge>
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="recurring" className="mt-4">
+                {renderList(recurring, 'agents.schedules.noRecurring')}
+              </TabsContent>
+              <TabsContent value="once" className="mt-4">
+                {renderList(oneTime, 'agents.schedules.noOneTime')}
+              </TabsContent>
+            </Tabs>
             <RunDetailDrawer
               run={activeRun}
               onClose={() => setActiveRun(null)}

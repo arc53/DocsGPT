@@ -1548,7 +1548,7 @@ function APIActionTable({
                   size="sm"
                 />
               </TableCell>
-              <TableCell width="50px" align="center">
+              <TableCell width="40px" align="center">
                 <IconButton
                   label={t('convTile.delete')}
                   icon={Trash2}
@@ -1613,7 +1613,7 @@ function APIActionTable({
                 {t('settings.tools.cancel')}
               </Button>
             </TableCell>
-            <TableCell width="50px" align="center"></TableCell>
+            <TableCell width="40px" align="center"></TableCell>
           </TableRow>
         ) : (
           <TableRow>
@@ -1628,7 +1628,7 @@ function APIActionTable({
                 {t('settings.tools.addNew')}
               </Button>
             </TableCell>
-            <TableCell width="50px" align="center"></TableCell>
+            <TableCell width="40px" align="center"></TableCell>
           </TableRow>
         )}
       </>
@@ -1715,7 +1715,7 @@ function APIActionTable({
                   }
                 />
               </TableCell>
-              <TableCell width="50px" align="center">
+              <TableCell width="40px" align="center">
                 <IconButton
                   label={t('convTile.delete')}
                   icon={Trash2}
@@ -1764,7 +1764,7 @@ function APIActionTable({
                 {t('settings.tools.cancel')}
               </Button>
             </TableCell>
-            <TableCell width="50px" align="center"></TableCell>
+            <TableCell width="40px" align="center"></TableCell>
           </TableRow>
         ) : (
           <TableRow>
@@ -1779,7 +1779,7 @@ function APIActionTable({
                 {t('settings.tools.addNew')}
               </Button>
             </TableCell>
-            <TableCell width="50px" align="center"></TableCell>
+            <TableCell width="40px" align="center"></TableCell>
           </TableRow>
         )}
       </>
@@ -1797,7 +1797,7 @@ function APIActionTable({
                 <TableHeader>{t('settings.tools.name')}</TableHeader>
                 <TableHeader>{t('settings.tools.value')}</TableHeader>
                 <TableHeader>{t('settings.tools.description')}</TableHeader>
-                <TableHeader width="50px" align="center"></TableHeader>
+                <TableHeader width="40px" align="center"></TableHeader>
               </TableRow>
             </TableHead>
             <TableBody>{renderHeadersTable()}</TableBody>
@@ -1819,7 +1819,7 @@ function APIActionTable({
                 <TableHeader>{t('settings.tools.filledByLLM')}</TableHeader>
                 <TableHeader>{t('settings.tools.description')}</TableHeader>
                 <TableHeader>{t('settings.tools.value')}</TableHeader>
-                <TableHeader width="50px" align="center"></TableHeader>
+                <TableHeader width="40px" align="center"></TableHeader>
               </TableRow>
             </TableHead>
             <TableBody>{renderPropertiesTable('query_params')}</TableBody>
@@ -1837,7 +1837,7 @@ function APIActionTable({
                 <TableHeader>{t('settings.tools.filledByLLM')}</TableHeader>
                 <TableHeader>{t('settings.tools.description')}</TableHeader>
                 <TableHeader>{t('settings.tools.value')}</TableHeader>
-                <TableHeader width="50px" align="center"></TableHeader>
+                <TableHeader width="40px" align="center"></TableHeader>
               </TableRow>
             </TableHead>
             <TableBody>{renderPropertiesTable('body')}</TableBody>

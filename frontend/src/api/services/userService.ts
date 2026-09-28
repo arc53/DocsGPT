@@ -152,6 +152,15 @@ const userService = {
     limit?: number,
   ): Promise<Response> =>
     throttledApiClient.get(endpoints.USER.SOURCE_GRAPH(sourceId, limit), token),
+  getSourceGraphNodes: (
+    sourceId: string,
+    params: { q?: string; type?: string; page?: number; perPage?: number },
+    token: string | null,
+  ): Promise<Response> =>
+    throttledApiClient.get(
+      endpoints.USER.SOURCE_GRAPH_NODES(sourceId, params),
+      token,
+    ),
   getSourceGraphNode: (
     sourceId: string,
     nodeId: string,

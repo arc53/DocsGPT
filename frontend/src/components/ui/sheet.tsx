@@ -47,7 +47,7 @@ function SheetOverlay({
 }
 
 /**
- * The phone bottom-sheet shape: card fill, 16px top corners, capped by
+ * The phone bottom-sheet shape: card fill, 18px top corners, capped by
  * `max-h-sheet` so the scrim above it stays tappable. Shared with Modal's `mobileVariant="sheet"` so every bottom
  * sheet looks the same; the caller adds its own bottom padding (`pb-safe` or
  * `pb-safe-0`).
@@ -76,15 +76,34 @@ const sheetContentVariants = cva(
     variants: {
       side: {
         right:
-          'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm',
+          'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full border-l',
         left: 'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm',
         top: 'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b',
         // A bottom sheet stacks its handle and parts flush; SheetHeader and
         // SheetFooter bring their own padding.
         bottom: `${sheetBottomShape} pb-safe-0 gap-0`,
       },
+      // A right drawer's width by role (DESIGN.md "Modal, not Dialog"):
+      // default, a companion list read beside the chat (384px); detail, one
+      // record's fields (576px, full width on a phone); wide, a working
+      // surface such as a trace waterfall or an agent preview (600 / 700 /
+      // 800px).
+      size: {
+        default: '',
+        detail: '',
+        wide: '',
+      },
     },
-    defaultVariants: { side: 'right' },
+    compoundVariants: [
+      { side: 'right', size: 'default', class: 'w-3/4 sm:max-w-sm' },
+      { side: 'right', size: 'detail', class: 'w-full sm:max-w-xl' },
+      {
+        side: 'right',
+        size: 'wide',
+        class: 'w-full sm:max-w-[600px] md:max-w-[700px] lg:max-w-[800px]',
+      },
+    ],
+    defaultVariants: { side: 'right', size: 'default' },
   },
 );
 
@@ -92,17 +111,23 @@ function SheetContent({
   className,
   children,
   side = 'right',
+  size = 'default',
   handle = false,
   // A bottom sheet with a grab handle closes by its scrim, not an X (the
   // handle is only a cue; it doesn't drag).
   showCloseButton = !handle,
+  closeLabel = 'Close',
   title,
   onOpenAutoFocus,
   onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left';
+  /** Width of a right drawer: default (384px), detail (576px), wide (800px). */
+  size?: 'default' | 'detail' | 'wide';
   showCloseButton?: boolean;
+  /** Accessible name for the built-in X; pass a translated one. */
+  closeLabel?: string;
   /** Draw the grab bar first (bottom sheets). */
   handle?: boolean;
   // Accessible name for the dialog. Radix warns when a Dialog has no Title;
@@ -117,7 +142,7 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         data-side={side}
-        className={cn(sheetContentVariants({ side }), className)}
+        className={cn(sheetContentVariants({ side, size }), className)}
         {...props}
         {...focusReturn}
       >
@@ -130,7 +155,7 @@ function SheetContent({
             <Button
               variant="ghost-muted"
               size="icon-sm"
-              aria-label="Close"
+              aria-label={closeLabel}
               className="absolute top-2 right-2"
             >
               <XIcon />

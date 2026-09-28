@@ -84,15 +84,16 @@ const LABEL_SURFACE_CLASSES = {
 } as const;
 
 // Where the floating label rests while its Input or Textarea is empty and
-// unfocused, per control size; every other control keeps it on the border.
+// unfocused, per control size, at the field's own text size (16px, 14px from
+// md); every other control keeps it on the border.
 // Only the field itself counts (up to two levels down, for an Input with an
 // icon or a Textarea under an overlay), not a search box in an inline menu.
 const FLOATING_LABEL_REST = [
-  'group-has-[>input:placeholder-shown:not(:focus),>*>input:placeholder-shown:not(:focus)]/float:top-2 group-has-[>input:placeholder-shown:not(:focus),>*>input:placeholder-shown:not(:focus)]/float:text-base',
+  'group-has-[>input:placeholder-shown:not(:focus),>*>input:placeholder-shown:not(:focus)]/float:top-2 group-has-[>input:placeholder-shown:not(:focus),>*>input:placeholder-shown:not(:focus)]/float:text-base md:group-has-[>input:placeholder-shown:not(:focus),>*>input:placeholder-shown:not(:focus)]/float:text-sm',
   'group-has-[>input[data-size=sm]:placeholder-shown:not(:focus)]/float:top-1.5 group-has-[>input[data-size=sm]:placeholder-shown:not(:focus)]/float:text-sm',
   'group-has-[>input[data-size=lg]:placeholder-shown:not(:focus)]/float:top-3.5',
-  'group-has-[>*>input[data-left-icon]:placeholder-shown:not(:focus)]/float:left-7',
-  'group-has-[>textarea:placeholder-shown:not(:focus),>*>textarea:placeholder-shown:not(:focus)]/float:top-2 group-has-[>textarea:placeholder-shown:not(:focus),>*>textarea:placeholder-shown:not(:focus)]/float:text-base',
+  'group-has-[>*>input[data-left-icon]:placeholder-shown:not(:focus)]/float:left-8',
+  'group-has-[>textarea:placeholder-shown:not(:focus),>*>textarea:placeholder-shown:not(:focus)]/float:top-2 group-has-[>textarea:placeholder-shown:not(:focus),>*>textarea:placeholder-shown:not(:focus)]/float:text-base md:group-has-[>textarea:placeholder-shown:not(:focus),>*>textarea:placeholder-shown:not(:focus)]/float:text-sm',
   'group-has-[>textarea[data-size=lg]:placeholder-shown:not(:focus),>*>textarea[data-size=lg]:placeholder-shown:not(:focus)]/float:top-3',
 ].join(' ');
 

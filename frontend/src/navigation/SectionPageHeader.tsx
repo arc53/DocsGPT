@@ -1,3 +1,4 @@
+import type React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router-dom';
@@ -59,22 +60,39 @@ export function SectionBackLink({
 export default function SectionPageHeader({
   section,
   item,
+  title,
+  titleAction,
   className,
 }: {
   section: Section;
   item: SectionItem | null;
+  /** Replaces the resolved title. */
+  title?: React.ReactNode;
+  /** A control at the end of the title row. */
+  titleAction?: React.ReactNode;
   className?: string;
 }) {
   const { t } = useTranslation();
+  const heading = (
+    <h1 className="text-foreground text-2xl font-bold">
+      {title ??
+        (item && section.pageTitle !== 'section'
+          ? t(item.labelKey)
+          : (section.title ?? t(section.titleKey)))}
+    </h1>
+  );
 
   return (
     <div className={cn('flex flex-col', className)}>
       <SectionBackLink section={section} />
-      <h1 className="text-foreground text-2xl font-bold">
-        {item && section.pageTitle !== 'section'
-          ? t(item.labelKey)
-          : (section.title ?? t(section.titleKey))}
-      </h1>
+      {titleAction ? (
+        <div className="flex items-center justify-between gap-3">
+          {heading}
+          {titleAction}
+        </div>
+      ) : (
+        heading
+      )}
     </div>
   );
 }
@@ -84,11 +102,25 @@ export default function SectionPageHeader({
  * from resolving its own section, and keeps the heading identical across
  * settings, admin and agents.
  */
-export function CurrentSectionHeader({ className }: { className?: string }) {
+export function CurrentSectionHeader({
+  title,
+  titleAction,
+  className,
+}: {
+  title?: React.ReactNode;
+  titleAction?: React.ReactNode;
+  className?: string;
+}) {
   const { section, item } = useSectionContext();
 
   if (!section) return null;
   return (
-    <SectionPageHeader section={section} item={item} className={className} />
+    <SectionPageHeader
+      section={section}
+      item={item}
+      title={title}
+      titleAction={titleAction}
+      className={className}
+    />
   );
 }

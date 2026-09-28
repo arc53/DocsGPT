@@ -32,6 +32,16 @@ describe('Card', () => {
     expect(html).toContain('data-tone="destructive"');
   });
 
+  it('rings the whole card while a section-toggle inside it has keyboard focus', () => {
+    const classes = cardVariants({ variant: 'subtle' });
+    expect(classes).toContain(
+      'has-[[data-variant=section-toggle]:focus-visible]:ring-3',
+    );
+    expect(classes).toContain(
+      'has-[[data-variant=section-toggle]:focus-visible]:ring-inset',
+    );
+  });
+
   it('destructive tone turns muted text inside it to foreground', () => {
     const classes = cardVariants({ tone: 'destructive' });
     expect(classes).toContain('[&_.text-muted-foreground]:text-foreground');

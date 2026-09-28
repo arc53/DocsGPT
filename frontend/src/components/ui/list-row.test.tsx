@@ -34,4 +34,15 @@ describe('ListRow', () => {
     expect(html).toContain('focus-visible:ring-inset');
     expect(html).toContain('Sources');
   });
+
+  it('is dense, rounded and top-aligned at size sm', () => {
+    const html = renderToStaticMarkup(
+      <ListRow size="sm" interactive asChild title="Duisport">
+        <button type="button" />
+      </ListRow>,
+    );
+    expect(html).toContain('items-start gap-2.5 rounded-md px-2 py-1.5');
+    expect(html).not.toContain('px-4 py-3');
+    expect(html).toContain('focus-visible:ring-inset');
+  });
 });

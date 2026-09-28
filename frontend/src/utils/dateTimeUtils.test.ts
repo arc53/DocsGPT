@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDate, formatDateOnly, formatDateTime } from './dateTimeUtils';
+import {
+  formatCount,
+  formatDate,
+  formatDateOnly,
+  formatDateTime,
+} from './dateTimeUtils';
 
 describe('dateTimeUtils', () => {
   it('formats date-only values as DD/MM/YYYY', () => {
@@ -52,6 +57,23 @@ describe('formatRelative', () => {
     expect(formatRelative('garbage', { now: NOW })).toBeNull();
   });
 
+  it('words a future time as "in …" when asked (the next scheduled run)', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    const ahead = (ms: number) => new Date(NOW + ms).toISOString();
+    const opts = { now: NOW, locale: 'en', future: true };
+    expect(formatRelative(ahead(18 * 3_600_000), opts)).toBe('in 18 hours');
+    // Clock skew under a minute still reads "now".
+    expect(formatRelative(ahead(20_000), opts)).toBe('now');
+  });
+
+  it('clamps a future time to "now" by default (server clock skew)', async () => {
+    const { formatRelative } = await import('./dateTimeUtils');
+    const ahead = (ms: number) => new Date(NOW + ms).toISOString();
+    expect(formatRelative(ahead(3 * 60_000), { now: NOW, locale: 'en' })).toBe(
+      'now',
+    );
+  });
+
   it('words the gap with Intl in the given language', async () => {
     const { formatRelative } = await import('./dateTimeUtils');
     expect(formatRelative(ago(20_000), { now: NOW, locale: 'en' })).toBe('now');
@@ -79,5 +101,22 @@ describe('formatRelative', () => {
     expect(
       formatRelative(old, { now: NOW, locale: 'en', dateAfterDays: 30 }),
     ).toBe(formatDateOnly(old));
+  });
+});
+
+describe('formatCount', () => {
+  it('groups digits the way the app language does', () => {
+    expect(formatCount(1234567, 'en')).toBe('1,234,567');
+    expect(formatCount(1234567, 'de')).toBe('1.234.567');
+    expect(formatCount(1234, 'ru')).toBe('1\u00a0234');
+  });
+
+  it('maps the app codes Intl does not know', () => {
+    expect(formatCount(1234, 'jp')).toBe('1,234');
+    expect(formatCount(1234, 'zhTW')).toBe('1,234');
+  });
+
+  it('leaves small numbers alone', () => {
+    expect(formatCount(7, 'de')).toBe('7');
   });
 });

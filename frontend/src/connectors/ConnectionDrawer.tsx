@@ -473,8 +473,9 @@ export default function ConnectionDrawer({
       <Sheet open onOpenChange={(open) => !open && onClose()}>
         <SheetContent
           side="right"
+          size="detail"
           aria-describedby={undefined}
-          className="w-full overflow-y-auto sm:max-w-xl"
+          className="overflow-y-auto"
         >
           <div className="flex flex-col gap-6 p-6">
             <div className="flex items-start gap-4 pr-8">

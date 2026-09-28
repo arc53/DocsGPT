@@ -184,3 +184,131 @@ describe('Upload source-type tiles', () => {
     expect(train!.className).toContain('bg-primary');
   });
 });
+
+function makeFile(name: string, type: string, bytes = 10): File {
+  return new File([new Uint8Array(bytes)], name, { type });
+}
+
+describe('Upload local file step', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  const openLocalFile = async () => {
+    await act(async () => {
+      root.render(
+        <Upload
+          receivedFile={[]}
+          setModalState={vi.fn()}
+          isOnboarding={false}
+          renderTab={null}
+          close={vi.fn()}
+        />,
+      );
+    });
+    const tile = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="option-card"]',
+      ),
+    ).find((el) =>
+      el.textContent?.includes('modals.uploadDoc.ingestors.local_file.label'),
+    )!;
+    await act(async () => tile.click());
+  };
+
+  const pick = async (files: File[]) => {
+    const input = document.body.querySelector(
+      '[data-slot="dropzone"] input[type="file"]',
+    );
+    if (!input) throw new Error('no dropzone input');
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    // react-dropzone resolves the selected files asynchronously.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  };
+
+  it('renders the file field as a default-size Dropzone', async () => {
+    await openLocalFile();
+    const zone = document.body.querySelector('[data-slot="dropzone"]');
+    expect(zone).not.toBeNull();
+    expect(zone!.getAttribute('data-size')).toBe('default');
+    expect(zone!.textContent).toContain('modals.uploadDoc.dropzoneText');
+    expect(zone!.textContent).toContain('modals.uploadDoc.dropzoneHint');
+    expect(document.body.textContent).not.toContain('modals.uploadDoc.choose');
+    expect(document.body.textContent).not.toContain(
+      'modals.uploadDoc.selectedFiles',
+    );
+    // No list until something is picked.
+    expect(document.body.querySelector('[data-slot="list-rows"]')).toBeNull();
+  });
+
+  it('lists picked files as rows with their size and fills the name', async () => {
+    await openLocalFile();
+    await pick([
+      makeFile('rates.pdf', 'application/pdf', 2048),
+      makeFile('notes.md', 'text/x-markdown', 10),
+    ]);
+    const rows = Array.from(
+      document.body.querySelectorAll('[data-slot="list-row"]'),
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain('rates.pdf');
+    expect(rows[0].textContent).toContain('2 KB');
+    expect(rows[1].textContent).toContain('notes.md');
+    const card = rows[0].closest('[data-slot="card"]');
+    expect(card).not.toBeNull();
+    expect(card!.getAttribute('data-variant')).toBe('outline');
+    const textInputs = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('input[type="text"]'),
+    );
+    expect(textInputs.some((el) => el.value === 'rates.pdf')).toBe(true);
+    const train = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === 'modals.uploadDoc.train');
+    expect(train!.disabled).toBe(false);
+  });
+
+  it('replaces the selection on a new drop', async () => {
+    await openLocalFile();
+    await pick([makeFile('a.pdf', 'application/pdf')]);
+    await pick([makeFile('b.pdf', 'application/pdf')]);
+    const rows = document.body.querySelectorAll('[data-slot="list-row"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('b.pdf');
+  });
+
+  it('reports files that are too large or of an unsupported type', async () => {
+    await openLocalFile();
+    const big = makeFile('huge.pdf', 'application/pdf');
+    Object.defineProperty(big, 'size', { value: 26_000_000 });
+    await pick([
+      big,
+      makeFile('setup.exe', 'application/x-msdownload'),
+      makeFile('ok.pdf', 'application/pdf'),
+    ]);
+    const rows = document.body.querySelectorAll('[data-slot="list-row"]');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('ok.pdf');
+    const zone = document.body.querySelector('[data-slot="dropzone"]')!;
+    expect(zone.parentElement!.querySelector('p')?.textContent).toBe(
+      'modals.uploadDoc.filesRejected',
+    );
+    // A clean drop clears the message.
+    await pick([makeFile('next.pdf', 'application/pdf')]);
+    expect(zone.parentElement!.querySelector('p')).toBeNull();
+  });
+});

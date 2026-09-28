@@ -46,7 +46,7 @@ const buttonVariants = cva(
         // (the base is shrink-0), keeping a neighbour's edit button in view.
         combobox:
           'min-w-0 shrink border border-input bg-card font-normal shadow-xs hover:bg-accent data-placeholder:text-muted-foreground',
-        // Underline tabs (FilePicker's drives, the agent page sub-nav). Mark the
+        // Underline route tabs (the workflow builder's sub-nav). Mark the
         // current tab with data-active; the 2px border is always there so the
         // row height doesn't move. The compound variant squares the corners.
         tab: 'border-b-2 border-transparent text-muted-foreground hover:text-foreground hover:border-border data-[active=true]:border-primary data-[active=true]:text-foreground',

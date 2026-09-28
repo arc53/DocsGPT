@@ -6,6 +6,7 @@ import { Handle, NodeProps, Position } from 'reactflow';
 import { cn } from '@/lib/utils';
 
 import { ConditionCase } from '../../types/workflow';
+import { nodeToneClass } from '../nodeTones';
 
 type ConditionNodeData = {
   label?: string;
@@ -44,7 +45,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
       className={cn(
         'bg-card relative rounded-2xl border shadow-md transition',
         selected
-          ? 'border-primary ring-primary scale-105 ring-2'
+          ? 'border-primary ring-ring/50 ring-3'
           : 'border-border hover:shadow-lg',
       )}
       style={{ minWidth: 180, maxWidth: 220, height }}
@@ -57,7 +58,12 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
       />
 
       <div className="flex items-center gap-3 px-3 py-2">
-        <div className="bg-warning/10 text-warning flex size-9 shrink-0 items-center justify-center rounded-full">
+        <div
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-full',
+            nodeToneClass('condition'),
+          )}
+        >
           <GitBranch className="size-3.5" />
         </div>
         <div className="min-w-0 flex-1 pr-2">
@@ -69,8 +75,8 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
           </div>
           <div className="text-muted-foreground text-xs">
             {data.config?.mode === 'advanced'
-              ? t('agents.workflow.nodes.modeAdvanced')
-              : t('agents.workflow.nodes.modeSimple')}
+              ? t('agents.workflow.builder.modeAdvanced')
+              : t('agents.workflow.builder.modeSimple')}
           </div>
         </div>
       </div>

@@ -145,4 +145,48 @@ describe('CommandInput', () => {
     );
     expect(classes).not.toContain('h-10');
   });
+
+  it('is a plain row with a bottom rule by default', async () => {
+    await render(
+      <Command>
+        <CommandInput placeholder="Search" />
+      </Command>,
+    );
+    const wrapper = document.querySelector<HTMLElement>(
+      '[data-slot="command-input-wrapper"]',
+    )!;
+    expect(wrapper.dataset.variant).toBe('default');
+    expect(wrapper.className).toContain('border-b');
+  });
+
+  // A filter field above a list the arrow keys walk into (a source view's
+  // navigator): SearchInput's 38px pill, its text 40px in.
+  it('variant="field" is the SearchInput pill with the ring on the frame', async () => {
+    await render(
+      <Command>
+        <CommandInput variant="field" placeholder="Filter files" />
+      </Command>,
+    );
+    const wrapper = document.querySelector<HTMLElement>(
+      '[data-slot="command-input-wrapper"]',
+    )!;
+    const classes = wrapper.className.split(' ');
+    expect(wrapper.dataset.variant).toBe('field');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'border-input',
+        'shadow-xs',
+        'h-9.5',
+        'rounded-full',
+        'px-3',
+        'gap-3',
+        'has-[input:focus-visible]:ring-3',
+        'has-[input:focus-visible]:border-ring',
+      ]),
+    );
+    expect(classes).not.toContain('border-b');
+    const icon = wrapper.querySelector('svg')!;
+    expect(icon.getAttribute('class')).toContain('text-muted-foreground');
+    expect(icon.getAttribute('class')).not.toContain('opacity-50');
+  });
 });

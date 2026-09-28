@@ -7,22 +7,53 @@ import unusedImports from 'eslint-plugin-unused-imports';
 import prettier from 'eslint-plugin-prettier';
 import globals from 'globals';
 
+import { cardSurfaceSelectors } from './eslint/card-surfaces.js';
+import { everywhereSelectors, pageSelectors } from './eslint/design-rules.js';
+
+// Selectors every file gets: viewport heights, focus return, card surfaces.
+// On iOS Safari vh (and h-screen, which is 100vh) is the viewport with the
+// toolbars hidden, so a vh height overflows the visible screen. w-screen is
+// vw, which the toolbars don't change, so it stays allowed.
+const baseSyntaxRules = [
+  ...['Literal[value=/\\dvh\\b/]', 'TemplateElement[value.raw=/\\dvh\\b/]'].map(
+    (selector) => ({
+      selector,
+      message:
+        'vh is the toolbar-hidden viewport on iOS Safari. Use dvh for the app shell and caps on things that pop up, svh for a fixed-size panel in a page that scrolls, or max-h-sheet for a bottom sheet. See DESIGN.md.',
+    }),
+  ),
+  ...[
+    'Literal[value=/(^|[\\s:])(min-|max-)?h-screen\\b/]',
+    'TemplateElement[value.raw=/(^|[\\s:])(min-|max-)?h-screen\\b/]',
+  ].map((selector) => ({
+    selector,
+    message:
+      "Tailwind's screen heights (h-/min-h-/max-h-screen) are the toolbar-hidden viewport on iOS Safari, taller than the visible screen. Use h-dvh / min-h-dvh, or svh for a fixed panel. See DESIGN.md.",
+  })),
+  // Modal, Sheet and DialogContent return focus to what had it on open
+  // (ui/use-focus-return.ts). A hand-rolled return focuses the trigger
+  // even after a tap, which lights its ring on iOS.
+  {
+    selector: 'JSXAttribute[name.name="onCloseAutoFocus"]',
+    message:
+      'Modal, Sheet and DialogContent already return focus to what had it on open (ui/use-focus-return.ts). Don\'t hand-roll onCloseAutoFocus. See DESIGN.md "Focus return".',
+  },
+  // Nothing on a filled tile repeats its muted fill (DESIGN.md "Card
+  // surfaces").
+  ...cardSurfaceSelectors,
+];
+
 export default [
   {
     ignores: [
       'node_modules/',
       'dist/',
       'prettier.config.cjs',
-      '.eslintrc.cjs',
-      'env.d.ts',
       'public/',
-      'assets/',
-      'vite-env.d.ts',
       '.prettierignore',
       'package-lock.json',
       'package.json',
       'postcss.config.cjs',
-      'tailwind.config.cjs',
       'tsconfig.json',
       'tsconfig.node.json',
       'vite.config.ts',
@@ -84,35 +115,14 @@ export default [
           ],
         },
       ],
-      // On iOS Safari vh (and h-screen, which is 100vh) is the viewport with
-      // the toolbars hidden, so a vh height overflows the visible screen.
-      // w-screen is vw, which the toolbars don't change, so it stays allowed.
+      // DESIGN.md rules a selector can check: viewport heights, focus return
+      // and card surfaces (baseSyntaxRules above), plus the class and markup
+      // rules in eslint/design-rules.js.
       'no-restricted-syntax': [
         'error',
-        ...[
-          'Literal[value=/\\dvh\\b/]',
-          'TemplateElement[value.raw=/\\dvh\\b/]',
-        ].map((selector) => ({
-          selector,
-          message:
-            'vh is the toolbar-hidden viewport on iOS Safari. Use dvh for the app shell and caps on things that pop up, svh for a fixed-size panel in a page that scrolls, or max-h-sheet for a bottom sheet. See DESIGN.md.',
-        })),
-        ...[
-          'Literal[value=/(^|[\\s:])(min-|max-)?h-screen\\b/]',
-          'TemplateElement[value.raw=/(^|[\\s:])(min-|max-)?h-screen\\b/]',
-        ].map((selector) => ({
-          selector,
-          message:
-            "Tailwind's screen heights (h-/min-h-/max-h-screen) are the toolbar-hidden viewport on iOS Safari, taller than the visible screen. Use h-dvh / min-h-dvh, or svh for a fixed panel. See DESIGN.md.",
-        })),
-        // Modal, Sheet and DialogContent return focus to what had it on open
-        // (ui/use-focus-return.ts). A hand-rolled return focuses the trigger
-        // even after a tap, which lights its ring on iOS.
-        {
-          selector: 'JSXAttribute[name.name="onCloseAutoFocus"]',
-          message:
-            'Modal, Sheet and DialogContent already return focus to what had it on open (ui/use-focus-return.ts). Don\'t hand-roll onCloseAutoFocus. See DESIGN.md "Focus return".',
-        },
+        ...baseSyntaxRules,
+        ...everywhereSelectors,
+        ...pageSelectors,
       ],
       // Design-system rules (@shadcn/lint). Tokens, variants and the
       // approved exceptions are documented in DESIGN.md.
@@ -205,23 +215,7 @@ export default [
               allow: ['layout'],
               message: {
                 default:
-                  '"{{className}}" is not allowed on <{{component}}>: use Alert variant (default, destructive, success, warning, info) from {{file}}.',
-              },
-            },
-            {
-              pattern: '^Checkbox$',
-              allow: ['layout'],
-              message: {
-                default:
-                  '"{{className}}" is not allowed on <Checkbox>: use size from {{file}}.',
-              },
-            },
-            {
-              pattern: '^Dropzone$',
-              allow: ['layout'],
-              message: {
-                default:
-                  '"{{className}}" is not allowed on <Dropzone>: use size (default, compact); colours, border and radius follow the drag state in {{file}}.',
+                  '"{{className}}" is not allowed on <{{component}}>: use Alert variant (default, neutral, success, warning, info, destructive) from {{file}}.',
               },
             },
             {
@@ -249,14 +243,6 @@ export default [
               allow: ['layout', 'color'],
             },
             {
-              pattern: '^Progress$',
-              allow: ['layout'],
-            },
-            {
-              pattern: '^(Toast|ToastViewport)$',
-              allow: ['layout'],
-            },
-            {
               pattern: '^(ToastContent|ToastItem|ToastFooter)$',
               allow: ['layout', 'spacing'],
             },
@@ -266,10 +252,6 @@ export default [
               // messages, so padding here is part of the layout.
               pattern: '^MessageScroller(Viewport|Content)$',
               allow: ['layout', 'spacing'],
-            },
-            {
-              pattern: '^OptionCard$',
-              allow: ['layout'],
             },
             {
               pattern: '^(CardHeader|CardContent|CardFooter|CardAction)$',
@@ -334,6 +316,22 @@ export default [
     rules: {
       'shadcn/no-restyle': 'off',
       'no-restricted-imports': 'off',
+      // ui/ defines the parts the page rules ask for (the table, the
+      // checkbox, the floating label's transition-all), so only the
+      // everywhere rules apply here.
+      'no-restricted-syntax': [
+        'error',
+        ...baseSyntaxRules,
+        ...everywhereSelectors,
+      ],
+    },
+  },
+  {
+    // Tests hold class strings as fixtures (often asserting their absence),
+    // so the class-token rules don't apply to them.
+    files: ['src/**/*.test.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': ['error', ...baseSyntaxRules],
     },
   },
   {

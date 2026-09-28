@@ -68,6 +68,19 @@ export type ScheduleRun = {
 };
 
 export type ScheduleListResponse = { schedules: Schedule[] };
+
+/** Run totals for an agent's schedules over the last `days` days. */
+export type ScheduleStats = {
+  days: number;
+  runs: number;
+  failed: number;
+  tokens: number;
+  latest_failure: {
+    scheduled_for: string;
+    status: ScheduleRunStatus;
+    error_type?: ScheduleRunErrorType | null;
+  } | null;
+};
 export type ScheduleResponse = { schedule: Schedule };
 export type ScheduleRunListResponse = {
   runs: ScheduleRun[];

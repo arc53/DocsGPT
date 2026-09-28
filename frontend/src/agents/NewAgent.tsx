@@ -1,5 +1,13 @@
 import isEqual from 'lodash/isEqual';
-import { ChevronRight, CircleCheck, CircleX, Database } from 'lucide-react';
+import {
+  ChevronRight,
+  CircleCheck,
+  CircleX,
+  Database,
+  Info,
+  Play,
+  SquarePen,
+} from 'lucide-react';
 import React, {
   useCallback,
   useEffect,
@@ -17,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
+import { EmptyState } from '@/components/ui/empty-state';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 
@@ -36,8 +45,6 @@ import { cn } from '@/lib/utils';
 import devicesService from '../api/services/devicesService';
 import modelService from '../api/services/modelService';
 import userService from '../api/services/userService';
-import ScienceSparkDarkIcon from '../assets/science-spark-dark.svg';
-import ScienceSparkIcon from '../assets/science-spark.svg';
 import { FileUpload } from '../components/FileUpload';
 import {
   MultiSelectPopover,
@@ -76,13 +83,15 @@ import {
   getToolDisplayName,
   isClassicAgentToolVisible,
 } from '../utils/toolUtils';
-import { CurrentSectionHeader } from '../navigation/SectionPageHeader';
 import { agentsListPath } from './paths';
-import SectionPills from '../navigation/SectionPills';
 import GuardrailsSection, {
   guardrailsIncomplete,
 } from './components/GuardrailsSection';
 import AgentPreview from './AgentPreview';
+import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
+import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
+import AgentPreviewSheet from './components/AgentPreviewSheet';
+import SectionShell from '../navigation/SectionShell';
 import { Agent, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
@@ -183,6 +192,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const tokenLimitSwitchId = useId();
   const requestLimitSwitchId = useId();
   const promptOverrideSwitchId = useId();
+  const sourcesPickerId = useId();
+  const toolsPickerId = useId();
+  const modelsPickerId = useId();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const previewStatus = useSelector(selectPreviewStatus);
+
+  // The preview chat outlives its drawer: closing and reopening keeps the
+  // conversation. It starts over on New chat, after a save, and on leaving.
+  useEffect(() => {
+    dispatch(resetPreview());
+    return () => {
+      dispatch(resetPreview());
+    };
+  }, [dispatch]);
   const [isAdvancedSectionExpanded, setIsAdvancedSectionExpanded] =
     useState(false);
 
@@ -523,6 +546,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       };
       setAgent(updatedAgent);
       initialAgentRef.current = updatedAgent;
+      // The saved agent is what the preview talks to; start its chat over.
+      dispatch(resetPreview());
 
       if (effectiveMode === 'new' || effectiveMode === 'draft') {
         setEffectiveMode('edit');
@@ -809,7 +834,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [selectedTools]);
 
   useEffect(() => {
-    if (isPublishable()) dispatch(setSelectedAgent(agent));
+    // Editing a published agent: the preview talks to the saved version, so
+    // Redux keeps that snapshot (the preview reads its model from it).
+    const saved = effectiveMode === 'edit' ? initialAgentRef.current : null;
+    if (saved) dispatch(setSelectedAgent(saved));
+    else if (isPublishable()) dispatch(setSelectedAgent(agent));
 
     if (!modeConfig[effectiveMode].trackChanges) {
       setHasChanges(true);
@@ -830,227 +859,243 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       jsonSchemaText !== initialJsonSchemaText;
     setHasChanges(isChanged);
   }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
-  // Only show the agent sub-nav once the agent has an id (i.e. not the bare
-  // ``new`` mode). The sub-nav links to Logs/Schedules which require an id.
-  const showAgentNav = effectiveMode === 'edit' && Boolean(agent.id);
+
+  const isPublished = agent.status === 'published';
+  const agentDisplayName =
+    agent.name?.trim() || t('agents.pageHeader.fallbackName');
+
+  // Page-level actions live in the ⋯ beside the title. Until the agent is
+  // published the preview can only say "Publish to preview", so Preview is a
+  // menu item then and a toolbar button after.
+  const menuOptions = [
+    ...(isPublished
+      ? []
+      : [
+          {
+            label: t('agents.form.sections.preview'),
+            icon: Play,
+            onClick: () => setPreviewOpen(true),
+          },
+        ]),
+    ...(modeConfig[effectiveMode].showAccessDetails
+      ? [
+          {
+            label: t('agents.form.buttons.accessDetails'),
+            onClick: () => setAgentDetails('ACTIVE'),
+          },
+        ]
+      : []),
+    // Sharing is owner-only — hidden for agents shared into the workspace by
+    // a team (ownership === 'team').
+    ...(modeConfig[effectiveMode].showAccessDetails &&
+    agent.ownership !== 'team' &&
+    agent.id
+      ? [
+          {
+            label: t('agents.shareWithTeam'),
+            onClick: () => setShareModalOpen(true),
+          },
+        ]
+      : []),
+  ];
+
+  // At most three buttons, so the row fits a phone; the main one stretches
+  // across it there.
+  const headerActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      {hasChanges && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="field"
+          shape="pill"
+          onClick={handleCancel}
+        >
+          {t('agents.form.buttons.cancel')}
+        </Button>
+      )}
+      {modeConfig[effectiveMode].showSaveDraft && (
+        <Button
+          type="button"
+          variant="outline"
+          size="field"
+          shape="pill"
+          disabled={isDraftBlocked()}
+          loading={draftLoading}
+          onClick={handleSaveDraft}
+        >
+          {t('agents.form.buttons.saveDraft')}
+        </Button>
+      )}
+      {isPublished && (
+        <Button
+          type="button"
+          variant="outline"
+          size="field"
+          shape="pill"
+          onClick={() => setPreviewOpen(true)}
+        >
+          <Play />
+          {t('agents.form.sections.preview')}
+        </Button>
+      )}
+      <Button
+        type="button"
+        size="field"
+        shape="pill"
+        disabled={!isPublishable() || !hasChanges}
+        loading={publishLoading}
+        onClick={handlePublish}
+        className="flex-1 sm:flex-none"
+      >
+        {modeConfig[effectiveMode].buttonText}
+      </Button>
+    </div>
+  );
 
   return (
-    <div className="flex min-h-dvh flex-col p-4 pb-2 md:p-12 md:pt-4 md:pb-3 xl:h-dvh">
-      {agent.agent_type === 'workflow' && (
-        <div className="mt-4 w-full">
-          <WorkflowBuilder />
-        </div>
-      )}
-      <div className="flex w-full flex-wrap items-center justify-between gap-2">
-        {showAgentNav ? <CurrentSectionHeader /> : <span aria-hidden />}
-        <div className="flex flex-wrap items-center gap-2">
-          {hasChanges && (
-            <Button
-              type="button"
-              variant="ghost"
-              shape="pill"
-              onClick={handleCancel}
-            >
-              {t('agents.form.buttons.cancel')}
-            </Button>
-          )}
-          {modeConfig[effectiveMode].showSaveDraft && (
-            <Button
-              type="button"
-              variant="outline-primary"
-              shape="pill"
-              disabled={isDraftBlocked()}
-              loading={draftLoading}
-              onClick={handleSaveDraft}
-            >
-              {t('agents.form.buttons.saveDraft')}
-            </Button>
-          )}
-          <Button
-            type="button"
-            disabled={!isPublishable() || !hasChanges}
-            loading={publishLoading}
-            onClick={handlePublish}
-            shape="pill"
-          >
-            {modeConfig[effectiveMode].buttonText}
-          </Button>
-          {modeConfig[effectiveMode].showAccessDetails && (
-            <ActionMenu
-              triggerLabel={t('agents.form.buttons.moreActions')}
-              options={[
-                {
-                  label: t('agents.form.buttons.accessDetails'),
-                  onClick: () => setAgentDetails('ACTIVE'),
-                },
-                // Sharing is owner-only — hidden for agents shared into the
-                // workspace by a team (ownership === 'team').
-                ...(agent.ownership !== 'team' && agent.id
-                  ? [
-                      {
-                        label: t('agents.shareWithTeam'),
-                        onClick: () => setShareModalOpen(true),
-                      },
-                    ]
-                  : []),
-              ]}
+    <SectionShell
+      title={effectiveMode === 'new' ? t('agents.newAgent') : undefined}
+      titleAction={
+        <ActionMenu
+          size="toolbar"
+          triggerLabel={t('agents.form.buttons.moreActions')}
+          options={menuOptions}
+        />
+      }
+    >
+      {agent.agent_type === 'workflow' && <WorkflowBuilder />}
+      <AgentPageToolbar
+        intro={agent.id ? undefined : t('agents.form.byline.new')}
+        name={agentDisplayName}
+        status={
+          isPublished ? (
+            <Badge variant="success">{t('agents.form.status.published')}</Badge>
+          ) : (
+            <Badge variant="neutral">{t('agents.card.draft')}</Badge>
+          )
+        }
+        meta={
+          effectiveMode === 'edit' ? (
+            <LastUsedMeta lastUsedAt={agent.last_used_at} />
+          ) : undefined
+        }
+        actions={headerActions}
+      >
+        {submitError && (
+          <Alert variant="destructive" className="mb-6">
+            <CircleX aria-hidden="true" />
+            <AlertDescription>{submitError}</AlertDescription>
+          </Alert>
+        )}
+      </AgentPageToolbar>
+      <div className="flex flex-col gap-5">
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader title={t('agents.form.sections.basics')} />
+          {/* Phone: the avatar beside Name, Description across the row.
+              From sm: the avatar spans both rows beside the fields. */}
+          <div className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-5 sm:items-start">
+            <FileUpload
+              showPreview
+              size="tile"
+              currentImage={agent.image || undefined}
+              onUpload={handleUpload}
+              onRemove={() => setImageFile(null)}
+              uploadText={t('agents.form.labels.avatar')}
+              className="sm:row-span-2"
             />
-          )}
-        </div>
-      </div>
-      {showAgentNav && <SectionPills className="mt-4" />}
-      {submitError && (
-        <Alert variant="destructive" className="mt-3">
-          <CircleX aria-hidden="true" className="size-4" />
-          <AlertDescription>{submitError}</AlertDescription>
-        </Alert>
-      )}
-      <div className="bg-muted mt-3 flex w-full flex-1 grid-cols-5 flex-col gap-10 rounded-2xl p-5 xl:grid xl:gap-5 xl:overflow-hidden">
-        <div className="scrollbar-overlay col-span-2 flex flex-col gap-5 xl:max-h-full xl:overflow-y-auto xl:pr-3">
-          <div className="bg-card flex flex-col gap-5 rounded-2xl px-6 py-3">
-            <SectionHeader title={t('agents.form.sections.meta')} />
-            <div className="flex flex-col gap-5">
-              <FormField label={t('agents.form.labels.name')}>
-                <Input
-                  shape="pill"
-                  type="text"
-                  value={agent.name}
-                  placeholder={t('agents.form.placeholders.agentName')}
-                  onChange={(e) => setAgent({ ...agent, name: e.target.value })}
-                />
-              </FormField>
-              <FormField label={t('agents.form.labels.description')}>
-                <Textarea
-                  size="lg"
-                  className="h-32"
-                  placeholder={t('agents.form.placeholders.describeAgent')}
-                  value={agent.description}
-                  onChange={(e) =>
-                    setAgent({ ...agent, description: e.target.value })
-                  }
-                />
-              </FormField>
-              <FileUpload
-                showPreview
-                size="compact"
-                previewSize={56}
-                onUpload={handleUpload}
-                onRemove={() => setImageFile(null)}
-                uploadText={[
-                  {
-                    text: t('agents.form.upload.clickToUpload'),
-                    highlight: true,
-                  },
-                  {
-                    text: t('agents.form.upload.dragAndDrop'),
-                  },
-                ]}
-              />
-            </div>
-          </div>
-          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
-            <SectionHeader title={t('agents.form.sections.source')} />
-            <div>
-              <div className="flex flex-wrap items-center gap-1">
-                <MultiSelectPopover
-                  open={isSourcePopupOpen}
-                  onOpenChange={setIsSourcePopupOpen}
-                  title={t('agents.form.sourcePopup.title')}
-                  items={sourceItems}
-                  selectedIds={Array.from(selectedSourceIds)}
-                  onToggle={(id) => {
-                    const next = new Set(selectedSourceIds);
-                    if (next.has(id)) next.delete(id);
-                    else next.add(id);
-                    setSelectedSourceIds(next);
-                  }}
-                  searchPlaceholder={t(
-                    'agents.form.sourcePopup.searchPlaceholder',
-                  )}
-                  emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
-                  footer={
-                    <SourcesPopoverFooter
-                      onNavigate={() => setIsSourcePopupOpen(false)}
-                      onUploadClick={handleUploadClick}
-                    />
-                  }
-                  trigger={
-                    <Button
-                      type="button"
-                      variant="combobox"
-                      size="field"
-                      shape="pill"
-                      ref={sourceAnchorButtonRef}
-                      data-placeholder={
-                        selectedSourceIds.size > 0 ? undefined : ''
-                      }
-                      className="w-full justify-start text-left"
-                    >
-                      <span
-                        className="truncate"
-                        title={selectedSourceNames.join(', ')}
-                      >
-                        {sourceTriggerLabel}
-                      </span>
-                    </Button>
-                  }
-                />
-              </div>
-              {selectedSourceIds.size === 0 && (
-                <p className="text-muted-foreground mt-1.5 text-xs">
-                  {t('agents.form.sourcePopup.noSourceHint')}
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="bg-card rounded-2xl px-6 py-3">
-            <div className="flex flex-wrap items-end gap-1">
-              <div className="min-w-20 grow basis-full sm:basis-0">
-                <Prompts
-                  prompts={prompts}
-                  selectedPrompt={
-                    prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    // Owner-resolved name from the agent payload: lets a team
-                    // member see the owner's prompt name (which isn't in their
-                    // own prompts list). 'public' hides owner-only edit/share
-                    // affordances on a prompt the viewer doesn't own.
-                    (agent.prompt_name
-                      ? {
-                          name: agent.prompt_name,
-                          id: agent.prompt_id || 'default',
-                          type: 'public',
-                        }
-                      : prompts[0]) || {
-                      name: 'default',
-                      id: 'default',
-                      type: 'public',
-                    }
-                  }
-                  onSelectPrompt={(name, id, type) =>
-                    setAgent({ ...agent, prompt_id: id })
-                  }
-                  setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-                  title={t('agents.form.sections.prompt')}
-                  titleAs="heading"
-                  showAddButton={false}
-                  dropdownProps={{ className: 'w-full' }}
-                />
-              </div>
-              <Button
-                type="button"
-                variant="outline-primary"
-                size="field"
+            <FormField
+              labelSurface="background"
+              label={t('agents.form.labels.name')}
+            >
+              <Input
                 shape="pill"
-                onClick={() => setAddPromptModal('ACTIVE')}
-                className="min-w-20 shrink-0 basis-full sm:basis-auto"
-              >
-                {t('agents.form.buttons.add')}
-              </Button>
-            </div>
+                type="text"
+                value={agent.name}
+                placeholder={t('agents.form.placeholders.agentName')}
+                onChange={(e) => setAgent({ ...agent, name: e.target.value })}
+              />
+            </FormField>
+            <FormField
+              labelSurface="background"
+              label={t('agents.form.labels.description')}
+              className="col-span-2 sm:col-span-1 sm:col-start-2"
+            >
+              <Textarea
+                size="lg"
+                className="h-32 sm:h-24"
+                placeholder={t('agents.form.placeholders.describeAgent')}
+                value={agent.description}
+                onChange={(e) =>
+                  setAgent({ ...agent, description: e.target.value })
+                }
+              />
+            </FormField>
           </div>
-          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
-            <SectionHeader title={t('agents.form.sections.tools')} />
-            <div className="flex flex-wrap items-center gap-1">
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader title={t('agents.form.sections.knowledge')} />
+          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+            <FormField
+              id={sourcesPickerId}
+              labelSurface="background"
+              label={t('agents.form.labels.sources')}
+              hint={
+                selectedSourceIds.size === 0
+                  ? t('agents.form.sourcePopup.noSourceHint')
+                  : undefined
+              }
+            >
+              <MultiSelectPopover
+                open={isSourcePopupOpen}
+                onOpenChange={setIsSourcePopupOpen}
+                title={t('agents.form.sourcePopup.title')}
+                items={sourceItems}
+                selectedIds={Array.from(selectedSourceIds)}
+                onToggle={(id) => {
+                  const next = new Set(selectedSourceIds);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  setSelectedSourceIds(next);
+                }}
+                searchPlaceholder={t(
+                  'agents.form.sourcePopup.searchPlaceholder',
+                )}
+                emptyMessage={t('agents.form.sourcePopup.noOptionsMessage')}
+                footer={
+                  <SourcesPopoverFooter
+                    onNavigate={() => setIsSourcePopupOpen(false)}
+                    onUploadClick={handleUploadClick}
+                  />
+                }
+                trigger={
+                  <Button
+                    type="button"
+                    variant="combobox"
+                    size="field"
+                    shape="pill"
+                    id={sourcesPickerId}
+                    ref={sourceAnchorButtonRef}
+                    data-placeholder={
+                      selectedSourceIds.size > 0 ? undefined : ''
+                    }
+                    className="w-full justify-start text-left"
+                  >
+                    <span
+                      className="truncate"
+                      title={selectedSourceNames.join(', ')}
+                    >
+                      {sourceTriggerLabel}
+                    </span>
+                  </Button>
+                }
+              />
+            </FormField>
+            <FormField
+              id={toolsPickerId}
+              labelSurface="background"
+              label={t('agents.form.sections.tools')}
+            >
               <MultiSelectPopover
                 open={isToolsPopupOpen}
                 onOpenChange={setIsToolsPopupOpen}
@@ -1085,6 +1130,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     variant="combobox"
                     size="field"
                     shape="pill"
+                    id={toolsPickerId}
                     ref={toolAnchorButtonRef}
                     data-placeholder={selectedTools.length > 0 ? undefined : ''}
                     className="w-full justify-start text-left"
@@ -1100,11 +1146,58 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   </Button>
                 }
               />
+            </FormField>
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <div className="min-w-0 flex-1">
+                <Prompts
+                  prompts={prompts}
+                  selectedPrompt={
+                    prompts.find((prompt) => prompt.id === agent.prompt_id) ||
+                    // Owner-resolved name from the agent payload: lets a team
+                    // member see the owner's prompt name (which isn't in their
+                    // own prompts list). 'public' hides owner-only edit/share
+                    // affordances on a prompt the viewer doesn't own.
+                    (agent.prompt_name
+                      ? {
+                          name: agent.prompt_name,
+                          id: agent.prompt_id || 'default',
+                          type: 'public',
+                        }
+                      : prompts[0]) || {
+                      name: 'default',
+                      id: 'default',
+                      type: 'public',
+                    }
+                  }
+                  onSelectPrompt={(name, id, type) =>
+                    setAgent({ ...agent, prompt_id: id })
+                  }
+                  setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
+                  title={t('agents.form.sections.prompt')}
+                  titleAs="field"
+                  labelSurface="background"
+                  showAddButton={false}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline-primary"
+                size="field"
+                shape="pill"
+                onClick={() => setAddPromptModal('ACTIVE')}
+              >
+                {t('agents.form.buttons.add')}
+              </Button>
             </div>
           </div>
-          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
-            <SectionHeader title={t('agents.form.sections.agentType')} />
-            <div>
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          <SectionHeader title={t('agents.form.sections.model')} />
+          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+            <FormField
+              labelSurface="background"
+              label={t('agents.form.sections.agentType')}
+            >
               <Select
                 value={agent.agent_type || undefined}
                 onValueChange={(value) =>
@@ -1124,11 +1217,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          </div>
-          <div className="bg-card flex flex-col gap-3 rounded-2xl px-6 py-3">
-            <SectionHeader title={t('agents.form.sections.models')} />
-            <div className="flex flex-col gap-3">
+            </FormField>
+            <FormField
+              id={modelsPickerId}
+              labelSurface="background"
+              label={t('agents.form.sections.models')}
+            >
               <MultiSelectPopover
                 open={isModelsPopupOpen}
                 onOpenChange={setIsModelsPopupOpen}
@@ -1168,6 +1262,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     variant="combobox"
                     size="field"
                     shape="pill"
+                    id={modelsPickerId}
                     ref={modelAnchorButtonRef}
                     data-placeholder={
                       selectedModelIds.size > 0 ? undefined : ''
@@ -1185,258 +1280,257 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   </Button>
                 }
               />
-              {selectedModelIds.size > 0 && (
-                <FormField label={t('agents.form.labels.defaultModel')}>
-                  <Select
-                    value={agent.default_model_id || undefined}
-                    onValueChange={(value) =>
-                      setAgent({ ...agent, default_model_id: value })
-                    }
-                  >
-                    <SelectTrigger className="w-full" shape="pill" size="field">
-                      <SelectValue
-                        placeholder={t(
-                          'agents.form.placeholders.selectDefaultModel',
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableModels
-                        .filter((m) => selectedModelIds.has(m.id))
-                        .map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.display_name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </FormField>
-              )}
-            </div>
-          </div>
-          <div className="bg-card has-[[data-variant=section-toggle]:focus-visible]:ring-ring/50 rounded-2xl px-6 py-3 has-[[data-variant=section-toggle]:focus-visible]:ring-3 has-[[data-variant=section-toggle]:focus-visible]:ring-inset">
-            {/* The heading wraps the toggle: a button's children are
-                presentational, so a heading inside it is lost to screen readers. */}
-            <h2>
-              <Button
-                type="button"
-                variant="section-toggle"
-                onClick={() =>
-                  setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
-                }
-                size="sm"
-                aria-expanded={isAdvancedSectionExpanded}
-                className="-ml-3 w-fit justify-start"
+            </FormField>
+            {selectedModelIds.size > 0 && (
+              <FormField
+                labelSurface="background"
+                label={t('agents.form.labels.defaultModel')}
               >
-                <ChevronRight
-                  aria-hidden="true"
-                  className={cn(
-                    'transition-transform duration-200',
-                    isAdvancedSectionExpanded && 'rotate-90',
-                  )}
-                />
-                <span className="text-lg font-semibold">
-                  {t('agents.form.sections.advanced')}
-                </span>
-              </Button>
-            </h2>
-            {isAdvancedSectionExpanded && (
-              <div className="mt-5">
-                <FormField
-                  label={t('agents.form.advanced.jsonSchema')}
-                  hint={t('agents.form.advanced.jsonSchemaDescription')}
+                <Select
+                  value={agent.default_model_id || undefined}
+                  onValueChange={(value) =>
+                    setAgent({ ...agent, default_model_id: value })
+                  }
                 >
-                  <Textarea
-                    size="lg"
-                    value={jsonSchemaText}
-                    onChange={(e) => validateAndSetJsonSchema(e.target.value)}
-                    placeholder={`{
-  "type": "object",
-  "properties": {
-    "name": {"type": "string"},
-    "email": {"type": "string"}
-  },
-  "required": ["name", "email"],
-  "additionalProperties": false
-}`}
-                    rows={9}
-                    className="font-mono"
-                  />
-                </FormField>
-                {jsonSchemaText.trim() !== '' && (
-                  <div
-                    className={cn(
-                      'mt-2 flex items-center gap-2 text-sm',
-                      jsonSchemaValid ? 'text-success' : 'text-destructive',
-                    )}
-                  >
-                    {jsonSchemaValid ? (
-                      <CircleCheck className="size-4" aria-hidden="true" />
-                    ) : (
-                      <CircleX className="size-4" aria-hidden="true" />
-                    )}
-                    {jsonSchemaValid
-                      ? t('agents.form.advanced.validJson')
-                      : t('agents.form.advanced.invalidJson')}
-                  </div>
-                )}
-
-                <SettingRows className="mt-6">
-                  <SettingRow
-                    label={t('agents.form.advanced.tokenLimiting')}
-                    description={t(
-                      'agents.form.advanced.tokenLimitingDescription',
-                    )}
-                    htmlFor={tokenLimitSwitchId}
-                    after={
-                      <Input
-                        type="number"
-                        min="0"
-                        value={agent.token_limit || ''}
-                        onChange={(e) =>
-                          setAgent({
-                            ...agent,
-                            token_limit: e.target.value
-                              ? parseInt(e.target.value)
-                              : undefined,
-                          })
-                        }
-                        disabled={!agent.limited_token_mode}
-                        placeholder={t(
-                          'agents.form.placeholders.enterTokenLimit',
-                        )}
-                        aria-label={t('agents.form.advanced.tokenLimit')}
-                        shape="pill"
-                      />
-                    }
-                  >
-                    <Switch
-                      id={tokenLimitSwitchId}
-                      checked={agent.limited_token_mode}
-                      onCheckedChange={(checked) => {
-                        setAgent({
-                          ...agent,
-                          limited_token_mode: checked,
-                          limited_request_mode: checked
-                            ? false
-                            : agent.limited_request_mode,
-                        });
-                      }}
+                  <SelectTrigger className="w-full" shape="pill" size="field">
+                    <SelectValue
+                      placeholder={t(
+                        'agents.form.placeholders.selectDefaultModel',
+                      )}
                     />
-                  </SettingRow>
-                  <SettingRow
-                    label={t('agents.form.advanced.requestLimiting')}
-                    description={t(
-                      'agents.form.advanced.requestLimitingDescription',
-                    )}
-                    htmlFor={requestLimitSwitchId}
-                    after={
-                      <Input
-                        type="number"
-                        min="0"
-                        value={agent.request_limit || ''}
-                        onChange={(e) =>
-                          setAgent({
-                            ...agent,
-                            request_limit: e.target.value
-                              ? parseInt(e.target.value)
-                              : undefined,
-                          })
-                        }
-                        disabled={!agent.limited_request_mode}
-                        placeholder={t(
-                          'agents.form.placeholders.enterRequestLimit',
-                        )}
-                        aria-label={t('agents.form.advanced.requestLimit')}
-                        shape="pill"
-                      />
-                    }
-                  >
-                    <Switch
-                      id={requestLimitSwitchId}
-                      checked={agent.limited_request_mode}
-                      onCheckedChange={(checked) => {
-                        setAgent({
-                          ...agent,
-                          limited_request_mode: checked,
-                          limited_token_mode: checked
-                            ? false
-                            : agent.limited_token_mode,
-                        });
-                      }}
-                    />
-                  </SettingRow>
-                  <SettingRow
-                    label={t('agents.form.advanced.systemPromptOverride')}
-                    description={t(
-                      'agents.form.advanced.systemPromptOverrideDescription',
-                    )}
-                    htmlFor={promptOverrideSwitchId}
-                  >
-                    <Switch
-                      id={promptOverrideSwitchId}
-                      checked={agent.allow_system_prompt_override}
-                      onCheckedChange={(checked) =>
-                        setAgent({
-                          ...agent,
-                          allow_system_prompt_override: checked,
-                        })
-                      }
-                    />
-                  </SettingRow>
-                </SettingRows>
-              </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableModels
+                      .filter((m) => selectedModelIds.has(m.id))
+                      .map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.display_name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
             )}
           </div>
-          <GuardrailsSection
-            value={agent.config?.guardrails}
-            token={token}
-            // Guardrails are the owner's policy: the update route drops
-            // ``config`` for team members, editors included. Leaving the
-            // controls live for editors let them save a change the server
-            // silently discarded, and the success toast said it had worked.
-            disabled={Boolean(agent.team_access)}
-            disabledNotice={
-              agent.team_access
-                ? t('agents.form.guardrails.ownerOnly')
-                : undefined
-            }
-            onChange={(guardrails) =>
-              setAgent({
-                ...agent,
-                config: { ...(agent.config ?? {}), guardrails },
-              })
-            }
-          />
-          {modeConfig[effectiveMode].showDelete && agent.id && (
-            <Card
-              tone="destructive"
-              padding="lg"
-              className="flex-row flex-wrap items-start justify-between"
+        </Card>
+        <Card variant="subtle" padding="lg" className="gap-5">
+          {/* The heading wraps the toggle: a button's children are
+              presentational, so a heading inside it is lost to screen readers. */}
+          <h2>
+            <Button
+              type="button"
+              variant="section-toggle"
+              onClick={() =>
+                setIsAdvancedSectionExpanded(!isAdvancedSectionExpanded)
+              }
+              size="sm"
+              aria-expanded={isAdvancedSectionExpanded}
+              className="-ml-3 w-fit justify-start"
             >
-              <SectionHeader
-                tone="destructive"
-                title={t('agents.form.dangerZone.heading')}
-                description={t('agents.form.dangerZone.description')}
-                className="min-w-0 flex-1"
+              <ChevronRight
+                aria-hidden="true"
+                className={cn(
+                  'transition-transform duration-200',
+                  isAdvancedSectionExpanded && 'rotate-90',
+                )}
               />
-              <Button
-                type="button"
-                variant="destructive-outline"
-                size="sm"
-                onClick={() => setDeleteConfirmation('ACTIVE')}
-                className="shrink-0"
+              <span className="text-lg font-semibold">
+                {t('agents.form.sections.advanced')}
+              </span>
+            </Button>
+          </h2>
+          {isAdvancedSectionExpanded && (
+            <div>
+              <FormField
+                labelSurface="background"
+                label={t('agents.form.advanced.jsonSchema')}
+                hint={t('agents.form.advanced.jsonSchemaDescription')}
               >
-                {t('agents.form.dangerZone.deleteButton')}
-              </Button>
-            </Card>
+                <Textarea
+                  size="lg"
+                  value={jsonSchemaText}
+                  onChange={(e) => validateAndSetJsonSchema(e.target.value)}
+                  placeholder={`{
+"type": "object",
+"properties": {
+  "name": {"type": "string"},
+  "email": {"type": "string"}
+},
+"required": ["name", "email"],
+"additionalProperties": false
+}`}
+                  rows={9}
+                  className="font-mono"
+                />
+              </FormField>
+              {jsonSchemaText.trim() !== '' && (
+                <div
+                  className={cn(
+                    'mt-2 flex items-center gap-2 text-sm',
+                    jsonSchemaValid ? 'text-success' : 'text-destructive',
+                  )}
+                >
+                  {jsonSchemaValid ? (
+                    <CircleCheck className="size-4" aria-hidden="true" />
+                  ) : (
+                    <CircleX className="size-4" aria-hidden="true" />
+                  )}
+                  {jsonSchemaValid
+                    ? t('agents.form.advanced.validJson')
+                    : t('agents.form.advanced.invalidJson')}
+                </div>
+              )}
+
+              <SettingRows className="mt-6">
+                <SettingRow
+                  label={t('agents.form.advanced.tokenLimiting')}
+                  description={t(
+                    'agents.form.advanced.tokenLimitingDescription',
+                  )}
+                  htmlFor={tokenLimitSwitchId}
+                  after={
+                    <Input
+                      type="number"
+                      min="0"
+                      value={agent.token_limit || ''}
+                      onChange={(e) =>
+                        setAgent({
+                          ...agent,
+                          token_limit: e.target.value
+                            ? parseInt(e.target.value)
+                            : undefined,
+                        })
+                      }
+                      disabled={!agent.limited_token_mode}
+                      placeholder={t(
+                        'agents.form.placeholders.enterTokenLimit',
+                      )}
+                      aria-label={t('agents.form.advanced.tokenLimit')}
+                      shape="pill"
+                    />
+                  }
+                >
+                  <Switch
+                    id={tokenLimitSwitchId}
+                    checked={agent.limited_token_mode}
+                    onCheckedChange={(checked) => {
+                      setAgent({
+                        ...agent,
+                        limited_token_mode: checked,
+                        limited_request_mode: checked
+                          ? false
+                          : agent.limited_request_mode,
+                      });
+                    }}
+                  />
+                </SettingRow>
+                <SettingRow
+                  label={t('agents.form.advanced.requestLimiting')}
+                  description={t(
+                    'agents.form.advanced.requestLimitingDescription',
+                  )}
+                  htmlFor={requestLimitSwitchId}
+                  after={
+                    <Input
+                      type="number"
+                      min="0"
+                      value={agent.request_limit || ''}
+                      onChange={(e) =>
+                        setAgent({
+                          ...agent,
+                          request_limit: e.target.value
+                            ? parseInt(e.target.value)
+                            : undefined,
+                        })
+                      }
+                      disabled={!agent.limited_request_mode}
+                      placeholder={t(
+                        'agents.form.placeholders.enterRequestLimit',
+                      )}
+                      aria-label={t('agents.form.advanced.requestLimit')}
+                      shape="pill"
+                    />
+                  }
+                >
+                  <Switch
+                    id={requestLimitSwitchId}
+                    checked={agent.limited_request_mode}
+                    onCheckedChange={(checked) => {
+                      setAgent({
+                        ...agent,
+                        limited_request_mode: checked,
+                        limited_token_mode: checked
+                          ? false
+                          : agent.limited_token_mode,
+                      });
+                    }}
+                  />
+                </SettingRow>
+                <SettingRow
+                  label={t('agents.form.advanced.systemPromptOverride')}
+                  description={t(
+                    'agents.form.advanced.systemPromptOverrideDescription',
+                  )}
+                  htmlFor={promptOverrideSwitchId}
+                >
+                  <Switch
+                    id={promptOverrideSwitchId}
+                    checked={agent.allow_system_prompt_override}
+                    onCheckedChange={(checked) =>
+                      setAgent({
+                        ...agent,
+                        allow_system_prompt_override: checked,
+                      })
+                    }
+                  />
+                </SettingRow>
+              </SettingRows>
+            </div>
           )}
-        </div>
-        <div className="col-span-3 flex flex-col gap-2 xl:h-full xl:py-2">
-          <div className="flex-1 xl:min-h-0 xl:overflow-hidden">
-            <AgentPreviewArea />
-          </div>
-        </div>
+        </Card>
+        <GuardrailsSection
+          value={agent.config?.guardrails}
+          token={token}
+          // Guardrails are the owner's policy: the update route drops
+          // ``config`` for team members, editors included. Leaving the
+          // controls live for editors let them save a change the server
+          // silently discarded, and the success toast said it had worked.
+          disabled={Boolean(agent.team_access)}
+          disabledNotice={
+            agent.team_access
+              ? t('agents.form.guardrails.ownerOnly')
+              : undefined
+          }
+          onChange={(guardrails) =>
+            setAgent({
+              ...agent,
+              config: { ...(agent.config ?? {}), guardrails },
+            })
+          }
+        />
+        {modeConfig[effectiveMode].showDelete && agent.id && (
+          <Card
+            tone="destructive"
+            padding="lg"
+            className="flex-row flex-wrap items-start justify-between"
+          >
+            <SectionHeader
+              tone="destructive"
+              title={t('agents.form.dangerZone.heading')}
+              description={t('agents.form.dangerZone.description')}
+              className="min-w-0 flex-1"
+            />
+            <Button
+              type="button"
+              variant="destructive-outline"
+              size="sm"
+              onClick={() => setDeleteConfirmation('ACTIVE')}
+              className="shrink-0"
+            >
+              {t('agents.form.dangerZone.deleteButton')}
+            </Button>
+          </Card>
+        )}
       </div>
       <ConfirmationModal
         message={t('agents.deleteConfirmation')}
@@ -1484,39 +1578,71 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           setAgent({ ...agent, prompt_id: id });
         }}
       />
-    </div>
-  );
-}
-
-function AgentPreviewArea() {
-  const { t } = useTranslation();
-  const selectedAgent = useSelector(selectSelectedAgent);
-  return (
-    <div className="bg-card border-border h-[600px] w-full rounded-2xl border xl:h-full">
-      {selectedAgent?.status === 'published' ? (
-        <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl">
-          <AgentPreview />
-        </div>
-      ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2">
-          <img
-            src={ScienceSparkIcon}
-            alt=""
-            aria-hidden="true"
-            className="block size-12 dark:hidden"
-          />
-          <img
-            src={ScienceSparkDarkIcon}
-            alt=""
-            aria-hidden="true"
-            className="hidden size-12 dark:block"
-          />{' '}
-          <p className="text-muted-foreground text-xs">
-            {t('agents.form.preview.publishedPreview')}
-          </p>
-        </div>
-      )}
-    </div>
+      <AgentPreviewSheet
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        title={t('agents.form.sections.preview')}
+        description={`${agentDisplayName} · ${
+          isPublished
+            ? t('agents.form.preview.savedVersion')
+            : t('agents.card.draft')
+        }`}
+        running={previewStatus === 'loading'}
+        actions={
+          isPublished ? (
+            <Button
+              type="button"
+              variant="ghost-muted"
+              size="sm"
+              shape="pill"
+              onClick={() => dispatch(resetPreview())}
+            >
+              <SquarePen />
+              {t('newChat')}
+            </Button>
+          ) : undefined
+        }
+      >
+        {isPublished ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {effectiveMode === 'edit' && hasChanges && (
+              <div className="px-4 pt-4">
+                <Alert role="note">
+                  <Info />
+                  <AlertDescription>
+                    {t('agents.form.preview.unsavedChanges')}
+                  </AlertDescription>
+                </Alert>
+              </div>
+            )}
+            <div className="relative min-h-0 flex-1">
+              <AgentPreview />
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center px-6">
+            <EmptyState
+              size="sm"
+              illustration="none"
+              title={t('agents.form.preview.publishTitle')}
+              description={t('agents.form.preview.publishDescription')}
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  shape="pill"
+                  disabled={!isPublishable()}
+                  loading={publishLoading}
+                  onClick={handlePublish}
+                >
+                  {t('agents.form.buttons.publish')}
+                </Button>
+              }
+            />
+          </div>
+        )}
+      </AgentPreviewSheet>
+    </SectionShell>
   );
 }
 

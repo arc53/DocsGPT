@@ -887,6 +887,49 @@ class TestDirectoryStructure:
         assert data["provider"] == "gdrive"
         assert data["base_path"] == "/data/nested"
 
+    def test_team_viewer_can_read(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import DirectoryStructure
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        owner, viewer = "u-dir-owner", "u-dir-viewer"
+        src = _seed_source(
+            pg_conn, owner, name="shared",
+            directory_structure={"a.docx": {"type": "application/docx"}},
+        )
+        team = TeamsRepository(pg_conn).create("Acme", "acme-dir", owner)
+        TeamMembersRepository(pg_conn).add_member(team["id"], viewer, role="team_member")
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team["id"], "source", str(src["id"]), owner_id=owner, granted_by=owner,
+            access_level="viewer",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/directory_structure?id={src['id']}"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": viewer}
+            response = DirectoryStructure().get()
+        assert response.status_code == 200
+        assert response.json["directory_structure"] == {"a.docx": {"type": "application/docx"}}
+
+    def test_non_owner_without_grant_404(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import DirectoryStructure
+
+        src = _seed_source(
+            pg_conn, "u-dir-owner2", name="private",
+            directory_structure={"a.txt": None},
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/directory_structure?id={src['id']}"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "u-dir-stranger"}
+            response = DirectoryStructure().get()
+        assert response.status_code == 404
+
 
 class TestSourceConfigResource:
     def test_returns_401_unauthenticated(self, app):

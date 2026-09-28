@@ -317,6 +317,55 @@ class AgentSchedules(Resource):
         return _ok({"schedule": _format_schedule(created)}, status=201)
 
 
+@schedules_ns.route("/agents/<string:agent_id>/schedules/stats")
+class AgentScheduleStats(Resource):
+    @api.doc(
+        description="Run stats for an agent's schedules over a recent window.",
+        params={"days": "Window in days (default 30, clamped to 1..365)"},
+    )
+    @_safe_route
+    def get(self, agent_id: str):
+        """Return run count, failures, tokens and latest failure for an agent.
+
+        Args:
+            agent_id: Agent id from the URL.
+
+        Returns:
+            A Flask response with ``days``, ``runs``, ``failed``, ``tokens``
+            and ``latest_failure`` (or an error envelope).
+        """
+        user_id = _user_id()
+        if not user_id:
+            return _err("unauthorized", 401)
+        agent = _agent_owned(agent_id, user_id)
+        if agent is None:
+            return _err("agent not found", 404)
+        try:
+            days = max(1, min(int(request.args.get("days", 30)), 365))
+        except (TypeError, ValueError):
+            days = 30
+        try:
+            with db_readonly() as conn:
+                stats = ScheduleRunsRepository(conn).stats_for_agent(
+                    str(agent["id"]), user_id, days=days,
+                )
+        except Exception as exc:
+            current_app.logger.error(
+                "schedule stats failed: %s", exc, exc_info=True,
+            )
+            return _err("internal error", 500)
+        latest = stats.get("latest_failure")
+        return _ok(
+            {
+                "days": days,
+                "runs": stats["runs"],
+                "failed": stats["failed"],
+                "tokens": stats["tokens"],
+                "latest_failure": _format_run(latest) if latest else None,
+            }
+        )
+
+
 @schedules_ns.route("/schedules/<string:schedule_id>")
 class ScheduleResource(Resource):
     @api.doc(description="Get schedule by id.")

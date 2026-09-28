@@ -268,3 +268,13 @@ describe('schedulesSlice SSE event handling', () => {
     expect(stub.trigger_source).toBe('cron');
   });
 });
+
+describe('selectSchedulesForAgent', () => {
+  it('returns a stable empty list for an agent that has not loaded', () => {
+    // A fresh [] per call re-runs every effect that depends on the list.
+    const state = { schedules: reducer(undefined, { type: '@@init' }) };
+    expect(selectSchedulesForAgent(state, 'missing')).toBe(
+      selectSchedulesForAgent(state, 'missing'),
+    );
+  });
+});
