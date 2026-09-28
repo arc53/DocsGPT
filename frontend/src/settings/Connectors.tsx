@@ -98,27 +98,28 @@ export default function Connectors() {
     setSearchParams(searchParams, { replace: true });
   };
 
-  // Only categories that have something in them (connectors that need admin
-  // setup are not listed, which can empty one).
+  // Only categories that have something in them once the composer's
+  // capability filter applies (hidden connectors can empty one too), so no
+  // pill leads to an empty page.
+  const withCapability = catalog.filter((connector) =>
+    capability === 'sync'
+      ? connector.capabilities.includes('sync')
+      : capability === 'tools'
+        ? connector.capabilities.some((c) => c !== 'sync')
+        : true,
+  );
   const filters = FILTERS.filter(
     (key) =>
       key === 'all' ||
       key === filter ||
       (key === 'connected'
-        ? catalog.some(isConnected)
-        : catalog.some((connector) => connector.category === key)),
+        ? withCapability.some(isConnected)
+        : withCapability.some((connector) => connector.category === key)),
   );
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return catalog
-      .filter((connector) =>
-        capability === 'sync'
-          ? connector.capabilities.includes('sync')
-          : capability === 'tools'
-            ? connector.capabilities.some((c) => c !== 'sync')
-            : true,
-      )
+    return withCapability
       .filter((connector) => {
         if (filter === 'connected') return isConnected(connector);
         if (filter !== 'all') return connector.category === filter;
@@ -131,7 +132,7 @@ export default function Connectors() {
           connectorDescription(t, connector).toLowerCase().includes(query),
       )
       .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
-  }, [catalog, filter, search, t, capability]);
+  }, [withCapability, filter, search, t]);
 
   const open = (connector: ConnectorDefinition) => {
     if (connector.state === 'available' || connector.state === 'custom') {

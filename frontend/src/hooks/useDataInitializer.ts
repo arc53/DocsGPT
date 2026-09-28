@@ -2,7 +2,11 @@ import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
-import { setConnectorsEnabled } from '../connectors/connectorsSlice';
+import {
+  loadConnectors,
+  selectConnectorsEnabled,
+  setConnectorsEnabled,
+} from '../connectors/connectorsSlice';
 import { claimLegacySessionTokens } from '../utils/providerUtils';
 import {
   getDocs,
@@ -17,6 +21,7 @@ import {
   setSourceDocs,
   setSpeechAvailability,
 } from '../preferences/preferenceSlice';
+import type { AppDispatch } from '../store';
 
 /**
  * useDataInitializer Hook
@@ -31,7 +36,7 @@ import {
  * @param isAuthLoading -
  */
 export default function useDataInitializer(isAuthLoading: boolean) {
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const conversations = useSelector(selectConversations);
 
@@ -52,6 +57,14 @@ export default function useDataInitializer(isAuthLoading: boolean) {
       })
       .catch(() => undefined);
   }, [dispatch]);
+
+  // Connections load once at start so the nav can flag one that needs
+  // signing in again before any connectors page is opened.
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  useEffect(() => {
+    if (isAuthLoading || !connectorsEnabled) return;
+    dispatch(loadConnectors({ token }));
+  }, [isAuthLoading, connectorsEnabled, token, dispatch]);
 
   // Connector sign-ins used to leave a session token in localStorage. Link
   // each one to its server-side connection once, then forget it.

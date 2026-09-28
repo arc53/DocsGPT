@@ -236,6 +236,16 @@ describe('Connectors page', () => {
     expect(pills).not.toContain('settings.connectors.categories.database');
   });
 
+  it('offers no category that the capability filter would leave empty', async () => {
+    await render('/settings/connectors?capability=sync');
+    const pills = Array.from(
+      container.querySelectorAll('[data-slot="toggle-group-item"]'),
+    ).map((item) => item.textContent);
+    expect(pills).toContain('settings.connectors.categories.files');
+    // Telegram (messaging) cannot sync.
+    expect(pills).not.toContain('settings.connectors.categories.messaging');
+  });
+
   it('shows a retry when the catalog fails to load', async () => {
     service.getCatalog.mockResolvedValue({ success: false });
     await render();

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 
+import ConnectionHealthDot from '../connectors/ConnectionHealthDot';
 import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
 import { getVisibleGroups, type Section, type SectionItem } from './sections';
 import { useSidebarLevel } from './SidebarLevelProvider';
@@ -69,6 +70,7 @@ export default function SectionNav({
         >
           <Icon className="text-muted-foreground size-5 shrink-0" aria-hidden />
           <span className="truncate">{t(item.labelKey)}</span>
+          {item.path === '/settings/connectors' && <ConnectionHealthDot />}
         </Link>
       </Button>
     );

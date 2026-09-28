@@ -1247,7 +1247,8 @@
         "reconnect": "同期を続けるには {{name}} を再接続してください。",
         "reconnectSources_other": "{{name}} を再接続してください: {{formatted}} 件のソースが一時停止中です",
         "reconnectTools": "エージェントが再び使えるよう {{name}} を再接続してください",
-        "reconnectBoth_other": "{{name}} を再接続してください: {{formatted}} 件のソースが一時停止中で、エージェントも使えません"
+        "reconnectBoth_other": "{{name}} を再接続してください: {{formatted}} 件のソースが一時停止中で、エージェントも使えません",
+        "navDot": "接続に対応が必要です"
       },
       "error": {
         "decrypt": "保存された認証情報を復号できませんでした。続行するには再接続してください。",
@@ -2566,5 +2567,9 @@
   },
   "prompts": {
     "textAriaLabel": "プロンプトテキスト"
+  },
+  "connectHero": {
+    "title": "データを接続",
+    "body": "{{names}} などとチャットできます。"
   }
 }

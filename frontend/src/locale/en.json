@@ -1269,7 +1269,8 @@
         "reconnectSources_other": "Reconnect {{name}}: {{formatted}} sources are paused",
         "reconnectTools": "Reconnect {{name}} so agents can use it again",
         "reconnectBoth_one": "Reconnect {{name}}: {{formatted}} source is paused and agents can't use it",
-        "reconnectBoth_other": "Reconnect {{name}}: {{formatted}} sources are paused and agents can't use it"
+        "reconnectBoth_other": "Reconnect {{name}}: {{formatted}} sources are paused and agents can't use it",
+        "navDot": "A connection needs attention"
       },
       "error": {
         "decrypt": "Stored credentials could not be decrypted. Reconnect to continue.",
@@ -2638,5 +2639,9 @@
         "model": "{{model}} ({{tokens}} tokens)"
       }
     }
+  },
+  "connectHero": {
+    "title": "Connect your data",
+    "body": "Chat with {{names}} and more."
   }
 }

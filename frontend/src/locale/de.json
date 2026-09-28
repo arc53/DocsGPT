@@ -1263,7 +1263,8 @@
         "reconnectSources_other": "{{name}} neu verbinden: {{formatted}} Quellen sind pausiert",
         "reconnectTools": "{{name}} neu verbinden, damit Agenten es wieder nutzen können",
         "reconnectBoth_one": "{{name}} neu verbinden: {{formatted}} Quelle ist pausiert und Agenten können es nicht nutzen",
-        "reconnectBoth_other": "{{name}} neu verbinden: {{formatted}} Quellen sind pausiert und Agenten können es nicht nutzen"
+        "reconnectBoth_other": "{{name}} neu verbinden: {{formatted}} Quellen sind pausiert und Agenten können es nicht nutzen",
+        "navDot": "Eine Verbindung braucht Aufmerksamkeit"
       },
       "error": {
         "decrypt": "Die gespeicherten Zugangsdaten konnten nicht entschlüsselt werden. Verbinde neu, um fortzufahren.",
@@ -2587,5 +2588,9 @@
   },
   "prompts": {
     "textAriaLabel": "Prompt-Text"
+  },
+  "connectHero": {
+    "title": "Daten verbinden",
+    "body": "Chatte mit {{names}} und mehr."
   }
 }

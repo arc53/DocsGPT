@@ -86,6 +86,12 @@ export const selectConnectorCatalog = (state: RootLike) =>
   state.connectors.catalog;
 export const selectConnections = (state: RootLike) =>
   state.connectors.connections;
+/** A connection that needs the user (signing in again, or failing). */
+export const selectConnectionsNeedAttention = (state: RootLike) =>
+  (state.connectors?.connections ?? []).some(
+    (connection) =>
+      connection.status === 'reconnect_needed' || connection.status === 'error',
+  );
 export const selectConnectorsLoading = (state: RootLike) =>
   state.connectors.loading;
 export const selectConnectorsLoaded = (state: RootLike) =>

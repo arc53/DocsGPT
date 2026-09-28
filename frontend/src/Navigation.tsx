@@ -55,6 +55,7 @@ import {
   getSectionForPath,
   type Section,
 } from './navigation/sections';
+import ConnectionHealthDot from './connectors/ConnectionHealthDot';
 import { useSidebarLevel } from './navigation/SidebarLevelProvider';
 import { useSectionContext } from './navigation/useSectionContext';
 import { useLastAppPath } from './navigation/useLastAppPath';
@@ -798,6 +799,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   aria-hidden
                 />
                 <p className="text-foreground text-sm">{t('settings.label')}</p>
+                <ConnectionHealthDot />
               </Link>
             </Button>
           </div>

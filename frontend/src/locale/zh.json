@@ -1247,7 +1247,8 @@
         "reconnect": "重新连接 {{name}} 以继续同步。",
         "reconnectSources_other": "请重新连接 {{name}}：{{formatted}} 个来源已暂停",
         "reconnectTools": "请重新连接 {{name}}，让智能体可以再次使用它",
-        "reconnectBoth_other": "请重新连接 {{name}}：{{formatted}} 个来源已暂停，智能体也无法使用它"
+        "reconnectBoth_other": "请重新连接 {{name}}：{{formatted}} 个来源已暂停，智能体也无法使用它",
+        "navDot": "有连接需要处理"
       },
       "error": {
         "decrypt": "无法解密保存的凭据。请重新连接以继续。",
@@ -2566,5 +2567,9 @@
   },
   "prompts": {
     "textAriaLabel": "提示文本"
+  },
+  "connectHero": {
+    "title": "连接你的数据",
+    "body": "与 {{names}} 等进行对话。"
   }
 }
