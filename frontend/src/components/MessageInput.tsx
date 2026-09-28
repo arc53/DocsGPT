@@ -1584,11 +1584,11 @@ export default function MessageInput({
   const hasSubmittableContent =
     Boolean(value.trim()) ||
     (allowSendWithoutText && attachments.some((a) => a.status !== 'failed'));
-  const canSubmit =
-    hasSubmittableContent &&
+  const composerIdle =
     !loading &&
     recordingState !== 'recording' &&
     recordingState !== 'transcribing';
+  const canSubmit = hasSubmittableContent && composerIdle;
 
   const submitNow = () => {
     const failed = attachments.filter((a) => a.status === 'failed');
@@ -1620,7 +1620,14 @@ export default function MessageInput({
     readiness: sendReadiness,
     arm: armSend,
     cancel: cancelArmedSend,
-  } = useArmedSend({ attachments, onFlush: submitNow });
+  } = useArmedSend({
+    attachments,
+    onFlush: submitNow,
+    // A queued send that settles while another answer streams would be
+    // refused by the consumer after the composer was already cleared; hold
+    // it until the composer can take a submit again.
+    canFlush: composerIdle,
+  });
 
   // Adopt a question queued outside the composer: seed the input, arm,
   // and hand the wait to the standard banner. If the attachments already

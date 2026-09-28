@@ -19,9 +19,13 @@ export function getSendReadiness(attachments: Attachment[]): SendReadiness {
 export function useArmedSend({
   attachments,
   onFlush,
+  canFlush = true,
 }: {
   attachments: Attachment[];
   onFlush: () => void;
+  // False while the composer can't take a submit (an answer is streaming):
+  // the armed send holds until it can, instead of flushing into a refusal.
+  canFlush?: boolean;
 }) {
   const [armed, setArmed] = useState(false);
   // Latest-closure ref so the flush submits the current composer value,
@@ -37,12 +41,12 @@ export function useArmedSend({
       flushedRef.current = false;
       return;
     }
-    if (readiness.state === 'ready' && !flushedRef.current) {
+    if (readiness.state === 'ready' && canFlush && !flushedRef.current) {
       flushedRef.current = true;
       setArmed(false);
       flushRef.current();
     }
-  }, [armed, readiness.state]);
+  }, [armed, readiness.state, canFlush]);
 
   const arm = useCallback(() => setArmed(true), []);
   const cancel = useCallback(() => setArmed(false), []);

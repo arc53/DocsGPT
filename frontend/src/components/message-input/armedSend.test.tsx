@@ -66,13 +66,15 @@ type HookApi = ReturnType<typeof useArmedSend>;
 function Host({
   attachments,
   onFlush,
+  canFlush,
   api,
 }: {
   attachments: Attachment[];
   onFlush: () => void;
+  canFlush?: boolean;
   api: { current: HookApi | null };
 }) {
-  const hook = useArmedSend({ attachments, onFlush });
+  const hook = useArmedSend({ attachments, onFlush, canFlush });
   api.current = hook;
   return null;
 }
@@ -96,10 +98,15 @@ describe('useArmedSend', () => {
     container.remove();
   });
 
-  const render = async (attachments: Attachment[]) => {
+  const render = async (attachments: Attachment[], canFlush?: boolean) => {
     await act(async () => {
       root.render(
-        <Host attachments={attachments} onFlush={onFlush} api={api} />,
+        <Host
+          attachments={attachments}
+          onFlush={onFlush}
+          canFlush={canFlush}
+          api={api}
+        />,
       );
     });
   };
@@ -137,6 +144,21 @@ describe('useArmedSend', () => {
 
     await render([att({ status: 'failed', fileName: 'broken.pdf' })]);
     expect(onFlush).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds a ready flush until canFlush turns true', async () => {
+    await render([att({ status: 'processing' })]);
+    await act(async () => api.current!.arm());
+
+    // Files resolved, but another answer is streaming: flushing now would
+    // clear the composer while the submit is refused.
+    await render([att()], false);
+    expect(onFlush).not.toHaveBeenCalled();
+    expect(api.current!.armed).toBe(true);
+
+    await render([att()], true);
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(api.current!.armed).toBe(false);
   });
 
   it('cancel disarms and prevents the auto-flush', async () => {

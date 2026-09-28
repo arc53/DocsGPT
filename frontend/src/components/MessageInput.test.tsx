@@ -136,4 +136,29 @@ describe('MessageInput send with a failed attachment', () => {
 
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
+
+  it('keeps a queued question while another answer is streaming', async () => {
+    store.dispatch(addAttachment(att({ status: 'processing', progress: 30 })));
+    await render();
+    await type('Queued question');
+    await pressEnter();
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    // A retry starts streaming, then the file settles.
+    await render(true);
+    await act(async () => {
+      store.dispatch({
+        type: 'upload/updateAttachment',
+        payload: { id: 'ok-1', updates: { status: 'completed' } },
+      });
+    });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(textarea().value).toBe('Queued question');
+
+    // The stream ends: the held send goes out.
+    await render(false);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith('Queued question');
+  });
 });
