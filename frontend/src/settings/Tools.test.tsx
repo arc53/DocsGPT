@@ -31,6 +31,17 @@ const TOOLS = [
     actions: [],
     connection_id: null,
   },
+  {
+    id: 'lin',
+    name: 'mcp_tool',
+    displayName: 'Linear',
+    customName: '',
+    description: 'MCP Server: https://mcp.linear.app/mcp',
+    status: true,
+    config: {},
+    actions: [],
+    connection_id: 'conn-2',
+  },
 ];
 
 vi.mock('../api/services/userService', () => ({
@@ -46,7 +57,27 @@ vi.mock('../api/services/userService', () => ({
 }));
 vi.mock('../api/services/connectorsService', () => ({
   default: {
-    getCatalog: vi.fn(async () => ({ success: true, connectors: [] })),
+    getCatalog: vi.fn(async () => ({
+      success: true,
+      connectors: [
+        {
+          key: 'telegram',
+          name: 'Telegram',
+          description: 'Send messages to a chat.',
+          publisher: 'built_in',
+          available: true,
+          capabilities: ['write'],
+        },
+        {
+          key: 'mcp:linear',
+          name: 'Linear',
+          description: 'Issues and projects.',
+          publisher: 'preset',
+          available: true,
+          capabilities: ['write'],
+        },
+      ],
+    })),
     listConnections: vi.fn(async () => ({
       success: true,
       connections: [
@@ -57,6 +88,14 @@ vi.mock('../api/services/connectorsService', () => ({
           icon: 'tool_telegram',
           status: 'connected',
           account_label: '…abcd',
+        },
+        {
+          id: 'conn-2',
+          connector_key: 'mcp:linear',
+          name: 'Linear',
+          icon: 'linear',
+          status: 'reconnect_needed',
+          account_label: 'Linear',
         },
       ],
     })),
@@ -142,10 +181,43 @@ describe('Tools page', () => {
     ).toBe('/settings/connectors?connector=telegram');
   });
 
+  const card = (title: string) =>
+    Array.from(container.querySelectorAll<HTMLElement>('h2'))
+      .find((h) => h.textContent === title)!
+      .closest<HTMLElement>('[data-slot="card"]')!;
+
+  it('manages a connected tool on its connector page, not with its own switch', async () => {
+    await render();
+    const telegram = card('Telegram');
+    expect(telegram.querySelector('[role="switch"]')).toBeNull();
+    // The catalog's plain description, not the tool's setup notes.
+    expect(telegram.textContent).toContain(
+      'settings.connectors.descriptions.telegram',
+    );
+    const manage = Array.from(telegram.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.connectors.manageConnection',
+    )!;
+    await act(async () => manage.click());
+    expect(
+      document.body.querySelector('[data-testid="where"]')?.textContent,
+    ).toBe('/settings/connectors?connector=telegram');
+  });
+
+  it('says a connected tool needs signing in again, with no raw MCP reconnect', async () => {
+    await render();
+    expect(card('Linear').textContent).toContain(
+      'settings.connectors.health.signInAgain',
+    );
+    expect(card('Linear').textContent).not.toContain('MCP Server:');
+    await openMenu(2);
+    expect(menuItem('settings.tools.reconnect')).toBeUndefined();
+  });
+
   it('keeps Edit for a tool that is not from a connection', async () => {
     await render();
     await openMenu(1);
     expect(menuItem('settings.tools.edit')).toBeDefined();
     expect(menuItem('settings.connectors.manageConnection')).toBeUndefined();
+    expect(card('My API').querySelector('[role="switch"]')).not.toBeNull();
   });
 });

@@ -23,10 +23,12 @@ import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
+  connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
+import { connectorDescription } from '../connectors/i18n';
 import { useLoaderState } from '../hooks';
 import type { AvailableToolType } from '../modals/types';
 import AddToolModal from '../modals/AddToolModal';
@@ -178,7 +180,9 @@ export default function Tools() {
         variant: 'default',
       });
     }
-    if (tool.name === 'mcp_tool') {
+    // A connected server reconnects on its connector page, like any other
+    // connection; only an MCP tool without one keeps the server form.
+    if (tool.name === 'mcp_tool' && !connectionOf(tool)) {
       options.splice(1, 0, {
         icon: RefreshCw,
         label: t('settings.tools.reconnect'),
@@ -402,123 +406,143 @@ export default function Tools() {
                   <EmptyState title={t('settings.tools.noToolsFound')} />
                 ) : (
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {filtered.map((tool, index) => (
-                      <Card
-                        key={index}
-                        variant="filled"
-                        padding="lg"
-                        className="relative h-52 justify-between overflow-hidden"
-                      >
-                        {!tool.default && (
-                          <ActionMenu
-                            options={getMenuOptions(tool)}
-                            triggerLabel={t('settings.tools.settingsIconAlt')}
-                            className="absolute top-3 right-3 z-10"
-                          />
-                        )}
-                        <div className="w-full">
-                          <div className="flex w-full items-center gap-2 px-1">
-                            <ToolIcon
-                              name={tool.name}
-                              title={t('settings.tools.toolIconTitle', {
-                                name: tool.displayName,
-                              })}
-                              className="size-6"
+                    {filtered.map((tool, index) => {
+                      const connection = connectionOf(tool);
+                      const connector = connection
+                        ? catalog.find(
+                            (c) => c.key === connection.connector_key,
+                          )
+                        : undefined;
+                      // A catalog service reads as the catalog describes it;
+                      // a custom server keeps the description it came with.
+                      const description =
+                        connector && connector.publisher !== 'custom'
+                          ? connectorDescription(t, connector)
+                          : tool.description;
+                      return (
+                        <Card
+                          key={index}
+                          variant="filled"
+                          padding="lg"
+                          className="relative h-52 justify-between overflow-hidden"
+                        >
+                          {!tool.default && (
+                            <ActionMenu
+                              options={getMenuOptions(tool)}
+                              triggerLabel={t('settings.tools.settingsIconAlt')}
+                              className="absolute top-3 right-3 z-10"
                             />
-                            {tool.default && (
-                              <Badge variant="neutral">
-                                {t('settings.tools.builtIn')}
-                              </Badge>
-                            )}
-                            {tool.name === 'mcp_tool' &&
-                              mcpStatuses[tool.id] && (
-                                <Badge
-                                  variant={
-                                    mcpStatuses[tool.id] === 'connected'
-                                      ? 'success'
-                                      : mcpStatuses[tool.id] === 'needs_auth'
-                                        ? 'warning'
-                                        : 'neutral'
-                                  }
-                                >
-                                  {mcpStatuses[tool.id] === 'connected'
-                                    ? t('settings.tools.authStatus.connected')
-                                    : mcpStatuses[tool.id] === 'needs_auth'
-                                      ? t('settings.tools.authStatus.needsAuth')
-                                      : t(
-                                          'settings.tools.authStatus.configured',
-                                        )}
+                          )}
+                          <div className="w-full">
+                            <div className="flex w-full items-center gap-2 px-1">
+                              <ToolIcon
+                                name={tool.name}
+                                title={t('settings.tools.toolIconTitle', {
+                                  name: tool.displayName,
+                                })}
+                                className="size-6"
+                              />
+                              {tool.default && (
+                                <Badge variant="neutral">
+                                  {t('settings.tools.builtIn')}
                                 </Badge>
                               )}
-                            {tool.ownership === 'team' && (
-                              <Badge variant="neutral">
-                                <Users className="size-3" aria-hidden="true" />
-                                {tool.team_access === 'editor'
-                                  ? t('teamAccess.editor')
-                                  : t('teamAccess.viewer')}
-                              </Badge>
-                            )}
+                              {connectionNeedsSignIn(connection) ? (
+                                <Badge variant="warning">
+                                  {t('settings.connectors.health.signInAgain')}
+                                </Badge>
+                              ) : !tool.status ? (
+                                <Badge variant="neutral">
+                                  {t('settings.tools.off')}
+                                </Badge>
+                              ) : null}
+                              {tool.name === 'mcp_tool' &&
+                                !connection &&
+                                mcpStatuses[tool.id] && (
+                                  <Badge
+                                    variant={
+                                      mcpStatuses[tool.id] === 'connected'
+                                        ? 'success'
+                                        : mcpStatuses[tool.id] === 'needs_auth'
+                                          ? 'warning'
+                                          : 'neutral'
+                                    }
+                                  >
+                                    {mcpStatuses[tool.id] === 'connected'
+                                      ? t('settings.tools.authStatus.connected')
+                                      : mcpStatuses[tool.id] === 'needs_auth'
+                                        ? t(
+                                            'settings.tools.authStatus.needsAuth',
+                                          )
+                                        : t(
+                                            'settings.tools.authStatus.configured',
+                                          )}
+                                  </Badge>
+                                )}
+                              {tool.ownership === 'team' && (
+                                <Badge variant="neutral">
+                                  <Users
+                                    className="size-3"
+                                    aria-hidden="true"
+                                  />
+                                  {tool.team_access === 'editor'
+                                    ? t('teamAccess.editor')
+                                    : t('teamAccess.viewer')}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="mt-[9px] px-1">
+                              <CardTitle
+                                as="h2"
+                                title={tool.customName || tool.displayName}
+                                className="truncate capitalize"
+                              >
+                                {tool.customName || tool.displayName}
+                              </CardTitle>
+                              <CardDescription
+                                size="xs"
+                                className="mt-1 line-clamp-4 max-h-24 overflow-hidden break-words"
+                                title={description}
+                              >
+                                {description}
+                              </CardDescription>
+                            </div>
                           </div>
-                          <div className="mt-[9px] px-1">
-                            <CardTitle
-                              as="h2"
-                              title={tool.customName || tool.displayName}
-                              className="truncate capitalize"
-                            >
-                              {tool.customName || tool.displayName}
-                            </CardTitle>
-                            <CardDescription
-                              size="xs"
-                              className="mt-1 line-clamp-4 max-h-24 overflow-hidden break-words"
-                              title={tool.description}
-                            >
-                              {tool.description}
-                            </CardDescription>
-                          </div>
-                        </div>
-                        {(() => {
-                          const connection = tool.connection_id
-                            ? connections.find(
-                                (c) => c.id === tool.connection_id,
-                              )
-                            : undefined;
-                          if (!connection) return null;
-                          // The same meta line as a Sources tile; mr-12 keeps
-                          // it clear of the status switch.
-                          return (
+                          {connection && (
+                            // The way to the connection's page, marked with
+                            // the service it comes from.
                             <CardFooter>
-                              <span className="mr-12 flex min-w-0 items-center gap-2">
-                                <ConnectorIcon
-                                  icon={connection.icon}
-                                  className="size-3.5 shrink-0"
-                                />
-                                <span
-                                  className="truncate"
-                                  title={connection.account_label}
-                                >
-                                  {t('settings.tools.viaConnection', {
-                                    name: connection.name,
-                                    interpolation: { escapeValue: false },
-                                  })}
-                                </span>
-                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                shape="pill"
+                                onClick={() => handleSettingsClick(tool)}
+                              >
+                                <ConnectorIcon icon={connection.icon} />
+                                {t('settings.connectors.manageConnection')}
+                              </Button>
                             </CardFooter>
-                          );
-                        })()}
-                        <div className="absolute right-4 bottom-4">
-                          <Switch
-                            checked={tool.status}
-                            onCheckedChange={(checked) =>
-                              updateToolStatus(tool.id, checked)
-                            }
-                            id={`toolToggle-${index}`}
-                            aria-label={t('settings.tools.toggleToolAria', {
-                              toolName: tool.customName || tool.displayName,
-                            })}
-                          />
-                        </div>
-                      </Card>
-                    ))}
+                          )}
+                          {/* A connected tool is turned on and off on its
+                            connection's page, the one home for it. */}
+                          {!connection && (
+                            <div className="absolute right-4 bottom-4">
+                              <Switch
+                                checked={tool.status}
+                                onCheckedChange={(checked) =>
+                                  updateToolStatus(tool.id, checked)
+                                }
+                                id={`toolToggle-${index}`}
+                                aria-label={t('settings.tools.toggleToolAria', {
+                                  toolName: tool.customName || tool.displayName,
+                                })}
+                              />
+                            </div>
+                          )}
+                        </Card>
+                      );
+                    })}
                   </div>
                 );
               })()

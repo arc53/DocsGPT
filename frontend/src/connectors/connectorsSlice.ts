@@ -86,12 +86,15 @@ export const selectConnectorCatalog = (state: RootLike) =>
   state.connectors.catalog;
 export const selectConnections = (state: RootLike) =>
   state.connectors.connections;
+/** Whether a connection needs the user to sign in again (expired or failing). */
+export const connectionNeedsSignIn = (
+  connection: { status: string } | null | undefined,
+) =>
+  connection?.status === 'reconnect_needed' || connection?.status === 'error';
+
 /** A connection that needs the user (signing in again, or failing). */
 export const selectConnectionsNeedAttention = (state: RootLike) =>
-  (state.connectors?.connections ?? []).some(
-    (connection) =>
-      connection.status === 'reconnect_needed' || connection.status === 'error',
-  );
+  (state.connectors?.connections ?? []).some(connectionNeedsSignIn);
 export const selectConnectorsLoading = (state: RootLike) =>
   state.connectors.loading;
 export const selectConnectorsLoaded = (state: RootLike) =>
