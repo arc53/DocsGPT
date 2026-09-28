@@ -648,6 +648,23 @@ class TestUpdateAgent:
             field in msg and user in msg for msg in warnings
         ), f"no WARN naming field={field!r} and user={user!r}; got {warnings!r}"
 
+    def test_blank_chunks_resets_to_the_default(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-upd-blank-chunks"
+        agent = _seed_agent(pg_conn, user=user)
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}",
+            method="PUT",
+            json={"name": "n", "description": "d", "status": "draft", "chunks": ""},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 200
+        assert AgentsRepository(pg_conn).get(str(agent["id"]), user)["chunks"] == 6
+
     def test_invalid_chunks_returns_400(self, app, pg_conn):
         from docsgpt.api.user.agents.routes import UpdateAgent
 

@@ -183,6 +183,13 @@ def test_import_without_chunks_uses_the_default(pg_conn):
     assert agent["chunks"] == 6
 
 
+def test_import_with_invalid_chunks_uses_the_default(pg_conn):
+    user = "u_invalid_chunks"
+    result = apply_import(pg_conn, user, _doc(name="Odd Bot", _slug="odd-bot", chunks="lots"))
+    agent = AgentsRepository(pg_conn).get(result["agent_id"], user)
+    assert agent["chunks"] == 6
+
+
 def test_import_keeps_explicit_chunks(pg_conn):
     user = "u_explicit_chunks"
     result = apply_import(pg_conn, user, _doc(name="Off Bot", _slug="off-bot", chunks=0))
