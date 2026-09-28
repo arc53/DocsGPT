@@ -120,3 +120,25 @@ class TestDiscover:
         with pytest.raises(service.ConnectionUnavailable), patch("docsgpt.agents.tools.mcp_tool.MCPTool") as tool_cls:
             mcp._discover("alice", connection, {"config": {}})
         tool_cls.assert_not_called()
+
+
+def test_oauth_resource_is_the_full_mcp_endpoint():
+    """Linear and Sentry publish ``https://host/mcp`` as their protected
+    resource; the SDK must be given that endpoint, not only the origin."""
+    from mcp.shared.auth_utils import check_resource_allowed, resource_url_from_server_url
+
+    from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+
+    oauth = DocsGPTOAuth(
+        mcp_url="https://mcp.linear.app/mcp",
+        redis_client=MagicMock(),
+        redirect_uri="https://example.com/callback",
+        user_id="user1",
+    )
+    assert oauth.context.server_url == "https://mcp.linear.app/mcp"
+    requested = resource_url_from_server_url(oauth.context.server_url)
+    # Servers that publish the endpoint, and those that publish the origin.
+    assert check_resource_allowed(requested_resource=requested, configured_resource="https://mcp.linear.app/mcp")
+    assert check_resource_allowed(requested_resource=requested, configured_resource="https://mcp.linear.app")
+    # Stored tokens stay keyed by the server's origin.
+    assert oauth.context.storage.server_url == "https://mcp.linear.app"

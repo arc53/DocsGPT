@@ -752,8 +752,12 @@ class DocsGPTOAuth(OAuthClientProvider):
             connection_id=connection_id,
         )
 
+        # The SDK checks the server's protected-resource metadata against a
+        # resource derived from this URL, so it gets the full MCP endpoint:
+        # Linear and Sentry publish ``https://host/mcp``, and an origin-only
+        # URL fails that check before sign-in. Tokens stay keyed by origin.
         super().__init__(
-            server_url=self.server_base_url,
+            server_url=mcp_url.rstrip("/") or self.server_base_url,
             client_metadata=client_metadata,
             storage=storage,
             redirect_handler=self.redirect_handler,
