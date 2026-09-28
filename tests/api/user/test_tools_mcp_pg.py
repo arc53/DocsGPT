@@ -232,6 +232,8 @@ class TestTestMCPServerConfig:
             "success": False,
             "requires_oauth": True,
             "auth_url": "https://auth/ex",
+            "task_id": "task-123",
+            "message": "OAuth required",
         }
 
         with patch(
@@ -252,6 +254,8 @@ class TestTestMCPServerConfig:
             response = TestMCPServerConfig().post()
         assert response.status_code == 200
         assert response.json["requires_oauth"] is True
+        # The client follows the sign-in by this task's events.
+        assert response.json["task_id"] == "task-123"
 
     def test_unexpected_exception_returns_500(self, app):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig

@@ -217,7 +217,7 @@ class TestMCPServerConfig(Resource):
                 safe_result = {
                     k: v
                     for k, v in result.items()
-                    if k in ("success", "requires_oauth", "auth_url")
+                    if k in ("success", "requires_oauth", "auth_url", "task_id")
                 }
                 return make_response(jsonify(safe_result), 200)
 
