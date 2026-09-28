@@ -40,6 +40,11 @@ Backfill (idempotent, only fills NULLs or unconverted rows):
    resolved each invoking member's own token before this migration and keep
    doing so (``member``); owners can switch them in the share dialog.
 
+``connector_policies`` holds the admin's per-connector switches (enabled,
+forced credential mode). The instance-wide "Allow custom MCP servers" switch
+is the ``connectors.allow_custom_mcp`` key in ``app_metadata`` (absent means
+allowed).
+
 Revision ID: 0038_connections
 Revises: 0037_request_traces
 """
@@ -75,6 +80,19 @@ _BATCH = 500
 def upgrade() -> None:
     _upgrade_links()
     _upgrade_credentials()
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS connector_policies (
+            connector_key   TEXT PRIMARY KEY,
+            enabled         BOOLEAN NOT NULL DEFAULT true,
+            credential_mode TEXT NOT NULL DEFAULT 'choose'
+                CONSTRAINT connector_policies_credential_mode_chk
+                CHECK (credential_mode IN ('choose', 'owner', 'member')),
+            updated_by      TEXT,
+            updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        """
+    )
 
 
 def _upgrade_links() -> None:
@@ -433,6 +451,7 @@ def _restore_account_index() -> None:
 
 
 def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS connector_policies;")
     _downgrade_credentials()
     op.execute("DROP INDEX IF EXISTS user_tools_connection_idx;")
     op.execute("DROP INDEX IF EXISTS sources_connection_idx;")

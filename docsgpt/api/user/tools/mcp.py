@@ -112,6 +112,31 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
     return str(row["id"]) if row else None
 
 
+def _mcp_policy_error(config: dict):
+    """A 403 when an admin turned this MCP server's connector off, else None.
+
+    A preset's own switch applies to its server; any other server is a
+    custom connector and needs "Allow custom MCP servers".
+    """
+    from docsgpt.connectors import catalog, service
+
+    preset = catalog.preset_for_url(config.get("server_url"))
+    key = preset.key if preset else "custom_mcp"
+    try:
+        with db_readonly() as conn:
+            service.ensure_connector_allowed(conn, key)
+    except service.ConnectorDisabled:
+        return make_response(
+            jsonify({"success": False, "error": "This MCP server is turned off by an admin", "code": "disabled"}),
+            403,
+        )
+    except Exception:
+        # The switch is an admin preference; when the policy table cannot be
+        # read, saving the tool (which needs the database) fails on its own.
+        current_app.logger.warning("Could not read connector policies", exc_info=True)
+    return None
+
+
 @tools_mcp_ns.route("/mcp_server/test")
 class TestMCPServerConfig(Resource):
     @api.expect(
@@ -147,6 +172,9 @@ class TestMCPServerConfig(Resource):
                 )
 
             _validate_mcp_server_url(config)
+            policy_error = _mcp_policy_error(config)
+            if policy_error is not None:
+                return policy_error
 
             auth_credentials = _extract_auth_credentials(config)
             test_config = config.copy()
@@ -243,6 +271,9 @@ class MCPServerSave(Resource):
                 )
 
             _validate_mcp_server_url(config)
+            policy_error = _mcp_policy_error(config)
+            if policy_error is not None:
+                return policy_error
 
             auth_credentials = _extract_auth_credentials(config)
             auth_type = config.get("auth_type", "none")

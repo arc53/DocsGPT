@@ -611,6 +611,17 @@ connector_sessions_table = Table(
 )
 
 
+connector_policies_table = Table(
+    "connector_policies",
+    metadata,
+    Column("connector_key", Text, primary_key=True),
+    Column("enabled", Boolean, nullable=False, server_default="true"),
+    Column("credential_mode", Text, nullable=False, server_default="choose"),
+    Column("updated_by", Text),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+
 # --- Conversations, messages, workflows -------------------------------------
 
 conversations_table = Table(

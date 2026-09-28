@@ -385,7 +385,11 @@ class ClassicRAG(BaseRetriever):
                     doc_tokens = num_tokens_from_string(doc_text_with_header)
 
                     if cumulative_tokens + doc_tokens < token_budget:
-                        entry = {"text": page_content, **labels}
+                        entry = {
+                            "text": page_content,
+                            **labels,
+                            **self._connector_labels.for_source(vectorstore_id),
+                        }
                         if self.include_scores:
                             entry["score"] = score
                             entry["score_kind"] = score_kind

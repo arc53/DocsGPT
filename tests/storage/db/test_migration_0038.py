@@ -95,6 +95,7 @@ class TestMigration0038:
             )
             assert "connection_id" in _columns(conn, "sources")
             assert "connection_id" in _columns(conn, "user_tools")
+            assert {"connector_key", "enabled", "credential_mode"} <= _columns(conn, "connector_policies")
 
     def test_backfill_links_legacy_rows(self, pg_engine):
         url = pg_engine.url.render_as_string(hide_password=False)

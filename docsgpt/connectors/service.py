@@ -214,7 +214,8 @@ def catalog_for_user(conn, user_id: str, *, is_admin: bool, policies: Optional[d
             else only learns that setup is needed.
         policies: ``connector_key`` to policy row, when admin policies exist.
     """
-    policies = policies or {}
+    if policies is None:
+        policies = load_policies(conn)
     by_key: dict[str, list[str]] = {}
     for connection in list_connections(conn, user_id):
         by_key.setdefault(connection["connector_key"], []).append(connection["status"])
@@ -686,6 +687,7 @@ def create_api_key_connection(
     else:
         credentials = {k: v for k, v in credentials.items() if v not in (None, "")}
     ensure_can_store_credentials()
+    ensure_connector_allowed(conn, definition.key)
     secret_values = {k: v for k, v in credentials.items() if (fields.get(k).secret if fields.get(k) else True)}
     account_label = label or credential_hint(secret_values or credentials)
     repo = ConnectorSessionsRepository(conn)
@@ -736,6 +738,7 @@ def begin_oauth(conn, user_id: str, provider: str, connection_id: Optional[str] 
         if row is None or row.get("provider") != provider:
             raise ConnectionUnavailable("Connection not found", connection_id=connection_id, status="missing")
         return row
+    ensure_connector_allowed(conn, provider)
     definition = catalog.get_definition(provider)
     result = conn.execute(
         text(
@@ -1168,3 +1171,51 @@ def reencrypt_all(batch_size: int = 500) -> dict:
     for connection_id in failed_ids:
         mark_reconnect_needed(connection_id, DECRYPT_ERROR)
     return counts
+
+
+# ---------------------------------------------------------------------------
+# Admin policy
+# ---------------------------------------------------------------------------
+
+
+class ConnectorDisabled(Exception):
+    """An admin turned this connector (or custom MCP servers) off."""
+
+
+def custom_mcp_allowed(conn) -> bool:
+    """The instance-wide "Allow custom MCP servers" switch (on unless turned off)."""
+    from docsgpt.storage.db.repositories.app_metadata import AppMetadataRepository
+    from docsgpt.storage.db.repositories.connector_policies import ALLOW_CUSTOM_MCP_KEY
+
+    return AppMetadataRepository(conn).get(ALLOW_CUSTOM_MCP_KEY) != "false"
+
+
+def load_policies(conn) -> dict[str, dict]:
+    """Every connector's policy, with custom MCP folded in from its switch."""
+    from docsgpt.storage.db.repositories.connector_policies import ConnectorPoliciesRepository
+
+    policies = dict(ConnectorPoliciesRepository(conn).all())
+    if not custom_mcp_allowed(conn):
+        policies["custom_mcp"] = {**policies.get("custom_mcp", {}), "enabled": False}
+    return policies
+
+
+def ensure_connector_allowed(conn, connector_key: Optional[str]) -> None:
+    """Refuse a new connection to a connector an admin turned off.
+
+    Raises:
+        ConnectorDisabled: The connector, or custom MCP servers, are off.
+    """
+    if not connector_key:
+        return
+    policy = load_policies(conn).get(connector_key) or {}
+    if policy.get("enabled") is False:
+        raise ConnectorDisabled(f"{connector_key} is turned off by an admin")
+
+
+def forced_credential_mode(conn, connector_key: Optional[str]) -> Optional[str]:
+    """``owner`` or ``member`` when an admin forces one for this connector."""
+    if not connector_key:
+        return None
+    mode = (load_policies(conn).get(connector_key) or {}).get("credential_mode")
+    return mode if mode in ("owner", "member") else None

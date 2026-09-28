@@ -470,6 +470,8 @@ def _create_connected_tool(user, data, definition, tool_instance):
             )
     except connection_service.EncryptionKeyNotConfigured:
         return None
+    except connection_service.ConnectorDisabled as err:
+        return make_response(jsonify({"success": False, "message": str(err)}), 403)
     except ValueError as err:
         return make_response(jsonify({"success": False, "message": str(err)}), 400)
     return make_response(jsonify({"id": str(created["id"]), "connection_id": str(connection["id"])}), 200)

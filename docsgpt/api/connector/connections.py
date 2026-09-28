@@ -97,6 +97,8 @@ class ConnectionsList(Resource):
                 )
         except service.EncryptionKeyNotConfigured as err:
             return _error(str(err), 400, code="encryption_key_default")
+        except service.ConnectorDisabled as err:
+            return _error(str(err), 403, code="disabled")
         except ValueError as err:
             return _error(str(err), 400)
         except Exception as err:
@@ -448,3 +450,36 @@ class ConnectionRefreshTools(Resource):
             current_app.logger.error(f"Error refreshing MCP tools: {err}", exc_info=True)
             return _error("Failed to refresh tools", 502)
         return make_response(jsonify({"success": True, **diff}), 200)
+
+
+@connections_ns.route("/connections/tools/<string:tool_id>/credential-mode")
+class ToolCredentialMode(Resource):
+    @api.doc(
+        description=(
+            "Whose account a shared connection-backed tool uses: {mode: owner | member}. "
+            "Owner only; refused when an admin forces a mode for the connector."
+        )
+    )
+    def put(self, tool_id: str):
+        from docsgpt.connectors.resolve import MODE_MEMBER, MODE_OWNER
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        user_id = _user_id()
+        if not user_id:
+            return _unauthorized()
+        mode = _json_body().get("mode")
+        if mode not in (MODE_OWNER, MODE_MEMBER):
+            return _error("mode must be owner or member", 400)
+        with db_session() as conn:
+            tools = UserToolsRepository(conn)
+            tool = tools.get_any(tool_id, user_id)
+            if tool is None or tool.get("user_id") != user_id or not tool.get("connection_id"):
+                return _error("Tool not found", 404)
+            connection = ConnectorSessionsRepository(conn).get(str(tool["connection_id"]))
+            forced = service.forced_credential_mode(
+                conn, catalog.connector_key_for_row(connection) if connection else None,
+            )
+            if forced and forced != mode:
+                return _error("An admin sets this for every share", 409, code="forced", mode=forced)
+            tools.update(str(tool["id"]), user_id, {"credential_mode": mode})
+        return make_response(jsonify({"success": True, "mode": mode}), 200)

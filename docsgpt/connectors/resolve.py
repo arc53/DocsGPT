@@ -76,6 +76,11 @@ def resolve_connection(resource: dict, invoker_user_id: Optional[str]) -> Option
     with db_readonly() as conn:
         repo = ConnectorSessionsRepository(conn)
         owned = repo.get(str(connection_id))
+        owned_key = catalog.connector_key_for_row(owned) if owned else None
+        policy = service.load_policies(conn).get(owned_key) or {} if owned_key else {}
+        if policy.get("credential_mode") in (MODE_OWNER, MODE_MEMBER):
+            # An admin forces whose account every share of this connector uses.
+            mode = policy["credential_mode"]
         if owned is not None and owner and owned.get("user_id") != owner:
             # A resource may only point at its own owner's connection.
             logger.warning(
@@ -86,7 +91,11 @@ def resolve_connection(resource: dict, invoker_user_id: Optional[str]) -> Option
         if mode == MODE_MEMBER and invoker_user_id and invoker_user_id != owner:
             row = _member_connection(repo, owned, invoker_user_id)
     key = catalog.connector_key_for_row(row or owned or {})
-    available = row is not None and service.normalize_status(row) == service.STATUS_CONNECTED
+    available = (
+        row is not None
+        and service.normalize_status(row) == service.STATUS_CONNECTED
+        and policy.get("enabled") is not False
+    )
     return ResolvedConnection(
         row=row,
         available=available,

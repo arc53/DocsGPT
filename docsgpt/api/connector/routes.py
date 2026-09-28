@@ -222,6 +222,8 @@ class ConnectorAuth(Resource):
                 )
             except service.ConnectionUnavailable:
                 return make_response(jsonify({"success": False, "error": "Connection not found"}), 404)
+            except service.ConnectorDisabled as err:
+                return make_response(jsonify({"success": False, "error": str(err), "code": "disabled"}), 403)
             # The popup drops results for origins outside the allowlist, which the
             # user only sees as a cancelled sign-in; name the missing origin here.
             request_origin = _origin_of(request.headers.get("Origin"))

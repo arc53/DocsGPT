@@ -932,6 +932,14 @@ class ToolExecutor:
                 or require_approval
             )
 
+        # A member running someone else's account (a shared tool in owner
+        # mode) always confirms write actions, whatever the owner chose for
+        # themselves.
+        if not require_approval and resolved is not None and resolved.delegated:
+            from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
+
+            require_approval = action_access(tool_data.get("name"), action_data) == ACCESS_WRITE
+
         if require_approval:
             if self.headless:
                 tool_row_id = str(tool_data.get("id") or tool_id)
@@ -1286,6 +1294,12 @@ class ToolExecutor:
             "arguments": call_args,
         }
         tool_data = tools_dict[tool_id]
+        # Name the service a connection-backed tool used, so the chip can show
+        # its logo ("Searched Notion"). Never the account behind it.
+        resolved = self._resolve_connection(tool_data)
+        if resolved is not None and resolved.connector_key:
+            tool_call_data["connector_key"] = resolved.connector_key
+            tool_call_data["connector_name"] = resolved.connector_name
         # Surface the device id on remote_device tool-call events so the
         # approval UI can wire up the sticky "don't ask again" button.
         if tool_data.get("name") == "remote_device":
@@ -1330,6 +1344,11 @@ class ToolExecutor:
             if tool_data["name"] == "api_tool"
             else next(action for action in tool_data["actions"] if action["name"] == action_name)
         )
+
+        if "connector_key" in tool_call_data:
+            from docsgpt.connectors.permissions import action_access
+
+            tool_call_data["access"] = action_access(tool_data.get("name"), action_data)
 
         query_params, headers, body, parameters = {}, {}, {}, {}
         param_types = {

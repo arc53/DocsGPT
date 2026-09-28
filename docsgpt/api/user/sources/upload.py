@@ -482,6 +482,8 @@ def _remote_credentials(user, source, config):
     try:
         with db_session() as conn:
             row, _ = service.create_api_key_connection(conn, user, definition, provided)
+    except service.ConnectorDisabled as err:
+        return None, None, make_response(jsonify({"success": False, "error": str(err)}), 403)
     except (service.EncryptionKeyNotConfigured, ValueError):
         return config, None, None
     return public, str(row["id"]), None
