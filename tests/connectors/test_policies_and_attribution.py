@@ -108,6 +108,8 @@ class TestAdminPolicies:
             {"name": "GOOGLE_CLIENT_ID", "set": True}, {"name": "GOOGLE_CLIENT_SECRET", "set": False},
         ]
         assert drive["connection_count"] == 1
+        # Sync-only: the page shows no sharing policy for it.
+        assert drive["capabilities"] == ["sync"]
         assert "secret-client-id" not in json.dumps(payload)
         assert payload["allow_custom_mcp"] is True
 

@@ -70,6 +70,7 @@ class AdminConnectorsResource(Resource):
                     "category": definition.category,
                     "publisher": definition.publisher,
                     "auth_kind": definition.auth_kind,
+                    "capabilities": list(definition.capabilities),
                     "enabled": service.connector_is_enabled(policies, definition.key),
                     "credential_mode": policy.get("credential_mode", "choose"),
                     "configured": definition.configured,

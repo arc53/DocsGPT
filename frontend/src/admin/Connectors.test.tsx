@@ -30,6 +30,7 @@ const connector = (overrides: Record<string, unknown> = {}) => ({
   icon: 'google-drive',
   publisher: 'built_in',
   auth_kind: 'oauth',
+  capabilities: ['sync'],
   enabled: true,
   credential_mode: 'choose',
   configured: false,
@@ -43,6 +44,29 @@ const connector = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const MCP_ROW = connector({
+  key: 'custom_mcp',
+  name: 'MCP server',
+  icon: 'mcp',
+  publisher: 'custom',
+  auth_kind: 'mcp',
+  capabilities: ['read', 'write'],
+  configured: true,
+  required_settings: [],
+  connection_count: 0,
+});
+const NOTION = {
+  key: 'mcp_notion',
+  name: 'Notion',
+  icon: 'notion',
+  publisher: 'preset',
+  auth_kind: 'mcp_oauth',
+  capabilities: ['read', 'write'],
+  configured: true,
+  required_settings: [],
+  connection_count: 0,
+};
+
 const payload = (overrides: Record<string, unknown> = {}) => ({
   success: true,
   connectors: [
@@ -53,10 +77,12 @@ const payload = (overrides: Record<string, unknown> = {}) => ({
       icon: 'notion',
       publisher: 'preset',
       auth_kind: 'mcp_oauth',
+      capabilities: ['read', 'write'],
       configured: true,
       required_settings: [],
       connection_count: 0,
     }),
+    MCP_ROW,
   ],
   allow_custom_mcp: true,
   default_encryption_key: false,
@@ -106,7 +132,7 @@ describe('Admin Connectors', () => {
     getAdmin.mockResolvedValue(payload());
     await render();
     const rows = Array.from(container.querySelectorAll('tbody tr'));
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows[0].textContent).toContain('Google Drive');
     expect(rows[0].textContent).toContain('Needs setup');
     expect(rows[0].textContent).toContain('Setup guide');
@@ -130,24 +156,74 @@ describe('Admin Connectors', () => {
   it('saves a connector toggle as a policy', async () => {
     getAdmin.mockResolvedValue(payload());
     updateAdmin.mockResolvedValue(
-      payload({
-        connectors: [connector({ enabled: false })],
-      }),
+      payload({ connectors: [connector({ ...NOTION, enabled: false })] }),
     );
     await render();
-    const toggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Google Drive enabled"]',
-    )!;
-    await act(async () => toggle.click());
+    const toggle = () =>
+      container.querySelector<HTMLButtonElement>(
+        'table [aria-label="Notion enabled"]',
+      )!;
+    await act(async () => toggle().click());
     expect(updateAdmin).toHaveBeenCalledWith(
-      { policies: { google_drive: { enabled: false } } },
+      { policies: { mcp_notion: { enabled: false } } },
       null,
     );
+    expect(toggle().getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('keeps a connector that needs setup off, and says why', async () => {
+    getAdmin.mockResolvedValue(payload());
+    await render();
+    const drive = container.querySelector<HTMLButtonElement>(
+      'table [aria-label="Google Drive enabled"]',
+    )!;
+    expect(drive.disabled).toBe(true);
+  });
+
+  it('shows no sharing policy for a sync-only connector', async () => {
+    getAdmin.mockResolvedValue(payload());
+    await render();
+    const [drive, notion] = Array.from(container.querySelectorAll('tbody tr'));
+    expect(drive.textContent).toContain('No tools');
     expect(
-      container
-        .querySelector('[aria-label="Google Drive enabled"]')
-        ?.getAttribute('aria-checked'),
-    ).toBe('false');
+      notion.querySelector('[aria-label="Notion sharing policy"]'),
+    ).not.toBeNull();
+  });
+
+  it('turns custom MCP servers off from their own row', async () => {
+    getAdmin.mockResolvedValue(payload());
+    updateAdmin.mockResolvedValue(payload({ allow_custom_mcp: false }));
+    await render();
+    const mcp = () =>
+      container.querySelector<HTMLButtonElement>(
+        'table [aria-label="MCP server enabled"]',
+      )!;
+    await act(async () => mcp().click());
+    expect(updateAdmin).toHaveBeenCalledWith(
+      { allow_custom_mcp: false, policies: { custom_mcp: { enabled: false } } },
+      null,
+    );
+    expect(mcp().getAttribute('aria-checked')).toBe('false');
+    expect(container.querySelector('#allow-custom-mcp')).toBeNull();
+  });
+
+  it('lists connectors on phones and opens their controls in a sheet', async () => {
+    getAdmin.mockResolvedValue(payload());
+    await render();
+    const rows = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="list-row"] button',
+      ),
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows[0].textContent).toContain(
+      'Needs setup · 3 connections · No tools',
+    );
+    await act(async () => rows[1].click());
+    expect(
+      document.body.querySelector('[data-slot="sheet-content"]'),
+    ).not.toBeNull();
+    expect(document.body.textContent).toContain('Shared tools use');
   });
 
   it('reports a failed save in a toast and keeps the page', async () => {
@@ -155,14 +231,21 @@ describe('Admin Connectors', () => {
     updateAdmin.mockResolvedValue({ success: false });
     await render();
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('#allow-custom-mcp')!.click(),
+      container
+        .querySelector<HTMLButtonElement>(
+          'table [aria-label="Notion enabled"]',
+        )!
+        .click(),
     );
-    expect(updateAdmin).toHaveBeenCalledWith({ allow_custom_mcp: false }, null);
+    expect(updateAdmin).toHaveBeenCalledWith(
+      { policies: { mcp_notion: { enabled: false } } },
+      null,
+    );
     expect(selectActionToast(store.getState())).toMatchObject({
       variant: 'destructive',
       message: 'Could not save the change.',
     });
-    expect(container.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(3);
   });
 
   it('saves one change at a time so a late response cannot win', async () => {
@@ -172,34 +255,28 @@ describe('Admin Connectors', () => {
       () => new Promise((resolve) => pending.push(resolve)),
     );
     await render();
-    const toggle = () =>
+    const notion = () =>
       container.querySelector<HTMLButtonElement>(
-        '[aria-label="Google Drive enabled"]',
+        'table [aria-label="Notion enabled"]',
       )!;
-    await act(async () => toggle().click());
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('#allow-custom-mcp')!.click(),
-    );
+    const mcp = () =>
+      container.querySelector<HTMLButtonElement>(
+        'table [aria-label="MCP server enabled"]',
+      )!;
+    await act(async () => notion().click());
+    await act(async () => mcp().click());
     // The second save waits for the first.
     expect(updateAdmin).toHaveBeenCalledTimes(1);
-    await act(async () =>
-      pending[0](payload({ connectors: [connector({ enabled: false })] })),
-    );
+    const off = connector({ ...NOTION, enabled: false });
+    await act(async () => pending[0](payload({ connectors: [off, MCP_ROW] })));
     expect(updateAdmin).toHaveBeenCalledTimes(2);
     await act(async () =>
       pending[1](
-        payload({
-          connectors: [connector({ enabled: false })],
-          allow_custom_mcp: false,
-        }),
+        payload({ connectors: [off, MCP_ROW], allow_custom_mcp: false }),
       ),
     );
-    expect(toggle().getAttribute('aria-checked')).toBe('false');
-    expect(
-      container
-        .querySelector('#allow-custom-mcp')!
-        .getAttribute('aria-checked'),
-    ).toBe('false');
+    expect(notion().getAttribute('aria-checked')).toBe('false');
+    expect(mcp().getAttribute('aria-checked')).toBe('false');
   });
 
   it('offers a retry when loading fails', async () => {

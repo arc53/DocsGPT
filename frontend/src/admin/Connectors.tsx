@@ -9,6 +9,14 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
+import { FormField } from '../components/ui/form-field';
+import { ListRow, ListRows } from '../components/ui/list-row';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from '../components/ui/sheet';
 import {
   DescriptionItem,
   DescriptionList,
@@ -34,6 +42,11 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -47,6 +60,7 @@ type AdminConnector = {
   icon: string;
   publisher: 'built_in' | 'preset' | 'custom';
   auth_kind: string;
+  capabilities: string[];
   enabled: boolean;
   credential_mode: Policy;
   configured: boolean;
@@ -66,10 +80,13 @@ type AdminConnectorsData = {
 };
 
 const POLICY_LABELS: Record<Policy, string> = {
-  choose: 'Let owners choose',
-  member: "Always each member's own account",
-  owner: "Always the owner's account",
+  choose: 'The sharer decides per share',
+  member: "Always each person's own account",
+  owner: "Always the sharer's account",
 };
+
+const hasTools = (connector: AdminConnector) =>
+  connector.capabilities.some((capability) => capability !== 'sync');
 
 function CodeRow({ value }: { value: string }) {
   return (
@@ -161,6 +178,7 @@ export default function Connectors() {
   const [data, setData] = useState<AdminConnectorsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [guide, setGuide] = useState<AdminConnector | null>(null);
+  const [detailKey, setDetailKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -207,6 +225,94 @@ export default function Connectors() {
   if (!data?.success)
     return <LoadError message="Failed to load connectors." onRetry={load} />;
 
+  // The sheet (phones) always shows the connector's latest saved state.
+  const detail = data.connectors.find((c) => c.key === detailKey) ?? null;
+
+  // The custom MCP row is the one switch for members' own MCP servers.
+  const isCustomMcp = (connector: AdminConnector) =>
+    connector.key === 'custom_mcp';
+  const enabledOf = (connector: AdminConnector) =>
+    connector.enabled && (!isCustomMcp(connector) || data.allow_custom_mcp);
+  const setEnabled = (connector: AdminConnector, on: boolean) =>
+    save(
+      isCustomMcp(connector)
+        ? { allow_custom_mcp: on, policies: { custom_mcp: { enabled: on } } }
+        : { policies: { [connector.key]: { enabled: on } } },
+    );
+
+  const statusBadge = (connector: AdminConnector) => (
+    <Badge variant={connector.configured ? 'success' : 'warning'}>
+      {connector.configured ? 'Ready' : 'Needs setup'}
+    </Badge>
+  );
+
+  const summary = (connector: AdminConnector) =>
+    [
+      !connector.configured
+        ? 'Needs setup'
+        : enabledOf(connector)
+          ? 'On'
+          : 'Off',
+      `${fmtNumber(connector.connection_count)} ${
+        connector.connection_count === 1 ? 'connection' : 'connections'
+      }`,
+      hasTools(connector)
+        ? POLICY_LABELS[connector.credential_mode]
+        : 'No tools',
+    ].join(' · ');
+
+  const enabledSwitch = (connector: AdminConnector) => {
+    const control = (
+      <Switch
+        checked={enabledOf(connector)}
+        disabled={!connector.configured}
+        aria-label={`${connector.name} enabled`}
+        onCheckedChange={(checked) => setEnabled(connector, checked === true)}
+      />
+    );
+    // Off until its server settings exist: switching it on would do nothing.
+    if (connector.configured) return control;
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span tabIndex={0} className="inline-flex w-fit">
+            {control}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>Add its server settings first</TooltipContent>
+      </Tooltip>
+    );
+  };
+
+  const policyControl = (connector: AdminConnector, fullWidth = false) =>
+    hasTools(connector) ? (
+      <Select
+        value={connector.credential_mode}
+        onValueChange={(value) =>
+          save({
+            policies: { [connector.key]: { credential_mode: value as Policy } },
+          })
+        }
+      >
+        <SelectTrigger
+          size="sm"
+          className={fullWidth ? 'w-full' : 'w-60'}
+          aria-label={`${connector.name} sharing policy`}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(POLICY_LABELS) as Policy[]).map((policy) => (
+            <SelectItem key={policy} value={policy}>
+              {POLICY_LABELS[policy]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    ) : (
+      <span className="text-muted-foreground text-sm">No tools</span>
+    );
+
   return (
     <div className="flex flex-col gap-8">
       <PageToolbar intro="Choose which connectors members can use and whose account a shared tool runs with. A connector that still needs server settings starts turned off and is hidden from members; it turns on once its settings are in place, unless you switch it off." />
@@ -229,22 +335,6 @@ export default function Connectors() {
         </Alert>
       )}
 
-      <SettingRows>
-        <SettingRow
-          label="Allow custom MCP servers"
-          description="Members can connect any remote MCP server. Presets are controlled one by one below."
-          htmlFor="allow-custom-mcp"
-        >
-          <Switch
-            id="allow-custom-mcp"
-            checked={data.allow_custom_mcp}
-            onCheckedChange={(checked) =>
-              save({ allow_custom_mcp: checked === true })
-            }
-          />
-        </SettingRow>
-      </SettingRows>
-
       <section className="flex flex-col gap-3">
         <SectionHeader
           title="Redirect URIs"
@@ -265,8 +355,37 @@ export default function Connectors() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <SectionHeader title="Connectors" />
-        <TableContainer>
+        <SectionHeader
+          title="Connectors"
+          description="The custom MCP server row decides whether members can add their own MCP servers; presets are switched one by one."
+        />
+        {/* Phones: a list; each row opens the connector's controls. */}
+        <Card padding="none" className="overflow-hidden md:hidden">
+          <ListRows>
+            {data.connectors.map((connector) => (
+              <ListRow
+                key={connector.key}
+                interactive
+                asChild
+                leading={
+                  <ConnectorIcon
+                    icon={connector.icon}
+                    className="size-5 shrink-0"
+                  />
+                }
+                title={connector.name}
+                description={summary(connector)}
+                trailing={statusBadge(connector)}
+              >
+                <button
+                  type="button"
+                  onClick={() => setDetailKey(connector.key)}
+                />
+              </ListRow>
+            ))}
+          </ListRows>
+        </Card>
+        <TableContainer className="hidden md:block">
           <Table>
             <TableHead>
               <TableRow>
@@ -297,60 +416,12 @@ export default function Connectors() {
                       )}
                     </span>
                   </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={connector.configured ? 'success' : 'warning'}
-                    >
-                      {connector.configured ? 'Ready' : 'Needs setup'}
-                    </Badge>
-                  </TableCell>
+                  <TableCell>{statusBadge(connector)}</TableCell>
                   <TableCell align="right" className="tabular-nums">
                     {fmtNumber(connector.connection_count)}
                   </TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={connector.enabled}
-                      aria-label={`${connector.name} enabled`}
-                      onCheckedChange={(checked) =>
-                        save({
-                          policies: {
-                            [connector.key]: { enabled: checked === true },
-                          },
-                        })
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Select
-                      value={connector.credential_mode}
-                      onValueChange={(value) =>
-                        save({
-                          policies: {
-                            [connector.key]: {
-                              credential_mode: value as Policy,
-                            },
-                          },
-                        })
-                      }
-                    >
-                      <SelectTrigger
-                        size="sm"
-                        className="w-60"
-                        aria-label={`${connector.name} sharing policy`}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(Object.keys(POLICY_LABELS) as Policy[]).map(
-                          (policy) => (
-                            <SelectItem key={policy} value={policy}>
-                              {POLICY_LABELS[policy]}
-                            </SelectItem>
-                          ),
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
+                  <TableCell>{enabledSwitch(connector)}</TableCell>
+                  <TableCell>{policyControl(connector)}</TableCell>
                   <TableCell align="right">
                     {connector.required_settings.length > 0 && (
                       <Button
@@ -369,6 +440,49 @@ export default function Connectors() {
           </Table>
         </TableContainer>
       </section>
+
+      {detail && (
+        <Sheet open onOpenChange={(open) => !open && setDetailKey(null)}>
+          <SheetContent side="right" size="detail" closeLabel="Close">
+            <div className="flex flex-col gap-6 p-6">
+              <div className="flex items-center gap-3 pr-12">
+                <ConnectorIcon icon={detail.icon} className="size-7" />
+                <SheetTitle className="truncate">{detail.name}</SheetTitle>
+              </div>
+              <SheetDescription>{summary(detail)}</SheetDescription>
+              <SettingRows>
+                <SettingRow
+                  label="Enabled"
+                  description={
+                    detail.configured
+                      ? 'Members can connect and use it.'
+                      : 'Add its server settings first (Setup guide).'
+                  }
+                >
+                  {enabledSwitch(detail)}
+                </SettingRow>
+              </SettingRows>
+              {hasTools(detail) && (
+                <FormField label="Shared tools use">
+                  {policyControl(detail, true)}
+                </FormField>
+              )}
+              {detail.required_settings.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  className="w-fit"
+                  onClick={() => setGuide(detail)}
+                >
+                  Setup guide
+                </Button>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
 
       {guide && (
         <SetupGuide

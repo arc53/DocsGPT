@@ -50,11 +50,11 @@ Tool calls name the service that ran them: "Searched Notion", "Read from Google 
 Admins manage connectors in **Admin > Connectors**. It lists every connector with its status, how many connections use it, and:
 
 - **Enabled** turns a connector off for everyone. Members no longer see it (except to manage a connection they already have), its tools stop working, and its sources stop syncing until you turn it back on. Existing connections are kept.
-- **Shared tools use** is **Let owners choose** (default), **Always the owner's account** or **Always each member's own account**.
-- **Allow custom MCP servers** controls whether members can add their own MCP servers. Presets are enabled one by one.
+- **Shared tools use** is **The sharer decides per share** (default), **Always the sharer's account** or **Always each person's own account**. Connectors that only sync content have no tools and show **No tools**.
+- The **MCP server** row decides whether members can add their own MCP servers. Presets are switched one by one.
 - **Setup guide** on an OAuth connector shows the redirect URI to register and which server settings are still missing.
 
-A connector that still needs server settings starts turned off and is hidden from members. It turns on once its settings are present, unless you switched it off; switching it on before then has no effect for members.
+A connector that still needs server settings starts turned off and is hidden from members; its switch stays disabled until the settings are present. It turns on once they are, unless you switched it off. On a phone, the page lists the connectors and opens each one's controls in a panel.
 
 ### Encryption key
 
