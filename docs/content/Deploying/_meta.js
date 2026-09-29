@@ -7,6 +7,10 @@ export default {
     "title": "📖 Settings Reference",
     "href": "/Deploying/Settings-Reference"
   },
+  "Security": {
+    "title": "🛡️ Security Checklist",
+    "href": "/Deploying/Security"
+  },
   "OIDC-SSO": {
     "title": "🔐 SSO with OIDC",
     "href": "/Deploying/OIDC-SSO"
