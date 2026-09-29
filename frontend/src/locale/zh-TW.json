@@ -2409,13 +2409,25 @@
           "shareAgain": "請 {{person}} 重新分享。",
           "signInAgain": "請 {{person}} 重新登入。",
           "connectAgain": "請 {{person}} 重新連接該帳戶。",
-          "admin": "請管理員重新開啟。"
+          "admin": "請管理員重新開啟。",
+          "shareAgainOwner": "請其擁有者重新分享。",
+          "signInAgainOwner": "請其擁有者重新登入。",
+          "connectAgainOwner": "請其擁有者重新連接該帳戶。"
         },
         "promptFallback": "在此之前，代理會使用預設提示詞。",
         "serviceFallback": "該服務",
         "remove": "移除",
         "removeLabel": "移除 {{name}}",
-        "reconnectLabel": "重新連接 {{name}}"
+        "reconnectLabel": "重新連接 {{name}}",
+        "unnamed": {
+          "tool": "工具 {{id}}",
+          "source": "來源 {{id}}",
+          "prompt": "提示詞 {{id}}"
+        },
+        "note": {
+          "perUserAccount": "每個人使用自己的帳戶"
+        },
+        "chip": "未在執行：{{count}}"
       },
       "sponsorConfirm": {
         "title": "以你的存取權限執行？",

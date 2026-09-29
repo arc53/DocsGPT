@@ -2409,13 +2409,25 @@
           "shareAgain": "{{person}} に再度共有するよう依頼してください。",
           "signInAgain": "{{person}} に再度サインインするよう依頼してください。",
           "connectAgain": "{{person}} にアカウントを再接続するよう依頼してください。",
-          "admin": "管理者にオンに戻すよう依頼してください。"
+          "admin": "管理者にオンに戻すよう依頼してください。",
+          "shareAgainOwner": "所有者に再度共有するよう依頼してください。",
+          "signInAgainOwner": "所有者に再度サインインするよう依頼してください。",
+          "connectAgainOwner": "所有者にアカウントを再接続するよう依頼してください。"
         },
         "promptFallback": "それまでエージェントはデフォルトのプロンプトを使用します。",
         "serviceFallback": "サービス",
         "remove": "削除",
         "removeLabel": "{{name}} を削除",
-        "reconnectLabel": "{{name}} を再接続"
+        "reconnectLabel": "{{name}} を再接続",
+        "unnamed": {
+          "tool": "ツール {{id}}",
+          "source": "ソース {{id}}",
+          "prompt": "プロンプト {{id}}"
+        },
+        "note": {
+          "perUserAccount": "各自が自分のアカウントを使用します"
+        },
+        "chip": "実行されていません: {{count}}"
       },
       "sponsorConfirm": {
         "title": "あなたのアクセス権で実行しますか？",

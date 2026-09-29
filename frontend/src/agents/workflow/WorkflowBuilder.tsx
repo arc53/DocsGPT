@@ -58,7 +58,9 @@ import {
 import { useSponsorPrompt } from '../useSponsorPrompt';
 import ResourceStatusNotice, {
   type NamedResource,
+  unnamedResourceLabel,
 } from '../components/ResourceStatusNotice';
+import FloatingResourceNotice from './components/FloatingResourceNotice';
 import { useSignInAgain } from '../../connectors/SignInAgainNotice';
 import WorkflowDetailsSheet, {
   type WorkflowDetailsSave,
@@ -255,7 +257,6 @@ function WorkflowBuilderInner() {
   // Keys of stopped node resources the caller agreed to run with their
   // access; sent as ``confirm_sponsor`` with the next save.
   const [takeovers, setTakeovers] = useState<string[]>([]);
-  const [resourceNoticeOpen, setResourceNoticeOpen] = useState(true);
   // Bumped after a reconnect so the run state is read again.
   const [resourcesReloadKey, setResourcesReloadKey] = useState(0);
   const signInAgain = useSignInAgain({
@@ -1694,7 +1695,7 @@ function WorkflowBuilderInner() {
       const known = (
         item.type === 'tool' ? nodeRefNames.tools : nodeRefNames.sources
       ).find((entry) => entry.id.toLowerCase() === item.id)?.label;
-      return known || t('agents.form.sponsors.unknownItem');
+      return known || unnamedResourceLabel(t, item);
     },
     [nodeRefNames, t],
   );
@@ -1751,7 +1752,6 @@ function WorkflowBuilderInner() {
   );
   const showResourceNotice =
     canManageAgent &&
-    resourceNoticeOpen &&
     (stoppedResources.length > 0 ||
       workflowResources.sponsors.some((sponsor) => sponsor.active));
 
@@ -2009,32 +2009,21 @@ function WorkflowBuilderInner() {
             className="bg-muted relative min-w-0 flex-1"
           >
             {showResourceNotice && (
-              <div className="bg-card absolute top-4 left-4 z-20 max-h-[60%] w-full max-w-md overflow-y-auto rounded-xl shadow-md">
-                <div className="relative p-3 pr-10">
-                  <ResourceStatusNotice
-                    agent={resourceNoticeAgent}
-                    stopped={stoppedResources}
-                    resolveName={resolveResourceName}
-                    takeovers={takeovers}
-                    showAttachNote={false}
-                    onTakeOver={(item) => void takeOverResource(item)}
-                    onUndoTakeover={(key) =>
-                      setTakeovers((prev) => prev.filter((k) => k !== key))
-                    }
-                    onRemove={removeResource}
-                    onReconnect={reconnectResource}
-                  />
-                  <div className="absolute top-2.5 right-2.5">
-                    <IconButton
-                      variant="ghost"
-                      size="icon-xs"
-                      onClick={() => setResourceNoticeOpen(false)}
-                      label={t('agents.close')}
-                      icon={X}
-                    />
-                  </div>
-                </div>
-              </div>
+              <FloatingResourceNotice stoppedCount={stoppedResources.length}>
+                <ResourceStatusNotice
+                  agent={resourceNoticeAgent}
+                  stopped={stoppedResources}
+                  resolveName={resolveResourceName}
+                  takeovers={takeovers}
+                  showAttachNote={false}
+                  onTakeOver={(item) => void takeOverResource(item)}
+                  onUndoTakeover={(key) =>
+                    setTakeovers((prev) => prev.filter((k) => k !== key))
+                  }
+                  onRemove={removeResource}
+                  onReconnect={reconnectResource}
+                />
+              </FloatingResourceNotice>
             )}
             <WorkflowModelsContext.Provider value={modelNames}>
               <ReactFlow

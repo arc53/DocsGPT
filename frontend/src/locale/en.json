@@ -2442,13 +2442,25 @@
           "shareAgain": "Ask {{person}} to share it again.",
           "signInAgain": "Ask {{person}} to sign in again.",
           "connectAgain": "Ask {{person}} to connect the account again.",
-          "admin": "Ask an admin to turn it back on."
+          "admin": "Ask an admin to turn it back on.",
+          "shareAgainOwner": "Ask its owner to share it again.",
+          "signInAgainOwner": "Ask its owner to sign in again.",
+          "connectAgainOwner": "Ask its owner to connect the account again."
         },
         "promptFallback": "The agent uses the default prompt until then.",
         "serviceFallback": "the service",
         "remove": "Remove",
         "removeLabel": "Remove {{name}}",
-        "reconnectLabel": "Reconnect {{name}}"
+        "reconnectLabel": "Reconnect {{name}}",
+        "unnamed": {
+          "tool": "Tool {{id}}",
+          "source": "Source {{id}}",
+          "prompt": "Prompt {{id}}"
+        },
+        "note": {
+          "perUserAccount": "Each person uses their own account"
+        },
+        "chip": "Not running: {{count}}"
       },
       "sponsorConfirm": {
         "title": "Run with your access?",

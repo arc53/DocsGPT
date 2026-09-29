@@ -5,7 +5,10 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import type { Agent, ResourceSponsor, ResourceState } from '../types';
-import ResourceStatusNotice from './ResourceStatusNotice';
+import ResourceStatusNotice, {
+  noteKey,
+  unnamedResourceLabel,
+} from './ResourceStatusNotice';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -228,6 +231,60 @@ describe('ResourceStatusNotice', () => {
     );
     expect(admin.textContent).toContain('agents.form.resourceStates.ask.admin');
     expect(deleted.textContent).not.toContain('agents.form.resourceStates.ask');
+  });
+
+  it("asks the item's owner without naming them when the reader may not know them", async () => {
+    await render(editorAgent, [
+      stoppedItem({
+        reason: 'owner_lost_access',
+        contact: null,
+        contact_role: 'resource_owner',
+      }),
+      stoppedItem({
+        key: 'tool:t2',
+        id: 't2',
+        reason: 'connection_needs_reconnect',
+        contact: null,
+        contact_role: 'resource_owner',
+      }),
+      stoppedItem({
+        key: 'tool:t3',
+        id: 't3',
+        reason: 'connection_removed',
+        contact: null,
+        contact_role: 'resource_owner',
+      }),
+    ]);
+    const [lost, reconnect, removed] = Array.from(
+      container.querySelectorAll('li'),
+    );
+    expect(lost.textContent).toContain(
+      'agents.form.resourceStates.ask.shareAgainOwner',
+    );
+    expect(reconnect.textContent).toContain(
+      'agents.form.resourceStates.ask.signInAgainOwner',
+    );
+    expect(removed.textContent).toContain(
+      'agents.form.resourceStates.ask.connectAgainOwner',
+    );
+  });
+
+  it('names a nameless item by its kind and a short id', () => {
+    const t = ((key: string, options?: Record<string, string>) =>
+      `${key}|${options?.id}`) as never;
+    expect(
+      unnamedResourceLabel(t, {
+        type: 'source',
+        id: '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0',
+      }),
+    ).toBe('agents.form.resourceStates.unnamed.source|0f1e2d3c');
+  });
+
+  it("has words for a tool on each person's own account", () => {
+    expect(noteKey('per_user_account')).toBe(
+      'agents.form.resourceStates.note.perUserAccount',
+    );
+    expect(noteKey(null)).toBeNull();
   });
 
   it('notes that a stopped prompt falls back to the default', async () => {

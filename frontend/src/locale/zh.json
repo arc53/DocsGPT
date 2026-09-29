@@ -2409,13 +2409,25 @@
           "shareAgain": "请让 {{person}} 重新共享。",
           "signInAgain": "请让 {{person}} 重新登录。",
           "connectAgain": "请让 {{person}} 重新连接该账户。",
-          "admin": "请让管理员重新开启。"
+          "admin": "请让管理员重新开启。",
+          "shareAgainOwner": "请让其所有者重新共享。",
+          "signInAgainOwner": "请让其所有者重新登录。",
+          "connectAgainOwner": "请让其所有者重新连接该账户。"
         },
         "promptFallback": "在此之前，智能体使用默认提示词。",
         "serviceFallback": "该服务",
         "remove": "移除",
         "removeLabel": "移除 {{name}}",
-        "reconnectLabel": "重新连接 {{name}}"
+        "reconnectLabel": "重新连接 {{name}}",
+        "unnamed": {
+          "tool": "工具 {{id}}",
+          "source": "来源 {{id}}",
+          "prompt": "提示词 {{id}}"
+        },
+        "note": {
+          "perUserAccount": "每个人使用自己的账户"
+        },
+        "chip": "未在运行：{{count}}"
       },
       "sponsorConfirm": {
         "title": "以你的访问权限运行？",

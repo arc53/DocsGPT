@@ -2424,13 +2424,25 @@
           "shareAgain": "Bitte {{person}}, es erneut zu teilen.",
           "signInAgain": "Bitte {{person}}, sich erneut anzumelden.",
           "connectAgain": "Bitte {{person}}, das Konto erneut zu verbinden.",
-          "admin": "Bitte einen Admin, es wieder zu aktivieren."
+          "admin": "Bitte einen Admin, es wieder zu aktivieren.",
+          "shareAgainOwner": "Bitte den Eigentümer, es erneut zu teilen.",
+          "signInAgainOwner": "Bitte den Eigentümer, sich erneut anzumelden.",
+          "connectAgainOwner": "Bitte den Eigentümer, das Konto erneut zu verbinden."
         },
         "promptFallback": "Bis dahin verwendet der Agent den Standard-Prompt.",
         "serviceFallback": "Dienst",
         "remove": "Entfernen",
         "removeLabel": "{{name}} entfernen",
-        "reconnectLabel": "{{name}} neu verbinden"
+        "reconnectLabel": "{{name}} neu verbinden",
+        "unnamed": {
+          "tool": "Tool {{id}}",
+          "source": "Quelle {{id}}",
+          "prompt": "Prompt {{id}}"
+        },
+        "note": {
+          "perUserAccount": "Jede Person verwendet ihr eigenes Konto"
+        },
+        "chip": "Läuft nicht: {{count}}"
       },
       "sponsorConfirm": {
         "title": "Mit deinem Zugriff ausführen?",

@@ -40,6 +40,9 @@ export type ResourceStateReason =
   | 'connection_removed'
   | 'connector_disabled';
 
+/** Something to know about an item that runs (`ResourceState.note`). */
+export type ResourceStateNote = 'per_user_account';
+
 /** A person the page names: their email when on file, else their user id. */
 export type ResourcePerson = { user_id: string; label: string };
 
@@ -57,11 +60,19 @@ export type ResourceState = {
   state: 'active' | 'stopped';
   /** Null while it runs. */
   reason: ResourceStateReason | null;
+  /** `per_user_account`: it runs on each person's own account. */
+  note?: ResourceStateNote | null;
   /** Who it ran with the access of, when someone else added it. */
   sponsor?: ResourcePerson | null;
-  /** Someone other than the reader who can fix it. */
+  /** Someone other than the reader who can fix it, when the reader may know them. */
   contact?: ResourcePerson | null;
-  /** The service of a connected tool, or of one a connection reason stopped. */
+  /** Who can fix it (`resource_owner`), named or not. */
+  contact_role?: 'resource_owner' | null;
+  /**
+   * The service of a connected tool, or of one a connection reason stopped.
+   * `id` only when the reader may reconnect
+   * it; the account's own name only for its owner.
+   */
   connection?: {
     id: string | null;
     connector_key: string | null;

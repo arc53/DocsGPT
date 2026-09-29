@@ -2424,13 +2424,25 @@
           "shareAgain": "Pide a {{person}} que lo vuelva a compartir.",
           "signInAgain": "Pide a {{person}} que vuelva a iniciar sesión.",
           "connectAgain": "Pide a {{person}} que vuelva a conectar la cuenta.",
-          "admin": "Pide a un administrador que lo vuelva a activar."
+          "admin": "Pide a un administrador que lo vuelva a activar.",
+          "shareAgainOwner": "Pide a su propietario que lo vuelva a compartir.",
+          "signInAgainOwner": "Pide a su propietario que vuelva a iniciar sesión.",
+          "connectAgainOwner": "Pide a su propietario que vuelva a conectar la cuenta."
         },
         "promptFallback": "Mientras tanto, el agente usa el prompt predeterminado.",
         "serviceFallback": "el servicio",
         "remove": "Quitar",
         "removeLabel": "Quitar {{name}}",
-        "reconnectLabel": "Reconectar {{name}}"
+        "reconnectLabel": "Reconectar {{name}}",
+        "unnamed": {
+          "tool": "Herramienta {{id}}",
+          "source": "Fuente {{id}}",
+          "prompt": "Prompt {{id}}"
+        },
+        "note": {
+          "perUserAccount": "Cada persona usa su propia cuenta"
+        },
+        "chip": "Sin ejecutar: {{count}}"
       },
       "sponsorConfirm": {
         "title": "¿Ejecutar con tu acceso?",

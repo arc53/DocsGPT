@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { Info, TriangleAlert, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -10,6 +11,7 @@ import type {
   Agent,
   ResourceSponsor,
   ResourceState,
+  ResourceStateNote,
   ResourceStateReason,
 } from '../types';
 
@@ -64,17 +66,43 @@ export function reasonKey(
   }
 }
 
-/** Whom to ask, as the key that says so; null when the reader can act. */
+/** The words for a running item's `note`, or null when it has none. */
+export function noteKey(note: ResourceStateNote | null | undefined) {
+  return note === 'per_user_account'
+    ? 'agents.form.resourceStates.note.perUserAccount'
+    : null;
+}
+
+/** A name for an item the reader may not see: its kind and a short id. */
+export function unnamedResourceLabel(
+  t: TFunction,
+  item: Pick<NamedResource, 'type' | 'id'>,
+): string {
+  return t(`agents.form.resourceStates.unnamed.${item.type}`, {
+    id: item.id.slice(0, 8),
+  });
+}
+
+/**
+ * Whom to ask, as the key that says so; null when the reader can act. The
+ * person is named when the read names them (`contact`), else only as the
+ * item's owner.
+ */
 function askKey(item: ResourceState): string | null {
   if (item.reason === 'connector_disabled')
     return 'agents.form.resourceStates.ask.admin';
-  if (!item.contact) return null;
+  const suffix = item.contact
+    ? ''
+    : item.contact_role === 'resource_owner'
+      ? 'Owner'
+      : null;
+  if (suffix === null) return null;
   if (item.reason === 'owner_lost_access')
-    return 'agents.form.resourceStates.ask.shareAgain';
+    return `agents.form.resourceStates.ask.shareAgain${suffix}`;
   if (item.reason === 'connection_needs_reconnect')
-    return 'agents.form.resourceStates.ask.signInAgain';
+    return `agents.form.resourceStates.ask.signInAgain${suffix}`;
   if (item.reason === 'connection_removed')
-    return 'agents.form.resourceStates.ask.connectAgain';
+    return `agents.form.resourceStates.ask.connectAgain${suffix}`;
   return null;
 }
 

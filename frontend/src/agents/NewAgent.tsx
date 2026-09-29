@@ -101,6 +101,7 @@ import AgentPreviewSheet from './components/AgentPreviewSheet';
 import SectionShell from '../navigation/SectionShell';
 import ResourceStatusNotice, {
   type NamedResource,
+  unnamedResourceLabel,
 } from './components/ResourceStatusNotice';
 import {
   confirmTakeOver,
@@ -332,13 +333,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         return (
           prompts.find((prompt) => prompt.id === sponsor.id)?.name ||
           agent.prompt_name ||
-          t('agents.form.sponsors.unknownItem')
+          unnamedResourceLabel(t, sponsor)
         );
       }
       const tool = selectedTools.find((item) => item.id === sponsor.id);
-      return tool
-        ? getToolDisplayName(tool)
-        : t('agents.form.sponsors.unknownItem');
+      return tool ? getToolDisplayName(tool) : unnamedResourceLabel(t, sponsor);
     },
     [agent.prompt_name, prompts, resolveSourceLabel, selectedTools, t],
   );
