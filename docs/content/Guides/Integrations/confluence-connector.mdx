@@ -22,7 +22,7 @@ Members connect this service from **Settings > Connectors**, and one sign-in ser
 
 1. Go to [developer.atlassian.com/console/myapps](https://developer.atlassian.com/console/myapps/) and click **Create** > **OAuth 2.0 integration**
 2. Under **Authorization**, add a callback URL:
-   - Local: `http://localhost:7091/api/connectors/callback`
+   - Local: `http://127.0.0.1:7091/api/connectors/callback` (the default `CONNECTOR_REDIRECT_BASE_URI`; Admin > Connectors shows the exact value to copy)
    - Production: `https://yourdomain.com/api/connectors/callback` (the value of `CONNECTOR_REDIRECT_BASE_URI`, registered as-is)
 
 ### Step 2: Configure Permissions
