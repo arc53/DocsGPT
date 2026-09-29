@@ -761,6 +761,25 @@
           "teams": "团队",
           "people": "人员",
           "editors": "编辑者"
+        },
+        "uses": {
+          "title": "此智能体使用的内容",
+          "intro": "使用此智能体的每个人都会用到这些内容，各自按所示的访问权限运行。",
+          "stopped": "已停止",
+          "writesOff": "API 不可更改",
+          "writesNote": "在你于 Access Details 中允许之前，API、小组件和公开链接的用户无法通过标记为“API 不可更改”的项目进行更改。",
+          "writesNoteEditor": "在所有者于 Access Details 中允许之前，API、小组件和公开链接的用户无法通过标记为“API 不可更改”的项目进行更改。",
+          "access": {
+            "you": "你的访问权限",
+            "person": "{{person}} 的访问权限",
+            "owner": "所有者的访问权限",
+            "member": "每个人自己的 {{service}} 账号",
+            "memberNoService": "每个人自己的账号",
+            "yourAccount": "你的 {{service}} 账号",
+            "yourAccountNoService": "你的账号",
+            "personAccount": "{{person}} 的 {{service}} 账号",
+            "personAccountNoService": "{{person}} 的账号"
+          }
         }
       },
       "memberCount_one": "{{formatted}} 名成员",
@@ -815,7 +834,7 @@
           "viewers_can_use_in_agents": {
             "label": "查看者可以在自己的代理中使用",
             "description": "它使用你的凭据运行。",
-            "descriptionMember": "每位成员使用自己的账号。"
+            "descriptionMember": "每个人使用自己的账号。"
           }
         },
         "prompt": {
@@ -1527,18 +1546,19 @@
         "defaultKey": "管理员必须先设置 ENCRYPTION_SECRET_KEY，才能连接服务。"
       },
       "sharing": {
-        "owner": "团队成员使用我的账号",
-        "member": "每位成员连接自己的账号",
-        "ownerShort": "我的账号",
-        "memberShort": "各自的账号"
+        "owner": "所有人使用你的账号",
+        "member": "每个人连接自己的账号",
+        "ownerShort": "你的账号",
+        "memberShort": "各自的账号",
+        "ownerShortShared": "所有者的账号"
       },
       "share": {
-        "heading": "团队成员使用谁的账号",
+        "heading": "使用谁的账号运行",
         "ownerWarning": "团队成员将在 {{name}} 中以 {{account}} 的身份操作。",
         "ownerWarningShared": "团队成员将以所有者的 {{name}} 账号操作。",
         "confirmWrite": "我了解团队成员可以使用我的账号执行操作。",
         "confirmWriteShared": "我了解团队成员可以使用所有者的 {{name}} 账号执行操作。",
-        "memberNote": "每位成员需先连接自己的 {{name}} 账号才能使用此工具。",
+        "memberNote": "每个人使用自己的 {{name}} 账号，并在首次使用此工具时连接。",
         "forced": "管理员已为此连接器的所有共享设定了此项。",
         "ownerChooses": "只有所有者可以更改此项。",
         "saveFailed": "无法保存更改。请重试。"

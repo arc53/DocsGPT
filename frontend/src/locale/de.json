@@ -762,6 +762,25 @@
           "teams": "Teams",
           "people": "Personen",
           "editors": "Bearbeiter"
+        },
+        "uses": {
+          "title": "Was dieser Agent nutzt",
+          "intro": "Alle, die diesen Agenten nutzen, erhalten diese Elemente, jeweils mit dem angezeigten Zugriff.",
+          "stopped": "Gestoppt",
+          "writesOff": "Keine API-Änderungen",
+          "writesNote": "API-, Widget- und Link-Nutzer können mit Elementen, die mit „Keine API-Änderungen“ markiert sind, nichts ändern, bis du es unter Zugangsdaten erlaubst.",
+          "writesNoteEditor": "API-, Widget- und Link-Nutzer können mit Elementen, die mit „Keine API-Änderungen“ markiert sind, nichts ändern, bis der Eigentümer es unter Zugangsdaten erlaubt.",
+          "access": {
+            "you": "Dein Zugriff",
+            "person": "Zugriff von {{person}}",
+            "owner": "Zugriff des Eigentümers",
+            "member": "Das eigene {{service}}-Konto jeder Person",
+            "memberNoService": "Das eigene Konto jeder Person",
+            "yourAccount": "Dein {{service}}-Konto",
+            "yourAccountNoService": "Dein Konto",
+            "personAccount": "{{service}}-Konto von {{person}}",
+            "personAccountNoService": "Konto von {{person}}"
+          }
         }
       },
       "memberCount_one": "{{formatted}} Mitglied",
@@ -816,7 +835,7 @@
           "viewers_can_use_in_agents": {
             "label": "Betrachter dürfen es in eigenen Agenten nutzen",
             "description": "Es läuft mit deinen Anmeldedaten.",
-            "descriptionMember": "Jedes Mitglied nutzt sein eigenes Konto."
+            "descriptionMember": "Jede Person nutzt ihr eigenes Konto."
           }
         },
         "prompt": {
@@ -1537,18 +1556,19 @@
         "defaultKey": "Ein Admin muss ENCRYPTION_SECRET_KEY setzen, bevor Dienste verbunden werden können."
       },
       "sharing": {
-        "owner": "Teammitglieder nutzen mein Konto",
-        "member": "Jedes Mitglied verbindet sein eigenes Konto",
-        "ownerShort": "Mein Konto",
-        "memberShort": "Jeweils eigenes"
+        "owner": "Alle nutzen dein Konto",
+        "member": "Jede Person verbindet ihr eigenes Konto",
+        "ownerShort": "Dein Konto",
+        "memberShort": "Jeweils eigenes",
+        "ownerShortShared": "Konto des Eigentümers"
       },
       "share": {
-        "heading": "Welches Konto Teammitglieder nutzen",
+        "heading": "Mit wessen Konto es läuft",
         "ownerWarning": "Teammitglieder handeln in {{name}} als {{account}}.",
         "ownerWarningShared": "Teammitglieder handeln mit dem {{name}}-Konto des Eigentümers.",
         "confirmWrite": "Ich verstehe, dass Teammitglieder mit meinem Konto Aktionen ausführen können.",
         "confirmWriteShared": "Ich verstehe, dass Teammitglieder mit dem {{name}}-Konto des Eigentümers Aktionen ausführen können.",
-        "memberNote": "Jedes Mitglied verbindet sein eigenes {{name}}-Konto, bevor es dieses Werkzeug nutzen kann.",
+        "memberNote": "Jede Person nutzt ihr eigenes {{name}}-Konto und verbindet es, wenn sie dieses Werkzeug zum ersten Mal nutzt.",
         "forced": "Ein Admin hat das für alle Freigaben dieses Konnektors festgelegt.",
         "ownerChooses": "Nur der Eigentümer kann das ändern.",
         "saveFailed": "Die Änderung konnte nicht gespeichert werden. Versuche es erneut."

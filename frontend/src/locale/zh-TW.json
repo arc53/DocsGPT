@@ -761,6 +761,25 @@
           "teams": "團隊",
           "people": "人員",
           "editors": "編輯者"
+        },
+        "uses": {
+          "title": "此代理使用的內容",
+          "intro": "使用此代理的每個人都會用到這些內容，各自依所示的存取權限執行。",
+          "stopped": "已停止",
+          "writesOff": "API 無法變更",
+          "writesNote": "在你於 Access Details 中允許之前，API、小工具和公開連結的使用者無法透過標示為「API 無法變更」的項目進行變更。",
+          "writesNoteEditor": "在擁有者於 Access Details 中允許之前，API、小工具和公開連結的使用者無法透過標示為「API 無法變更」的項目進行變更。",
+          "access": {
+            "you": "你的存取權限",
+            "person": "{{person}} 的存取權限",
+            "owner": "擁有者的存取權限",
+            "member": "每個人自己的 {{service}} 帳號",
+            "memberNoService": "每個人自己的帳號",
+            "yourAccount": "你的 {{service}} 帳號",
+            "yourAccountNoService": "你的帳號",
+            "personAccount": "{{person}} 的 {{service}} 帳號",
+            "personAccountNoService": "{{person}} 的帳號"
+          }
         }
       },
       "memberCount_one": "{{formatted}} 位成員",
@@ -815,7 +834,7 @@
           "viewers_can_use_in_agents": {
             "label": "檢視者可以在自己的代理中使用",
             "description": "它會以你的憑證執行。",
-            "descriptionMember": "每位成員使用自己的帳號。"
+            "descriptionMember": "每個人使用自己的帳號。"
           }
         },
         "prompt": {
@@ -1527,18 +1546,19 @@
         "defaultKey": "管理員必須先設定 ENCRYPTION_SECRET_KEY，才能連線服務。"
       },
       "sharing": {
-        "owner": "團隊成員使用我的帳號",
-        "member": "每位成員連線自己的帳號",
-        "ownerShort": "我的帳號",
-        "memberShort": "各自的帳號"
+        "owner": "所有人使用你的帳號",
+        "member": "每個人連線自己的帳號",
+        "ownerShort": "你的帳號",
+        "memberShort": "各自的帳號",
+        "ownerShortShared": "擁有者的帳號"
       },
       "share": {
-        "heading": "團隊成員使用誰的帳號",
+        "heading": "使用誰的帳號執行",
         "ownerWarning": "團隊成員將在 {{name}} 中以 {{account}} 的身分操作。",
         "ownerWarningShared": "團隊成員將以擁有者的 {{name}} 帳號操作。",
         "confirmWrite": "我了解團隊成員可以使用我的帳號執行操作。",
         "confirmWriteShared": "我了解團隊成員可以使用擁有者的 {{name}} 帳號執行操作。",
-        "memberNote": "每位成員須先連線自己的 {{name}} 帳號，才能使用此工具。",
+        "memberNote": "每個人使用自己的 {{name}} 帳號，並在首次使用此工具時連線。",
         "forced": "管理員已為此連接器的所有共用設定此項。",
         "ownerChooses": "只有擁有者可以變更此項。",
         "saveFailed": "無法儲存變更。請再試一次。"

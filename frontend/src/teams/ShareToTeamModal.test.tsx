@@ -54,6 +54,13 @@ vi.mock('../api/services/connectorsService', () => ({
   },
 }));
 
+// The agent section loads the agent itself; its own tests cover it.
+vi.mock('../agents/components/AgentUsesSection', () => ({
+  default: ({ agentId }: { agentId: string }) => (
+    <div data-testid="agent-uses">{agentId}</div>
+  ),
+}));
+
 // Mark formatted counts so a raw number in the UI shows up in a test.
 vi.mock('../utils/dateTimeUtils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../utils/dateTimeUtils')>()),
@@ -137,6 +144,13 @@ describe('ShareToTeamModal', () => {
     });
     await flush();
   };
+
+  it('lists what the agent uses', async () => {
+    await render();
+    expect(
+      body().querySelector('[data-testid="agent-uses"]')?.textContent,
+    ).toBe('a1');
+  });
 
   describe('access settings', () => {
     it('shows a collapsed Access settings toggle to the owner', async () => {
@@ -421,9 +435,8 @@ describe('ShareToTeamModal credentials', () => {
       body().querySelectorAll<HTMLButtonElement>(
         '[data-slot="toggle-group-item"]',
       ),
-    ).find(
-      (item) =>
-        item.textContent === `settings.connectors.sharing.${value}Short`,
+    ).find((item) =>
+      item.textContent?.startsWith(`settings.connectors.sharing.${value}Short`),
     )!;
   const picker = () =>
     body().querySelector<HTMLButtonElement>('[role="combobox"]')!;
@@ -433,8 +446,16 @@ describe('ShareToTeamModal credentials', () => {
     expect(text()).not.toContain('settings.connectors.share.heading');
   });
 
+  it('has no agent resource list for a tool', async () => {
+    await render(credentials());
+    expect(body().querySelector('[data-testid="agent-uses"]')).toBeNull();
+  });
+
   it('says whose account members use on a tool that only reads', async () => {
     await render(credentials());
+    expect(toggle('owner').textContent).toBe(
+      'settings.connectors.sharing.ownerShort',
+    );
     expect(body().querySelector('[role="note"]')).toBeNull();
     expect(body().querySelector('[data-slot="option-card"]')).toBeNull();
     expect(toggle('owner').getAttribute('aria-checked')).toBe('true');
@@ -561,6 +582,10 @@ describe('ShareToTeamModal credentials', () => {
 
     it("shows whose account shares use but doesn't let them change it", async () => {
       await render(shared());
+      // The owner's account, not "Your account".
+      expect(toggle('owner').textContent).toBe(
+        'settings.connectors.sharing.ownerShortShared',
+      );
       expect(toggle('owner').getAttribute('aria-checked')).toBe('true');
       expect(toggle('owner').disabled).toBe(true);
       expect(toggle('member').disabled).toBe(true);

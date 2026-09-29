@@ -38,7 +38,10 @@ type ResourceStatusNoticeProps = {
 };
 
 /** The message key that says why an item stopped. */
-function reasonKey(reason: ResourceStateReason | null, ownerReads: boolean) {
+export function reasonKey(
+  reason: ResourceStateReason | null,
+  ownerReads: boolean,
+) {
   switch (reason) {
     case 'deleted':
       return 'agents.form.resourceStates.reason.deleted';

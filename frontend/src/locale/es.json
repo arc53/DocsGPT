@@ -762,6 +762,25 @@
           "teams": "Equipos",
           "people": "Personas",
           "editors": "Editores"
+        },
+        "uses": {
+          "title": "Qué usa este agente",
+          "intro": "Todos los que usan este agente reciben estos elementos, cada uno con el acceso indicado.",
+          "stopped": "Detenido",
+          "writesOff": "Sin cambios por API",
+          "writesNote": "Los usuarios de la API, el widget y el enlace público no pueden hacer cambios con los elementos marcados «Sin cambios por API» hasta que los permitas en Access Details.",
+          "writesNoteEditor": "Los usuarios de la API, el widget y el enlace público no pueden hacer cambios con los elementos marcados «Sin cambios por API» hasta que el propietario los permita en Access Details.",
+          "access": {
+            "you": "Tu acceso",
+            "person": "Acceso de {{person}}",
+            "owner": "Acceso del propietario",
+            "member": "La propia cuenta de {{service}} de cada persona",
+            "memberNoService": "La propia cuenta de cada persona",
+            "yourAccount": "Tu cuenta de {{service}}",
+            "yourAccountNoService": "Tu cuenta",
+            "personAccount": "Cuenta de {{service}} de {{person}}",
+            "personAccountNoService": "Cuenta de {{person}}"
+          }
         }
       },
       "memberCount_one": "{{formatted}} miembro",
@@ -816,7 +835,7 @@
           "viewers_can_use_in_agents": {
             "label": "Los lectores pueden usarla en sus propios agentes",
             "description": "Se ejecuta con tus credenciales.",
-            "descriptionMember": "Cada miembro usa su propia cuenta."
+            "descriptionMember": "Cada persona usa su propia cuenta."
           }
         },
         "prompt": {
@@ -1537,18 +1556,19 @@
         "defaultKey": "Un administrador debe definir ENCRYPTION_SECRET_KEY antes de poder conectar servicios."
       },
       "sharing": {
-        "owner": "Los miembros usan mi cuenta",
-        "member": "Cada miembro conecta su propia cuenta",
-        "ownerShort": "Mi cuenta",
-        "memberShort": "La de cada miembro"
+        "owner": "Todos usan tu cuenta",
+        "member": "Cada persona conecta su propia cuenta",
+        "ownerShort": "Tu cuenta",
+        "memberShort": "La de cada persona",
+        "ownerShortShared": "La cuenta del propietario"
       },
       "share": {
-        "heading": "Qué cuenta usan los miembros del equipo",
+        "heading": "Con qué cuenta se ejecuta",
         "ownerWarning": "Los miembros del equipo actuarán como {{account}} en {{name}}.",
         "ownerWarningShared": "Los miembros del equipo actuarán con la cuenta de {{name}} del propietario.",
         "confirmWrite": "Entiendo que los miembros del equipo pueden realizar acciones con mi cuenta.",
         "confirmWriteShared": "Entiendo que los miembros del equipo pueden realizar acciones con la cuenta de {{name}} del propietario.",
-        "memberNote": "Cada miembro conecta su propia cuenta de {{name}} antes de poder usar esta herramienta.",
+        "memberNote": "Cada persona usa su propia cuenta de {{name}} y la conecta la primera vez que usa esta herramienta.",
         "forced": "Un administrador eligió esto para todos los recursos compartidos de este conector.",
         "ownerChooses": "Solo el propietario puede cambiar esto.",
         "saveFailed": "No se pudo guardar el cambio. Inténtalo de nuevo."

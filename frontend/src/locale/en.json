@@ -768,6 +768,25 @@
           "teams": "Teams",
           "people": "People",
           "editors": "Editors"
+        },
+        "uses": {
+          "title": "What this agent uses",
+          "intro": "Everyone who uses this agent gets these, each with the access shown.",
+          "stopped": "Stopped",
+          "writesOff": "No API changes",
+          "writesNote": "API, widget and public-link users can't make changes with items marked “No API changes” until you allow them in Access Details.",
+          "writesNoteEditor": "API, widget and public-link users can't make changes with items marked “No API changes” until the owner allows them in Access Details.",
+          "access": {
+            "you": "Your access",
+            "person": "{{person}}'s access",
+            "owner": "The owner's access",
+            "member": "Each person's own {{service}} account",
+            "memberNoService": "Each person's own account",
+            "yourAccount": "Your {{service}} account",
+            "yourAccountNoService": "Your account",
+            "personAccount": "{{person}}'s {{service}} account",
+            "personAccountNoService": "{{person}}'s account"
+          }
         }
       },
       "memberCount_one": "{{formatted}} member",
@@ -822,7 +841,7 @@
           "viewers_can_use_in_agents": {
             "label": "Viewers can use it in their own agents",
             "description": "It runs with your credentials.",
-            "descriptionMember": "Each member uses their own account."
+            "descriptionMember": "Each person uses their own account."
           }
         },
         "prompt": {
@@ -1543,18 +1562,19 @@
         "defaultKey": "An admin must set ENCRYPTION_SECRET_KEY before services can be connected."
       },
       "sharing": {
-        "owner": "Team members use my account",
-        "member": "Each member connects their own account",
-        "ownerShort": "My account",
-        "memberShort": "Each member's own"
+        "owner": "Everyone uses your account",
+        "member": "Each person connects their own account",
+        "ownerShort": "Your account",
+        "memberShort": "Each person's own",
+        "ownerShortShared": "The owner's account"
       },
       "share": {
-        "heading": "Whose account team members use",
+        "heading": "Whose account it runs with",
         "ownerWarning": "Team members will act as {{account}} on {{name}}.",
         "ownerWarningShared": "Team members will act as the owner's {{name}} account.",
         "confirmWrite": "I understand teammates can take actions with my account.",
         "confirmWriteShared": "I understand teammates can take actions with the owner's {{name}} account.",
-        "memberNote": "Each member connects their own {{name}} account before they can use this tool.",
+        "memberNote": "Each person uses their own {{name}} account, and connects it the first time they use this tool.",
         "forced": "An admin chose this for every share of this connector.",
         "ownerChooses": "Only the owner can change this.",
         "saveFailed": "Could not save the change. Try again."

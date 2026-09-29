@@ -61,12 +61,18 @@ export type ResourceState = {
   sponsor?: ResourcePerson | null;
   /** Someone other than the reader who can fix it. */
   contact?: ResourcePerson | null;
-  /** The service, for a connection reason. */
+  /** The service of a connected tool, or of one a connection reason stopped. */
   connection?: {
     id: string | null;
     connector_key: string | null;
     name: string | null;
   } | null;
+  /** A running connected tool's mode: the owner's account or each person's own. */
+  credential_mode?: 'owner' | 'member' | null;
+  /** Whose account an owner-mode connection acts as. */
+  account?: ResourcePerson | null;
+  /** Its write actions on credentials its owner stored (the API write allowlist's). */
+  owner_credential_writes?: string[];
   /** The reader may run it with their access by confirming on a save. */
   can_confirm?: boolean;
   /** The reader owns the connection that needs signing in again. */

@@ -20,6 +20,7 @@ import teamsService, {
   TeamMember,
 } from '../api/services/teamsService';
 import connectorsService from '../api/services/connectorsService';
+import AgentUsesSection from '../agents/components/AgentUsesSection';
 import SearchInput from '../components/SearchInput';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Checkbox } from '../components/ui/checkbox';
@@ -898,7 +899,13 @@ export default function ShareToTeamModal({
                       }
                     >
                       {mode === 'owner' ? <UserRound /> : <UsersRound />}
-                      {t(`settings.connectors.sharing.${mode}Short`)}
+                      {/* "Your account" to the owner; an editor sees the
+                          owner's, like the agent's "What this agent uses". */}
+                      {t(
+                        mode === 'owner' && credentials.readOnly
+                          ? 'settings.connectors.sharing.ownerShortShared'
+                          : `settings.connectors.sharing.${mode}Short`,
+                      )}
                     </ToggleGroupItem>
                   ))}
                 </ToggleGroup>
@@ -1127,6 +1134,13 @@ export default function ShareToTeamModal({
             )}
           </section>
         </>
+      )}
+
+      {/* Whose access each of the agent's tools, sources and prompt runs
+          with, for the people it is shared with (owners and editors only:
+          viewers never open this dialog). */}
+      {resourceType === 'agent' && (
+        <AgentUsesSection agentId={resourceId} readerId={currentUserId} />
       )}
 
       {accessSettings}
