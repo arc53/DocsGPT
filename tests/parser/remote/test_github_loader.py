@@ -6,6 +6,16 @@ import requests
 from docsgpt.parser.remote.github_loader import GitHubLoader
 
 
+@pytest.fixture(autouse=True)
+def _no_instance_token(monkeypatch):
+    """No ``GITHUB_ACCESS_TOKEN`` from the environment: with one, ``load_data``
+    checks the repository's visibility against the real GitHub API. Tests that
+    need the instance token set it themselves."""
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "GITHUB_ACCESS_TOKEN", None)
+
+
 def make_response(json_data=None, status_code=200, raise_error=None):
     resp = MagicMock()
     resp.status_code = status_code
