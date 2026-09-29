@@ -10,12 +10,15 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-const connectors = vi.hoisted(() => ({ setToolPermissions: vi.fn() }));
+const connectors = vi.hoisted(() => ({
+  setToolPermissions: vi.fn(),
+  setToolParameters: vi.fn(),
+}));
 vi.mock('../api/services/connectorsService', () => ({ default: connectors }));
 
 import actionToastReducer from '../notifications/actionToastSlice';
 import ToolPermissions from './ToolPermissions';
-import type { ConnectionTool } from './types';
+import type { ActionParameter, ConnectionTool } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -23,7 +26,21 @@ const action = (
   name: string,
   access: 'read' | 'write',
   permission: 'always' | 'ask' | 'off',
-) => ({ name, access, permission, description: `Does ${name}.` });
+  parameters: ActionParameter[] = [],
+) => ({ name, access, permission, description: `Does ${name}.`, parameters });
+
+const param = (
+  name: string,
+  fixed: boolean,
+  value: ActionParameter['value'] = null,
+): ActionParameter => ({
+  name,
+  description: `The ${name}.`,
+  type: 'string',
+  required: false,
+  fixed,
+  value,
+});
 
 const tool = (actions: ReturnType<typeof action>[]): ConnectionTool =>
   ({
@@ -125,6 +142,105 @@ describe('ToolPermissions', () => {
     await render(tool([action('new_one', 'read', 'always')]));
     expect(container.textContent).toContain('New one');
     expect(container.textContent).not.toContain('Old one');
+  });
+
+  const button = (text: string) =>
+    Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === text,
+    )!;
+  const typeInto = (input: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  it('marks an action that has fixed values', async () => {
+    await render(
+      tool([
+        action('telegram_send_message', 'write', 'ask', [
+          param('text', false),
+          param('chat_id', true, '-100'),
+        ]),
+      ]),
+    );
+    expect(container.textContent).toContain(
+      'settings.connectors.parameters.fixedCount:1',
+    );
+  });
+
+  it('fixes a parameter to a value the AI cannot change', async () => {
+    const send = action('telegram_send_message', 'write', 'ask', [
+      param('text', false),
+      param('chat_id', false),
+    ]);
+    connectors.setToolParameters.mockResolvedValue({
+      success: true,
+      tool: tool([
+        {
+          ...send,
+          parameters: [param('text', false), param('chat_id', true, '-100')],
+        },
+      ]),
+    });
+    await render(tool([send]));
+    await act(async () =>
+      button('settings.connectors.parameters.show').click(),
+    );
+    const row = container.querySelector<HTMLElement>(
+      '[data-parameter="chat_id"]',
+    )!;
+    await act(async () =>
+      row.querySelector<HTMLButtonElement>('[data-mode="fixed"]')!.click(),
+    );
+    const input = row.querySelector<HTMLInputElement>('input')!;
+    await act(async () => typeInto(input, '-100'));
+    await act(async () =>
+      button('settings.connectors.parameters.save').click(),
+    );
+    expect(connectors.setToolParameters).toHaveBeenCalledWith(
+      'conn-1',
+      'tool-1',
+      'telegram_send_message',
+      { chat_id: '-100' },
+      null,
+    );
+    expect(container.textContent).toContain(
+      'settings.connectors.parameters.fixedCount:1',
+    );
+  });
+
+  it('lets the AI decide a fixed parameter again', async () => {
+    connectors.setToolParameters.mockResolvedValue({
+      success: true,
+      tool: tool([]),
+    });
+    await render(
+      tool([
+        action('telegram_send_message', 'write', 'ask', [
+          param('chat_id', true, '-100'),
+        ]),
+      ]),
+    );
+    await act(async () =>
+      button('settings.connectors.parameters.show').click(),
+    );
+    const row = container.querySelector<HTMLElement>(
+      '[data-parameter="chat_id"]',
+    )!;
+    expect(row.querySelector<HTMLInputElement>('input')!.value).toBe('-100');
+    await act(async () =>
+      row.querySelector<HTMLButtonElement>('[data-mode="ai"]')!.click(),
+    );
+    expect(connectors.setToolParameters).toHaveBeenCalledWith(
+      'conn-1',
+      'tool-1',
+      'telegram_send_message',
+      { chat_id: null },
+      null,
+    );
   });
 
   it('says what Ask first means outside chat', async () => {

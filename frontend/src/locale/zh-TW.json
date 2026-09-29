@@ -1326,6 +1326,18 @@
         "repositories": "儲存庫",
         "updated": "更新於 {{date}}",
         "loadFailed": "無法載入你的儲存庫。"
+      },
+      "parameters": {
+        "show": "參數",
+        "hide": "隱藏參數",
+        "fixedCount_other": "已固定 {{formatted}} 個",
+        "ai": "由 AI 決定",
+        "fixed": "一律使用",
+        "choiceLabel": "{{parameter}} 的填寫方式",
+        "valueLabel": "{{parameter}} 的值",
+        "save": "儲存",
+        "saveFailed": "無法儲存此值。請再試一次。",
+        "hint": "設為「一律使用」的值會在每次呼叫時送出。AI 看不到它，也無法變更。"
       }
     }
   },

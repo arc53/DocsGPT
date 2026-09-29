@@ -1418,6 +1418,21 @@
         "repositories": "Репозитории",
         "updated": "Обновлён {{date}}",
         "loadFailed": "Не удалось загрузить ваши репозитории."
+      },
+      "parameters": {
+        "show": "Параметры",
+        "hide": "Скрыть параметры",
+        "fixedCount_one": "{{formatted}} задан",
+        "fixedCount_few": "{{formatted}} задано",
+        "fixedCount_many": "{{formatted}} задано",
+        "fixedCount_other": "{{formatted}} задано",
+        "ai": "Решает ИИ",
+        "fixed": "Всегда использовать",
+        "choiceLabel": "Как заполняется {{parameter}}",
+        "valueLabel": "Значение {{parameter}}",
+        "save": "Сохранить",
+        "saveFailed": "Не удалось сохранить значение. Попробуйте ещё раз.",
+        "hint": "Значение «Всегда использовать» отправляется при каждом вызове. ИИ его не видит и не может изменить."
       }
     }
   },

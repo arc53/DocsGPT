@@ -1326,6 +1326,18 @@
         "repositories": "仓库",
         "updated": "更新于 {{date}}",
         "loadFailed": "无法加载你的仓库。"
+      },
+      "parameters": {
+        "show": "参数",
+        "hide": "隐藏参数",
+        "fixedCount_other": "已固定 {{formatted}} 个",
+        "ai": "由 AI 决定",
+        "fixed": "始终使用",
+        "choiceLabel": "{{parameter}} 的填写方式",
+        "valueLabel": "{{parameter}} 的值",
+        "save": "保存",
+        "saveFailed": "无法保存该值。请重试。",
+        "hint": "设为“始终使用”的值会在每次调用时发送。AI 看不到它，也无法更改。"
       }
     }
   },

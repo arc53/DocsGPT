@@ -92,11 +92,22 @@ export type Connection = {
 export type ActionAccess = 'read' | 'write';
 export type ActionPermission = 'always' | 'ask' | 'off';
 
+export type ActionParameter = {
+  name: string;
+  description: string;
+  type: string;
+  required: boolean;
+  /** Sent with `value` on every call; the AI never sees it. */
+  fixed: boolean;
+  value: string | number | boolean | null;
+};
+
 export type ConnectionToolAction = {
   name: string;
   description: string;
   access: ActionAccess;
   permission: ActionPermission;
+  parameters?: ActionParameter[];
 };
 
 export type ConnectionTool = {

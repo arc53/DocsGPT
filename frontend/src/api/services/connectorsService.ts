@@ -111,6 +111,21 @@ const connectorsService = {
         token,
       ),
     ),
+  /** Fix parameters to a value (`null` lets the AI decide again). */
+  setToolParameters: async (
+    id: string,
+    toolId: string,
+    action: string,
+    parameters: Record<string, string | number | boolean | null>,
+    token: string | null,
+  ) =>
+    json(
+      await apiClient.put(
+        endpoints.USER.CONNECTION_TOOL_PARAMETERS(id, toolId),
+        { action, parameters },
+        token,
+      ),
+    ),
   setCredentialMode: async (
     toolId: string,
     mode: 'owner' | 'member',

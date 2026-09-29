@@ -1350,6 +1350,19 @@
         "repositories": "Repositories",
         "updated": "Updated {{date}}",
         "loadFailed": "Could not load your repositories."
+      },
+      "parameters": {
+        "show": "Parameters",
+        "hide": "Hide parameters",
+        "fixedCount_one": "{{formatted}} fixed",
+        "fixedCount_other": "{{formatted}} fixed",
+        "ai": "Let AI decide",
+        "fixed": "Always use",
+        "choiceLabel": "How {{parameter}} is filled in",
+        "valueLabel": "Value for {{parameter}}",
+        "save": "Save",
+        "saveFailed": "Could not save the value. Try again.",
+        "hint": "A value set to Always use is sent on every call. The AI never sees it and cannot change it."
       }
     }
   },

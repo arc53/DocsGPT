@@ -1326,6 +1326,18 @@
         "repositories": "リポジトリ",
         "updated": "{{date}} に更新",
         "loadFailed": "リポジトリを読み込めませんでした。"
+      },
+      "parameters": {
+        "show": "パラメーター",
+        "hide": "パラメーターを隠す",
+        "fixedCount_other": "{{formatted}} 件固定",
+        "ai": "AI に任せる",
+        "fixed": "常に使用",
+        "choiceLabel": "{{parameter}} の入力方法",
+        "valueLabel": "{{parameter}} の値",
+        "save": "保存",
+        "saveFailed": "値を保存できませんでした。もう一度お試しください。",
+        "hint": "「常に使用」の値は毎回の呼び出しで送信されます。AI はこの値を見ることも変更することもできません。"
       }
     }
   },

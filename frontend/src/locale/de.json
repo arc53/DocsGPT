@@ -1344,6 +1344,19 @@
         "repositories": "Repositorys",
         "updated": "Aktualisiert {{date}}",
         "loadFailed": "Deine Repositorys konnten nicht geladen werden."
+      },
+      "parameters": {
+        "show": "Parameter",
+        "hide": "Parameter ausblenden",
+        "fixedCount_one": "{{formatted}} festgelegt",
+        "fixedCount_other": "{{formatted}} festgelegt",
+        "ai": "KI entscheidet",
+        "fixed": "Immer verwenden",
+        "choiceLabel": "Wie {{parameter}} ausgefüllt wird",
+        "valueLabel": "Wert für {{parameter}}",
+        "save": "Speichern",
+        "saveFailed": "Der Wert konnte nicht gespeichert werden. Versuche es erneut.",
+        "hint": "Ein Wert mit „Immer verwenden“ wird bei jedem Aufruf gesendet. Die KI sieht ihn nicht und kann ihn nicht ändern."
       }
     }
   },

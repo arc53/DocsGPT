@@ -123,6 +123,8 @@ const endpoints = {
       `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/permissions`,
     CONNECTION_REPOSITORIES: (id: string) =>
       `/api/connections/${encodeURIComponent(id)}/repositories`,
+    CONNECTION_TOOL_PARAMETERS: (id: string, toolId: string) =>
+      `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/parameters`,
     CONNECTIONS_CLAIM: '/api/connections/claim',
     TOOL_CREDENTIAL_MODE: (toolId: string) =>
       `/api/connections/tools/${encodeURIComponent(toolId)}/credential-mode`,

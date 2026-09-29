@@ -1344,6 +1344,19 @@
         "repositories": "Repositorios",
         "updated": "Actualizado {{date}}",
         "loadFailed": "No se pudieron cargar tus repositorios."
+      },
+      "parameters": {
+        "show": "Parámetros",
+        "hide": "Ocultar parámetros",
+        "fixedCount_one": "{{formatted}} fijo",
+        "fixedCount_other": "{{formatted}} fijos",
+        "ai": "Que decida la IA",
+        "fixed": "Usar siempre",
+        "choiceLabel": "Cómo se rellena {{parameter}}",
+        "valueLabel": "Valor de {{parameter}}",
+        "save": "Guardar",
+        "saveFailed": "No se pudo guardar el valor. Inténtalo de nuevo.",
+        "hint": "Un valor con «Usar siempre» se envía en cada llamada. La IA nunca lo ve ni puede cambiarlo."
       }
     }
   },

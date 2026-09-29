@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { SectionHeader } from '../components/ui/section-header';
@@ -17,6 +18,7 @@ import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { formatCount } from '../utils/dateTimeUtils';
+import ActionParameters, { type ParameterValue } from './ActionParameters';
 import { actionTitle } from './i18n';
 import type {
   ActionPermission,
@@ -30,10 +32,104 @@ const PERMISSIONS: ActionPermission[] = ['always', 'ask', 'off'];
 const FOLD_AFTER = 5;
 
 /**
+ * One action under Customize: its name, what it does and its permission,
+ * with its parameters one click away and a count of the values fixed there.
+ */
+function ActionRow({
+  action,
+  readOnly,
+  onPermission,
+  onParameters,
+}: {
+  action: ConnectionToolAction;
+  readOnly: boolean;
+  onPermission: (permission: ActionPermission) => void;
+  onParameters: (changes: Record<string, ParameterValue>) => Promise<boolean>;
+}) {
+  const { t } = useTranslation();
+  const [showParameters, setShowParameters] = useState(false);
+  const parameters = action.parameters ?? [];
+  const fixedCount = parameters.filter((parameter) => parameter.fixed).length;
+  return (
+    <li className="flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col items-start">
+          <div className="flex max-w-full items-center gap-2">
+            <p className="text-foreground truncate text-sm" title={action.name}>
+              {actionTitle(action.name)}
+            </p>
+            {fixedCount > 0 && (
+              <Badge variant="neutral">
+                {t('settings.connectors.parameters.fixedCount', {
+                  count: fixedCount,
+                  formatted: formatCount(fixedCount),
+                })}
+              </Badge>
+            )}
+          </div>
+          {action.description && (
+            <p
+              className="text-muted-foreground line-clamp-2 text-xs"
+              title={action.description}
+            >
+              {action.description}
+            </p>
+          )}
+          {parameters.length > 0 && (
+            <Button
+              type="button"
+              variant="link"
+              size="inline"
+              className="mt-1"
+              aria-expanded={showParameters}
+              onClick={() => setShowParameters(!showParameters)}
+            >
+              {showParameters
+                ? t('settings.connectors.parameters.hide')
+                : t('settings.connectors.parameters.show')}
+            </Button>
+          )}
+        </div>
+        <Select
+          value={action.permission}
+          disabled={readOnly}
+          onValueChange={(value) => onPermission(value as ActionPermission)}
+        >
+          <SelectTrigger
+            size="sm"
+            className="w-32 shrink-0"
+            aria-label={t('settings.connectors.permission.label', {
+              action: actionTitle(action.name),
+            })}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PERMISSIONS.map((permission) => (
+              <SelectItem key={permission} value={permission}>
+                {t(`settings.connectors.permission.${permission}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {showParameters && (
+        <ActionParameters
+          parameters={parameters}
+          readOnly={readOnly}
+          onSave={onParameters}
+        />
+      )}
+    </li>
+  );
+}
+
+/**
  * One tool's actions in two groups, what it looks up and what it does, each
  * set at once to Allow / Ask first / Off; single actions can differ under
- * Customize. Changes save immediately; a failed save puts the previous
- * choices back and says so.
+ * Customize, where each action also opens its parameters to fix values the
+ * AI must always use. Changes save immediately; a failed save puts the
+ * previous choices back and says so.
  */
 export default function ToolPermissions({
   connectionId,
@@ -81,6 +177,33 @@ export default function ToolPermissions({
           }),
         );
       });
+  };
+
+  const setParameters = async (
+    actionName: string,
+    changes: Record<string, ParameterValue>,
+  ) => {
+    try {
+      const data = await connectorsService.setToolParameters(
+        connectionId,
+        tool.id,
+        actionName,
+        changes,
+        token,
+      );
+      if (!data?.success) throw new Error('save failed');
+      setActions(data.tool.actions);
+      onChange?.(data.tool);
+      return true;
+    } catch {
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('settings.connectors.parameters.saveFailed'),
+        }),
+      );
+      return false;
+    }
   };
 
   const groups = (['read', 'write'] as const)
@@ -177,53 +300,17 @@ export default function ToolPermissions({
             {open && (
               <ul className="flex flex-col gap-3">
                 {group.actions.map((action) => (
-                  <li
+                  <ActionRow
                     key={action.name}
-                    className="flex items-start justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <p
-                        className="text-foreground truncate text-sm"
-                        title={action.name}
-                      >
-                        {actionTitle(action.name)}
-                      </p>
-                      {action.description && (
-                        <p
-                          className="text-muted-foreground line-clamp-2 text-xs"
-                          title={action.description}
-                        >
-                          {action.description}
-                        </p>
-                      )}
-                    </div>
-                    <Select
-                      value={action.permission}
-                      disabled={readOnly}
-                      onValueChange={(value) =>
-                        setPermissions({
-                          [action.name]: value as ActionPermission,
-                        })
-                      }
-                    >
-                      <SelectTrigger
-                        size="sm"
-                        className="w-32 shrink-0"
-                        aria-label={t('settings.connectors.permission.label', {
-                          action: actionTitle(action.name),
-                        })}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PERMISSIONS.map((permission) => (
-                          <SelectItem key={permission} value={permission}>
-                            {t(`settings.connectors.permission.${permission}`)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </li>
+                    action={action}
+                    readOnly={readOnly}
+                    onPermission={(permission) =>
+                      setPermissions({ [action.name]: permission })
+                    }
+                    onParameters={(changes) =>
+                      setParameters(action.name, changes)
+                    }
+                  />
                 ))}
               </ul>
             )}
