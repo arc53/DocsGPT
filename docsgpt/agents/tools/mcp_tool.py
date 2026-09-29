@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 
 _mcp_clients_cache = {}
 
+# A token expiry long past: a stored token of unknown age is renewed before use.
+_EXPIRED = 1.0
+
 _ANNOTATION_HINTS = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
 
 
@@ -720,6 +723,10 @@ class MCPTool(Tool):
         }
 
 
+class MCPReauthorizationRequired(Exception):
+    """An MCP sign-in expired and could not be renewed: its owner must sign in again."""
+
+
 class DocsGPTOAuth(OAuthClientProvider):
     """
     Custom OAuth handler for DocsGPT that uses frontend redirect instead of browser.
@@ -812,6 +819,25 @@ class DocsGPTOAuth(OAuthClientProvider):
             return data, headers
 
         return prepare_token_auth
+
+    async def _initialize(self) -> None:
+        """Load the stored sign-in along with when its access token expires.
+
+        The SDK learns a token's expiry only from a token response in this
+        process, so a token read back from the connection gets the expiry
+        saved with it, and an expired one is renewed with its refresh token
+        before it is sent. One saved before expiries were kept is of unknown
+        age and is renewed once.
+        """
+        await super()._initialize()
+        tokens = self.context.current_tokens
+        if tokens is None:
+            return
+        expires_at = getattr(self.context.storage, "expires_at", None)
+        if expires_at:
+            self.context.token_expiry_time = float(expires_at)
+        elif tokens.refresh_token and tokens.expires_in:
+            self.context.token_expiry_time = _EXPIRED
 
     def _process_auth_url(self, authorization_url: str) -> tuple[str, str]:
         """Process authorization URL to extract state"""
@@ -920,12 +946,12 @@ class NonInteractiveOAuth(DocsGPTOAuth):
         super().__init__(**kwargs)
 
     async def redirect_handler(self, authorization_url: str) -> None:
-        raise Exception(
+        raise MCPReauthorizationRequired(
             "OAuth session expired — please re-authorize this MCP server in tool settings."
         )
 
     async def callback_handler(self) -> AuthorizationCodeResult:
-        raise Exception(
+        raise MCPReauthorizationRequired(
             "OAuth session expired — please re-authorize this MCP server in tool settings."
         )
 
@@ -951,6 +977,8 @@ class DBTokenStorage(TokenStorage):
         self.user_id = user_id
         self.expected_redirect_uri = expected_redirect_uri
         self.connection_id = connection_id
+        # When the stored access token expires (epoch seconds), once read.
+        self.expires_at: Optional[float] = None
 
     @staticmethod
     def get_base_url(url: str) -> str:
@@ -972,6 +1000,7 @@ class DBTokenStorage(TokenStorage):
         data = await asyncio.to_thread(self._fetch_session_data)
         if not data or "tokens" not in data:
             return None
+        self.expires_at = data.get("tokens_expires_at")
         try:
             return OAuthToken.model_validate(data["tokens"])
         except ValidationError as e:
@@ -1007,7 +1036,10 @@ class DBTokenStorage(TokenStorage):
     async def set_tokens(self, tokens: OAuthToken) -> None:
         base_url = self.get_base_url(self.server_url)
         token_dump = tokens.model_dump()
-        await asyncio.to_thread(self._merge, {"tokens": token_dump})
+        # Kept beside the token: a later process cannot tell from
+        # ``expires_in`` alone whether it has expired.
+        self.expires_at = time.time() + tokens.expires_in if tokens.expires_in else None
+        await asyncio.to_thread(self._merge, {"tokens": token_dump, "tokens_expires_at": self.expires_at})
         logger.info("Saved tokens for %s", base_url)
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:

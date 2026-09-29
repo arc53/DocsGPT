@@ -1203,6 +1203,128 @@ class TestDBTokenStorage:
             is None
         )
 
+    def test_stored_tokens_remember_when_they_expire(self, monkeypatch, pg_conn):
+        import time
+
+        from mcp.shared.auth import OAuthToken
+
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
+
+        self._patch_db(monkeypatch, pg_conn)
+        storage = DBTokenStorage(server_url="https://mcp.expiry.example.com/mcp", user_id="user-expiry")
+        loop = asyncio.new_event_loop()
+        try:
+            before = time.time()
+            loop.run_until_complete(storage.set_tokens(OAuthToken(
+                access_token="at", token_type="Bearer", expires_in=3600, refresh_token="rt",
+            )))
+            # A later process reads the tokens back with when they expire.
+            reader = DBTokenStorage(server_url="https://mcp.expiry.example.com/mcp", user_id="user-expiry")
+            tokens = loop.run_until_complete(reader.get_tokens())
+        finally:
+            loop.close()
+        assert tokens.access_token == "at"
+        assert before + 3600 <= reader.expires_at <= time.time() + 3600
+
+    def test_tokens_without_a_lifetime_have_no_expiry(self, monkeypatch, pg_conn):
+        from mcp.shared.auth import OAuthToken
+
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
+
+        self._patch_db(monkeypatch, pg_conn)
+        storage = DBTokenStorage(server_url="https://mcp.forever.example.com/mcp", user_id="user-forever")
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(storage.set_tokens(OAuthToken(access_token="at", token_type="Bearer")))
+            loop.run_until_complete(storage.get_tokens())
+        finally:
+            loop.close()
+        assert storage.expires_at is None
+
+
+# =====================================================================
+# Renewing a stored sign-in
+# =====================================================================
+
+
+class _StoredTokens:
+    """A token storage holding one sign-in, with or without its expiry."""
+
+    def __init__(self, tokens, expires_at=None):
+        self.tokens = tokens
+        self.expires_at = None
+        self._expires_at = expires_at
+
+    async def get_tokens(self):
+        self.expires_at = self._expires_at
+        return self.tokens
+
+    async def get_client_info(self):
+        return None
+
+
+@pytest.mark.unit
+class TestStoredSignInRenewal:
+    """A stored MCP sign-in is renewed with its refresh token once it expires.
+
+    The SDK only knows when a token expires if it obtained it in this
+    process; a worker that loads it from the connection must be told, or it
+    sends the expired token, gets a 401 and asks the user to sign in again.
+    """
+
+    @staticmethod
+    def _oauth(storage):
+        from docsgpt.agents.tools.mcp_tool import NonInteractiveOAuth
+
+        oauth = NonInteractiveOAuth(
+            mcp_url="https://mcp.example.com/mcp",
+            redirect_uri="https://docsgpt.example.com/api/mcp_server/callback",
+            user_id="alice",
+            connection_id="c1",
+        )
+        oauth.context.storage = storage
+        return oauth
+
+    @staticmethod
+    def _token(**extra):
+        from mcp.shared.auth import OAuthToken
+
+        return OAuthToken(access_token="at", token_type="Bearer", **extra)
+
+    def test_expired_stored_token_is_due_for_renewal(self):
+        import time
+
+        oauth = self._oauth(_StoredTokens(self._token(refresh_token="rt", expires_in=3600), time.time() - 5))
+        asyncio.run(oauth._initialize())
+        assert oauth.context.is_token_valid() is False
+
+    def test_unexpired_stored_token_is_used_as_it_is(self):
+        import time
+
+        expires_at = time.time() + 600
+        oauth = self._oauth(_StoredTokens(self._token(refresh_token="rt", expires_in=3600), expires_at))
+        asyncio.run(oauth._initialize())
+        assert oauth.context.token_expiry_time == expires_at
+        assert oauth.context.is_token_valid() is True
+
+    def test_token_saved_before_expiries_were_kept_is_renewed_once(self):
+        # Its age is unknown, so it is treated as expired while it can be renewed.
+        oauth = self._oauth(_StoredTokens(self._token(refresh_token="rt", expires_in=3600)))
+        asyncio.run(oauth._initialize())
+        assert oauth.context.is_token_valid() is False
+
+    def test_token_that_cannot_be_renewed_is_still_tried(self):
+        oauth = self._oauth(_StoredTokens(self._token(expires_in=3600)))
+        asyncio.run(oauth._initialize())
+        assert oauth.context.is_token_valid() is True
+
+    def test_a_lost_sign_in_raises_a_typed_error(self):
+        from docsgpt.agents.tools.mcp_tool import MCPReauthorizationRequired
+
+        oauth = self._oauth(_StoredTokens(None))
+        with pytest.raises(MCPReauthorizationRequired, match="OAuth session expired"):
+            asyncio.run(oauth.redirect_handler("https://mcp.example.com/authorize?state=x"))
+
 
 # =====================================================================
 # NonInteractiveOAuth
