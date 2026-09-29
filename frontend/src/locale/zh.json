@@ -804,7 +804,8 @@
           },
           "viewers_can_use_in_agents": {
             "label": "查看者可以在自己的代理中使用",
-            "description": "它使用你的凭据运行。"
+            "description": "它使用你的凭据运行。",
+            "descriptionMember": "每位成员使用自己的账号。"
           }
         },
         "prompt": {
@@ -1400,7 +1401,6 @@
         "syncNow": "立即同步",
         "syncStarted": "正在同步 {{name}}…",
         "syncFailed": "无法开始同步。请重试。",
-        "toolSwitch": "{{name}} 开启",
         "toolSwitchFailed": "无法更改工具。请重试。",
         "account": "账号：{{account}}",
         "expired": "登录已过期。重新连接以继续使用此连接。",
@@ -1525,9 +1525,12 @@
       "share": {
         "heading": "团队成员使用谁的账号",
         "ownerWarning": "团队成员将在 {{name}} 中以 {{account}} 的身份操作。",
+        "ownerWarningShared": "团队成员将以所有者的 {{name}} 账号操作。",
         "confirmWrite": "我了解团队成员可以使用我的账号执行操作。",
+        "confirmWriteShared": "我了解团队成员可以使用所有者的 {{name}} 账号执行操作。",
         "memberNote": "每位成员需先连接自己的 {{name}} 账号才能使用此工具。",
         "forced": "管理员已为此连接器的所有共享设定了此项。",
+        "ownerChooses": "只有所有者可以更改此项。",
         "saveFailed": "无法保存更改。请重试。"
       },
       "createFailed": "无法添加连接器。请重试。",

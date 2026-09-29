@@ -33,6 +33,7 @@ import {
 } from '../connectors/connectorsSlice';
 import { connectorDescription } from '../connectors/i18n';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
+import { toolServiceOf } from '../connectors/toolService';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { useLoaderState } from '../hooks';
 import type { AvailableToolType } from '../modals/types';
@@ -94,26 +95,29 @@ export default function Tools() {
   }>({});
 
   // A connection-backed tool shares its connection's account or asks each
-  // member to connect their own; the share dialog shows that choice.
+  // member to connect their own; the share dialog shows that choice. Whose
+  // account it is stays the owner's choice: an editor the owner lets share
+  // sees it locked, and still confirms before sharing a tool that can act.
   const shareCredentials = (
     tool: UserToolType,
   ): ShareCredentials | undefined => {
-    const connection = tool.connection_id
-      ? connections.find((c) => c.id === tool.connection_id)
-      : undefined;
-    if (!connection) return undefined;
-    const policy = catalog.find(
-      (c) => c.key === connection.connector_key,
-    )?.credential_policy;
+    if (!tool.connection_id) return undefined;
+    const owner = isOwner(tool);
+    const service = toolServiceOf(tool, connections, catalog);
+    // The owner's own connection names the account; until it loads there
+    // is nothing to show them.
+    if (!service || (owner && !service.connection)) return undefined;
+    const policy = service.connector?.credential_policy;
     return {
       toolId: tool.id,
-      connectorName: connection.name,
-      account: connection.account_label,
+      connectorName: service.name,
+      account: owner ? (service.connection?.account_label ?? '') : '',
       mode: tool.credential_mode === 'member' ? 'member' : 'owner',
       forcedMode: policy === 'owner' || policy === 'member' ? policy : null,
       hasWrites: (tool.actions ?? []).some(
         (action) => action.access === 'write',
       ),
+      readOnly: !owner,
     };
   };
 
@@ -209,13 +213,13 @@ export default function Tools() {
             },
     ];
     // A connected server reconnects on its connector page, like any other
-    // connection; only an MCP tool without one keeps the server form. A
-    // teammate never sees the owner's connection, so its id alone rules
-    // them out. A shared OAuth server's sign-in is the owner's to redo.
-    const hasConnection = isOwner(tool) ? !!connection : !!tool.connection_id;
+    // connection; only an MCP tool without one keeps the server form. The
+    // tool's own connection id decides, for everyone: a teammate never sees
+    // the owner's connection, and the owner's loads after the tools. A
+    // shared OAuth server's sign-in is the owner's to redo.
     if (
       tool.name === 'mcp_tool' &&
-      !hasConnection &&
+      !tool.connection_id &&
       can(tool, 'edit_credentials') &&
       !isSharedOAuthMcp(tool)
     ) {
@@ -698,10 +702,7 @@ export default function Tools() {
               resourceType="tool"
               resourceId={toolToShare.id}
               resourceName={toolToShare.customName || toolToShare.displayName}
-              // Whose account shares use is the owner's choice alone.
-              credentials={
-                isOwner(toolToShare) ? shareCredentials(toolToShare) : undefined
-              }
+              credentials={shareCredentials(toolToShare)}
               onClose={() => {
                 setToolToShare(null);
                 getUserTools();

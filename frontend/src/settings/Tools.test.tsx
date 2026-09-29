@@ -69,7 +69,13 @@ vi.mock('../modals/MCPServerModal', () => ({
     return null;
   },
 }));
-vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+const shareModalProps = vi.fn();
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: unknown) => {
+    shareModalProps(props);
+    return null;
+  },
+}));
 vi.mock('../api/services/devicesService', () => ({ default: {} }));
 
 // The connector panel itself is tested on its own; here it only has to open
@@ -487,6 +493,89 @@ describe('Tools page connections', () => {
       menuItem('My API', 'settings.connectors.manageConnection'),
     ).toBeUndefined();
     expect(card('My API').querySelector('[role="switch"]')).not.toBeNull();
+  });
+
+  it('gives a viewer of a connected tool View, not Manage connection', async () => {
+    getUserTools.mockImplementation(() =>
+      jsonResponse({
+        tools: [
+          {
+            ...TOOLS[0],
+            customName: 'Telegram (shared)',
+            connection_id: 'owner-conn',
+            access: 'viewer',
+            ownership: 'team',
+            team_access: 'viewer',
+            allowed_actions: ['use', 'use_in_own'],
+          },
+        ],
+      }),
+    );
+    await renderTools(root);
+    expect(menuItem('Telegram (shared)', 'settings.tools.view')).toBeDefined();
+    expect(
+      menuItem('Telegram (shared)', 'settings.connectors.manageConnection'),
+    ).toBeUndefined();
+    expect(
+      menuItem('Telegram (shared)', 'settings.tools.reconnect'),
+    ).toBeUndefined();
+  });
+
+  // The connections load after the tools; the owner must not see the raw
+  // MCP Reconnect for a connected tool in between.
+  it("offers no Reconnect for the owner's connected MCP tool before connections load", async () => {
+    reduxState.connectors.connections = [];
+    getUserTools.mockImplementation(() =>
+      jsonResponse({
+        tools: [
+          {
+            ...TOOLS[2],
+            customName: 'Linear (mine)',
+            config: { auth_type: 'bearer' },
+            access: 'owner',
+          },
+        ],
+      }),
+    );
+    await renderTools(root);
+    expect(
+      menuItem('Linear (mine)', 'settings.tools.reconnect'),
+    ).toBeUndefined();
+  });
+
+  it("shows an editor who may share the owner's account, locked, with the write confirmation", async () => {
+    shareModalProps.mockReset();
+    getUserTools.mockImplementation(() =>
+      jsonResponse({
+        tools: [
+          {
+            ...TOOLS[0],
+            customName: 'Telegram (shared)',
+            connection_id: 'owner-conn',
+            credential_mode: 'owner',
+            actions: [{ name: 'send', access: 'write' }],
+            access: 'editor',
+            ownership: 'team',
+            team_access: 'editor',
+            allowed_actions: ['edit', 'share', 'use', 'use_in_own'],
+          },
+        ],
+      }),
+    );
+    await renderTools(root);
+    await act(async () =>
+      menuItem('Telegram (shared)', 'settings.tools.shareWithTeam')!.click(),
+    );
+    const props = shareModalProps.mock.calls.at(-1)?.[0] as {
+      credentials?: Record<string, unknown>;
+    };
+    expect(props.credentials).toMatchObject({
+      toolId: 'tg',
+      connectorName: 'Telegram',
+      mode: 'owner',
+      hasWrites: true,
+      readOnly: true,
+    });
   });
 
   it("offers no Reconnect for a teammate's connected MCP tool", async () => {

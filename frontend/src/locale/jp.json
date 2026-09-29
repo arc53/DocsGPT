@@ -804,7 +804,8 @@
           },
           "viewers_can_use_in_agents": {
             "label": "閲覧者が自分のエージェントで使える",
-            "description": "あなたの認証情報で実行されます。"
+            "description": "あなたの認証情報で実行されます。",
+            "descriptionMember": "各メンバーが自分のアカウントを使います。"
           }
         },
         "prompt": {
@@ -1400,7 +1401,6 @@
         "syncNow": "今すぐ同期",
         "syncStarted": "{{name}} を同期しています…",
         "syncFailed": "同期を開始できませんでした。もう一度お試しください。",
-        "toolSwitch": "{{name}} をオン",
         "toolSwitchFailed": "ツールを変更できませんでした。もう一度お試しください。",
         "account": "アカウント: {{account}}",
         "expired": "サインインの有効期限が切れました。この接続を使い続けるには再接続してください。",
@@ -1525,9 +1525,12 @@
       "share": {
         "heading": "チームメンバーが使うアカウント",
         "ownerWarning": "チームメンバーは {{name}} で {{account}} として操作します。",
+        "ownerWarningShared": "チームメンバーは所有者の {{name}} アカウントで操作します。",
         "confirmWrite": "チームメンバーが自分のアカウントで操作を行えることを理解しました。",
+        "confirmWriteShared": "チームメンバーが所有者の {{name}} アカウントで操作を行えることを理解しました。",
         "memberNote": "各メンバーは、このツールを使う前に自分の {{name}} アカウントを接続します。",
         "forced": "このコネクタのすべての共有に対して管理者が設定しています。",
+        "ownerChooses": "これを変更できるのは所有者だけです。",
         "saveFailed": "変更を保存できませんでした。もう一度お試しください。"
       },
       "createFailed": "コネクタを追加できませんでした。もう一度お試しください。",

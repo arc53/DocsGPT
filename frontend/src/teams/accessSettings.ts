@@ -62,18 +62,34 @@ export const settingValue = (
   key: string,
 ): boolean => settings.find((s) => s.key === key)?.value ?? false;
 
+/**
+ * The switches the share dialog lists. A connected tool drops "Editors can
+ * change credentials": its secret is on the owner's connection, which only
+ * the owner can change whatever the switch says.
+ */
+export const shownSettings = (
+  type: ResourceType,
+  settings: ResourceSetting[],
+  connected = false,
+): ResourceSetting[] =>
+  type === 'tool' && connected
+    ? settings.filter((s) => s.key !== 'editors_can_change_credentials')
+    : settings;
+
 /** Whether any switch is off its default (opens Access settings by default). */
 export const anyChanged = (settings: ResourceSetting[]): boolean =>
   settings.some((s) => s.value !== s.default);
 
 /**
  * What an Editor can do on this resource, as one or two sentences: a base
- * sentence per type, then whether they may also share or delete it.
+ * sentence per type, then whether they may also share or delete it. Editors
+ * never change a connected tool's credentials (see `shownSettings`).
  */
 export function editorHint(
   t: TFunction,
   type: ResourceType,
   settings: ResourceSetting[],
+  connected = false,
 ): string {
   const on = (key: string) => settingValue(settings, key);
   let base: string;
@@ -82,9 +98,10 @@ export function editorHint(
       ? t('settings.teams.editorHint.agent')
       : t('settings.teams.editorHint.agentNoAccessDetails');
   } else if (type === 'tool') {
-    base = on('editors_can_change_credentials')
-      ? t('settings.teams.editorHint.tool')
-      : t('settings.teams.editorHint.toolNoCredentials');
+    base =
+      !connected && on('editors_can_change_credentials')
+        ? t('settings.teams.editorHint.tool')
+        : t('settings.teams.editorHint.toolNoCredentials');
   } else {
     base = t(`settings.teams.editorHint.${type}`);
   }
@@ -111,19 +128,33 @@ export function editorHint(
   return `${base} ${tail}`;
 }
 
-/** A switch's label and description in the share dialog. */
+/**
+ * A switch's label and description in the share dialog. `credentialMode` is
+ * a connected tool's: in member mode a viewer's agent runs with the viewer's
+ * own account, not the owner's credentials.
+ */
 export const settingCopy = (
   t: TFunction,
   type: ResourceType,
   key: string,
-): { label: string; description: string } => ({
-  label: t(`settings.teams.accessSettings.${type}.${key}.label`, {
-    defaultValue: key,
-  }),
-  description: t(`settings.teams.accessSettings.${type}.${key}.description`, {
-    defaultValue: '',
-  }),
-});
+  credentialMode?: 'owner' | 'member',
+): { label: string; description: string } => {
+  const description =
+    type === 'tool' &&
+    key === 'viewers_can_use_in_agents' &&
+    credentialMode === 'member'
+      ? 'descriptionMember'
+      : 'description';
+  return {
+    label: t(`settings.teams.accessSettings.${type}.${key}.label`, {
+      defaultValue: key,
+    }),
+    description: t(
+      `settings.teams.accessSettings.${type}.${key}.${description}`,
+      { defaultValue: '' },
+    ),
+  };
+};
 
 /**
  * The read-only "What people here can do" lines: the viewer and editor

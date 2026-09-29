@@ -805,7 +805,8 @@
           },
           "viewers_can_use_in_agents": {
             "label": "Los lectores pueden usarla en sus propios agentes",
-            "description": "Se ejecuta con tus credenciales."
+            "description": "Se ejecuta con tus credenciales.",
+            "descriptionMember": "Cada miembro usa su propia cuenta."
           }
         },
         "prompt": {
@@ -1401,7 +1402,6 @@
         "syncNow": "Sincronizar ahora",
         "syncStarted": "Sincronizando {{name}}…",
         "syncFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo.",
-        "toolSwitch": "{{name}} activado",
         "toolSwitchFailed": "No se pudo cambiar la herramienta. Inténtalo de nuevo.",
         "account": "Cuenta: {{account}}",
         "expired": "El inicio de sesión caducó. Reconecta para seguir usando esta conexión.",
@@ -1535,9 +1535,12 @@
       "share": {
         "heading": "Qué cuenta usan los miembros del equipo",
         "ownerWarning": "Los miembros del equipo actuarán como {{account}} en {{name}}.",
+        "ownerWarningShared": "Los miembros del equipo actuarán con la cuenta de {{name}} del propietario.",
         "confirmWrite": "Entiendo que los miembros del equipo pueden realizar acciones con mi cuenta.",
+        "confirmWriteShared": "Entiendo que los miembros del equipo pueden realizar acciones con la cuenta de {{name}} del propietario.",
         "memberNote": "Cada miembro conecta su propia cuenta de {{name}} antes de poder usar esta herramienta.",
         "forced": "Un administrador eligió esto para todos los recursos compartidos de este conector.",
+        "ownerChooses": "Solo el propietario puede cambiar esto.",
         "saveFailed": "No se pudo guardar el cambio. Inténtalo de nuevo."
       },
       "createFailed": "No se pudo añadir el conector. Inténtalo de nuevo.",

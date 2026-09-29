@@ -889,7 +889,8 @@ also refuses Logs, Schedules and Pin on a draft), never on `ownership`,
   (`components/ViewOnlyNotice`: an `Alert role="note"` with `Lock` first and
   `common.viewOnlyNotice`) as its first child. Where only part of an editable
   form is locked (a tool's credentials when the owner turned off "Editors can
-  change credentials"), the same notice passes its own `message`. There is no Save; Cancel becomes a lone Close.
+  change credentials", or when the tool runs on the owner's connection, whose
+  secret only the owner changes), the same notice passes its own `message`. There is no Save; Cancel becomes a lone Close.
   Fields are `disabled` (a group: `<fieldset disabled className="min-w-0">`);
   long text the user reads or copies (a prompt, a chunk) is `readOnly`, so it
   keeps full contrast and scrolls. Titles and menu items swap Edit and

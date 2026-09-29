@@ -804,7 +804,8 @@
           },
           "viewers_can_use_in_agents": {
             "label": "檢視者可以在自己的代理中使用",
-            "description": "它會以你的憑證執行。"
+            "description": "它會以你的憑證執行。",
+            "descriptionMember": "每位成員使用自己的帳號。"
           }
         },
         "prompt": {
@@ -1400,7 +1401,6 @@
         "syncNow": "立即同步",
         "syncStarted": "正在同步 {{name}}…",
         "syncFailed": "無法開始同步。請再試一次。",
-        "toolSwitch": "{{name}} 開啟",
         "toolSwitchFailed": "無法變更工具。請再試一次。",
         "account": "帳號：{{account}}",
         "expired": "登入已過期。重新連線以繼續使用此連線。",
@@ -1525,9 +1525,12 @@
       "share": {
         "heading": "團隊成員使用誰的帳號",
         "ownerWarning": "團隊成員將在 {{name}} 中以 {{account}} 的身分操作。",
+        "ownerWarningShared": "團隊成員將以擁有者的 {{name}} 帳號操作。",
         "confirmWrite": "我了解團隊成員可以使用我的帳號執行操作。",
+        "confirmWriteShared": "我了解團隊成員可以使用擁有者的 {{name}} 帳號執行操作。",
         "memberNote": "每位成員須先連線自己的 {{name}} 帳號，才能使用此工具。",
         "forced": "管理員已為此連接器的所有共用設定此項。",
+        "ownerChooses": "只有擁有者可以變更此項。",
         "saveFailed": "無法儲存變更。請再試一次。"
       },
       "createFailed": "無法新增連接器。請再試一次。",

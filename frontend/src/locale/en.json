@@ -811,7 +811,8 @@
           },
           "viewers_can_use_in_agents": {
             "label": "Viewers can use it in their own agents",
-            "description": "It runs with your credentials."
+            "description": "It runs with your credentials.",
+            "descriptionMember": "Each member uses their own account."
           }
         },
         "prompt": {
@@ -1407,7 +1408,6 @@
         "syncNow": "Sync now",
         "syncStarted": "Syncing {{name}}…",
         "syncFailed": "Could not start the sync. Try again.",
-        "toolSwitch": "{{name}} on",
         "toolSwitchFailed": "Could not change the tool. Try again.",
         "account": "Account: {{account}}",
         "expired": "The sign-in expired. Reconnect to keep using this connection.",
@@ -1541,9 +1541,12 @@
       "share": {
         "heading": "Whose account team members use",
         "ownerWarning": "Team members will act as {{account}} on {{name}}.",
+        "ownerWarningShared": "Team members will act as the owner's {{name}} account.",
         "confirmWrite": "I understand teammates can take actions with my account.",
+        "confirmWriteShared": "I understand teammates can take actions with the owner's {{name}} account.",
         "memberNote": "Each member connects their own {{name}} account before they can use this tool.",
         "forced": "An admin chose this for every share of this connector.",
+        "ownerChooses": "Only the owner can change this.",
         "saveFailed": "Could not save the change. Try again."
       },
       "createFailed": "Could not add the connector. Try again.",

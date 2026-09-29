@@ -201,11 +201,25 @@ describe('ConnectionDrawer', () => {
     ).toBeNull();
   });
 
+  // The switch is the owner's "In my chats", the same one as on the tool's
+  // card, not an on/off for everyone the tool is shared with.
+  it('labels the tool switch "In my chats"', async () => {
+    await render();
+    const toggle = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label="settings.tools.useInMyChatsAria"]',
+    )!;
+    expect(toggle.getAttribute('role')).toBe('switch');
+    const label = document.body.querySelector<HTMLLabelElement>(
+      `label[for="${toggle.id}"]`,
+    );
+    expect(label?.textContent).toBe('settings.tools.inMyChats');
+  });
+
   it('turns a tool on and off from its connection page', async () => {
     users.updateToolStatus.mockResolvedValue({ ok: true });
     await render();
     const toggle = document.body.querySelector<HTMLButtonElement>(
-      '[aria-label="settings.connectors.detail.toolSwitch"]',
+      '[aria-label="settings.tools.useInMyChatsAria"]',
     )!;
     expect(toggle.getAttribute('aria-checked')).toBe('true');
     await act(async () => toggle.click());
@@ -220,7 +234,7 @@ describe('ConnectionDrawer', () => {
     users.updateToolStatus.mockResolvedValue({ ok: false });
     await render();
     const toggle = document.body.querySelector<HTMLButtonElement>(
-      '[aria-label="settings.connectors.detail.toolSwitch"]',
+      '[aria-label="settings.tools.useInMyChatsAria"]',
     )!;
     await act(async () => toggle.click());
     expect(toggle.getAttribute('aria-checked')).toBe('true');

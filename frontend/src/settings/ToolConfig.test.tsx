@@ -585,6 +585,48 @@ describe('ToolConfig', () => {
       );
     });
 
+    // The connection's secret is the owner's alone: the server refuses any
+    // credential change from anyone else, so the form must not offer one.
+    it("locks a connected tool's credentials for an editor allowed to change credentials", async () => {
+      updateTool.mockResolvedValue({ ok: true });
+      await render({
+        ...configTool,
+        connection_id: 'owner-conn',
+        access: 'editor',
+        allowed_actions: ['edit', 'edit_credentials', 'use'],
+      } as UserToolType);
+      const note = container.querySelector('[data-slot="alert"]');
+      expect(note?.textContent).toBe('common.credentialsLockedNotice');
+      const credential = container.querySelector<HTMLInputElement>(
+        'input[type="password"]',
+      );
+      expect(credential && disabled(credential)).toBe(true);
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )?.set;
+        setter?.call(nameInput(), 'Renamed');
+        nameInput().dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => {
+        buttonByText('settings.tools.save')?.click();
+      });
+      expect(updateTool).toHaveBeenCalledTimes(1);
+      expect(updateTool.mock.calls[0][0]).not.toHaveProperty('config');
+    });
+
+    it("keeps a connected tool's credentials open to its owner", async () => {
+      await render({
+        ...configTool,
+        connection_id: 'my-conn',
+        access: 'owner',
+      } as UserToolType);
+      expect(container.textContent).not.toContain(
+        'common.credentialsLockedNotice',
+      );
+    });
+
     it("disables an API tool's URL and header values without edit_credentials", async () => {
       await render({ ...apiTool, ...editorNoCreds } as APIToolType);
       await expandFirstAction();

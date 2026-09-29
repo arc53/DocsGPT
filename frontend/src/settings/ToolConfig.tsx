@@ -40,7 +40,7 @@ import ImportSpecModal from '../modals/ImportSpecModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { getMethodBadgeVariant } from '../utils/httpMethodColors';
-import { can } from '../utils/accessUtils';
+import { can, isOwner } from '../utils/accessUtils';
 import { isSharedOAuthMcp } from '../utils/toolUtils';
 import { areObjectsEqual } from '../utils/objectUtils';
 import { cn, focusRing } from '@/lib/utils';
@@ -125,7 +125,12 @@ export default function ToolConfig({
   // A shared OAuth server's connection stays with its owner (the backend
   // refuses it), so its fields lock like credentials the caller can't change.
   const sharedOAuth = isSharedOAuthMcp(tool);
-  const canEditCredentials = can(tool, 'edit_credentials') && !sharedOAuth;
+  // A connected tool's secret lives on the owner's connection, which the
+  // server lets only its owner change, whatever the owner's switch says.
+  const ownerOnlyConnection =
+    'connection_id' in tool && !!tool.connection_id && !isOwner(tool);
+  const canEditCredentials =
+    can(tool, 'edit_credentials') && !sharedOAuth && !ownerOnlyConnection;
   // Neither: the tool opens as a read-only view with no Save.
   const readOnly = !canEdit && !canEditCredentials;
   const access = React.useMemo(
@@ -313,17 +318,6 @@ export default function ToolConfig({
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleDelete = () => {
-    // A draft (a new OpenAPI tool not saved yet) has nothing to delete.
-    if (!tool.id) {
-      handleGoBack();
-      return;
-    }
-    userService.deleteTool({ id: tool.id }, token).then(() => {
-      handleGoBack();
-    });
   };
 
   const handleAddNewAction = (actionName: string) => {

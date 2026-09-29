@@ -805,7 +805,8 @@
           },
           "viewers_can_use_in_agents": {
             "label": "Betrachter dürfen es in eigenen Agenten nutzen",
-            "description": "Es läuft mit deinen Anmeldedaten."
+            "description": "Es läuft mit deinen Anmeldedaten.",
+            "descriptionMember": "Jedes Mitglied nutzt sein eigenes Konto."
           }
         },
         "prompt": {
@@ -1401,7 +1402,6 @@
         "syncNow": "Jetzt synchronisieren",
         "syncStarted": "{{name}} wird synchronisiert…",
         "syncFailed": "Die Synchronisierung konnte nicht gestartet werden. Versuche es erneut.",
-        "toolSwitch": "{{name}} an",
         "toolSwitchFailed": "Das Werkzeug konnte nicht geändert werden. Versuche es erneut.",
         "account": "Konto: {{account}}",
         "expired": "Die Anmeldung ist abgelaufen. Verbinde neu, um diese Verbindung weiter zu nutzen.",
@@ -1535,9 +1535,12 @@
       "share": {
         "heading": "Welches Konto Teammitglieder nutzen",
         "ownerWarning": "Teammitglieder handeln in {{name}} als {{account}}.",
+        "ownerWarningShared": "Teammitglieder handeln mit dem {{name}}-Konto des Eigentümers.",
         "confirmWrite": "Ich verstehe, dass Teammitglieder mit meinem Konto Aktionen ausführen können.",
+        "confirmWriteShared": "Ich verstehe, dass Teammitglieder mit dem {{name}}-Konto des Eigentümers Aktionen ausführen können.",
         "memberNote": "Jedes Mitglied verbindet sein eigenes {{name}}-Konto, bevor es dieses Werkzeug nutzen kann.",
         "forced": "Ein Admin hat das für alle Freigaben dieses Konnektors festgelegt.",
+        "ownerChooses": "Nur der Eigentümer kann das ändern.",
         "saveFailed": "Die Änderung konnte nicht gespeichert werden. Versuche es erneut."
       },
       "createFailed": "Der Konnektor konnte nicht hinzugefügt werden. Versuche es erneut.",

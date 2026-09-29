@@ -66,6 +66,7 @@ import {
   errorMessage,
   resolveSettings,
   settingCopy,
+  shownSettings,
 } from './accessSettings';
 import { loadTeams, selectTeams } from './teamsSlice';
 
@@ -73,12 +74,18 @@ import { loadTeams, selectTeams } from './teamsSlice';
 export type ShareCredentials = {
   toolId: string;
   connectorName: string;
+  /** The connection's account; empty when the caller isn't its owner. */
   account: string;
   mode: 'owner' | 'member';
   /** Set when an admin forces one mode for every share of this connector. */
   forcedMode?: 'owner' | 'member' | null;
   /** Owner-mode shares of a tool with write actions need an explicit OK. */
   hasWrites: boolean;
+  /**
+   * An editor the owner lets share: the mode is the owner's choice, shown
+   * but locked, and the write confirmation still applies.
+   */
+  readOnly?: boolean;
 };
 
 type Props = {
@@ -157,7 +164,7 @@ export default function ShareToTeamModal({
   const needsWriteConfirm =
     !!credentials && credentialMode === 'owner' && credentials.hasWrites;
   const changeCredentialMode = (mode: 'owner' | 'member') => {
-    if (!credentials || mode === credentialMode) return;
+    if (!credentials || credentials.readOnly || mode === credentialMode) return;
     const previous = credentialMode;
     setCredentialMode(mode);
     connectorsService
@@ -261,7 +268,12 @@ export default function ShareToTeamModal({
       .getResourceSettings(resourceType, resourceId, token)
       .then((r) => {
         setSettingsInfo(r);
-        if (anyChanged(resolveSettings(resourceType, r?.settings))) {
+        const shown = shownSettings(
+          resourceType,
+          resolveSettings(resourceType, r?.settings),
+          !!credentials,
+        );
+        if (anyChanged(shown)) {
           setSettingsOpen(true);
         }
       })
@@ -271,9 +283,16 @@ export default function ShareToTeamModal({
       });
   }, [resourceType, resourceId]);
 
+  // A connected tool hides "Editors can change credentials": its secret is
+  // the owner's connection, which editors never change.
   const settings = useMemo<ResourceSetting[]>(
-    () => resolveSettings(resourceType, settingsInfo?.settings),
-    [resourceType, settingsInfo],
+    () =>
+      shownSettings(
+        resourceType,
+        resolveSettings(resourceType, settingsInfo?.settings),
+        !!credentials,
+      ),
+    [resourceType, settingsInfo, credentials],
   );
   const canManageSettings = can(settingsInfo, 'manage_settings');
 
@@ -798,7 +817,12 @@ export default function ShareToTeamModal({
       {settingsOpen && (
         <SettingRows>
           {settings.map((setting) => {
-            const copy = settingCopy(t, resourceType, setting.key);
+            const copy = settingCopy(
+              t,
+              resourceType,
+              setting.key,
+              credentials ? credentialMode : undefined,
+            );
             const id = `share-setting-${setting.key}`;
             return (
               <SettingRow
@@ -858,8 +882,9 @@ export default function ShareToTeamModal({
                       key={mode}
                       value={mode}
                       disabled={
-                        !!credentials.forcedMode &&
-                        credentials.forcedMode !== mode
+                        !!credentials.readOnly ||
+                        (!!credentials.forcedMode &&
+                          credentials.forcedMode !== mode)
                       }
                     >
                       {mode === 'owner' ? <UserRound /> : <UsersRound />}
@@ -868,21 +893,32 @@ export default function ShareToTeamModal({
                   ))}
                 </ToggleGroup>
               </div>
-              {credentials.forcedMode && (
+              {credentials.forcedMode ? (
                 <p className="text-muted-foreground text-xs">
                   {t('settings.connectors.share.forced')}
                 </p>
+              ) : (
+                credentials.readOnly && (
+                  <p className="text-muted-foreground text-xs">
+                    {t('settings.connectors.share.ownerChooses')}
+                  </p>
+                )
               )}
               {credentialMode === 'owner' ? (
                 // A tool that can act asks for the confirmation below, which
                 // says the same; one that only reads gets a plain line.
                 needsWriteConfirm ? null : (
                   <p className="text-muted-foreground text-sm">
-                    {t('settings.connectors.share.ownerWarning', {
-                      account: credentials.account,
-                      name: credentials.connectorName,
-                      interpolation: { escapeValue: false },
-                    })}
+                    {credentials.readOnly
+                      ? t('settings.connectors.share.ownerWarningShared', {
+                          name: credentials.connectorName,
+                          interpolation: { escapeValue: false },
+                        })
+                      : t('settings.connectors.share.ownerWarning', {
+                          account: credentials.account,
+                          name: credentials.connectorName,
+                          interpolation: { escapeValue: false },
+                        })}
                   </p>
                 )
               ) : (
@@ -906,7 +942,12 @@ export default function ShareToTeamModal({
                     htmlFor="share-confirm-writes"
                     className="text-sm font-normal"
                   >
-                    {t('settings.connectors.share.confirmWrite')}
+                    {credentials.readOnly
+                      ? t('settings.connectors.share.confirmWriteShared', {
+                          name: credentials.connectorName,
+                          interpolation: { escapeValue: false },
+                        })
+                      : t('settings.connectors.share.confirmWrite')}
                   </Label>
                 </div>
               )}
@@ -1036,7 +1077,7 @@ export default function ShareToTeamModal({
               data-testid="share-editor-hint"
               className="text-muted-foreground mt-1.5 text-xs"
             >
-              {editorHint(t, resourceType, settings)}
+              {editorHint(t, resourceType, settings, !!credentials)}
             </p>
           </div>
 

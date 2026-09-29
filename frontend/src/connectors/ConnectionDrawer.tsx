@@ -22,6 +22,7 @@ import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal, ModalActions } from '../components/ui/modal';
@@ -302,7 +303,11 @@ function RenameAccountModal({
   );
 }
 
-/** A connection tool's on/off switch: the one place it is turned on or off. */
+/**
+ * A connection tool's "In my chats" switch: the owner's own preference, the
+ * same one as on the tool's card. Teammates the tool is shared with keep
+ * their own, so it never turns the tool off for them.
+ */
 function ToolSwitch({
   tool,
   onToggle,
@@ -313,19 +318,26 @@ function ToolSwitch({
   const { t } = useTranslation();
   const [on, setOn] = useState(tool.status);
   useEffect(() => setOn(tool.status), [tool.status]);
+  const id = `connection-tool-in-chats-${tool.id}`;
   return (
-    <Switch
-      checked={on}
-      aria-label={t('settings.connectors.detail.toolSwitch', {
-        name: tool.display_name,
-        interpolation: { escapeValue: false },
-      })}
-      onCheckedChange={async (checked) => {
-        const next = checked === true;
-        setOn(next);
-        if (!(await onToggle(tool.id, next))) setOn(!next);
-      }}
-    />
+    <span className="flex shrink-0 items-center gap-2">
+      <Label htmlFor={id} className="text-muted-foreground text-xs font-normal">
+        {t('settings.tools.inMyChats')}
+      </Label>
+      <Switch
+        id={id}
+        checked={on}
+        aria-label={t('settings.tools.useInMyChatsAria', {
+          toolName: tool.display_name,
+          interpolation: { escapeValue: false },
+        })}
+        onCheckedChange={async (checked) => {
+          const next = checked === true;
+          setOn(next);
+          if (!(await onToggle(tool.id, next))) setOn(!next);
+        }}
+      />
+    </span>
   );
 }
 
