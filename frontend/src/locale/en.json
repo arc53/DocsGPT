@@ -1938,7 +1938,7 @@
       "resetKey": "Reset key",
       "resetKeyConfirm": "Are you sure you want to reset the API key? The current key will stop working immediately and this action cannot be undone.",
       "apiWrites": {
-        "title": "Actions API, widget and public-link users can take as you",
+        "title": "Changes others can make as you",
         "description": "Nobody can approve an action for you through the API key, the widget or the agent's public link, so changes made with your connected accounts and saved credentials are blocked unless you allow them here.",
         "saveFailed": "Could not save. Try again.",
         "summaryNone": "None allowed yet",

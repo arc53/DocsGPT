@@ -68,18 +68,18 @@ function ToolAllowlist({
   const plain = { interpolation: { escapeValue: false } };
   return (
     <div data-tool={tool.id} className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-start justify-between gap-3">
         <SectionHeader
           as="h4"
           size="xs"
-          className="min-w-0"
+          className="min-w-0 flex-1"
           title={tool.name}
           description={t(`${K}.toolCount`, {
             allowed: formatCount(allowedCount),
             formatted: formatCount(tool.actions.length),
           })}
         />
-        <div className="bg-muted rounded-full p-1">
+        <div className="bg-muted shrink-0 rounded-full p-1">
           <ToggleGroup
             type="single"
             size="xs"
