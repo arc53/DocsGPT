@@ -477,6 +477,17 @@ describe('ShareToTeamModal credentials', () => {
     expect(text()).toContain('settings.connectors.share.forced');
   });
 
+  it('follows the mode once the connection loads after opening', async () => {
+    await render();
+    await render(credentials({ hasWrites: true, mode: 'member' }));
+    expect(toggle('member').getAttribute('aria-checked')).toBe('true');
+    // Member mode runs on each member's own account: nothing to confirm.
+    expect(body().querySelector('#share-confirm-writes')).toBeNull();
+    await render(credentials({ hasWrites: true, forcedMode: 'owner' }));
+    expect(toggle('owner').getAttribute('aria-checked')).toBe('true');
+    expect(toggle('member').disabled).toBe(true);
+  });
+
   describe('access settings of a connected tool', () => {
     const toolSettings = (values: Record<string, boolean> = {}) => ({
       success: true,

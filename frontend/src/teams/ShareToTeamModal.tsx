@@ -157,9 +157,19 @@ export default function ShareToTeamModal({
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const savedCredentialMode =
+    credentials?.forcedMode ?? credentials?.mode ?? 'owner';
   const [credentialMode, setCredentialMode] = useState<'owner' | 'member'>(
-    credentials?.forcedMode ?? credentials?.mode ?? 'owner',
+    savedCredentialMode,
   );
+  // The caller may open the dialog before the tool's connection has loaded:
+  // follow the mode (or an admin's forced one) when it arrives or changes.
+  const [seenCredentialMode, setSeenCredentialMode] =
+    useState(savedCredentialMode);
+  if (savedCredentialMode !== seenCredentialMode) {
+    setSeenCredentialMode(savedCredentialMode);
+    setCredentialMode(savedCredentialMode);
+  }
   const [writesConfirmed, setWritesConfirmed] = useState(false);
   const needsWriteConfirm =
     !!credentials && credentialMode === 'owner' && credentials.hasWrites;
