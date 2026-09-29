@@ -411,43 +411,32 @@ function Configure-Auth {
     Write-Host ""
     Write-ColorText "Authentication Configuration" -ForegroundColor "White" -Bold
     Write-ColorText "Choose authentication type:" -ForegroundColor "White"
-    Write-ColorText "1) None (default, no authentication)" -ForegroundColor "Yellow"
-    Write-ColorText "2) Simple JWT" -ForegroundColor "Yellow"
-    Write-ColorText "3) Session JWT" -ForegroundColor "Yellow"
+    Write-ColorText "1) None (default): no sign-in, every visitor shares one account" -ForegroundColor "Yellow"
+    Write-ColorText "2) Simple JWT: one shared access token, everyone who has it is the same user" -ForegroundColor "Yellow"
+    Write-ColorText "3) Session JWT: keeps browsers apart, but anyone who can reach DocsGPT gets in" -ForegroundColor "Yellow"
     Write-ColorText "b) Back" -ForegroundColor "Yellow"
+    Write-ColorText "For separate user accounts with real sign-in, set AUTH_TYPE=oidc in .env after setup and connect" -ForegroundColor "White"
+    Write-ColorText "your identity provider: https://docs.docsgpt.cloud/Deploying/OIDC-SSO" -ForegroundColor "White"
     Write-Host ""
     $auth_choice = Read-Host "Choose option (1-3, or b)"
 
     switch ($auth_choice) {
         "1" {
+            Remove-EnvKeys @("AUTH_TYPE", "JWT_SECRET_KEY")
             Write-ColorText "Authentication disabled (default)." -ForegroundColor "Green"
         }
         "2" {
+            Remove-EnvKeys @("AUTH_TYPE", "JWT_SECRET_KEY")
             "AUTH_TYPE=simple_jwt" | Add-Content -Path $ENV_FILE -Encoding utf8
-            $jwt_key = Read-Host "Enter JWT secret key (leave empty to auto-generate)"
-            if ([string]::IsNullOrEmpty($jwt_key)) {
-                $bytes = New-Object byte[] 32
-                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-                $rng.GetBytes($bytes)
-                $rng.Dispose()
-                $jwt_key = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
-                Write-ColorText "Auto-generated JWT secret key." -ForegroundColor "Yellow"
-            }
-            "JWT_SECRET_KEY=$jwt_key" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-JwtSecretKey
             Write-ColorText "Authentication set to Simple JWT." -ForegroundColor "Green"
+            Write-ColorText "The page asks for the access token. The backend prints it when it starts:" -ForegroundColor "White"
+            Write-ColorText "  docker compose -f `"$COMPOSE_FILE`" logs backend | Select-String `"Simple JWT`"" -ForegroundColor "White"
         }
         "3" {
+            Remove-EnvKeys @("AUTH_TYPE", "JWT_SECRET_KEY")
             "AUTH_TYPE=session_jwt" | Add-Content -Path $ENV_FILE -Encoding utf8
-            $jwt_key = Read-Host "Enter JWT secret key (leave empty to auto-generate)"
-            if ([string]::IsNullOrEmpty($jwt_key)) {
-                $bytes = New-Object byte[] 32
-                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-                $rng.GetBytes($bytes)
-                $rng.Dispose()
-                $jwt_key = [System.BitConverter]::ToString($bytes).Replace("-", "").ToLower()
-                Write-ColorText "Auto-generated JWT secret key." -ForegroundColor "Yellow"
-            }
-            "JWT_SECRET_KEY=$jwt_key" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-JwtSecretKey
             Write-ColorText "Authentication set to Session JWT." -ForegroundColor "Green"
         }
         {$_ -eq "b" -or $_ -eq "B"} { return }
@@ -457,6 +446,36 @@ function Configure-Auth {
             Start-Sleep -Seconds 1
         }
     }
+}
+
+# 32 random bytes as hex, for the generated secrets
+function New-HexSecret {
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $rng.GetBytes($bytes)
+    $rng.Dispose()
+    return ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
+}
+
+# Ask for a JWT signing key, or generate one, and write it to .env
+function Write-JwtSecretKey {
+    $jwt_key = Read-Host "Enter JWT secret key (leave empty to auto-generate)"
+    if ([string]::IsNullOrEmpty($jwt_key)) {
+        $jwt_key = New-HexSecret
+        Write-ColorText "Auto-generated JWT secret key." -ForegroundColor "Yellow"
+    }
+    "JWT_SECRET_KEY=$jwt_key" | Add-Content -Path $ENV_FILE -Encoding utf8
+}
+
+# Drop settings from .env so choosing again does not leave the earlier value behind
+function Remove-EnvKeys {
+    param([string[]]$Keys)
+    if (-not (Test-Path $ENV_FILE)) { return }
+    $kept = Get-Content $ENV_FILE | Where-Object {
+        $line = $_
+        -not ($Keys | Where-Object { $line.StartsWith("$_=") })
+    }
+    Set-Content -Path $ENV_FILE -Value $kept -Encoding utf8
 }
 
 # Integrations configuration
@@ -574,9 +593,58 @@ function Ensure-InternalKey {
     }
 }
 
+# Generate ENCRYPTION_SECRET_KEY, which seals stored connector, MCP and tool credentials. A key
+# is never replaced: credentials already stored are sealed with it. A rerun carries it over from
+# the .env it overwrites, and an install whose .env had none keeps the default rather than lose
+# the credentials it may already hold under it.
+function Ensure-EncryptionKey {
+    $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
+    if ($content -match "(?m)^ENCRYPTION_SECRET_KEY=") {
+        return
+    }
+    if (-not [string]::IsNullOrEmpty($script:PREVIOUS_ENCRYPTION_KEY)) {
+        "ENCRYPTION_SECRET_KEY=$($script:PREVIOUS_ENCRYPTION_KEY)" | Add-Content -Path $ENV_FILE -Encoding utf8
+    } elseif ($script:HAD_ENV_FILE) {
+        Write-ColorText "ENCRYPTION_SECRET_KEY was not generated: this install may already hold credentials sealed with" -ForegroundColor "Yellow"
+        Write-ColorText "the default key. To set one, see https://docs.docsgpt.cloud/Deploying/Security#secrets" -ForegroundColor "Yellow"
+    } else {
+        "ENCRYPTION_SECRET_KEY=$(New-HexSecret)" | Add-Content -Path $ENV_FILE -Encoding utf8
+    }
+}
+
+# Ask whether other machines may reach DocsGPT; by default its ports are bound to 127.0.0.1
+function Configure-NetworkAccess {
+    Write-Host ""
+    Write-ColorText "DocsGPT is reachable from this computer only (its ports are bound to 127.0.0.1)." -ForegroundColor "White"
+    $expose_network = Read-Host "Make it reachable from other machines on your network? (y/N)"
+    if ($expose_network -ne "y" -and $expose_network -ne "Y") {
+        return
+    }
+    "DOCSGPT_BIND=0.0.0.0" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Write-Host ""
+    Write-ColorText "Warning: anyone who can reach this machine can use DocsGPT and your model API key." -ForegroundColor "Yellow" -Bold
+    Write-ColorText "Without authentication there is no sign-in: every visitor shares one account, with its documents," -ForegroundColor "Yellow"
+    Write-ColorText "agents and connected services. Traffic is plain HTTP, so put a TLS proxy in front of it outside a" -ForegroundColor "Yellow"
+    Write-ColorText "trusted network. Checklist: https://docs.docsgpt.cloud/Deploying/Security" -ForegroundColor "Yellow"
+    Write-ColorText "From other machines, open http://<this machine's address>:7091 (the UI on 5173 calls the API on localhost)." -ForegroundColor "White"
+    Write-Host ""
+    $auth_now = Read-Host "Set up authentication now? (Y/n)"
+    if ($auth_now -eq "n" -or $auth_now -eq "N") {
+        Write-ColorText "No authentication set. Set AUTH_TYPE in .env before anyone else can reach this machine." -ForegroundColor "Yellow"
+        return
+    }
+    Configure-Auth
+    $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
+    if ($content -notmatch "(?m)^AUTH_TYPE=") {
+        Write-ColorText "No authentication set. Set AUTH_TYPE in .env before anyone else can reach this machine." -ForegroundColor "Yellow"
+    }
+}
+
 # Main advanced settings menu
 function Prompt-AdvancedSettings {
     Ensure-InternalKey
+    Ensure-EncryptionKey
+    Configure-NetworkAccess
     Write-Host ""
     $configure_advanced = Read-Host "Would you like to configure advanced settings? (y/N)"
     if ($configure_advanced -ne "y" -and $configure_advanced -ne "Y") {
@@ -778,7 +846,7 @@ function Serve-LocalOllama {
         $attempts = 0
         
         while (-not $ollamaReady -and $attempts -lt $maxAttempts) {
-            $containerStatus = & docker compose -f "$COMPOSE_FILE" -f "$optional_compose" ps --services --filter "status=running" --format "{{.Service}}"
+            $containerStatus = & docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$optional_compose" ps --services --filter "status=running" --format "{{.Service}}"
             
             if ($containerStatus -like "*ollama*") {
                 $ollamaReady = $true
@@ -1067,7 +1135,15 @@ function Connect-CloudAPIProvider {
 Animate-Dino
 
 # Check if .env file exists and is not empty
+$script:PREVIOUS_ENCRYPTION_KEY = ""
+$script:HAD_ENV_FILE = $false
 if ((Test-Path $ENV_FILE) -and ((Get-Item $ENV_FILE).Length -gt 0)) {
+    $script:HAD_ENV_FILE = $true
+    # Carried into the new .env: the credentials this install stored are sealed with it.
+    $previousKeyLine = Get-Content $ENV_FILE | Where-Object { $_.StartsWith("ENCRYPTION_SECRET_KEY=") } | Select-Object -Last 1
+    if ($previousKeyLine) {
+        $script:PREVIOUS_ENCRYPTION_KEY = $previousKeyLine.Substring("ENCRYPTION_SECRET_KEY=".Length)
+    }
     Write-Host ""
     Write-ColorText "Warning: An existing .env file was found with the following settings:" -ForegroundColor "Yellow" -Bold
     $envLines = Get-Content $ENV_FILE

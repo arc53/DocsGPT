@@ -9,12 +9,12 @@ services:
       - VITE_EMBEDDINGS_NAME=$EMBEDDINGS_NAME
       - DOCKER=true
     ports:
-      - "5173:5173"
+      - "${DOCSGPT_BIND:-127.0.0.1}:5173:5173"
 
   redis:
     image: redis:6-alpine
     ports:
-      - 6379:6379
+      - "127.0.0.1:6379:6379"
 
   postgres:
     image: postgres:16-alpine
@@ -23,7 +23,7 @@ services:
       - POSTGRES_PASSWORD=docsgpt
       - POSTGRES_DB=docsgpt
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

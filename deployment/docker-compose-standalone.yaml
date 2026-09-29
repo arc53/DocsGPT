@@ -33,8 +33,14 @@
 #                          compatible); the code default stays mpnet for upgrades.
 #
 # HTTPS for a public domain: point the domain's DNS at this machine, open ports
-# 80 and 443, then
+# 80 and 443, turn on authentication (a public instance is otherwise open to
+# anyone), then
+#   printf 'AUTH_TYPE=simple_jwt\nJWT_SECRET_KEY=%s\nENCRYPTION_SECRET_KEY=%s\n' \
+#     "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" >> .env
 #   DOCSGPT_DOMAIN=docs.example.com docker compose -f docker-compose-standalone.yaml --profile https up -d
+# simple_jwt is one shared access token (the backend log prints it); use
+# AUTH_TYPE=oidc for separate user accounts. Set ENCRYPTION_SECRET_KEY only on a
+# fresh install: credentials already stored are sealed with the current key.
 # Caddy obtains and renews the certificate and proxies to the backend. Putting
 # DOCSGPT_DOMAIN and COMPOSE_PROFILES=https in .env instead makes every later
 # `up`, `down` and `logs` include Caddy without the flag.

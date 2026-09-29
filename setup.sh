@@ -281,44 +281,60 @@ configure_embeddings() {
 configure_auth() {
     echo -e "\n${DEFAULT_FG}${BOLD}Authentication Configuration${NC}"
     echo -e "${DEFAULT_FG}Choose authentication type:${NC}"
-    echo -e "${YELLOW}1) None (default, no authentication)${NC}"
-    echo -e "${YELLOW}2) Simple JWT${NC}"
-    echo -e "${YELLOW}3) Session JWT${NC}"
+    echo -e "${YELLOW}1) None (default): no sign-in, every visitor shares one account${NC}"
+    echo -e "${YELLOW}2) Simple JWT: one shared access token, everyone who has it is the same user${NC}"
+    echo -e "${YELLOW}3) Session JWT: keeps browsers apart, but anyone who can reach DocsGPT gets in${NC}"
     echo -e "${YELLOW}b) Back${NC}"
+    echo -e "${DEFAULT_FG}For separate user accounts with real sign-in, set AUTH_TYPE=oidc in .env after setup and connect${NC}"
+    echo -e "${DEFAULT_FG}your identity provider: https://docs.docsgpt.cloud/Deploying/OIDC-SSO${NC}"
     echo
     read -p "$(echo -e "${DEFAULT_FG}Choose option (1-3, or b): ${NC}")" auth_choice
 
     case "$auth_choice" in
         1)
+            remove_env_keys AUTH_TYPE JWT_SECRET_KEY
             echo -e "${GREEN}Authentication disabled (default).${NC}"
             ;;
         2)
+            remove_env_keys AUTH_TYPE JWT_SECRET_KEY
             echo "AUTH_TYPE=simple_jwt" >> "$ENV_FILE"
-            read -p "$(echo -e "${DEFAULT_FG}Enter JWT secret key (leave empty to auto-generate): ${NC}")" jwt_key
-            if [ -n "$jwt_key" ]; then
-                echo "JWT_SECRET_KEY=$jwt_key" >> "$ENV_FILE"
-            else
-                generated_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
-                echo "JWT_SECRET_KEY=$generated_key" >> "$ENV_FILE"
-                echo -e "${YELLOW}Auto-generated JWT secret key.${NC}"
-            fi
+            write_jwt_secret_key
             echo -e "${GREEN}Authentication set to Simple JWT.${NC}"
+            echo -e "${DEFAULT_FG}The page asks for the access token. The backend prints it when it starts:${NC}"
+            echo -e "${DEFAULT_FG}  docker compose -f \"${COMPOSE_FILE}\" logs backend | grep \"Simple JWT\"${NC}"
             ;;
         3)
+            remove_env_keys AUTH_TYPE JWT_SECRET_KEY
             echo "AUTH_TYPE=session_jwt" >> "$ENV_FILE"
-            read -p "$(echo -e "${DEFAULT_FG}Enter JWT secret key (leave empty to auto-generate): ${NC}")" jwt_key
-            if [ -n "$jwt_key" ]; then
-                echo "JWT_SECRET_KEY=$jwt_key" >> "$ENV_FILE"
-            else
-                generated_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
-                echo "JWT_SECRET_KEY=$generated_key" >> "$ENV_FILE"
-                echo -e "${YELLOW}Auto-generated JWT secret key.${NC}"
-            fi
+            write_jwt_secret_key
             echo -e "${GREEN}Authentication set to Session JWT.${NC}"
             ;;
         b|B) return ;;
         *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;
     esac
+}
+
+# Ask for a JWT signing key, or generate one, and write it to .env
+write_jwt_secret_key() {
+    local jwt_key generated_key
+    read -p "$(echo -e "${DEFAULT_FG}Enter JWT secret key (leave empty to auto-generate): ${NC}")" jwt_key
+    if [ -n "$jwt_key" ]; then
+        echo "JWT_SECRET_KEY=$jwt_key" >> "$ENV_FILE"
+    else
+        generated_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        echo "JWT_SECRET_KEY=$generated_key" >> "$ENV_FILE"
+        echo -e "${YELLOW}Auto-generated JWT secret key.${NC}"
+    fi
+}
+
+# Drop settings from .env so choosing again does not leave the earlier value behind
+remove_env_keys() {
+    local key
+    [ -f "$ENV_FILE" ] || return 0
+    for key in "$@"; do
+        grep -v "^${key}=" "$ENV_FILE" > "${ENV_FILE}.tmp"
+        mv "${ENV_FILE}.tmp" "$ENV_FILE"
+    done
 }
 
 # Integrations configuration
@@ -421,9 +437,58 @@ ensure_internal_key() {
     fi
 }
 
+# Generate ENCRYPTION_SECRET_KEY, which seals stored connector, MCP and tool credentials. A key
+# is never replaced: credentials already stored are sealed with it. A rerun carries it over from
+# the .env it overwrites, and an install whose .env had none keeps the default rather than lose
+# the credentials it may already hold under it.
+ensure_encryption_key() {
+    local encryption_key
+    if grep -q "^ENCRYPTION_SECRET_KEY=" "$ENV_FILE" 2>/dev/null; then
+        return
+    fi
+    if [ -n "$PREVIOUS_ENCRYPTION_KEY" ]; then
+        echo "ENCRYPTION_SECRET_KEY=$PREVIOUS_ENCRYPTION_KEY" >> "$ENV_FILE"
+    elif [ "$HAD_ENV_FILE" -eq 1 ]; then
+        echo -e "${YELLOW}ENCRYPTION_SECRET_KEY was not generated: this install may already hold credentials sealed with${NC}"
+        echo -e "${YELLOW}the default key. To set one, see https://docs.docsgpt.cloud/Deploying/Security#secrets${NC}"
+    else
+        encryption_key=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        echo "ENCRYPTION_SECRET_KEY=$encryption_key" >> "$ENV_FILE"
+    fi
+}
+
+# Ask whether other machines may reach DocsGPT; by default its ports are bound to 127.0.0.1
+configure_network_access() {
+    local expose_network auth_now
+    echo
+    echo -e "${DEFAULT_FG}DocsGPT is reachable from this computer only (its ports are bound to 127.0.0.1).${NC}"
+    read -p "$(echo -e "${DEFAULT_FG}Make it reachable from other machines on your network? (y/N): ${NC}")" expose_network
+    if [[ ! "$expose_network" =~ ^[yY]$ ]]; then
+        return
+    fi
+    echo "DOCSGPT_BIND=0.0.0.0" >> "$ENV_FILE"
+    echo -e "\n${YELLOW}${BOLD}Warning:${NC}${YELLOW} anyone who can reach this machine can use DocsGPT and your model API key.${NC}"
+    echo -e "${YELLOW}Without authentication there is no sign-in: every visitor shares one account, with its documents,${NC}"
+    echo -e "${YELLOW}agents and connected services. Traffic is plain HTTP, so put a TLS proxy in front of it outside a${NC}"
+    echo -e "${YELLOW}trusted network. Checklist: https://docs.docsgpt.cloud/Deploying/Security${NC}"
+    echo -e "${DEFAULT_FG}From other machines, open http://<this machine's address>:7091 (the UI on 5173 calls the API on localhost).${NC}"
+    echo
+    read -p "$(echo -e "${DEFAULT_FG}Set up authentication now? (Y/n): ${NC}")" auth_now
+    if [[ "$auth_now" =~ ^[nN]$ ]]; then
+        echo -e "${YELLOW}No authentication set. Set AUTH_TYPE in .env before anyone else can reach this machine.${NC}"
+        return
+    fi
+    configure_auth
+    if ! grep -q "^AUTH_TYPE=" "$ENV_FILE" 2>/dev/null; then
+        echo -e "${YELLOW}No authentication set. Set AUTH_TYPE in .env before anyone else can reach this machine.${NC}"
+    fi
+}
+
 # Main advanced settings menu
 prompt_advanced_settings() {
     ensure_internal_key
+    ensure_encryption_key
+    configure_network_access
     echo
     read -p "$(echo -e "${DEFAULT_FG}Would you like to configure advanced settings? (y/N): ${NC}")" configure_advanced
     if [[ ! "$configure_advanced" =~ ^[yY]$ ]]; then
@@ -566,7 +631,7 @@ serve_local_ollama() {
     echo "Waiting for Ollama container to be ready..."
     OLLAMA_READY=false
     while ! $OLLAMA_READY; do
-        CONTAINER_STATUS=$(docker compose "${compose_files[@]}" ps --services --filter "status=running" --format '{{.Service}}')
+        CONTAINER_STATUS=$(docker compose --env-file "${ENV_FILE}" "${compose_files[@]}" ps --services --filter "status=running" --format '{{.Service}}')
         if [[ "$CONTAINER_STATUS" == *"ollama"* ]]; then # Check if 'ollama' service is in running services
             OLLAMA_READY=true
             echo "Ollama container is running."
@@ -767,7 +832,12 @@ connect_cloud_api_provider() {
 animate_dino
 
 # Check if .env file exists and is not empty
+PREVIOUS_ENCRYPTION_KEY=""
+HAD_ENV_FILE=0
 if [ -f "$ENV_FILE" ] && [ -s "$ENV_FILE" ]; then
+    HAD_ENV_FILE=1
+    # Carried into the new .env: the credentials this install stored are sealed with it.
+    PREVIOUS_ENCRYPTION_KEY=$(grep "^ENCRYPTION_SECRET_KEY=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)
     echo -e "\n${YELLOW}${BOLD}Warning:${NC}${YELLOW} An existing .env file was found with the following settings:${NC}"
     head -3 "$ENV_FILE" | while IFS= read -r line; do echo -e "${DEFAULT_FG}  $line${NC}"; done
     total_lines=$(wc -l < "$ENV_FILE")

@@ -2,7 +2,11 @@
 #   DOCSGPT_IMAGE_TAG      develop (default, follows main) or a release, e.g. 0.20.0
 #   DOCSGPT_IMAGE_VARIANT  empty (default, slim) or -docling: docling parser engine,
 #                          its models, and tesseract baked in (OCR-ready)
-# Set them in ../.env or the shell. deployment/docker-compose-standalone.yaml runs
+#   DOCSGPT_BIND           interface the API (7091) and UI (5173) are published on:
+#                          127.0.0.1 (default, this machine only) or 0.0.0.0 (every
+#                          interface; set AUTH_TYPE first, see Deploying/Security)
+# Set them in ../.env (with --env-file .env) or the shell. Postgres and Redis are
+# published on 127.0.0.1 only, for a backend run on the host. deployment/docker-compose-standalone.yaml runs
 # the same images without a git checkout, with the backend serving the UI on one port.
 name: docsgpt-oss
 services:
@@ -26,7 +30,7 @@ services:
       - VITE_DISABLE_SOURCE_FE
       - VITE_USE_V
     ports:
-      - "5173:5173"
+      - "${DOCSGPT_BIND:-127.0.0.1}:5173:5173"
     depends_on:
       - backend
 
@@ -42,7 +46,7 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     ports:
-      - "7091:7091"
+      - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
     volumes:
       # Host data stays under application/ (the old package directory) for this
       # release so an upgraded checkout keeps its indexes; it moves with the
@@ -93,7 +97,7 @@ services:
   redis:
     image: redis:6-alpine
     ports:
-      - 6379:6379
+      - "127.0.0.1:6379:6379"
 
   postgres:
     image: postgres:16-alpine
@@ -102,7 +106,7 @@ services:
       - POSTGRES_PASSWORD=docsgpt
       - POSTGRES_DB=docsgpt
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

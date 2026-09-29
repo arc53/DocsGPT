@@ -20,7 +20,7 @@ services:
       - VITE_DISABLE_SOURCE_FE
       - VITE_USE_V
     ports:
-      - "5173:5173"
+      - "${DOCSGPT_BIND:-127.0.0.1}:5173:5173"
     depends_on:
       - backend
 
@@ -42,7 +42,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     ports:
-      - "7091:7091"
+      - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
     volumes:
       # Host data lives under application/ (the old package directory) for this
       # release, like the other compose files; it moves with the packaging work,
@@ -94,7 +94,7 @@ services:
   redis:
     image: redis:6-alpine
     ports:
-      - 6379:6379
+      - "127.0.0.1:6379:6379"
 
   postgres:
     image: postgres:16-alpine
@@ -103,7 +103,7 @@ services:
       - POSTGRES_PASSWORD=docsgpt
       - POSTGRES_DB=docsgpt
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
