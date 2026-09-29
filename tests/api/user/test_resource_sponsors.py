@@ -45,6 +45,8 @@ _DB_MODULES = (
     "docsgpt.agents.tool_executor",
     "docsgpt.api.answer.services.stream_processor",
     "docsgpt.agents.workflows.workflow_engine",
+    "docsgpt.connectors.resolve",
+    "docsgpt.connectors.service",
     "docsgpt.storage.db.session",
 )
 
@@ -389,8 +391,10 @@ class TestRunTime:
 # ---------------------------------------------------------------------------
 
 
-def _wf_body(tool=None, source=None):
-    agent_cfg = {"agent_type": "classic", "system_prompt": "s", "tools": [tool] if tool else [],
+def _wf_body(tool=None, source=None, tools=None):
+    if tools is None:
+        tools = [tool] if tool else []
+    agent_cfg = {"agent_type": "classic", "system_prompt": "s", "tools": tools,
                  "sources": [source] if source else []}
     return {
         "name": "WF",
@@ -457,3 +461,94 @@ class TestWorkflows:
             TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", agent_id, target_user_id=EDITOR)
             assert engine._node_tool_principals([tool]) == {}
             assert engine._authorized_node_sources([source]) == []
+
+    def _node_executor(self, monkeypatch, pg_conn, wid, caller, tools):
+        """Run one agent node of ``wid`` for ``caller``; return its agent's tool executor."""
+        from docsgpt.agents.tool_executor import ToolExecutor
+        from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory, _WorkflowNodeMixin
+        from docsgpt.agents.workflows.schemas import NodeType, Workflow, WorkflowGraph, WorkflowNode
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+
+        class _Base:
+            # Stands in for BaseAgent: the executor is built for the token's user.
+            def __init__(self, decoded_token=None, **_kwargs):
+                sub = (decoded_token or {}).get("sub")
+                self.tool_executor = ToolExecutor(user=sub, decoded_token=decoded_token)
+
+        class _NodeAgent(_WorkflowNodeMixin, _Base):
+            def gen(self, _prompt):
+                yield {"answer": "ok"}
+
+        built = []
+
+        def _create(agent_type, **kwargs):
+            built.append(_NodeAgent(**kwargs))
+            return built[-1]
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _name: None)
+        agent = SimpleNamespace(
+            endpoint="stream", llm_name="openai", model_id="gpt-4o-mini", api_key="k", chat_history=[],
+            decoded_token={"sub": caller}, user=caller, workflow_owner=OWNER,
+            _resolve_owner_id=lambda: OWNER, workflow_row=WorkflowsRepository(pg_conn).get_by_id(wid),
+        )
+        engine = WorkflowEngine(WorkflowGraph(workflow=Workflow(name="wf"), nodes=[], edges=[]), agent)
+        engine.state["query"] = "q"
+        node = WorkflowNode(
+            id="a1", workflow_id=wid, type=NodeType.AGENT, title="A", position={"x": 0, "y": 0},
+            config={"agent_type": "classic", "system_prompt": "s", "tools": tools},
+        )
+        with _patch_db(pg_conn):
+            list(engine._execute_agent_node(node))
+        return built[0].tool_executor
+
+    @pytest.mark.parametrize("caller", [OWNER, VIEWER, OTHER])
+    def test_node_tools_resolve_as_the_owner_whoever_runs_it(self, app, pg_conn, monkeypatch, caller):
+        """A teammate or public-link user gets the node tools the owner gets."""
+        wid, _ = self._setup(pg_conn)
+        owner_tool = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
+        editor_tool, _, _ = _editor_resources(pg_conn)
+        assert _status(self._put(app, pg_conn, wid, EDITOR, _wf_body(editor_tool))) == 200
+        tools = [owner_tool, editor_tool]
+        assert _status(self._put(app, pg_conn, wid, OWNER, _wf_body(tools=tools))) == 200
+
+        executor = self._node_executor(monkeypatch, pg_conn, wid, caller, tools)
+        with _patch_db(pg_conn):
+            resolved = executor.get_tools()
+        assert {tid: row["user_id"] for tid, row in resolved.items()} == {owner_tool: OWNER, editor_tool: EDITOR}
+        # Whoever runs the node stays the invoker: member-mode connections are theirs.
+        assert executor.user == caller
+
+    def test_caller_only_tool_is_not_in_the_node(self, app, pg_conn, monkeypatch):
+        """A tool only the caller can use never resolves: nodes are the owner's."""
+        wid, _ = self._setup(pg_conn)
+        viewer_tool = str(UserToolsRepository(pg_conn).create(VIEWER, "api_tool")["id"])
+        executor = self._node_executor(monkeypatch, pg_conn, wid, VIEWER, [viewer_tool])
+        with _patch_db(pg_conn):
+            assert executor.get_tools() == {}
+
+    @pytest.mark.parametrize(("mode", "account", "delegated"), [("member", VIEWER, False), ("owner", OWNER, True)])
+    def test_node_connection_follows_the_credential_mode(self, app, pg_conn, monkeypatch, mode, account, delegated):
+        from sqlalchemy import text
+
+        def _connection(user):
+            return str(pg_conn.execute(
+                text(
+                    "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status, "
+                    "account_label) VALUES (:u, 'telegram', 'telegram', 'api_key', 'connected', :u) RETURNING id"
+                ),
+                {"u": user},
+            ).scalar())
+
+        wid, _ = self._setup(pg_conn)
+        _connection(VIEWER)
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "telegram", connection_id=_connection(OWNER), credential_mode=mode,
+        )["id"])
+        assert _status(self._put(app, pg_conn, wid, OWNER, _wf_body(tool))) == 200
+
+        executor = self._node_executor(monkeypatch, pg_conn, wid, VIEWER, [tool])
+        with _patch_db(pg_conn):
+            resolved = executor._resolve_connection(executor.get_tools()[tool])
+        assert resolved.row["user_id"] == account
+        assert resolved.delegated is delegated

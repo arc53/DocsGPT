@@ -405,6 +405,7 @@ class WorkflowEngine:
             "model_user_id": getattr(self.agent, "model_user_id", None),
             "api_key": node_api_key,
             "tool_ids": node_config.tools,
+            "tool_owner": self._workflow_owner_id(),
             "tool_principals": self._node_tool_principals(node_config.tools),
             "prompt": node_prompt,
             "chat_history": self.agent.chat_history,
@@ -1322,6 +1323,15 @@ class WorkflowEngine:
         docs_together = "\n\n".join(docs_together_parts) if docs_together_parts else None
         return docs, docs_together
 
+    def _workflow_owner_id(self) -> Optional[str]:
+        """The workflow's owner, whom node tools and sources run as.
+
+        Returns:
+            The owner's user id, or None when the run has none.
+        """
+        resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
+        return (resolve_owner() if callable(resolve_owner) else None) or self._resolve_user_id()
+
     def _node_tool_principals(self, tool_ids) -> Dict[str, str]:
         """Node tool id -> the editor to resolve it as, for sponsored tools.
 
@@ -1373,10 +1383,7 @@ class WorkflowEngine:
         if not sources:
             return []
         ids = sources if isinstance(sources, list) else [sources]
-        resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
-        owner = (resolve_owner() if callable(resolve_owner) else None) or (
-            self._resolve_user_id()
-        )
+        owner = self._workflow_owner_id()
         if not owner:
             logger.warning("Workflow node sources dropped: no owner to authorize.")
             return []

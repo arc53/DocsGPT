@@ -523,6 +523,9 @@ class ToolExecutor:
         # get_tools() resolves EXACTLY these ids — builtin synthetic ids and
         # user_tools rows alike — with no defaults mixed in. None = unscoped.
         self.allowed_tool_ids: Optional[List[str]] = None
+        # Who an explicit tool-id scope resolves as: the workflow owner for a
+        # node, so whoever runs it gets the owner's tools. None = ``user``.
+        self.tool_owner: Optional[str] = None
         # Tool id -> the user to resolve it as, for a workflow node's tools
         # sponsored by an editor (see resource_access.active_sponsor).
         self.tool_principals: Dict[str, str] = {}
@@ -582,17 +585,21 @@ class ToolExecutor:
         """Resolve an explicit tool-id scope — exactly these ids, no defaults.
 
         Used by workflow agent nodes: the node's configured tools (builtin
-        synthetic ids like Artifact/Code Executor/Read Document, or the user's
-        ``user_tools`` rows) are the node's WHOLE toolset. An unresolvable id
-        is dropped with a warning rather than failing the node.
+        synthetic ids like Artifact/Code Executor/Read Document, or the
+        ``user_tools`` rows of ``tool_owner``) are the node's WHOLE toolset.
+        Rows resolve as the workflow owner, then as the editor who attached
+        them, never as whoever runs the workflow — the same rule as an agent's
+        own tools. An unresolvable id is dropped with a warning rather than
+        failing the node.
         """
         if not tool_ids:
             return {}
+        principal = self.tool_owner or self.user
         with db_readonly() as conn:
             tools_repo = UserToolsRepository(conn)
             tools: List[Dict] = []
             for tid in tool_ids:
-                row = resolve_tool_by_id(tid, self.user, user_tools_repo=tools_repo)
+                row = resolve_tool_by_id(tid, principal, user_tools_repo=tools_repo)
                 if row is None and str(tid) in self.tool_principals:
                     row = resolve_tool_by_id(tid, self.tool_principals[str(tid)], user_tools_repo=tools_repo)
                 if row is None:
