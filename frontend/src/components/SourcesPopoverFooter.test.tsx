@@ -53,11 +53,10 @@ describe('SourcesPopoverFooter', () => {
 
   it('renders the sources link as an inline link Button', async () => {
     await renderFooter();
-    const [link, connect] = Array.from(container.querySelectorAll('a'));
+    const links = container.querySelectorAll('a');
+    expect(links).toHaveLength(1);
+    const [link] = Array.from(links);
     expect(link.getAttribute('href')).toBe('/settings/knowledge');
-    expect(connect.getAttribute('href')).toBe(
-      '/settings/connectors?capability=sync',
-    );
     expect(link.dataset.slot).toBe('button');
     expect(link.className).toContain('text-primary');
     expect(link.className).toContain('text-sm');

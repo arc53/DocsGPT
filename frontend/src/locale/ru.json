@@ -2111,7 +2111,6 @@
       "selectedCount": "Выбрано: {{count}}",
       "groupOwn": "Ваши",
       "groupTeam": "Общие с командой",
-      "connectMore": "Подключить ещё",
       "fromConnector": "Из {{name}}",
       "fromConnectorTitle": "Из {{name}}: {{title}}",
       "knowledge": "Знания"

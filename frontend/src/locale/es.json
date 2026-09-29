@@ -2019,7 +2019,6 @@
       "selectedCount": "{{count}} seleccionados",
       "groupOwn": "Tuyos",
       "groupTeam": "Compartidas con el equipo",
-      "connectMore": "Conectar más",
       "fromConnector": "De {{name}}",
       "fromConnectorTitle": "De {{name}}: {{title}}",
       "knowledge": "Conocimiento"

@@ -2025,7 +2025,6 @@
       "selectedCount": "{{count}} selected",
       "groupOwn": "Yours",
       "groupTeam": "Shared with team",
-      "connectMore": "Connect more",
       "fromConnector": "From {{name}}",
       "fromConnectorTitle": "From {{name}}: {{title}}",
       "knowledge": "Knowledge"
