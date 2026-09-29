@@ -3,6 +3,9 @@ export type ToolCallsType = {
   action_name: string;
   call_id: string;
   arguments: Record<string, any>;
+  // What the call sends once fixed values replace what the model asked for;
+  // absent when they are the same. The chat shows this.
+  sent_arguments?: Record<string, any>;
   result?: Record<string, any>;
   error?: string;
   status?:
@@ -39,3 +42,7 @@ export type ToolCallsType = {
   connector_name?: string | null;
   access?: 'read' | 'write' | null;
 };
+
+/** The arguments to show for a call: what it sends, not what the model asked. */
+export const shownArguments = (toolCall: ToolCallsType): Record<string, any> =>
+  toolCall.sent_arguments ?? toolCall.arguments ?? {};

@@ -1240,6 +1240,9 @@ class LLMHandler(ABC):
                 # can wire the sticky "don't ask again" button.
                 if pause_info.get("device_id"):
                     pause_data["device_id"] = pause_info["device_id"]
+                # What will be sent once fixed values replace the model's.
+                if pause_info.get("sent_arguments") is not None:
+                    pause_data["sent_arguments"] = pause_info["sent_arguments"]
                 # A connection-backed tool whose account needs signing in: the
                 # approval card becomes a Connect card.
                 if pause_info.get("connection_required"):

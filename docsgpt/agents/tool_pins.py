@@ -104,6 +104,32 @@ def resolve_arguments(
     return resolved
 
 
+def shown_arguments(sections: Mapping[str, Mapping[str, Any]]) -> dict:
+    """One flat ``{parameter: value}`` view of resolved sections, for the chat.
+
+    Headers are left out: they may carry a pinned secret (an API key the
+    owner fixed), and the chat is shown to whoever runs the agent.
+    """
+    shown: dict = {}
+    for section in PARAM_SECTIONS:
+        if section != "headers":
+            shown.update(sections.get(section) or {})
+    return shown
+
+
+def sent_arguments(
+    action: Mapping,
+    llm_arguments: Mapping[str, Any],
+    connection_pins: Optional[Mapping[str, Any]] = None,
+) -> dict:
+    """What a call sends, flattened for display (see :func:`shown_arguments`).
+
+    The approval card and the finished call show this rather than what the
+    model asked for, which fixed values may have replaced.
+    """
+    return shown_arguments(resolve_arguments(action, llm_arguments, connection_pins))
+
+
 def coerce_value(details: Mapping, value: Any) -> Any:
     """Check a value for a pin against the parameter's declared type.
 

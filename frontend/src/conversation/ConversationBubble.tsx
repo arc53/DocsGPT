@@ -54,7 +54,7 @@ import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import ResearchProgress from './ResearchProgress';
-import { ToolCallsType } from './types';
+import { shownArguments, ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
 const DisableSourceFE = envVar('VITE_DISABLE_SOURCE_FE') === 'true';
@@ -790,7 +790,7 @@ function ToolCallApprovalBar({
     0,
     toolCall.action_name.lastIndexOf('_'),
   );
-  const argPreview = JSON.stringify(toolCall.arguments);
+  const argPreview = JSON.stringify(shownArguments(toolCall));
   const truncated =
     argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
 
@@ -899,7 +899,7 @@ function ToolCallApprovalBar({
           <Card variant="subtle" padding="sm" className="mb-2">
             <div className="scrollbar-overlay max-h-40 overflow-y-auto">
               <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-                {JSON.stringify(toolCall.arguments, null, 2)}
+                {JSON.stringify(shownArguments(toolCall), null, 2)}
               </pre>
             </div>
           </Card>

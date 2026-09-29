@@ -14,7 +14,7 @@ from docsgpt.agents.default_tools import (
     synthesized_default_tools,
 )
 from docsgpt import tracing
-from docsgpt.agents.tool_pins import iter_parameters, llm_fills, resolve_arguments
+from docsgpt.agents.tool_pins import iter_parameters, llm_fills, resolve_arguments, sent_arguments, shown_arguments
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
@@ -1102,6 +1102,12 @@ class ToolExecutor:
                 "pause_type": "awaiting_approval",
                 "thought_signature": getattr(call, "thought_signature", None),
             }
+            # The card shows what will be sent: fixed values replace what the
+            # model asked for. ``arguments`` stays as the model sent it, since
+            # resuming replays it to the model, which never sees fixed values.
+            sent = sent_arguments(action_data, arguments, self._connection_parameters(tool_data))
+            if action_data and sent != arguments:
+                payload["sent_arguments"] = sent
             # Surface the device id so the approval UI can offer a
             # "don't ask again" sticky-pattern action for remote devices.
             if tool_data.get("name") == "remote_device":
@@ -1482,6 +1488,11 @@ class ToolExecutor:
         sections = resolve_arguments(action_data, call_args, self._connection_parameters(tool_data))
         query_params, headers = sections["query_params"], sections["headers"]
         body, parameters = sections["body"], sections["parameters"]
+        # The chat shows what was sent; ``arguments`` keeps what the model
+        # asked for, which is what a later turn replays to it.
+        sent = shown_arguments(sections)
+        if sent != (call_args if isinstance(call_args, dict) else {}):
+            tool_call_data["sent_arguments"] = sent
 
         # Load tool (with caching)
         from docsgpt.connectors.service import ConnectionUnavailable

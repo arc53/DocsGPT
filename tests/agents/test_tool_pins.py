@@ -238,3 +238,48 @@ class TestPinHelpers:
         carried = carry_pins(old, fresh)
         assert carried["parameters"]["properties"]["team"]["value"] == "ENG"
         assert carried["parameters"]["properties"]["team"]["filled_by_llm"] is False
+
+
+@pytest.mark.unit
+class TestArgumentsShownForACall:
+    """What the chat shows for a call is what is sent, not what the model asked."""
+
+    def _pause(self, executor, action, call_args, monkeypatch):
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "telegram_send_message", call_args))),
+        )
+        call = Mock()
+        call.name = "telegram_send_message"
+        call.id = "c1"
+        return executor.check_pause(_tools(action), call, "MockLLM")
+
+    def test_approval_card_shows_the_fixed_value(self, monkeypatch):
+        action = {**_action(text=_llm(), chat_id=_pinned("111")), "require_approval": True}
+        pending = self._pause(ToolExecutor(user="u"), action, {"text": "hi", "chat_id": "666"}, monkeypatch)
+        assert pending["pause_type"] == "awaiting_approval"
+        assert pending["sent_arguments"] == {"text": "hi", "chat_id": "111"}
+        # What the model asked stays as it was: resuming replays it to the model.
+        assert pending["arguments"] == {"text": "hi", "chat_id": "666"}
+
+    def test_no_separate_arguments_when_nothing_changes(self, monkeypatch):
+        action = {**_action(text=_llm()), "require_approval": True}
+        pending = self._pause(ToolExecutor(user="u"), action, {"text": "hi"}, monkeypatch)
+        assert "sent_arguments" not in pending
+
+    def test_a_finished_call_records_what_was_sent(self, mock_tool_manager, monkeypatch):
+        executor = ToolExecutor(user="u")
+        action = _action(text=_llm(), chat_id=_pinned("111"))
+        _run(executor, _tools(action), {"text": "hi", "chat_id": "666"}, monkeypatch)
+        recorded = executor.tool_calls[-1]
+        assert recorded["sent_arguments"] == {"text": "hi", "chat_id": "111"}
+        assert recorded["arguments"] == {"text": "hi", "chat_id": "666"}
+
+    def test_headers_are_never_shown(self):
+        from docsgpt.agents.tool_pins import sent_arguments
+
+        action = {
+            "headers": {"properties": {"Authorization": _pinned("Bearer secret")}},
+            "query_params": {"properties": {"id": _llm()}},
+        }
+        assert sent_arguments(action, {"id": "1"}) == {"id": "1"}
