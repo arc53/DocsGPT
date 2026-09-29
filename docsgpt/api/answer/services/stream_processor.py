@@ -128,6 +128,10 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
 
 _PROMPT_PRESETS_WITHOUT_ROW = ("reduce",)
 
+# Tools whose approval is decided per call from live state, not the stored
+# ``require_approval`` flags (see ``ToolExecutor.check_pause``).
+_LIVE_APPROVAL_TOOLS = frozenset({"remote_device", "code_executor"})
+
 
 def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Optional[dict] = None) -> Any:
     """``prompt_id`` if ``principal`` (or the agent's sponsor) may use it, else ``"default"``.
@@ -1407,6 +1411,9 @@ class StreamProcessor:
 
         try:
             user_id = self.initial_user_id or "local"
+            outside_caller = bool(
+                self.agent_config.get("external_api_caller") or self.agent_config.get("public_link_caller")
+            )
             # The same toolset the run gets: an agent's own tools (resolved as
             # its owner, or the editor who attached them), else the caller's
             # tools plus defaults. Explicit rows first, so they claim names.
@@ -1443,9 +1450,10 @@ class StreamProcessor:
                     required_actions = None
 
                 owner = tool_doc.get("user_id")
-                if owner and owner != user_id:
-                    # Someone else's tool: pre-fetch asks nobody, so only
-                    # what the run would do without asking.
+                if owner and (owner != user_id or outside_caller):
+                    # Someone else's tool (a widget or API run carries the
+                    # owner's id but isn't the owner): pre-fetch asks nobody,
+                    # so only what the run would do without asking.
                     required_actions = self._unasked_actions(tool_doc, required_actions)
                     if not required_actions:
                         continue
@@ -1473,8 +1481,11 @@ class StreamProcessor:
         """The required actions of someone else's tool that run without asking.
 
         A tool on someone else's connected account runs on their account or
-        needs the caller's own connection, and an approval-gated action waits
-        for a person; pre-fetch has neither, so both are left out.
+        needs the caller's own connection, a tool that decides approval per
+        call (a remote device, the code executor) can't be judged from its
+        stored flags, an approval-gated action waits for a person, and a
+        write with the owner's credentials needs the owner's say-so;
+        pre-fetch has none of these, so all are left out.
 
         Args:
             tool_doc: The tool row, owned by someone other than the caller.
@@ -1484,18 +1495,15 @@ class StreamProcessor:
         Returns:
             The action names to run, empty when there are none.
         """
-        if tool_doc.get("connection_id"):
+        from docsgpt.connectors.permissions import owner_credential_writes, tool_actions
+
+        if tool_doc.get("connection_id") or tool_doc.get("name") in _LIVE_APPROVAL_TOOLS:
             return set()
-        if tool_doc.get("name") == "api_tool":
-            actions = [
-                {"name": name, **(action or {})}
-                for name, action in ((tool_doc.get("config") or {}).get("actions") or {}).items()
-            ]
-        else:
-            actions = tool_doc.get("actions") or []
+        owner_writes = set(owner_credential_writes(tool_doc))
         unasked = {
-            action.get("name") for action in actions
+            action.get("name") for action in tool_actions(tool_doc)
             if action.get("name") and action.get("active", True) and not action.get("require_approval")
+            and action.get("name") not in owner_writes
         }
         if required_actions is None or None in required_actions:
             return unasked

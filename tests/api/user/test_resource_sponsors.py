@@ -424,14 +424,14 @@ class TestRunTime:
 class TestToolPrefetch:
     """Prompt tool pre-fetch runs the agent's tools, as the agent run resolves them."""
 
-    def _prefetched(self, pg_conn, agent_id, caller, required):
+    def _prefetched(self, pg_conn, agent_id, caller, required, **flags):
         from docsgpt.api.answer.services.stream_processor import StreamProcessor
         from docsgpt.core.settings import settings
 
         agent = _row(pg_conn, agent_id)
         processor = StreamProcessor({"agent_id": agent_id}, {"sub": caller})
         processor.agent_id = agent_id
-        processor.agent_config = {"user_api_key": agent["key"]}
+        processor.agent_config = {"user_api_key": agent["key"], **flags}
         processor._required_tool_actions = required
         fetched = {}
 
@@ -477,6 +477,30 @@ class TestToolPrefetch:
         # Nobody is asked during pre-fetch: a teammate gets no approval-gated
         # action and nothing on the owner's connected account.
         assert self._prefetched(pg_conn, agent_id, VIEWER, required) == {api: {"fetch"}}
+
+
+    def test_tools_that_decide_approval_live_are_not_prefetched_for_others(self, pg_conn):
+        agent_id, _ = _agent(pg_conn)
+        device = self._tool(pg_conn, OWNER, "remote_device", [{"name": "run_command", "active": True}])
+        code = self._tool(pg_conn, OWNER, "code_executor", [{"name": "execute_code", "active": True}])
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [device, code]})
+        required = {"remote_device": {None}, "code_executor": {None}}
+        assert self._prefetched(pg_conn, agent_id, OWNER, required) == {device: {None}, code: {None}}
+        assert self._prefetched(pg_conn, agent_id, VIEWER, required) == {}
+
+    def test_api_key_callers_prefetch_like_someone_else(self, pg_conn):
+        """A widget or API run carries the owner's id, but the caller is not the owner."""
+        agent_id, _ = _agent(pg_conn)
+        api = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool", config={"actions": {
+            "status": {"url": "https://x.test/s", "method": "GET", "active": True},
+            "notify": {"url": "https://x.test/n", "method": "POST", "active": True},
+        }})["id"])
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [api]})
+        required = {"api_tool": {None}}
+        assert self._prefetched(pg_conn, agent_id, OWNER, required) == {api: {None}}
+        # Writes on the owner's credentials never pre-fetch for them.
+        assert self._prefetched(pg_conn, agent_id, OWNER, required, external_api_caller=True) == {api: {"status"}}
+        assert self._prefetched(pg_conn, agent_id, VIEWER, required, public_link_caller=True) == {api: {"status"}}
 
 
 # ---------------------------------------------------------------------------
