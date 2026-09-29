@@ -317,7 +317,23 @@ There are two Ollama optional files:
 
 ### Launching with Ollama and Pulling a Model
 
-1.  **Clone the DocsGPT Repository and Create `.env` (as described above).**
+1.  **Clone the DocsGPT Repository and create `.env` pointing at Ollama.**
+
+    Clone the repository as described above, but put these lines in `.env` instead of the public API block. Without them DocsGPT keeps sending chats to the public DocsGPT API, even with the Ollama container running:
+
+    ```
+    LLM_PROVIDER=openai
+    OPENAI_BASE_URL=http://ollama:11434/v1
+    LLM_NAME=llama3.2:1b
+    API_KEY=None
+    VITE_API_STREAMING=true
+    INTERNAL_KEY=<any random string, e.g. openssl rand -hex 16>
+    EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2
+    ```
+
+    `ollama` is the service the overlay adds, reachable from the DocsGPT containers by that name. `LLM_NAME` is the model you pull in step 3; it is required, and several models can be listed separated by commas. See [Local Inference](/Models/local-inference) for the other settings.
+
+    The overlays only fit the Compose files in the checkout. With the standalone Compose file or `docsgpt up`, run Ollama on the host instead and use `OPENAI_BASE_URL=http://host.docker.internal:11434/v1` (on Linux, also make Ollama listen beyond localhost with `OLLAMA_HOST=0.0.0.0`).
 
 2.  **Launch DocsGPT with Ollama Docker Compose:**
 
@@ -334,14 +350,14 @@ There are two Ollama optional files:
 
 3.  **Pull the Ollama Model:**
 
-    **Crucially, after launching with Ollama, you need to pull the desired model into the Ollama container.**  Find the `LLM_NAME` you configured in your `.env` file (e.g., `llama3.2:1b`). Then execute the following command to pull the model *inside* the running Ollama container:
+    **Crucially, after launching with Ollama, you need to pull the desired model into the Ollama container.**  Use the `LLM_NAME` from your `.env` file (`llama3.2:1b` in the example above) and run this command to pull the model *inside* the running Ollama container:
 
     ```bash
-    docker compose -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml exec -it ollama ollama pull <LLM_NAME>
+    docker compose --env-file .env -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml exec -it ollama ollama pull <LLM_NAME>
     ```
     or (for GPU):
-     ```bash
-    docker compose -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml exec -it ollama ollama pull <LLM_NAME>
+    ```bash
+    docker compose --env-file .env -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml exec -it ollama ollama pull <LLM_NAME>
     ```
     Replace `<LLM_NAME>` with the actual model name from your `.env` file.
 
@@ -354,12 +370,12 @@ There are two Ollama optional files:
     To stop a DocsGPT setup launched with Ollama optional files, use `docker compose down` and include all the compose files used during the `up` command:
 
     ```bash
-    docker compose -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml down
+    docker compose --env-file .env -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-cpu.yaml down
     ```
     or
 
     ```bash
-    docker compose -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml down
+    docker compose --env-file .env -f deployment/docker-compose-hub.yaml -f deployment/optional/docker-compose.optional.ollama-gpu.yaml down
     ```
 
 **Important for GPU Usage:**
