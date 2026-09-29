@@ -19,6 +19,7 @@ from docsgpt.connectors import catalog, service
 from docsgpt.core.settings import settings
 from docsgpt.security.encryption import is_default_encryption_key
 from docsgpt.storage.db.repositories.app_metadata import AppMetadataRepository
+from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 from docsgpt.storage.db.repositories.connector_policies import (
     ALLOW_CUSTOM_MCP_KEY,
     CREDENTIAL_POLICIES,
@@ -155,5 +156,18 @@ class AdminConnectorsResource(Resource):
                 )
             if allow_custom is not None:
                 AppMetadataRepository(conn).set(ALLOW_CUSTOM_MCP_KEY, "true" if allow_custom else "false")
+            metadata = {"by": actor, "via": "admin_api", "policies": updates}
+            if allow_custom is not None:
+                metadata["allow_custom_mcp"] = allow_custom
+            AuthEventsRepository(conn).insert(
+                # Instance configuration, not an account: filed under the acting admin, with no target.
+                actor or "unknown",
+                "connector_policy_set",
+                ip=request.remote_addr,
+                user_agent=request.headers.get("User-Agent"),
+                metadata=metadata,
+                actor_id=actor or "unknown",
+                target_id=None,
+            )
         logger.info("connector_policies_updated", extra={"admin": actor, "connectors": sorted(updates)})
         return self.get()

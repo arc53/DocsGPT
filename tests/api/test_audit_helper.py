@@ -92,6 +92,7 @@ class TestCategories:
             ("admin_user_deactivated", "access"),
             ("team.member_add", "access"),
             ("quota_policy_set", "config"),
+            ("connector_policy_set", "config"),
             ("source.deleted", "data"),
             ("agent.created", "data"),
             ("conversation.deleted", "data"),
