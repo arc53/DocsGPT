@@ -15,6 +15,12 @@ export type ConnectorsState = {
   loading: boolean;
   loaded: boolean;
   failed: boolean;
+  /**
+   * The `loadConnectors` call started last. Loads overlap (several screens
+   * refresh at once), and only its answer is applied: an older one could
+   * hold connections from before a connect.
+   */
+  latestRequestId?: string | null;
 };
 
 const initialState: ConnectorsState = {
@@ -24,6 +30,7 @@ const initialState: ConnectorsState = {
   loading: false,
   loaded: false,
   failed: false,
+  latestRequestId: null,
 };
 
 /**
@@ -58,17 +65,22 @@ const connectorsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(loadConnectors.pending, (state) => {
+      .addCase(loadConnectors.pending, (state, action) => {
+        state.latestRequestId = action.meta.requestId;
         state.loading = true;
         state.failed = false;
       })
       .addCase(loadConnectors.fulfilled, (state, action) => {
+        if (action.meta.requestId !== state.latestRequestId) return;
+        state.latestRequestId = null;
         state.loading = false;
         state.loaded = true;
         state.catalog = action.payload.catalog;
         state.connections = action.payload.connections;
       })
-      .addCase(loadConnectors.rejected, (state) => {
+      .addCase(loadConnectors.rejected, (state, action) => {
+        if (action.meta.requestId !== state.latestRequestId) return;
+        state.latestRequestId = null;
         state.loading = false;
         state.failed = true;
       });
