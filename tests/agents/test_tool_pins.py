@@ -254,11 +254,15 @@ class TestArgumentsShownForACall:
         call.id = "c1"
         return executor.check_pause(_tools(action), call, "MockLLM")
 
-    def test_approval_card_shows_the_fixed_value(self, monkeypatch):
+    def test_approval_card_marks_a_fixed_value_without_revealing_it(self, monkeypatch):
+        """A value the owner fixed may be a secret, and the chat is shown to
+        whoever runs the agent: the card says it is fixed, not what it is."""
+        from docsgpt.agents.tool_pins import FIXED_MASK
+
         action = {**_action(text=_llm(), chat_id=_pinned("111")), "require_approval": True}
         pending = self._pause(ToolExecutor(user="u"), action, {"text": "hi", "chat_id": "666"}, monkeypatch)
         assert pending["pause_type"] == "awaiting_approval"
-        assert pending["sent_arguments"] == {"text": "hi", "chat_id": "111"}
+        assert pending["sent_arguments"] == {"text": "hi", "chat_id": FIXED_MASK}
         # What the model asked stays as it was: resuming replays it to the model.
         assert pending["arguments"] == {"text": "hi", "chat_id": "666"}
 
@@ -267,19 +271,36 @@ class TestArgumentsShownForACall:
         pending = self._pause(ToolExecutor(user="u"), action, {"text": "hi"}, monkeypatch)
         assert "sent_arguments" not in pending
 
-    def test_a_finished_call_records_what_was_sent(self, mock_tool_manager, monkeypatch):
+    def test_a_finished_call_records_what_was_sent_and_keeps_it(self, mock_tool_manager, monkeypatch):
+        from docsgpt.agents.tool_pins import FIXED_MASK
+
         executor = ToolExecutor(user="u")
         action = _action(text=_llm(), chat_id=_pinned("111"))
         _run(executor, _tools(action), {"text": "hi", "chat_id": "666"}, monkeypatch)
         recorded = executor.tool_calls[-1]
-        assert recorded["sent_arguments"] == {"text": "hi", "chat_id": "111"}
+        assert recorded["sent_arguments"] == {"text": "hi", "chat_id": FIXED_MASK}
         assert recorded["arguments"] == {"text": "hi", "chat_id": "666"}
+        # Saved with the conversation, so a reload shows the same.
+        (saved,) = executor.get_truncated_tool_calls()
+        assert saved["sent_arguments"] == {"text": "hi", "chat_id": FIXED_MASK}
 
-    def test_headers_are_never_shown(self):
+    def test_a_value_the_connection_sets_is_shown(self, monkeypatch):
+        """Telegram's default chat is the account's own setting, not a secret."""
         from docsgpt.agents.tool_pins import sent_arguments
+
+        action = _action(text=_llm(), chat_id=_llm())
+        assert sent_arguments(action, {"text": "hi", "chat_id": "666"}, {"chat_id": "111"}) == {
+            "text": "hi", "chat_id": "111",
+        }
+
+    def test_fixed_query_and_body_values_and_headers_stay_hidden(self):
+        from docsgpt.agents.tool_pins import FIXED_MASK, sent_arguments
 
         action = {
             "headers": {"properties": {"Authorization": _pinned("Bearer secret")}},
-            "query_params": {"properties": {"id": _llm()}},
+            "query_params": {"properties": {"id": _llm(), "api_key": _pinned("sk-query")}},
+            "body": {"properties": {"token": _pinned("sk-body")}},
         }
-        assert sent_arguments(action, {"id": "1"}) == {"id": "1"}
+        shown = sent_arguments(action, {"id": "1"})
+        assert shown == {"id": "1", "api_key": FIXED_MASK, "token": FIXED_MASK}
+        assert "secret" not in str(shown) and "sk-" not in str(shown)

@@ -104,17 +104,8 @@ def resolve_arguments(
     return resolved
 
 
-def shown_arguments(sections: Mapping[str, Mapping[str, Any]]) -> dict:
-    """One flat ``{parameter: value}`` view of resolved sections, for the chat.
-
-    Headers are left out: they may carry a pinned secret (an API key the
-    owner fixed), and the chat is shown to whoever runs the agent.
-    """
-    shown: dict = {}
-    for section in PARAM_SECTIONS:
-        if section != "headers":
-            shown.update(sections.get(section) or {})
-    return shown
+#: What the chat shows in place of a value the owner fixed.
+FIXED_MASK = "(fixed)"
 
 
 def sent_arguments(
@@ -122,12 +113,29 @@ def sent_arguments(
     llm_arguments: Mapping[str, Any],
     connection_pins: Optional[Mapping[str, Any]] = None,
 ) -> dict:
-    """What a call sends, flattened for display (see :func:`shown_arguments`).
+    """What a call sends, flattened for the chat (the approval card, a finished call).
 
-    The approval card and the finished call show this rather than what the
-    model asked for, which fixed values may have replaced.
+    It follows :func:`resolve_arguments`, but a value the owner fixed shows
+    as :data:`FIXED_MASK`: it may be a secret (an API key in a query), and
+    the chat is shown to whoever runs the agent, over the API or a widget
+    too. A value the connection sets (Telegram's default chat) is the
+    account's own setting and shows as it is. Headers are left out.
     """
-    return shown_arguments(resolve_arguments(action, llm_arguments, connection_pins))
+    connection_pins = connection_pins or {}
+    shown: dict = {}
+    for section, name, details in iter_parameters(action):
+        if section == "headers":
+            continue
+        if name in connection_pins:
+            shown[name] = connection_pins[name]
+        elif not llm_fills(details):
+            if has_value(details):
+                shown[name] = FIXED_MASK
+        elif name in llm_arguments:
+            shown[name] = llm_arguments[name]
+        elif has_value(details):
+            shown[name] = details["value"]
+    return shown
 
 
 def coerce_value(details: Mapping, value: Any) -> Any:

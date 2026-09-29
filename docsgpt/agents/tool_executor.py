@@ -14,7 +14,7 @@ from docsgpt.agents.default_tools import (
     synthesized_default_tools,
 )
 from docsgpt import tracing
-from docsgpt.agents.tool_pins import iter_parameters, llm_fills, resolve_arguments, sent_arguments, shown_arguments
+from docsgpt.agents.tool_pins import iter_parameters, llm_fills, resolve_arguments, sent_arguments
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
@@ -1513,7 +1513,7 @@ class ToolExecutor:
         body, parameters = sections["body"], sections["parameters"]
         # The chat shows what was sent; ``arguments`` keeps what the model
         # asked for, which is what a later turn replays to it.
-        sent = shown_arguments(sections)
+        sent = sent_arguments(action_data, call_args, self._connection_parameters(tool_data))
         if sent != (call_args if isinstance(call_args, dict) else {}):
             tool_call_data["sent_arguments"] = sent
 
@@ -1843,7 +1843,9 @@ class ToolExecutor:
     # Keys the client needs that are not part of the fixed shape below. They are
     # small and optional, and are copied only when present so an ordinary tool
     # call does not grow null columns in every persisted row.
-    _PRESERVED_TOOL_CALL_KEYS = ("artifacts", "device_id", "connector_key", "connector_name", "access")
+    _PRESERVED_TOOL_CALL_KEYS = (
+        "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments",
+    )
 
     def get_truncated_tool_calls(self) -> List[Dict]:
         """Project tool calls into the shape that is streamed and persisted.
