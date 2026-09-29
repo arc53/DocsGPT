@@ -294,3 +294,34 @@ class TestAccountNamesInToolNames:
         detail = service.connection_detail(pg_conn, named)
         assert detail["account_name"] == "Alerts bot"
         assert detail["tools"][0]["display_name"] == "Telegram · Alerts bot"
+
+
+class TestOwnerCredentialWrites:
+    """The tool list names the writes an agent's API allowlist can cover."""
+
+    def _listed(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import GetTools
+
+        with _db(pg_conn), app.test_request_context("/api/get_tools"):
+            from flask import request
+
+            request.decoded_token = {"sub": "alice"}
+            tools = GetTools().get().get_json()["tools"]
+        return {t["name"]: t.get("owner_credential_writes") for t in tools if t.get("ownership") == "user"}
+
+    def test_writes_on_stored_credentials_are_listed(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        repo = UserToolsRepository(pg_conn)
+        repo.create("alice", "api_tool", config={"actions": {
+            "status": {"url": "https://x.test/s", "method": "GET", "active": True},
+            "notify": {"url": "https://x.test/n", "method": "POST", "active": True},
+        }})
+        repo.create("alice", "mcp_tool", config={"server_url": "https://m.test/mcp", "auth_type": "bearer"},
+                    actions=[{"name": "create_issue", "active": True}, {"name": "list_issues", "active": True}])
+        repo.create("alice", "read_webpage", actions=[{"name": "post_page", "active": True}])
+        listed = self._listed(app, pg_conn)
+        assert listed["api_tool"] == ["notify"]
+        assert listed["mcp_tool"] == ["create_issue"]
+        # No credentials: nothing of the owner's to write with.
+        assert listed["read_webpage"] == []

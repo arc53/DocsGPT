@@ -237,3 +237,72 @@ class TestWorkflowNodes:
         assert node_executor.external_caller is True
         assert node_executor.public_link_caller is True
         assert node_executor.api_write_allowlist == {f"tool-1:{ACTION}"}
+
+
+def _stored_tool(name: str, action: dict, config: dict) -> dict:
+    return {"id": "tool-9", "user_id": "alice", "name": name, "config": config, "actions": [action]}
+
+
+def _api_tool(method: str) -> dict:
+    tool = _stored_tool("api_tool", {}, {"actions": {"call": {"url": "https://x.test", "method": method,
+                                                              "active": True, "require_approval": False}}})
+    tool["actions"] = []
+    return tool
+
+
+class TestOwnerHeldCredentialsWithoutAConnection:
+    """Writes with the owner's stored credentials are gated like connected ones."""
+
+    def _caller(self, **flags):
+        from docsgpt.agents.tool_executor import ToolExecutor
+
+        flags.setdefault("user", "bob")
+        return ToolExecutor(**flags)
+
+    @pytest.mark.parametrize("flags", [{"public_link_caller": True}, {"external_caller": True, "user": "alice"}])
+    def test_api_tool_write_is_refused(self, flags):
+        pause = _pause(self._caller(**flags), _api_tool("POST"), action="call")
+        assert pause["pause_type"] == "headless_denied"
+        assert "Access details" in pause["deny_reason"]
+
+    def test_api_tool_read_runs(self):
+        assert _pause(self._caller(public_link_caller=True), _api_tool("GET"), action="call") is None
+
+    def test_allowlisted_api_tool_write_runs(self):
+        caller = self._caller(public_link_caller=True, api_write_allowlist=["tool-9:call"])
+        assert _pause(caller, _api_tool("POST"), action="call") is None
+
+    def test_mcp_tool_with_stored_sign_in_is_gated(self):
+        tool = _stored_tool("mcp_tool", {"name": "create_issue", "active": True},
+                            {"server_url": "https://m.test/mcp", "auth_type": "bearer"})
+        pause = _pause(self._caller(public_link_caller=True), tool, action="create_issue")
+        assert pause["pause_type"] == "headless_denied"
+
+    def test_mcp_tool_without_credentials_is_not_gated(self):
+        tool = _stored_tool("mcp_tool", {"name": "create_issue", "active": True},
+                            {"server_url": "https://m.test/mcp", "auth_type": "none"})
+        assert _pause(self._caller(public_link_caller=True), tool, action="create_issue") is None
+
+    def test_teammate_is_not_gated(self):
+        assert _pause(self._caller(), _api_tool("POST"), action="call") is None
+
+
+class TestScheduledRunsForOthers:
+    """A scheduled run acts as the owner, for someone who can't approve for them."""
+
+    def test_public_link_schedule_cannot_write_on_the_owners_account(self, pg_conn):
+        from docsgpt.agents.tool_executor import ToolExecutor
+
+        cid = _connection(pg_conn, "alice")
+        executor = ToolExecutor(user="alice", headless=True, public_link_caller=True)
+        with _db(pg_conn):
+            pause = _pause(executor, _tool(cid))
+        assert pause["pause_type"] == "headless_denied"
+        assert "public link" in pause["deny_reason"]
+
+    def test_owners_own_schedule_is_not_gated(self, pg_conn):
+        from docsgpt.agents.tool_executor import ToolExecutor
+
+        cid = _connection(pg_conn, "alice")
+        with _db(pg_conn):
+            assert _pause(ToolExecutor(user="alice", headless=True), _tool(cid)) is None

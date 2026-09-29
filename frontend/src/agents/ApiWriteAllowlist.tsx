@@ -24,6 +24,7 @@ type UserTool = {
   displayName?: string;
   customName?: string;
   connection_id?: string | null;
+  owner_credential_writes?: string[];
   actions?: {
     name: string;
     description?: string;
@@ -33,9 +34,11 @@ type UserTool = {
 };
 
 /**
- * The write actions on the owner's connected accounts that anyone calling
- * this agent with its API key may run. Nobody can approve an action in the
- * widget or the API, so the server refuses every other such write.
+ * The write actions on the owner's accounts and stored credentials that
+ * anyone reaching this agent through its API key, widget, a webhook or its
+ * public link may run. Nobody there can approve an action for the owner, so
+ * the server refuses every other such write. The server names these writes
+ * per tool (`owner_credential_writes`).
  *
  * A toggle saves at once, on top of the agent's last saved config
  * (`getSavedConfig`), so edits still pending in the form are not saved with
@@ -76,19 +79,16 @@ export default function ApiWriteAllowlist({
         const agentTools = new Set(agent.tools);
         setActions(
           (data.tools ?? [])
-            .filter((tool) => agentTools.has(tool.id) && tool.connection_id)
+            .filter((tool) => agentTools.has(tool.id))
             .flatMap((tool) =>
-              (tool.actions ?? [])
-                .filter(
-                  (action) =>
-                    action.access === 'write' && action.active !== false,
-                )
-                .map((action) => ({
-                  entry: `${tool.id}:${action.name}`,
-                  tool: tool.customName || tool.displayName || '',
-                  action: action.name,
-                  description: action.description ?? '',
-                })),
+              (tool.owner_credential_writes ?? []).map((name) => ({
+                entry: `${tool.id}:${name}`,
+                tool: tool.customName || tool.displayName || '',
+                action: name,
+                description:
+                  tool.actions?.find((action) => action.name === name)
+                    ?.description ?? '',
+              })),
             ),
         );
       })

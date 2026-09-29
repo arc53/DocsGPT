@@ -1889,8 +1889,8 @@
       "resetKey": "Schlüssel zurücksetzen",
       "resetKeyConfirm": "Möchten Sie den API-Schlüssel wirklich zurücksetzen? Der aktuelle Schlüssel funktioniert sofort nicht mehr und diese Aktion kann nicht rückgängig gemacht werden.",
       "apiWrites": {
-        "title": "Aktionen, die jeder mit diesem Schlüssel in deinem Namen ausführen kann",
-        "description": "Im Widget oder über die API kann niemand eine Aktion bestätigen. Änderungen an deinen verbundenen Konten sind daher blockiert, außer du erlaubst sie hier.",
+        "title": "Aktionen, die API-, Widget- und Public-Link-Nutzer in deinem Namen ausführen können",
+        "description": "Über den API-Schlüssel, das Widget, einen Webhook oder den öffentlichen Link des Agenten kann niemand eine Aktion für dich bestätigen. Änderungen mit deinen verbundenen Konten und gespeicherten Zugangsdaten sind daher blockiert, außer du erlaubst sie hier.",
         "item": "{{tool}}: {{action}}",
         "saveFailed": "Speichern fehlgeschlagen. Versuche es erneut."
       },

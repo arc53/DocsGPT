@@ -1157,20 +1157,24 @@ class ToolExecutor:
 
             require_approval = action_access(tool_data.get("name"), action_data) == ACCESS_WRITE
 
-        # An API-key caller writes on the owner's account only with the
+        # An API-key caller writes with the owner's credentials only with the
         # owner's say-so: nobody can approve in a widget, and "Always allow"
         # was the owner's choice for themselves, not for anyone with the key.
         # A public-link user is a stranger to the owner, so their approval
         # can't stand in for the owner's either.
-        public_on_owner_account = self.public_link_caller and resolved is not None and resolved.delegated
-        if (self.external_caller and resolved is not None) or public_on_owner_account:
+        if (self.external_caller or self.public_link_caller) and self._on_owner_credentials(tool_data, resolved):
             from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
 
             if action_access(tool_data.get("name"), action_data) == ACCESS_WRITE:
                 entry = f"{tool_data.get('id') or tool_id}:{action_name}"
                 if entry in self.api_write_allowlist:
                     return None
-                route = "its API key" if self.external_caller else "its public link"
+                route = "for API, widget or webhook callers" if self.external_caller else "from its public link"
+                target = (
+                    f"the owner's {resolved.connector_name} account"
+                    if resolved is not None and resolved.connector_name
+                    else "the owner's credentials"
+                )
                 return {
                     "call_id": call_id,
                     "name": llm_name,
@@ -1181,8 +1185,8 @@ class ToolExecutor:
                     "arguments": arguments,
                     "pause_type": "headless_denied",
                     "deny_reason": (
-                        f"This agent can't take this action with {resolved.connector_name or 'the owner'}'s "
-                        f"account through {route}. The owner can allow it in the agent's Access details."
+                        f"This agent can't take this action with {target} {route}. "
+                        "The owner can allow it in the agent's Access details."
                     ),
                     "error_type": "tool_not_allowed",
                     "thought_signature": getattr(call, "thought_signature", None),
@@ -1237,6 +1241,33 @@ class ToolExecutor:
             return payload
 
         return None
+
+    def _on_owner_credentials(self, tool_data: Dict, resolved) -> bool:
+        """Whether a call would act with credentials the caller doesn't hold.
+
+        The connection's account when there is one, else the tool owner's
+        stored credentials (see ``holds_owner_credentials``). An API-key
+        caller and any scheduled run hold none of their own: the run acts as
+        the owner. A public-link user in the app holds their own account only.
+
+        Args:
+            tool_data: The ``user_tools`` row being called.
+            resolved: The connection ``resolve_connection`` picked, or None.
+
+        Returns:
+            True when the call would use someone else's credentials.
+        """
+        from docsgpt.connectors.permissions import holds_owner_credentials
+
+        if resolved is not None:
+            holder = (resolved.row or {}).get("user_id")
+        elif holds_owner_credentials(tool_data):
+            holder = tool_data.get("user_id")
+        else:
+            return False
+        if self.external_caller or self.headless:
+            return True
+        return holder != self.user
 
     def _remote_device_requires_approval(
         self,

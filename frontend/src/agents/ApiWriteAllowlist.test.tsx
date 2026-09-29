@@ -34,6 +34,7 @@ const TOOLS = {
       id: 'tg',
       displayName: 'Telegram',
       connection_id: 'c1',
+      owner_credential_writes: ['telegram_send_message'],
       actions: [
         { name: 'telegram_send_message', access: 'write', active: true },
         { name: 'telegram_read', access: 'read', active: true },
@@ -43,7 +44,15 @@ const TOOLS = {
       id: 'memory',
       displayName: 'Memory',
       connection_id: null,
+      owner_credential_writes: [],
       actions: [{ name: 'memory_write', access: 'write', active: true }],
+    },
+    {
+      id: 'crm',
+      displayName: 'CRM API',
+      connection_id: null,
+      owner_credential_writes: ['create_lead'],
+      actions: [],
     },
   ],
 };
@@ -101,7 +110,7 @@ describe('ApiWriteAllowlist', () => {
     return onConfigChange;
   };
 
-  it('lists only write actions on connected accounts, unchecked by default', async () => {
+  it("lists only writes on the owner's credentials, unchecked by default", async () => {
     await render(agent());
     const labels = Array.from(container.querySelectorAll('label')).map(
       (l) => l.textContent,
@@ -164,6 +173,14 @@ describe('ApiWriteAllowlist', () => {
     await act(async () => box().click());
     expect(box().getAttribute('aria-checked')).toBe('false');
     expect(selectActionToast(store.getState())?.variant).toBe('destructive');
+  });
+
+  it('lists writes on stored credentials of tools without a connection', async () => {
+    await render(agent({ tools: ['crm'] }));
+    const labels = Array.from(container.querySelectorAll('label')).map(
+      (l) => l.textContent,
+    );
+    expect(labels).toEqual(['CRM API: Create lead']);
   });
 
   it('renders nothing for an agent without connected tools', async () => {

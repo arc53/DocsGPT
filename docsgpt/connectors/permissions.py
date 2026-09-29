@@ -101,3 +101,58 @@ def apply_default_permissions(tool_name: Optional[str], actions: list[dict]) -> 
             updated["require_approval"] = True
         stamped.append(updated)
     return stamped
+
+
+def tool_actions(tool: dict) -> list[dict]:
+    """A tool row's actions, each carrying its ``name``.
+
+    An API tool keeps its actions under ``config["actions"]`` keyed by name;
+    every other tool lists them in ``actions``.
+    """
+    if tool.get("name") == "api_tool":
+        stored = (tool.get("config") or {}).get("actions") or {}
+        return [{**(action or {}), "name": name} for name, action in stored.items()]
+    return [action for action in tool.get("actions") or [] if isinstance(action, dict)]
+
+
+def holds_owner_credentials(tool: dict) -> bool:
+    """Whether ``tool`` acts with credentials stored by its owner.
+
+    A connection's account, an API tool (its headers and query values carry
+    the owner's keys), a stored secret, or an MCP server the owner signed in
+    to. Anyone running it acts as the owner there, whoever they are.
+
+    Args:
+        tool: A ``user_tools`` row.
+
+    Returns:
+        True when the tool runs on the owner's credentials.
+    """
+    if tool.get("connection_id") or tool.get("name") == "api_tool":
+        return True
+    config = tool.get("config") or {}
+    if config.get("encrypted_credentials"):
+        return True
+    return tool.get("name") == "mcp_tool" and (config.get("auth_type") or "none") != "none"
+
+
+def owner_credential_writes(tool: dict) -> list[str]:
+    """Names of the tool's write actions that run on its owner's credentials.
+
+    These are what someone who can't approve for the owner (an API-key or
+    widget caller, a public-link user, a webhook) may run only when the owner
+    allows them in the agent's API write allowlist.
+
+    Args:
+        tool: A ``user_tools`` row.
+
+    Returns:
+        Action names, empty when the tool holds no owner credentials.
+    """
+    if not holds_owner_credentials(tool):
+        return []
+    return [
+        action["name"] for action in tool_actions(tool)
+        if action.get("name") and action.get("active") is not False
+        and action_access(tool.get("name"), action) == ACCESS_WRITE
+    ]

@@ -36,6 +36,7 @@ from docsgpt.api.user.resource_access import (
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.connectors.catalog import base_url, definition_for_tool
 from docsgpt.connectors.service import account_tool_names
+from docsgpt.connectors.permissions import owner_credential_writes
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
@@ -709,6 +710,9 @@ class GetTools(Resource):
 
             def _shape_tool(row, *, ownership="user", force_strip_secret=False):
                 tool_copy = _row_to_api(row)
+                # The writes an agent's API write allowlist can cover (read
+                # from the stored row, before any secret is masked).
+                tool_copy["owner_credential_writes"] = owner_credential_writes(row)
                 config_req = tool_copy.get("configRequirements", {})
                 if not config_req:
                     tool_instance = tool_manager.tools.get(tool_copy.get("name"))
