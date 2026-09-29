@@ -14,6 +14,7 @@ from docsgpt.agents.default_tools import (
     synthesized_default_tools,
 )
 from docsgpt import tracing
+from docsgpt.agents.tool_pins import iter_parameters, llm_fills, resolve_arguments
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
@@ -761,17 +762,22 @@ class ToolExecutor:
             )
         return result
 
-    def _build_tool_parameters(self, action: Dict) -> Dict:
+    def _build_tool_parameters(self, action: Dict, hidden: Optional[set] = None) -> Dict:
+        """The JSON schema the model sees for ``action``.
+
+        Parameters the model does not fill (fixed values) and ``hidden`` ones
+        (values the connection fixes) are left out, so the model is never
+        asked for them.
+        """
         params = {"type": "object", "properties": {}, "required": []}
-        for param_type in ["query_params", "headers", "body", "parameters"]:
-            if param_type in action and action[param_type].get("properties"):
-                for k, v in action[param_type]["properties"].items():
-                    if v.get("filled_by_llm", True):
-                        params["properties"][k] = {
-                            key: value for key, value in v.items() if key not in ("filled_by_llm", "value", "required")
-                        }
-                        if v.get("required", False):
-                            params["required"].append(k)
+        for _section, k, v in iter_parameters(action):
+            if not llm_fills(v) or (hidden and k in hidden):
+                continue
+            params["properties"][k] = {
+                key: value for key, value in v.items() if key not in ("filled_by_llm", "value", "required")
+            }
+            if v.get("required", False):
+                params["required"].append(k)
         return params
 
     def _guardrail_tool_result(self, result: Any, tool_name: str, action_name: str) -> Any:
@@ -1393,23 +1399,10 @@ class ToolExecutor:
 
             tool_call_data["access"] = action_access(tool_data.get("name"), action_data)
 
-        query_params, headers, body, parameters = {}, {}, {}, {}
-        param_types = {
-            "query_params": query_params,
-            "headers": headers,
-            "body": body,
-            "parameters": parameters,
-        }
-
-        for param_type, target_dict in param_types.items():
-            if param_type in action_data and action_data[param_type].get("properties"):
-                for param, details in action_data[param_type]["properties"].items():
-                    if param not in call_args and "value" in details and details["value"]:
-                        target_dict[param] = details["value"]
-        for param, value in call_args.items():
-            for param_type, target_dict in param_types.items():
-                if param_type in action_data and param in action_data[param_type].get("properties", {}):
-                    target_dict[param] = value
+        # Fixed values win over whatever the model sent for the same key.
+        sections = resolve_arguments(action_data, call_args)
+        query_params, headers = sections["query_params"], sections["headers"]
+        body, parameters = sections["body"], sections["parameters"]
 
         # Load tool (with caching)
         from docsgpt.connectors.service import ConnectionUnavailable
