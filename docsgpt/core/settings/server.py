@@ -23,7 +23,14 @@ class ServerSettings(SettingsGroup):
         default=True, description="Serve the web UI shipped in the package (docsgpt/static) from the API process."
     )
     FLASK_DEBUG_MODE: bool = Field(default=False, description="Run Flask in debug mode.")
-    VERSION_CHECK: bool = Field(default=True, description="Anonymous startup version check for security issues.")
+    VERSION_CHECK: bool = Field(
+        default=True,
+        description=(
+            "Outbound version check for security advisories: the worker sends its version, a random instance id, "
+            "the Python version and the platform to gptcloud.arc53.com when it starts and every 7 hours (reusing a "
+            "recent cached answer), and logs any advisory. Set false to turn it off."
+        ),
+    )
     PUBLIC_API_BASE_URL: Optional[str] = Field(
         default=None, description="Public base URL for user-facing endpoint references in prompts."
     )

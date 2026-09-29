@@ -42,7 +42,11 @@ class AuthSettings(SettingsGroup):
         ),
     )
     INTERNAL_KEY: Optional[str] = Field(
-        default=None, description="Internal API key for worker-to-backend authentication."
+        default=None,
+        description=(
+            "Required: shared secret the worker uses to hand finished indexes and files to the API. Set the same "
+            "value on the API and the worker; without it the API rejects the worker's uploads and every ingest fails."
+        ),
     )
 
     # OIDC SSO (AUTH_TYPE=oidc): any OpenID Connect IdP with discovery (Authentik, Keycloak, ...).

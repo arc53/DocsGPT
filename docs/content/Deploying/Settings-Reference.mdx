@@ -46,7 +46,7 @@ Previous ENCRYPTION_SECRET_KEY, tried when a stored credential was encrypted wit
 
 Type `str`, default unset.
 
-Internal API key for worker-to-backend authentication.
+Required: shared secret the worker uses to hand finished indexes and files to the API. Set the same value on the API and the worker; without it the API rejects the worker's uploads and every ingest fails.
 
 ### `OIDC_ISSUER`
 
@@ -1169,7 +1169,7 @@ Run Flask in debug mode.
 
 Type `bool`, default `true`.
 
-Anonymous startup version check for security issues.
+Outbound version check for security advisories: the worker sends its version, a random instance id, the Python version and the platform to gptcloud.arc53.com when it starts and every 7 hours (reusing a recent cached answer), and logs any advisory. Set false to turn it off.
 
 ### `PUBLIC_API_BASE_URL`
 
