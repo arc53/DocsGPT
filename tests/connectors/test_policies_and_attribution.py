@@ -113,6 +113,30 @@ class TestAdminPolicies:
         assert "secret-client-id" not in json.dumps(payload)
         assert payload["allow_custom_mcp"] is True
 
+    def test_github_is_ready_and_lists_its_optional_app_settings(self, app, pg_conn, monkeypatch):
+        """Tokens need no setup; the GitHub App settings only add Sign in with GitHub."""
+        from docsgpt.api.admin.connectors import AdminConnectorsResource
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GITHUB_CLIENT_ID", "Iv1.secret-client")
+        monkeypatch.setattr(settings, "GITHUB_CLIENT_SECRET", None)
+        monkeypatch.setattr(settings, "GITHUB_APP_SLUG", None)
+        with _db(pg_conn):
+            resp = _call(app, AdminConnectorsResource, "get", "/api/admin/connectors", roles=["admin"])
+        payload = resp.get_json()
+        github = next(c for c in payload["connectors"] if c["key"] == "github")
+        assert github["configured"] is True and github["enabled"] is True
+        assert github["required_settings"] == []
+        assert github["oauth_settings"] == [
+            {"name": "GITHUB_CLIENT_ID", "set": True},
+            {"name": "GITHUB_CLIENT_SECRET", "set": False},
+            {"name": "GITHUB_APP_SLUG", "set": False},
+        ]
+        assert github["oauth_configured"] is False
+        assert "Iv1.secret-client" not in json.dumps(payload)
+        drive = next(c for c in payload["connectors"] if c["key"] == "google_drive")
+        assert drive["oauth_settings"] == [] and drive["oauth_configured"] is False
+
     def test_disable_connector_and_custom_mcp(self, app, pg_conn):
         from docsgpt.api.admin.connectors import AdminConnectorsResource
 

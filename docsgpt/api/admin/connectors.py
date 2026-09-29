@@ -78,6 +78,13 @@ class AdminConnectorsResource(Resource):
                         {"name": name, "set": bool(getattr(settings, name, None))}
                         for name in definition.required_settings
                     ],
+                    # Optional: they add a second sign-in (GitHub's App) to a
+                    # connector that already works without them.
+                    "oauth_settings": [
+                        {"name": name, "set": bool(getattr(settings, name, None))}
+                        for name in definition.oauth_settings
+                    ],
+                    "oauth_configured": definition.oauth_configured,
                     "connection_count": counts.get(definition.key, 0),
                     "docs_url": definition.docs_url,
                     "mcp_url": definition.mcp_url,
