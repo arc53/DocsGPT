@@ -1271,7 +1271,11 @@
           "readWrite": "代理可以查詢資訊並進行變更。變更需要你的核准。"
         },
         "accountName": "為此帳戶命名",
-        "accountNameHint": "選填。讓你和 AI 區分你的帳戶，例如「警示機器人」。"
+        "accountNameHint": "選填。讓你和 AI 區分你的帳戶，例如「警示機器人」。",
+        "syncToKnowledge": "同步到知識庫",
+        "syncToKnowledgeDescription": "從 {{name}} 選擇要在回答中搜尋的內容。關閉時僅建立連線，之後可在連接器中同步。",
+        "syncLater": "尚未同步任何內容到知識庫。若要新增內容，請在連接器中開啟 {{name}}，然後選擇「同步更多內容」。",
+        "retrievalSettings": "進階檢索設定"
       },
       "remove": {
         "title": "要移除 {{name}} 嗎？",

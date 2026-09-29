@@ -1291,7 +1291,11 @@
           "readWrite": "Agents can look things up and make changes. Changes need your approval."
         },
         "accountName": "Name this account",
-        "accountNameHint": "Optional. Tells your accounts apart, for you and the AI, e.g. Alerts bot."
+        "accountNameHint": "Optional. Tells your accounts apart, for you and the AI, e.g. Alerts bot.",
+        "syncToKnowledge": "Sync into Knowledge",
+        "syncToKnowledgeDescription": "Pick content from {{name}} for answers to search. Leave it off to only connect; you can sync later from Connectors.",
+        "syncLater": "Nothing syncs into Knowledge yet. To add content, open {{name}} in Connectors and choose Sync more content.",
+        "retrievalSettings": "Advanced retrieval settings"
       },
       "remove": {
         "title": "Remove {{name}}?",

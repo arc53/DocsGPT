@@ -9,10 +9,16 @@ vi.mock('./ConnectWizard', () => ({
   default: ({
     mode,
     connectionId,
+    purpose,
   }: {
     mode: string;
     connectionId?: string;
-  }) => <div data-testid="wizard">{`${mode}:${connectionId ?? ''}`}</div>,
+    purpose?: string;
+  }) => (
+    <div data-testid="wizard" data-purpose={purpose ?? ''}>
+      {`${mode}:${connectionId ?? ''}`}
+    </div>
+  ),
 }));
 vi.mock('../modals/MCPServerModal', () => ({ default: () => null }));
 
@@ -30,6 +36,14 @@ const LINEAR = {
   auth_kind: 'mcp_oauth',
   mcp_url: 'https://mcp.linear.app/mcp',
   sync_ingestor: 'linear',
+} as unknown as ConnectorDefinition;
+
+const DRIVE = {
+  key: 'google_drive',
+  name: 'Google Drive',
+  auth_kind: 'oauth',
+  mcp_url: null,
+  sync_ingestor: 'google_drive',
 } as unknown as ConnectorDefinition;
 
 let launchRef: ((c: ConnectorDefinition, o?: LaunchOptions) => void) | null =
@@ -88,5 +102,23 @@ describe('useConnectorLauncher', () => {
       launchRef!(LINEAR, { mode: 'reconnect', connectionId: 'c1' }),
     );
     expect(wizard()).toBe('reconnect:c1');
+  });
+
+  const purpose = () =>
+    container
+      .querySelector('[data-testid="wizard"]')
+      ?.getAttribute('data-purpose');
+
+  it('tells the wizard it was opened for Knowledge', async () => {
+    await act(async () => launchRef!(LINEAR, { purpose: 'knowledge' }));
+    expect(purpose()).toBe('knowledge');
+    await act(async () => launchRef!(DRIVE, { purpose: 'knowledge' }));
+    expect(wizard()).toBe('connect:');
+    expect(purpose()).toBe('knowledge');
+  });
+
+  it('leaves a plain connect without a purpose', async () => {
+    await act(async () => launchRef!(DRIVE));
+    expect(purpose()).toBe('');
   });
 });

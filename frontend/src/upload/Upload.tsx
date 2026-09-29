@@ -9,8 +9,6 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
 import userService from '../api/services/userService';
-import modelService from '../api/services/modelService';
-import type { Model } from '../models/types';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -75,6 +73,7 @@ import RetrievalOptions, {
   optionsToConfig,
   type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
+import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 
 /** Per-file limit for local uploads (25 MB), enforced by the dropzone. */
 const MAX_UPLOAD_BYTES = 25000000;
@@ -126,9 +125,8 @@ function Upload({
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [retrievalOptions, setRetrievalOptions] =
     useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
-  const [graphRAGAvailable, setGraphRAGAvailable] = useState(false);
-  const [hybridAvailable, setHybridAvailable] = useState(false);
-  const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  const { graphRAGAvailable, hybridAvailable, availableModels } =
+    useRetrievalAvailability(token);
 
   // File picker state
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -136,41 +134,6 @@ function Upload({
   // The connection (account) the source syncs from. Pickers report it; S3
   // and Reddit pick it here ('' means "enter new credentials").
   const [connectionId, setConnectionId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    userService
-      .getConfig()
-      .then((response) => response.json())
-      .then((config) => {
-        if (!cancelled) {
-          setGraphRAGAvailable(!!config?.graphrag_available);
-          setHybridAvailable(!!config?.hybrid_available);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Models back the graphrag extraction-model picker; only fetched when the
-  // instance supports graphrag.
-  useEffect(() => {
-    if (!graphRAGAvailable) return;
-    let cancelled = false;
-    modelService
-      .getModels(token)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled && data)
-          setAvailableModels(modelService.transformModels(data.models || []));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [graphRAGAvailable, token]);
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
@@ -1281,11 +1244,16 @@ function Upload({
                             c.status === 'connected',
                         );
                         setHandedOver(true);
+                        // Opened to add knowledge: syncing starts switched on.
                         launch(
                           connector,
                           account
-                            ? { mode: 'sync', connectionId: account.id }
-                            : {},
+                            ? {
+                                mode: 'sync',
+                                connectionId: account.id,
+                                purpose: 'knowledge',
+                              }
+                            : { purpose: 'knowledge' },
                         );
                         return;
                       }
@@ -1335,8 +1303,12 @@ function Upload({
               launch(
                 githubConnector,
                 githubAccount
-                  ? { mode: 'sync', connectionId: githubAccount.id }
-                  : {},
+                  ? {
+                      mode: 'sync',
+                      connectionId: githubAccount.id,
+                      purpose: 'knowledge',
+                    }
+                  : { purpose: 'knowledge' },
               );
             }}
           >

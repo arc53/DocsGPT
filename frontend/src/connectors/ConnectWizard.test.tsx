@@ -27,6 +27,7 @@ vi.mock('../api/services/connectorsService', () => ({ default: service }));
 const mcpApi = vi.hoisted(() => ({
   testMCPConnection: vi.fn(),
   saveMCPServer: vi.fn(),
+  getConfig: vi.fn(),
 }));
 vi.mock('../api/services/userService', async (importOriginal) => {
   const original = await importOriginal<{ default: object }>();
@@ -102,6 +103,10 @@ vi.mock('./LinearPicker', async (importOriginal) => {
 import notificationsReducer, {
   sseEventReceived,
 } from '../notifications/notificationsSlice';
+import {
+  DEFAULT_RETRIEVAL_OPTIONS,
+  optionsToConfig,
+} from '../settings/components/RetrievalOptions';
 import connectorsReducer from './connectorsSlice';
 import ConnectWizard from './ConnectWizard';
 import type { ConnectorDefinition } from './types';
@@ -206,6 +211,7 @@ describe('ConnectWizard', () => {
       success: true,
       connections: [],
     });
+    mcpApi.getConfig.mockResolvedValue({ json: async () => ({}) });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -260,6 +266,9 @@ describe('ConnectWizard', () => {
     expect(button, `button ${text}`).toBeDefined();
     await act(async () => button!.click());
   };
+
+  const knowledgeSwitch = () =>
+    document.body.querySelector<HTMLButtonElement>('[id^="knowledge-"]');
 
   const typeInto = async (input: HTMLInputElement, value: string) => {
     const setter = Object.getOwnPropertyDescriptor(
@@ -377,7 +386,7 @@ describe('ConnectWizard', () => {
   });
 
   it('lets a content service skip choosing what to sync', async () => {
-    await render(drive);
+    await render(drive, vi.fn(), { purpose: 'knowledge' });
     await click('settings.connectors.wizard.signIn');
     expect(document.body.textContent).toContain(
       'settings.connectors.wizard.chooseWhatToSync',
@@ -395,7 +404,7 @@ describe('ConnectWizard', () => {
       tools: [],
       sources: [{ id: 'src-1', name: 'Handbook' }],
     });
-    await render(drive);
+    await render(drive, vi.fn(), { purpose: 'knowledge' });
     await click('settings.connectors.wizard.signIn');
     await click('pick-folder');
     await click('modals.uploadDoc.train');
@@ -405,11 +414,165 @@ describe('ConnectWizard', () => {
       items: { file_ids: [], folder_ids: ['folder-1'] },
       frequency: 'weekly',
       name: 'Handbook',
+      config: optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS),
     });
     expect(typeof key).toBe('string');
     expect(document.body.textContent).toContain(
       'settings.connectors.wizard.doneSummary',
     );
+  });
+
+  describe('Sync into Knowledge', () => {
+    const button = (text: string) =>
+      Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.textContent?.trim() === text);
+
+    it('is off on a plain connect: the account is made, nothing syncs', async () => {
+      await render(drive);
+      await click('settings.connectors.wizard.signIn');
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.chooseWhatToSetUp',
+      );
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.syncToKnowledge',
+      );
+      expect(knowledgeSwitch()!.getAttribute('aria-checked')).toBe('false');
+      // The picker, name, frequency and retrieval settings stay folded away.
+      expect(document.body.textContent).not.toContain('pick-folder');
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.syncFrequency',
+      );
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.retrievalSettings',
+      );
+      // One way on: nothing to skip.
+      expect(button('settings.connectors.wizard.skip')).toBeUndefined();
+      await click('settings.connectors.wizard.continue');
+      expect(service.setup).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.doneTitle',
+      );
+      // The summary says nothing syncs yet, and where to start later.
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.syncLater',
+      );
+    });
+
+    it('shows the picker once switched on', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [{ id: 'src-1', name: 'Handbook' }],
+      });
+      await render(drive);
+      await click('settings.connectors.wizard.signIn');
+      await act(async () => knowledgeSwitch()!.click());
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.chooseWhatToSync',
+      );
+      expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
+      await click('pick-folder');
+      await click('modals.uploadDoc.train');
+      expect(service.setup.mock.calls[0][1].sync.items).toEqual({
+        file_ids: [],
+        folder_ids: ['folder-1'],
+      });
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.syncLater',
+      );
+    });
+
+    it('drops the picked items when switched back off', async () => {
+      await render(drive, vi.fn(), { purpose: 'knowledge' });
+      await click('settings.connectors.wizard.signIn');
+      expect(knowledgeSwitch()!.getAttribute('aria-checked')).toBe('true');
+      await click('pick-folder');
+      await act(async () => knowledgeSwitch()!.click());
+      await act(async () => knowledgeSwitch()!.click());
+      // The picker starts over, so nothing is left to add.
+      expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
+    });
+
+    it('sends the advanced retrieval settings with the sync', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [],
+      });
+      await render(drive, vi.fn(), { purpose: 'knowledge' });
+      await click('settings.connectors.wizard.signIn');
+      const toggle = button('settings.connectors.wizard.retrievalSettings')!;
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      await act(async () => toggle.click());
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      await typeInto(
+        document.body.querySelector<HTMLInputElement>('#retrieval-chunks')!,
+        '9',
+      );
+      await click('pick-folder');
+      await click('modals.uploadDoc.train');
+      expect(service.setup.mock.calls[0][1].sync.config).toEqual(
+        optionsToConfig({
+          ...DEFAULT_RETRIEVAL_OPTIONS,
+          retrieval: { ...DEFAULT_RETRIEVAL_OPTIONS.retrieval, chunks: 9 },
+        }),
+      );
+    });
+
+    it('blocks the sync while the prescreen settings do not add up', async () => {
+      await render(drive, vi.fn(), { purpose: 'knowledge' });
+      await click('settings.connectors.wizard.signIn');
+      await click('pick-folder');
+      await click('settings.connectors.wizard.retrievalSettings');
+      await act(async () =>
+        document.body
+          .querySelector<HTMLButtonElement>('#retrieval-prescreen')!
+          .click(),
+      );
+      // More chunks than prescreen candidates.
+      await typeInto(
+        document.body.querySelector<HTMLInputElement>('#retrieval-chunks')!,
+        '50',
+      );
+      expect(button('modals.uploadDoc.train')?.disabled).toBe(true);
+    });
+
+    it('is not asked about when syncing more from an account', async () => {
+      await render(drive, vi.fn(), {
+        mode: 'sync',
+        connectionId: 'conn-drive',
+      });
+      expect(knowledgeSwitch()).toBeNull();
+      expect(document.body.textContent).toContain('pick-folder');
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.chooseWhatToSync',
+      );
+    });
+
+    it('is not offered by a service that does not sync', async () => {
+      service.createConnection.mockResolvedValue({
+        success: true,
+        connection: { id: 'conn-1' },
+      });
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [],
+      });
+      await render(base, vi.fn(), { purpose: 'knowledge' });
+      await typeInto(
+        document.body.querySelector<HTMLInputElement>(
+          'input[type="password"]',
+        )!,
+        't',
+      );
+      await click('settings.connectors.status.connect');
+      expect(knowledgeSwitch()).toBeNull();
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.syncLater',
+      );
+    });
   });
 
   it('opens a new chat from Try it in chat', async () => {
@@ -589,7 +752,7 @@ describe('ConnectWizard', () => {
         tools: [{ ...TELEGRAM_TOOL, name: 'mcp_tool', display_name: 'GitHub' }],
         sources: [{ id: 'src-1', name: 'octocat/private' }],
       });
-      await render(github);
+      await render(github, vi.fn(), { purpose: 'knowledge' });
       await connectWithToken();
       await click('pick-repo');
       await click('settings.connectors.wizard.continue');
@@ -601,6 +764,7 @@ describe('ConnectWizard', () => {
           items: { repo_url: 'octocat/private' },
           frequency: 'weekly',
           name: 'octocat/private',
+          config: optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS),
         },
       });
       expect(document.body.textContent).toContain(
@@ -629,7 +793,7 @@ describe('ConnectWizard', () => {
         tools: [],
         sources: [],
       });
-      await render(github);
+      await render(github, vi.fn(), { purpose: 'knowledge' });
       await connectWithToken();
       const toolSwitch =
         document.body.querySelector<HTMLButtonElement>('[role="switch"]')!;
@@ -762,7 +926,7 @@ describe('ConnectWizard', () => {
         tools: [],
         sources: [{ id: 'src-1', name: 'Linear · Engineering' }],
       });
-      await signIn();
+      await signIn({ purpose: 'knowledge' });
       // The tools came with the sign-in; syncing is the next question.
       expect(document.body.textContent).toContain(
         'settings.connectors.wizard.chooseWhatToSync',
@@ -782,6 +946,7 @@ describe('ConnectWizard', () => {
           },
           frequency: 'weekly',
           name: 'Linear · Engineering',
+          config: optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS),
         },
       });
       // The summary still lists the tools from the sign-in.
@@ -791,7 +956,7 @@ describe('ConnectWizard', () => {
     });
 
     it('can skip syncing and keep only the tools', async () => {
-      await signIn();
+      await signIn({ purpose: 'knowledge' });
       const train = Array.from(
         document.body.querySelectorAll<HTMLButtonElement>('button'),
       ).find((b) => b.textContent?.trim() === 'modals.uploadDoc.train');
@@ -804,6 +969,20 @@ describe('ConnectWizard', () => {
       );
       expect(document.body.textContent).toContain(
         'settings.connectors.wizard.toolsHeading:1',
+      );
+    });
+
+    it('asks before syncing on a plain connect, and keeps the tools', async () => {
+      await signIn();
+      expect(knowledgeSwitch()!.getAttribute('aria-checked')).toBe('false');
+      expect(document.body.textContent).not.toContain('pick-team');
+      await click('settings.connectors.wizard.continue');
+      expect(service.setup).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.toolsHeading:1',
+      );
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.syncLater',
       );
     });
 
@@ -820,6 +999,8 @@ describe('ConnectWizard', () => {
         connectionId: 'conn-lin',
       });
       expect(document.body.textContent).toContain('pick-team');
+      // Syncing is why it opened: no question about it.
+      expect(knowledgeSwitch()).toBeNull();
     });
   });
 });

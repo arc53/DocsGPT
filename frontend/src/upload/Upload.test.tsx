@@ -237,9 +237,30 @@ describe('Upload source-type tiles', () => {
     expect(launch).toHaveBeenCalledWith(s3, {
       mode: 'sync',
       connectionId: 'k1',
+      purpose: 'knowledge',
     });
     connectorsState.catalog = [];
     connectorsState.connections = [];
+  });
+
+  it('connects a new account for Knowledge, syncing switched on', async () => {
+    launch.mockClear();
+    const s3 = {
+      key: 's3',
+      icon: 's3',
+      sync_ingestor: 's3',
+      auth_kind: 'api_key',
+      available: true,
+      missing_settings: [],
+    };
+    connectorsState.catalog = [s3];
+    await render();
+    const tile = tiles().find((t) =>
+      t.textContent?.includes('ingestors.s3.label'),
+    )!;
+    await act(async () => tile.click());
+    expect(launch).toHaveBeenCalledWith(s3, { purpose: 'knowledge' });
+    connectorsState.catalog = [];
   });
 
   describe('GitHub', () => {
@@ -285,7 +306,9 @@ describe('Upload source-type tiles', () => {
         'modals.uploadDoc.github.privateHint',
       );
       await act(async () => handOver()!.click());
-      expect(launch).toHaveBeenCalledWith(githubConnector, {});
+      expect(launch).toHaveBeenCalledWith(githubConnector, {
+        purpose: 'knowledge',
+      });
     });
 
     it('goes straight to picking a repository with a connected account', async () => {
@@ -307,6 +330,7 @@ describe('Upload source-type tiles', () => {
       expect(launch).toHaveBeenCalledWith(githubConnector, {
         mode: 'sync',
         connectionId: 'gh-1',
+        purpose: 'knowledge',
       });
     });
 

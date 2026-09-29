@@ -1285,7 +1285,11 @@
           "readWrite": "Agenten können Dinge nachschlagen und ändern. Änderungen brauchen deine Freigabe."
         },
         "accountName": "Konto benennen",
-        "accountNameHint": "Optional. Unterscheidet deine Konten, für dich und die KI, z. B. Alarm-Bot."
+        "accountNameHint": "Optional. Unterscheidet deine Konten, für dich und die KI, z. B. Alarm-Bot.",
+        "syncToKnowledge": "Ins Wissen synchronisieren",
+        "syncToKnowledgeDescription": "Wähle Inhalte aus {{name}}, die Antworten durchsuchen. Bleibt es aus, wird nur verbunden; synchronisieren kannst du später unter Konnektoren.",
+        "syncLater": "Noch wird nichts ins Wissen synchronisiert. Um Inhalte hinzuzufügen, öffne {{name}} unter Konnektoren und wähle Weitere Inhalte synchronisieren.",
+        "retrievalSettings": "Erweiterte Abrufeinstellungen"
       },
       "remove": {
         "title": "{{name}} entfernen?",

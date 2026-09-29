@@ -7,7 +7,10 @@ import MCPServerModal from '../modals/MCPServerModal';
 import type { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
-import ConnectWizard, { type WizardMode } from './ConnectWizard';
+import ConnectWizard, {
+  type LaunchPurpose,
+  type WizardMode,
+} from './ConnectWizard';
 import { loadConnectors } from './connectorsSlice';
 import { isMcpPreset } from './launchRules';
 import type { ConnectorDefinition } from './types';
@@ -18,6 +21,11 @@ export type LaunchOptions = {
   connectionId?: string;
   /** An existing MCP tool to reconnect through the MCP server form. */
   mcpServer?: Record<string, unknown>;
+  /**
+   * Why the wizard opens. `knowledge` (Add knowledge, Knowledge's Connect a
+   * service) starts with Sync into Knowledge on; otherwise it starts off.
+   */
+  purpose?: LaunchPurpose;
 };
 
 type Active =
@@ -27,6 +35,7 @@ type Active =
       mode: WizardMode;
       connectionId?: string;
       mcpToolId?: string;
+      purpose?: LaunchPurpose;
     }
   | {
       kind: 'mcp';
@@ -69,6 +78,7 @@ export default function useConnectorLauncher({
             typeof options.mcpServer?.id === 'string'
               ? options.mcpServer.id
               : undefined,
+          purpose: options.purpose,
         });
         return;
       }
@@ -102,6 +112,7 @@ export default function useConnectorLauncher({
         connector,
         mode: options.mode ?? 'connect',
         connectionId: options.connectionId,
+        purpose: options.purpose,
       });
     },
     [navigate],
@@ -142,6 +153,7 @@ export default function useConnectorLauncher({
           mode={active.mode}
           connectionId={active.connectionId}
           mcpToolId={active.mcpToolId}
+          purpose={active.purpose}
           onClose={() => {
             setActive(null);
             refresh();

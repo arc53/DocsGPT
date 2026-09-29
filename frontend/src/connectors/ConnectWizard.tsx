@@ -42,6 +42,13 @@ import {
   setSelectedAgent,
   setSelectedDocs,
 } from '../preferences/preferenceSlice';
+import RetrievalOptions, {
+  DEFAULT_RETRIEVAL_OPTIONS,
+  isPrescreenConfigValid,
+  optionsToConfig,
+  type RetrievalOptionsValue,
+} from '../settings/components/RetrievalOptions';
+import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 import type { AppDispatch } from '../store';
 import { formatCount } from '../utils/dateTimeUtils';
 import { ACCOUNT_NAME_MAX } from './accounts';
@@ -65,6 +72,12 @@ import type {
 } from './types';
 
 export type WizardMode = 'connect' | 'reconnect' | 'sync' | 'done';
+/**
+ * Why the wizard opened. `knowledge` (Add knowledge, Knowledge's Connect a
+ * service) starts a first connect with Sync into Knowledge on; `tools`, or
+ * none, leaves it off for the user to choose.
+ */
+export type LaunchPurpose = 'knowledge' | 'tools';
 
 const FREQUENCIES = ['never', 'daily', 'weekly', 'monthly'] as const;
 const PICKER_CONNECTORS = new Set([
@@ -80,16 +93,19 @@ const GITHUB_TOKEN_URL =
 type CreatedSource = { id: string; name: string };
 
 /**
- * The one connect flow every entry point opens: sign in, choose what to
- * sync (content connectors only, skippable), then a summary with Try it in
- * chat. Tool connectors create their tools on sign-in, writes needing
- * approval, so they go from the credentials straight to the summary.
+ * The one connect flow every entry point opens: sign in, choose what to set
+ * up, then a summary with Try it in chat. A content connector asks whether to
+ * sync into Knowledge (on when opened for Knowledge) and, if so, what to sync
+ * and with which retrieval settings. Tool connectors create their tools on
+ * sign-in, writes needing approval, so they go from the credentials straight
+ * to the summary.
  */
 export default function ConnectWizard({
   connector,
   mode = 'connect',
   connectionId: initialConnectionId = null,
   mcpToolId,
+  purpose,
   onClose,
   onFinished,
 }: {
@@ -98,6 +114,7 @@ export default function ConnectWizard({
   connectionId?: string | null;
   /** Reconnecting an MCP preset: the tool to update rather than add. */
   mcpToolId?: string;
+  purpose?: LaunchPurpose;
   onClose: () => void;
   onFinished?: () => void;
 }) {
@@ -144,6 +161,15 @@ export default function ConnectWizard({
 
   const connection = connections.find((c) => c.id === connectionId);
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
+  // A first connect asks whether to sync into Knowledge; Sync more is only
+  // about syncing, so it never asks.
+  const askSync = canSync && mode === 'connect';
+  const [syncOn, setSyncOn] = useState(purpose === 'knowledge');
+  const syncing = canSync && (mode === 'sync' || syncOn);
+  const [retrievalOptions, setRetrievalOptions] =
+    useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
+  const { graphRAGAvailable, hybridAvailable, availableModels } =
+    useRetrievalAvailability(token, step === 'setup' && syncing);
   // Tools the user opts into while choosing what to sync, not on sign-in.
   const offerTools =
     connector.setup.tools === 'ask' &&
@@ -339,10 +365,31 @@ export default function ConnectWizard({
   const wantsTools = offerTools && toolsOn;
   const offerWrites = wantsTools && !!connector.writes_allowed;
   const wantsWrites = offerWrites && writesOn;
-  const canAddSource = hasSyncSelection || wantsTools;
+  const syncReady = syncing && hasSyncSelection;
+  // Off, there is nothing to pick: the button only finishes connecting.
+  // On, something must be picked (or the tools wanted), and an incoherent
+  // prescreen config blocks it as in Upload; the backend would refuse it.
+  const canAddSource =
+    !syncing ||
+    ((hasSyncSelection || wantsTools) &&
+      isPrescreenConfigValid(retrievalOptions));
+
+  const toggleSync = (on: boolean) => {
+    setSyncOn(on);
+    // The file pickers start over when shown again; drop what they reported.
+    if (!on) {
+      setSelectedFiles([]);
+      setSelectedFolders([]);
+    }
+  };
 
   const addSource = async () => {
     if (!connectionId) return;
+    if (!wantsTools && !syncReady) {
+      // Connected, nothing more to set up.
+      setStep('done');
+      return;
+    }
     setPending(true);
     setError('');
     try {
@@ -351,11 +398,12 @@ export default function ConnectWizard({
         {
           create_tools: wantsTools,
           ...(wantsWrites && { allow_writes: true }),
-          ...(hasSyncSelection && {
+          ...(syncReady && {
             sync: {
               items: syncItems(),
               frequency,
               name: sourceName.trim() || undefined,
+              config: optionsToConfig(retrievalOptions),
             },
           }),
         },
@@ -448,8 +496,16 @@ export default function ConnectWizard({
           : toolCount
             ? t('settings.connectors.wizard.doneTools', { tools: toolsText })
             : '';
-    return [accountLine, countsLine].filter(Boolean).join(' ');
-  }, [connection, sources, toolCount, t]);
+    // A new account that syncs nothing yet: say where syncing starts later.
+    const syncLine =
+      mode === 'connect' && canSync && sources.length === 0
+        ? t('settings.connectors.wizard.syncLater', {
+            name,
+            interpolation: { escapeValue: false },
+          })
+        : '';
+    return [accountLine, countsLine, syncLine].filter(Boolean).join(' ');
+  }, [connection, sources, toolCount, mode, canSync, name, t]);
 
   const renderSignIn = () => (
     <div className="flex flex-col gap-5">
@@ -559,29 +615,31 @@ export default function ConnectWizard({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {offerTools && (
+      {(offerTools || askSync) && (
         <SettingRows>
-          <SettingRow
-            label={t('settings.connectors.wizard.addTools', {
-              name,
-              interpolation: { escapeValue: false },
-            })}
-            description={t(
-              `settings.connectors.wizard.addToolsDescription.${
-                connector.capabilities.includes('write') || wantsWrites
-                  ? 'readWrite'
-                  : 'read'
-              }`,
-            )}
-            htmlFor={`tools-${connector.key}`}
-            alignStart
-          >
-            <Switch
-              id={`tools-${connector.key}`}
-              checked={toolsOn}
-              onCheckedChange={(checked) => setToolsOn(checked === true)}
-            />
-          </SettingRow>
+          {offerTools && (
+            <SettingRow
+              label={t('settings.connectors.wizard.addTools', {
+                name,
+                interpolation: { escapeValue: false },
+              })}
+              description={t(
+                `settings.connectors.wizard.addToolsDescription.${
+                  connector.capabilities.includes('write') || wantsWrites
+                    ? 'readWrite'
+                    : 'read'
+                }`,
+              )}
+              htmlFor={`tools-${connector.key}`}
+              alignStart
+            >
+              <Switch
+                id={`tools-${connector.key}`}
+                checked={toolsOn}
+                onCheckedChange={(checked) => setToolsOn(checked === true)}
+              />
+            </SettingRow>
+          )}
           {offerWrites && (
             <SettingRow
               label={t('settings.connectors.github.writes')}
@@ -596,87 +654,116 @@ export default function ConnectWizard({
               />
             </SettingRow>
           )}
+          {askSync && (
+            <SettingRow
+              label={t('settings.connectors.wizard.syncToKnowledge')}
+              description={t(
+                'settings.connectors.wizard.syncToKnowledgeDescription',
+                { name, interpolation: { escapeValue: false } },
+              )}
+              htmlFor={`knowledge-${connector.key}`}
+              alignStart
+            >
+              <Switch
+                id={`knowledge-${connector.key}`}
+                checked={syncOn}
+                onCheckedChange={(checked) => toggleSync(checked === true)}
+              />
+            </SettingRow>
+          )}
         </SettingRows>
       )}
-      {isRepoPicker && connectionId ? (
-        <RepoPicker
-          connectionId={connectionId}
-          token={token}
-          value={selectedRepo}
-          onChange={(fullName) => {
-            setSelectedRepo(fullName);
-            if (!nameTouched) setSourceName(fullName);
-          }}
-        />
-      ) : isLinearPicker && connectionId ? (
-        <LinearPicker
-          connectionId={connectionId}
-          token={token}
-          value={linearSelection}
-          onChange={(selection) => {
-            setLinearSelection(selection);
-            if (!nameTouched) setSourceName(linearSourceName(selection));
-          }}
-        />
-      ) : connector.key === 'google_drive' &&
-        envVar('VITE_GOOGLE_CLIENT_ID') ? (
-        <GoogleDrivePicker
-          token={token}
-          connectionId={connectionId}
-          onFirstPickName={prefillName}
-          onSelectionChange={(fileIds, folderIds = []) => {
-            setSelectedFiles(fileIds);
-            setSelectedFolders(folderIds);
-          }}
-        />
-      ) : PICKER_CONNECTORS.has(connector.key) ? (
-        <FilePicker
-          provider={connector.key}
-          token={token}
-          connectionId={connectionId}
-          onFirstPickName={prefillName}
-          onSelectionChange={(fileIds, folderIds = []) => {
-            setSelectedFiles(fileIds);
-            setSelectedFolders(folderIds);
-          }}
-        />
-      ) : (
-        <CredentialForm
-          connectorKey={connector.key}
-          idPrefix={`sync-${connector.key}`}
-          fields={connector.setup_fields}
-          values={setupValues}
-          onChange={(values) => {
-            setSetupValues(values);
-            const first = Object.values(values).find(Boolean);
-            if (first) prefillName(first);
-          }}
-        />
+      {syncing && (
+        <>
+          {isRepoPicker && connectionId ? (
+            <RepoPicker
+              connectionId={connectionId}
+              token={token}
+              value={selectedRepo}
+              onChange={(fullName) => {
+                setSelectedRepo(fullName);
+                if (!nameTouched) setSourceName(fullName);
+              }}
+            />
+          ) : isLinearPicker && connectionId ? (
+            <LinearPicker
+              connectionId={connectionId}
+              token={token}
+              value={linearSelection}
+              onChange={(selection) => {
+                setLinearSelection(selection);
+                if (!nameTouched) setSourceName(linearSourceName(selection));
+              }}
+            />
+          ) : connector.key === 'google_drive' &&
+            envVar('VITE_GOOGLE_CLIENT_ID') ? (
+            <GoogleDrivePicker
+              token={token}
+              connectionId={connectionId}
+              onFirstPickName={prefillName}
+              onSelectionChange={(fileIds, folderIds = []) => {
+                setSelectedFiles(fileIds);
+                setSelectedFolders(folderIds);
+              }}
+            />
+          ) : PICKER_CONNECTORS.has(connector.key) ? (
+            <FilePicker
+              provider={connector.key}
+              token={token}
+              connectionId={connectionId}
+              onFirstPickName={prefillName}
+              onSelectionChange={(fileIds, folderIds = []) => {
+                setSelectedFiles(fileIds);
+                setSelectedFolders(folderIds);
+              }}
+            />
+          ) : (
+            <CredentialForm
+              connectorKey={connector.key}
+              idPrefix={`sync-${connector.key}`}
+              fields={connector.setup_fields}
+              values={setupValues}
+              onChange={(values) => {
+                setSetupValues(values);
+                const first = Object.values(values).find(Boolean);
+                if (first) prefillName(first);
+              }}
+            />
+          )}
+          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
+            <Input
+              label={t('modals.uploadDoc.name')}
+              value={sourceName}
+              onChange={(e) => {
+                setNameTouched(true);
+                setSourceName(e.target.value);
+              }}
+            />
+            <FormField label={t('settings.connectors.wizard.syncFrequency')}>
+              <Select value={frequency} onValueChange={setFrequency}>
+                <SelectTrigger size="field" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FREQUENCIES.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {t(`settings.sources.syncFrequency.${value}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FormField>
+          </div>
+          <RetrievalOptions
+            title={t('settings.connectors.wizard.retrievalSettings')}
+            value={retrievalOptions}
+            onChange={setRetrievalOptions}
+            hybridAvailable={hybridAvailable}
+            graphRAGAvailable={graphRAGAvailable}
+            availableModels={availableModels}
+          />
+        </>
       )}
-      <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2">
-        <Input
-          label={t('modals.uploadDoc.name')}
-          value={sourceName}
-          onChange={(e) => {
-            setNameTouched(true);
-            setSourceName(e.target.value);
-          }}
-        />
-        <FormField label={t('settings.connectors.wizard.syncFrequency')}>
-          <Select value={frequency} onValueChange={setFrequency}>
-            <SelectTrigger size="field" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FREQUENCIES.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {t(`settings.sources.syncFrequency.${value}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FormField>
-      </div>
     </div>
   );
 
@@ -723,7 +810,7 @@ export default function ConnectWizard({
             interpolation: { escapeValue: false },
           })
       : step === 'setup'
-        ? offerTools
+        ? offerTools || !syncing
           ? t('settings.connectors.wizard.chooseWhatToSetUp')
           : t('settings.connectors.wizard.chooseWhatToSync')
         : t('settings.connectors.wizard.doneTitle', {
@@ -763,6 +850,11 @@ export default function ConnectWizard({
           }
         />
       )
+    ) : step === 'setup' && !offerTools && !syncing ? (
+      // Only the Knowledge question, answered no: Skip would do the same.
+      <Button type="button" size="lg" shape="pill" onClick={addSource}>
+        {t('settings.connectors.wizard.continue')}
+      </Button>
     ) : step === 'setup' ? (
       <ModalActions
         cancelLabel={t('settings.connectors.wizard.skip')}

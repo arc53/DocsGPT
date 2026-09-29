@@ -19,6 +19,12 @@ const service = vi.hoisted(() => ({
 }));
 vi.mock('../api/services/connectorsService', () => ({ default: service }));
 
+// The wizard is tested on its own; here only what it is opened with matters.
+const launch = vi.hoisted(() => vi.fn());
+vi.mock('../connectors/useConnectorLauncher', () => ({
+  default: () => ({ launch, modals: null }),
+}));
+
 import connectorsReducer from '../connectors/connectorsSlice';
 import type { ConnectorDefinition } from '../connectors/types';
 import Connectors from './Connectors';
@@ -245,6 +251,62 @@ describe('Connectors page', () => {
     expect(pills).toContain('settings.connectors.categories.files');
     // Telegram (messaging) cannot sync.
     expect(pills).not.toContain('settings.connectors.categories.messaging');
+  });
+
+  describe('opened for Knowledge', () => {
+    const S3 = definition({
+      key: 's3',
+      name: 'Amazon S3',
+      category: 'files',
+      capabilities: ['sync'],
+      sync_ingestor: 's3',
+      tool_templates: [],
+      setup: { tools: 'off', sync: 'ask' },
+    });
+
+    beforeEach(() => {
+      launch.mockClear();
+      service.getCatalog.mockResolvedValue({
+        success: true,
+        connectors: [...CATALOG, S3],
+      });
+    });
+
+    it('connects with syncing switched on from a sync-only list', async () => {
+      await render('/settings/connectors?capability=sync');
+      await act(async () => card('s3')!.click());
+      expect(launch).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 's3' }),
+        { purpose: 'knowledge' },
+      );
+    });
+
+    it('leaves the choice off on a plain visit', async () => {
+      await render();
+      await act(async () => card('s3')!.click());
+      expect(launch).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 's3' }),
+        {},
+      );
+    });
+
+    it("carries it through the connector's page", async () => {
+      await render('/settings/connectors?capability=sync');
+      await act(async () => card('google_drive')!.click());
+      // No account of the user's own yet: the page offers Connect.
+      const connect = Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>(
+          '[role="dialog"] button',
+        ),
+      ).find(
+        (b) => b.textContent?.trim() === 'settings.connectors.status.connect',
+      )!;
+      await act(async () => connect.click());
+      expect(launch).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'google_drive' }),
+        { purpose: 'knowledge' },
+      );
+    });
   });
 
   const ATLASSIAN = definition({

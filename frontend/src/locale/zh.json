@@ -1271,7 +1271,11 @@
           "readWrite": "智能体可以查询信息并进行更改。更改需要你的批准。"
         },
         "accountName": "为此账户命名",
-        "accountNameHint": "可选。让你和 AI 区分你的账户，例如“告警机器人”。"
+        "accountNameHint": "可选。让你和 AI 区分你的账户，例如“告警机器人”。",
+        "syncToKnowledge": "同步到知识库",
+        "syncToKnowledgeDescription": "从 {{name}} 选择要在回答中搜索的内容。关闭时仅建立连接，之后可在连接器中同步。",
+        "syncLater": "尚未同步任何内容到知识库。要添加内容，请在连接器中打开 {{name}}，然后选择“同步更多内容”。",
+        "retrievalSettings": "高级检索设置"
       },
       "remove": {
         "title": "移除 {{name}}？",

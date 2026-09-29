@@ -1285,7 +1285,11 @@
           "readWrite": "Los agentes pueden consultar información y hacer cambios. Los cambios necesitan tu aprobación."
         },
         "accountName": "Nombre de esta cuenta",
-        "accountNameHint": "Opcional. Distingue tus cuentas, para ti y para la IA; por ejemplo, Bot de alertas."
+        "accountNameHint": "Opcional. Distingue tus cuentas, para ti y para la IA; por ejemplo, Bot de alertas.",
+        "syncToKnowledge": "Sincronizar en Conocimiento",
+        "syncToKnowledgeDescription": "Elige contenido de {{name}} para que las respuestas lo busquen. Desactivado, solo se conecta; puedes sincronizar más tarde desde Conectores.",
+        "syncLater": "Aún no se sincroniza nada en Conocimiento. Para añadir contenido, abre {{name}} en Conectores y elige Sincronizar más contenido.",
+        "retrievalSettings": "Configuración avanzada de recuperación"
       },
       "remove": {
         "title": "¿Eliminar {{name}}?",

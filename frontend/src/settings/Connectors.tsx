@@ -34,7 +34,9 @@ import {
 } from '../connectors/connectorsSlice';
 import { connectorDescription, connectorName } from '../connectors/i18n';
 import type { ConnectorDefinition } from '../connectors/types';
-import useConnectorLauncher from '../connectors/useConnectorLauncher';
+import useConnectorLauncher, {
+  type LaunchOptions,
+} from '../connectors/useConnectorLauncher';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 
@@ -129,6 +131,10 @@ export default function Connectors() {
     searchParams.delete('capability');
     setSearchParams(searchParams, { replace: true });
   };
+  // Listed for syncing (Knowledge's Connect a service, the sources picker's
+  // Connect more): a connect starts with Sync into Knowledge on.
+  const withPurpose = (options: LaunchOptions = {}): LaunchOptions =>
+    capability === 'sync' ? { ...options, purpose: 'knowledge' } : options;
 
   // Only categories that have something in them once the composer's
   // capability filter applies (hidden connectors can empty one too), so no
@@ -178,7 +184,7 @@ export default function Connectors() {
       !hasParts &&
       (connector.state === 'available' || connector.state === 'custom')
     ) {
-      launch(connector);
+      launch(connector, withPurpose());
       return;
     }
     setOpenKey(connector.key);
@@ -329,7 +335,7 @@ export default function Connectors() {
         onClose={closeDrawer}
         onConnect={(connector, options) => {
           closeDrawer();
-          launch(connector, options);
+          launch(connector, withPurpose(options));
         }}
       />
       {modals}

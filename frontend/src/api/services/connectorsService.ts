@@ -1,3 +1,4 @@
+import type { SourceConfig } from '../../models/misc';
 import apiClient, { throttledApiClient } from '../client';
 import endpoints from '../endpoints';
 
@@ -20,6 +21,8 @@ export type ConnectionSetupBody = {
     items: Record<string, unknown>;
     frequency?: string;
     name?: string;
+    /** The source's retrieval settings, as an upload sends them. */
+    config?: SourceConfig;
   };
 };
 
