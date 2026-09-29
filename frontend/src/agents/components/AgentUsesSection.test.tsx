@@ -505,6 +505,25 @@ describe('AgentUsesSection', () => {
     expect(openDetails).toHaveBeenCalledTimes(1);
   });
 
+  // Access details lists the writes only once the agent has an API key, so
+  // without one the note says to create it there first.
+  it('says the allowlist needs an API key when the agent has none', async () => {
+    const blocked = [
+      item({ id: 't1', name: 'Blocked', owner_credential_writes: ['x'] }),
+    ];
+    await render(agentWith(blocked), 'me', vi.fn());
+    await open();
+    const alert = () => container.querySelector('[data-slot="alert"]');
+    expect(alert()?.textContent).toContain(`${K}.accessDetailsNeedsKey`);
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(agentWith(blocked, { key: 'abcd...wxyz' }), 'me', vi.fn());
+    await open();
+    expect(alert()?.textContent).not.toContain(`${K}.accessDetailsNeedsKey`);
+    expect(alert()?.textContent).toContain(`${K}.openAccessDetails`);
+  });
+
   it('offers no Access details button to an editor or without a way there', async () => {
     const blocked = [
       item({ id: 't1', name: 'Blocked', owner_credential_writes: ['x'] }),

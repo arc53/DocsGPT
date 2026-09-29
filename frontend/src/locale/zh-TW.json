@@ -793,7 +793,8 @@
           "writesNoteApi": "連接器上的「允許」適用於聊天。標示為「無法透過 API」的變更，在你於 Access Details 中允許之前，API 和小工具的使用者無法進行。",
           "writesNoteApiEditor": "連接器上的「允許」適用於聊天。標示為「無法透過 API」的變更，在擁有者於 Access Details 中允許之前，API 和小工具的使用者無法進行。",
           "writesNoteMemberTail": "在每個人使用自己帳號的工具上，公開連結的使用者以自己的帳號進行變更。",
-          "openAccessDetails": "開啟 Access Details"
+          "openAccessDetails": "開啟 Access Details",
+          "accessDetailsNeedsKey": "代理有 API 金鑰後，Access Details 中會列出這些變更。"
         }
       },
       "memberCount_one": "{{formatted}} 位成員",

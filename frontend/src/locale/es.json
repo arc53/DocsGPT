@@ -789,12 +789,13 @@
             "personCredentials": "Credenciales guardadas de {{person}}",
             "otherCredentials": "Credenciales guardadas de otra persona"
           },
-          "writesSomeOff": "Algunos no por API",
+          "writesSomeOff": "No todo por API",
           "adminOff": "Cambios desactivados por un administrador",
           "writesNoteApi": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API y el widget hasta que los permitas en Access Details.",
           "writesNoteApiEditor": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API y el widget hasta que el propietario los permita en Access Details.",
           "writesNoteMemberTail": "En las herramientas donde cada persona usa su propia cuenta, los usuarios del enlace público hacen cambios con su propia cuenta.",
-          "openAccessDetails": "Abrir Access Details"
+          "openAccessDetails": "Abrir Access Details",
+          "accessDetailsNeedsKey": "Access Details muestra estos cambios cuando el agente tiene una clave de API."
         }
       },
       "memberCount_one": "{{formatted}} miembro",

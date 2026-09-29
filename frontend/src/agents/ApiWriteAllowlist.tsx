@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -56,6 +56,8 @@ function ToolAllowlist({
 }) {
   const { t } = useTranslation();
   const [unfolded, setUnfolded] = useState(false);
+  // Names the tool for its Customize link, which reads the same in each.
+  const titleId = useId();
   const allowedCount = tool.actions.filter((item) =>
     allowed.has(item.entry),
   ).length;
@@ -73,7 +75,7 @@ function ToolAllowlist({
           as="h4"
           size="xs"
           className="min-w-0 flex-1"
-          title={tool.name}
+          title={<span id={titleId}>{tool.name}</span>}
           description={t(`${K}.toolCount`, {
             allowed: formatCount(allowedCount),
             formatted: formatCount(tool.actions.length),
@@ -107,6 +109,7 @@ function ToolAllowlist({
         size="inline"
         className="self-start"
         aria-expanded={unfolded}
+        aria-describedby={titleId}
         onClick={() => setUnfolded(!unfolded)}
       >
         {unfolded

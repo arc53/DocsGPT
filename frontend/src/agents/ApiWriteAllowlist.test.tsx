@@ -315,6 +315,22 @@ describe('ApiWriteAllowlist', () => {
     expect(savedConfig().api_write_allowlist).toEqual(['old:gone_action']);
   });
 
+  // Every tool has a Customize link; each names its tool to screen readers.
+  it('ties each Customize link to its tool', async () => {
+    await render(agent({ tools: ['tg', 'crm'] }), { defaultOpen: true });
+    for (const [id, name] of [
+      ['tg', 'Telegram'],
+      ['crm', 'CRM API'],
+    ]) {
+      const link = Array.from(group(id).querySelectorAll('button')).find(
+        (b) => b.getAttribute('aria-expanded') === 'false',
+      )!;
+      const describedBy = link.getAttribute('aria-describedby');
+      expect(describedBy).toBeTruthy();
+      expect(document.getElementById(describedBy!)?.textContent).toBe(name);
+    }
+  });
+
   it('allows one action under Customize, leaving the tool choice mixed', async () => {
     updateAgent.mockResolvedValue({ ok: true });
     await render(agent());

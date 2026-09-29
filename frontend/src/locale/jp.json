@@ -788,12 +788,13 @@
             "personCredentials": "{{person}} の保存済み認証情報",
             "otherCredentials": "他の人の保存済み認証情報"
           },
-          "writesSomeOff": "一部 API 経由は不可",
+          "writesSomeOff": "一部は API 経由不可",
           "adminOff": "管理者が変更をオフにしています",
           "writesNoteApi": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、Access Details で許可するまで、API とウィジェットの利用者には行えません。",
           "writesNoteApiEditor": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、オーナーが Access Details で許可するまで、API とウィジェットの利用者には行えません。",
           "writesNoteMemberTail": "各自のアカウントを使うツールでは、公開リンクの利用者は自分のアカウントで変更します。",
-          "openAccessDetails": "Access Details を開く"
+          "openAccessDetails": "Access Details を開く",
+          "accessDetailsNeedsKey": "エージェントに API キーがあると、Access Details にこれらの変更が表示されます。"
         }
       },
       "memberCount_one": "{{formatted}}人のメンバー",

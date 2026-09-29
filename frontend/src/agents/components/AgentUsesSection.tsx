@@ -233,7 +233,12 @@ export default function AgentUsesSection({
               <AlertDescription>{writesNote}</AlertDescription>
               {/* Only the owner sets the allowlist. */}
               {ownerReads && onOpenAccessDetails && (
-                <div className="mt-2">
+                <div className="mt-2 flex flex-col items-start gap-1.5">
+                  {/* Access details lists these writes once there is a key
+                      (a draft gets one when it is published). */}
+                  {!agent.key && (
+                    <p className="text-xs">{t(`${K}.accessDetailsNeedsKey`)}</p>
+                  )}
                   <Button
                     type="button"
                     size="sm"

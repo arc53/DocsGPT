@@ -789,12 +789,13 @@
             "personCredentials": "Gespeicherte Zugangsdaten von {{person}}",
             "otherCredentials": "Gespeicherte Zugangsdaten einer anderen Person"
           },
-          "writesSomeOff": "Teils nicht über API",
+          "writesSomeOff": "Nicht alles über API",
           "adminOff": "Änderungen von einem Admin deaktiviert",
           "writesNoteApi": "„Erlauben“ bei einem Connector gilt für Chats. Mit „Nicht über API“ markierte Änderungen bleiben für API- und Widget-Nutzer aus, bis du sie unter Zugangsdaten erlaubst.",
           "writesNoteApiEditor": "„Erlauben“ bei einem Connector gilt für Chats. Mit „Nicht über API“ markierte Änderungen bleiben für API- und Widget-Nutzer aus, bis der Eigentümer sie unter Zugangsdaten erlaubt.",
           "writesNoteMemberTail": "Bei Werkzeugen, bei denen jede Person ihr eigenes Konto nutzt, ändern Link-Nutzer mit ihrem eigenen Konto.",
-          "openAccessDetails": "Zugangsdaten öffnen"
+          "openAccessDetails": "Zugangsdaten öffnen",
+          "accessDetailsNeedsKey": "Die Zugangsdaten listen diese Änderungen auf, sobald der Agent einen API-Schlüssel hat."
         }
       },
       "memberCount_one": "{{formatted}} Mitglied",

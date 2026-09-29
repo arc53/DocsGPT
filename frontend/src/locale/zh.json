@@ -793,7 +793,8 @@
           "writesNoteApi": "连接器上的“允许”适用于聊天。标记为“不可通过 API”的更改，在你于 Access Details 中允许之前，API 和小组件的用户无法进行。",
           "writesNoteApiEditor": "连接器上的“允许”适用于聊天。标记为“不可通过 API”的更改，在所有者于 Access Details 中允许之前，API 和小组件的用户无法进行。",
           "writesNoteMemberTail": "在每个人使用自己账号的工具上，公开链接的用户用自己的账号进行更改。",
-          "openAccessDetails": "打开 Access Details"
+          "openAccessDetails": "打开 Access Details",
+          "accessDetailsNeedsKey": "智能体有 API 密钥后，Access Details 中会列出这些更改。"
         }
       },
       "memberCount_one": "{{formatted}} 名成员",

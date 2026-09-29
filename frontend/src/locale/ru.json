@@ -833,12 +833,13 @@
             "personCredentials": "Сохранённые учётные данные {{person}}",
             "otherCredentials": "Сохранённые учётные данные другого пользователя"
           },
-          "writesSomeOff": "Частично не через API",
+          "writesSomeOff": "Не всё через API",
           "adminOff": "Изменения выключены администратором",
           "writesNoteApi": "«Разрешать» у коннектора действует в чатах. Изменения с отметкой «Не через API» остаются выключены для пользователей API и виджета, пока вы не разрешите их в Access Details.",
           "writesNoteApiEditor": "«Разрешать» у коннектора действует в чатах. Изменения с отметкой «Не через API» остаются выключены для пользователей API и виджета, пока владелец не разрешит их в Access Details.",
           "writesNoteMemberTail": "В инструментах, где у каждого свой аккаунт, пользователи публичной ссылки вносят изменения через свой аккаунт.",
-          "openAccessDetails": "Открыть Access Details"
+          "openAccessDetails": "Открыть Access Details",
+          "accessDetailsNeedsKey": "Access Details покажет эти изменения, когда у агента появится API-ключ."
         }
       },
       "memberCount_one": "{{formatted}} участник",

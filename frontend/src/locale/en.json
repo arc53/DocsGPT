@@ -795,12 +795,13 @@
             "personCredentials": "{{person}}'s saved credentials",
             "otherCredentials": "Someone else's saved credentials"
           },
-          "writesSomeOff": "Some not via API",
+          "writesSomeOff": "Not all via API",
           "adminOff": "Changes off by an admin",
           "writesNoteApi": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API and widget users until you allow them in Access Details.",
           "writesNoteApiEditor": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API and widget users until the owner allows them in Access Details.",
           "writesNoteMemberTail": "On tools where each person uses their own account, public-link users make changes with their own account.",
-          "openAccessDetails": "Open Access Details"
+          "openAccessDetails": "Open Access Details",
+          "accessDetailsNeedsKey": "Access Details lists these changes once the agent has an API key."
         }
       },
       "memberCount_one": "{{formatted}} member",
