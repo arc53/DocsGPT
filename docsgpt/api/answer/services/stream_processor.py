@@ -396,7 +396,13 @@ class StreamProcessor:
         share it with the rest of the turn. It is always generated here, never
         taken from the request body: request quotas count distinct request
         ids, so a client-chosen id would let every call count as one.
+
+        A request with neither a token nor an agent API key has nobody to run
+        for: nothing is set up (no pre-fetch runs the agent's tools), None is
+        returned and the route answers 401.
         """
+        if not self.decoded_token and not self.data.get("api_key"):
+            return None
         if not getattr(self, "request_id", None):
             self.request_id = str(uuid.uuid4())
         self.initialize()

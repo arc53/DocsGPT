@@ -22,6 +22,7 @@ def _processor() -> StreamProcessor:
     sp.agent_config = {}
     sp.retriever_config = {"retriever_name": "classic", "chunks": 2, "doc_token_limit": 50000}
     sp.data = {}
+    sp.decoded_token = {"sub": "u"}
     return sp
 
 
