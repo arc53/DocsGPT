@@ -479,7 +479,9 @@ def connector_key_for_row(row: dict) -> Optional[str]:
     """
     key = row.get("connector_key")
     provider = row.get("provider") or ""
-    if not key:
+    if not key or key.startswith("mcp:"):
+        # ``mcp:<server>`` is a provider value, never a catalog key.
+        key = None
         if provider.startswith("mcp:"):
             key = "custom_mcp"
         elif get_definition(provider):

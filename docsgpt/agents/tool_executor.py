@@ -1879,32 +1879,50 @@ class ToolExecutor:
     def _apply_connection(self, tool_data: Dict, tool_id: str, tool_config: Dict, resolved) -> None:
         """Merge a connection's credentials into ``tool_config``.
 
+        A connection only serves the tools its connector provides (a Telegram
+        bot token never reaches an ntfy tool), and an MCP connection's secret
+        only goes to the server it was stored for.
+
+        Args:
+            tool_data: The ``user_tools`` row being run.
+            tool_id: The tool's key in this run.
+            tool_config: The config the tool is loaded with, updated in place.
+            resolved: The connection :func:`resolve_connection` picked.
+
         Raises:
-            ConnectionUnavailable: The connection needs signing in again.
+            ConnectionUnavailable: The connection needs signing in again, or
+                does not belong to this tool's connector or server.
         """
-        from docsgpt.connectors import service
+        from docsgpt.connectors import catalog, service
         from docsgpt.connectors.resolve import audit_delegation
 
+        unavailable = service.ConnectionUnavailable(
+            f"{resolved.connector_name or 'This service'} needs to be connected",
+            connection_id=resolved.connection_id,
+        )
         if not resolved.available or resolved.row is None:
-            raise service.ConnectionUnavailable(
-                f"{resolved.connector_name or 'This service'} needs to be connected",
-                connection_id=resolved.connection_id,
+            raise unavailable
+        tool_name = tool_data.get("name")
+        definition = catalog.get_definition(resolved.connector_key)
+        if definition is None or tool_name not in definition.tool_templates:
+            logger.warning(
+                "tool %s (%s) points at a %s connection", tool_data.get("id") or tool_id, tool_name,
+                resolved.connector_key,
             )
-        if tool_data.get("name") == "mcp_tool":
-            from docsgpt.connectors import catalog
-
+            raise unavailable
+        if tool_name == "mcp_tool":
             # A connection's secret only goes to the server it was stored for:
-            # a custom server's own URL, or a built-in connector's MCP server
-            # (GitHub's token only ever goes to GitHub's).
+            # a custom server's own URL (legacy rows name it in ``provider``),
+            # or a preset's or built-in connector's MCP server (GitHub's token
+            # only ever goes to GitHub's). No server known, nothing is sent.
             stored_for = catalog.base_url(resolved.row.get("server_url"))
-            definition = catalog.get_definition(resolved.connector_key)
-            if not stored_for and definition is not None and definition.publisher == "built_in":
+            provider = str(resolved.row.get("provider") or "")
+            if not stored_for and provider.startswith("mcp:"):
+                stored_for = catalog.base_url(provider[len("mcp:"):])
+            if not stored_for:
                 stored_for = definition.mcp_base_url or ""
-            if stored_for and stored_for != catalog.base_url(tool_config.get("server_url")):
-                raise service.ConnectionUnavailable(
-                    f"{resolved.connector_name or 'This service'} needs to be connected",
-                    connection_id=resolved.connection_id,
-                )
+            if not stored_for or stored_for != catalog.base_url(tool_config.get("server_url")):
+                raise unavailable
             if service.builtin_mcp_config(definition) is not None:
                 # Only the connector's own endpoints: GitHub's write one while
                 # the tool opted in and an admin allows it, else read-only.

@@ -533,6 +533,41 @@ class TestMcpServerMismatch:
                 _executor()._get_or_load_tool(tool, "t1", "search")
         manager.return_value.load_tool.assert_not_called()
 
+    @pytest.mark.parametrize("tool_name, provider, server_url", [
+        # A service's key without a server of its own is not an MCP server's.
+        ("mcp_tool", "telegram", None),
+        ("mcp_tool", "ntfy", None),
+        # A custom server connection that names no server has nowhere to go.
+        ("mcp_tool", "custom_mcp", None),
+        # A tool only runs on a connection of the connector that provides it.
+        ("ntfy", "telegram", None),
+        ("telegram", "ntfy", None),
+        ("telegram", "custom_mcp", "https://new.example.com"),
+    ])
+    def test_connection_of_another_connector_is_not_applied(self, pg_conn, tool_name, provider, server_url):
+        from docsgpt.connectors import service
+
+        cid = _connection(pg_conn, provider=provider, server_url=server_url,
+                          secrets={"credentials": {"token": "bot-token", "bearer_token": "bot-token"}})
+        tool = {**_tool(cid, name=tool_name), "config": {"server_url": "https://new.example.com/mcp",
+                                                        "auth_type": "bearer"}}
+        with _service_db(pg_conn), patch("docsgpt.agents.tool_executor.ToolManager") as manager:
+            with pytest.raises(service.ConnectionUnavailable):
+                _executor()._get_or_load_tool(tool, "t1", "search")
+        manager.return_value.load_tool.assert_not_called()
+
+    def test_legacy_mcp_connection_is_still_applied_to_its_server(self, pg_conn):
+        """Rows from before connector keys are named from their ``mcp:`` provider."""
+        cid = _connection(pg_conn, provider="mcp:https://m.example.com", auth_kind="mcp_oauth",
+                          server_url=None, secrets={"tokens": {"access_token": "x"}})
+        pg_conn.execute(text("UPDATE connector_sessions SET connector_key = NULL WHERE id = CAST(:i AS uuid)"),
+                        {"i": cid})
+        tool = {**_tool(cid, name="mcp_tool"), "config": {"server_url": "https://m.example.com/mcp",
+                                                         "auth_type": "oauth"}}
+        with _service_db(pg_conn), patch("docsgpt.agents.tool_executor.ToolManager") as manager:
+            _executor()._get_or_load_tool(tool, "t1", "search")
+        assert manager.return_value.load_tool.call_args.kwargs["tool_config"]["connection_id"] == cid
+
     def test_save_keeps_previous_connection_only_for_the_same_server(self, pg_conn):
         from docsgpt.api.user.tools.mcp import _previous_connection
 
