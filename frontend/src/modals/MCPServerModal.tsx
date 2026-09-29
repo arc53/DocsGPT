@@ -808,7 +808,7 @@ export default function MCPServerModal({
                 defaultValue: `Discovered Actions (${discoveredTools.length})`,
               })}
             />
-            <ul className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+            <ul className="flex flex-col gap-1.5">
               {discoveredTools.map((tool) => (
                 <li
                   key={tool.name}

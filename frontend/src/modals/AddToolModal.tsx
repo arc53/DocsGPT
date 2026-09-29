@@ -166,7 +166,8 @@ export default function AddToolModal({
                             </CardTitle>
                             <CardDescription
                               size="xs"
-                              className="mt-1 h-24 overflow-auto"
+                              className="mt-1 line-clamp-4 break-words"
+                              title={tool.description}
                             >
                               {tool.description}
                             </CardDescription>

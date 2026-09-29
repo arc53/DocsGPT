@@ -140,9 +140,11 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
       )}
       {preview.query !== undefined && (
         <ToolCallPanel title={f('query')} copyText={jsonText(preview.query)}>
-          <p className="max-h-60 overflow-y-auto wrap-break-word whitespace-pre-wrap">
-            {jsonText(preview.query)}
-          </p>
+          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
+            <p className="wrap-break-word whitespace-pre-wrap">
+              {jsonText(preview.query)}
+            </p>
+          </div>
         </ToolCallPanel>
       )}
       {preview.arguments !== undefined && (
@@ -150,23 +152,29 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
           title={f('arguments')}
           copyText={jsonText(preview.arguments)}
         >
-          <pre className="max-h-60 overflow-y-auto font-mono text-xs wrap-break-word whitespace-pre-wrap">
-            {jsonText(preview.arguments)}
-          </pre>
+          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
+            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+              {jsonText(preview.arguments)}
+            </pre>
+          </div>
         </ToolCallPanel>
       )}
       {preview.result !== undefined && (
         <ToolCallPanel title={f('result')} copyText={jsonText(preview.result)}>
-          <pre className="max-h-60 overflow-y-auto font-mono text-xs wrap-break-word whitespace-pre-wrap">
-            {jsonText(preview.result)}
-          </pre>
+          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
+            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+              {jsonText(preview.result)}
+            </pre>
+          </div>
         </ToolCallPanel>
       )}
       {preview.output !== undefined && (
         <ToolCallPanel title={f('output')} copyText={jsonText(preview.output)}>
-          <p className="max-h-60 overflow-y-auto wrap-break-word whitespace-pre-wrap">
-            {jsonText(preview.output)}
-          </p>
+          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
+            <p className="wrap-break-word whitespace-pre-wrap">
+              {jsonText(preview.output)}
+            </p>
+          </div>
         </ToolCallPanel>
       )}
       {chunks.length > 0 && (
@@ -174,46 +182,48 @@ export default function TraceSpanDetails({ span }: { span: TraceSpan }) {
           title={f('retrievedChunks')}
           copyText={JSON.stringify(chunks, null, 2)}
         >
-          <ol className="flex max-h-72 flex-col gap-2 overflow-y-auto">
-            {chunks.map((chunk, index) => (
-              <li key={index} className="flex flex-col gap-0.5">
-                <span className="text-foreground font-medium">
-                  {index + 1}. {chunk.title || chunk.source || '—'}
-                  {typeof chunk.score === 'number' && (
-                    <span className="text-muted-foreground ml-2 font-normal tabular-nums">
-                      {chunk.score.toFixed(3)}
+          <div className="scrollbar-overlay max-h-72 overflow-y-auto">
+            <ol className="flex flex-col gap-2">
+              {chunks.map((chunk, index) => (
+                <li key={index} className="flex flex-col gap-0.5">
+                  <span className="text-foreground font-medium">
+                    {index + 1}. {chunk.title || chunk.source || '—'}
+                    {typeof chunk.score === 'number' && (
+                      <span className="text-muted-foreground ml-2 font-normal tabular-nums">
+                        {chunk.score.toFixed(3)}
+                      </span>
+                    )}
+                  </span>
+                  {chunk.text && (
+                    <span className="text-muted-foreground line-clamp-3">
+                      {chunk.text}
                     </span>
                   )}
-                </span>
-                {chunk.text && (
-                  <span className="text-muted-foreground line-clamp-3">
-                    {chunk.text}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
+                </li>
+              ))}
+            </ol>
+          </div>
         </ToolCallPanel>
       )}
       {otherPreviews.map(([key, value]) => (
         <ToolCallPanel key={key} title={key} copyText={jsonText(value)}>
-          <pre className="max-h-60 overflow-y-auto font-mono text-xs wrap-break-word whitespace-pre-wrap">
-            {jsonText(value)}
-          </pre>
+          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
+            <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+              {jsonText(value)}
+            </pre>
+          </div>
         </ToolCallPanel>
       ))}
       <details>
         <summary className="text-muted-foreground cursor-pointer select-none">
           {f('allAttributes')}
         </summary>
-        <Card
-          variant="filled"
-          padding="sm"
-          className="mt-1 max-h-60 overflow-y-auto"
-        >
-          <pre className="text-muted-foreground font-mono text-xs wrap-break-word whitespace-pre-wrap">
-            {JSON.stringify(a, null, 2)}
-          </pre>
+        <Card variant="filled" padding="sm" className="mt-1">
+          <div className="scrollbar-overlay max-h-60 overflow-y-auto">
+            <pre className="text-muted-foreground font-mono text-xs wrap-break-word whitespace-pre-wrap">
+              {JSON.stringify(a, null, 2)}
+            </pre>
+          </div>
         </Card>
       </details>
     </div>

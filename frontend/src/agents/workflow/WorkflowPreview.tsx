@@ -312,7 +312,7 @@ export function RunArtifactsSection({
       isOpen={isOpen}
       onToggle={onToggle}
     >
-      <div className="max-h-[480px] overflow-y-auto pt-1">
+      <div className="scrollbar-overlay max-h-[480px] overflow-y-auto pt-1">
         {isOpen && (
           <WorkflowRunArtifacts
             workflowRunId={workflowRunId}

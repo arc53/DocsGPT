@@ -285,7 +285,7 @@ function VariableListWithSearch({
           />
         </div>
 
-        <div className="max-h-48 overflow-y-auto">
+        <div className="scrollbar-overlay max-h-48 overflow-y-auto">
           {filtered.length === 0 ? (
             <EmptyState
               size="xs"

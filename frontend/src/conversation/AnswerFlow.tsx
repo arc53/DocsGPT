@@ -303,9 +303,11 @@ function InlineToolCallChip({
             title={t('conversation.inlineSteps.arguments')}
             copyText={JSON.stringify(toolCall.arguments ?? {}, null, 2)}
           >
-            <p className="max-h-80 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
-              {JSON.stringify(toolCall.arguments ?? {}, null, 2)}
-            </p>
+            <div className="scrollbar-overlay max-h-80 overflow-y-auto">
+              <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+                {JSON.stringify(toolCall.arguments ?? {}, null, 2)}
+              </pre>
+            </div>
           </ToolCallPanel>
           <ToolCallPanel
             title={t('conversation.inlineSteps.response')}
@@ -338,9 +340,11 @@ function InlineToolCallChip({
             {!isRunning &&
               toolCall.status !== 'error' &&
               toolCall.status !== 'denied' && (
-                <p className="max-h-80 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
-                  {JSON.stringify(toolCall.result ?? {}, null, 2)}
-                </p>
+                <div className="scrollbar-overlay max-h-80 overflow-y-auto">
+                  <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
+                    {JSON.stringify(toolCall.result ?? {}, null, 2)}
+                  </pre>
+                </div>
               )}
           </ToolCallPanel>
         </div>

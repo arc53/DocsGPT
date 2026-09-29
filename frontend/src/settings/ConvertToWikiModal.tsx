@@ -211,7 +211,7 @@ export default function ConvertToWikiModal({
                 <p className="text-foreground text-sm font-medium">
                   {t('settings.sources.wiki.convert.skippedHeading')}
                 </p>
-                <ul className="text-muted-foreground max-h-40 list-disc space-y-1 overflow-auto pl-5 text-xs">
+                <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-xs">
                   {summary.skipped.map((s) => (
                     <li key={s.file} title={s.reason}>
                       {s.file}

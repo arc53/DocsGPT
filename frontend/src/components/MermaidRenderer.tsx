@@ -319,7 +319,7 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
       ) : errorRender ? (
         <Alert variant="destructive" className="m-2 w-auto">
           <CircleAlert />
-          <AlertDescription className="overflow-auto wrap-break-word whitespace-normal">
+          <AlertDescription className="wrap-break-word whitespace-normal">
             {error}
           </AlertDescription>
         </Alert>

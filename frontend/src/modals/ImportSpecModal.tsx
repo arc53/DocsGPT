@@ -266,7 +266,7 @@ export default function ImportSpecModal({
               </Button>
             </div>
 
-            <div className="flex max-h-72 flex-col gap-2 overflow-y-auto px-1">
+            <div className="flex flex-col gap-2 px-1">
               {parsedResult.actions.map((action, index) => (
                 <label
                   key={index}
