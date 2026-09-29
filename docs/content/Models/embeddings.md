@@ -25,8 +25,8 @@ In essence, embedding models are the bridge that allows DocsGPT to understand th
 DocsGPT is designed to be flexible and supports a wide range of embedding models right out of the box:
 
 *   **Local models (FastEmbed / ONNX Runtime):** DocsGPT runs local embeddings through [FastEmbed](https://github.com/qdrant/fastembed). Any of FastEmbed's built-in models works, as does any Hugging Face repository that ships an ONNX export at `onnx/model.onnx` — which covers most popular sentence-transformers repos. A repository with PyTorch weights only will not load; serve those over `EMBEDDINGS_BASE_URL` instead. New installs default to `ibm-granite/granite-embedding-311m-multilingual-r2`; existing ones stay on `huggingface_sentence-transformers/all-mpnet-base-v2` until re-embedded.
-*   **OpenAI Embeddings:** DocsGPT supports OpenAI embedding models (for example `text-embedding-ada-002`, `text-embedding-3-small`, `text-embedding-3-large`) via the OpenAI API.
-*   **Azure OpenAI Embeddings:** Set `AZURE_EMBEDDINGS_DEPLOYMENT_NAME` alongside your Azure OpenAI configuration.
+*   **OpenAI Embeddings:** `text-embedding-ada-002` is built in (`EMBEDDINGS_NAME=openai_text-embedding-ada-002`). Other OpenAI models such as `text-embedding-3-small` and `text-embedding-3-large` work through the remote-embeddings mode; see [Using OpenAI Embeddings](#using-openai-embeddings).
+*   **Azure OpenAI Embeddings:** Azure OpenAI is supported for embeddings only, not for chat. See [Azure OpenAI Embeddings](#azure-openai-embeddings).
 *   **Remote OpenAI-compatible Embeddings:** Any server that exposes an OpenAI-compatible `/v1/embeddings` endpoint (for example llama.cpp, vLLM, TEI, or a hosted provider) by setting `EMBEDDINGS_BASE_URL`. See [Remote Embeddings](#remote-openai-compatible-embeddings) below.
 
 ## Configuring a Local Model
@@ -74,6 +74,31 @@ EMBEDDINGS_NAME=openai_text-embedding-ada-002
 EMBEDDINGS_KEY=YOUR_OPENAI_API_KEY
 ```
 
+Only `text-embedding-ada-002` is built in. Any other name that DocsGPT does not know, such as `text-embedding-3-small`, is treated as a Hugging Face repository and fails to load. Use OpenAI's newer models through the [remote-embeddings mode](#remote-openai-compatible-embeddings) instead:
+
+```
+EMBEDDINGS_BASE_URL=https://api.openai.com
+EMBEDDINGS_NAME=text-embedding-3-small
+EMBEDDINGS_KEY=YOUR_OPENAI_API_KEY
+```
+
+DocsGPT learns the vector width from the first response. Changing models on an existing index still needs re-embedding; see [Embedding Dimensions](#important-embedding-dimensions-must-stay-consistent).
+
+### Azure OpenAI Embeddings
+
+DocsGPT switches the OpenAI embeddings client to Azure when `OPENAI_API_BASE`, `OPENAI_API_VERSION` and `AZURE_DEPLOYMENT_NAME` are all set. `EMBEDDINGS_NAME` must still name the built-in ada-002 entry, and the Azure deployment that serves it goes in `AZURE_EMBEDDINGS_DEPLOYMENT_NAME`:
+
+```
+EMBEDDINGS_NAME=openai_text-embedding-ada-002
+EMBEDDINGS_KEY=YOUR_AZURE_OPENAI_KEY
+OPENAI_API_BASE=https://YOUR_RESOURCE.openai.azure.com/
+OPENAI_API_VERSION=2024-02-01
+AZURE_DEPLOYMENT_NAME=YOUR_DEPLOYMENT
+AZURE_EMBEDDINGS_DEPLOYMENT_NAME=YOUR_EMBEDDINGS_DEPLOYMENT
+```
+
+The key is looked up in the same order as for OpenAI. There is no Azure OpenAI chat provider; `AZURE_DEPLOYMENT_NAME` is only part of the check that turns Azure on.
+
 ## Remote (OpenAI-compatible) Embeddings
 
 If you run your own embedding server, or use a provider that exposes an OpenAI-style embeddings API, point DocsGPT at it with `EMBEDDINGS_BASE_URL`. When this is set, all embedding calls (ingestion and querying) are sent to `{EMBEDDINGS_BASE_URL}/v1/embeddings` in OpenAI format instead of running a local model.
@@ -106,7 +131,9 @@ Leaving `EMBEDDINGS_NAME` unset imposes no limit: the name is only forwarded as 
 
 A local embedding model costs a few hundred megabytes of resident memory per process, and the API embeds every query it serves — so by default it would hold its own copy alongside the worker's.
 
-`EMBEDDINGS_DELEGATE_TO_WORKER` (on by default) moves that work to the Celery worker: the API sends the text over the broker and gets the vector back, holding no model. Measured on a default install, the API process drops from ~657 MB to ~284 MB, and query embedding costs one broker round trip (~60 ms on a prefork worker).
+`EMBEDDINGS_DELEGATE_TO_WORKER` (on by default) moves that work to the Celery worker: the API sends the text over the broker and gets the vector back, holding no model. Measured on a default install, the API process drops from ~660 MB to ~285 MB, and query embedding costs one broker round trip (~60 ms on a prefork worker).
+
+`EMBEDDINGS_THREADS` sets the intra-op threads of the local ONNX runner; unset, it uses every core. It scales sub-linearly, so several single-threaded workers do more than one many-threaded process on the same cores.
 
 Retrieval then depends on a worker consuming `EMBEDDINGS_QUEUE` (`embeddings` by default). A bare `celery worker` with no `-Q` consumes it along with everything else. **A worker started with an explicit `-Q` must list it** — the bundled Compose and Kubernetes manifests run `-Q docsgpt,parsing,embeddings` for exactly this reason. Omit it and every search blocks for `EMBEDDINGS_DELEGATE_TIMEOUT` and then returns an answer with no retrieved context, without raising.
 
@@ -163,6 +190,9 @@ With `GRAPHRAG_ENABLED`, the script also rewrites `graph_nodes.name_embedding` o
 
 ## Adding Support for Other Embedding Models
 
-To teach DocsGPT about a new model — so it carries a known pooling, width and context window rather than being inferred — add an `EmbeddingModel` entry to `MODELS` in `docsgpt/vectorstore/model_registry.py`. That registry is the single source of truth the local runner, the remote client, the schema bootstrap and the chunker all read.
+To teach DocsGPT about a new model — so it carries a known pooling, width and context window rather than being inferred — add an `EmbeddingModel` entry to `MODELS` in `docsgpt/vectorstore/model_registry.py`. That registry is the single source of truth the local runner, the remote client, the schema bootstrap and the chunker all read, and for a model that FastEmbed can run, or one served over `EMBEDDINGS_BASE_URL`, the entry is usually all you need.
 
-Specifically, pay attention to the `EmbeddingsWrapper` and `EmbeddingsSingleton` classes. `EmbeddingsWrapper` provides a way to wrap different embedding model libraries into a consistent interface for DocsGPT. `EmbeddingsSingleton` manages the instantiation and retrieval of embedding model instances. By understanding these classes and the existing embedding model implementations, you can create your own custom integration for virtually any embedding model library you desire.
+To plug in a different embedding library, look at these classes:
+
+- `EmbeddingsWrapper` in `docsgpt/vectorstore/embeddings_local.py` wraps the local runner in the `embed_query` / `embed_documents` interface the vector stores use.
+- `EmbeddingsSingleton` in `docsgpt/vectorstore/base.py` builds and caches one embeddings instance per model, and `get_embeddings` in the same file decides between the remote, OpenAI, delegated and local paths.

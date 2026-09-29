@@ -91,7 +91,7 @@ celery -A docsgpt.app.celery worker -l INFO
 **The worker is required for retrieval, not optional.** `EMBEDDINGS_DELEGATE_TO_WORKER`
 defaults on, so the API embeds each query by dispatching to the worker rather than
 loading a model of its own — which keeps the API process around 285 MB instead of
-1.2 GB. Without a worker consuming `EMBEDDINGS_QUEUE`, every search fails after
+about 660 MB. Without a worker consuming `EMBEDDINGS_QUEUE`, every search fails after
 `EMBEDDINGS_DELEGATE_TIMEOUT`. To run the API on its own, either set
 `EMBEDDINGS_DELEGATE_TO_WORKER=false` (loads the model in-process) or point
 `EMBEDDINGS_BASE_URL` at an embeddings service.

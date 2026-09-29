@@ -16,10 +16,10 @@ class EmbeddingsSettings(SettingsGroup):
     EMBEDDINGS_NAME: str = Field(
         default="huggingface_sentence-transformers/all-mpnet-base-v2",
         description=(
-            "Embedding model. The legacy model is the default on purpose: an install that never pinned this "
-            "has vectors from it, and granite is the same width so a swap would fail silently. New installs "
-            "get granite from .env-template; existing ones switch by setting this and running "
-            "docsgpt.scripts.reembed."
+            "Embedding model. Leave unset and the first boot pins one in the database: granite for a new "
+            "install, this legacy default for an install that already has sources, since granite is the same "
+            "width and a silent swap would degrade retrieval. Setting it overrides the pin; to switch an "
+            "existing index, set it and run docsgpt.scripts.reembed."
         ),
     )
     EMBEDDINGS_BASE_URL: Optional[str] = Field(
@@ -43,7 +43,8 @@ class EmbeddingsSettings(SettingsGroup):
         ge=1,
         description=(
             "Documents per local ONNX forward pass. Each pass pads to its longest input, and that waste grows "
-            "with the square of chunk length: at 1250 tokens, 32 peaked at 6.6 GB, 1 at 2.9 GB."
+            "with the square of chunk length: on a 30-document ingest at 1250-token chunks, 32 peaked at "
+            "7.7 GB, 1 at 1.5 GB."
         ),
     )
     EMBEDDINGS_THREADS: Optional[int] = Field(
@@ -77,7 +78,8 @@ class EmbeddingsSettings(SettingsGroup):
     EMBEDDINGS_DELEGATE_TO_WORKER: bool = Field(
         default=True,
         description=(
-            "Embed on the worker so the API holds no model (~890 MB), at one broker round trip per query. "
+            "Embed on the worker so the API holds no model (~660 MB down to ~285 MB on a default install), at "
+            "one broker round trip per query. "
             "Ignored when EMBEDDINGS_BASE_URL is set, which is the better answer for production."
         ),
     )
