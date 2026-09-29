@@ -11,6 +11,7 @@ const connectors = vi.hoisted(() => ({
   getConnection: vi.fn(),
   getCatalog: vi.fn(async () => ({ success: true, connectors: [] })),
   listConnections: vi.fn(async () => ({ success: true, connections: [] })),
+  setup: vi.fn(),
 }));
 vi.mock('../api/services/connectorsService', () => ({ default: connectors }));
 
@@ -99,6 +100,7 @@ describe('ConnectionDrawer', () => {
               connector_key: 'google_drive',
               status: 'connected',
             },
+            { id: 'conn-gh', connector_key: 'github', status: 'connected' },
           ],
         },
         preference: { token: null },
@@ -121,13 +123,13 @@ describe('ConnectionDrawer', () => {
     container.remove();
   });
 
-  const render = async () => {
+  const render = async (connector: ConnectorDefinition = DRIVE) => {
     store = makeStore();
     await act(async () => {
       root.render(
         <Provider store={store}>
           <ConnectionDrawer
-            connector={DRIVE}
+            connector={connector}
             onClose={vi.fn()}
             onConnect={vi.fn()}
           />
@@ -215,5 +217,58 @@ describe('ConnectionDrawer', () => {
     expect(document.body.textContent).not.toContain(
       'settings.connectors.publisher',
     );
+  });
+
+  describe('GitHub', () => {
+    const GITHUB = {
+      ...DRIVE,
+      key: 'github',
+      name: 'GitHub',
+      icon: 'github',
+      auth_kind: 'api_key',
+      capabilities: ['sync', 'read'],
+      setup: { tools: 'ask', sync: 'ask' },
+      sync_ingestor: 'github',
+      tool_templates: ['mcp_tool'],
+    } as unknown as ConnectorDefinition;
+    const TOKEN_DETAIL = {
+      ...DETAIL,
+      connector_key: 'github',
+      auth_kind: 'api_key',
+      account_label: 'octocat',
+      sources: [],
+      tools: [],
+    };
+
+    beforeEach(() => {
+      connectors.setup.mockReset();
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: TOKEN_DETAIL,
+      });
+    });
+
+    it('names a token connection by its account, not as a key hint', async () => {
+      await render(GITHUB);
+      expect(document.body.textContent).toContain(
+        'settings.connectors.detail.connectedAs',
+      );
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.detail.keyEnding',
+      );
+    });
+
+    it('adds the tools a connection skipped during setup', async () => {
+      connectors.setup.mockResolvedValue({ success: true, tools: [] });
+      await render(GITHUB);
+      await act(async () =>
+        button('settings.connectors.detail.addTools').click(),
+      );
+      expect(connectors.setup).toHaveBeenCalledWith(
+        'conn-1',
+        { create_tools: true },
+        null,
+      );
+    });
   });
 });

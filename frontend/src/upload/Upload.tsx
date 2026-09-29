@@ -1,4 +1,4 @@
-import { ChevronLeft, FileText } from 'lucide-react';
+import { ChevronLeft, FileText, Lock } from 'lucide-react';
 import { envVar } from '@/env';
 import { cn } from '@/lib/utils';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,6 +11,7 @@ import type { RootState } from '../store';
 import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
 import type { Model } from '../models/types';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { FormField as UiFormField } from '../components/ui/form-field';
@@ -1300,6 +1301,53 @@ function Upload({
     );
   };
 
+  // The GitHub tile reads public repositories by URL with no account. A
+  // private one needs the user's own GitHub connection: hand over to the
+  // connect wizard, which picks from the account's repositories.
+  const githubConnector = connectorsEnabled
+    ? connectorCatalog.find((c) => c.key === 'github' && c.available)
+    : undefined;
+  const githubAccount = githubConnector
+    ? connections.find(
+        (c) => c.connector_key === 'github' && c.status === 'connected',
+      )
+    : undefined;
+  const renderGitHubHandOver = () =>
+    githubConnector ? (
+      <Alert variant="info" role="note">
+        <Lock />
+        <AlertDescription>
+          {githubAccount
+            ? t('modals.uploadDoc.github.connectedHint', {
+                account: githubAccount.account_label,
+                interpolation: { escapeValue: false },
+              })
+            : t('modals.uploadDoc.github.privateHint')}
+        </AlertDescription>
+        <div className="mt-2">
+          <Button
+            type="button"
+            size="sm"
+            shape="pill"
+            variant="outline"
+            onClick={() => {
+              setHandedOver(true);
+              launch(
+                githubConnector,
+                githubAccount
+                  ? { mode: 'sync', connectionId: githubAccount.id }
+                  : {},
+              );
+            }}
+          >
+            {githubAccount
+              ? t('modals.uploadDoc.github.pickRepository')
+              : t('modals.uploadDoc.github.connect')}
+          </Button>
+        </div>
+      </Alert>
+    ) : null;
+
   const renderSetupNotice = () =>
     selectedConnector && needsSetup ? (
       <ConnectorSetupNotice connector={selectedConnector} />
@@ -1373,6 +1421,7 @@ function Upload({
                   className="w-full"
                 />
                 {needsSetup ? renderSetupNotice() : renderFormFields()}
+                {ingestor.type === 'github' && renderGitHubHandOver()}
                 {ingestor.type !== 'wiki' && !needsSetup && (
                   <RetrievalOptions
                     value={retrievalOptions}

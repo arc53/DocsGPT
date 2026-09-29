@@ -55,6 +55,11 @@ export type ConnectorDefinition = {
   oauth_scopes: string[];
   /** Shown under this connector's card (one service offered two ways). */
   part_of?: string | null;
+  /**
+   * How a user can connect, preferred first. GitHub offers `oauth` (Sign in
+   * with GitHub, once an admin sets up the GitHub App) before `api_key`.
+   */
+  sign_in_methods?: ConnectorAuthKind[];
   available: boolean;
   disabled: boolean;
   needs_setup: boolean;
@@ -110,6 +115,16 @@ export type ConnectionSource = {
   last_sync: string | null;
   sync_frequency: string;
   sync_state: 'active' | 'paused_reconnect';
+};
+
+/** A repository a GitHub connection can read, for the sync picker. */
+export type GitHubRepository = {
+  full_name: string;
+  private: boolean;
+  description: string;
+  default_branch: string;
+  updated_at: string | null;
+  html_url: string;
 };
 
 export type ConnectionDetail = Connection & {

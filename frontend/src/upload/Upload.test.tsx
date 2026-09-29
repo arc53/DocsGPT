@@ -242,6 +242,81 @@ describe('Upload source-type tiles', () => {
     connectorsState.connections = [];
   });
 
+  describe('GitHub', () => {
+    const githubConnector = {
+      key: 'github',
+      icon: 'github',
+      sync_ingestor: 'github',
+      auth_kind: 'api_key',
+      available: true,
+      missing_settings: [],
+    };
+    const openGitHub = async () => {
+      await render();
+      const tile = tiles().find((t) =>
+        t.textContent?.includes('modals.uploadDoc.ingestors.github.label'),
+      )!;
+      await act(async () => tile.click());
+    };
+    const handOver = () =>
+      Array.from(document.body.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('modals.uploadDoc.github.'),
+      );
+
+    afterEach(() => {
+      connectorsState.catalog = [];
+      connectorsState.connections = [];
+    });
+
+    it('stays one public-repository tile, with a way to private ones', async () => {
+      launch.mockClear();
+      connectorsState.catalog = [githubConnector];
+      await render();
+      const githubTiles = tiles().filter((t) =>
+        t.textContent?.includes('modals.uploadDoc.ingestors.github.label'),
+      );
+      expect(githubTiles).toHaveLength(1);
+      await openGitHub();
+      // The repository URL form still works without an account.
+      expect(document.body.textContent).toContain(
+        'modals.uploadDoc.ingestors.github.heading',
+      );
+      expect(document.body.textContent).toContain(
+        'modals.uploadDoc.github.privateHint',
+      );
+      await act(async () => handOver()!.click());
+      expect(launch).toHaveBeenCalledWith(githubConnector, {});
+    });
+
+    it('goes straight to picking a repository with a connected account', async () => {
+      launch.mockClear();
+      connectorsState.catalog = [githubConnector];
+      connectorsState.connections = [
+        {
+          id: 'gh-1',
+          connector_key: 'github',
+          status: 'connected',
+          account_label: 'octocat',
+        },
+      ];
+      await openGitHub();
+      expect(document.body.textContent).toContain(
+        'modals.uploadDoc.github.connectedHint',
+      );
+      await act(async () => handOver()!.click());
+      expect(launch).toHaveBeenCalledWith(githubConnector, {
+        mode: 'sync',
+        connectionId: 'gh-1',
+      });
+    });
+
+    it('offers no hand-over when GitHub connections are off', async () => {
+      connectorsState.catalog = [];
+      await openGitHub();
+      expect(handOver()).toBeUndefined();
+    });
+  });
+
   it('picks the saved account once connections finish loading', async () => {
     connectorsState.catalog = [
       {

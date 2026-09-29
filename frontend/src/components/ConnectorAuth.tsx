@@ -13,6 +13,11 @@ interface ConnectorAuthOptions {
   provider: string;
   /** Reconnect this connection (the same account) rather than add one. */
   connectionId?: string;
+  /**
+   * GitHub: open the GitHub App's installation page (where the repositories
+   * it can read are chosen) instead of the sign-in page.
+   */
+  install?: boolean;
   onSuccess: (data: { connection_id: string; user_email: string }) => void;
   onError: (error: string) => void;
 }
@@ -35,6 +40,7 @@ interface ConnectorAuthProps extends ConnectorAuthOptions {
 export function useConnectorAuth({
   provider,
   connectionId,
+  install = false,
   onSuccess,
   onError,
 }: ConnectorAuthOptions): () => void {
@@ -129,6 +135,7 @@ export function useConnectorAuth({
           provider,
           token,
           connectionId,
+          install,
         );
         if (!mountedRef.current) {
           authWindow.close();

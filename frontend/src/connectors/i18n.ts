@@ -17,6 +17,14 @@ export const connectorDescription = (
     defaultValue: connector.description,
   });
 
+/**
+ * Whether an API-key connection's account label is a hint of the key
+ * (`…abcd`) rather than an account name (GitHub names a token connection
+ * after its login).
+ */
+export const isKeyHint = (label: string | null | undefined) =>
+  !!label && label.startsWith('…');
+
 /** An action's name in words: `get_triage_responsibility` → "Get triage responsibility". */
 export const actionTitle = (name: string) => {
   const words = name.replace(/[_-]+/g, ' ').trim();
@@ -44,6 +52,7 @@ const BUILT_IN_ICONS: Record<string, string> = {
   telegram: 'tool_telegram',
   ntfy: 'tool_ntfy',
   postgres: 'tool_postgres',
+  github: 'github',
 };
 
 /**

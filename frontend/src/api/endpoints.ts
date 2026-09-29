@@ -95,10 +95,14 @@ const endpoints = {
     DELETE_TOOL: '/api/delete_tool',
     PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
-    CONNECTOR_AUTH: (provider: string, connectionId?: string) =>
+    CONNECTOR_AUTH: (
+      provider: string,
+      connectionId?: string,
+      install?: boolean,
+    ) =>
       `/api/connectors/auth?provider=${encodeURIComponent(provider)}${
         connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ''
-      }`,
+      }${install ? '&install=1' : ''}`,
     CONNECTOR_FILES: '/api/connectors/files',
     CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
     CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
@@ -117,6 +121,8 @@ const endpoints = {
       `/api/connections/${encodeURIComponent(id)}/refresh-tools`,
     CONNECTION_TOOL_PERMISSIONS: (id: string, toolId: string) =>
       `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/permissions`,
+    CONNECTION_REPOSITORIES: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/repositories`,
     CONNECTIONS_CLAIM: '/api/connections/claim',
     TOOL_CREDENTIAL_MODE: (toolId: string) =>
       `/api/connections/tools/${encodeURIComponent(toolId)}/credential-mode`,

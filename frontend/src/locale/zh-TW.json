@@ -1151,7 +1151,8 @@
         "mcp_atlassian": "搜尋和更新 Jira 議題與 Confluence 頁面。",
         "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
         "mcp_asana": "尋找和更新 Asana 任務與專案。",
-        "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。"
+        "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。",
+        "github": "將儲存庫同步到知識庫，並讓代理讀取程式碼、Issue 和提取要求。"
       },
       "empty": "尚未連線任何服務。連線一個服務以同步其內容，或為代理提供新工具。",
       "noMatches": "沒有符合搜尋的連接器。",
@@ -1188,7 +1189,10 @@
         "toolSwitchFailed": "無法變更工具。請再試一次。",
         "account": "帳號：{{account}}",
         "expired": "登入已過期。重新連線以繼續使用此連線。",
-        "broken": "此連線已停止運作。重新連線以再試一次。"
+        "broken": "此連線已停止運作。重新連線以再試一次。",
+        "addTools": "新增工具",
+        "noTools": "此連線還沒有工具。",
+        "addToolsFailed": "無法新增工具。請再試一次。"
       },
       "permission": {
         "always": "允許",
@@ -1224,7 +1228,9 @@
         "telegram_token": "機器人權杖",
         "ntfy_token": "存取權杖",
         "postgres_token": "連線字串",
-        "brave_token": "API 金鑰"
+        "brave_token": "API 金鑰",
+        "github_access_token": "個人存取權杖",
+        "repo_url": "儲存庫"
       },
       "wizard": {
         "connectTitle": "連線 {{name}}",
@@ -1248,7 +1254,19 @@
         "doneSources": "{{sources}} 正在同步到知識庫。",
         "doneTools": "{{tools}}已就緒。",
         "waiting": "請在開啟的視窗中完成 {{name}} 登入。",
-        "openSignIn": "開啟 {{name}} 登入"
+        "openSignIn": "開啟 {{name}} 登入",
+        "chooseWhatToSetUp": "選擇要設定的內容",
+        "continue": "繼續",
+        "methodLabel": "連線方式",
+        "methodOauth": "使用 {{name}} 登入",
+        "methodToken": "使用存取權杖",
+        "credentialsRejected": "{{name}} 未接受這些憑證。請檢查後再試一次。",
+        "toolsUnavailable": "無法存取 {{name}} 的工具。請再試一次，或將其關閉以繼續。",
+        "addTools": "允許代理使用 {{name}}",
+        "addToolsDescription": {
+          "read": "代理可以查詢資訊，但無法做任何變更。",
+          "readWrite": "代理可以查詢資訊並進行變更。變更需要你的核准。"
+        }
       },
       "remove": {
         "title": "要移除 {{name}} 嗎？",
@@ -1297,7 +1315,18 @@
         "read": "查詢資訊",
         "write": "執行操作"
       },
-      "manageConnection": "管理連線"
+      "manageConnection": "管理連線",
+      "github": {
+        "tokenHint": "為要使用的儲存庫建立細部權杖，並授予 Contents 和 Metadata 的讀取權限。",
+        "createToken": "在 GitHub 上建立權杖",
+        "chooseRepositories": "在 GitHub 上選擇儲存庫",
+        "noAppRepositories": "DocsGPT 還看不到任何儲存庫。請在 GitHub 上選擇允許它讀取的儲存庫。",
+        "noTokenRepositories": "此權杖無法讀取任何儲存庫。請在 GitHub 上授予存取權，然後重新連線。",
+        "searchRepositories": "搜尋儲存庫",
+        "repositories": "儲存庫",
+        "updated": "更新於 {{date}}",
+        "loadFailed": "無法載入你的儲存庫。"
+      }
     }
   },
   "modals": {
@@ -1457,7 +1486,13 @@
       "groupConnection": "來自連線",
       "tileConnectedAs": "已以 {{account}} 連線",
       "newCredentials": "輸入新的憑證",
-      "tileNotConnected": "未連線"
+      "tileNotConnected": "未連線",
+      "github": {
+        "privateHint": "私人儲存庫？連結你的 GitHub 帳號即可同步。",
+        "connectedHint": "私人儲存庫透過你的 GitHub 連線（{{account}}）同步。",
+        "connect": "連結 GitHub",
+        "pickRepository": "選擇儲存庫"
+      }
     },
     "createAPIKey": {
       "label": "建立新的 API 金鑰",

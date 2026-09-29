@@ -1160,7 +1160,8 @@
         "mcp_atlassian": "Jira-Issues und Confluence-Seiten durchsuchen und aktualisieren.",
         "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
         "mcp_asana": "Asana-Aufgaben und -Projekte finden und aktualisieren.",
-        "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen."
+        "mcp_stripe": "Kunden, Zahlungen und Abonnements in Stripe nachschlagen.",
+        "github": "Repositorys in Wissen synchronisieren und Agenten Code, Issues und Pull Requests lesen lassen."
       },
       "empty": "Noch nichts verbunden. Verbinde einen Dienst, um seine Inhalte zu synchronisieren oder Agenten neue Werkzeuge zu geben.",
       "noMatches": "Keine Konnektoren passen zu deiner Suche.",
@@ -1197,7 +1198,10 @@
         "toolSwitchFailed": "Das Werkzeug konnte nicht geändert werden. Versuche es erneut.",
         "account": "Konto: {{account}}",
         "expired": "Die Anmeldung ist abgelaufen. Verbinde neu, um diese Verbindung weiter zu nutzen.",
-        "broken": "Diese Verbindung funktioniert nicht mehr. Verbinde neu, um es erneut zu versuchen."
+        "broken": "Diese Verbindung funktioniert nicht mehr. Verbinde neu, um es erneut zu versuchen.",
+        "addTools": "Werkzeuge hinzufügen",
+        "noTools": "Noch keine Werkzeuge aus dieser Verbindung.",
+        "addToolsFailed": "Die Werkzeuge konnten nicht hinzugefügt werden. Versuche es erneut."
       },
       "permission": {
         "always": "Erlauben",
@@ -1236,7 +1240,9 @@
         "telegram_token": "Bot-Token",
         "ntfy_token": "Zugriffstoken",
         "postgres_token": "Verbindungszeichenfolge",
-        "brave_token": "API-Schlüssel"
+        "brave_token": "API-Schlüssel",
+        "github_access_token": "Persönliches Zugriffstoken",
+        "repo_url": "Repository"
       },
       "wizard": {
         "connectTitle": "{{name}} verbinden",
@@ -1262,7 +1268,19 @@
         "doneSources": "{{sources}} werden ins Wissen synchronisiert.",
         "doneTools": "{{tools}} bereit.",
         "waiting": "Schließe die Anmeldung bei {{name}} im geöffneten Fenster ab.",
-        "openSignIn": "Anmeldung bei {{name}} öffnen"
+        "openSignIn": "Anmeldung bei {{name}} öffnen",
+        "chooseWhatToSetUp": "Auswählen, was eingerichtet wird",
+        "continue": "Weiter",
+        "methodLabel": "Art der Verbindung",
+        "methodOauth": "Mit {{name}} anmelden",
+        "methodToken": "Zugriffstoken verwenden",
+        "credentialsRejected": "{{name}} hat diese Zugangsdaten nicht akzeptiert. Prüfe sie und versuche es erneut.",
+        "toolsUnavailable": "Die Werkzeuge von {{name}} waren nicht erreichbar. Versuche es erneut oder schalte sie aus, um fortzufahren.",
+        "addTools": "Agenten {{name}} nutzen lassen",
+        "addToolsDescription": {
+          "read": "Agenten können Dinge nachschlagen. Sie können nichts ändern.",
+          "readWrite": "Agenten können Dinge nachschlagen und ändern. Änderungen brauchen deine Freigabe."
+        }
       },
       "remove": {
         "title": "{{name}} entfernen?",
@@ -1315,7 +1333,18 @@
         "read": "Schlägt nach",
         "write": "Führt Aktionen aus"
       },
-      "manageConnection": "Verbindung verwalten"
+      "manageConnection": "Verbindung verwalten",
+      "github": {
+        "tokenHint": "Erstelle ein feingranulares Token mit Lesezugriff auf „Contents“ und „Metadata“ für die Repositorys, die du nutzen möchtest.",
+        "createToken": "Token auf GitHub erstellen",
+        "chooseRepositories": "Repositorys auf GitHub auswählen",
+        "noAppRepositories": "DocsGPT sieht noch keine Repositorys. Wähle auf GitHub aus, welche es lesen darf.",
+        "noTokenRepositories": "Dieses Token kann keine Repositorys lesen. Gib ihm auf GitHub Zugriff und verbinde dann neu.",
+        "searchRepositories": "Repositorys durchsuchen",
+        "repositories": "Repositorys",
+        "updated": "Aktualisiert {{date}}",
+        "loadFailed": "Deine Repositorys konnten nicht geladen werden."
+      }
     }
   },
   "modals": {
@@ -1475,7 +1504,13 @@
       "groupConnection": "Aus einer Verbindung",
       "tileConnectedAs": "Verbunden als {{account}}",
       "newCredentials": "Neue Zugangsdaten eingeben",
-      "tileNotConnected": "Nicht verbunden"
+      "tileNotConnected": "Nicht verbunden",
+      "github": {
+        "privateHint": "Privates Repository? Verbinde dein GitHub-Konto, um es zu synchronisieren.",
+        "connectedHint": "Private Repositorys werden über deine GitHub-Verbindung ({{account}}) synchronisiert.",
+        "connect": "GitHub verbinden",
+        "pickRepository": "Repository auswählen"
+      }
     },
     "createAPIKey": {
       "label": "Neuen API-Schlüssel erstellen",

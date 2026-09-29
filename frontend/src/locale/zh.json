@@ -1151,7 +1151,8 @@
         "mcp_atlassian": "搜索和更新 Jira 问题与 Confluence 页面。",
         "mcp_sentry": "查看 Sentry 问题、事件和发布版本。",
         "mcp_asana": "查找和更新 Asana 任务与项目。",
-        "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。"
+        "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
+        "github": "将仓库同步到知识库，并让智能体读取代码、Issue 和拉取请求。"
       },
       "empty": "尚未连接任何服务。连接一个服务以同步其内容，或为智能体提供新工具。",
       "noMatches": "没有与搜索匹配的连接器。",
@@ -1188,7 +1189,10 @@
         "toolSwitchFailed": "无法更改工具。请重试。",
         "account": "账号：{{account}}",
         "expired": "登录已过期。重新连接以继续使用此连接。",
-        "broken": "此连接已停止工作。重新连接以再试一次。"
+        "broken": "此连接已停止工作。重新连接以再试一次。",
+        "addTools": "添加工具",
+        "noTools": "此连接还没有工具。",
+        "addToolsFailed": "无法添加工具。请重试。"
       },
       "permission": {
         "always": "允许",
@@ -1224,7 +1228,9 @@
         "telegram_token": "机器人令牌",
         "ntfy_token": "访问令牌",
         "postgres_token": "连接字符串",
-        "brave_token": "API 密钥"
+        "brave_token": "API 密钥",
+        "github_access_token": "个人访问令牌",
+        "repo_url": "仓库"
       },
       "wizard": {
         "connectTitle": "连接 {{name}}",
@@ -1248,7 +1254,19 @@
         "doneSources": "{{sources}} 正在同步到知识库。",
         "doneTools": "{{tools}}已就绪。",
         "waiting": "请在打开的窗口中完成 {{name}} 登录。",
-        "openSignIn": "打开 {{name}} 登录"
+        "openSignIn": "打开 {{name}} 登录",
+        "chooseWhatToSetUp": "选择要设置的内容",
+        "continue": "继续",
+        "methodLabel": "连接方式",
+        "methodOauth": "使用 {{name}} 登录",
+        "methodToken": "使用访问令牌",
+        "credentialsRejected": "{{name}} 未接受这些凭据。请检查后重试。",
+        "toolsUnavailable": "无法访问 {{name}} 的工具。请重试，或将其关闭以继续。",
+        "addTools": "允许智能体使用 {{name}}",
+        "addToolsDescription": {
+          "read": "智能体可以查询信息，但不能做任何更改。",
+          "readWrite": "智能体可以查询信息并进行更改。更改需要你的批准。"
+        }
       },
       "remove": {
         "title": "移除 {{name}}？",
@@ -1297,7 +1315,18 @@
         "read": "查找信息",
         "write": "执行操作"
       },
-      "manageConnection": "管理连接"
+      "manageConnection": "管理连接",
+      "github": {
+        "tokenHint": "为要使用的仓库创建一个细粒度令牌，并授予 Contents 和 Metadata 的读取权限。",
+        "createToken": "在 GitHub 上创建令牌",
+        "chooseRepositories": "在 GitHub 上选择仓库",
+        "noAppRepositories": "DocsGPT 还看不到任何仓库。请在 GitHub 上选择允许它读取的仓库。",
+        "noTokenRepositories": "此令牌无法读取任何仓库。请在 GitHub 上为其授予访问权限，然后重新连接。",
+        "searchRepositories": "搜索仓库",
+        "repositories": "仓库",
+        "updated": "更新于 {{date}}",
+        "loadFailed": "无法加载你的仓库。"
+      }
     }
   },
   "modals": {
@@ -1457,7 +1486,13 @@
       "groupConnection": "来自连接",
       "tileConnectedAs": "已作为 {{account}} 连接",
       "newCredentials": "输入新的凭据",
-      "tileNotConnected": "未连接"
+      "tileNotConnected": "未连接",
+      "github": {
+        "privateHint": "私有仓库？连接你的 GitHub 账号即可同步。",
+        "connectedHint": "私有仓库通过你的 GitHub 连接（{{account}}）同步。",
+        "connect": "连接 GitHub",
+        "pickRepository": "选择仓库"
+      }
     },
     "createAPIKey": {
       "label": "创建新的 API 密钥",

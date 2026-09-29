@@ -292,8 +292,12 @@ const userService = {
     provider: string,
     token: string | null,
     connectionId?: string,
+    install?: boolean,
   ): Promise<any> =>
-    apiClient.get(endpoints.USER.CONNECTOR_AUTH(provider, connectionId), token),
+    apiClient.get(
+      endpoints.USER.CONNECTOR_AUTH(provider, connectionId, install),
+      token,
+    ),
   getConnectorFiles: (
     data: any,
     token: string | null,

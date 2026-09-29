@@ -64,6 +64,14 @@ vi.mock('../components/FilePicker', () => ({
   ),
 }));
 
+vi.mock('./RepoPicker', () => ({
+  default: ({ onChange }: { onChange: (name: string) => void }) => (
+    <button type="button" onClick={() => onChange('octocat/private')}>
+      pick-repo
+    </button>
+  ),
+}));
+
 import notificationsReducer, {
   sseEventReceived,
 } from '../notifications/notificationsSlice';
@@ -116,6 +124,32 @@ const drive: ConnectorDefinition = {
   sync_ingestor: 'google_drive',
   tool_templates: [],
   setup: { tools: 'off', sync: 'ask' },
+};
+
+const github: ConnectorDefinition = {
+  ...base,
+  key: 'github',
+  name: 'GitHub',
+  icon: 'github',
+  category: 'dev',
+  auth_kind: 'api_key',
+  capabilities: ['sync', 'read'],
+  credential_fields: [
+    {
+      key: 'access_token',
+      label: 'Personal access token',
+      secret: true,
+      required: true,
+    },
+  ],
+  setup_fields: [
+    { key: 'repo_url', label: 'Repository', secret: false, required: true },
+  ],
+  sync_ingestor: 'github',
+  tool_templates: ['mcp_tool'],
+  setup: { tools: 'ask', sync: 'ask' },
+  mcp_url: 'https://api.githubcopilot.com/mcp/readonly',
+  sign_in_methods: ['api_key'],
 };
 
 const TELEGRAM_TOOL = {
@@ -388,5 +422,149 @@ describe('ConnectWizard', () => {
       'settings.connectors.wizard.toolsHeading:1',
     );
     open.mockRestore();
+  });
+
+  describe('GitHub', () => {
+    const connectWithToken = async () => {
+      service.createConnection.mockResolvedValue({
+        success: true,
+        connection: { id: 'conn-gh' },
+      });
+      await typeInto(
+        document.body.querySelector<HTMLInputElement>(
+          'input[type="password"]',
+        )!,
+        'github_pat_abc',
+      );
+      await click('settings.connectors.status.connect');
+    };
+
+    it('connects with a token when no GitHub App is set up', async () => {
+      await render(github);
+      // One way in: no method switch, a token field and how to make one.
+      expect(document.body.querySelector('[role="radiogroup"]')).toBeNull();
+      expect(document.body.textContent).toContain(
+        'settings.connectors.github.tokenHint',
+      );
+      await connectWithToken();
+      expect(service.createConnection).toHaveBeenCalledWith(
+        {
+          connector_key: 'github',
+          credentials: { access_token: 'github_pat_abc' },
+        },
+        null,
+      );
+      // Tools are asked about, not created on sign-in.
+      expect(service.setup).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.chooseWhatToSetUp',
+      );
+    });
+
+    it('offers Sign in with GitHub first, and a token instead', async () => {
+      await render({ ...github, sign_in_methods: ['oauth', 'api_key'] });
+      expect(document.body.querySelector('input[type="password"]')).toBeNull();
+      await click('settings.connectors.wizard.methodToken');
+      expect(
+        document.body.querySelector('input[type="password"]'),
+      ).not.toBeNull();
+      await click('settings.connectors.wizard.methodOauth');
+      await click('settings.connectors.wizard.signIn');
+      // The OAuth pop-up (mocked) reported the connection.
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.chooseWhatToSetUp',
+      );
+    });
+
+    it('says when GitHub refused the token', async () => {
+      service.createConnection.mockResolvedValue({
+        success: false,
+        code: 'invalid_credentials',
+      });
+      await render(github);
+      await typeInto(
+        document.body.querySelector<HTMLInputElement>(
+          'input[type="password"]',
+        )!,
+        'nope',
+      );
+      await click('settings.connectors.status.connect');
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.credentialsRejected',
+      );
+    });
+
+    it('adds the read-only tools and syncs the picked repository in one step', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [{ ...TELEGRAM_TOOL, name: 'mcp_tool', display_name: 'GitHub' }],
+        sources: [{ id: 'src-1', name: 'octocat/private' }],
+      });
+      await render(github);
+      await connectWithToken();
+      await click('pick-repo');
+      await click('settings.connectors.wizard.continue');
+      const [id, body] = service.setup.mock.calls[0];
+      expect(id).toBe('conn-gh');
+      expect(body).toEqual({
+        create_tools: true,
+        sync: {
+          items: { repo_url: 'octocat/private' },
+          frequency: 'weekly',
+          name: 'octocat/private',
+        },
+      });
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.doneTitle',
+      );
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.toolsHeading:1',
+      );
+    });
+
+    it('can add only the tools', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [],
+      });
+      await render(github);
+      await connectWithToken();
+      await click('settings.connectors.wizard.continue');
+      expect(service.setup.mock.calls[0][1]).toEqual({ create_tools: true });
+    });
+
+    it('can sync without tools', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [],
+      });
+      await render(github);
+      await connectWithToken();
+      const toolSwitch =
+        document.body.querySelector<HTMLButtonElement>('[role="switch"]')!;
+      expect(toolSwitch.getAttribute('aria-checked')).toBe('true');
+      await act(async () => toolSwitch.click());
+      await click('pick-repo');
+      await click('settings.connectors.wizard.continue');
+      expect(service.setup.mock.calls[0][1].create_tools).toBe(false);
+      expect(service.setup.mock.calls[0][1].sync.items).toEqual({
+        repo_url: 'octocat/private',
+      });
+    });
+
+    it('shows why the tools could not be added', async () => {
+      service.setup.mockResolvedValue({
+        success: false,
+        code: 'tools_unavailable',
+      });
+      await render(github);
+      await connectWithToken();
+      await click('settings.connectors.wizard.continue');
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.toolsUnavailable',
+      );
+    });
   });
 });

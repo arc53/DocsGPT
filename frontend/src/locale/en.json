@@ -1166,7 +1166,8 @@
         "mcp_atlassian": "Search and update Jira issues and Confluence pages.",
         "mcp_sentry": "Look up Sentry issues, events and releases.",
         "mcp_asana": "Find and update Asana tasks and projects.",
-        "mcp_stripe": "Look up customers, payments and subscriptions in Stripe."
+        "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
+        "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
       },
       "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
       "noMatches": "No connectors match your search.",
@@ -1203,7 +1204,10 @@
         "toolSwitchFailed": "Could not change the tool. Try again.",
         "account": "Account: {{account}}",
         "expired": "The sign-in expired. Reconnect to keep using this connection.",
-        "broken": "This connection stopped working. Reconnect to try again."
+        "broken": "This connection stopped working. Reconnect to try again.",
+        "addTools": "Add tools",
+        "noTools": "No tools from this connection yet.",
+        "addToolsFailed": "Could not add the tools. Try again."
       },
       "permission": {
         "always": "Allow",
@@ -1242,7 +1246,9 @@
         "telegram_token": "Bot token",
         "ntfy_token": "Access token",
         "postgres_token": "Connection string",
-        "brave_token": "API key"
+        "brave_token": "API key",
+        "github_access_token": "Personal access token",
+        "repo_url": "Repository"
       },
       "wizard": {
         "connectTitle": "Connect {{name}}",
@@ -1268,7 +1274,19 @@
         "doneSources": "{{sources}} syncing into Knowledge.",
         "doneTools": "{{tools}} ready.",
         "waiting": "Finish signing in to {{name}} in the window that opened.",
-        "openSignIn": "Open the {{name}} sign-in"
+        "openSignIn": "Open the {{name}} sign-in",
+        "chooseWhatToSetUp": "Choose what to set up",
+        "continue": "Continue",
+        "methodLabel": "How to connect",
+        "methodOauth": "Sign in with {{name}}",
+        "methodToken": "Use an access token",
+        "credentialsRejected": "{{name}} did not accept these credentials. Check them and try again.",
+        "toolsUnavailable": "{{name}}'s tools could not be reached. Try again, or turn them off to continue.",
+        "addTools": "Let agents use {{name}}",
+        "addToolsDescription": {
+          "read": "Agents can look things up. They cannot change anything.",
+          "readWrite": "Agents can look things up and make changes. Changes need your approval."
+        }
       },
       "remove": {
         "title": "Remove {{name}}?",
@@ -1321,7 +1339,18 @@
         "read": "Looks things up",
         "write": "Takes actions"
       },
-      "manageConnection": "Manage connection"
+      "manageConnection": "Manage connection",
+      "github": {
+        "tokenHint": "Create a fine-grained token with read access to Contents and Metadata on the repositories you want to use.",
+        "createToken": "Create a token on GitHub",
+        "chooseRepositories": "Choose repositories on GitHub",
+        "noAppRepositories": "DocsGPT cannot see any repositories yet. Choose which ones it may read on GitHub.",
+        "noTokenRepositories": "This token cannot read any repositories. Give it access on GitHub, then reconnect.",
+        "searchRepositories": "Search repositories",
+        "repositories": "Repositories",
+        "updated": "Updated {{date}}",
+        "loadFailed": "Could not load your repositories."
+      }
     }
   },
   "modals": {
@@ -1481,7 +1510,13 @@
       "groupConnection": "From a connection",
       "tileConnectedAs": "Connected as {{account}}",
       "newCredentials": "Enter new credentials",
-      "tileNotConnected": "Not connected"
+      "tileNotConnected": "Not connected",
+      "github": {
+        "privateHint": "Private repository? Connect your GitHub account to sync it.",
+        "connectedHint": "Private repositories sync from your GitHub connection ({{account}}).",
+        "connect": "Connect GitHub",
+        "pickRepository": "Pick a repository"
+      }
     },
     "createAPIKey": {
       "label": "Create New API Key",

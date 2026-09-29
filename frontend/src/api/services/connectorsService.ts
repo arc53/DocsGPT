@@ -86,6 +86,10 @@ const connectorsService = {
         token,
       ),
     ),
+  repositories: async (id: string, token: string | null) =>
+    json(
+      await apiClient.get(endpoints.USER.CONNECTION_REPOSITORIES(id), token),
+    ),
   refreshTools: async (id: string, token: string | null) =>
     json(
       await apiClient.post(

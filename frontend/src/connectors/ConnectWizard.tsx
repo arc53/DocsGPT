@@ -1,4 +1,4 @@
-import { CircleAlert } from 'lucide-react';
+import { CircleAlert, ExternalLink } from 'lucide-react';
 import { nanoid } from '@reduxjs/toolkit';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -30,6 +30,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { SettingRow, SettingRows } from '../components/ui/setting-row';
+import { Switch } from '../components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import {
   setConversation,
   updateConversationId,
@@ -44,10 +47,15 @@ import { formatCount } from '../utils/dateTimeUtils';
 import ConnectorIcon from './ConnectorIcon';
 import CredentialForm, { credentialsComplete } from './CredentialForm';
 import { loadConnectors, selectConnections } from './connectorsSlice';
-import { connectorDescription, connectorName } from './i18n';
+import { connectorDescription, connectorName, isKeyHint } from './i18n';
+import RepoPicker from './RepoPicker';
 import ToolPermissions from './ToolPermissions';
 import useMcpOAuth, { type McpOAuthConfig } from './useMcpOAuth';
-import type { ConnectionTool, ConnectorDefinition } from './types';
+import type {
+  ConnectionTool,
+  ConnectorAuthKind,
+  ConnectorDefinition,
+} from './types';
 
 export type WizardMode = 'connect' | 'reconnect' | 'sync' | 'done';
 
@@ -57,6 +65,9 @@ const PICKER_CONNECTORS = new Set([
   'share_point',
   'confluence',
 ]);
+// Where a GitHub user makes a fine-grained token (Contents and Metadata: read).
+const GITHUB_TOKEN_URL =
+  'https://github.com/settings/personal-access-tokens/new';
 
 type CreatedSource = { id: string; name: string };
 
@@ -103,6 +114,12 @@ export default function ConnectWizard({
   const [sources, setSources] = useState<CreatedSource[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+  // A connector that asks about its tools (GitHub) offers them switched on.
+  const [toolsOn, setToolsOn] = useState(true);
+  const [chosenMethod, setChosenMethod] = useState<ConnectorAuthKind | null>(
+    null,
+  );
   const [sourceName, setSourceName] = useState('');
   const [nameTouched, setNameTouched] = useState(false);
   const [frequency, setFrequency] = useState(
@@ -113,6 +130,21 @@ export default function ConnectWizard({
 
   const connection = connections.find((c) => c.id === connectionId);
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
+  // Tools the user opts into while choosing what to sync, not on sign-in.
+  const offerTools =
+    connector.setup.tools === 'ask' &&
+    connector.tool_templates.length > 0 &&
+    mode !== 'sync';
+  // GitHub signs in two ways: Sign in with GitHub (when an admin set up the
+  // GitHub App) or a token. Reconnecting keeps the connection's own way.
+  const methods = connector.sign_in_methods?.length
+    ? connector.sign_in_methods
+    : [connector.auth_kind];
+  const method: ConnectorAuthKind =
+    mode === 'reconnect' && connection?.auth_kind
+      ? connection.auth_kind
+      : (chosenMethod ?? methods[0]);
+  const usesOAuth = method === 'oauth';
 
   // A finished MCP save or a reconnect lands here with only the connection id.
   useEffect(() => {
@@ -139,7 +171,7 @@ export default function ConnectWizard({
       );
       if (setup?.success) setTools(setup.tools ?? []);
     }
-    setStep(canSync ? 'setup' : 'done');
+    setStep(canSync || offerTools ? 'setup' : 'done');
   };
 
   // MCP presets (Notion, Linear…) sign in over MCP OAuth: no URL or auth
@@ -236,7 +268,12 @@ export default function ConnectWizard({
         setError(
           data?.code === 'encryption_key_default'
             ? t('settings.connectors.error.defaultKey')
-            : t('settings.connectors.wizard.connectFailed'),
+            : data?.code === 'invalid_credentials'
+              ? t('settings.connectors.wizard.credentialsRejected', {
+                  name,
+                  interpolation: { escapeValue: false },
+                })
+              : t('settings.connectors.wizard.connectFailed'),
         );
         return;
       }
@@ -252,14 +289,21 @@ export default function ConnectWizard({
     if (!nameTouched && picked) setSourceName((current) => current || picked);
   };
 
+  const isRepoPicker = connector.key === 'github';
   const syncItems = (): Record<string, unknown> =>
     PICKER_CONNECTORS.has(connector.key)
       ? { file_ids: selectedFiles, folder_ids: selectedFolders }
-      : setupValues;
+      : isRepoPicker
+        ? { repo_url: selectedRepo }
+        : setupValues;
 
-  const canAddSource = PICKER_CONNECTORS.has(connector.key)
+  const hasSyncSelection = PICKER_CONNECTORS.has(connector.key)
     ? selectedFiles.length + selectedFolders.length > 0
-    : credentialsComplete(connector.setup_fields, setupValues);
+    : isRepoPicker
+      ? !!selectedRepo
+      : credentialsComplete(connector.setup_fields, setupValues);
+  const wantsTools = offerTools && toolsOn;
+  const canAddSource = hasSyncSelection || wantsTools;
 
   const addSource = async () => {
     if (!connectionId) return;
@@ -269,20 +313,30 @@ export default function ConnectWizard({
       const data = await connectorsService.setup(
         connectionId,
         {
-          create_tools: false,
-          sync: {
-            items: syncItems(),
-            frequency,
-            name: sourceName.trim() || undefined,
-          },
+          create_tools: wantsTools,
+          ...(hasSyncSelection && {
+            sync: {
+              items: syncItems(),
+              frequency,
+              name: sourceName.trim() || undefined,
+            },
+          }),
         },
         token,
         idempotencyKey,
       );
       if (!data?.success) {
-        setError(data?.error || t('settings.connectors.wizard.syncFailed'));
+        setError(
+          data?.code === 'tools_unavailable'
+            ? t('settings.connectors.wizard.toolsUnavailable', {
+                name,
+                interpolation: { escapeValue: false },
+              })
+            : data?.error || t('settings.connectors.wizard.syncFailed'),
+        );
         return;
       }
+      if (wantsTools) setTools(data.tools ?? []);
       setSources(data.sources ?? []);
       refresh();
       setStep('done');
@@ -325,7 +379,7 @@ export default function ConnectWizard({
   const summary = useMemo(() => {
     const account = connection?.account_label ?? '';
     const accountLine =
-      connection?.auth_kind === 'api_key'
+      connection?.auth_kind === 'api_key' && isKeyHint(account)
         ? t('settings.connectors.wizard.connectedWithKey', {
             hint: account,
             interpolation: { escapeValue: false },
@@ -392,14 +446,54 @@ export default function ConnectWizard({
           </a>
         </Button>
       )}
-      {connector.auth_kind === 'oauth' || isMcpPreset ? null : (
-        <CredentialForm
-          connectorKey={connector.key}
-          idPrefix={`connect-${connector.key}`}
-          fields={connector.credential_fields}
-          values={credentials}
-          onChange={setCredentials}
-        />
+      {mode !== 'reconnect' && methods.length > 1 && (
+        <ToggleGroup
+          type="single"
+          value={method}
+          onValueChange={(value) =>
+            value && setChosenMethod(value as ConnectorAuthKind)
+          }
+          aria-label={t('settings.connectors.wizard.methodLabel')}
+        >
+          {methods.map((value) => (
+            <ToggleGroupItem key={value} value={value}>
+              {value === 'oauth'
+                ? t('settings.connectors.wizard.methodOauth', {
+                    name,
+                    interpolation: { escapeValue: false },
+                  })
+                : t('settings.connectors.wizard.methodToken')}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      )}
+      {usesOAuth || isMcpPreset ? null : (
+        <>
+          {connector.key === 'github' && (
+            <div className="flex flex-col gap-1">
+              <p className="text-muted-foreground text-sm">
+                {t('settings.connectors.github.tokenHint')}
+              </p>
+              <Button variant="link" size="inline" asChild className="w-fit">
+                <a
+                  href={GITHUB_TOKEN_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t('settings.connectors.github.createToken')}
+                  <ExternalLink />
+                </a>
+              </Button>
+            </div>
+          )}
+          <CredentialForm
+            connectorKey={connector.key}
+            idPrefix={`connect-${connector.key}`}
+            fields={connector.credential_fields}
+            values={credentials}
+            onChange={setCredentials}
+          />
+        </>
       )}
     </div>
   );
@@ -412,7 +506,41 @@ export default function ConnectWizard({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {connector.key === 'google_drive' && envVar('VITE_GOOGLE_CLIENT_ID') ? (
+      {offerTools && (
+        <SettingRows>
+          <SettingRow
+            label={t('settings.connectors.wizard.addTools', {
+              name,
+              interpolation: { escapeValue: false },
+            })}
+            description={t(
+              `settings.connectors.wizard.addToolsDescription.${
+                connector.capabilities.includes('write') ? 'readWrite' : 'read'
+              }`,
+            )}
+            htmlFor={`tools-${connector.key}`}
+            alignStart
+          >
+            <Switch
+              id={`tools-${connector.key}`}
+              checked={toolsOn}
+              onCheckedChange={(checked) => setToolsOn(checked === true)}
+            />
+          </SettingRow>
+        </SettingRows>
+      )}
+      {isRepoPicker && connectionId ? (
+        <RepoPicker
+          connectionId={connectionId}
+          token={token}
+          value={selectedRepo}
+          onChange={(fullName) => {
+            setSelectedRepo(fullName);
+            if (!nameTouched) setSourceName(fullName);
+          }}
+        />
+      ) : connector.key === 'google_drive' &&
+        envVar('VITE_GOOGLE_CLIENT_ID') ? (
         <GoogleDrivePicker
           token={token}
           connectionId={connectionId}
@@ -516,7 +644,9 @@ export default function ConnectWizard({
             interpolation: { escapeValue: false },
           })
       : step === 'setup'
-        ? t('settings.connectors.wizard.chooseWhatToSync')
+        ? offerTools
+          ? t('settings.connectors.wizard.chooseWhatToSetUp')
+          : t('settings.connectors.wizard.chooseWhatToSync')
         : t('settings.connectors.wizard.doneTitle', {
             name,
             interpolation: { escapeValue: false },
@@ -524,7 +654,7 @@ export default function ConnectWizard({
 
   const footer =
     step === 'signin' ? (
-      connector.auth_kind === 'oauth' || isMcpPreset ? (
+      usesOAuth || isMcpPreset ? (
         <ModalActions
           cancelLabel={t('cancel')}
           onCancel={() => {
@@ -558,7 +688,11 @@ export default function ConnectWizard({
       <ModalActions
         cancelLabel={t('settings.connectors.wizard.skip')}
         onCancel={() => (mode === 'sync' ? onClose() : setStep('done'))}
-        submitLabel={t('modals.uploadDoc.train')}
+        submitLabel={
+          offerTools
+            ? t('settings.connectors.wizard.continue')
+            : t('modals.uploadDoc.train')
+        }
         onSubmit={addSource}
         pending={pending}
         disabled={!canAddSource}

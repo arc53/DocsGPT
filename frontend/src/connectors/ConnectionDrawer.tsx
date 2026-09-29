@@ -41,7 +41,7 @@ import { CapabilityBadges } from './ConnectorCard';
 import ConnectorIcon from './ConnectorIcon';
 import ConnectorSetupNotice from './ConnectorSetupNotice';
 import { loadConnectors, selectConnections } from './connectorsSlice';
-import { connectorDescription, connectorName } from './i18n';
+import { connectorDescription, connectorName, isKeyHint } from './i18n';
 import ToolPermissions from './ToolPermissions';
 import type {
   ConnectionDetail,
@@ -64,13 +64,14 @@ const STATUS_VARIANT: Record<
 };
 
 /**
- * "Connected as …", or the key hint for pasted credentials. A connection that
- * is not working names its account without claiming it is connected.
+ * "Connected as …", or the key hint for pasted credentials (a GitHub token
+ * is named after its account instead). A connection that is not working
+ * names its account without claiming it is connected.
  */
 function useAccountTitle() {
   const { t } = useTranslation();
   return (detail: ConnectionDetail) =>
-    detail.auth_kind === 'api_key'
+    detail.auth_kind === 'api_key' && isKeyHint(detail.account_label)
       ? t('settings.connectors.detail.keyEnding', {
           hint: detail.account_label,
           interpolation: { escapeValue: false },
@@ -247,6 +248,7 @@ function AccountSection({
   onRefreshTools,
   onToggleTool,
   onSyncNow,
+  onAddTools,
 }: {
   connector: ConnectorDefinition;
   detail: ConnectionDetail;
@@ -258,11 +260,20 @@ function AccountSection({
   /** Turns a tool of this connection on or off for agents and chat. */
   onToggleTool: (toolId: string, on: boolean) => Promise<boolean>;
   onSyncNow: (source: ConnectionSource) => void;
+  /** Creates the tools a connection skipped while it was set up (GitHub's). */
+  onAddTools: (detail: ConnectionDetail) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const accountTitle = useAccountTitle();
   const problem = useProblem();
   const [refreshing, setRefreshing] = useState(false);
+  const [addingTools, setAddingTools] = useState(false);
+  const canAddTools =
+    connector.setup.tools === 'ask' &&
+    (connector.tool_templates?.length ?? 0) > 0 &&
+    connector.publisher !== 'custom' &&
+    detail.tools.length === 0 &&
+    detail.status === 'connected';
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
   const isMcp = detail.tools.some((tool) => tool.name === 'mcp_tool');
   const menu: MenuOption[] = [];
@@ -414,6 +425,36 @@ function AccountSection({
               </ListRows>
             </Card>
           )}
+        </section>
+      )}
+      {canAddTools && (
+        <section className="flex flex-col gap-2">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('settings.connectors.detail.tools')}
+            actions={
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="-mr-3"
+                loading={addingTools}
+                onClick={() => {
+                  setAddingTools(true);
+                  onAddTools(detail).finally(() => setAddingTools(false));
+                }}
+              >
+                <Plus />
+                {t('settings.connectors.detail.addTools')}
+              </Button>
+            }
+          />
+          <EmptyState
+            size="xs"
+            illustration="none"
+            title={t('settings.connectors.detail.noTools')}
+          />
         </section>
       )}
       {detail.tools.length > 0 && (
@@ -617,6 +658,27 @@ export default function ConnectionDrawer({
     }
   };
 
+  const addTools = async (detail: ConnectionDetail) => {
+    const data = await connectorsService
+      .setup(detail.id, { create_tools: true }, token)
+      .catch(() => null);
+    if (!data?.success) {
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message:
+            data?.code === 'tools_unavailable'
+              ? t('settings.connectors.wizard.toolsUnavailable', {
+                  name: connector ? connectorName(t, connector) : detail.name,
+                  interpolation: { escapeValue: false },
+                })
+              : t('settings.connectors.detail.addToolsFailed'),
+        }),
+      );
+    }
+    refresh();
+  };
+
   const refreshTools = async (detail: ConnectionDetail) => {
     const data = await connectorsService.refreshTools(detail.id, token);
     dispatch(
@@ -754,6 +816,7 @@ export default function ConnectionDrawer({
                       onRefreshTools={refreshTools}
                       onToggleTool={toggleTool}
                       onSyncNow={syncNow}
+                      onAddTools={addTools}
                     />
                   ))}
                 </div>
@@ -799,6 +862,7 @@ export default function ConnectionDrawer({
                       onRefreshTools={refreshTools}
                       onToggleTool={toggleTool}
                       onSyncNow={syncNow}
+                      onAddTools={addTools}
                     />
                   ))}
                 </section>
