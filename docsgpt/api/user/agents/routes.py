@@ -1242,7 +1242,7 @@ class UpdateAgent(Resource):
                         if not normalized:
                             if workflow_required:
                                 return _reject("Workflow is required", user, field)
-                            update_fields["workflow_id"] = None
+                            pg_workflow_id = None
                         else:
                             # The agent runs its workflow as the owner, so it
                             # must be one of the owner's workflows.
@@ -1251,19 +1251,20 @@ class UpdateAgent(Resource):
                             )
                             if wf_err:
                                 return wf_err
-                            # Only the owner may point the agent at a different
-                            # workflow: editing rights on this agent extend to
-                            # the graph it uses, so swapping in the workflow of
-                            # another of the owner's agents would hand that
-                            # graph to the editor.
-                            current_workflow = existing_agent.get("workflow_id")
-                            if is_team_editor and pg_workflow_id != (
-                                str(current_workflow) if current_workflow else None
-                            ):
-                                return _denied(
-                                    AccessDenied(403, "Only the owner can change this agent's workflow")
-                                )
-                            update_fields["workflow_id"] = pg_workflow_id
+                        # Only the owner may change which workflow the agent
+                        # uses, detaching included: editing rights on this
+                        # agent extend to the graph it uses, so swapping in the
+                        # workflow of another of the owner's agents would hand
+                        # that graph to the editor. Editing the graph itself
+                        # goes through the workflow routes.
+                        current_workflow = existing_agent.get("workflow_id")
+                        if is_team_editor and pg_workflow_id != (
+                            str(current_workflow) if current_workflow else None
+                        ):
+                            return _denied(
+                                AccessDenied(403, "Only the owner can change this agent's workflow")
+                            )
+                        update_fields["workflow_id"] = pg_workflow_id
                     elif field == "prompt_id":
                         value = data["prompt_id"]
                         if not value or value == "default":

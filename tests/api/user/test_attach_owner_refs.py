@@ -133,6 +133,25 @@ class TestAgentWorkflowSwap:
         assert _status(_put(app, pg_conn, agent_a, OWNER, {"workflow": wf_b})) == 200
         assert str(_row(pg_conn, agent_a)["workflow_id"]) == wf_b
 
+    def test_editor_cannot_detach_workflow(self, app, pg_conn):
+        # Unpublishing in the same request makes the empty workflow allowed
+        # for a draft; detaching is still the owner's call.
+        agent_a, wf_a, _ = self._two_workflow_agents(pg_conn)
+        resp = _put(app, pg_conn, agent_a, EDITOR, {"status": "draft", "workflow": ""})
+        assert _status(resp) == 403
+        assert str(_row(pg_conn, agent_a)["workflow_id"]) == wf_a
+
+    def test_owner_may_detach_workflow(self, app, pg_conn):
+        agent_a, _, _ = self._two_workflow_agents(pg_conn)
+        resp = _put(app, pg_conn, agent_a, OWNER, {"status": "draft", "workflow": ""})
+        assert _status(resp) == 200, resp.get_json()
+        assert _row(pg_conn, agent_a)["workflow_id"] is None
+
+    def test_editor_empty_workflow_on_agent_without_one_is_a_no_op(self, app, pg_conn):
+        agent_id, _ = _agent(pg_conn)
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"status": "draft", "workflow": ""})
+        assert _status(resp) == 200, resp.get_json()
+
 
 class TestWorkflowNodeAttach:
     def _setup(self, pg_conn):
