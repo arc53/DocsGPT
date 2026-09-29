@@ -58,11 +58,14 @@ const BODY_TYPE_HINT_KEYS: Record<string, string> = {
 /**
  * What the caller may change on the open tool (`utils/accessUtils` `can`):
  * `canEdit` covers the name and the actions, `canEditCredentials` the
- * secrets, URLs and header / query values.
+ * secrets, URLs and header / query values, and `canFixValues` whether a
+ * parameter is filled by the AI or fixed, and its fixed value (the owner's
+ * alone: the server refuses anyone else).
  */
 const ToolAccessContext = React.createContext({
   canEdit: true,
   canEditCredentials: true,
+  canFixValues: true,
 });
 
 /** Maps a body content type to its hint's locale key suffix (JSON by default). */
@@ -133,9 +136,10 @@ export default function ToolConfig({
     can(tool, 'edit_credentials') && !sharedOAuth && !ownerOnlyConnection;
   // Neither: the tool opens as a read-only view with no Save.
   const readOnly = !canEdit && !canEditCredentials;
+  const canFixValues = isOwner(tool);
   const access = React.useMemo(
-    () => ({ canEdit, canEditCredentials }),
-    [canEdit, canEditCredentials],
+    () => ({ canEdit, canEditCredentials, canFixValues }),
+    [canEdit, canEditCredentials, canFixValues],
   );
 
   const toggleUserActionExpand = (index: number) => {
@@ -681,6 +685,7 @@ export default function ToolConfig({
                                               <Checkbox
                                                 size="sm"
                                                 checked={param[1].filled_by_llm}
+                                                disabled={!canFixValues}
                                                 id={uniqueKey}
                                                 aria-label={t(
                                                   'settings.tools.filledByLLM',
@@ -738,7 +743,10 @@ export default function ToolConfig({
                                           <Input
                                             value={param[1].value}
                                             key={uniqueKey}
-                                            disabled={param[1].filled_by_llm}
+                                            disabled={
+                                              param[1].filled_by_llm ||
+                                              !canFixValues
+                                            }
                                             size="sm"
                                             onChange={(e) => {
                                               setTool({
@@ -1293,7 +1301,8 @@ function APIActionTable({
   ) => void;
 }) {
   const { t } = useTranslation();
-  const { canEditCredentials } = React.useContext(ToolAccessContext);
+  const { canEditCredentials, canFixValues } =
+    React.useContext(ToolAccessContext);
   const idPrefix = React.useId();
 
   const [action, setAction] = React.useState<APIActionType>(apiAction);
@@ -1557,6 +1566,7 @@ function APIActionTable({
                       id={`${idPrefix}-${section}-${index}-filled-by-llm`}
                       aria-label={t('settings.tools.filledByLLM')}
                       checked={param.filled_by_llm}
+                      disabled={!canFixValues}
                       onCheckedChange={(checked) =>
                         handlePropertyChange(
                           section,
@@ -1588,6 +1598,7 @@ function APIActionTable({
                   value={param.value}
                   disabled={
                     param.filled_by_llm ||
+                    !canFixValues ||
                     (section === 'query_params' && !canEditCredentials)
                   }
                   onChange={(e) =>

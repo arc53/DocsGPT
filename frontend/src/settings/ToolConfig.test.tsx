@@ -567,6 +567,30 @@ describe('ToolConfig', () => {
       expect(credential && disabled(credential)).toBe(true);
     });
 
+    it('locks fixed values for anyone but the owner', async () => {
+      // Even an editor who may change credentials: the server refuses a fixed
+      // value from anyone but the owner.
+      await render({
+        ...userTool,
+        access: 'editor',
+        allowed_actions: ['edit', 'edit_credentials', 'use', 'use_in_own'],
+      } as UserToolType);
+      await act(async () => {
+        (
+          container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        ).click();
+      });
+      const filled = container.querySelector(
+        '[aria-label="settings.tools.filledByLLM"]',
+      );
+      expect(filled?.hasAttribute('disabled')).toBe(true);
+      const tableInputs = Array.from(
+        container.querySelectorAll<HTMLInputElement>('table input[data-slot]'),
+      );
+      // The description stays editable; the value is the fixed one.
+      expect(tableInputs.at(-1)?.disabled).toBe(true);
+    });
+
     it('says why the credentials are locked for an editor without edit_credentials', async () => {
       await render({ ...configTool, ...editorNoCreds } as UserToolType);
       const note = container.querySelector('[data-slot="alert"]');
