@@ -1306,26 +1306,111 @@ class TestUpdateToolActionsHappy:
             response = UpdateToolActions().post()
         assert response.status_code == 404
 
-    def test_updates_actions(self, app, pg_conn):
-        from docsgpt.api.user.tools.routes import UpdateToolActions
+    @staticmethod
+    def _seed_actions_tool(pg_conn, user):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
-        user = "u-actions"
-        tool = _seed_tool(pg_conn, user=user)
+        return UserToolsRepository(pg_conn).create(
+            user,
+            "telegram",
+            config={},
+            display_name="Telegram",
+            description="",
+            actions=[
+                {
+                    "name": "telegram_send_message",
+                    "description": "Send a message",
+                    "active": True,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string", "filled_by_llm": True, "value": ""},
+                            "chat_id": {"type": "string", "filled_by_llm": True, "value": ""},
+                        },
+                    },
+                }
+            ],
+            status=True,
+        )
+
+    def _post(self, app, pg_conn, user, tool_id, actions):
+        from docsgpt.api.user.tools.routes import UpdateToolActions
 
         with _patch_tools_db(pg_conn), app.test_request_context(
             "/api/update_tool_actions",
             method="POST",
-            json={
-                "id": str(tool["id"]),
-                "actions": [
-                    {"name": "action_1", "active": True, "parameters": {}}
-                ],
-            },
+            json={"id": tool_id, "actions": actions},
         ):
             from flask import request
             request.decoded_token = {"sub": user}
-            response = UpdateToolActions().post()
+            return UpdateToolActions().post()
+
+    @staticmethod
+    def _stored(pg_conn, tool):
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        return UserToolsRepository(pg_conn).get_by_id(str(tool["id"]))["actions"][0]
+
+    def test_updates_actions(self, app, pg_conn):
+        user = "u-actions"
+        tool = self._seed_actions_tool(pg_conn, user)
+        response = self._post(
+            app, pg_conn, user, str(tool["id"]), [{"name": "telegram_send_message", "active": False}],
+        )
         assert response.status_code == 200
+        assert self._stored(pg_conn, tool)["active"] is False
+
+    def test_owner_pins_a_parameter(self, app, pg_conn):
+        user = "u-actions-pin"
+        tool = self._seed_actions_tool(pg_conn, user)
+        response = self._post(app, pg_conn, user, str(tool["id"]), [{
+            "name": "telegram_send_message",
+            "parameters": {"properties": {"chat_id": {"filled_by_llm": False, "value": "123"}}},
+        }])
+        assert response.status_code == 200
+        chat_id = self._stored(pg_conn, tool)["parameters"]["properties"]["chat_id"]
+        assert chat_id["filled_by_llm"] is False and chat_id["value"] == "123"
+
+    @pytest.mark.parametrize(
+        "actions",
+        [
+            [{"name": "made_up_action", "active": True}],
+            [{"name": "telegram_send_message", "parameters": {"properties": {"token": {"value": "x"}}}}],
+            [{"active": True}],
+            "not a list",
+        ],
+    )
+    def test_rejects_actions_that_do_not_match_the_schema(self, app, pg_conn, actions):
+        user = "u-actions-bad"
+        tool = self._seed_actions_tool(pg_conn, user)
+        response = self._post(app, pg_conn, user, str(tool["id"]), actions)
+        assert response.status_code == 400
+        assert self._stored(pg_conn, tool)["active"] is True
+
+    def test_team_editor_can_change_actions_but_not_pins(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        owner, editor = "u-owner", "u-editor"
+        tool = self._seed_actions_tool(pg_conn, owner)
+        team = TeamsRepository(pg_conn).create("Pins", "t-pins", owner)
+        TeamMembersRepository(pg_conn).add_member(str(team["id"]), editor)
+        TeamResourceGrantsRepository(pg_conn).grant(
+            str(team["id"]), "tool", str(tool["id"]), owner, owner, access_level="editor",
+        )
+        toggled = self._post(
+            app, pg_conn, editor, str(tool["id"]), [{"name": "telegram_send_message", "active": False}],
+        )
+        pinned = self._post(app, pg_conn, editor, str(tool["id"]), [{
+            "name": "telegram_send_message",
+            "parameters": {"properties": {"chat_id": {"filled_by_llm": False, "value": "666"}}},
+        }])
+        assert toggled.status_code == 200
+        assert pinned.status_code == 403
+        stored = self._stored(pg_conn, tool)
+        assert stored["active"] is False
+        assert stored["parameters"]["properties"]["chat_id"]["filled_by_llm"] is True
 
 
 class TestUpdateToolStatusHappy:

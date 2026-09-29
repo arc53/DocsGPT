@@ -9,14 +9,16 @@ const useDrivePicker = ((
   drivePickerImport as unknown as { default?: typeof drivePickerImport }
 ).default ?? drivePickerImport) as typeof drivePickerImport;
 
-import userService from '../api/services/userService';
-import ConnectorAuth from './ConnectorAuth';
+import { useDispatch, useSelector } from 'react-redux';
+
+import connectorsService from '../api/services/connectorsService';
 import {
-  getSessionToken,
-  setSessionToken,
-  removeSessionToken,
-  validateProviderSession,
-} from '../utils/providerUtils';
+  loadConnectors,
+  selectConnections,
+} from '../connectors/connectorsSlice';
+import type { AppDispatch } from '../store';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import ConnectorAuth from './ConnectorAuth';
 import SkeletonLoader from './SkeletonLoader';
 import { Button } from './ui/button';
 import { SectionHeader } from './ui/section-header';
@@ -32,90 +34,88 @@ interface PickerFile {
 
 interface GoogleDrivePickerProps {
   token: string | null;
+  /** The Drive connection to pick from; defaults to the first connected one. */
+  connectionId?: string | null;
+  /** Reports the account the picker uses, so the upload can name it. */
+  onConnectionChange?: (connectionId: string | null) => void;
   onSelectionChange: (fileIds: string[], folderIds?: string[]) => void;
+  /** Called with the first item's name when the selection goes from empty to one. */
+  onFirstPickName?: (name: string) => void;
 }
 
 const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
   token,
+  connectionId: controlledConnectionId,
+  onConnectionChange,
   onSelectionChange,
+  onFirstPickName,
 }) => {
   const { t } = useTranslation();
+  const dispatch = useDispatch<AppDispatch>();
+  const connections = useSelector(selectConnections);
+  const [chosenConnectionId, setChosenConnectionId] = useState<string | null>(
+    null,
+  );
+  const accounts = connections.filter(
+    (c) => c.connector_key === 'google_drive' && c.status === 'connected',
+  );
+  const activeConnectionId =
+    controlledConnectionId ??
+    (chosenConnectionId && accounts.some((a) => a.id === chosenConnectionId)
+      ? chosenConnectionId
+      : (accounts[0]?.id ?? null));
+  const activeAccount = accounts.find((a) => a.id === activeConnectionId);
+  const isConnected = !!activeConnectionId;
   const [selectedFiles, setSelectedFiles] = useState<PickerFile[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<PickerFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [isConnected, setIsConnected] = useState(false);
   const [authError, setAuthError] = useState<string>('');
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
 
   const [openPicker] = useDrivePicker();
 
   useEffect(() => {
-    const sessionToken = getSessionToken('google_drive');
-    if (sessionToken) {
-      setIsValidating(true);
-      setIsConnected(true); // Optimistically set as connected for skeleton
-      validateSession(sessionToken);
-    }
-  }, [token]);
+    onConnectionChange?.(activeConnectionId);
+  }, [activeConnectionId]);
 
-  const validateSession = async (sessionToken: string) => {
+  // The Picker runs in the browser and needs an access token. It is fetched
+  // per use and kept in memory only; the refresh token never leaves the server.
+  const fetchAccessToken = async (): Promise<string | null> => {
+    if (!activeConnectionId) return null;
+    setIsValidating(true);
     try {
-      const validateResponse = await validateProviderSession(
+      const data = await connectorsService.pickerToken(
+        activeConnectionId,
         token,
-        'google_drive',
       );
-
-      if (!validateResponse.ok) {
-        setIsConnected(false);
+      if (!data?.success) {
         setAuthError(
           t('modals.uploadDoc.connectors.googleDrive.sessionExpired'),
         );
-        setIsValidating(false);
-        return false;
+        dispatch(loadConnectors({ token }));
+        return null;
       }
-
-      const validateData = await validateResponse.json();
-      if (validateData.success) {
-        setUserEmail(
-          validateData.user_email ||
-            t('modals.uploadDoc.connectors.auth.connectedUser'),
-        );
-        setIsConnected(true);
-        setAuthError('');
-        setAccessToken(validateData.access_token || null);
-        setIsValidating(false);
-        return true;
-      } else {
-        setIsConnected(false);
-        setAuthError(
-          validateData.error ||
-            t('modals.uploadDoc.connectors.googleDrive.sessionExpiredGeneric'),
-        );
-        setIsValidating(false);
-        return false;
-      }
+      setAuthError('');
+      return data.access_token ?? null;
     } catch (error) {
-      console.error('Error validating session:', error);
+      console.error('Error fetching the picker token:', error);
       setAuthError(t('modals.uploadDoc.connectors.googleDrive.validateFailed'));
-      setIsConnected(false);
+      return null;
+    } finally {
       setIsValidating(false);
-      return false;
     }
   };
 
   const handleOpenPicker = async () => {
     setIsLoading(true);
 
-    const sessionToken = getSessionToken('google_drive');
-
-    if (!sessionToken) {
+    if (!activeConnectionId) {
       setAuthError(t('modals.uploadDoc.connectors.googleDrive.noSession'));
       setIsLoading(false);
       return;
     }
 
+    const accessToken = await fetchAccessToken();
     if (!accessToken) {
       setAuthError(t('modals.uploadDoc.connectors.googleDrive.noAccessToken'));
       setIsLoading(false);
@@ -191,6 +191,13 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
               );
               return [...prevFolders, ...uniqueNewFolders];
             });
+            if (
+              selectedFiles.length === 0 &&
+              selectedFolders.length === 0 &&
+              docs.length > 0
+            ) {
+              onFirstPickName?.(docs[0].name);
+            }
             onSelectionChange(
               [...selectedFiles, ...newFiles].map((file) => file.id),
               [...selectedFolders, ...newFolders].map((folder) => folder.id),
@@ -206,25 +213,17 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
   };
 
   const handleDisconnect = async () => {
-    const sessionToken = getSessionToken('google_drive');
-    if (sessionToken) {
+    if (activeConnectionId) {
       try {
-        await userService.disconnectConnector(
-          'google_drive',
-          sessionToken,
-          token,
-        );
+        await connectorsService.disconnect(activeConnectionId, token);
       } catch (err) {
         console.error('Error disconnecting from Google Drive:', err);
       }
+      dispatch(loadConnectors({ token }));
     }
-
-    removeSessionToken('google_drive');
-    setIsConnected(false);
+    setChosenConnectionId(null);
     setSelectedFiles([]);
     setSelectedFolders([]);
-    setAccessToken(null);
-    setUserEmail('');
     setAuthError('');
     onSelectionChange([], []);
   };
@@ -241,25 +240,20 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
           <ConnectorAuth
             provider="google_drive"
             label={t('modals.uploadDoc.connectors.googleDrive.connect')}
+            icon={<ConnectorIcon icon="drive" className="size-5" />}
             onSuccess={(data) => {
-              setUserEmail(
-                data.user_email ||
-                  t('modals.uploadDoc.connectors.auth.connectedUser'),
-              );
-              setIsConnected(true);
               setAuthError('');
-
-              if (data.session_token) {
-                setSessionToken('google_drive', data.session_token);
-                validateSession(data.session_token);
-              }
+              dispatch(loadConnectors({ token }));
+              if (data.connection_id) setChosenConnectionId(data.connection_id);
             }}
             onError={(error) => {
               setAuthError(error);
-              setIsConnected(false);
             }}
             isConnected={isConnected}
-            userEmail={userEmail}
+            userEmail={
+              activeAccount?.account_label ||
+              t('modals.uploadDoc.connectors.auth.connectedUser')
+            }
             onDisconnect={handleDisconnect}
             errorMessage={authError}
           />

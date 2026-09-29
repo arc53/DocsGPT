@@ -47,11 +47,14 @@ import {
 } from '../preferences/preferenceSlice';
 import { isToolCallRunning } from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
+import ConnectToolCallBar from './ConnectToolCallBar';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectorIconKey } from '../connectors/i18n';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import ResearchProgress from './ResearchProgress';
-import { ToolCallsType } from './types';
+import { shownArguments, ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
 const DisableSourceFE = envVar('VITE_DISABLE_SOURCE_FE') === 'true';
@@ -65,7 +68,13 @@ const ConversationBubble = forwardRef<
     feedback?: FEEDBACK;
     handleFeedback?: (feedback: FEEDBACK) => void;
     thought?: string;
-    sources?: { title: string; text: string; link: string }[];
+    sources?: {
+      title: string;
+      text: string;
+      link: string;
+      connector_key?: string | null;
+      connector_name?: string | null;
+    }[];
     toolCalls?: ToolCallsType[];
     /** Arrival order of the answer's parts; drives inline rendering. */
     segments?: AnswerSegment[];
@@ -368,6 +377,23 @@ const ConversationBubble = forwardRef<
                                 </p>
                               </a>
                             </Button>
+                          ) : source.connector_name ? (
+                            <div className="mt-3.5 flex flex-row items-center gap-1.5">
+                              <ConnectorIcon
+                                icon={connectorIconKey(source.connector_key)}
+                                className="text-muted-foreground size-4 shrink-0"
+                              />
+                              <p
+                                className="mt-0.5 truncate text-xs"
+                                title={source.title}
+                              >
+                                {t('conversation.sources.fromConnectorTitle', {
+                                  name: source.connector_name,
+                                  title: source.title,
+                                  interpolation: { escapeValue: false },
+                                })}
+                              </p>
+                            </div>
                           ) : (
                             <div className="mt-3.5 flex flex-row items-center gap-1.5">
                               <FileText className="text-muted-foreground size-4 shrink-0" />
@@ -473,10 +499,17 @@ const ConversationBubble = forwardRef<
             onOpenArtifact={onOpenArtifact}
             renderApproval={(toolCall: ToolCallsType) => (
               <div className="animate-in fade-in mt-4 mr-5 ml-6 duration-160 ease-out motion-reduce:animate-none">
-                <ToolCallApprovalBar
-                  toolCall={toolCall}
-                  onToolAction={onToolAction}
-                />
+                {toolCall.connection_required ? (
+                  <ConnectToolCallBar
+                    toolCall={toolCall}
+                    onToolAction={onToolAction}
+                  />
+                ) : (
+                  <ToolCallApprovalBar
+                    toolCall={toolCall}
+                    onToolAction={onToolAction}
+                  />
+                )}
               </div>
             )}
             renderWikiWrite={(toolCall: ToolCallsType, isLive: boolean) => (
@@ -653,7 +686,13 @@ function onActivateKey(
 }
 
 type AllSourcesProps = {
-  sources: { title: string; text: string; link?: string }[];
+  sources: {
+    title: string;
+    text: string;
+    link?: string;
+    connector_key?: string | null;
+    connector_name?: string | null;
+  }[];
 };
 
 function AllSources(sources: AllSourcesProps) {
@@ -706,6 +745,20 @@ function AllSources(sources: AllSourcesProps) {
                   <ExternalLink className="text-muted-foreground group-hover/card:text-primary ml-1 inline size-3" />
                 )}
               </p>
+              {source.connector_name && (
+                <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
+                  <ConnectorIcon
+                    icon={connectorIconKey(source.connector_key)}
+                    className="text-muted-foreground size-3.5 shrink-0"
+                  />
+                  <span className="truncate">
+                    {t('conversation.sources.fromConnector', {
+                      name: source.connector_name,
+                      interpolation: { escapeValue: false },
+                    })}
+                  </span>
+                </p>
+              )}
               <p className="text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word">
                 {source.text}
               </p>
@@ -737,7 +790,7 @@ function ToolCallApprovalBar({
     0,
     toolCall.action_name.lastIndexOf('_'),
   );
-  const argPreview = JSON.stringify(toolCall.arguments);
+  const argPreview = JSON.stringify(shownArguments(toolCall));
   const truncated =
     argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
 
@@ -846,7 +899,7 @@ function ToolCallApprovalBar({
           <Card variant="subtle" padding="sm" className="mb-2">
             <div className="scrollbar-overlay max-h-40 overflow-y-auto">
               <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
-                {JSON.stringify(toolCall.arguments, null, 2)}
+                {JSON.stringify(shownArguments(toolCall), null, 2)}
               </pre>
             </div>
           </Card>

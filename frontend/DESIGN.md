@@ -647,10 +647,12 @@ description use a Switch in a SettingRow instead.
 ### Switch, TimePicker and Calendar (`ui/switch.tsx`, `ui/time-picker.tsx`, `ui/calendar.tsx`)
 
 `Switch` (Radix) is an on/off setting, placed inside a `SettingRow` that names
-it. A tile's own on/off (the tool tile's "In my chats") is the one exception:
-a `Label text-muted-foreground text-xs font-normal` + `Switch` pair at the
-tile's bottom-right. For a shared tool it is the caller's own preference,
-never a switch that turns the tool off for everyone. The track is `primary` when on and `bg-input` when off, with a white
+it. A tool's own "In my chats" on/off is the one exception. On a Tools page
+tile it is a bare `Switch` at the tile's bottom-right, named only by its
+`aria-label` (no visible label); in a connection's drawer, a tool row ends in
+a `Label text-muted-foreground text-xs font-normal` + `Switch` pair. Either way
+it is the caller's own preference, never a switch that turns the tool off for
+everyone. The track is `primary` when on and `bg-input` when off, with a white
 thumb in both themes (see Elevation).
 
 `TimePicker` picks a time of day as two `SelectTrigger`s, hours and minutes,
@@ -806,9 +808,10 @@ overlay. The app has one
 `ToastViewport`, mounted in `App.tsx`; it is the live region
 (`role="status"`, `aria-live="polite"`) and the fixed stack, so `Toast`
 cards carry no role and no toast renders its own rail or positioning. Top
-to bottom it holds `TeamNotificationToast`, `ToolApprovalToast`,
-`UploadToast` and `ActionToast`, and it moves to the bottom-left while any
-agent preview drawer is open (workflow or classic). A new toast component returns only its
+to bottom it holds `TeamNotificationToast`, `ConnectionHealthToast` (a
+connection that needs reconnecting, with a Reconnect action),
+`ToolApprovalToast`, `UploadToast` and `ActionToast`, and it moves to the
+bottom-left while any agent preview drawer is open (workflow or classic). A new toast component returns only its
 `Toast` cards and is added to that viewport. A page that reports the result
 of an action (the admin Users actions) dispatches
 `showActionToast({ variant: 'success' | 'destructive', message })` from
@@ -888,7 +891,8 @@ also refuses Logs, Schedules and Pin on a draft), never on `ownership`,
   (`components/ViewOnlyNotice`: an `Alert role="note"` with `Lock` first and
   `common.viewOnlyNotice`) as its first child. Where only part of an editable
   form is locked (a tool's credentials when the owner turned off "Editors can
-  change credentials"), the same notice passes its own `message`. There is no Save; Cancel becomes a lone Close.
+  change credentials", or when the tool runs on the owner's connection, whose
+  secret only the owner changes), the same notice passes its own `message`. There is no Save; Cancel becomes a lone Close.
   Fields are `disabled` (a group: `<fieldset disabled className="min-w-0">`);
   long text the user reads or copies (a prompt, a chunk) is `readOnly`, so it
   keeps full contrast and scrolls. Titles and menu items swap Edit and
@@ -1670,6 +1674,7 @@ list stays reviewable.
 | `settings/PersonalAccessTokens.tsx`                                 | `shadcn/no-restyle`             | Token scope chips are identifiers, so the `neutral` Badge is set in mono (`font-mono`). One disable.                                                                                                                                                                                                                                                                                                                                                                                            |
 | `agents/workflow/WorkflowPreview.tsx`                               | `shadcn/no-restyle`             | A step's state changes (keys and values the app serialised) are `neutral` Badges set in mono (`font-mono`), like token scopes. One disable.                                                                                                                                                                                                                                                                                                                                                     |
 | `settings/traces/TraceChips.tsx`                                    | `shadcn/no-restyle`             | Trace stat chips (durations, counts) use tabular figures so they don't jitter between rows (`tabular-nums` on Badge). One disable.                                                                                                                                                                                                                                                                                                                                                              |
+| `connectors/ConnectorSetupNotice.tsx`                               | `shadcn/no-restyle`             | The setup-guide link inside the needs-setup warning Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                       |
 | `modals/MCPServerModal.tsx`                                         | `shadcn/no-restyle`             | The authorization link inside the test-result Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                             |
 | `components/MermaidRenderer.tsx`                                    | `shadcn/no-restyle`             | The zoom readout between − and + is a `link inline` Button on the `bg-black/70` overlay; it keeps the overlay's white 12px regular text (`text-xs font-normal text-current`). One disable, beside the two zoom-button ones above.                                                                                                                                                                                                                                                               |
 | `conversation/SharedConversation.tsx`                               | `shadcn/no-restyle`             | The "DocsGPT" link sits in the `/share/:id` page's regular-weight byline (`font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                                                                          |

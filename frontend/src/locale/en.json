@@ -10,12 +10,6 @@
   "loading": "Loading...",
   "retry": "Retry",
   "cancel": "Cancel",
-  "common": {
-    "close": "Close",
-    "viewOnlyNotice": "You can view this, but your role can't change it.",
-    "credentialsLockedNotice": "Only the owner can change this tool's credentials.",
-    "savedSecretHint": "Saved. Leave empty to keep it."
-  },
   "errorBoundary": {
     "message": "Something went wrong displaying this content.",
     "tryAgain": "Try again"
@@ -110,16 +104,16 @@
     },
     "sources": {
       "title": "Here you can manage all of the source file that are available to you and those you have uploaded.",
-      "subtitle": "Upload and manage the documents and knowledge sources used to power your responses",
-      "label": "Sources",
+      "subtitle": "Content DocsGPT can search and cite: uploads, websites, wikis and content synced from your connections.",
+      "label": "Knowledge",
       "name": "Source Name",
       "date": "Vector Date",
       "type": "Type",
       "tokenUsage": "Token Usage",
-      "noData": "No existing Sources",
+      "noData": "No knowledge yet",
       "searchPlaceholder": "Search...",
       "addNew": "Add New",
-      "addSource": "Add Source",
+      "addSource": "Add knowledge",
       "addChunk": "Add Chunk",
       "preLoaded": "Pre-loaded",
       "private": "Private",
@@ -190,7 +184,17 @@
         "pagesTitle": "Pages",
         "loadFailed": "Could not load the wiki pages.",
         "pageLoadFailed": "Could not load this page.",
-        "editTitle": "Edit page"
+        "editTitle": "Edit page",
+        "settings": {
+          "action": "Wiki settings",
+          "title": "Wiki settings",
+          "outsideEdits": {
+            "label": "Let API and widget users edit this wiki",
+            "description": "When this is off, people who use an agent through its API key or widget can read this wiki but not change it. Public-link visitors can only edit wikis they can edit themselves, and are asked before each edit. You and the wiki's editors can always edit it."
+          },
+          "loadError": "Could not load the wiki settings.",
+          "saveError": "Could not save the change. Please try again."
+        }
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -308,7 +312,7 @@
       "chunks": "Chunks",
       "noChunks": "No chunks found",
       "noChunksAlt": "No chunks found",
-      "goToSources": "Go to Sources",
+      "goToSources": "Go to Knowledge",
       "uploadNew": "Upload new",
       "noResults": "No results found",
       "fileName": "Name",
@@ -451,6 +455,9 @@
       "editChunkDescription": "{{file}} · chunk {{n}} · {{tokens}} tokens",
       "previousChunk": "Previous chunk",
       "nextChunk": "Next chunk",
+      "paused": "Sync paused. Reconnect {{name}} to resume.",
+      "emptyHint": "Upload files, add a website, or connect a service to sync its content.",
+      "connectService": "Connect a service",
       "viewConfig": "View source settings",
       "errors": {
         "forbidden": "You don't have permission to do that on this source.",
@@ -682,10 +689,6 @@
       "createTeamError": "Could not create team.",
       "noTeams": "No teams yet.",
       "noDescription": "No description",
-      "memberCount_one": "{{formatted}} member",
-      "memberCount_other": "{{formatted}} members",
-      "sharedCount_one": "{{formatted}} shared",
-      "sharedCount_other": "{{formatted}} shared",
       "loadError": "Failed to load teams.",
       "roleAdmin": "admin",
       "roleMember": "member",
@@ -765,8 +768,46 @@
           "teams": "Teams",
           "people": "People",
           "editors": "Editors"
+        },
+        "uses": {
+          "title": "What this agent uses",
+          "intro": "Everyone who uses this agent gets these, each with the access shown.",
+          "stopped": "Stopped",
+          "writesOff": "Not via API",
+          "writesNote": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API, widget and public-link users until you allow them in Access Details.",
+          "writesNoteEditor": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API, widget and public-link users until the owner allows them in Access Details.",
+          "access": {
+            "you": "Your access",
+            "person": "{{person}}'s access",
+            "other": "Someone else's access",
+            "owner": "The owner's access",
+            "member": "Each person's own {{service}} account (API and widget: yours)",
+            "memberNoService": "Each person's own account (API and widget: yours)",
+            "yourAccount": "Your {{service}} account",
+            "yourAccountNoService": "Your account",
+            "personAccount": "{{person}}'s {{service}} account",
+            "personAccountNoService": "{{person}}'s account",
+            "memberShared": "Each person's own {{service}} account (API and widget: the owner's)",
+            "memberSharedNoService": "Each person's own account (API and widget: the owner's)",
+            "otherAccount": "Someone else's {{service}} account",
+            "otherAccountNoService": "Someone else's account",
+            "yourCredentials": "Your saved credentials",
+            "personCredentials": "{{person}}'s saved credentials",
+            "otherCredentials": "Someone else's saved credentials"
+          },
+          "writesSomeOff": "Not all via API",
+          "adminOff": "Changes off by an admin",
+          "writesNoteApi": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API and widget users until you allow them in Access Details.",
+          "writesNoteApiEditor": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API and widget users until the owner allows them in Access Details.",
+          "writesNoteMemberTail": "On tools where each person uses their own account, public-link users make changes with their own account.",
+          "openAccessDetails": "Open Access Details",
+          "accessDetailsNeedsKey": "Access Details lists these changes once the agent has an API key."
         }
       },
+      "memberCount_one": "{{formatted}} member",
+      "memberCount_other": "{{formatted}} members",
+      "sharedCount_one": "{{formatted}} shared",
+      "sharedCount_other": "{{formatted}} shared",
       "accessChangeError": "Could not change access.",
       "accessSettings": {
         "title": "Access settings",
@@ -814,7 +855,8 @@
           },
           "viewers_can_use_in_agents": {
             "label": "Viewers can use it in their own agents",
-            "description": "It runs with your credentials."
+            "description": "It runs with your credentials.",
+            "descriptionMember": "Each person uses their own account."
           }
         },
         "prompt": {
@@ -936,11 +978,11 @@
     },
     "tools": {
       "label": "Tools",
-      "subtitle": "Browse, connect, and configure the tools and integrations that power your agents",
+      "subtitle": "Actions your agents can take. Built-in tools live here. Tools from a connected service are grouped under that service.",
       "searchPlaceholder": "Search tools...",
       "addTool": "Add Tool",
       "noToolsFound": "No tools found",
-      "selectToolSetup": "Select a tool to set up",
+      "selectToolSetup": "Add a tool",
       "settingsIconAlt": "Settings icon",
       "configureToolAria": "Configure {{toolName}}",
       "toggleToolAria": "Toggle {{toolName}}",
@@ -952,8 +994,8 @@
       "builtIn": "Built-in",
       "authStatus": {
         "connected": "Connected",
-        "needsAuth": "Needs Auth",
-        "configured": "Configured"
+        "needsAuth": "Reconnect",
+        "configured": "Connected"
       },
       "deleteWarning": "Are you sure you want to delete the tool \"{{toolName}}\"?",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
@@ -1069,6 +1111,11 @@
       },
       "headerValuePlaceholder": "e.g., application/json",
       "toolIconTitle": "{{name}} icon",
+      "groupBuiltIn": "Built in",
+      "groupService": "From a service",
+      "browseConnectors": "Browse all connectors",
+      "viaConnection": "via {{name}}",
+      "off": "Off",
       "view": "View",
       "inMyChats": "In my chats",
       "useInMyChatsAria": "Use {{toolName}} in my chats",
@@ -1304,13 +1351,320 @@
           "subtitle": "The new secret for \"{{name}}\" is ready. The old one no longer works."
         }
       }
+    },
+    "connectors": {
+      "label": "Connectors",
+      "subtitle": "Connect DocsGPT to the services your team uses. A connection can sync content into Knowledge and give agents tools.",
+      "search": "Search connectors...",
+      "addCustom": "Add custom tool",
+      "custom": {
+        "custom_mcp": "MCP server",
+        "custom_openapi": "OpenAPI / REST"
+      },
+      "categoriesLabel": "Filter connectors by category",
+      "categories": {
+        "all": "All",
+        "connected": "Connected",
+        "files": "Files & storage",
+        "knowledge": "Docs & wikis",
+        "dev": "Developer tools",
+        "messaging": "Messaging",
+        "database": "Databases",
+        "search": "Search & web",
+        "custom": "Custom",
+        "projects": "Projects & issues",
+        "business": "Payments & business"
+      },
+      "capability": {
+        "sync": "Sync",
+        "read": "Read",
+        "write": "Write"
+      },
+      "status": {
+        "connect": "Connect",
+        "connected": "Connected",
+        "connectedCount": "{{formatted}} connected",
+        "reconnect": "Reconnect",
+        "needsAdminSetup": "Needs admin setup",
+        "disabledByAdmin": "Disabled by admin",
+        "custom": "Custom"
+      },
+      "connectionStatus": {
+        "connected": "Connected",
+        "reconnect_needed": "Reconnect needed",
+        "disconnected": "Disconnected",
+        "error": "Error",
+        "pending": "Waiting for sign-in"
+      },
+      "publisher": {
+        "built_in": "Built in",
+        "preset": "Preset",
+        "custom": "Custom"
+      },
+      "descriptions": {
+        "google_drive": "Sync Docs, Sheets and PDFs into Knowledge.",
+        "share_point": "Sync files from SharePoint sites and OneDrive into Knowledge.",
+        "confluence": "Sync Confluence spaces and pages into Knowledge.",
+        "s3": "Sync documents from an S3 bucket into Knowledge.",
+        "reddit": "Sync Reddit posts that match your searches into Knowledge.",
+        "brave": "Search the web and images with the Brave Search API.",
+        "telegram": "Send messages and images to a Telegram chat.",
+        "ntfy": "Send push notifications through an ntfy server.",
+        "postgres": "Read the schema and run SQL against a Postgres database.",
+        "custom_mcp": "Connect any remote Model Context Protocol server.",
+        "custom_openapi": "Import an OpenAPI spec and call its endpoints as tools.",
+        "mcp_notion": "Search, read and update Notion pages and databases.",
+        "mcp_linear": "Sync issues and documents into Knowledge, and let agents find, create and update issues.",
+        "mcp_atlassian": "Search and update Jira issues and Confluence pages.",
+        "mcp_sentry": "Look up Sentry issues, events and releases.",
+        "mcp_asana": "Find and update Asana tasks and projects.",
+        "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
+        "github": "Sync repositories into Knowledge and let agents read code, issues and pull requests."
+      },
+      "empty": "Nothing connected yet. Connect a service to sync its content or give agents new tools.",
+      "noMatches": "No connectors match your search.",
+      "loadFailed": "Could not load connectors.",
+      "askAdmin": "Ask an admin to set this up.",
+      "setupSettings": "Set these server settings, then restart DocsGPT:",
+      "setupGuide": "Setup guide",
+      "unverified": "This server is not reviewed by DocsGPT. Only connect servers you trust.",
+      "detail": {
+        "accounts": "Accounts",
+        "connectedAs": "Connected as {{account}}",
+        "connectAnother": "Connect another account",
+        "sources": "Knowledge from this connection",
+        "tools": "Tools from this connection",
+        "noAccounts": "No account connected yet.",
+        "failed": "Could not load this connection.",
+        "lastSync": "Synced {{date}} · {{frequency}}",
+        "paused": "Sync paused",
+        "toolOn": "On",
+        "toolOff": "Off",
+        "accountMenu": "Account actions",
+        "disconnect": "Disconnect",
+        "keyEnding": "Key ending {{hint}}",
+        "syncMore": "Sync more content",
+        "refreshTools": "Refresh tools",
+        "noSources": "Nothing synced from this connection yet.",
+        "remove": "Remove",
+        "refreshed": "Tools refreshed: {{added}} added, {{removed}} removed.",
+        "refreshFailed": "Could not refresh the tools.",
+        "syncNow": "Sync now",
+        "syncStarted": "Syncing {{name}}…",
+        "syncFailed": "Could not start the sync. Try again.",
+        "toolSwitchFailed": "Could not change the tool. Try again.",
+        "account": "Account: {{account}}",
+        "expired": "The sign-in expired. Reconnect to keep using this connection.",
+        "broken": "This connection stopped working. Reconnect to try again.",
+        "addTools": "Add tools",
+        "noTools": "No tools from this connection yet.",
+        "addToolsFailed": "Could not add the tools. Try again.",
+        "rename": "Rename",
+        "accountPicker": "Choose an account"
+      },
+      "permission": {
+        "always": "Allow",
+        "ask": "Ask first",
+        "off": "Off",
+        "label": "Permission for {{action}}",
+        "saveFailed": "Could not save the permission. Try again.",
+        "groupLabel": "Permission for all of {{group}}",
+        "fold": "Hide actions",
+        "hint": "“Allow” and “Ask first” apply in chat; with “Ask first”, DocsGPT asks you before running the action. Changes through an agent's API, widget or public link are allowed per agent, in its Access Details.",
+        "actionCount_one": "{{formatted}} action",
+        "actionCount_other": "{{formatted}} actions",
+        "customize_one": "Customize the action",
+        "customize_other": "Customize each of {{formatted}}"
+      },
+      "disconnect": {
+        "title": "Disconnect {{name}}?",
+        "body_zero": "Tools from this connection stop working until you reconnect.",
+        "body_one": "The item it synced stays in Knowledge but stops updating. Tools from this connection stop working until you reconnect.",
+        "body_other": "The {{formatted}} items it synced stay in Knowledge but stop updating. Tools from this connection stop working until you reconnect.",
+        "failed": "Could not disconnect. Try again."
+      },
+      "fields": {
+        "token": "API key",
+        "aws_access_key_id": "Access key ID",
+        "aws_secret_access_key": "Secret access key",
+        "region": "Region",
+        "endpoint_url": "Custom endpoint URL",
+        "client_id": "Client ID",
+        "client_secret": "Client secret",
+        "user_agent": "User agent",
+        "bucket": "Bucket",
+        "prefix": "Path prefix",
+        "search_queries": "Search queries",
+        "number_posts": "Number of posts",
+        "telegram_token": "Bot token",
+        "ntfy_token": "Access token",
+        "postgres_token": "Connection string",
+        "brave_token": "API key",
+        "github_access_token": "Personal access token",
+        "repo_url": "Repository",
+        "telegram_chat_id": "Default chat ID"
+      },
+      "wizard": {
+        "connectTitle": "Connect {{name}}",
+        "reconnectTitle": "Reconnect {{name}}",
+        "signIn": "Sign in to {{name}}",
+        "chooseWhatToSync": "Choose what to sync",
+        "skip": "Skip for now",
+        "syncFrequency": "Sync",
+        "doneTitle": "{{name}} is connected",
+        "doneSummary": "Connected as {{account}}. {{sources}} syncing into Knowledge, {{tools}} ready.",
+        "doneSummaryNone": "Connected as {{account}}.",
+        "sourcesCount_one": "{{formatted}} item",
+        "sourcesCount_other": "{{formatted}} items",
+        "toolsCount_one": "{{formatted}} tool",
+        "toolsCount_other": "{{formatted}} tools",
+        "toolsHeading": "Tools ({{formatted}})",
+        "tryInChat": "Try it in chat",
+        "done": "Done",
+        "connectFailed": "Could not connect. Check the details and try again.",
+        "syncFailed": "Could not start the sync. Try again.",
+        "connectedWithKey": "Connected with the key ending {{hint}}.",
+        "doneCounts": "{{sources}} syncing into Knowledge, {{tools}} ready.",
+        "doneSources": "{{sources}} syncing into Knowledge.",
+        "doneTools": "{{tools}} ready.",
+        "waiting": "Finish signing in to {{name}} in the window that opened.",
+        "openSignIn": "Open the {{name}} sign-in",
+        "chooseWhatToSetUp": "Choose what to set up",
+        "continue": "Continue",
+        "methodLabel": "How to connect",
+        "methodOauth": "Sign in with {{name}}",
+        "methodToken": "Use an access token",
+        "credentialsRejected": "{{name}} did not accept these credentials. Check them and try again.",
+        "toolsUnavailable": "{{name}}'s tools could not be reached. Try again, or turn them off to continue.",
+        "addTools": "Let agents use {{name}}",
+        "addToolsDescription": {
+          "read": "Agents can look things up. They cannot change anything.",
+          "readWrite": "Agents can look things up and make changes. Changes need your approval."
+        },
+        "accountName": "Name this account",
+        "accountNameHint": "Optional. Tells your accounts apart, for you and the AI, e.g. Alerts bot.",
+        "syncToKnowledge": "Sync into Knowledge",
+        "syncToKnowledgeDescription": "Pick content from {{name}} for answers to search. Leave it off to only connect; you can sync later from Connectors.",
+        "syncLater": "Nothing syncs into Knowledge yet. To add content, open {{name}} in Connectors and choose Sync more content.",
+        "retrievalSettings": "Advanced retrieval settings"
+      },
+      "remove": {
+        "title": "Remove {{name}}?",
+        "description": "The stored sign-in is deleted. Choose what happens to what this connection feeds.",
+        "sourcesLabel_one": "The item it synced into Knowledge",
+        "sourcesLabel_other": "The {{formatted}} items it synced into Knowledge",
+        "keepSources": "Keep content (stop syncing)",
+        "deleteSources": "Delete",
+        "toolsLabel_one": "Its tool",
+        "toolsLabel_other": "Its {{formatted}} tools",
+        "deleteTools": "Delete",
+        "keepTools": "Keep, turned off",
+        "failed": "Could not remove the connection. Try again."
+      },
+      "health": {
+        "reconnect": "Reconnect {{name}} to keep syncing.",
+        "reconnectSources_one": "Reconnect {{name}}: {{formatted}} item stopped syncing into Knowledge",
+        "reconnectSources_other": "Reconnect {{name}}: {{formatted}} items stopped syncing into Knowledge",
+        "reconnectTools": "Reconnect {{name}} so agents can use it again",
+        "reconnectBoth_one": "Reconnect {{name}}: {{formatted}} item stopped syncing and agents can't use it",
+        "reconnectBoth_other": "Reconnect {{name}}: {{formatted}} items stopped syncing and agents can't use it",
+        "navDot": "A connection needs attention",
+        "signInAgain": "Sign in again",
+        "pickerNotice": "{{name}} needs you to sign in again."
+      },
+      "error": {
+        "decrypt": "Stored credentials could not be decrypted. Reconnect to continue.",
+        "defaultKey": "An admin must set ENCRYPTION_SECRET_KEY before services can be connected."
+      },
+      "sharing": {
+        "owner": "Everyone uses your account",
+        "member": "Each person connects their own account",
+        "ownerShort": "Your account",
+        "memberShort": "Each person's own",
+        "ownerShortShared": "The owner's account"
+      },
+      "share": {
+        "heading": "Whose account it runs with",
+        "ownerWarning": "Team members will act as {{account}} on {{name}}.",
+        "ownerWarningShared": "Team members will act as the owner's {{name}} account.",
+        "confirmWrite": "I understand teammates can take actions with my account.",
+        "confirmWriteShared": "I understand teammates can take actions with the owner's {{name}} account.",
+        "memberNote": "Each person uses their own {{name}} account, and connects it the first time they use this tool. Through an agent's API key or widget, it uses the agent owner's account.",
+        "forced": "An admin chose this for every share of this connector.",
+        "ownerChooses": "Only the owner can change this.",
+        "saveFailed": "Could not save the change. Try again."
+      },
+      "createFailed": "Could not add the connector. Try again.",
+      "capabilityFilter": {
+        "sync": "Showing connectors that sync content into Knowledge.",
+        "tools": "Showing connectors that give agents tools.",
+        "showAll": "Show all"
+      },
+      "capabilityPlain": {
+        "sync": "Syncs into Knowledge",
+        "read": "Looks things up",
+        "write": "Takes actions"
+      },
+      "github": {
+        "tokenHint": "Create a fine-grained token with read access to Contents and Metadata on the repositories you want to use. For agents to make changes, also give it read and write access to Issues and Pull requests.",
+        "writes": "Also let agents make changes (issues, comments, pull requests)",
+        "writesDescription": "Changes ask you first by default. Your token, or the GitHub App, needs read and write access to Issues and Pull requests.",
+        "writesForbidden": "An admin turned off changes through GitHub.",
+        "writesFailed": "Could not change what agents may do on GitHub.",
+        "createToken": "Create a token on GitHub",
+        "chooseRepositories": "Choose repositories on GitHub",
+        "noAppRepositories": "DocsGPT cannot see any repositories yet. Choose which ones it may read on GitHub.",
+        "noTokenRepositories": "This token cannot read any repositories. Give it access on GitHub, then reconnect.",
+        "searchRepositories": "Search repositories",
+        "repositories": "Repositories",
+        "updated": "Updated {{date}}",
+        "loadFailed": "Could not load your repositories."
+      },
+      "linear": {
+        "teams": "Teams",
+        "teamsHint": "Sync the issues of these teams.",
+        "projects": "Projects",
+        "projectsHint": "Sync the issues of these projects.",
+        "search": "Search teams and projects",
+        "noMatches": "No teams or projects match your search.",
+        "includeComments": "Include comments",
+        "includeCommentsDescription": "Add each issue's comments to it.",
+        "includeDocuments": "Include project documents",
+        "includeDocumentsDescription": "Sync the Linear documents of the projects you pick.",
+        "loadFailed": "Could not load your Linear teams and projects.",
+        "empty": "This Linear account has no teams or projects to sync."
+      },
+      "parameters": {
+        "show": "Parameters",
+        "hide": "Hide parameters",
+        "fixedCount_one": "{{formatted}} fixed",
+        "fixedCount_other": "{{formatted}} fixed",
+        "ai": "Let AI decide",
+        "fixed": "Always use",
+        "choiceLabel": "How {{parameter}} is filled in",
+        "valueLabel": "Value for {{parameter}}",
+        "save": "Save",
+        "saveFailed": "Could not save the value. Try again.",
+        "hint": "A value set to Always use is sent on every call. The AI never sees it and cannot change it.",
+        "fromAccount": "Set on this account: {{value}}"
+      },
+      "fieldHints": {
+        "telegram_chat_id": "Optional. Messages go to this chat, and the AI cannot pick another. Add the bot to the chat, send it a message, then find the chat's id in https://api.telegram.org/bot<token>/getUpdates."
+      },
+      "rename": {
+        "title": "Rename account",
+        "description": "The name tells this account apart from your other accounts of the same service, for you and the AI. Leave it empty to show the account itself.",
+        "label": "Account name",
+        "save": "Save",
+        "failed": "Could not rename the account. Try again."
+      }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "Upload new document",
+      "label": "Add knowledge",
       "select": "Choose how to upload your document to DocsGPT",
-      "selectSource": "Select the way to add your source",
+      "selectSource": "Add knowledge",
       "selectedFiles": "Selected Files",
       "noFilesSelected": "No files selected",
       "file": "Upload from device",
@@ -1325,19 +1679,11 @@
       "filesRejected": "Not added (over 25 MB or not a supported type): {{files}}",
       "uploadedFiles": "Uploaded Files",
       "cancel": "Cancel",
-      "train": "Train",
+      "train": "Add to Knowledge",
       "create": "Create",
       "link": "Link",
       "urlLink": "URL Link",
       "repoUrl": "Repository URL",
-      "reddit": {
-        "id": "Client ID",
-        "secret": "Client Secret",
-        "agent": "User agent",
-        "searchQueries": "Search queries",
-        "numberOfPosts": "Number of posts",
-        "addQuery": "Add Query"
-      },
       "drag": {
         "title": "Drop attachments here",
         "description": "Release to upload your attachments"
@@ -1359,8 +1705,6 @@
         "clear": "Clear",
         "ingestionFailed": "Ingestion failed."
       },
-      "showAdvanced": "Show advanced options",
-      "hideAdvanced": "Hide advanced options",
       "ingestors": {
         "local_file": {
           "label": "Upload File",
@@ -1377,26 +1721,6 @@
         "github": {
           "label": "GitHub",
           "heading": "Add content from GitHub"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "Add content from Reddit"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "Upload from Google Drive"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "Add content from Amazon S3"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "Upload from SharePoint"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "Upload from Confluence"
         },
         "wiki": {
           "label": "New wiki",
@@ -1451,13 +1775,21 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "AWS Access Key ID",
-        "awsSecretAccessKey": "AWS Secret Access Key",
-        "bucket": "Bucket Name",
-        "prefix": "Path Prefix (optional)",
-        "region": "AWS Region",
-        "endpointUrl": "Custom Endpoint URL (optional)",
         "initialContent": "Initial content (optional)"
+      },
+      "github": {
+        "privateHint": "Private repository? Connect your GitHub account to sync it.",
+        "connectedHint": "Private repositories sync from your GitHub connection ({{account}}).",
+        "connect": "Connect GitHub",
+        "pickRepository": "Pick a repository"
+      },
+      "connectData": {
+        "title": "Connect your data",
+        "description": "Sync {{services}}",
+        "more": "more",
+        "intro": "Pick a service, sign in, then choose what to sync into Knowledge.",
+        "connectedAs": "Connected as {{account}}",
+        "browseAll": "Browse all connectors"
       }
     },
     "createAPIKey": {
@@ -1494,8 +1826,8 @@
     "configTool": {
       "title": "Tool Config",
       "type": "Type",
-      "apiKeyLabel": "API Key / OAuth",
-      "apiKeyPlaceholder": "Enter API Key / OAuth",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "Enter API key",
       "addButton": "Add Tool",
       "closeButton": "Close",
       "customNamePlaceholder": "Enter custom name (optional)",
@@ -1573,6 +1905,24 @@
       "learnMore": "Learn more",
       "resetKey": "Reset key",
       "resetKeyConfirm": "Are you sure you want to reset the API key? The current key will stop working immediately and this action cannot be undone.",
+      "apiWrites": {
+        "title": "Changes others can make as you",
+        "description": "Nobody can approve an action for you through the API key, the widget or the agent's public link, so changes made with your connected accounts and saved credentials are blocked unless you allow them here.",
+        "saveFailed": "Could not save. Try again.",
+        "summaryNone": "None allowed yet",
+        "summaryTools_one": "{{tools}} can make changes",
+        "summaryTools_other": "{{tools}} can make changes",
+        "summaryCount": "{{allowed}} of {{formatted}} allowed",
+        "toolCount": "Changes from API, widget and public links · {{allowed}} of {{formatted}} allowed",
+        "toolLabel": "Allow changes from API, widget and public links on {{tool}}",
+        "choice": {
+          "off": "Off",
+          "all": "All"
+        },
+        "customize_one": "Customize the change",
+        "customize_other": "Customize each of {{formatted}}",
+        "fold": "Hide changes"
+      },
       "actionFailed": "That didn't work. Please try again.",
       "apiKeyAfterPublish": "Publish the agent to create its API key."
     },
@@ -1667,14 +2017,18 @@
     },
     "sources": {
       "title": "Sources",
-      "text": "Choose Your Sources",
+      "text": "Choose knowledge",
       "link": "Source link",
       "view_more_one": "{{count}} more source",
       "view_more_other": "{{count}} more sources",
-      "noSourcesAvailable": "No sources available",
-      "selectedCount": "{{count}} sources selected",
-      "groupOwn": "Your sources",
-      "groupTeam": "Shared with team"
+      "noSourcesAvailable": "No knowledge yet",
+      "selectedCount": "{{count}} selected",
+      "groupOwn": "Yours",
+      "groupTeam": "Shared with team",
+      "connectMore": "Connect more",
+      "fromConnector": "From {{name}}",
+      "fromConnectorTitle": "From {{name}}: {{title}}",
+      "knowledge": "Knowledge"
     },
     "attachments": {
       "attach": "Attach",
@@ -1720,7 +2074,9 @@
       "accessingMemory": "Accessing memory…",
       "runningCode": "Running code…",
       "creatingArtifact": "Creating an artifact…",
-      "usingTool": "Using {{tool}}…"
+      "usingTool": "Using {{tool}}…",
+      "searchingConnector": "Searching {{name}}...",
+      "usingConnector": "Using {{name}}..."
     },
     "toolChip": {
       "searchingWeb": "Searched the web · “{{query}}”",
@@ -1731,7 +2087,10 @@
       "accessingMemory": "Accessed memory",
       "runningCode": "Ran code",
       "creatingArtifact": "Created an artifact",
-      "usingTool": "Used {{tool}}"
+      "usingTool": "Used {{tool}}",
+      "searchedConnector": "Searched {{name}}",
+      "readConnector": "Read from {{name}}",
+      "usedConnector": "Used {{name}}: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Arguments",
@@ -1786,7 +2145,12 @@
       "approveAlways": "Approve, don't ask again",
       "deny": "Deny",
       "details": "Details",
-      "denyReasonPlaceholder": "Optional reason for denying…"
+      "denyReasonPlaceholder": "Optional reason for denying…",
+      "connectTitle": "This tool needs your {{name}} account.",
+      "connect": "Connect {{name}}",
+      "continue": "Continue",
+      "skip": "Skip",
+      "thisService": "this service"
     },
     "research": {
       "title": "Research",
@@ -1802,7 +2166,6 @@
   "agents": {
     "title": "Agents",
     "edit": "Edit",
-    "view": "View",
     "card": {
       "pin": "Pin agent",
       "unpin": "Unpin agent",
@@ -1896,7 +2259,7 @@
       "placeholders": {
         "agentName": "Agent name",
         "describeAgent": "Describe your agent",
-        "selectSources": "Select sources",
+        "selectSources": "Select knowledge",
         "chunksPerQuery": "Chunks per query",
         "selectType": "Select type",
         "selectTools": "Select tools",
@@ -1906,20 +2269,23 @@
         "enterRequestLimit": "Enter request limit"
       },
       "sourcePopup": {
-        "title": "Select Sources",
-        "searchPlaceholder": "Search sources...",
-        "noOptionsMessage": "No sources available",
+        "title": "Select knowledge",
+        "searchPlaceholder": "Search knowledge...",
+        "noOptionsMessage": "No knowledge yet",
         "groupOwn": "Your sources",
         "groupTeam": "Shared with team",
-        "noSourceHint": "Optional. Without a source the agent answers from the model and its tools only."
+        "noSourceHint": "Optional. Without knowledge the agent answers from the model and its tools only."
       },
       "toolsPopup": {
         "title": "Select Tools",
         "searchPlaceholder": "Search tools...",
         "noOptionsMessage": "No tools available",
         "groupBuiltin": "Built-in",
-        "groupDefault": "Default",
-        "groupCustom": "Custom"
+        "groupDefault": "Built-in",
+        "groupCustom": "Custom",
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "On this agent",
+        "attachedHint": "Added by someone else. You can remove it."
       },
       "modelsPopup": {
         "title": "Select Models",
@@ -1939,7 +2305,7 @@
         "defaultModel": "Default Model",
         "name": "Name",
         "description": "Description",
-        "sources": "Sources",
+        "sources": "Knowledge",
         "avatar": "Avatar"
       },
       "advanced": {
@@ -2030,11 +2396,69 @@
         "published": "Published"
       },
       "sponsors": {
-        "attachNote": "Tools, sources and prompts you add from your own library run with your access for everyone who uses this agent.",
+        "attachNote": "Tools, sources and prompts you add that the owner can't use run with your access for everyone who uses this agent. You need to own them or be able to edit them, and you'll be asked to confirm.",
         "publicLinkNote": "This agent has a public link, so anyone with the link can get answers from them.",
         "addedBy": "Added by {{person}}: {{names}}",
-        "unavailable": "Not running: {{names}}. {{person}} added them and no longer has access. Remove them or choose ones the owner can use.",
-        "unknownItem": "Unnamed item"
+        "addedByOther": "Added by someone else: {{names}}",
+        "unknownItem": "Unnamed item",
+        "notAllowed": "You can't add {{names}} to this agent. The owner can't use them, and you can only share what you own or can edit.",
+        "takeOver": "Run {{name}} with my access",
+        "takeOverPending": "{{name}} will run with your access when you save.",
+        "undoTakeOver": "Undo",
+        "confirmationOutdated": "This agent changed since you confirmed what runs with your access. Check the notices and save again."
+      },
+      "resourceStates": {
+        "title": "Some tools, sources or prompts aren't running",
+        "reason": {
+          "deleted": "{{name}} was deleted.",
+          "ownerLostAccessYou": "You can no longer use {{name}}.",
+          "ownerLostAccess": "The agent's owner can no longer use {{name}}.",
+          "sponsorCannotEditAgent": "{{name}} ran with {{person}}'s access, and they can no longer edit this agent.",
+          "sponsorCannotEditAgentOther": "{{name}} ran with someone else's access, and they can no longer edit this agent.",
+          "sponsorCannotEditItem": "{{name}} ran with {{person}}'s access, and they can no longer edit it.",
+          "sponsorCannotEditItemOther": "{{name}} ran with someone else's access, and they can no longer edit it.",
+          "connectionNeedsReconnect": "{{name}} needs its {{service}} account signed in again.",
+          "connectionRemoved": "The {{service}} account {{name}} used was removed.",
+          "connectorDisabled": "An admin turned off {{service}}, so {{name}} can't run.",
+          "unknown": "{{name}} isn't running."
+        },
+        "ask": {
+          "shareAgain": "Ask {{person}} to share it again.",
+          "signInAgain": "Ask {{person}} to sign in again.",
+          "connectAgain": "Ask {{person}} to connect the account again.",
+          "admin": "Ask an admin to turn it back on.",
+          "shareAgainOwner": "Ask its owner to share it again.",
+          "signInAgainOwner": "Ask its owner to sign in again.",
+          "connectAgainOwner": "Ask its owner to connect the account again."
+        },
+        "promptFallback": "The agent uses the default prompt until then.",
+        "serviceFallback": "the service",
+        "remove": "Remove",
+        "removeLabel": "Remove {{name}}",
+        "reconnectLabel": "Reconnect {{name}}",
+        "unnamed": {
+          "tool": "Tool {{id}}",
+          "source": "Source {{id}}",
+          "prompt": "Prompt {{id}}"
+        },
+        "chip": "Not running: {{count}}"
+      },
+      "sponsorConfirm": {
+        "title": "Run with your access?",
+        "description": "The agent's owner can't use these. If you add them, they run with your access for everyone who uses this agent.",
+        "audienceTitle": "Who can use them through this agent",
+        "audienceTeams": "Members of {{teams}}",
+        "audienceApiKey": "Anyone with the agent's API key, including its website widget",
+        "audiencePublicLink": "Anyone with the agent's public link",
+        "audienceWebhook": "Anything that calls the agent's webhook",
+        "audienceEditors": "Everyone who can open this agent",
+        "stopNote": "They stop running if you lose edit access to them or to this agent. They then stay attached but do nothing until someone who can edit them takes them over, or they are removed.",
+        "confirm": "Add with my access",
+        "types": {
+          "tool": "Tool",
+          "source": "Source",
+          "prompt": "Prompt"
+        }
       }
     },
     "logs": {
@@ -2343,7 +2767,7 @@
         "outputVariable": "Output Variable",
         "outputVariablePlaceholder": "Variable name for output",
         "streamToUser": "Stream output to user",
-        "sources": "Sources",
+        "sources": "Knowledge",
         "documents": "Documents",
         "documentsHint": "Documents passed to this agent from uploads or upstream nodes.",
         "filePassing": "File passing",
@@ -2382,7 +2806,8 @@
         "detailsTitle": "Workflow details",
         "detailsDescription": "Name, description and image shown on the agent card.",
         "unsavedChanges": "Unsaved changes",
-        "editDetailsMenu": "Edit details"
+        "editDetailsMenu": "Edit details",
+        "attachedOption": "{{name}} (added by someone else)"
       },
       "validation": {
         "nameRequired": "Workflow name is required",
@@ -2485,6 +2910,7 @@
       "workflowTitle": "Workflow Agent",
       "workflowDescription": "Design complex multi-step workflows with different models, conditional logic, and state management"
     },
+    "view": "View",
     "deleteFailed": "Could not delete the agent. Please try again."
   },
   "components": {
@@ -2553,7 +2979,8 @@
     "shared": "Shared",
     "connectTo": "Connect to {{provider}}",
     "sessionExpiredFor": "Session expired. Please reconnect to {{provider}}.",
-    "selectFilesFrom": "Select Files from {{provider}}"
+    "selectFilesFrom": "Select Files from {{provider}}",
+    "account": "Account"
   },
   "actionButtons": {
     "openNewChat": "Open New Chat",
@@ -2620,7 +3047,8 @@
       "admins": "Admins",
       "usage": "Usage",
       "quotas": "Quotas",
-      "audit": "Activity"
+      "audit": "Activity",
+      "connectors": "Connectors"
     },
     "quotas": {
       "unpriced": {
@@ -2629,5 +3057,15 @@
         "model": "{{model}} ({{tokens}} tokens)"
       }
     }
+  },
+  "connectHero": {
+    "title": "Connect your data",
+    "body": "Chat with {{names}} and more."
+  },
+  "common": {
+    "close": "Close",
+    "viewOnlyNotice": "You can view this, but your role can't change it.",
+    "credentialsLockedNotice": "Only the owner can change this tool's credentials.",
+    "savedSecretHint": "Saved. Leave empty to keep it."
   }
 }

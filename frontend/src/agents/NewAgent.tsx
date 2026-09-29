@@ -52,6 +52,14 @@ import {
 } from '../components/MultiSelectPopover';
 import SourcesPopoverFooter from '../components/SourcesPopoverFooter';
 import ToolIcon from '../components/ToolIcon';
+import connectorsService from '../api/services/connectorsService';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectionNeedsSignIn } from '../connectors/connectorsSlice';
+import SignInAgainNotice, {
+  useSignInAgain,
+} from '../connectors/SignInAgainNotice';
+import { toolServiceOf } from '../connectors/toolService';
+import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -91,8 +99,19 @@ import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
 import SectionShell from '../navigation/SectionShell';
-import SponsoredResourcesNotice from './components/SponsoredResourcesNotice';
-import { Agent, ResourceSponsor, ToolSummary } from './types';
+import ResourceStatusNotice, {
+  type NamedResource,
+  unnamedResourceLabel,
+} from './components/ResourceStatusNotice';
+import {
+  confirmTakeOver,
+  readSponsorRefusal,
+  saveWithSponsorConsent,
+  sponsorNotAllowedMessage,
+  withAttachedToolRows,
+} from './sponsorConsent';
+import { useSponsorPrompt } from './useSponsorPrompt';
+import { Agent, ResourceState, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
@@ -121,7 +140,7 @@ const extractApiError = async (
 };
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { agentId } = useParams();
@@ -165,6 +184,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [userTools, setUserTools] = useState<MultiSelectPopoverItem[]>([]);
   const [rawUserTools, setRawUserTools] = useState<UserToolType[]>([]);
+  // Connections behind the picker's tools that need signing in again.
+  const [brokenToolConnections, setBrokenToolConnections] = useState<
+    { connection: Connection; mcpToolId?: string }[]
+  >([]);
+  const [toolsReloadKey, setToolsReloadKey] = useState(0);
+  // Bumped after a reconnect so the agent's run state is read again.
+  const [detailsReloadKey, setDetailsReloadKey] = useState(0);
+  const signInAgain = useSignInAgain({
+    onConnected: () => {
+      setToolsReloadKey((key) => key + 1);
+      setDetailsReloadKey((key) => key + 1);
+    },
+  });
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
@@ -175,12 +207,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     new Set(),
   );
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
+  // Tools on the agent when it loaded: the owner's private ones don't come
+  // back in the caller's own tool list, so the picker adds a row for each.
+  const [attachedTools, setAttachedTools] = useState<ToolSummary[]>([]);
+  // Asks before a save makes what the caller added run with their access.
+  const sponsorPrompt = useSponsorPrompt();
+  // Keys of stopped items the caller chose to keep running with their
+  // access; sent as ``confirm_sponsor`` with the next save.
+  const [takeovers, setTakeovers] = useState<string[]>([]);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
   );
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  // Access details opened from Share to allow changes: its allowlist unfolds.
+  const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [hasChanges, setHasChanges] = useState(false);
@@ -286,19 +328,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Name of a tool/source/prompt that runs with an editor's access, from the
   // same owner-agnostic details the pickers show.
   const resolveSponsoredName = useCallback(
-    (sponsor: ResourceSponsor): string => {
+    (sponsor: NamedResource): string => {
+      if (sponsor.name) return sponsor.name;
       if (sponsor.type === 'source') return resolveSourceLabel(sponsor.id);
       if (sponsor.type === 'prompt') {
         return (
           prompts.find((prompt) => prompt.id === sponsor.id)?.name ||
           agent.prompt_name ||
-          t('agents.form.sponsors.unknownItem')
+          unnamedResourceLabel(t, sponsor)
         );
       }
       const tool = selectedTools.find((item) => item.id === sponsor.id);
-      return tool
-        ? getToolDisplayName(tool)
-        : t('agents.form.sponsors.unknownItem');
+      return tool ? getToolDisplayName(tool) : unnamedResourceLabel(t, sponsor);
     },
     [agent.prompt_name, prompts, resolveSourceLabel, selectedTools, t],
   );
@@ -321,6 +362,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       .map((id) => ({ id, label: resolveSourceLabel(id), icon: <Database /> }));
     return [...items, ...unlisted];
   }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t]);
+
+  // The caller's tools, plus a remove-only row for each tool on the agent
+  // they can't list (the owner's private tools on a shared agent).
+  const toolItems = useMemo(
+    () =>
+      withAttachedToolRows(userTools, attachedTools, {
+        group: t('agents.form.toolsPopup.groupAttached'),
+        description: t('agents.form.toolsPopup.attachedHint'),
+      }),
+    [attachedTools, t, userTools],
+  );
 
   const selectedSourceNames = useMemo(
     () =>
@@ -405,6 +457,156 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
+  // Fresh sponsor details and run state after a save or a reconnect,
+  // without touching unsaved fields.
+  const refreshSponsors = useCallback(
+    async (id?: string) => {
+      if (!id) return;
+      try {
+        const response = await userService.getAgent(id, token);
+        if (!response.ok) return;
+        const data = await response.json();
+        const details: Partial<Agent> = {
+          resource_sponsors: data.resource_sponsors ?? [],
+          resource_states: data.resource_states ?? [],
+          sponsor_audience: data.sponsor_audience,
+        };
+        setAgent((prev) => ({ ...prev, ...details }));
+        if (initialAgentRef.current)
+          initialAgentRef.current = { ...initialAgentRef.current, ...details };
+      } catch {
+        // The notice keeps what it showed.
+      }
+    },
+    [token],
+  );
+
+  useEffect(() => {
+    if (detailsReloadKey > 0) void refreshSponsors(agent.id);
+    // Only a reconnect asks for this; agent.id is read when it does.
+  }, [detailsReloadKey, refreshSponsors]);
+
+  /** The message for a refused save. */
+  const saveFailureMessage = async (
+    response: Response,
+    fallback: string,
+  ): Promise<string> => {
+    const refusal = await readSponsorRefusal(response);
+    if (refusal?.kind === 'notAllowed')
+      return sponsorNotAllowedMessage(t, i18n.language, refusal.resources);
+    if (refusal?.kind === 'unexpected') {
+      // Someone changed the agent since the caller chose; show them now.
+      setTakeovers([]);
+      void refreshSponsors(agent.id);
+      return t('agents.form.sponsors.confirmationOutdated');
+    }
+    return extractApiError(response, fallback);
+  };
+
+  /**
+   * Create or update the agent, asking whenever the server wants the
+   * caller's confirmation to run what they added with their access.
+   * Resolves to null when they decline.
+   */
+  const sendAgent = (formData: FormData) =>
+    saveWithSponsorConsent(
+      (confirm) => {
+        if (confirm.length > 0)
+          formData.set('confirm_sponsor', JSON.stringify(confirm));
+        else formData.delete('confirm_sponsor');
+        return effectiveMode === 'new'
+          ? userService.createAgent(formData, token)
+          : userService.updateAgent(agent.id || '', formData, token);
+      },
+      sponsorPrompt.ask,
+      takeovers,
+    );
+
+  /** Bookkeeping after an update the server accepted. */
+  const afterSaved = (id?: string) => {
+    // What is on the agent now is what the tool picker keeps rows for.
+    setAttachedTools(selectedTools);
+    if (effectiveMode !== 'new') {
+      setTakeovers([]);
+      void refreshSponsors(id);
+    }
+  };
+
+  const undoTakeover = (key: string) =>
+    setTakeovers((prev) => prev.filter((k) => k !== key));
+
+  // Stopped items still on the agent in the form: one removed here (not yet
+  // saved) leaves the notice.
+  const stoppedResources = useMemo(() => {
+    const toolIds = new Set(
+      selectedTools.map((tool) => String(tool?.id).toLowerCase()),
+    );
+    const sourceIds = new Set(
+      Array.from(selectedSourceIds, (id) => id.toLowerCase()),
+    );
+    const promptId = String(agent.prompt_id || '').toLowerCase();
+    return (agent.resource_states ?? []).filter(
+      (item) =>
+        item.state === 'stopped' &&
+        (item.type === 'tool'
+          ? toolIds.has(item.id)
+          : item.type === 'source'
+            ? sourceIds.has(item.id)
+            : promptId === item.id),
+    );
+  }, [
+    agent.resource_states,
+    agent.prompt_id,
+    selectedSourceIds,
+    selectedTools,
+  ]);
+
+  /** Take a stopped item off the agent; the next save stores it. */
+  const removeResource = (item: ResourceState) => {
+    if (item.type === 'tool')
+      setSelectedTools((prev) =>
+        prev.filter((tool) => String(tool?.id).toLowerCase() !== item.id),
+      );
+    else if (item.type === 'source')
+      setSelectedSourceIds(
+        (prev) =>
+          new Set(
+            Array.from(prev).filter((id) => id.toLowerCase() !== item.id),
+          ),
+      );
+    else setAgent((prev) => ({ ...prev, prompt_id: 'default' }));
+    undoTakeover(item.key);
+  };
+
+  /**
+   * Ask before a stopped item runs with the caller's access, naming who
+   * reaches it through the agent; on yes the next save confirms it.
+   */
+  const takeOverResource = async (item: ResourceState) => {
+    const agreed = await confirmTakeOver(
+      sponsorPrompt.ask,
+      item,
+      resolveSponsoredName(item),
+      agent.sponsor_audience,
+    );
+    if (agreed)
+      setTakeovers((prev) =>
+        prev.includes(item.key) ? prev : [...prev, item.key],
+      );
+  };
+
+  /** Sign a stopped tool's connection in again, in place where possible. */
+  const reconnectResource = (item: ResourceState) => {
+    const connection = item.connection;
+    if (!connection?.id || !connection.connector_key) return;
+    const isMcp =
+      rawUserTools.find((tool) => tool.id === item.id)?.name === 'mcp_tool';
+    signInAgain.reconnect(
+      { id: connection.id, connector_key: connection.connector_key },
+      isMcp ? item.id : undefined,
+    );
+  };
+
   const handleSaveDraft = async () => {
     const formData = new FormData();
     formData.append('name', agent.name);
@@ -467,13 +669,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     try {
       setDraftLoading(true);
       setSubmitError(null);
-      const response =
-        effectiveMode === 'new'
-          ? await userService.createAgent(formData, token)
-          : await userService.updateAgent(agent.id || '', formData, token);
+      const response = await sendAgent(formData);
+      if (!response) return;
       if (!response.ok) {
         setSubmitError(
-          await extractApiError(
+          await saveFailureMessage(
             response,
             t('agents.form.errors.saveDraftFailed'),
           ),
@@ -481,6 +681,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         return;
       }
       const data = await response.json();
+      afterSaved(data.id || agent.id);
 
       const updatedAgent = {
         ...agent,
@@ -560,13 +761,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     try {
       setPublishLoading(true);
       setSubmitError(null);
-      const response =
-        effectiveMode === 'new'
-          ? await userService.createAgent(formData, token)
-          : await userService.updateAgent(agent.id || '', formData, token);
+      const response = await sendAgent(formData);
+      if (!response) return;
       if (!response.ok) {
         setSubmitError(
-          await extractApiError(
+          await saveFailureMessage(
             response,
             t('agents.form.errors.publishFailed'),
           ),
@@ -584,6 +783,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       };
       setAgent(updatedAgent);
       initialAgentRef.current = updatedAgent;
+      afterSaved(updatedAgent.id);
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());
 
@@ -618,12 +818,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   useEffect(() => {
     const getTools = async () => {
-      const [toolsResponse, devicesResult] = await Promise.all([
-        userService.getUserTools(token),
-        // Tolerate failures here: the picker should still render the
-        // tool list even if /api/devices returns an error or 401.
-        devicesService.list(token).catch(() => ({ devices: [] })),
-      ]);
+      const [toolsResponse, devicesResult, connectionsResult, catalogResult] =
+        await Promise.all([
+          userService.getUserTools(token),
+          // Tolerate failures here: the picker should still render the
+          // tool list even if /api/devices returns an error or 401.
+          devicesService.list(token).catch(() => ({ devices: [] })),
+          connectorsService
+            .listConnections(token)
+            .catch(() => ({ connections: [] })),
+          // Names a teammate's connected tool, whose connection the caller
+          // never sees.
+          connectorsService.getCatalog(token).catch(() => ({ connectors: [] })),
+        ]);
+      const ownConnections = (connectionsResult?.connections ??
+        []) as Connection[];
+      const catalog = (catalogResult?.connectors ??
+        []) as ConnectorDefinition[];
+      const connectionsById = new Map<string, Connection>(
+        ownConnections.map((c) => [c.id, c]),
+      );
       if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
       const data = await toolsResponse.json();
       // Hide workflow-only builtins (e.g. read_document) from the classic
@@ -642,21 +856,54 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           !Number.isNaN(seen) && Date.now() - seen < onlineWindowMs;
         devicesById.set(d.id, { online, last_seen_at: d.last_seen_at });
       });
-      // Group ordering: builtins -> defaults -> user tools (sorted via the
-      // MultiSelectPopover first-appearance grouping).
+      // Group ordering: builtins -> defaults -> one group per connection
+      // (the service and its account; a teammate's, only the service) ->
+      // custom tools, via the MultiSelectPopover first-appearance grouping.
+      const serviceOf = (tool: UserToolType) =>
+        toolServiceOf(tool, ownConnections, catalog);
+      const connectionOf = (tool: UserToolType) => serviceOf(tool)?.connection;
+      const rank = (tool: UserToolType) =>
+        tool.builtin ? 0 : tool.default ? 1 : tool.connection_id ? 2 : 3;
       const groupFor = (tool: UserToolType): string => {
         if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
         if (tool.default) return t('agents.form.toolsPopup.groupDefault');
+        const service = serviceOf(tool);
+        if (service?.connection)
+          return t('agents.form.toolsPopup.groupConnection', {
+            name: service.connection.name,
+            account: service.connection.account_label,
+            interpolation: { escapeValue: false },
+          });
+        if (service) return service.name;
         return t('agents.form.toolsPopup.groupCustom');
       };
-      const tools: MultiSelectPopoverItem[] = visibleTools.map(
-        (tool: UserToolType) => {
+      const tools: MultiSelectPopoverItem[] = [...visibleTools]
+        .sort(
+          (a, b) =>
+            rank(a) - rank(b) ||
+            // Keeps each connection's tools together.
+            (rank(a) === 2 ? groupFor(a).localeCompare(groupFor(b)) : 0),
+        )
+        .map((tool: UserToolType) => {
+          const connection = connectionOf(tool);
+          const serviceIcon = serviceOf(tool)?.icon;
           const base: MultiSelectPopoverItem = {
             id: tool.id,
             label: getToolDisplayName(tool),
-            icon: <ToolIcon name={tool.name} className="size-5" />,
+            icon: serviceIcon ? (
+              <ConnectorIcon icon={serviceIcon} className="size-5" />
+            ) : (
+              <ToolIcon name={tool.name} className="size-5" />
+            ),
             group: groupFor(tool),
           };
+          if (connectionNeedsSignIn(connection)) {
+            base.descriptionNode = (
+              <p className="text-warning text-xs">
+                {t('settings.connectors.health.signInAgain')}
+              </p>
+            );
+          }
           if (tool.name === 'remote_device') {
             const deviceId = (tool.config?.device_id as string) || '';
             const meta = devicesById.get(deviceId);
@@ -673,19 +920,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             );
           }
           return base;
-        },
-      );
-      const groupOrder = [
-        t('agents.form.toolsPopup.groupBuiltin'),
-        t('agents.form.toolsPopup.groupDefault'),
-        t('agents.form.toolsPopup.groupCustom'),
-      ];
-      tools.sort(
-        (a, b) =>
-          groupOrder.indexOf(a.group || '') - groupOrder.indexOf(b.group || ''),
-      );
+        });
       setUserTools(tools);
       setRawUserTools(visibleTools);
+      setBrokenToolConnections(
+        Array.from(connectionsById.values())
+          .filter(connectionNeedsSignIn)
+          .flatMap((connection) => {
+            const own = visibleTools.filter(
+              (tool) => tool.connection_id === connection.id,
+            );
+            if (own.length === 0) return [];
+            return [
+              {
+                connection,
+                mcpToolId: own.find((tool) => tool.name === 'mcp_tool')?.id,
+              },
+            ];
+          }),
+      );
     };
     const getModels = async () => {
       const response = await modelService.getModels(token);
@@ -710,7 +963,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     };
     getTools();
     getModels();
-  }, [token, mode]);
+  }, [token, mode, toolsReloadKey]);
 
   // Validate folder_id from URL against user's folders
   useEffect(() => {
@@ -755,7 +1008,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         const agentSourceIds = selectedSourceIdsFromAgent(data);
         setSelectedSourceIds(new Set(agentSourceIds));
 
-        if (data.tool_details) setSelectedTools(data.tool_details);
+        if (data.tool_details) {
+          setSelectedTools(data.tool_details);
+          setAttachedTools(data.tool_details);
+        }
         if (data.status === 'draft') setEffectiveMode('draft');
         if (data.json_schema) {
           const jsonText = JSON.stringify(data.json_schema, null, 2);
@@ -865,9 +1121,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const isChanged =
       !isEqual(agent, initialAgentRef.current) ||
       imageFile !== null ||
-      jsonSchemaText !== initialJsonSchemaText;
+      jsonSchemaText !== initialJsonSchemaText ||
+      takeovers.length > 0;
     setHasChanges(isChanged);
-  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
+  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText, takeovers]);
 
   const isPublished = agent.status === 'published';
   // What the caller's role allows on this agent (`allowed_actions` from the
@@ -882,6 +1139,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Page-level actions live in the ⋯ beside the title. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
   // menu item then and a toolbar button after.
+  const canOpenAccessDetails =
+    modeConfig[effectiveMode].showAccessDetails &&
+    can(agent, 'manage_access_details');
   const menuOptions = [
     ...(isPublished
       ? []
@@ -892,8 +1152,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             onClick: () => setPreviewOpen(true),
           },
         ]),
-    ...(modeConfig[effectiveMode].showAccessDetails &&
-    can(agent, 'manage_access_details')
+    ...(canOpenAccessDetails
       ? [
           {
             label: t('agents.form.buttons.accessDetails'),
@@ -981,6 +1240,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         />
       }
     >
+      {signInAgain.modals}
       {agent.agent_type === 'workflow' && <WorkflowBuilder />}
       <AgentPageToolbar
         intro={agent.id ? undefined : t('agents.form.byline.new')}
@@ -1117,7 +1377,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 open={isToolsPopupOpen}
                 onOpenChange={setIsToolsPopupOpen}
                 title={t('agents.form.toolsPopup.title')}
-                items={userTools}
+                items={toolItems}
                 selectedIds={selectedTools.map((tool) => tool.id)}
                 onToggle={(id) => {
                   const exists = selectedTools.find((t) => t.id === id);
@@ -1125,12 +1385,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     setSelectedTools(selectedTools.filter((t) => t.id !== id));
                     return;
                   }
-                  const item = userTools.find((t) => t.id === id);
+                  const item = toolItems.find((t) => t.id === id);
                   const raw = rawUserTools.find((t) => t.id === id);
+                  const attached = attachedTools.find((t) => t.id === id);
                   if (!item) return;
                   setSelectedTools([
                     ...selectedTools,
-                    {
+                    attached ?? {
                       id: item.id,
                       name: raw?.name || item.label,
                       display_name: item.label,
@@ -1141,6 +1402,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   'agents.form.toolsPopup.searchPlaceholder',
                 )}
                 emptyMessage={t('agents.form.toolsPopup.noOptionsMessage')}
+                footer={
+                  brokenToolConnections.length > 0 ? (
+                    <SignInAgainNotice
+                      connections={brokenToolConnections.map(
+                        ({ connection }) => connection,
+                      )}
+                      onReconnect={(connection) => {
+                        setIsToolsPopupOpen(false);
+                        signInAgain.reconnect(
+                          connection,
+                          brokenToolConnections.find(
+                            (entry) => entry.connection.id === connection.id,
+                          )?.mcpToolId,
+                        );
+                      }}
+                    />
+                  ) : undefined
+                }
                 trigger={
                   <Button
                     type="button"
@@ -1206,9 +1485,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 {t('agents.form.buttons.add')}
               </Button>
             </div>
-            <SponsoredResourcesNotice
+            <ResourceStatusNotice
               agent={agent}
+              stopped={stoppedResources}
               resolveName={resolveSponsoredName}
+              takeovers={takeovers}
+              onTakeOver={(item) => void takeOverResource(item)}
+              onUndoTakeover={undoTakeover}
+              onRemove={removeResource}
+              onReconnect={reconnectResource}
             />
           </div>
         </Card>
@@ -1550,6 +1835,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             </Card>
           )}
       </div>
+      {sponsorPrompt.modal}
       <ConfirmationModal
         message={t('agents.deleteConfirmation')}
         modalState={deleteConfirmation}
@@ -1566,8 +1852,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         agent={agent}
         mode={effectiveMode}
         modalState={agentDetails}
-        setModalState={setAgentDetails}
+        setModalState={(state) => {
+          setAgentDetails(state);
+          if (state === 'INACTIVE') setDetailsOnApiWrites(false);
+        }}
+        openApiWrites={detailsOnApiWrites}
         onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
+        onConfigChange={(config) => {
+          // The allowlist is saved already: record it on the saved snapshot
+          // too, and keep any unsaved form edits to the rest of the config.
+          if (initialAgentRef.current)
+            initialAgentRef.current = { ...initialAgentRef.current, config };
+          setAgent((prev) => ({
+            ...prev,
+            config: {
+              ...(prev.config ?? {}),
+              api_write_allowlist: config.api_write_allowlist,
+            },
+          }));
+        }}
+        getSavedConfig={() => initialAgentRef.current?.config ?? agent.config}
       />
       {shareModalOpen && agent.id && (
         <ShareToTeamModal
@@ -1575,6 +1879,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           resourceId={agent.id}
           resourceName={agent.name}
           onClose={() => setShareModalOpen(false)}
+          onOpenAccessDetails={
+            canOpenAccessDetails
+              ? () => {
+                  setShareModalOpen(false);
+                  setDetailsOnApiWrites(true);
+                  setAgentDetails('ACTIVE');
+                }
+              : undefined
+          }
         />
       )}
       {uploadModalState === 'ACTIVE' && (

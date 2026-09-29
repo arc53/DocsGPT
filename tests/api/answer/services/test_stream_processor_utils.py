@@ -22,7 +22,7 @@ def _patch_db(conn):
         "docsgpt.api.answer.services.stream_processor.db_readonly", _yield
     ), patch(
         "docsgpt.api.answer.services.stream_processor.db_session", _yield
-    ):
+    ), patch("docsgpt.agents.tool_executor.db_readonly", _yield):
         yield
 
 

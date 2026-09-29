@@ -52,6 +52,7 @@ ROUTES = "docsgpt.api.user.sources.routes"
 CHUNKS = "docsgpt.api.user.sources.chunks"
 UPLOAD = "docsgpt.api.user.sources.upload"
 CONNECTOR = "docsgpt.api.connector.routes"
+CONNECTIONS = "docsgpt.connectors.service"
 
 
 def _shared_source(pg_conn, **kwargs):
@@ -456,13 +457,14 @@ def _owner_session(pg_conn, token="st-owner", token_info=None):
             "token_info": token_info or {"access_token": "a", "refresh_token": "r"},
         },
     )
+    return str(row["id"])
 
 
 def _connector_sync(app, pg_conn, user, body):
     from docsgpt.api.connector.routes import ConnectorSync
 
     delay = MagicMock(return_value=MagicMock(id="t-sync"))
-    with _patch_db(pg_conn, CONNECTOR), patch(
+    with _patch_db(pg_conn, CONNECTOR, CONNECTIONS), patch(
         f"{CONNECTOR}.ingest_connector_task.delay", delay
     ):
         resp = _call(app, user, "/api/connectors/sync", ConnectorSync().post, method="POST", json=body)
@@ -472,12 +474,12 @@ def _connector_sync(app, pg_conn, user, body):
 class TestConnectorSync:
     def test_editor_syncs_with_owner_session(self, app, pg_conn):
         sid = _connector_source(pg_conn)
-        _owner_session(pg_conn)
+        owner_connection = _owner_session(pg_conn)
         resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
         assert resp.status_code == 200
         kwargs = delay.call_args.kwargs
         assert kwargs["user"] == OWNER
-        assert kwargs["session_token"] == "st-owner"
+        assert kwargs["connection_id"] == owner_connection
 
     def test_editor_cannot_substitute_own_session(self, app, pg_conn):
         from docsgpt.storage.db.repositories.connector_sessions import (
@@ -485,15 +487,16 @@ class TestConnectorSync:
         )
 
         sid = _connector_source(pg_conn)
-        _owner_session(pg_conn)
+        owner_connection = _owner_session(pg_conn)
         repo = ConnectorSessionsRepository(pg_conn)
         row = repo.upsert(EDITOR, "google_drive", status="authorized")
         repo.update(str(row["id"]), {"session_token": "st-editor", "token_info": {"access_token": "x"}})
         resp, delay = _connector_sync(
-            app, pg_conn, EDITOR, {"source_id": sid, "session_token": "st-editor"}
+            app, pg_conn, EDITOR,
+            {"source_id": sid, "session_token": "st-editor", "connection_id": str(row["id"])},
         )
         assert resp.status_code == 200
-        assert delay.call_args.kwargs["session_token"] == "st-owner"
+        assert delay.call_args.kwargs["connection_id"] == owner_connection
 
     def test_owner_session_missing_returns_409(self, app, pg_conn):
         sid = _connector_source(pg_conn)
@@ -512,9 +515,50 @@ class TestConnectorSync:
 
     def test_owner_still_uses_own_token(self, app, pg_conn):
         sid = _connector_source(pg_conn)
-        _owner_session(pg_conn)
+        owner_connection = _owner_session(pg_conn)
         resp, delay = _connector_sync(
             app, pg_conn, OWNER, {"source_id": sid, "session_token": "st-owner"}
         )
         assert resp.status_code == 200
         assert delay.call_args.kwargs["user"] == OWNER
+        assert delay.call_args.kwargs["connection_id"] == owner_connection
+
+    def test_editor_syncs_with_the_sources_own_connection(self, app, pg_conn):
+        from sqlalchemy import text
+
+        from docsgpt.security.encryption import encrypt_json
+        from docsgpt.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+
+        sid = _connector_source(pg_conn)
+        _owner_session(pg_conn)
+        second = str(ConnectorSessionsRepository(pg_conn).create(
+            OWNER, "google_drive", connector_key="google_drive", auth_kind="oauth",
+            account_label="second@example.com",
+            encrypted_credentials=encrypt_json({"token_info": {"access_token": "b", "refresh_token": "r"}}, OWNER),
+        )["id"])
+        pg_conn.execute(
+            text("UPDATE sources SET connection_id = CAST(:c AS uuid) WHERE id = CAST(:s AS uuid)"),
+            {"c": second, "s": sid},
+        )
+        resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
+        assert resp.status_code == 200
+        assert delay.call_args.kwargs["connection_id"] == second
+
+    def test_editor_sync_refuses_a_signed_out_source_connection(self, app, pg_conn):
+        from sqlalchemy import text
+
+        sid = _connector_source(pg_conn)
+        connection = _owner_session(pg_conn)
+        pg_conn.execute(
+            text("UPDATE connector_sessions SET status = 'reconnect_needed' WHERE id = CAST(:c AS uuid)"),
+            {"c": connection},
+        )
+        pg_conn.execute(
+            text("UPDATE sources SET connection_id = CAST(:c AS uuid) WHERE id = CAST(:s AS uuid)"),
+            {"c": connection, "s": sid},
+        )
+        resp, delay = _connector_sync(app, pg_conn, EDITOR, {"source_id": sid})
+        assert resp.status_code == 409
+        delay.assert_not_called()

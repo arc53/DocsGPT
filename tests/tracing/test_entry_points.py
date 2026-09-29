@@ -82,7 +82,8 @@ class TestHeadless:
         assert trace.request_id == "run-1"
         assert trace.user_id == "owner-1"
         assert trace.status == "ok"
-        assert [s.kind for s in trace.spans] == ["retrieval", "agent"]
+        # The per-source dispatcher's span wraps its retriever's own.
+        assert [s.kind for s in trace.spans] == ["retrieval", "retrieval", "agent"]
 
     def test_trace_can_belong_to_the_scheduling_user(self, monkeypatch, flushed):
         """A schedule on a shared agent is the scheduler's run, not the owner's."""

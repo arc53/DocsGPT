@@ -1191,27 +1191,11 @@ class LLMHandler(ABC):
                     )
                     if hasattr(agent.tool_executor, "headless_denials"):
                         agent.tool_executor.headless_denials.append(pause_info)
-                    from docsgpt.agents.tool_executor import (
-                        _mark_failed,
-                        _record_proposed,
-                    )
+                    from docsgpt.agents.tool_executor import journal_refused_call
 
-                    if _record_proposed(
-                        pause_info["call_id"],
-                        pause_info["tool_name"],
-                        pause_info["action_name"],
-                        pause_info.get("arguments") or {},
-                        tool_id=pause_info.get("tool_id"),
-                        message_id=agent.tool_executor.message_id,
-                        user_id=agent.tool_executor.user,
-                        agent_id=agent.tool_executor.agent_id,
-                    ):
-                        _mark_failed(
-                            pause_info["call_id"],
-                            f"headless: {deny_reason}",
-                            message_id=agent.tool_executor.message_id,
-                            user_id=agent.tool_executor.user,
-                        )
+                    journal_refused_call(
+                        agent.tool_executor, pause_info, f"headless: {deny_reason}"
+                    )
                     denied_data = {
                         "tool_name": pause_info["tool_name"],
                         "call_id": pause_info["call_id"],
@@ -1240,6 +1224,13 @@ class LLMHandler(ABC):
                 # can wire the sticky "don't ask again" button.
                 if pause_info.get("device_id"):
                     pause_data["device_id"] = pause_info["device_id"]
+                # What will be sent once fixed values replace the model's.
+                if pause_info.get("sent_arguments") is not None:
+                    pause_data["sent_arguments"] = pause_info["sent_arguments"]
+                # A connection-backed tool whose account needs signing in: the
+                # approval card becomes a Connect card.
+                if pause_info.get("connection_required"):
+                    pause_data["connection_required"] = pause_info["connection_required"]
                 trace_unexecuted_tool_call(call, pause_data)
                 yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)

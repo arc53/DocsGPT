@@ -79,6 +79,12 @@ DURABLE_TASK = dict(
 )
 
 
+def _connection_unavailable():
+    from docsgpt.connectors.service import ConnectionUnavailable
+
+    return ConnectionUnavailable
+
+
 def durable_task(**overrides) -> Dict:
     """Return ``DURABLE_TASK`` with per-task overrides applied.
 
@@ -167,13 +173,16 @@ def ingest(
 @with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,
-    config=None, idempotency_key=None, source_id=None,
+    config=None, idempotency_key=None, source_id=None, connection_id=None,
+    sync_frequency="never",
 ):
     resp = remote_worker(
         self, source_data, job_name, user, loader,
+        sync_frequency=sync_frequency,
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        connection_id=connection_id,
     )
     return resp
 
@@ -249,6 +258,15 @@ def schedule_syncs(self, frequency):
     return resp
 
 
+@celery.task(bind=True, acks_late=True, autoretry_for=(Exception,), max_retries=3, retry_backoff=60,
+             dont_autoretry_for=(_connection_unavailable(),))
+def sync_connector_source(self, source_id):
+    """Re-sync one connector source from its connection, with no browser involved."""
+    from docsgpt.worker import sync_connector_source as run
+
+    return run(self, source_id)
+
+
 @celery.task(bind=True)
 def sync_source(
     self,
@@ -259,6 +277,7 @@ def sync_source(
     sync_frequency,
     retriever,
     doc_id,
+    connection_id=None,
 ):
     resp = sync(
         self,
@@ -269,6 +288,7 @@ def sync_source(
         sync_frequency,
         retriever,
         doc_id,
+        connection_id=connection_id,
     )
     return resp
 
@@ -408,7 +428,9 @@ except Exception:
     pass
 
 
-@celery.task(**DURABLE_TASK)
+# A revoked or disconnected connection will not heal by retrying; the
+# service has already paused the source and told its owner to reconnect.
+@celery.task(**durable_task(dont_autoretry_for=(DocumentParseError, _connection_unavailable())))
 @with_idempotency(
     task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,
 )
@@ -428,6 +450,7 @@ def ingest_connector_task(
     config=None,
     idempotency_key=None,
     source_id=None,
+    connection_id=None,
 ):
     from docsgpt.worker import ingest_connector
 
@@ -437,6 +460,7 @@ def ingest_connector_task(
         user,
         source_type,
         session_token=session_token,
+        connection_id=connection_id,
         file_ids=file_ids,
         folder_ids=folder_ids,
         recursive=recursive,

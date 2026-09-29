@@ -172,7 +172,7 @@ Open the agent in the builder and expand the **Guardrails** section.
 Checks that cannot run without settings (`denylist`, `url`, `policy`, and `pii` with no entities selected) are marked *Not configured* and block saving until they are filled in, so a half-configured control can never be published as if it were protecting you.
 
 <Callout type="info" emoji="ℹ️">
-Guardrails are the **agent owner's** policy. Team members with edit access can see the configuration but cannot change it — an editor who could clear a control would silently strip protection from everyone using the agent. Controls required by the instance floor (below) appear locked and cannot be removed.
+Guardrails, like the agent's limits, are policy that the owner and the agent's team **editors** can change. Viewers don't see the configuration. To keep a control that nobody who edits the agent can remove, require it in the [instance floor](#the-instance-floor): floor controls appear locked for everyone. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use) for what else viewers and editors can do.
 </Callout>
 
 Guardrails also apply to a **draft** agent in the builder preview, which is the natural place to try a control before publishing.

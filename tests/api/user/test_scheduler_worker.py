@@ -680,3 +680,63 @@ class TestRunAsOwnerAccessRecheck:
         assert result["status"] == "success"
         # Runs with the owner's agent row (owner's context).
         assert headless.call_args.args[0]["user_id"] == "owner-x"
+
+
+_OK = {
+    "answer": "ok", "tool_calls": [], "sources": [], "thought": "",
+    "prompt_tokens": 1, "generated_tokens": 1, "denied": [],
+    "error_type": None, "model_id": "m",
+}
+
+
+class TestCallerRules:
+    """A scheduled run acts as the owner but keeps the rules of whoever set it."""
+
+    def _run(self, conn, *, owner="owner-x", user="owner-x", shared=False, created_via="ui", grant=False):
+        import uuid as _uuid
+
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import (
+            TeamResourceGrantsRepository,
+        )
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        agent_id = _make_agent(conn, owner)
+        conn.execute(text("UPDATE agents SET shared = :s WHERE id = CAST(:id AS uuid)"),
+                     {"s": shared, "id": agent_id})
+        if grant:
+            team = TeamsRepository(conn).create("T", f"t-{_uuid.uuid4().hex[:8]}", owner)
+            TeamMembersRepository(conn).add_member(str(team["id"]), user)
+            TeamResourceGrantsRepository(conn).grant(
+                str(team["id"]), "agent", agent_id, owner, owner, access_level="viewer",
+            )
+        schedule = SchedulesRepository(conn).create(
+            user_id=user, agent_id=agent_id, trigger_type="once", instruction="hello",
+            run_at=_now(), next_run_at=_now(), created_via=created_via,
+        )
+        return ScheduleRunsRepository(conn).record_pending(str(schedule["id"]), user, agent_id, _now())
+
+    def _caller(self, pg_engine, **kwargs):
+        with pg_engine.begin() as conn:
+            run = self._run(conn, **kwargs)
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", return_value=_OK) as headless:
+            assert execute_scheduled_run_body(str(run["id"]), "celery-c")["status"] == "success"
+        return {k: headless.call_args.kwargs.get(k) for k in ("external_caller", "public_link_caller")}
+
+    def test_public_link_users_schedule_runs_as_a_public_link_caller(self, pg_engine, patched_engine, stub_events):
+        assert self._caller(pg_engine, user="stranger", shared=True) == {
+            "external_caller": False, "public_link_caller": True,
+        }
+
+    def test_team_members_schedule_runs_as_a_teammate(self, pg_engine, patched_engine, stub_events):
+        assert self._caller(pg_engine, user="member-y", shared=True, grant=True) == {
+            "external_caller": False, "public_link_caller": False,
+        }
+
+    def test_schedule_set_through_the_api_runs_as_an_external_caller(self, pg_engine, patched_engine, stub_events):
+        assert self._caller(pg_engine, created_via="api") == {
+            "external_caller": True, "public_link_caller": False,
+        }
+
+    def test_owners_own_schedule_runs_as_the_owner(self, pg_engine, patched_engine, stub_events):
+        assert self._caller(pg_engine) == {"external_caller": False, "public_link_caller": False}

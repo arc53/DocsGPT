@@ -17,6 +17,13 @@ vi.mock('react-redux', () => ({
 }));
 
 vi.mock('../api/services/userService', () => ({ default: mocks }));
+// Tested on its own; it needs the store and the tool list. Here it only has
+// to show up (or not).
+vi.mock('../agents/ApiWriteAllowlist', () => ({
+  default: ({ defaultOpen }: { defaultOpen?: boolean }) => (
+    <div data-testid="api-write-allowlist" data-open={String(!!defaultOpen)} />
+  ),
+}));
 
 vi.mock('./ConfirmationModal', () => ({
   default: ({
@@ -56,7 +63,7 @@ describe('AgentDetailsModal', () => {
     document.body.innerHTML = '';
   });
 
-  const render = async (agent: Partial<Agent>) => {
+  const render = async (agent: Partial<Agent>, openApiWrites?: boolean) => {
     await act(async () => {
       root.render(
         <AgentDetailsModal
@@ -64,6 +71,7 @@ describe('AgentDetailsModal', () => {
           mode="edit"
           modalState="ACTIVE"
           setModalState={() => undefined}
+          openApiWrites={openApiWrites}
         />,
       );
     });
@@ -95,6 +103,40 @@ describe('AgentDetailsModal', () => {
     expect(document.body.textContent).toContain(
       'modals.agentDetails.apiKeyAfterPublish',
     );
+  });
+
+  // The allowlist acts on the owner's connected accounts; the server keeps
+  // it unchanged for anyone else, so only the owner sees it.
+  describe('API write allowlist', () => {
+    const allowlist = () =>
+      document.querySelector('[data-testid="api-write-allowlist"]');
+
+    it('shows it to the owner of an agent with a key', async () => {
+      await render({ status: 'published', key: 'k-1', access: 'owner' });
+      expect(allowlist()).not.toBeNull();
+    });
+
+    it('starts it folded, or open when sent to allow changes', async () => {
+      await render({ status: 'published', key: 'k-1', access: 'owner' });
+      expect(allowlist()?.getAttribute('data-open')).toBe('false');
+      await render({ status: 'published', key: 'k-1', access: 'owner' }, true);
+      expect(allowlist()?.getAttribute('data-open')).toBe('true');
+    });
+
+    it('hides it from an editor, even with a key', async () => {
+      await render({
+        status: 'published',
+        key: 'k-1',
+        access: 'editor',
+        allowed_actions: ['view', 'edit', 'manage_access_details'],
+      });
+      expect(allowlist()).toBeNull();
+    });
+
+    it('hides it until the agent has a key', async () => {
+      await render({ status: 'published', access: 'owner' });
+      expect(allowlist()).toBeNull();
+    });
   });
 
   it('shows a refused public link in an alert', async () => {

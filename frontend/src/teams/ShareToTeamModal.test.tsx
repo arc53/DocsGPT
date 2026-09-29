@@ -47,13 +47,27 @@ vi.mock('../api/services/teamsService', () => ({
   },
 }));
 
+const setCredentialMode = vi.fn();
+vi.mock('../api/services/connectorsService', () => ({
+  default: {
+    setCredentialMode: (...a: unknown[]) => setCredentialMode(...a),
+  },
+}));
+
+// The agent section loads the agent itself; its own tests cover it.
+vi.mock('../agents/components/AgentUsesSection', () => ({
+  default: ({ agentId }: { agentId: string }) => (
+    <div data-testid="agent-uses">{agentId}</div>
+  ),
+}));
+
 // Mark formatted counts so a raw number in the UI shows up in a test.
 vi.mock('../utils/dateTimeUtils', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../utils/dateTimeUtils')>()),
   formatCount: (value: number) => `#${value}`,
 }));
 
-import ShareToTeamModal from './ShareToTeamModal';
+import ShareToTeamModal, { type ShareCredentials } from './ShareToTeamModal';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -130,6 +144,13 @@ describe('ShareToTeamModal', () => {
     });
     await flush();
   };
+
+  it('lists what the agent uses', async () => {
+    await render();
+    expect(
+      body().querySelector('[data-testid="agent-uses"]')?.textContent,
+    ).toBe('a1');
+  });
 
   describe('access settings', () => {
     it('shows a collapsed Access settings toggle to the owner', async () => {
@@ -359,5 +380,233 @@ describe('ShareToTeamModal', () => {
     expect(body().querySelector('[role="alert"]')?.textContent).toContain(
       'Not allowed',
     );
+  });
+});
+
+describe('ShareToTeamModal credentials', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  const credentials = (
+    overrides: Partial<ShareCredentials> = {},
+  ): ShareCredentials => ({
+    toolId: 'tool-1',
+    connectorName: 'Linear',
+    account: 'lena@meridian.example',
+    mode: 'owner',
+    hasWrites: false,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    listResourceShares.mockReset().mockResolvedValue({ shares: [] });
+    getResourceSettings.mockReset().mockResolvedValue(settingsResponse());
+    listMembers.mockReset().mockResolvedValue({ members: [] });
+    setCredentialMode.mockReset();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  const render = async (creds?: ShareCredentials) => {
+    act(() => {
+      root.render(
+        <ShareToTeamModal
+          resourceType="tool"
+          resourceId="tool-1"
+          resourceName="Linear"
+          credentials={creds}
+          onClose={() => undefined}
+        />,
+      );
+    });
+    await flush();
+  };
+
+  // A compact segmented choice, not a pair of picker tiles.
+  const toggle = (value: 'owner' | 'member') =>
+    Array.from(
+      body().querySelectorAll<HTMLButtonElement>(
+        '[data-slot="toggle-group-item"]',
+      ),
+    ).find((item) =>
+      item.textContent?.startsWith(`settings.connectors.sharing.${value}Short`),
+    )!;
+  const picker = () =>
+    body().querySelector<HTMLButtonElement>('[role="combobox"]')!;
+
+  it('shows nothing about accounts for a resource without a connection', async () => {
+    await render();
+    expect(text()).not.toContain('settings.connectors.share.heading');
+  });
+
+  it('has no agent resource list for a tool', async () => {
+    await render(credentials());
+    expect(body().querySelector('[data-testid="agent-uses"]')).toBeNull();
+  });
+
+  it('says whose account members use on a tool that only reads', async () => {
+    await render(credentials());
+    expect(toggle('owner').textContent).toBe(
+      'settings.connectors.sharing.ownerShort',
+    );
+    expect(body().querySelector('[role="note"]')).toBeNull();
+    expect(body().querySelector('[data-slot="option-card"]')).toBeNull();
+    expect(toggle('owner').getAttribute('aria-checked')).toBe('true');
+    expect(text()).toContain(
+      'settings.connectors.share.ownerWarning(account=lena@meridian.example',
+    );
+  });
+
+  it('asks only for the confirmation on a tool that can act, with no warning box', async () => {
+    await render(credentials({ hasWrites: true }));
+    expect(body().querySelector('[role="note"]')).toBeNull();
+    expect(text()).not.toContain('settings.connectors.share.ownerWarning');
+    expect(body().querySelector('#share-confirm-writes')).not.toBeNull();
+  });
+
+  it('blocks sharing an owner-mode tool with writes until confirmed', async () => {
+    await render(credentials({ hasWrites: true }));
+    expect(picker().disabled).toBe(true);
+    const box = body().querySelector<HTMLButtonElement>(
+      '#share-confirm-writes',
+    )!;
+    await act(async () => box.click());
+    expect(picker().disabled).toBe(false);
+  });
+
+  it('saves a mode change and rolls back when the save fails', async () => {
+    setCredentialMode.mockResolvedValue({ success: false });
+    await render(credentials({ hasWrites: true }));
+    await act(async () => toggle('member').click());
+    await flush();
+    expect(setCredentialMode).toHaveBeenCalledWith('tool-1', 'member', 'tok');
+    expect(toggle('owner').getAttribute('aria-checked')).toBe('true');
+    expect(text()).toContain('settings.connectors.share.saveFailed');
+  });
+
+  it('locks the other mode when an admin forces one', async () => {
+    await render(credentials({ forcedMode: 'member' }));
+    expect(toggle('member').getAttribute('aria-checked')).toBe('true');
+    expect(toggle('owner').disabled).toBe(true);
+    expect(text()).toContain('settings.connectors.share.forced');
+  });
+
+  it('follows the mode once the connection loads after opening', async () => {
+    await render();
+    await render(credentials({ hasWrites: true, mode: 'member' }));
+    expect(toggle('member').getAttribute('aria-checked')).toBe('true');
+    // Member mode runs on each member's own account: nothing to confirm.
+    expect(body().querySelector('#share-confirm-writes')).toBeNull();
+    await render(credentials({ hasWrites: true, forcedMode: 'owner' }));
+    expect(toggle('owner').getAttribute('aria-checked')).toBe('true');
+    expect(toggle('member').disabled).toBe(true);
+  });
+
+  describe('access settings of a connected tool', () => {
+    const toolSettings = (values: Record<string, boolean> = {}) => ({
+      success: true,
+      resource_type: 'tool',
+      resource_id: 'tool-1',
+      settings: [
+        { key: 'editors_can_change_credentials', default: true },
+        { key: 'editors_can_share', default: false },
+        { key: 'viewers_can_use_in_agents', default: true },
+      ].map((s) => ({ ...s, value: values[s.key] ?? s.default })),
+      access: 'owner',
+      allowed_actions: OWNER_ACTIONS,
+    });
+    const openSettings = () =>
+      act(() => buttonByText('settings.teams.accessSettings.title')!.click());
+
+    beforeEach(() => {
+      getResourceSettings.mockResolvedValue(toolSettings());
+    });
+
+    // The connection's secret is the owner's alone, so the switch would
+    // promise editors something the server refuses.
+    it('has no switch for editors to change credentials', async () => {
+      await render(credentials());
+      openSettings();
+      expect(
+        body().querySelector('#share-setting-editors_can_change_credentials'),
+      ).toBeNull();
+      expect(
+        body().querySelector('#share-setting-viewers_can_use_in_agents'),
+      ).not.toBeNull();
+    });
+
+    it('keeps the switch for a tool with no connection', async () => {
+      await render();
+      openSettings();
+      expect(
+        body().querySelector('#share-setting-editors_can_change_credentials'),
+      ).not.toBeNull();
+    });
+
+    it('tells editors they cannot change credentials', async () => {
+      await render(credentials());
+      const hint = body().querySelector('[data-testid="share-editor-hint"]');
+      expect(hint?.textContent).toContain(
+        'settings.teams.editorHint.toolNoCredentials',
+      );
+    });
+
+    it("says viewers' runs use each member's own account in member mode", async () => {
+      await render(credentials({ mode: 'member' }));
+      openSettings();
+      expect(text()).toContain(
+        'settings.teams.accessSettings.tool.viewers_can_use_in_agents.descriptionMember',
+      );
+    });
+
+    it("says viewers' runs use the owner's credentials in owner mode", async () => {
+      await render(credentials());
+      openSettings();
+      expect(text()).toContain(
+        'settings.teams.accessSettings.tool.viewers_can_use_in_agents.description',
+      );
+      expect(text()).not.toContain('descriptionMember');
+    });
+  });
+
+  describe('for an editor allowed to share', () => {
+    const shared = (overrides: Partial<ShareCredentials> = {}) =>
+      credentials({ account: '', readOnly: true, ...overrides });
+
+    it("shows whose account shares use but doesn't let them change it", async () => {
+      await render(shared());
+      // The owner's account, not "Your account".
+      expect(toggle('owner').textContent).toBe(
+        'settings.connectors.sharing.ownerShortShared',
+      );
+      expect(toggle('owner').getAttribute('aria-checked')).toBe('true');
+      expect(toggle('owner').disabled).toBe(true);
+      expect(toggle('member').disabled).toBe(true);
+      expect(text()).toContain('settings.connectors.share.ownerChooses');
+      expect(text()).toContain(
+        'settings.connectors.share.ownerWarningShared(name=Linear)',
+      );
+    });
+
+    it('still asks for the write confirmation before adding people', async () => {
+      await render(shared({ hasWrites: true }));
+      expect(text()).toContain(
+        'settings.connectors.share.confirmWriteShared(name=Linear)',
+      );
+      expect(picker().disabled).toBe(true);
+      await act(async () =>
+        body()
+          .querySelector<HTMLButtonElement>('#share-confirm-writes')!
+          .click(),
+      );
+      expect(picker().disabled).toBe(false);
+    });
   });
 });

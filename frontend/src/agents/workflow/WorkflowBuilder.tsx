@@ -49,10 +49,24 @@ import { agentEditPath, agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
 import AgentPreviewSheet from '../components/AgentPreviewSheet';
+import {
+  confirmTakeOver,
+  readSponsorRefusal,
+  saveWithSponsorConsent,
+  sponsorNotAllowedMessage,
+} from '../sponsorConsent';
+import { useSponsorPrompt } from '../useSponsorPrompt';
+import ResourceStatusNotice, {
+  type NamedResource,
+  unnamedResourceLabel,
+} from '../components/ResourceStatusNotice';
+import FloatingResourceNotice from './components/FloatingResourceNotice';
+import { useSignInAgain } from '../../connectors/SignInAgainNotice';
 import WorkflowDetailsSheet, {
   type WorkflowDetailsSave,
 } from './components/WorkflowDetailsSheet';
-import { Agent } from '../types';
+import type { SponsorAudience } from '../sponsorConsent';
+import { Agent, ResourceSponsor, ResourceState } from '../types';
 import { ConditionCase, WorkflowNode } from '../types/workflow';
 import {
   createDefaultCodeConfig,
@@ -86,6 +100,11 @@ import NotePanel from './panels/NotePanel';
 import StatePanel from './panels/StatePanel';
 import WorkflowPreview from './WorkflowPreview';
 import {
+  nodeResourceIds,
+  stoppedNodeResources,
+  withoutNodeResource,
+} from './nodeResources';
+import {
   type AgentNodeConfig,
   findFreePosition,
   NO_ESCAPE,
@@ -95,11 +114,14 @@ import {
   validateJsonSchemaConfig,
 } from './workflowHelpers';
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
-import { canAddToolToOwn } from '../../utils/toolUtils';
+import { canAddToolToOwn, getToolDisplayName } from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
 
 const PRIMARY_ACTION_SPINNER_DELAY_MS = 180;
+
+/** How a save ended; `cancelled` when the caller declined to sponsor. */
+type WorkflowSaveOutcome = 'saved' | 'failed' | 'cancelled';
 // A node added from the palette while one is selected lands this far right
 // of it (then moves down until it covers nothing).
 const ADD_BESIDE_GAP_X = 80;
@@ -192,7 +214,7 @@ const NODE_TYPES: NodeTypes = {
 };
 
 function WorkflowBuilderInner() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
@@ -222,6 +244,24 @@ function WorkflowBuilderInner() {
   const [showPrimaryActionSpinner, setShowPrimaryActionSpinner] =
     useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
+  // Asks before a node resource the owner can't use runs with the
+  // caller's access; the save that asked gets the retried save's result.
+  const sponsorPrompt = useSponsorPrompt();
+  // What runs on the nodes with an editor's access and what stopped, from
+  // the workflow read (people who may edit it).
+  const [workflowResources, setWorkflowResources] = useState<{
+    sponsors: ResourceSponsor[];
+    states: ResourceState[];
+    audience?: SponsorAudience;
+  }>({ sponsors: [], states: [] });
+  // Keys of stopped node resources the caller agreed to run with their
+  // access; sent as ``confirm_sponsor`` with the next save.
+  const [takeovers, setTakeovers] = useState<string[]>([]);
+  // Bumped after a reconnect so the run state is read again.
+  const [resourcesReloadKey, setResourcesReloadKey] = useState(0);
+  const signInAgain = useSignInAgain({
+    onConnected: () => setResourcesReloadKey((key) => key + 1),
+  });
   const [errorContext, setErrorContext] = useState<'preview' | 'publish'>(
     'publish',
   );
@@ -230,6 +270,8 @@ function WorkflowBuilderInner() {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  // Access details opened from Share to allow changes: its allowlist unfolds.
+  const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isDeletingAgent, setIsDeletingAgent] = useState(false);
   const [currentAgent, setCurrentAgent] = useState<Agent>(
@@ -249,6 +291,13 @@ function WorkflowBuilderInner() {
   );
   const [defaultAgentModelId, setDefaultAgentModelId] = useState('');
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
+  // Names of every tool and source the saved graph references, whoever owns
+  // them, so node pickers keep a remove-only option for the owner's private
+  // ones (GET /api/workflows/<id> ``ref_details``).
+  const [nodeRefNames, setNodeRefNames] = useState<{
+    tools: { id: string; label: string }[];
+    sources: { id: string; label: string }[];
+  }>({ tools: [], sources: [] });
   const sourceOptions = useMemo(
     () =>
       (sourceDocs ?? [])
@@ -909,6 +958,42 @@ function WorkflowBuilderInner() {
     loadAgentDetails();
   }, [agentId, token]);
 
+  const applyResourceDetails = useCallback(
+    (data: {
+      resource_sponsors?: ResourceSponsor[];
+      resource_states?: ResourceState[];
+      sponsor_audience?: SponsorAudience;
+    }) =>
+      setWorkflowResources({
+        sponsors: data.resource_sponsors ?? [],
+        states: data.resource_states ?? [],
+        audience: data.sponsor_audience,
+      }),
+    [],
+  );
+
+  // Fresh sponsor details and run state after a save or a reconnect,
+  // without touching the canvas.
+  const refreshResourceDetails = useCallback(
+    async (id: string | null) => {
+      if (!id) return;
+      try {
+        const response = await userService.getWorkflow(id, token);
+        if (!response.ok) return;
+        const responseData = await response.json();
+        applyResourceDetails(responseData.data ?? {});
+      } catch {
+        // The notice keeps what it showed.
+      }
+    },
+    [applyResourceDetails, token],
+  );
+
+  useEffect(() => {
+    if (resourcesReloadKey > 0) void refreshResourceDetails(workflowId);
+    // Only a reconnect asks for this; the workflow id is read when it does.
+  }, [resourcesReloadKey, refreshResourceDetails]);
+
   useEffect(() => {
     const loadWorkflow = async () => {
       if (!workflowId) return;
@@ -920,7 +1005,23 @@ function WorkflowBuilderInner() {
           workflow,
           nodes: apiNodes,
           edges: apiEdges,
+          ref_details: refDetails,
         } = responseData.data;
+        applyResourceDetails(responseData.data);
+        setNodeRefNames({
+          tools: (refDetails?.tools ?? []).map(
+            (tool: { id: string; name?: string; display_name?: string }) => ({
+              id: tool.id,
+              label: getToolDisplayName(tool),
+            }),
+          ),
+          sources: (refDetails?.sources ?? []).map(
+            (source: { id: string; name: string | null }) => ({
+              id: source.id,
+              label: source.name || '',
+            }),
+          ),
+        });
         const nextWorkflowName = workflow.name;
         const nextWorkflowDescription = workflow.description || '';
         const mappedNodes = apiNodes.map((n: WorkflowNode) => {
@@ -995,7 +1096,13 @@ function WorkflowBuilderInner() {
       }
     };
     loadWorkflow();
-  }, [workflowId, reactFlowInstance, token, clearHistory]);
+  }, [
+    workflowId,
+    reactFlowInstance,
+    token,
+    clearHistory,
+    applyResourceDetails,
+  ]);
 
   const validateWorkflow = useCallback((): string[] => {
     const errors: string[] = [];
@@ -1306,18 +1413,19 @@ function WorkflowBuilderInner() {
   const hasSavableChanges =
     canManageAgent && savedWorkflowSignature !== null
       ? workflowPayloadSignature !== savedWorkflowSignature ||
-        imageFile !== null
+        imageFile !== null ||
+        takeovers.length > 0
       : false;
 
   const persistWorkflow = useCallback(
-    async (navigateAfterSuccess: boolean): Promise<boolean> => {
+    async (navigateAfterSuccess: boolean): Promise<WorkflowSaveOutcome> => {
       setPublishErrors([]);
       setErrorContext('publish');
 
       const validationErrors = validateWorkflow();
       if (validationErrors.length > 0) {
         setPublishErrors(validationErrors);
-        return false;
+        return 'failed';
       }
 
       setIsPublishing(true);
@@ -1327,12 +1435,34 @@ function WorkflowBuilderInner() {
 
         let savedWorkflowId = workflowId;
         if (workflowId) {
-          const updateResponse = await userService.updateWorkflow(
-            workflowId,
-            workflowPayload,
-            token,
+          // A node tool or source the owner can't use would run with the
+          // caller's access: ask first, then save again with their answer.
+          const updateResponse = await saveWithSponsorConsent(
+            (confirm) =>
+              userService.updateWorkflow(
+                workflowId,
+                confirm.length > 0
+                  ? { ...workflowPayload, confirm_sponsor: confirm }
+                  : workflowPayload,
+                token,
+              ),
+            sponsorPrompt.ask,
+            takeovers,
           );
+          if (!updateResponse) return 'cancelled';
           if (!updateResponse.ok) {
+            const refusal = await readSponsorRefusal(updateResponse);
+            if (refusal?.kind === 'unexpected') {
+              // Someone changed the workflow since the caller chose.
+              setTakeovers([]);
+              void refreshResourceDetails(workflowId);
+              throw new Error(t('agents.form.sponsors.confirmationOutdated'));
+            }
+            if (refusal?.kind === 'notAllowed') {
+              throw new Error(
+                sponsorNotAllowedMessage(t, i18n.language, refusal.resources),
+              );
+            }
             const errorData = await updateResponse.json().catch(() => ({}));
             throw new Error(
               errorData.message ||
@@ -1378,10 +1508,12 @@ function WorkflowBuilderInner() {
           }
           setImageFile(null);
           setSavedWorkflowSignature(JSON.stringify(workflowPayload));
+          setTakeovers([]);
+          void refreshResourceDetails(workflowId);
           if (navigateAfterSuccess) {
             navigateBackToAgents();
           }
-          return true;
+          return 'saved';
         }
 
         const createResponse = await userService.createWorkflow(
@@ -1393,7 +1525,7 @@ function WorkflowBuilderInner() {
           const backendErrors = errorData.errors || [];
           if (backendErrors.length > 0) {
             setPublishErrors(backendErrors);
-            return false;
+            return 'failed';
           }
           throw new Error(
             errorData.message ||
@@ -1457,7 +1589,7 @@ function WorkflowBuilderInner() {
         if (navigateAfterSuccess) {
           navigateBackToAgents();
         }
-        return true;
+        return 'saved';
       } catch (error) {
         if (createdWorkflowId) {
           try {
@@ -1481,7 +1613,7 @@ function WorkflowBuilderInner() {
             ? error.message
             : t('agents.workflow.builder.saveFailed'),
         ]);
-        return false;
+        return 'failed';
       } finally {
         setIsPublishing(false);
       }
@@ -1499,6 +1631,10 @@ function WorkflowBuilderInner() {
       folderId,
       navigateBackToAgents,
       t,
+      i18n.language,
+      sponsorPrompt.ask,
+      takeovers,
+      refreshResourceDetails,
     ],
   );
 
@@ -1525,10 +1661,11 @@ function WorkflowBuilderInner() {
     setDetailsSaveRequested(false);
     setDetailsSaving(true);
     setDetailsSaveFailed(false);
-    void persistWorkflow(false).then((ok) => {
+    void persistWorkflow(false).then((outcome) => {
       setDetailsSaving(false);
-      if (ok) setShowDetails(false);
-      else setDetailsSaveFailed(true);
+      if (outcome === 'saved') setShowDetails(false);
+      // Declining the sponsor confirmation leaves the sheet open, no error.
+      else if (outcome === 'failed') setDetailsSaveFailed(true);
     });
   }, [detailsSaveRequested, persistWorkflow]);
 
@@ -1546,6 +1683,79 @@ function WorkflowBuilderInner() {
     if (isPrimaryActionDisabled) return;
     void persistWorkflow(false);
   }, [isPrimaryActionDisabled, persistWorkflow]);
+
+  // Stopped node resources still on the canvas.
+  const stoppedResources = useMemo(
+    () =>
+      stoppedNodeResources(workflowResources.states, nodeResourceIds(nodes)),
+    [workflowResources.states, nodes],
+  );
+
+  const resolveResourceName = useCallback(
+    (item: NamedResource): string => {
+      if (item.name) return item.name;
+      const known = (
+        item.type === 'tool' ? nodeRefNames.tools : nodeRefNames.sources
+      ).find((entry) => entry.id.toLowerCase() === item.id)?.label;
+      return known || unnamedResourceLabel(t, item);
+    },
+    [nodeRefNames, t],
+  );
+
+  /** Take a stopped tool or source off every agent node; saving stores it. */
+  const removeResource = useCallback(
+    (item: ResourceState) => {
+      takeSnapshot();
+      setNodes((prev) => withoutNodeResource(prev, item));
+      setTakeovers((prev) => prev.filter((k) => k !== item.key));
+    },
+    [takeSnapshot],
+  );
+
+  /**
+   * Ask before a stopped node resource runs with the caller's access,
+   * naming who reaches it through the workflow; on yes the next save
+   * confirms it.
+   */
+  const takeOverResource = useCallback(
+    async (item: ResourceState) => {
+      const agreed = await confirmTakeOver(
+        sponsorPrompt.ask,
+        item,
+        resolveResourceName(item),
+        workflowResources.audience,
+      );
+      if (agreed)
+        setTakeovers((prev) =>
+          prev.includes(item.key) ? prev : [...prev, item.key],
+        );
+    },
+    [resolveResourceName, sponsorPrompt.ask, workflowResources.audience],
+  );
+
+  /** Sign a stopped node tool's connection in again, in place where possible. */
+  const reconnectResource = useCallback(
+    (item: ResourceState) => {
+      const connection = item.connection;
+      if (!connection?.id || !connection.connector_key) return;
+      const isMcp =
+        availableTools.find((tool) => tool.id === item.id)?.name === 'mcp_tool';
+      signInAgain.reconnect(
+        { id: connection.id, connector_key: connection.connector_key },
+        isMcp ? item.id : undefined,
+      );
+    },
+    [availableTools, signInAgain],
+  );
+
+  const resourceNoticeAgent = useMemo<Agent>(
+    () => ({ ...currentAgent, resource_sponsors: workflowResources.sponsors }),
+    [currentAgent, workflowResources.sponsors],
+  );
+  const showResourceNotice =
+    canManageAgent &&
+    (stoppedResources.length > 0 ||
+      workflowResources.sponsors.some((sponsor) => sponsor.active));
 
   const agentForDetails = useMemo<Agent>(
     () => ({
@@ -1800,6 +2010,23 @@ function WorkflowBuilderInner() {
             ref={reactFlowWrapper}
             className="bg-muted relative min-w-0 flex-1"
           >
+            {showResourceNotice && (
+              <FloatingResourceNotice stoppedCount={stoppedResources.length}>
+                <ResourceStatusNotice
+                  agent={resourceNoticeAgent}
+                  stopped={stoppedResources}
+                  resolveName={resolveResourceName}
+                  takeovers={takeovers}
+                  showAttachNote={false}
+                  onTakeOver={(item) => void takeOverResource(item)}
+                  onUndoTakeover={(key) =>
+                    setTakeovers((prev) => prev.filter((k) => k !== key))
+                  }
+                  onRemove={removeResource}
+                  onReconnect={reconnectResource}
+                />
+              </FloatingResourceNotice>
+            )}
             <WorkflowModelsContext.Provider value={modelNames}>
               <ReactFlow
                 nodes={nodes}
@@ -1849,6 +2076,8 @@ function WorkflowBuilderInner() {
                   availableModels={availableModels}
                   availableTools={availableTools}
                   sourceOptions={sourceOptions}
+                  attachedTools={nodeRefNames.tools}
+                  attachedSources={nodeRefNames.sources}
                   documentOptions={selectedAgentDocumentOptions}
                   jsonSchemaText={selectedAgentJsonSchemaText}
                   jsonSchemaError={selectedAgentJsonSchemaError}
@@ -1946,6 +2175,8 @@ function WorkflowBuilderInner() {
             }}
           />
         </AgentPreviewSheet>
+        {sponsorPrompt.modal}
+        {signInAgain.modals}
         <ConfirmationModal
           message={
             workflowName
@@ -1968,6 +2199,15 @@ function WorkflowBuilderInner() {
             resourceId={effectiveAgentId}
             resourceName={workflowName}
             onClose={() => setShareModalOpen(false)}
+            onOpenAccessDetails={
+              canManageAgent && can(currentAgent, 'manage_access_details')
+                ? () => {
+                    setShareModalOpen(false);
+                    setDetailsOnApiWrites(true);
+                    setAgentDetails('ACTIVE');
+                  }
+                : undefined
+            }
           />
         )}
         {canManageAgent && (
@@ -1975,7 +2215,11 @@ function WorkflowBuilderInner() {
             agent={agentForDetails}
             mode="edit"
             modalState={agentDetails}
-            setModalState={setAgentDetails}
+            setModalState={(state) => {
+              setAgentDetails(state);
+              if (state === 'INACTIVE') setDetailsOnApiWrites(false);
+            }}
+            openApiWrites={detailsOnApiWrites}
             onKeyRegenerated={(key) =>
               setCurrentAgent((prev) => ({ ...prev, key }))
             }

@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
@@ -28,6 +29,11 @@ import { Card, CardFooter, CardTitle } from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { Pagination } from '../components/ui/pagination';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
 import { useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
@@ -51,6 +57,14 @@ import { can } from '../utils/accessUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { useSignInAgain } from '../connectors/SignInAgainNotice';
+import {
+  loadConnectors,
+  selectConnections,
+  selectConnectorsLoaded,
+} from '../connectors/connectorsSlice';
+import type { AppDispatch } from '../store';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
 import GraphSourceView from '../components/graph/GraphSourceView';
@@ -59,6 +73,7 @@ import EnableGraphRAGModal from './EnableGraphRAGModal';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import SourceConfigModal from './SourceConfigModal';
 import TestRetrievalModal from './TestRetrievalModal';
+import WikiSettingsModal from './WikiSettingsModal';
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -81,9 +96,18 @@ export default function Sources({
   handleDeleteDocument,
 }: DocumentsProps) {
   const { t } = useTranslation();
-  const dispatch = useDispatch();
+  const navigate = useNavigate();
+  const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const uploadTasks = useSelector(selectUploadTasks);
+  const connections = useSelector(selectConnections);
+  // Signing in again reloads the connections, which lifts the pause.
+  const { reconnect, modals: signInModals } = useSignInAgain();
+  const connectorsLoaded = useSelector(selectConnectorsLoaded);
+
+  useEffect(() => {
+    if (!connectorsLoaded) dispatch(loadConnectors({ token }));
+  }, [connectorsLoaded, dispatch, token]);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
   const debouncedSearchTerm = useDebouncedValue(searchTerm, 500);
@@ -108,6 +132,8 @@ export default function Sources({
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
   const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
+  const [documentForWikiSettings, setDocumentForWikiSettings] =
+    useState<Doc | null>(null);
   const [documentToConfigure, setDocumentToConfigure] = useState<Doc | null>(
     null,
   );
@@ -233,26 +259,6 @@ export default function Sources({
       });
   };
 
-  const getConnectorProvider = async (doc: Doc): Promise<string | null> => {
-    if (doc.provider) {
-      return doc.provider;
-    }
-    if (!doc.id) {
-      return null;
-    }
-    try {
-      const directoryResponse = await userService.getDirectoryStructure(
-        doc.id,
-        token,
-      );
-      const directoryData = await directoryResponse.json();
-      return directoryData?.provider ?? null;
-    } catch (error) {
-      console.error('Error fetching connector provider:', error);
-      return null;
-    }
-  };
-
   const handleSyncNow = async (doc: Doc) => {
     if (!doc.id) {
       return;
@@ -261,13 +267,8 @@ export default function Sources({
     try {
       let response: Response;
       if (doc.type?.startsWith('connector')) {
-        const provider = await getConnectorProvider(doc);
-        if (!provider) {
-          console.error('Sync now failed: provider not found');
-          showActionError(syncFailed);
-          return;
-        }
-        response = await userService.syncConnector(doc.id, provider, token);
+        // The server finds the connector from the source itself.
+        response = await userService.syncConnector(doc.id, token);
       } else {
         response = await userService.syncSource({ source_id: doc.id }, token);
       }
@@ -420,6 +421,18 @@ export default function Sources({
         onClick: () => {
           setDocumentToConfigure(document);
           setConfigModalState('ACTIVE');
+        },
+        variant: 'default',
+      });
+    }
+
+    // A wiki's own settings are the owner's (manage_settings).
+    if (document.id && isWiki && can(document, 'manage_settings')) {
+      actions.push({
+        icon: SlidersHorizontal,
+        label: t('settings.sources.wiki.settings.action'),
+        onClick: () => {
+          setDocumentForWikiSettings(document);
         },
         variant: 'default',
       });
@@ -647,11 +660,49 @@ export default function Sources({
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
           ) : !currentDocuments?.length ? (
-            <EmptyState title={t('settings.sources.noData')} />
+            searchTerm ? (
+              <EmptyState title={t('settings.sources.noResults')} />
+            ) : (
+              // Nothing yet: the two ways in, side by side.
+              <EmptyState
+                title={t('settings.sources.noData')}
+                description={t('settings.sources.emptyHint')}
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button
+                      type="button"
+                      shape="pill"
+                      onClick={() => {
+                        setIsOnboarding(false);
+                        setModalState('ACTIVE');
+                      }}
+                    >
+                      {t('settings.sources.addSource')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      shape="pill"
+                      onClick={() =>
+                        navigate('/settings/connectors?capability=sync')
+                      }
+                    >
+                      {t('settings.sources.connectService')}
+                    </Button>
+                  </div>
+                }
+              />
+            )
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {currentDocuments.map((document, index) => {
                 const docId = document.id ? document.id.toString() : '';
+                const connection = document.connectionId
+                  ? connections.find((c) => c.id === document.connectionId)
+                  : undefined;
+                const paused =
+                  connection?.status === 'reconnect_needed' ||
+                  connection?.status === 'disconnected';
 
                 return (
                   <div key={docId} className="relative">
@@ -695,6 +746,39 @@ export default function Sources({
 
                       <div className="flex flex-col items-start justify-start gap-1">
                         <RoleBadge item={document} />
+                        {connection && paused && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant="warning" tabIndex={0}>
+                                  {t('settings.connectors.detail.paused')}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {t('settings.sources.paused', {
+                                  name: connection.name,
+                                  interpolation: { escapeValue: false },
+                                })}
+                              </TooltipContent>
+                            </Tooltip>
+                            {/* The reader's own connection (only theirs are
+                                loaded): sign in again right here, without
+                                opening the source. */}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="xs"
+                              shape="pill"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                reconnect(connection);
+                              }}
+                              onKeyDown={(e) => e.stopPropagation()}
+                            >
+                              {t('settings.connectors.status.reconnect')}
+                            </Button>
+                          </div>
+                        )}
                         {document.ingestStatus === 'failed' && (
                           <Badge variant="destructive">
                             {t('settings.sources.ingestFailed')}
@@ -735,6 +819,23 @@ export default function Sources({
                             );
                           })()}
                         <CardFooter className="flex-col items-start gap-1">
+                          {connection && (
+                            <span className="flex max-w-full min-w-0 items-center gap-2">
+                              <ConnectorIcon
+                                icon={connection.icon}
+                                className="text-muted-foreground size-3.5 shrink-0"
+                              />
+                              <span
+                                className="truncate"
+                                title={connection.account_label}
+                              >
+                                {t('settings.tools.viaConnection', {
+                                  name: connection.name,
+                                  interpolation: { escapeValue: false },
+                                })}
+                              </span>
+                            </span>
+                          )}
                           <span className="flex items-center gap-2">
                             <CalendarIcon className="size-3.5" />
                             {document.date ? formatDate(document.date) : ''}
@@ -785,8 +886,13 @@ export default function Sources({
           onSuccessfulUpload={() =>
             refreshDocs(undefined, currentPage, rowsPerPage)
           }
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
         />
       )}
+
+      {signInModals}
 
       {deleteModalState === 'ACTIVE' && documentToDelete && (
         <ConfirmationModal
@@ -846,6 +952,13 @@ export default function Sources({
         graphRAGAvailable={graphRAGAvailable}
         availableModels={availableModels}
       />
+
+      {documentForWikiSettings && (
+        <WikiSettingsModal
+          document={documentForWikiSettings}
+          onClose={() => setDocumentForWikiSettings(null)}
+        />
+      )}
 
       <ConvertToWikiModal
         modalState={convertModalState}

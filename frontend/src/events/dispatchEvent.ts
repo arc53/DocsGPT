@@ -44,6 +44,9 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set([
   'graph.extract.progress',
   'graph.extract.completed',
   'graph.extract.failed',
+  // A connection's sign-in stopped working (connectors/service.py);
+  // consumed by ConnectionHealthToast via selectRecentEvents.
+  'connection.reconnect_needed',
 ]);
 
 /**

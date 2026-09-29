@@ -85,6 +85,8 @@ export type Doc = {
   // Access level when shared via a team: 'viewer' (read-only) or 'editor'
   // (full write). Null/absent for sources the caller owns.
   team_access?: 'viewer' | 'editor' | null;
+  // The connection a synced source comes from (Google Drive account, S3 keys).
+  connectionId?: string | null;
   // The caller's role and what it allows (sources API); gate UI with
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;

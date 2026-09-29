@@ -8,6 +8,7 @@ import Admins from './Admins';
 import Activity from './Activity';
 import Overview from './Overview';
 import Quotas from './Quotas';
+import Connectors from './Connectors';
 import Usage from './Usage';
 import Users from './Users';
 
@@ -39,6 +40,7 @@ export default function Admin() {
         <Route path="roles" element={<Admins />} />
         <Route path="usage" element={<Usage />} />
         <Route path="quotas" element={<Quotas />} />
+        <Route path="connectors" element={<Connectors />} />
         <Route path="audit" element={<Activity />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>

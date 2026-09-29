@@ -116,3 +116,58 @@ class TestWikiConfigAccess:
         assert cfg["source_owner_id"] == OWNER and cfg["user"] == "ed"
         assert self._cfg(use_conn, "vi", sid) is None
         assert self._cfg(use_conn, "eve", sid) is None
+
+
+class TestWikiOutsideEdits:
+    """API-key runs edit a wiki only when its owner allows; link visitors are asked."""
+
+    def _tools(self, conn, caller, sid, agent_config):
+        from docsgpt.agents.tools.wiki import WIKI_TOOL_ID, add_wiki_tool
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        proc = StreamProcessor.__new__(StreamProcessor)
+        proc.all_sources = [{"id": sid}]
+        proc.decoded_token = {"sub": caller}
+        proc.agent_config = agent_config
+        cfg = proc._build_wiki_config()
+        if cfg is None:
+            return None
+        tools = {}
+        add_wiki_tool(tools, cfg)
+        return {a["name"]: bool(a.get("require_approval")) for a in tools[WIKI_TOOL_ID]["actions"]}
+
+    def _wiki(self, conn, owner=OWNER):
+        return str(SourcesRepository(conn).create("W", user_id=owner, config={"kind": "wiki"})["id"])
+
+    def test_api_key_caller_reads_until_the_owner_allows_edits(self, use_conn):
+        # A widget or API run acts as the agent owner, who owns the wiki.
+        sid = self._wiki(use_conn)
+        assert self._tools(use_conn, OWNER, sid, {"external_api_caller": True}) == {"wiki_view": False}
+        SourcesRepository(use_conn).set_wiki_outside_edits(sid, OWNER, True)
+        tools = self._tools(use_conn, OWNER, sid, {"external_api_caller": True})
+        assert tools["wiki_create"] is False
+
+    def test_owner_and_team_editor_keep_every_action(self, use_conn):
+        sid = self._wiki(use_conn)
+        _share(use_conn, "source", sid, "ed", "editor")
+        assert self._tools(use_conn, OWNER, sid, {})["wiki_create"] is False
+        assert self._tools(use_conn, "ed", sid, {})["wiki_create"] is False
+
+    def test_link_visitor_edits_their_own_wiki_after_approving(self, use_conn):
+        # Visitor owns a wiki that the agent (someone else's) also uses.
+        sid = self._wiki(use_conn, owner="visitor")
+        tools = self._tools(use_conn, "visitor", sid, {"public_link_caller": True})
+        assert tools["wiki_view"] is False
+        assert tools["wiki_create"] is True and tools["wiki_delete"] is True
+
+    def test_link_visitor_who_edits_the_wiki_through_a_team(self, use_conn):
+        sid = self._wiki(use_conn)
+        _share(use_conn, "source", sid, "visitor", "editor")
+        tools = self._tools(use_conn, "visitor", sid, {"public_link_caller": True})
+        assert tools["wiki_create"] is True
+
+    def test_link_visitor_without_edit_rights_gets_no_wiki_tool(self, use_conn):
+        sid = self._wiki(use_conn)
+        assert self._tools(use_conn, "visitor", sid, {"public_link_caller": True}) is None
+        _share(use_conn, "source", sid, "visitor", "viewer")
+        assert self._tools(use_conn, "visitor", sid, {"public_link_caller": True}) is None

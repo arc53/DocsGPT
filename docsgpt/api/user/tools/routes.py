@@ -19,6 +19,7 @@ from docsgpt.agents.default_tools import (
     WORKFLOW_ONLY_BUILTINS,
 )
 from docsgpt.agents.tool_executor import API_TOOL_SECRET_SECTIONS, API_TOOL_SECRETS_KEY
+from docsgpt.agents.tool_pins import iter_parameters, llm_fills, merge_submitted_actions, PinChangeRefused
 from docsgpt.agents.tools.spec_parser import parse_spec
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api import api
@@ -33,9 +34,13 @@ from docsgpt.api.user.resource_access import (
     settings_many,
 )
 from docsgpt.api.user.team_sharing import visible_with_access
+from docsgpt.connectors.catalog import base_url, definition_for_tool
+from docsgpt.connectors.resolve import carry_removed_connection
+from docsgpt.connectors.service import account_tool_names
+from docsgpt.connectors.permissions import owner_credential_writes
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
-from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.notes import NotesRepository
@@ -189,7 +194,14 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
 _CREDENTIALS_FOR_NEW_SERVER = "Enter credentials for the new server"
 _FORBIDDEN_MESSAGE = "Your access to this item doesn't allow that"
 _MCP_CREDENTIAL_AUTH_TYPES = {"api_key", "bearer", "basic"}
-_META_KEYS = ("name", "displayName", "customName", "description", "actions")
+# ``name`` (the tool type) and ``actions`` are handled on their own.
+_META_KEYS = ("displayName", "customName", "description")
+_TYPE_IS_FIXED = "A tool's type can't be changed"
+_FIXED_VALUES_OWNER_ONLY = "Only the tool's owner can change fixed values"
+_MOVE_THROUGH_MCP_SAVE = (
+    "This server signs in through a connection: change its address or sign-in by saving the "
+    "server again (/api/mcp_server/save)"
+)
 
 
 class CredentialsRequired(Exception):
@@ -359,6 +371,96 @@ def _api_tool_config_needs_credentials(new_config: dict, existing_config: dict) 
     return False
 
 
+def _api_tool_param_state(section: str, spec: dict, *, stored: bool) -> tuple:
+    """Who fills an api_tool parameter and which value it keeps.
+
+    A header / query value is only ever shown masked, so a stored one (sealed,
+    or legacy plaintext) reads as ``"stored"`` and any value a client sends
+    is a new one.
+
+    Args:
+        section: ``headers``, ``query_params`` or ``body``.
+        spec: The parameter's schema.
+        stored: Whether ``spec`` comes from the stored config.
+
+    Returns:
+        ``(filled_by_llm, value marker)``; the marker is None without a value.
+    """
+    value = spec.get("value")
+    if section in API_TOOL_SECRET_SECTIONS:
+        if _has_value(value):
+            marker: Any = "stored" if stored else ("new", value)
+        else:
+            marker = "stored" if spec.get("has_value") else None
+    else:
+        marker = value if _has_value(value) else None
+    return llm_fills(spec), marker
+
+
+def _api_tool_fixed_values_changed(new_config: dict, existing_config: dict) -> bool:
+    """Whether an api_tool save changes a fixed value of an existing action.
+
+    A fixed value may be a secret (an API key in a query) or where a call
+    goes, so changing who fills a parameter, or its value, or clearing a
+    stored one is the owner's. Flipping ``filled_by_llm`` on a stored secret
+    would hand it to the model and show it in the chat. A parameter that
+    carries no value can be added or removed freely; a new action brings a
+    URL and is judged by :func:`_api_tool_config_needs_credentials`.
+
+    Args:
+        new_config: The config the client sent.
+        existing_config: The stored config.
+
+    Returns:
+        True when any existing action's fixed values would differ.
+    """
+    old_actions = (existing_config or {}).get("actions") or {}
+    new_actions = (new_config or {}).get("actions") or {}
+    if not isinstance(old_actions, dict) or not isinstance(new_actions, dict):
+        return bool(old_actions) or bool(new_actions)
+    for name, action in new_actions.items():
+        old = old_actions.get(name)
+        if not isinstance(old, dict) or not isinstance(action, dict):
+            continue
+        before = {(s, p): _api_tool_param_state(s, d, stored=True) for s, p, d in iter_parameters(old)}
+        after = {(s, p): _api_tool_param_state(s, d, stored=False) for s, p, d in iter_parameters(action)}
+        for key in before.keys() | after.keys():
+            if key in before and key in after:
+                if before[key] != after[key]:
+                    return True
+            elif (before.get(key) or after.get(key))[1] is not None:
+                return True
+    return False
+
+
+def _connection_server_moved(tool_doc: dict, new_config: Optional[dict]) -> bool:
+    """Whether a config save re-points a connection-backed MCP tool.
+
+    The connection holds the key for one server and one way of signing in;
+    a tool moved on these routes would keep a connection that no longer
+    applies (it is refused at run time) and the new key would be stored
+    where nothing reads it. ``/api/mcp_server/save`` moves a server properly.
+
+    Args:
+        tool_doc: The stored ``user_tools`` row.
+        new_config: The incoming ``config``.
+
+    Returns:
+        True when the base URL or ``auth_type`` would change.
+    """
+    if tool_doc.get("name") != "mcp_tool" or not tool_doc.get("connection_id"):
+        return False
+    existing = tool_doc.get("config") or {}
+    new_config = new_config if isinstance(new_config, dict) else {}
+    if "server_url" in new_config and base_url(str(new_config.get("server_url") or "").strip()) != base_url(
+        existing.get("server_url")
+    ):
+        return True
+    return "auth_type" in new_config and (new_config.get("auth_type") or "none") != (
+        existing.get("auth_type") or "none"
+    )
+
+
 def _mcp_origin_changed(new_config: dict, existing_config: dict) -> bool:
     """Whether a save moves an MCP server to another scheme, host or port."""
     old_url = (existing_config or {}).get("server_url")
@@ -396,18 +498,40 @@ def check_oauth_mcp_owner_only(
         raise AccessDenied(403, SHARED_OAUTH_OWNER_ONLY)
 
 
+def check_api_tool_fixed_values(
+    ra: ResourceAccess, new_config: Optional[dict], existing_config: Optional[dict]
+) -> None:
+    """Keep an api_tool's fixed header, query and body values with its owner.
+
+    Args:
+        ra: The caller's access to the tool.
+        new_config: The incoming ``config``.
+        existing_config: The stored ``config``.
+
+    Raises:
+        AccessDenied: 403 when a non-owner changes a fixed value (see
+            :func:`_api_tool_fixed_values_changed`).
+    """
+    if ra.access != "owner" and _api_tool_fixed_values_changed(new_config or {}, existing_config or {}):
+        raise AccessDenied(403, _FIXED_VALUES_OWNER_ONLY)
+
+
 def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: dict) -> dict:
     """Validate-free merge of an incoming config with the stored one, as the owner.
 
     Handles the three secret stores: ``config_requirements`` secrets
     (``encrypted_credentials``), api_tool header/query values, and the MCP
     origin-change rule (a new scheme, host or port drops stored credentials).
+    A removed connection's note is carried over from the stored config; the
+    client's copy is ignored.
 
     Raises:
         CredentialsRequired: the MCP origin changed and no new secret arrived.
     """
     owner_id = tool_doc["user_id"]
     existing_config = tool_doc.get("config") or {}
+    # The note that its connection was removed is the server's to keep.
+    new_config = carry_removed_connection(new_config, existing_config)
     if tool_doc.get("name") == "api_tool":
         return _seal_api_tool_secrets(new_config, existing_config, owner_id)
     moved = tool_doc.get("name") == "mcp_tool" and _mcp_origin_changed(new_config, existing_config)
@@ -479,7 +603,29 @@ def transform_actions(actions_metadata):
     return transformed
 
 
+def _stored_actions(tool_doc: dict) -> list:
+    """A tool's stored actions, or its class's own for a row stored without any.
+
+    Args:
+        tool_doc: The ``user_tools`` row.
+
+    Returns:
+        The action list submitted actions are validated against.
+    """
+    actions = tool_doc.get("actions") or []
+    if actions or tool_doc.get("name") in ("mcp_tool", "api_tool"):
+        return actions
+    tool_instance = tool_manager.tools.get(tool_doc.get("name"))
+    if tool_instance is None:
+        return actions
+    return transform_actions(copy.deepcopy(tool_instance.get_actions_metadata()))
+
+
 tools_ns = Namespace("tools", description="Tool management operations", path="/api")
+
+# Tools the Connectors page adds through "Add custom connector" rather than
+# the Add Tool modal.
+_CUSTOM_CONNECTOR_TOOLS = {"mcp_tool": "custom_mcp", "api_tool": "custom_openapi"}
 
 
 @tools_ns.route("/available_tools")
@@ -488,6 +634,16 @@ class AvailableTools(Resource):
     def get(self):
         if not request.decoded_token:
             return make_response(jsonify({"success": False}), 401)
+        from docsgpt.connectors import service as connection_service
+
+        try:
+            with db_readonly() as conn:
+                policies = connection_service.load_policies(conn)
+        except Exception:
+            # Without the admin's switches, fall back to the defaults (a
+            # connector is on when its server settings are present).
+            current_app.logger.warning("Could not read connector policies", exc_info=True)
+            policies = {}
         try:
             tools_metadata = []
             for tool_name, tool_instance in tool_manager.tools.items():
@@ -497,6 +653,19 @@ class AvailableTools(Resource):
                 description = lines[1].strip() if len(lines) > 1 else ""
                 config_req = tool_instance.get_config_requirements()
                 actions = tool_instance.get_actions_metadata()
+                definition = definition_for_tool(tool_name)
+                if definition is not None:
+                    if not (definition.configured and connection_service.connector_is_enabled(
+                        policies, definition.key,
+                    )):
+                        continue
+                    group, connector_key = "service", definition.key
+                    # One name everywhere: the connector's, not the tool's own.
+                    name = definition.name
+                elif tool_name in _CUSTOM_CONNECTOR_TOOLS:
+                    group, connector_key = "custom", _CUSTOM_CONNECTOR_TOOLS[tool_name]
+                else:
+                    group, connector_key = "built_in", None
                 tools_metadata.append(
                     {
                         "name": tool_name,
@@ -504,6 +673,8 @@ class AvailableTools(Resource):
                         "description": description,
                         "configRequirements": config_req,
                         "actions": actions,
+                        "group": group,
+                        "connector_key": connector_key,
                     }
                 )
         except Exception as err:
@@ -534,6 +705,8 @@ class GetTools(Resource):
                 team_shared = visible_with_access(conn, user, "tool")
                 shared_ids = [tid for tid in team_shared if tid not in owned_ids]
                 shared_rows = tools_repo.list_by_ids(shared_ids)
+                # "Telegram · Alerts bot" when the owner has several bots.
+                account_names = account_tool_names(conn, [*rows, *shared_rows])
                 switches = settings_many(conn, "tool", [*owned_ids, *shared_ids])
                 prefs = UserToolPreferencesRepository(conn).in_chat_many(user, shared_ids)
                 shared_via = _shared_via(conn, user, shared_ids)
@@ -542,6 +715,9 @@ class GetTools(Resource):
 
             def _shape_tool(row, *, ownership="user", force_strip_secret=False):
                 tool_copy = _row_to_api(row)
+                # The writes an agent's API write allowlist can cover (read
+                # from the stored row, before any secret is masked).
+                tool_copy["owner_credential_writes"] = owner_credential_writes(row)
                 config_req = tool_copy.get("configRequirements", {})
                 if not config_req:
                     tool_instance = tool_manager.tools.get(tool_copy.get("name"))
@@ -556,10 +732,16 @@ class GetTools(Resource):
                 ):
                     tool_copy["config"]["has_encrypted_credentials"] = True
                     tool_copy["config"].pop("encrypted_credentials", None)
+                if tool_copy.get("connection_id"):
+                    # The secret lives on the connection; the form must not
+                    # ask for it again.
+                    tool_copy.setdefault("config", {})["has_encrypted_credentials"] = True
                 if tool_copy.get("name") == "api_tool":
                     # Header / query-param values are secrets for everyone.
                     tool_copy["config"] = mask_api_tool_config(tool_copy.get("config") or {})
                 tool_copy["ownership"] = ownership
+                if str(row["id"]) in account_names:
+                    tool_copy["customName"] = tool_copy["displayName"] = account_names[str(row["id"])]
                 return tool_copy
 
             for row in rows:
@@ -657,6 +839,9 @@ class CreateTool(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        if isinstance(data.get("config"), dict):
+            # Only removing a connection notes that it was removed.
+            data["config"] = carry_removed_connection(data["config"], None)
         try:
             if data["name"] == "mcp_tool":
                 server_url = (data.get("config", {}).get("server_url") or "").strip()
@@ -680,6 +865,11 @@ class CreateTool(Resource):
                 f"Error getting tool actions: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+        definition = definition_for_tool(data["name"])
+        if definition is not None:
+            connected = _create_connected_tool(user, data, definition, tool_instance)
+            if connected is not None:
+                return connected
         try:
             config_requirements = tool_instance.get_config_requirements()
             if config_requirements:
@@ -722,6 +912,82 @@ class CreateTool(Resource):
         return make_response(jsonify({"id": new_id}), 200)
 
 
+def _create_connected_tool(user, data, definition, tool_instance):
+    """Create a service tool whose secret lives on a connection, not the tool.
+
+    Uses ``connection_id`` when given, otherwise stores the pasted secret on
+    a connection (reusing an identical one). Returns None to fall back to the
+    legacy path when a multi-user install still runs on the default key.
+    """
+    from docsgpt.connectors import catalog as connector_catalog
+    from docsgpt.connectors import service as connection_service
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    config_requirements = tool_instance.get_config_requirements()
+    public, secrets = connection_service.split_secrets(data.get("config") or {}, config_requirements)
+    connection_id = data.get("connection_id")
+    # An existing connection supplies the secrets the request leaves out.
+    validation_errors = _validate_config(
+        data.get("config") or {}, config_requirements, has_existing_secrets=bool(connection_id),
+    )
+    if validation_errors:
+        return make_response(
+            jsonify({"success": False, "message": "Validation failed", "errors": validation_errors}), 400,
+        )
+    try:
+        with db_session() as conn:
+            if connection_id:
+                connection = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), user)
+                if connection is None or connector_catalog.connector_key_for_row(connection) != definition.key:
+                    return make_response(jsonify({"success": False, "message": "Connection not found"}), 404)
+            else:
+                connection, _ = connection_service.create_api_key_connection(conn, user, definition, secrets)
+            created = connection_service.create_tool_for_connection(
+                conn,
+                user,
+                connection,
+                template=data["name"],
+                display_name=data.get("customName") or data.get("displayName") or definition.name,
+                config=public,
+                status=bool(data.get("status", True)),
+            )
+    except connection_service.EncryptionKeyNotConfigured:
+        return None
+    except connection_service.ConnectorDisabled as err:
+        return make_response(jsonify({"success": False, "message": str(err)}), 403)
+    except ValueError as err:
+        return make_response(jsonify({"success": False, "message": str(err)}), 400)
+    return make_response(jsonify({"id": str(created["id"]), "connection_id": str(connection["id"])}), 200)
+
+
+def _update_connection_secrets(conn, user, tool_doc, config, config_requirements):
+    """Write changed secrets onto the tool's connection; return the tool's public config.
+
+    Returns None when the caller does not own the connection (an editor on a
+    team share may change actions, never the owner's credentials).
+    """
+    from docsgpt.connectors import service as connection_service
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    public, secrets = connection_service.split_secrets(config or {}, config_requirements)
+    if secrets:
+        connection = ConnectorSessionsRepository(conn).get_for_user(str(tool_doc["connection_id"]), user)
+        if connection is None:
+            return None
+        try:
+            stored = connection_service.read_secrets(connection)
+        except CredentialDecryptionError:
+            # Unreadable after a lost key: the new secret replaces it.
+            stored = {}
+        credentials = {**(stored.get("credentials") or {}), **secrets}
+        connection_service.write_secrets(
+            conn, connection, {**stored, "credentials": credentials},
+            status=connection_service.STATUS_CONNECTED, last_error=None,
+        )
+        connection_service.resume_sources(conn, str(connection["id"]))
+    return public
+
+
 @tools_ns.route("/update_tool")
 class UpdateTool(Resource):
     @api.expect(
@@ -743,6 +1009,16 @@ class UpdateTool(Resource):
     )
     @api.doc(description="Update a tool by ID")
     def post(self):
+        """Update a tool's names, actions, config or chat switch.
+
+        The tool type (``name``) never changes. ``actions`` are checked
+        against the stored ones like ``/api/update_tool_actions``: nothing
+        is added and fixed values are the owner's. A connection-backed MCP
+        server is moved only through ``/api/mcp_server/save``.
+
+        Returns:
+            ``{"success": true}``, or 400 / 403 / 404 with a message.
+        """
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
@@ -817,13 +1093,32 @@ class UpdateTool(Resource):
                     return make_response(
                         jsonify({"success": False, "message": "Tool not found"}), 404,
                     )
-                if update_data:
+                if "name" in data and data["name"] != tool_doc.get("name"):
+                    # The type decides what the config and the connection's
+                    # credentials are used for; it is set once, on create.
+                    return make_response(jsonify({"success": False, "message": _TYPE_IS_FIXED}), 400)
+                if update_data or "actions" in data:
                     check_action(ra, "edit")
+                if "actions" in data:
+                    # The stored actions are the schema, and a fixed value is
+                    # the owner's (as on /api/update_tool_actions).
+                    try:
+                        update_data["actions"] = merge_submitted_actions(
+                            _stored_actions(tool_doc), data["actions"], may_change_pins=ra.access == "owner",
+                        )
+                    except PinChangeRefused as err:
+                        return make_response(jsonify({"success": False, "message": str(err)}), 403)
+                    except ValueError as err:
+                        return make_response(jsonify({"success": False, "message": str(err)}), 400)
                 if "config" in data:
-                    tool_name = tool_doc.get("name", data.get("name"))
+                    tool_name = tool_doc.get("name")
                     existing_config = tool_doc.get("config", {}) or {}
                     if tool_name == "mcp_tool":
                         check_oauth_mcp_owner_only(ra, existing_config, data["config"])
+                    if _connection_server_moved(tool_doc, data["config"]):
+                        return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                    if tool_name == "api_tool":
+                        check_api_tool_fixed_values(ra, data["config"], existing_config)
                     if tool_name == "api_tool" and not _api_tool_config_needs_credentials(
                         data["config"], existing_config
                     ):
@@ -834,7 +1129,11 @@ class UpdateTool(Resource):
                     config_requirements = (
                         tool_instance.get_config_requirements() if tool_instance else {}
                     )
-                    has_existing_secrets = "encrypted_credentials" in existing_config
+                    has_existing_secrets = (
+                        "encrypted_credentials" in existing_config or bool(tool_doc.get("connection_id"))
+                    )
+                    # Validate before touching the connection: a rejected
+                    # edit must not have rotated its credentials.
                     if config_requirements:
                         validation_errors = _validate_config(
                             data["config"], config_requirements,
@@ -849,6 +1148,20 @@ class UpdateTool(Resource):
                                 }),
                                 400,
                             )
+                    if tool_doc.get("connection_id"):
+                        # The connection may back the owner's other tools too,
+                        # so its secret stays the owner's to change even when
+                        # an editor may change the tool's own credentials.
+                        new_config = _update_connection_secrets(
+                            conn, user, tool_doc, data["config"], config_requirements,
+                        )
+                        if new_config is None:
+                            return make_response(
+                                jsonify({"success": False, "message": "Only the owner can change the credentials"}),
+                                403,
+                            )
+                        data = {**data, "config": new_config}
+
                     update_data["config"] = _prepare_tool_config(
                         tool_doc, data["config"], config_requirements
                     )
@@ -891,6 +1204,15 @@ class UpdateToolConfig(Resource):
     )
     @api.doc(description="Update the configuration of a tool")
     def post(self):
+        """Replace a tool's config, keeping stored secrets the client left out.
+
+        A connection-backed tool's new key goes to its connection (the
+        owner's to change) and its server cannot be moved here; an api_tool's
+        fixed values are the owner's.
+
+        Returns:
+            ``{"success": true}``, or 400 / 403 / 404 with a message.
+        """
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
@@ -931,12 +1253,18 @@ class UpdateToolConfig(Resource):
                                 jsonify({"success": False, "message": "Invalid server URL"}),
                                 400,
                             )
+                if _connection_server_moved(tool_doc, data["config"]):
+                    return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                if tool_name == "api_tool":
+                    check_api_tool_fixed_values(ra, data["config"], tool_doc.get("config"))
                 tool_instance = tool_manager.tools.get(tool_name)
                 config_requirements = (
                     tool_instance.get_config_requirements() if tool_instance else {}
                 )
                 existing_config = tool_doc.get("config", {}) or {}
-                has_existing_secrets = "encrypted_credentials" in existing_config
+                has_existing_secrets = (
+                    "encrypted_credentials" in existing_config or bool(tool_doc.get("connection_id"))
+                )
 
                 if config_requirements:
                     validation_errors = _validate_config(
@@ -953,7 +1281,17 @@ class UpdateToolConfig(Resource):
                             400,
                         )
 
-                final_config = _prepare_tool_config(tool_doc, data["config"], config_requirements)
+                config = data["config"]
+                if tool_doc.get("connection_id"):
+                    # The tool runs with its connection's key: a new one goes
+                    # there (the owner's to change), not into this config.
+                    config = _update_connection_secrets(conn, user, tool_doc, config, config_requirements)
+                    if config is None:
+                        return make_response(
+                            jsonify({"success": False, "message": "Only the owner can change the credentials"}),
+                            403,
+                        )
+                final_config = _prepare_tool_config(tool_doc, config, config_requirements)
 
                 repo.update(str(tool_doc["id"]), ra.owner_id, {"config": final_config})
         except AccessDenied as err:
@@ -1009,7 +1347,23 @@ class UpdateToolActions(Resource):
                 # ``edit`` covers action on/off, descriptions and approval
                 # (``require_approval``); actions carry no credentials.
                 ra = require(conn, "tool", data["id"], user, "edit")
-                UserToolsRepository(conn).update(ra.resource_id, ra.owner_id, {"actions": data["actions"]})
+                tool_doc = _load_owned_row(conn, ra)
+                if not tool_doc:
+                    return make_response(
+                        jsonify({"success": False, "message": "Tool not found"}), 404,
+                    )
+                # The stored actions are the schema: nothing can be added,
+                # and a fixed value is the owner's to set (an editor pinning
+                # a Telegram chat would redirect the owner's bot).
+                try:
+                    actions = merge_submitted_actions(
+                        _stored_actions(tool_doc), data["actions"], may_change_pins=ra.access == "owner",
+                    )
+                except PinChangeRefused as err:
+                    return make_response(jsonify({"success": False, "message": str(err)}), 403)
+                except ValueError as err:
+                    return make_response(jsonify({"success": False, "message": str(err)}), 400)
+                UserToolsRepository(conn).update(str(tool_doc["id"]), ra.owner_id, {"actions": actions})
         except AccessDenied as err:
             return denied_response(err)
         except Exception as err:

@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from docsgpt.agents.tools.base import Tool
 from docsgpt.agents.tools.path_utils import validate_tool_path
+from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.wiki_pages import (
     WikiPageConflict,
     WikiPagesRepository,
@@ -20,6 +21,11 @@ WIKI_UPDATED_VIA_AGENT = "agent"
 MAX_WIKI_PAGE_BYTES = 1_000_000
 
 _WRITE_ACTIONS = frozenset({"create", "str_replace", "insert", "delete", "rename"})
+
+OUTSIDE_EDITS_DENIED = (
+    "Error: This wiki's owner doesn't let API or widget users edit it, "
+    "so it can't be changed from here. You can still read it."
+)
 
 
 class WikiTool(Tool):
@@ -39,6 +45,9 @@ class WikiTool(Tool):
         self.config = config
         self.source_id: Optional[str] = config.get("source_id")
         self.source_owner_id: Optional[str] = config.get("source_owner_id")
+        # An API-key or widget run (it acts as the agent's owner): it writes
+        # only while the wiki's owner allows such edits.
+        self.outside_caller: bool = bool(config.get("outside_caller"))
         decoded_token = config.get("decoded_token") or {}
         self.updated_by: Optional[str] = (
             (decoded_token.get("sub") if decoded_token else None)
@@ -228,7 +237,29 @@ class WikiTool(Tool):
             return message
         if access is None or not access.can("edit"):
             return message
+        if self.outside_caller and not self._outside_edits_allowed():
+            return OUTSIDE_EDITS_DENIED
         return None
+
+    def _outside_edits_allowed(self) -> bool:
+        """Read the wiki's live ``wiki_outside_edits`` setting.
+
+        Read on every write rather than trusted from the run's setup, so the
+        owner turning it off stops a conversation that is already going.
+        Fails closed on a missing row or a failed lookup.
+
+        Returns:
+            bool: Whether an API-key or widget run may edit the wiki.
+        """
+        try:
+            with db_readonly() as conn:
+                row = SourcesRepository(conn).get_by_id(str(self.source_id))
+        except Exception:
+            logger.exception(
+                "Wiki outside-edits check failed for source %s", self.source_id
+            )
+            return False
+        return outside_edits_allowed(row)
 
     def get_config_requirements(self) -> Dict[str, Any]:
         return {}
@@ -500,12 +531,21 @@ class WikiTool(Tool):
         return f"Renamed: {validated_old} -> {validated_new}"
 
 
-def build_wiki_tool_entry() -> Dict[str, Any]:
-    """Build the synthetic tools_dict entry for the WikiTool."""
+def build_wiki_tool_entry(writes_allowed: bool = True, approval_required: bool = False) -> Dict[str, Any]:
+    """Build the synthetic tools_dict entry for the WikiTool.
+
+    Args:
+        writes_allowed: False offers the model only ``wiki_view``.
+        approval_required: Every write action waits for the caller's approval.
+    """
     entry = {"name": "wiki"}
     entry["actions"] = [
-        {**action, "active": True} for action in _wiki_actions_metadata()
+        {**action, "active": True}
+        for action in _wiki_actions_metadata()
+        if writes_allowed or action["name"] == "wiki_view"
     ]
+    if approval_required:
+        _require_write_approval(entry)
     return entry
 
 
@@ -513,11 +553,23 @@ def _wiki_actions_metadata() -> List[Dict[str, Any]]:
     return WikiTool().get_actions_metadata()
 
 
+def _require_write_approval(entry: Dict[str, Any]) -> None:
+    for action in entry.get("actions") or []:
+        if action.get("name") != "wiki_view":
+            action["require_approval"] = True
+
+
+def outside_edits_allowed(source_row: Optional[Dict[str, Any]]) -> bool:
+    """Whether a wiki's owner lets API-key and widget runs edit it."""
+    return bool(source_row and source_row.get("wiki_outside_edits"))
+
+
 def build_wiki_tool_config(
     source_id: str,
     source_owner_id: str,
     decoded_token: Optional[Dict] = None,
     user: Optional[str] = None,
+    outside_caller: bool = False,
 ) -> Dict[str, Any]:
     """Build the config dict passed to the injected WikiTool."""
     return {
@@ -525,6 +577,7 @@ def build_wiki_tool_config(
         "source_owner_id": source_owner_id,
         "decoded_token": decoded_token,
         "user": user,
+        "outside_caller": bool(outside_caller),
     }
 
 
@@ -534,15 +587,66 @@ def add_wiki_tool(tools_dict: Dict, config: Dict) -> None:
     Mirrors ``add_internal_search_tool``: the entry carries ``id=WIKI_TOOL_ID``
     so the executor can resolve the synthetic (DB-rowless) tool, and a ``config``
     the executor copies into the loaded tool. Mutates ``tools_dict`` in place.
+    ``writes_allowed=False`` (an API-key or widget run on a wiki whose owner
+    hasn't allowed their edits) offers only ``wiki_view``; the tool still
+    refuses writes itself from ``outside_caller``. ``approval_required`` (a
+    public-link run) puts every write behind the caller's approval.
     """
     if not config or not config.get("source_id") or not config.get("source_owner_id"):
         return
-    entry = build_wiki_tool_entry()
+    entry = build_wiki_tool_entry(
+        writes_allowed=config.get("writes_allowed", True) is not False,
+        approval_required=bool(config.get("approval_required")),
+    )
     entry["id"] = WIKI_TOOL_ID
     entry["config"] = build_wiki_tool_config(
         source_id=config["source_id"],
         source_owner_id=config["source_owner_id"],
         decoded_token=config.get("decoded_token"),
         user=config.get("user"),
+        outside_caller=bool(config.get("outside_caller")),
     )
     tools_dict[WIKI_TOOL_ID] = entry
+
+
+def apply_resume_caller_rules(
+    tools_dict: Dict, *, outside_caller: bool, public_link_caller: bool
+) -> None:
+    """Hold a resumed run's saved WikiTool entry to its caller's rules.
+
+    A paused turn is resumed by whoever sends its tool actions, which may not
+    be who started it: a widget key can resume the owner's own chat. So the
+    saved entry is tightened here rather than trusted. An API-key or widget
+    run gets ``outside_caller`` and, unless the wiki's owner allows their
+    edits (read live), only ``wiki_view``; a public-link run approves every
+    write. Never loosens an entry. Mutates ``tools_dict`` in place.
+
+    Args:
+        tools_dict: The resumed run's tools.
+        outside_caller: The saved state or the resuming request is an
+            API-key or widget caller.
+        public_link_caller: The saved state or the resuming request reached
+            the agent through its public link.
+    """
+    entry = tools_dict.get(WIKI_TOOL_ID) if isinstance(tools_dict, dict) else None
+    if not isinstance(entry, dict):
+        return
+    if public_link_caller:
+        _require_write_approval(entry)
+    if not outside_caller:
+        return
+    config = entry.get("config")
+    if not isinstance(config, dict):
+        config = {}
+        entry["config"] = config
+    config["outside_caller"] = True
+    allowed = False
+    source_id = config.get("source_id")
+    if source_id:
+        try:
+            with db_readonly() as conn:
+                allowed = outside_edits_allowed(SourcesRepository(conn).get_by_id(str(source_id)))
+        except Exception:
+            logger.exception("Wiki outside-edits check failed for source %s", source_id)
+    if not allowed:
+        entry["actions"] = [a for a in entry.get("actions") or [] if a.get("name") == "wiki_view"]

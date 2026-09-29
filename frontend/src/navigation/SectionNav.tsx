@@ -1,9 +1,12 @@
 import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 
+import ConnectionHealthDot from '../connectors/ConnectionHealthDot';
+import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
 import { getVisibleGroups, type Section, type SectionItem } from './sections';
 import { useSidebarLevel } from './SidebarLevelProvider';
 
@@ -35,7 +38,11 @@ export default function SectionNav({
 }: SectionNavProps) {
   const { t } = useTranslation();
   const { goToLevel } = useSidebarLevel();
-  const groups = getVisibleGroups(section, { isAdmin });
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const groups = getVisibleGroups(section, {
+    isAdmin,
+    features: { connectors: connectorsEnabled },
+  });
   const sectionTitle = section.title ?? t(section.titleKey);
 
   const renderItem = (item: SectionItem) => {
@@ -63,6 +70,7 @@ export default function SectionNav({
         >
           <Icon className="text-muted-foreground size-5 shrink-0" aria-hidden />
           <span className="truncate">{t(item.labelKey)}</span>
+          {item.path === '/settings/connectors' && <ConnectionHealthDot />}
         </Link>
       </Button>
     );

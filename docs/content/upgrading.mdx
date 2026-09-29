@@ -11,6 +11,23 @@ import { Callout } from 'nextra/components'
   **Upgrading from 0.16.x?** User data moved from MongoDB to Postgres in 0.17.0. Follow the [Postgres Migration guide](/Deploying/Postgres-Migration) before running `docker compose pull` or `git pull` — existing deployments will not start cleanly without it.
 </Callout>
 
+## Connectors: set ENCRYPTION_SECRET_KEY first
+
+Service credentials (OAuth tokens for Google Drive, SharePoint, Confluence and MCP servers, and API keys for tools) now live on **connections** and are encrypted with a key derived from `ENCRYPTION_SECRET_KEY`. Migration `0040_connections` runs on startup, encrypts the stored tokens and removes their plaintext copies.
+
+<Callout type="warning">
+  **Multi-user installs** (any `AUTH_TYPE`): set `ENCRYPTION_SECRET_KEY` to your own value **before** you upgrade, in the environment of the API, the worker and anything that runs migrations. The migration encrypts with the key it sees; changing it afterwards makes every connection ask its owner to reconnect. While the key is still the public default, DocsGPT refuses to store new credentials and Admin > Connectors shows a warning.
+</Callout>
+
+If you already used a key and want to change it, see [rotating the key](/Guides/Connectors#encryption-key). Single-user local installs keep working with the default and log a warning at startup.
+
+Other changes:
+
+- Register `CONNECTOR_REDIRECT_BASE_URI` exactly as set (no `?provider=` query) as the redirect URI of each OAuth app. Admin > Connectors shows it.
+- `VITE_GOOGLE_CLIENT_ID` is optional now; without it, members pick Drive files in DocsGPT's own picker.
+- Synced sources run as their connection, without a browser session. Keep Celery beat running for scheduled syncs.
+- Downgrading to `0037_request_traces` decrypts the tokens back and gives each tool its key again.
+
 ## pip installs: data home moved
 
 An installed package (`pip install docsgpt`, pipx, `uv tool`) used to keep its data home, meaning `.env`, `inputs/`, `indexes/` and `models/`, in the directory you ran `docsgpt api` and `docsgpt worker` from. It is now `~/.docsgpt/server` (`/opt/docsgpt` for root on Linux). Either move those files there, or set `DOCSGPT_HOME` to the old directory in the environment of both commands. Both commands print the data home they use, and point out a `.env` in the working directory that they no longer read. Source checkouts and the Docker images are not affected.

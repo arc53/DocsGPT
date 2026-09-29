@@ -65,7 +65,8 @@ def _authorized_source_ids(conn, agent: Dict[str, Any], source_ids: List[str]) -
         source_ids: Ids extracted from that row.
 
     A source the owner can't read still searches while the editor who
-    attached it (its sponsor) can edit the agent and read the source.
+    attached it (its sponsor) can edit the agent and still owns or edits
+    the source.
 
     Returns:
         list: The subset the agent's owner (or a live sponsor) may read.

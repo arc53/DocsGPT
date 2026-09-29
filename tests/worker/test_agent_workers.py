@@ -75,6 +75,9 @@ class TestAgentWebhookWorker:
         assert captured["input"] == '{"event": "ping"}'
         # Webhook caller should pass endpoint='webhook'.
         assert captured["kwargs"].get("endpoint") == "webhook"
+        # The owner set the webhook up (its URL is a secret): the run keeps the
+        # owner's rules, and headless runs still refuse approval-gated tools.
+        assert not captured["kwargs"].get("external_caller")
 
     def test_missing_agent_raises(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -375,4 +378,4 @@ class TestRunAgentHeadlessFromWebhook:
         outcome = headless_runner.run_agent_headless(agent_config, "hello")
 
         assert outcome["answer"] == "done"
-        assert captured_source.get("active_docs") == source_id
+        assert captured_source.get("active_docs") == [source_id]

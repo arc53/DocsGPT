@@ -61,7 +61,14 @@ export interface Query {
   conversationId?: string | null;
   title?: string | null;
   thought?: string;
-  sources?: { title: string; text: string; link: string }[];
+  sources?: {
+    title: string;
+    text: string;
+    link: string;
+    // A chunk synced from a connection names the service, never the account.
+    connector_key?: string | null;
+    connector_name?: string | null;
+  }[];
   tool_calls?: ToolCallsType[];
   // Arrival-ordered layout of the fields above, so reasoning and tool calls
   // render where they happened. Live-stream only; absent on reload, where

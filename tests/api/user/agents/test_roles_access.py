@@ -283,7 +283,12 @@ class TestUpdateAgent:
         denied = self._put(app, pg_conn, agent_id, EDITOR, {"tools": [foreign_tool]})
         assert _status(denied) == 403
         assert _status(self._put(app, pg_conn, agent_id, OWNER, {"tools": [owner_tool]})) == 200
-        ok = self._put(app, pg_conn, agent_id, EDITOR, {"tools": [owner_tool, shared_tool]})
+        # The owner can't use the shared tool, so the editor sponsors it,
+        # which takes their confirmation.
+        unconfirmed = self._put(app, pg_conn, agent_id, EDITOR, {"tools": [owner_tool, shared_tool]})
+        assert _status(unconfirmed) == 409
+        ok = self._put(app, pg_conn, agent_id, EDITOR, {"tools": [owner_tool, shared_tool],
+                                                        "confirm_sponsor": [f"tool:{shared_tool}"]})
         assert _status(ok) == 200
 
         set_settings(pg_conn, "tool", shared_tool, {"viewers_can_use_in_agents": False}, STRANGER)

@@ -5,6 +5,7 @@ import { ActiveState } from '../models/misc';
 
 export default function ConfirmationModal({
   message,
+  description,
   modalState,
   setModalState,
   submitLabel,
@@ -14,6 +15,8 @@ export default function ConfirmationModal({
   variant = 'default',
 }: {
   message: string;
+  /** A muted line under the title that says what the action does. */
+  description?: string;
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   submitLabel: string;
@@ -41,6 +44,7 @@ export default function ConfirmationModal({
         if (!open) setModalState('INACTIVE');
       }}
       title={message}
+      description={description}
       footer={
         <ModalActions
           cancelLabel={cancelLabel ? cancelLabel : t('cancel')}

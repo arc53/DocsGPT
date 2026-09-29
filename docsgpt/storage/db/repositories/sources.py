@@ -399,6 +399,30 @@ class SourcesRepository:
         )
         self._conn.execute(stmt)
 
+    def set_wiki_outside_edits(self, source_id: str, user_id: str, allowed: bool) -> bool:
+        """Record whether API-key and widget runs may edit this wiki.
+
+        Kept out of :meth:`update`'s columns so no route that forwards a
+        request body can change it; only the owner-checked wiki settings
+        route calls this.
+
+        Args:
+            source_id: The source's UUID.
+            user_id: The owner's id; the row is scoped to it.
+            allowed: The new value.
+
+        Returns:
+            bool: Whether a row was updated.
+        """
+        t = sources_table
+        result = self._conn.execute(
+            t.update()
+            .where(t.c.id == source_id)
+            .where(t.c.user_id == user_id)
+            .values(wiki_outside_edits=bool(allowed), updated_at=func.now())
+        )
+        return result.rowcount > 0
+
     def get_by_legacy_id(
         self, legacy_mongo_id: str, user_id: Optional[str] = None,
     ) -> Optional[dict]:

@@ -224,6 +224,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_chunks", "GET"): _rule("sources:read", (QUERY, "id")),
     ("/api/sources/<string:source_id>/wiki/pages", "GET"): _rule("sources:read", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/page", "GET"): _rule("sources:read", (VIEW, "source_id")),
+    ("/api/sources/<string:source_id>/wiki/settings", "GET"): _rule("sources:read", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/graph", "GET"): _rule("sources:read", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/graph/node/<string:node_id>", "GET"): _rule(
         "sources:read", (VIEW, "source_id")
@@ -357,12 +358,15 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/teams/<string:team_id>/grants": ("POST", "DELETE"),
     "/api/teams/<string:team_id>/transfer_owner": ("*",),
     "/api/resource_settings": ("PUT",),
+    # Who may edit a wiki from outside the app is the owner's call in a session.
+    "/api/sources/<string:source_id>/wiki/settings": ("PUT",),
     "/swagger.json": ("*",),
 }
 DENIED_PREFIXES = (
     "/api/admin/",
     "/api/auth/oidc/",
     "/api/connectors/",
+    "/api/connections",
     "/api/devices",
     "/scim/",
     "/static/",

@@ -29,7 +29,6 @@ from docsgpt.security.zip_archive import (
 )
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
-    owns_connector_session,
 )
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -452,6 +451,45 @@ class UploadFile(Resource):
         return make_response(jsonify(response_payload), 200)
 
 
+def _remote_credentials(user, source, config):
+    """Split an S3 / Reddit request into loader config and the connection holding its keys.
+
+    A request naming a ``connection_id`` uses that connection's stored keys.
+    A request carrying keys (the form before connections) stores them on a
+    connection, so they are entered once and never land in
+    ``sources.remote_data``. When a multi-user install still runs on the
+    public default encryption key, the keys stay with the source as before.
+
+    Returns:
+        ``(source_data, connection_id, error_response)``.
+    """
+    from docsgpt.connectors import catalog, service
+
+    definition = catalog.get_definition(source)
+    credential_keys = {f.key for f in definition.credential_fields}
+    public = {k: v for k, v in config.items() if k not in credential_keys and k != "connection_id"}
+    connection_id = config.get("connection_id")
+    if connection_id:
+        with db_readonly() as conn:
+            row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), user)
+        if row is None or catalog.connector_key_for_row(row) != source:
+            return None, None, make_response(
+                jsonify({"success": False, "error": "Invalid or unauthorized connection"}), 401,
+            )
+        return public, str(row["id"]), None
+    provided = {k: config[k] for k in credential_keys if config.get(k) not in (None, "")}
+    if not provided:
+        return config, None, None
+    try:
+        with db_session() as conn:
+            row, _ = service.create_api_key_connection(conn, user, definition, provided)
+    except service.ConnectorDisabled as err:
+        return None, None, make_response(jsonify({"success": False, "error": str(err)}), 403)
+    except (service.EncryptionKeyNotConfigured, ValueError):
+        return config, None, None
+    return public, str(row["id"]), None
+
+
 @sources_upload_ns.route("/remote")
 class UploadRemote(Resource):
     @api.expect(
@@ -521,32 +559,35 @@ class UploadRemote(Resource):
         try:
             config = json.loads(data["data"])
             source_data = None
+            connection_id = None
 
             if data["source"] == "github":
                 source_data = config.get("repo_url")
             elif data["source"] in ["crawler", "url", "sitemap"]:
                 source_data = config.get("url")
-            elif data["source"] == "reddit":
-                source_data = config
-            elif data["source"] == "s3":
-                source_data = config
+            elif data["source"] in ("reddit", "s3"):
+                source_data, connection_id, error = _remote_credentials(user, data["source"], config)
+                if error is not None:
+                    if scoped_key:
+                        _release_claim(scoped_key)
+                    return error
             elif data["source"] in ConnectorCreator.get_supported_connectors():
-                session_token = config.get("session_token")
-                if not session_token:
+                if not (config.get("connection_id") or config.get("session_token")):
                     if scoped_key:
                         _release_claim(scoped_key)
                     return make_response(
                         jsonify(
                             {
                                 "success": False,
-                                "error": f"Missing session_token in {data['source']} configuration",
+                                "error": f"Missing connection_id in {data['source']} configuration",
                             }
                         ),
                         400,
                     )
-                with db_readonly() as conn:
-                    connector_session = ConnectorSessionsRepository(conn).get_by_session_token(session_token)
-                if not owns_connector_session(connector_session, user, data["source"]):
+                from docsgpt.connectors import service as connection_service
+
+                connector_session = connection_service.resolve_request_connection(user, data["source"], config)
+                if connector_session is None:
                     if scoped_key:
                         _release_claim(scoped_key)
                     return make_response(
@@ -577,7 +618,7 @@ class UploadRemote(Resource):
                         "job_name": data["name"],
                         "user": user,
                         "source_type": data["source"],
-                        "session_token": session_token,
+                        "connection_id": str(connector_session["id"]),
                         "file_ids": file_ids,
                         "folder_ids": folder_ids,
                         "recursive": config.get("recursive", False),
@@ -612,6 +653,7 @@ class UploadRemote(Resource):
             remote_kwargs = {
                 "kwargs": {
                     "source_data": source_data,
+                    "connection_id": connection_id,
                     "job_name": data["name"],
                     "user": user,
                     "loader": data["source"],

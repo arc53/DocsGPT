@@ -10,12 +10,24 @@ import { useTranslation } from 'react-i18next';
 import userService from '../api/services/userService';
 import { formatBytes } from '../utils/stringUtils';
 import { formatDateTime } from '../utils/dateTimeUtils';
-import {
-  getSessionToken,
-  setSessionToken,
-  removeSessionToken,
-} from '../utils/providerUtils';
+import { useDispatch, useSelector } from 'react-redux';
+import connectorsService from '../api/services/connectorsService';
 import ConnectorAuth from '../components/ConnectorAuth';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectorIconKey } from '../connectors/i18n';
+import {
+  loadConnectors,
+  selectConnections,
+} from '../connectors/connectorsSlice';
+import type { AppDispatch } from '../store';
+import { FormField } from './ui/form-field';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select';
 import SearchInput from './SearchInput';
 import { Alert, AlertDescription } from './ui/alert';
 import {
@@ -75,6 +87,15 @@ interface CloudFilePickerProps {
     selectedFolderIds?: string[],
   ) => void;
   onDisconnect?: () => void;
+  /** Called with the first item's name when the selection goes from empty to one. */
+  onFirstPickName?: (name: string) => void;
+  /**
+   * The connection (signed-in account) to browse. Left out, the picker uses
+   * the first connected account for ``provider`` and lets the user switch.
+   */
+  connectionId?: string | null;
+  /** Reports the account the picker is browsing, so the upload can name it. */
+  onConnectionChange?: (connectionId: string | null) => void;
   provider: string;
   token: string | null;
   initialSelectedFiles?: string[];
@@ -84,11 +105,15 @@ interface CloudFilePickerProps {
 export const FilePicker: React.FC<CloudFilePickerProps> = ({
   onSelectionChange,
   onDisconnect,
+  onFirstPickName,
+  connectionId: controlledConnectionId,
+  onConnectionChange,
   provider,
   token,
   initialSelectedFiles = [],
 }) => {
   const { t } = useTranslation();
+  const dispatch = useDispatch<AppDispatch>();
   const PROVIDER_CONFIG = {
     google_drive: {
       displayName: 'Drive',
@@ -113,6 +138,23 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     );
   };
 
+  const allConnections = useSelector(selectConnections);
+  const accounts = allConnections.filter(
+    (connection) =>
+      connection.connector_key === provider &&
+      connection.status === 'connected',
+  );
+  const [chosenConnectionId, setChosenConnectionId] = useState<string | null>(
+    null,
+  );
+  const activeConnectionId =
+    controlledConnectionId ??
+    (chosenConnectionId &&
+    accounts.some((account) => account.id === chosenConnectionId)
+      ? chosenConnectionId
+      : (accounts[0]?.id ?? null));
+  const activeAccount = accounts.find((a) => a.id === activeConnectionId);
+
   const [files, setFiles] = useState<CloudFile[]>([]);
   const [selectedFiles, setSelectedFiles] =
     useState<string[]>(initialSelectedFiles);
@@ -131,13 +173,17 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   ]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
-  const [isConnected, setIsConnected] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>('');
   const [allowsSharedContent, setAllowsSharedContent] = useState(false);
   const [activeTab, setActiveTab] = useState<'my_files' | 'shared'>('my_files');
 
+  const isConnected = !!activeConnectionId;
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    onConnectionChange?.(activeConnectionId);
+  }, [activeConnectionId]);
 
   const isFolder = (file: CloudFile) => {
     return (
@@ -149,7 +195,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
   const loadCloudFiles = useCallback(
     async (
-      sessionToken: string,
+      connectionId: string,
       folderId: string | null,
       pageToken?: string,
       searchQuery = '',
@@ -169,7 +215,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       try {
         const body: Record<string, unknown> = {
           provider: provider,
-          session_token: sessionToken,
+          connection_id: connectionId,
           folder_id: folderId,
           limit: 10,
           page_token: pageToken,
@@ -190,7 +236,14 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           setNextPageToken(data.next_page_token);
           setHasMoreFiles(!!data.next_page_token);
         } else {
-          console.error('Error loading files:', data.error);
+          if (data.reconnect) {
+            setAuthError(
+              t('filePicker.sessionExpiredFor', {
+                provider: getProviderConfig(provider).displayName,
+              }),
+            );
+            dispatch(loadConnectors({ token }));
+          }
           if (!pageToken) {
             setFiles([]);
           }
@@ -210,72 +263,26 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     [token, provider],
   );
 
-  const validateAndLoadFiles = useCallback(async () => {
-    const sessionToken = getSessionToken(provider);
-    if (!sessionToken) {
-      setIsConnected(false);
-      return;
-    }
-
-    try {
-      const validateResponse = await userService.validateConnectorSession(
-        provider,
-        token,
-      );
-
-      if (!validateResponse.ok) {
-        removeSessionToken(provider);
-        setIsConnected(false);
-        setAuthError(
-          t('filePicker.sessionExpiredFor', {
-            provider: getProviderConfig(provider).displayName,
-          }),
-        );
-        return;
-      }
-
-      const validateData = await validateResponse.json();
-      if (validateData.success) {
-        setUserEmail(
-          validateData.user_email ||
-            t('modals.uploadDoc.connectors.auth.connectedUser'),
-        );
-        setIsConnected(true);
-        setAuthError('');
-        if (provider === 'share_point') {
-          setAllowsSharedContent(validateData.allows_shared_content ?? false);
-        }
-
-        setFiles([]);
-        setNextPageToken(null);
-        setHasMoreFiles(false);
-        setCurrentFolderId(null);
-        setActiveTab('my_files');
-        setFolderPath([
-          {
-            id: null,
-            name: getProviderConfig(provider).rootName,
-          },
-        ]);
-        loadCloudFiles(sessionToken, null, undefined, '');
-      } else {
-        removeSessionToken(provider);
-        setIsConnected(false);
-        setAuthError(
-          validateData.error ||
-            t('modals.uploadDoc.connectors.googleDrive.sessionExpiredGeneric'),
-        );
-      }
-    } catch (error) {
-      console.error('Error validating session:', error);
-      setAuthError(t('modals.uploadDoc.connectors.googleDrive.validateFailed'));
-      setIsConnected(false);
-    }
-  }, [provider, token, loadCloudFiles]);
-
+  // Browse from the root whenever the account changes.
   useEffect(() => {
-    validateAndLoadFiles();
-  }, [validateAndLoadFiles]);
+    setFiles([]);
+    setNextPageToken(null);
+    setHasMoreFiles(false);
+    setCurrentFolderId(null);
+    setActiveTab('my_files');
+    setAllowsSharedContent(false);
+    setFolderPath([{ id: null, name: getProviderConfig(provider).rootName }]);
+    if (!activeConnectionId) return;
+    setAuthError('');
+    loadCloudFiles(activeConnectionId, null, undefined, '');
+    if (provider === 'share_point') {
+      // Work and school accounts can browse "Shared with me" too.
+      connectorsService
+        .pickerToken(activeConnectionId, token)
+        .then((data) => setAllowsSharedContent(!!data?.allows_shared_content))
+        .catch(() => undefined);
+    }
+  }, [activeConnectionId, provider, loadCloudFiles]);
 
   const handleScroll = useCallback(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -284,17 +291,20 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
     const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
 
-    if (isNearBottom && hasMoreFiles && !isLoading && nextPageToken) {
-      const sessionToken = getSessionToken(provider);
-      if (sessionToken) {
-        loadCloudFiles(
-          sessionToken,
-          currentFolderId,
-          nextPageToken,
-          searchQuery,
-          activeTab === 'shared' && !currentFolderId,
-        );
-      }
+    if (
+      isNearBottom &&
+      hasMoreFiles &&
+      !isLoading &&
+      nextPageToken &&
+      activeConnectionId
+    ) {
+      loadCloudFiles(
+        activeConnectionId,
+        currentFolderId,
+        nextPageToken,
+        searchQuery,
+        activeTab === 'shared' && !currentFolderId,
+      );
     }
   }, [
     hasMoreFiles,
@@ -302,7 +312,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     nextPageToken,
     currentFolderId,
     searchQuery,
-    provider,
+    activeConnectionId,
     loadCloudFiles,
     activeTab,
   ]);
@@ -322,10 +332,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   }, []);
 
   const debouncedLoadFiles = useDebouncedCallback((query: string) => {
-    const sessionToken = getSessionToken(provider);
-    if (sessionToken) {
+    if (activeConnectionId) {
       loadCloudFiles(
-        sessionToken,
+        activeConnectionId,
         currentFolderId,
         undefined,
         query,
@@ -350,9 +359,8 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     setFolderPath((prev) => [...prev, { id: folderId, name: folderName }]);
     setSearchQuery('');
 
-    const sessionToken = getSessionToken(provider);
-    if (sessionToken) {
-      loadCloudFiles(sessionToken, folderId, undefined, '', false);
+    if (activeConnectionId) {
+      loadCloudFiles(activeConnectionId, folderId, undefined, '', false);
     }
   };
 
@@ -366,10 +374,9 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     setCurrentFolderId(newFolderId);
     setSearchQuery('');
 
-    const sessionToken = getSessionToken(provider);
-    if (sessionToken) {
+    if (activeConnectionId) {
       loadCloudFiles(
-        sessionToken,
+        activeConnectionId,
         newFolderId,
         undefined,
         '',
@@ -397,13 +404,20 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
             : getProviderConfig(provider).rootName,
       },
     ]);
-    const sessionToken = getSessionToken(provider);
-    if (sessionToken) {
-      loadCloudFiles(sessionToken, null, undefined, '', tab === 'shared');
+    if (activeConnectionId) {
+      loadCloudFiles(activeConnectionId, null, undefined, '', tab === 'shared');
     }
   };
 
   const handleFileSelect = (fileId: string, isFolder: boolean) => {
+    if (
+      selectedFiles.length === 0 &&
+      selectedFolders.length === 0 &&
+      onFirstPickName
+    ) {
+      const picked = files.find((file) => file.id === fileId);
+      if (picked) onFirstPickName(picked.name);
+    }
     if (isFolder) {
       const newSelectedFolders = selectedFolders.includes(fileId)
         ? selectedFolders.filter((id) => id !== fileId)
@@ -419,6 +433,13 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
     }
   };
 
+  const switchAccount = (connectionId: string) => {
+    setChosenConnectionId(connectionId);
+    setSelectedFiles([]);
+    setSelectedFolders([]);
+    onSelectionChange([], []);
+  };
+
   return (
     <div className="">
       {authError && (
@@ -428,45 +449,60 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
         </Alert>
       )}
 
+      {accounts.length > 1 && !controlledConnectionId && (
+        <FormField label={t('filePicker.account')} className="mb-4">
+          <Select
+            value={activeConnectionId ?? undefined}
+            onValueChange={switchAccount}
+          >
+            <SelectTrigger size="field" shape="pill" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((account) => (
+                <SelectItem key={account.id} value={account.id}>
+                  {account.account_label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FormField>
+      )}
+
       <ConnectorAuth
         provider={provider}
         label={t('filePicker.connectTo', {
           provider: getProviderConfig(provider).displayName,
         })}
+        icon={
+          <ConnectorIcon icon={connectorIconKey(provider)} className="size-5" />
+        }
         onSuccess={(data) => {
-          setUserEmail(
-            data.user_email ||
-              t('modals.uploadDoc.connectors.auth.connectedUser'),
-          );
-          setIsConnected(true);
           setAuthError('');
-
-          if (data.session_token) {
-            setSessionToken(provider, data.session_token);
-            validateAndLoadFiles();
-          }
+          dispatch(loadConnectors({ token }));
+          if (data.connection_id) setChosenConnectionId(data.connection_id);
         }}
         onError={(error) => {
           setAuthError(error);
-          setIsConnected(false);
         }}
         isConnected={isConnected}
-        userEmail={userEmail}
+        userEmail={
+          activeAccount?.account_label ||
+          t('modals.uploadDoc.connectors.auth.connectedUser')
+        }
         onDisconnect={() => {
-          const sessionToken = getSessionToken(provider);
-          if (sessionToken) {
-            userService
-              .disconnectConnector(provider, sessionToken, token)
+          if (activeConnectionId) {
+            connectorsService
+              .disconnect(activeConnectionId, token)
               .catch((err) =>
                 console.error(
                   `Error disconnecting from ${getProviderConfig(provider).displayName}:`,
                   err,
                 ),
-              );
+              )
+              .finally(() => dispatch(loadConnectors({ token })));
           }
-
-          removeSessionToken(provider);
-          setIsConnected(false);
+          setChosenConnectionId(null);
           setAllowsSharedContent(false);
           setActiveTab('my_files');
           setFiles([]);

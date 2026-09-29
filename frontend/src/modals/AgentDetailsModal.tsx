@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import { Agent } from '../agents/types';
+import ApiWriteAllowlist from '../agents/ApiWriteAllowlist';
+import { Agent, type AgentConfig } from '../agents/types';
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -13,6 +14,7 @@ import { Modal } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import { isOwner } from '../utils/accessUtils';
 import ConfirmationModal from './ConfirmationModal';
 
 const baseURL = envVar('VITE_BASE_URL');
@@ -35,6 +37,12 @@ type AgentDetailsModalProps = {
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   onKeyRegenerated?: (key: string) => void;
+  /** The agent's saved config after its API-key write allowlist changed. */
+  onConfigChange?: (config: AgentConfig) => void;
+  /** The agent's last saved config, which an allowlist change saves onto. */
+  getSavedConfig?: () => AgentConfig | undefined;
+  /** Open with the API write allowlist unfolded (sent here to allow changes). */
+  openApiWrites?: boolean;
 };
 
 export default function AgentDetailsModal({
@@ -43,6 +51,9 @@ export default function AgentDetailsModal({
   modalState,
   setModalState,
   onKeyRegenerated,
+  onConfigChange,
+  getSavedConfig,
+  openApiWrites = false,
 }: AgentDetailsModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -266,6 +277,16 @@ export default function AgentDetailsModal({
                 >
                   {t('modals.agentDetails.generate')}
                 </Button>
+              )}
+              {/* The allowlist acts on the owner's connected accounts, so
+                  only the owner changes it (the server keeps it otherwise). */}
+              {apiKey && isOwner(agent) && (
+                <ApiWriteAllowlist
+                  agent={agent}
+                  onConfigChange={onConfigChange}
+                  getSavedConfig={getSavedConfig}
+                  defaultOpen={openApiWrites}
+                />
               )}
             </div>
             <div className="flex flex-col gap-3">

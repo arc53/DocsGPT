@@ -4,6 +4,8 @@ import {
   ChevronRight,
   CircleAlert,
   Trash2,
+  UserRound,
+  UsersRound,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -17,8 +19,12 @@ import teamsService, {
   ResourceType,
   TeamMember,
 } from '../api/services/teamsService';
+import connectorsService from '../api/services/connectorsService';
+import AgentUsesSection from '../agents/components/AgentUsesSection';
 import SearchInput from '../components/SearchInput';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Checkbox } from '../components/ui/checkbox';
+import { Label } from '../components/ui/label';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { EmptyState } from '../components/ui/empty-state';
@@ -61,14 +67,39 @@ import {
   errorMessage,
   resolveSettings,
   settingCopy,
+  shownSettings,
 } from './accessSettings';
 import { loadTeams, selectTeams } from './teamsSlice';
+
+/** A connection-backed tool: whose account shares of it run with. */
+export type ShareCredentials = {
+  toolId: string;
+  connectorName: string;
+  /** The connection's account; empty when the caller isn't its owner. */
+  account: string;
+  mode: 'owner' | 'member';
+  /** Set when an admin forces one mode for every share of this connector. */
+  forcedMode?: 'owner' | 'member' | null;
+  /** Owner-mode shares of a tool with write actions need an explicit OK. */
+  hasWrites: boolean;
+  /**
+   * An editor the owner lets share: the mode is the owner's choice, shown
+   * but locked, and the write confirmation still applies.
+   */
+  readOnly?: boolean;
+};
 
 type Props = {
   resourceType: ResourceType;
   resourceId: string;
   resourceName?: string;
+  credentials?: ShareCredentials;
   onClose: () => void;
+  /**
+   * An agent's: opens its Access details (the API write allowlist) from
+   * "What this agent uses". The caller closes this dialog for it.
+   */
+  onOpenAccessDetails?: () => void;
 };
 
 // Member subs (OIDC subs) can be long; there's no display-name endpoint, so we
@@ -114,7 +145,9 @@ export default function ShareToTeamModal({
   resourceType,
   resourceId,
   resourceName,
+  credentials,
   onClose,
+  onOpenAccessDetails,
 }: Props) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -130,6 +163,37 @@ export default function ShareToTeamModal({
   const [shares, setShares] = useState<ResourceShare[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const savedCredentialMode =
+    credentials?.forcedMode ?? credentials?.mode ?? 'owner';
+  const [credentialMode, setCredentialMode] = useState<'owner' | 'member'>(
+    savedCredentialMode,
+  );
+  // The caller may open the dialog before the tool's connection has loaded:
+  // follow the mode (or an admin's forced one) when it arrives or changes.
+  const [seenCredentialMode, setSeenCredentialMode] =
+    useState(savedCredentialMode);
+  if (savedCredentialMode !== seenCredentialMode) {
+    setSeenCredentialMode(savedCredentialMode);
+    setCredentialMode(savedCredentialMode);
+  }
+  const [writesConfirmed, setWritesConfirmed] = useState(false);
+  const needsWriteConfirm =
+    !!credentials && credentialMode === 'owner' && credentials.hasWrites;
+  const changeCredentialMode = (mode: 'owner' | 'member') => {
+    if (!credentials || credentials.readOnly || mode === credentialMode) return;
+    const previous = credentialMode;
+    setCredentialMode(mode);
+    connectorsService
+      .setCredentialMode(credentials.toolId, mode, token)
+      .then((data) => {
+        if (!data?.success) throw new Error('save failed');
+      })
+      .catch(() => {
+        setCredentialMode(previous);
+        setActionError(t('settings.connectors.share.saveFailed'));
+      });
+  };
 
   // The owner's per-resource switches and the caller's own access, from
   // GET /api/resource_settings. Null until loaded (or when it fails: the hint
@@ -221,7 +285,12 @@ export default function ShareToTeamModal({
       .getResourceSettings(resourceType, resourceId, token)
       .then((r) => {
         setSettingsInfo(r);
-        if (anyChanged(resolveSettings(resourceType, r?.settings))) {
+        const shown = shownSettings(
+          resourceType,
+          resolveSettings(resourceType, r?.settings),
+          !!credentials,
+        );
+        if (anyChanged(shown)) {
           setSettingsOpen(true);
         }
       })
@@ -231,9 +300,16 @@ export default function ShareToTeamModal({
       });
   }, [resourceType, resourceId]);
 
+  // A connected tool hides "Editors can change credentials": its secret is
+  // the owner's connection, which editors never change.
   const settings = useMemo<ResourceSetting[]>(
-    () => resolveSettings(resourceType, settingsInfo?.settings),
-    [resourceType, settingsInfo],
+    () =>
+      shownSettings(
+        resourceType,
+        resolveSettings(resourceType, settingsInfo?.settings),
+        !!credentials,
+      ),
+    [resourceType, settingsInfo, credentials],
   );
   const canManageSettings = can(settingsInfo, 'manage_settings');
 
@@ -758,7 +834,12 @@ export default function ShareToTeamModal({
       {settingsOpen && (
         <SettingRows>
           {settings.map((setting) => {
-            const copy = settingCopy(t, resourceType, setting.key);
+            const copy = settingCopy(
+              t,
+              resourceType,
+              setting.key,
+              credentials ? credentialMode : undefined,
+            );
             const id = `share-setting-${setting.key}`;
             return (
               <SettingRow
@@ -794,6 +875,108 @@ export default function ShareToTeamModal({
         <p className="text-sm">{t('settings.teams.share.noTeams')}</p>
       ) : (
         <>
+          {credentials && (
+            <section className="flex flex-col gap-3">
+              <SectionHeader
+                as="h3"
+                size="xs"
+                title={t('settings.connectors.share.heading')}
+              />
+              {/* A compact one-of-two; the line under it says what the
+                  choice means. */}
+              <div className="bg-muted self-start rounded-full p-1">
+                <ToggleGroup
+                  type="single"
+                  size="xs"
+                  value={credentialMode}
+                  aria-label={t('settings.connectors.share.heading')}
+                  onValueChange={(value) =>
+                    value && changeCredentialMode(value as 'owner' | 'member')
+                  }
+                >
+                  {(['owner', 'member'] as const).map((mode) => (
+                    <ToggleGroupItem
+                      key={mode}
+                      value={mode}
+                      disabled={
+                        !!credentials.readOnly ||
+                        (!!credentials.forcedMode &&
+                          credentials.forcedMode !== mode)
+                      }
+                    >
+                      {mode === 'owner' ? <UserRound /> : <UsersRound />}
+                      {/* "Your account" to the owner; an editor sees the
+                          owner's, like the agent's "What this agent uses". */}
+                      {t(
+                        mode === 'owner' && credentials.readOnly
+                          ? 'settings.connectors.sharing.ownerShortShared'
+                          : `settings.connectors.sharing.${mode}Short`,
+                      )}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
+              {credentials.forcedMode ? (
+                <p className="text-muted-foreground text-xs">
+                  {t('settings.connectors.share.forced')}
+                </p>
+              ) : (
+                credentials.readOnly && (
+                  <p className="text-muted-foreground text-xs">
+                    {t('settings.connectors.share.ownerChooses')}
+                  </p>
+                )
+              )}
+              {credentialMode === 'owner' ? (
+                // A tool that can act asks for the confirmation below, which
+                // says the same; one that only reads gets a plain line.
+                needsWriteConfirm ? null : (
+                  <p className="text-muted-foreground text-sm">
+                    {credentials.readOnly
+                      ? t('settings.connectors.share.ownerWarningShared', {
+                          name: credentials.connectorName,
+                          interpolation: { escapeValue: false },
+                        })
+                      : t('settings.connectors.share.ownerWarning', {
+                          account: credentials.account,
+                          name: credentials.connectorName,
+                          interpolation: { escapeValue: false },
+                        })}
+                  </p>
+                )
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  {t('settings.connectors.share.memberNote', {
+                    name: credentials.connectorName,
+                    interpolation: { escapeValue: false },
+                  })}
+                </p>
+              )}
+              {needsWriteConfirm && (
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="share-confirm-writes"
+                    checked={writesConfirmed}
+                    onCheckedChange={(checked) =>
+                      setWritesConfirmed(checked === true)
+                    }
+                  />
+                  <Label
+                    htmlFor="share-confirm-writes"
+                    className="text-sm font-normal"
+                  >
+                    {credentials.readOnly
+                      ? t('settings.connectors.share.confirmWriteShared', {
+                          name: credentials.connectorName,
+                          interpolation: { escapeValue: false },
+                        })
+                      : t('settings.connectors.share.confirmWrite')}
+                  </Label>
+                </div>
+              )}
+            </section>
+          )}
+
           <div>
             {/* Add row: type-ahead combobox + access level select. */}
             <div className="flex items-center gap-2">
@@ -804,7 +987,9 @@ export default function ShareToTeamModal({
                     variant="combobox"
                     role="combobox"
                     aria-expanded={pickerOpen}
-                    disabled={committing}
+                    disabled={
+                      committing || (needsWriteConfirm && !writesConfirmed)
+                    }
                     data-placeholder=""
                     className="min-w-0 flex-1 justify-start"
                   >
@@ -915,7 +1100,7 @@ export default function ShareToTeamModal({
               data-testid="share-editor-hint"
               className="text-muted-foreground mt-1.5 text-xs"
             >
-              {editorHint(t, resourceType, settings)}
+              {editorHint(t, resourceType, settings, !!credentials)}
             </p>
           </div>
 
@@ -955,6 +1140,17 @@ export default function ShareToTeamModal({
             )}
           </section>
         </>
+      )}
+
+      {/* Whose access each of the agent's tools, sources and prompt runs
+          with, for the people it is shared with (owners and editors only:
+          viewers never open this dialog). */}
+      {resourceType === 'agent' && (
+        <AgentUsesSection
+          agentId={resourceId}
+          readerId={currentUserId}
+          onOpenAccessDetails={onOpenAccessDetails}
+        />
       )}
 
       {accessSettings}

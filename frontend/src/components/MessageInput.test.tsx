@@ -8,7 +8,12 @@ vi.mock('react-i18next', () => ({
 }));
 // The upload modal pulls in the whole ingest UI; the composer never opens it here.
 vi.mock('../upload/Upload', () => ({ default: () => null }));
+vi.mock('../connectors/SignInAgainNotice', () => ({
+  default: () => null,
+  useSignInAgain: () => ({ reconnect: vi.fn(), modals: null }),
+}));
 
+import connectorsReducer from '../connectors/connectorsSlice';
 import notificationsReducer from '../notifications/notificationsSlice';
 import { prefSlice } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
@@ -28,6 +33,7 @@ const makeStore = () =>
       preference: prefSlice.reducer,
       upload: uploadReducer,
       notifications: notificationsReducer,
+      connectors: connectorsReducer,
     },
   });
 

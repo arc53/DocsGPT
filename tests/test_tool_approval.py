@@ -215,6 +215,30 @@ class TestHandlerApprovalPause:
         ]
         assert len(approval_events) == 1
 
+    def test_approval_event_carries_what_will_be_sent(self):
+        handler = ConcreteHandler()
+        agent = self._make_agent({
+            "call_id": "c1",
+            "name": "send_msg_0",
+            "tool_name": "telegram",
+            "tool_id": "0",
+            "action_name": "send_msg",
+            "arguments": {"text": "hello", "chat_id": "666"},
+            "sent_arguments": {"text": "hello", "chat_id": "111"},
+            "pause_type": "awaiting_approval",
+            "thought_signature": None,
+        })
+        call = ToolCall(id="c1", name="send_msg_0", arguments='{"text": "hello"}')
+        gen = handler.handle_tool_calls(agent, [call], {"0": {"name": "telegram"}}, [])
+        events = []
+        try:
+            while True:
+                events.append(next(gen))
+        except StopIteration:
+            pass
+        (event,) = [e for e in events if e.get("data", {}).get("status") == "awaiting_approval"]
+        assert event["data"]["sent_arguments"] == {"text": "hello", "chat_id": "111"}
+
     def test_mixed_normal_and_approval(self):
         """First tool runs normally, second needs approval."""
         handler = ConcreteHandler()

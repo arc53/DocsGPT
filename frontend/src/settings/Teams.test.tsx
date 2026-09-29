@@ -1,6 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
 // A JWT whose payload is {"sub":"me"}.
 const TOKEN = `x.${btoa(JSON.stringify({ sub: 'me' }))}.y`;
@@ -183,6 +183,10 @@ describe('Teams page', () => {
     document.body.innerHTML = '';
   });
 
+  function Where() {
+    return <div data-testid="where">{useLocation().pathname}</div>;
+  }
+
   const render = async () => {
     act(() => {
       root.render(
@@ -190,6 +194,7 @@ describe('Teams page', () => {
           initialEntries={[{ pathname: '/teams', state: { openTeamId: 't1' } }]}
         >
           <Teams />
+          <Where />
         </MemoryRouter>,
       );
     });
@@ -359,6 +364,27 @@ describe('Teams page', () => {
     ).toHaveLength(0);
     expect(sheet.textContent).toContain(
       'settings.teams.drawer.open(type=settings.teams.resourceType.source)',
+    );
+  });
+
+  it('opens a shared source on the Knowledge page', async () => {
+    listGrants.mockResolvedValue({
+      team_role: 'team_member',
+      grants: [grant({ caller: VIEWER })],
+    });
+    await render();
+    await openDrawer();
+    const open = Array.from(
+      body().querySelectorAll<HTMLButtonElement>(
+        '[data-slot="sheet-content"] button',
+      ),
+    ).find((b) =>
+      b.textContent?.startsWith('settings.teams.drawer.open(type='),
+    )!;
+    act(() => open.click());
+    await flush();
+    expect(body().querySelector('[data-testid="where"]')?.textContent).toBe(
+      '/settings/knowledge',
     );
   });
 

@@ -44,6 +44,9 @@ class SchedulerTool(Tool):
         self.user_id: Optional[str] = user_id
         self.agent_id: Optional[str] = cfg.get("agent_id")
         self.conversation_id: Optional[str] = cfg.get("conversation_id")
+        # ``api`` when an API-key caller asked (set by the executor, never the
+        # model): the schedule's runs then keep that caller's write limits.
+        self.created_via: str = "api" if cfg.get("created_via") == "api" else "chat"
 
     def execute_action(self, action_name: str, **kwargs: Any) -> str:
         """Dispatch on the LLM-supplied action name."""
@@ -191,7 +194,7 @@ class SchedulerTool(Tool):
                     timezone=tz or "UTC",
                     tool_allowlist=allowlist,
                     origin_conversation_id=self.conversation_id,
-                    created_via="chat",
+                    created_via=self.created_via,
                 )
         except Exception as exc:
             logger.exception("schedule_task create failed: %s", exc)

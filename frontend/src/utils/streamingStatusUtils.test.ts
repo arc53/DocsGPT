@@ -125,4 +125,64 @@ describe('getToolChipLabel', () => {
       ),
     ).toBe('conversation.toolChip.usingTool|Mcp Tool');
   });
+  it('names a connection-backed call after its service', () => {
+    const notion = { tool_name: 'mcp_tool', connector_name: 'Notion' };
+    expect(
+      getToolChipLabel(
+        call({ ...notion, action_name: 'notion-search', access: 'read' }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.searchedConnector|Notion');
+    expect(
+      getToolChipLabel(
+        call({
+          ...notion,
+          action_name: 'notion-fetch',
+          access: 'read',
+          status: 'pending',
+        }),
+        t,
+      ),
+    ).toBe('conversation.streamingStatus.usingConnector|Notion');
+    expect(
+      getToolChipLabel(
+        call({ ...notion, action_name: 'notion-fetch', access: 'read' }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.readConnector|Notion');
+  });
+
+  it('names the action of a write without the service prefix', () => {
+    expect(
+      getToolChipLabel(
+        call({
+          tool_name: 'mcp_tool',
+          connector_name: 'Linear',
+          action_name: 'linear_create_issue',
+          access: 'write',
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.usedConnector|Linear,create issue');
+    expect(
+      getToolChipLabel(
+        call({
+          tool_name: 'telegram',
+          connector_name: 'Telegram',
+          action_name: 'send_message',
+          access: 'write',
+        }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.usedConnector|Telegram,send message');
+  });
+
+  it('keeps built-in labels for web search even with a connector name', () => {
+    expect(
+      getToolChipLabel(
+        call({ connector_name: 'Brave', arguments: { query: 'docsgpt' } }),
+        t,
+      ),
+    ).toBe('conversation.toolChip.searchingWeb|docsgpt');
+  });
 });

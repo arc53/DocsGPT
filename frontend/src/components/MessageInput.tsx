@@ -35,13 +35,24 @@ import {
   selectToken,
   setSelectedDocs,
 } from '../preferences/preferenceSlice';
-import type { RootState } from '../store';
+import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
 import ToolIcon from './ToolIcon';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import {
+  connectionNeedsSignIn,
+  loadConnectors,
+  selectConnections,
+  selectConnectorCatalog,
+} from '../connectors/connectorsSlice';
+import { toolServiceOf } from '../connectors/toolService';
+import SignInAgainNotice, {
+  useSignInAgain,
+} from '../connectors/SignInAgainNotice';
 import {
   AttachFileButton,
   AttachmentChipList,
@@ -340,6 +351,8 @@ export default function MessageInput({
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [userTools, setUserTools] = useState<UserToolType[]>([]);
+  const connections = useSelector(selectConnections);
+  const catalog = useSelector(selectConnectorCatalog);
   const [toolsLoading, setToolsLoading] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -1562,22 +1575,77 @@ export default function MessageInput({
       .finally(() => setToolsLoading(false));
   }, [token]);
 
+  // Launched from the Tools picker; the modals live here because the picker
+  // closes when a sign-in opens.
+  const signInAgain = useSignInAgain({ onConnected: fetchUserTools });
+
   useEffect(() => {
-    if (isToolsPopupOpen) fetchUserTools();
+    if (isToolsPopupOpen) {
+      fetchUserTools();
+      (dispatch as AppDispatch)(loadConnectors({ token }));
+    }
   }, [isToolsPopupOpen, fetchUserTools]);
 
-  const toolItems: MultiSelectPopoverItem[] = userTools.map((tool) => ({
-    id: tool.id,
-    label: tool.customName || tool.displayName,
-    icon: <ToolIcon name={tool.name} className="size-5" />,
-    description:
-      !isOwner(tool) && tool.shared_via
-        ? t('settings.tools.sharedBy', {
-            interpolation: { escapeValue: false },
-            team: tool.shared_via,
-          })
-        : undefined,
-  }));
+  // Tools from a connected service sit under that service; the rest are
+  // built in. Groups only appear once some tool comes from a connection.
+  // A teammate's connection is never in the caller's list, so the tool's own
+  // connection id decides, and the service is named from the catalog.
+  const toolService = (tool: UserToolType) =>
+    toolServiceOf(tool, connections, catalog);
+  const anyConnectedTool = userTools.some((tool) => !!tool.connection_id);
+  // Same groups as the agent builder: built in, one per service, then custom
+  // tools (an API tool, an MCP server with no connection).
+  const isCustomTool = (tool: UserToolType) =>
+    !tool.connection_id &&
+    (tool.name === 'api_tool' || tool.name === 'mcp_tool');
+  const toolRank = (tool: UserToolType) =>
+    tool.connection_id ? 1 : isCustomTool(tool) ? 2 : 0;
+  const toolItems: MultiSelectPopoverItem[] = [...userTools]
+    .sort((a, b) => toolRank(a) - toolRank(b))
+    .map((tool) => {
+      const service = toolService(tool);
+      const connection = service?.connection;
+      return {
+        id: tool.id,
+        label: tool.customName || tool.displayName,
+        icon: service?.icon ? (
+          <ConnectorIcon icon={service.icon} className="size-5" />
+        ) : (
+          <ToolIcon name={tool.name} className="size-5" />
+        ),
+        group: anyConnectedTool
+          ? (service?.name ??
+            (isCustomTool(tool)
+              ? t('agents.form.toolsPopup.groupCustom')
+              : t('settings.tools.groupBuiltIn')))
+          : undefined,
+        // Shared-by line; the sign-in warning below wins when both apply.
+        description:
+          !isOwner(tool) && tool.shared_via
+            ? t('settings.tools.sharedBy', {
+                interpolation: { escapeValue: false },
+                team: tool.shared_via,
+              })
+            : undefined,
+        descriptionNode: connectionNeedsSignIn(connection) ? (
+          <p className="text-warning text-xs">
+            {t('settings.connectors.health.signInAgain')}
+          </p>
+        ) : undefined,
+      };
+    });
+  // Each broken connection once, with the tool it would re-sign (an MCP
+  // preset keeps its tool rather than gaining a second one).
+  const brokenConnections = connections
+    .filter(connectionNeedsSignIn)
+    .flatMap((connection) => {
+      const tools = userTools.filter(
+        (tool) => tool.connection_id === connection.id,
+      );
+      if (tools.length === 0) return [];
+      const mcpTool = tools.find((tool) => tool.name === 'mcp_tool');
+      return [{ connection, mcpToolId: mcpTool?.id }];
+    });
 
   const selectedToolIds = userTools
     .filter((tool) => toolInChat(tool))
@@ -1739,6 +1807,7 @@ export default function MessageInput({
 
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
+      {signInAgain.modals}
       {/* react-dropzone input (for drag/drop) */}
       <input {...getInputProps()} />
       <input
@@ -1842,6 +1911,22 @@ export default function MessageInput({
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
                 loading={toolsLoading}
+                notice={
+                  <SignInAgainNotice
+                    connections={brokenConnections.map(
+                      ({ connection }) => connection,
+                    )}
+                    onReconnect={(connection) => {
+                      setIsToolsPopupOpen(false);
+                      signInAgain.reconnect(
+                        connection,
+                        brokenConnections.find(
+                          (entry) => entry.connection.id === connection.id,
+                        )?.mcpToolId,
+                      );
+                    }}
+                  />
+                }
               />
             )}
             {ENABLE_VOICE_INPUT && sttAvailable && (

@@ -5,6 +5,7 @@ from docsgpt.parser.remote.crawler_loader import CrawlerLoader
 from docsgpt.parser.remote.web_loader import WebLoader
 from docsgpt.parser.remote.reddit_loader import RedditPostsLoaderRemote
 from docsgpt.parser.remote.github_loader import GitHubLoader
+from docsgpt.parser.remote.linear_loader import LinearLoader
 from docsgpt.parser.remote.s3_loader import S3Loader
 
 
@@ -26,6 +27,7 @@ class RemoteCreator:
         "reddit": RedditPostsLoaderRemote,
         "github": GitHubLoader,
         "s3": S3Loader,
+        "linear": LinearLoader,
     }
 
     @classmethod
@@ -88,5 +90,5 @@ def normalize_remote_data(source_type, remote_data):
             return json.dumps(remote_data)
         return remote_data
 
-    # s3's loader accepts a dict or JSON string; pass it through unchanged.
+    # s3's and linear's loaders accept a dict or JSON string; pass it through unchanged.
     return remote_data
