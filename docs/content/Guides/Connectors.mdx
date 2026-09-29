@@ -51,6 +51,8 @@ Tools from OAuth MCP servers default to each member's own account. An admin can 
 
 An agent called with its API key (the website widget, the API) runs with its owner's connections, and nobody can approve an action there. It can read through those connections, but it can't take write actions on them unless the owner allows each one under **Access details > Actions anyone with this key can take as you**. Only the owner can change that list; team editors can't. The owner previewing their own agent in DocsGPT is not limited.
 
+The same list covers people who open the agent from its public link without being on a team it's shared with. They can't approve write actions on the owner's account, so those run only when the owner allows them there. On a tool where each member connects their own account, they approve writes on their own account as usual.
+
 ### What answers show
 
 Tool calls name the service that ran them: "Searched Notion", "Read from Google Drive", "Used Linear: create issue". Citations from a synced source read "From Google Drive". Answers never show which account was used.

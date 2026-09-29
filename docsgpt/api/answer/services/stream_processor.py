@@ -270,6 +270,9 @@ class StreamProcessor:
         self.retriever_config = {}
         self.is_shared_usage = False
         self.shared_token = None
+        # Set by _get_agent_key: the caller reaches the agent only through its
+        # public link (not its owner, no team grant).
+        self.public_link_usage = False
         self.agent_id = self.data.get("agent_id")
         # Set by _get_agent_key once access checks pass; read for keyless runs.
         self._authorized_agent_row: Optional[Dict[str, Any]] = None
@@ -702,9 +705,10 @@ class StreamProcessor:
                 # Team-shared agents are runnable by any member with a grant
                 # (viewer is enough to run). Resolved live against team_members
                 # on the SAME connection so a revoked grant/membership denies on
-                # the next call; resolution failure fails closed.
+                # the next call; resolution failure fails closed. Checked on a
+                # public agent too: a teammate there is not a link user.
                 is_team_shared = False
-                if not (is_owner or is_shared_with_user) and user_id:
+                if not is_owner and user_id:
                     try:
                         is_team_shared = TeamScopeRepository(conn).can_read(
                             user_id, "agent", str(agent["id"])
@@ -717,6 +721,7 @@ class StreamProcessor:
 
             if not (is_owner or is_shared_with_user or is_team_shared):
                 raise Exception("Unauthorized access to the agent")
+            self.public_link_usage = not (is_owner or is_team_shared)
             # Authorized. Keep the row so _configure_agent can read fields that
             # do not depend on an API key — a draft agent has key = NULL, and
             # the builder preview runs exactly that path.
@@ -1007,6 +1012,7 @@ class StreamProcessor:
             agent_id, self.initial_user_id
         )
         self.agent_id = str(agent_id) if agent_id else None
+        self.agent_config["public_link_caller"] = bool(self.agent_id and self.public_link_usage)
 
         # Determine the effective API key (explicit > agent-derived)
         effective_key = self.data.get("api_key") or self.agent_key
@@ -1729,6 +1735,7 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
             agent_id=agent_id,
             external_caller=bool(agent_config.get("external_api_caller")),
+            public_link_caller=bool(agent_config.get("public_link_caller")),
             api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id
@@ -1908,6 +1915,7 @@ class StreamProcessor:
             decoded_token=self.decoded_token,
             agent_id=self.agent_id,
             external_caller=bool(self.agent_config.get("external_api_caller")),
+            public_link_caller=bool(self.agent_config.get("public_link_caller")),
             api_write_allowlist=self.agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = self.conversation_id

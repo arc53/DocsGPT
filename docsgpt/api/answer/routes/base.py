@@ -1062,6 +1062,9 @@ class BaseAnswerResource:
                                     "external_api_caller": getattr(
                                         agent.tool_executor, "external_caller", False,
                                     ),
+                                    "public_link_caller": getattr(
+                                        agent.tool_executor, "public_link_caller", False,
+                                    ),
                                     "api_write_allowlist": sorted(
                                         getattr(agent.tool_executor, "api_write_allowlist", set()),
                                     ),

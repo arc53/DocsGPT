@@ -499,6 +499,7 @@ class ToolExecutor:
         headless: bool = False,
         tool_allowlist: Optional[List[str]] = None,
         external_caller: bool = False,
+        public_link_caller: bool = False,
         api_write_allowlist: Optional[List[str]] = None,
     ):
         self.user_api_key = user_api_key
@@ -514,6 +515,10 @@ class ToolExecutor:
         # uses the owner's accounts and nobody can approve, so writes on a
         # connected account run only when the owner allowlisted them.
         self.external_caller = bool(external_caller)
+        # Someone who reaches the agent only through its public link: they
+        # may not approve writes on the owner's account either, so those run
+        # only when allowlisted. Their own account (member mode) is theirs.
+        self.public_link_caller = bool(public_link_caller)
         self.api_write_allowlist: set = {str(x) for x in api_write_allowlist or []}
         # Set by BaseAgent._prepare_tools when the agent has tool-stage controls.
         self.guardrail_engine = None
@@ -1155,13 +1160,17 @@ class ToolExecutor:
         # An API-key caller writes on the owner's account only with the
         # owner's say-so: nobody can approve in a widget, and "Always allow"
         # was the owner's choice for themselves, not for anyone with the key.
-        if self.external_caller and resolved is not None:
+        # A public-link user is a stranger to the owner, so their approval
+        # can't stand in for the owner's either.
+        public_on_owner_account = self.public_link_caller and resolved is not None and resolved.delegated
+        if (self.external_caller and resolved is not None) or public_on_owner_account:
             from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
 
             if action_access(tool_data.get("name"), action_data) == ACCESS_WRITE:
                 entry = f"{tool_data.get('id') or tool_id}:{action_name}"
                 if entry in self.api_write_allowlist:
                     return None
+                route = "its API key" if self.external_caller else "its public link"
                 return {
                     "call_id": call_id,
                     "name": llm_name,
@@ -1173,7 +1182,7 @@ class ToolExecutor:
                     "pause_type": "headless_denied",
                     "deny_reason": (
                         f"This agent can't take this action with {resolved.connector_name or 'the owner'}'s "
-                        "account through its API key. The owner can allow it in the agent's Access details."
+                        f"account through {route}. The owner can allow it in the agent's Access details."
                     ),
                     "error_type": "tool_not_allowed",
                     "thought_signature": getattr(call, "thought_signature", None),

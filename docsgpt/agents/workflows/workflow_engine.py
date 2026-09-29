@@ -446,9 +446,9 @@ class WorkflowEngine:
         # the tool_call_attempts primary key and drop the later journal rows.
         node_executor = getattr(node_agent, "tool_executor", None)
         if node_executor is not None:
-            node_executor.message_id = getattr(
-                getattr(self.agent, "tool_executor", None), "message_id", None
-            )
+            run_executor = getattr(self.agent, "tool_executor", None)
+            node_executor.message_id = getattr(run_executor, "message_id", None)
+            self._inherit_caller_policy(node_executor, run_executor)
         # Run-scope the node agent's tools so artifact_generator / code_executor
         # address artifacts by this workflow run: a short ref (A1) created by one
         # node resolves for edit_artifact in a later node within the same run. Only
@@ -1322,6 +1322,25 @@ class WorkflowEngine:
 
         docs_together = "\n\n".join(docs_together_parts) if docs_together_parts else None
         return docs, docs_together
+
+    @staticmethod
+    def _inherit_caller_policy(node_executor: Any, run_executor: Any) -> None:
+        """Give a node's executor the caller rules of the run that started it.
+
+        A node's tools run for the same caller as the workflow agent: a
+        scheduled run still can't pause, and an API-key or public-link caller
+        still can't write on the owner's account unless it is allowlisted.
+
+        Args:
+            node_executor: The node agent's ``ToolExecutor``.
+            run_executor: The workflow agent's ``ToolExecutor``, if any.
+        """
+        if run_executor is None:
+            return
+        for attr in ("headless", "external_caller", "public_link_caller"):
+            setattr(node_executor, attr, bool(getattr(run_executor, attr, False)))
+        for attr in ("tool_allowlist", "api_write_allowlist"):
+            setattr(node_executor, attr, set(getattr(run_executor, attr, None) or ()))
 
     def _workflow_owner_id(self) -> Optional[str]:
         """The workflow's owner, whom node tools and sources run as.
