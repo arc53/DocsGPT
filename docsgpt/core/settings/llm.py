@@ -12,9 +12,21 @@ from docsgpt.core.settings._shared import SettingsGroup
 class LLMSettings(SettingsGroup):
     """Which model answers, how it is reached, and provider-specific behaviour."""
 
-    LLM_PROVIDER: str = Field(default="docsgpt", description="LLM provider key, e.g. openai, anthropic, docsgpt.")
+    LLM_PROVIDER: str = Field(
+        default="docsgpt",
+        description=(
+            "Provider whose first model is the default when LLM_NAME names none: docsgpt, openai, anthropic, "
+            "google, groq, openrouter, novita or openai_compatible. For your own OpenAI-compatible server use "
+            "openai with OPENAI_BASE_URL."
+        ),
+    )
     LLM_NAME: Optional[str] = Field(
-        default=None, description="Model name for the provider; with openai, e.g. gpt-4 or gpt-3.5-turbo."
+        default=None,
+        description=(
+            "Default model id. For a cloud provider it must be an id from docsgpt/core/models/*.yaml or a "
+            "MODELS_CONFIG_DIR YAML, e.g. gpt-5.5; any other name is ignored with a warning. With "
+            "OPENAI_BASE_URL it is required and names the model(s) the server serves, comma-separated."
+        ),
     )
     API_KEY: Optional[str] = Field(default=None, description="LLM API key used by LLM_PROVIDER.")
 

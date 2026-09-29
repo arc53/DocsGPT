@@ -262,7 +262,7 @@ function Prompt-CloudAPIProviderOptions {
     Write-ColorText "Connect Cloud API Provider" -ForegroundColor "White" -Bold
     Write-ColorText "Choose your Cloud API Provider:" -ForegroundColor "White"
     Write-ColorText "1) OpenAI" -ForegroundColor "Yellow"
-    Write-ColorText "2) Google (Vertex AI, Gemini)" -ForegroundColor "Yellow"
+    Write-ColorText "2) Google Gemini (AI Studio API key)" -ForegroundColor "Yellow"
     Write-ColorText "3) Anthropic (Claude)" -ForegroundColor "Yellow"
     Write-ColorText "4) Groq" -ForegroundColor "Yellow"
     Write-ColorText "5) Novita" -ForegroundColor "Yellow"
@@ -818,12 +818,15 @@ function Connect-LocalInferenceEngine {
     $script:openai_base_url = ""
     $script:model_name = ""
     
+    # DocsGPT registers no model for the server without a name, so one is required. Use the name the
+    # server serves (for Ollama, e.g. llama3.2:1b); separate several with commas.
     function Get-ModelName {
-        $model_name_input = Read-Host "Enter Model Name (press Enter for None)"
-        if ([string]::IsNullOrEmpty($model_name_input)) {
-            $script:model_name = "None"
-        } else {
-            $script:model_name = $model_name_input
+        $script:model_name = ""
+        while ([string]::IsNullOrWhiteSpace($script:model_name)) {
+            $script:model_name = (Read-Host "Enter Model Name as your server names it (required; comma-separate several)").Trim()
+            if ([string]::IsNullOrWhiteSpace($script:model_name)) {
+                Write-ColorText "A model name is required." -ForegroundColor "Red"
+            }
         }
     }
 
@@ -969,21 +972,21 @@ function Connect-CloudAPIProvider {
             "1" {  # OpenAI
                 $script:provider_name = "OpenAI"
                 $script:llm_name = "openai"
-                $script:model_name = "gpt-4o"
+                $script:model_name = "gpt-5.5"
                 Get-APIKey
                 break
             }
             "2" {  # Google
-                $script:provider_name = "Google (Vertex AI, Gemini)"
+                $script:provider_name = "Google Gemini (AI Studio API key)"
                 $script:llm_name = "google"
-                $script:model_name = "gemini-2.0-flash"
+                $script:model_name = "gemini-3.5-flash"
                 Get-APIKey
                 break
             }
             "3" {  # Anthropic
                 $script:provider_name = "Anthropic (Claude)"
                 $script:llm_name = "anthropic"
-                $script:model_name = "claude-3-5-sonnet-latest"
+                $script:model_name = "claude-sonnet-4-6"
                 Get-APIKey
                 break
             }
@@ -996,8 +999,8 @@ function Connect-CloudAPIProvider {
             }
             "5" {  # Novita
                 $script:provider_name = "Novita"
-                $script:llm_provider = "novita"
-                $script:model_name = "moonshotai/kimi-k2.5"
+                $script:llm_name = "novita"
+                $script:model_name = "moonshotai/kimi-k2.6"
                 Get-APIKey
                 break
             }

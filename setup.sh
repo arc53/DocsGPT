@@ -148,7 +148,7 @@ prompt_cloud_api_provider_options() {
     echo -e "\n${DEFAULT_FG}${BOLD}Connect Cloud API Provider${NC}"
     echo -e "${DEFAULT_FG}Choose your Cloud API Provider:${NC}"
     echo -e "${YELLOW}1) OpenAI${NC}"
-    echo -e "${YELLOW}2) Google (Vertex AI, Gemini)${NC}"
+    echo -e "${YELLOW}2) Google Gemini (AI Studio API key)${NC}"
     echo -e "${YELLOW}3) Anthropic (Claude)${NC}"
     echo -e "${YELLOW}4) Groq${NC}"
     echo -e "${YELLOW}5) Novita${NC}"
@@ -590,11 +590,17 @@ connect_local_inference_engine() {
     local engine_choice
     local model_name_prompt model_name openai_base_url
 
+    # DocsGPT registers no model for the server without a name, so one is required. Use the name the
+    # server serves (for Ollama, e.g. llama3.2:1b); separate several with commas.
     get_model_name() {
-        read -p "$(echo -e "${DEFAULT_FG}Enter Model Name (leave empty to set later as None): ${NC}")" model_name
-        if [ -z "$model_name" ]; then
-            model_name="None"
-        fi
+        model_name=""
+        while [ -z "$model_name" ]; do
+            read -p "$(echo -e "${DEFAULT_FG}Enter Model Name as your server names it (required; comma-separate several): ${NC}")" model_name
+            if [ -z "${model_name//[[:space:]]/}" ]; then
+                model_name=""
+                echo -e "${RED}A model name is required.${NC}"
+            fi
+        done
     }
 
     while true; do
@@ -696,19 +702,19 @@ connect_cloud_api_provider() {
             1) # OpenAI
                 provider_name="OpenAI"
                 llm_provider="openai"
-                model_name="gpt-4o"
+                model_name="gpt-5.5"
                 get_api_key
                 break ;;
             2) # Google
-                provider_name="Google (Vertex AI, Gemini)"
+                provider_name="Google Gemini (AI Studio API key)"
                 llm_provider="google"
-                model_name="gemini-2.0-flash"
+                model_name="gemini-3.5-flash"
                 get_api_key
                 break ;;
             3) # Anthropic
                 provider_name="Anthropic (Claude)"
                 llm_provider="anthropic"
-                model_name="claude-3-5-sonnet-latest"
+                model_name="claude-sonnet-4-6"
                 get_api_key
                 break ;;
             4) # Groq
@@ -720,7 +726,7 @@ connect_cloud_api_provider() {
             5) # Novita
                 provider_name="Novita"
                 llm_provider="novita"
-                model_name="moonshotai/kimi-k2.5"
+                model_name="moonshotai/kimi-k2.6"
                 get_api_key
                 break ;;
             b|B) clear; return 1 ;; # Clear screen and Back to Main Menu
