@@ -78,6 +78,11 @@ vi.mock('../teams/ShareToTeamModal', () => ({
 }));
 vi.mock('../api/services/devicesService', () => ({ default: {} }));
 
+const reconnect = vi.fn();
+vi.mock('../connectors/SignInAgainNotice', () => ({
+  useSignInAgain: () => ({ reconnect, modals: null }),
+}));
+
 const getUserTools = vi.fn();
 const updateToolStatus = vi.fn();
 vi.mock('../api/services/userService', () => ({
@@ -198,6 +203,8 @@ describe('Tools', () => {
     Array.from(card(id).querySelectorAll('[data-testid="menu"] button')).map(
       (b) => b.textContent,
     );
+  const switchOf = (id: string) =>
+    card(id).querySelector<HTMLButtonElement>('[role="switch"]')!;
 
   it('shows Edit, Reconnect, Share and Delete to the owner', async () => {
     await render([ownTool]);
@@ -259,13 +266,53 @@ describe('Tools', () => {
     });
   });
 
-  // Whether a tool is in the caller's own chats is set from the chat's
-  // Tools picker; the page's cards carry no switch for it.
-  it('puts no In my chats switch on any card', async () => {
-    await render([ownTool, editorTool, viewerTool]);
-    expect(container.querySelector('[role="switch"]')).toBeNull();
+  // The caller's own "In my chats" switch stays on the tile, named for
+  // screen readers only: the tile shows no label text beside it.
+  it('keeps the In my chats switch, bound to in_chat, without its label text', async () => {
+    await render([ownTool, editorTool]);
+    const sw = switchOf('ed');
+    expect(sw.getAttribute('aria-checked')).toBe('false');
+    expect(switchOf('own').getAttribute('aria-checked')).toBe('true');
+    expect(sw.getAttribute('aria-label')).toBe(
+      'settings.tools.useInMyChatsAria:{"toolName":"ed"}',
+    );
+    expect(card('ed').querySelector(`label[for="${sw.id}"]`)).toBeNull();
     expect(container.textContent).not.toContain('settings.tools.inMyChats');
-    expect(updateToolStatus).not.toHaveBeenCalled();
+  });
+
+  // The tool can't be in the caller's chats at all (the composer picker
+  // hides it too), so there is no state to show: no switch, no bare grey one.
+  it('hides the switch for a shared tool without use_in_own', async () => {
+    await render([viewerTool]);
+    expect(card('vw').querySelector('[role="switch"]')).toBeNull();
+  });
+
+  it('reverts the switch and shows an error toast when the update fails', async () => {
+    await render([editorTool]);
+    updateToolStatus.mockImplementation(() =>
+      jsonResponse({ success: false, message: 'Forbidden' }, false, 403),
+    );
+    await act(async () => switchOf('ed').click());
+    expect(updateToolStatus).toHaveBeenCalledWith(
+      { id: 'ed', status: true },
+      'token',
+    );
+    expect(switchOf('ed').getAttribute('aria-checked')).toBe('false');
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ variant: 'destructive' }),
+      }),
+    );
+  });
+
+  it('keeps the new value when the update succeeds', async () => {
+    await render([editorTool]);
+    // Mounting loads the connectors; only a toast would come after it.
+    dispatch.mockClear();
+    updateToolStatus.mockImplementation(() => jsonResponse({ success: true }));
+    await act(async () => switchOf('ed').click());
+    expect(switchOf('ed').getAttribute('aria-checked')).toBe('true');
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('shows the role on a shared tile as a neutral Users Badge', async () => {
@@ -401,11 +448,11 @@ describe('Tools page connections', () => {
   it('shows each connected account as its own tool, the account on its footer', async () => {
     await renderTools(root);
     const telegram = card('Telegram');
-    expect(telegram.querySelector('[role="switch"]')).toBeNull();
-    // Which account this card is, and the catalog's plain description.
-    expect(
-      telegram.querySelector('[data-slot="card-footer"]')?.textContent,
-    ).toBe('Alerts bot');
+    // Which account this card is beside its own switch, and the catalog's
+    // plain description.
+    const footer = telegram.querySelector('[data-slot="card-footer"]')!;
+    expect(footer.textContent).toBe('Alerts bot');
+    expect(footer.querySelector('[role="switch"]')).not.toBeNull();
     expect(telegram.textContent).toContain(
       'settings.connectors.descriptions.telegram',
     );
@@ -420,13 +467,48 @@ describe('Tools page connections', () => {
     expect(menuItem('Linear', 'settings.tools.reconnect')).toBeUndefined();
   });
 
+  // The owner signs in again right from the card; an MCP preset re-signs
+  // its existing tool.
+  it('offers the owner Sign in again on a connected tool that needs it', async () => {
+    reconnect.mockClear();
+    await renderTools(root);
+    expect(
+      menuItem('Telegram', 'settings.connectors.health.signInAgain'),
+    ).toBeUndefined();
+    await act(async () =>
+      menuItem('Linear', 'settings.connectors.health.signInAgain')!.click(),
+    );
+    expect(reconnect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conn-2', connector_key: 'mcp:linear' }),
+      'lin',
+    );
+  });
+
+  it("offers no Sign in again on a teammate's connected tool", async () => {
+    getUserTools.mockImplementation(() =>
+      jsonResponse({
+        tools: [
+          {
+            ...TOOLS[2],
+            customName: 'Linear (shared)',
+            connection_id: 'owner-conn',
+            access: 'editor',
+            ownership: 'team',
+            allowed_actions: ['edit', 'use', 'use_in_own'],
+          },
+        ],
+      }),
+    );
+    await renderTools(root);
+    expect(
+      menuItem('Linear (shared)', 'settings.connectors.health.signInAgain'),
+    ).toBeUndefined();
+  });
+
   it('keeps Edit for a tool that is not from a connection', async () => {
     await renderTools(root);
     expect(menuItem('My API', 'settings.tools.edit')).toBeDefined();
-    // No account line and nothing else for the footer: no footer.
-    expect(
-      card('My API').querySelector('[data-slot="card-footer"]'),
-    ).toBeNull();
+    expect(card('My API').querySelector('[role="switch"]')).not.toBeNull();
   });
 
   it("gives a viewer of a teammate's connected tool View", async () => {

@@ -58,6 +58,7 @@ import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import ConnectorIcon from '../connectors/ConnectorIcon';
+import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import {
   loadConnectors,
   selectConnections,
@@ -100,6 +101,8 @@ export default function Sources({
   const token = useSelector(selectToken);
   const uploadTasks = useSelector(selectUploadTasks);
   const connections = useSelector(selectConnections);
+  // Signing in again reloads the connections, which lifts the pause.
+  const { reconnect, modals: signInModals } = useSignInAgain();
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
 
   useEffect(() => {
@@ -744,19 +747,37 @@ export default function Sources({
                       <div className="flex flex-col items-start justify-start gap-1">
                         <RoleBadge item={document} />
                         {connection && paused && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Badge variant="warning" tabIndex={0}>
-                                {t('settings.connectors.detail.paused')}
-                              </Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t('settings.sources.paused', {
-                                name: connection.name,
-                                interpolation: { escapeValue: false },
-                              })}
-                            </TooltipContent>
-                          </Tooltip>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant="warning" tabIndex={0}>
+                                  {t('settings.connectors.detail.paused')}
+                                </Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {t('settings.sources.paused', {
+                                  name: connection.name,
+                                  interpolation: { escapeValue: false },
+                                })}
+                              </TooltipContent>
+                            </Tooltip>
+                            {/* The reader's own connection (only theirs are
+                                loaded): sign in again right here, without
+                                opening the source. */}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="xs"
+                              shape="pill"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                reconnect(connection);
+                              }}
+                              onKeyDown={(e) => e.stopPropagation()}
+                            >
+                              {t('settings.connectors.status.reconnect')}
+                            </Button>
+                          </div>
                         )}
                         {document.ingestStatus === 'failed' && (
                           <Badge variant="destructive">
@@ -870,6 +891,8 @@ export default function Sources({
           }
         />
       )}
+
+      {signInModals}
 
       {deleteModalState === 'ACTIVE' && documentToDelete && (
         <ConfirmationModal

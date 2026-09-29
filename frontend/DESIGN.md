@@ -647,11 +647,12 @@ description use a Switch in a SettingRow instead.
 ### Switch, TimePicker and Calendar (`ui/switch.tsx`, `ui/time-picker.tsx`, `ui/calendar.tsx`)
 
 `Switch` (Radix) is an on/off setting, placed inside a `SettingRow` that names
-it. A tool row's own on/off in a connection's drawer ("In my chats") is the
-one exception: a `Label text-muted-foreground text-xs font-normal` + `Switch`
-pair at the row's end. It is the caller's own preference, never a switch that
-turns the tool off for everyone. The Tools page's tiles carry no switch; the
-chat's Tools picker is where a tool goes in or out of the caller's chats. The track is `primary` when on and `bg-input` when off, with a white
+it. A tool's own "In my chats" on/off is the one exception. On a Tools page
+tile it is a bare `Switch` at the tile's bottom-right, named only by its
+`aria-label` (no visible label); in a connection's drawer, a tool row ends in
+a `Label text-muted-foreground text-xs font-normal` + `Switch` pair. Either way
+it is the caller's own preference, never a switch that turns the tool off for
+everyone. The track is `primary` when on and `bg-input` when off, with a white
 thumb in both themes (see Elevation).
 
 `TimePicker` picks a time of day as two `SelectTrigger`s, hours and minutes,

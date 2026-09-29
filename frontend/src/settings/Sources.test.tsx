@@ -2,25 +2,27 @@ import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
-const { dispatch, service, view, connectors, uploadProps } = vi.hoisted(() => ({
-  uploadProps: vi.fn(),
-  connectors: { connections: [] as Record<string, unknown>[] },
-  // The heavy children: each view reports the canEdit it was given.
-  view:
-    (testId: string) =>
-    ({ canEdit }: { canEdit?: boolean }) => (
-      <div data-testid={testId} data-can-edit={String(canEdit)} />
-    ),
-  dispatch: vi.fn(),
-  service: {
-    getConfig: vi.fn(),
-    manageSync: vi.fn(),
-    syncSource: vi.fn(),
-    syncConnector: vi.fn(),
-    reingestSource: vi.fn(),
-    getDirectoryStructure: vi.fn(),
-  },
-}));
+const { dispatch, service, view, connectors, uploadProps, reconnect } =
+  vi.hoisted(() => ({
+    reconnect: vi.fn(),
+    uploadProps: vi.fn(),
+    connectors: { connections: [] as Record<string, unknown>[] },
+    // The heavy children: each view reports the canEdit it was given.
+    view:
+      (testId: string) =>
+      ({ canEdit }: { canEdit?: boolean }) => (
+        <div data-testid={testId} data-can-edit={String(canEdit)} />
+      ),
+    dispatch: vi.fn(),
+    service: {
+      getConfig: vi.fn(),
+      manageSync: vi.fn(),
+      syncSource: vi.fn(),
+      syncConnector: vi.fn(),
+      reingestSource: vi.fn(),
+      getDirectoryStructure: vi.fn(),
+    },
+  }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -71,6 +73,9 @@ vi.mock('./WikiSettingsModal', () => ({
 }));
 vi.mock('./EnableGraphRAGModal', () => ({ default: () => null }));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+vi.mock('../connectors/SignInAgainNotice', () => ({
+  useSignInAgain: () => ({ reconnect, modals: null }),
+}));
 vi.mock('../upload/Upload', () => ({
   default: (props: unknown) => {
     uploadProps(props);
@@ -208,6 +213,52 @@ describe('Sources access', () => {
     expect(items).not.toContain('settings.connectors.manageConnection');
     expect(items).toContain('settings.sources.editConfig');
     expect(items).toContain('convTile.delete');
+  });
+
+  // A source whose connection needs signing in again says so on its tile
+  // and signs in again from there, without opening the source.
+  it('reconnects a paused synced source from its tile', async () => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        icon: 'drive',
+        status: 'reconnect_needed',
+        account_label: 'alex@example.com',
+      },
+    ];
+    reconnect.mockClear();
+    await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
+    connectors.connections = [];
+    const button = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.connectors.status.reconnect',
+    )!;
+    expect(button).toBeDefined();
+    await act(async () => button.click());
+    expect(reconnect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conn-1', connector_key: 'google_drive' }),
+    );
+    // Only the reconnect: the source view stays closed.
+    expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
+  });
+
+  it('offers no Reconnect on a synced source that is running', async () => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        status: 'connected',
+      },
+    ];
+    await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
+    connectors.connections = [];
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (b) => b.textContent === 'settings.connectors.status.reconnect',
+      ),
+    ).toBe(false);
   });
 
   // Leaving Knowledge loses nothing, so its Add knowledge may browse the

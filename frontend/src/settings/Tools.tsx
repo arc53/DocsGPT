@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
+import { Switch } from '../components/ui/switch';
 import { EmptyState } from '../components/ui/empty-state';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
@@ -30,6 +31,7 @@ import {
 } from '../connectors/connectorsSlice';
 import { connectorDescription } from '../connectors/i18n';
 import type { Connection } from '../connectors/types';
+import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import { toolServiceOf } from '../connectors/toolService';
 import { useLoaderState } from '../hooks';
 import type { AvailableToolType } from '../modals/types';
@@ -44,7 +46,11 @@ import ShareToTeamModal, {
   type ShareCredentials,
 } from '../teams/ShareToTeamModal';
 import { can, isOwner, roleOf } from '../utils/accessUtils';
-import { isSharedOAuthMcp } from '../utils/toolUtils';
+import {
+  canAddToolToOwn,
+  isSharedOAuthMcp,
+  toolInChat,
+} from '../utils/toolUtils';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
@@ -175,6 +181,17 @@ export default function Tools() {
   const getMenuOptions = (tool: UserToolType): MenuOption[] => {
     const canEdit = can(tool, 'edit') || can(tool, 'edit_credentials');
     const options: MenuOption[] = [];
+    // The caller's own connection that needs signing in again (the badge
+    // says so) is signed in again from here, in place where it can be.
+    const connection = connectionOf(tool);
+    if (connection && connectionNeedsSignIn(connection))
+      options.push({
+        icon: RefreshCw,
+        label: t('settings.connectors.health.signInAgain'),
+        onClick: () =>
+          reconnect(connection, tool.name === 'mcp_tool' ? tool.id : undefined),
+        variant: 'default',
+      });
     // The owner's connected tool (its connection is theirs) is managed on
     // the Connectors page, so it has no editor here; a teammate's opens the
     // tool editor like any other shared tool.
@@ -243,6 +260,10 @@ export default function Tools() {
       .catch(() => {});
   }, [token]);
 
+  const { reconnect, modals: signInModals } = useSignInAgain({
+    onConnected: () => getUserTools(),
+  });
+
   const getUserTools = () => {
     setLoading(true);
     userService
@@ -265,6 +286,40 @@ export default function Tools() {
       .catch((error) => {
         console.error('Error fetching tools:', error);
         setLoading(false);
+      });
+  };
+
+  const setToolInChat = (toolId: string, value: boolean) =>
+    setUserTools((prevTools) =>
+      prevTools.map((tool) =>
+        tool.id !== toolId
+          ? tool
+          : isOwner(tool)
+            ? { ...tool, status: value, in_chat: value }
+            : { ...tool, in_chat: value },
+      ),
+    );
+
+  // The switch moves at once and flips back when the server refuses it.
+  const updateToolStatus = (toolId: string, newStatus: boolean) => {
+    setToolInChat(toolId, newStatus);
+    const fail = () => {
+      setToolInChat(toolId, !newStatus);
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('settings.tools.statusUpdateFailed'),
+        }),
+      );
+    };
+    userService
+      .updateToolStatus({ id: toolId, status: newStatus }, token)
+      .then((response: Response) => {
+        if (!response.ok) fail();
+      })
+      .catch((error: unknown) => {
+        console.error('Failed to update tool status:', error);
+        fail();
       });
   };
 
@@ -528,22 +583,45 @@ export default function Tools() {
                               </CardDescription>
                             </div>
                           </div>
-                          {/* Which account this is: each account of a
-                              service is its own tool. */}
-                          {connection && (
+                          {/* Which account this is (each account of a
+                              service is its own tool) and the caller's own
+                              "In my chats" switch, named for screen readers
+                              only, share the meta row. A shared tool without
+                              use_in_own can't be in the caller's chats at
+                              all, so it has no switch. */}
+                          {(connection || canAddToolToOwn(tool)) && (
                             <CardFooter>
-                              <span className="flex min-w-0 items-center gap-2">
-                                <ConnectorIcon
-                                  icon={connection.icon}
-                                  className="size-3.5 shrink-0"
-                                />
-                                <span
-                                  className="truncate"
-                                  title={accountLine(connection)}
-                                >
-                                  {accountLine(connection)}
+                              {connection && (
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <ConnectorIcon
+                                    icon={connection.icon}
+                                    className="size-3.5 shrink-0"
+                                  />
+                                  <span
+                                    className="truncate"
+                                    title={accountLine(connection)}
+                                  >
+                                    {accountLine(connection)}
+                                  </span>
                                 </span>
-                              </span>
+                              )}
+                              {canAddToolToOwn(tool) && (
+                                <Switch
+                                  className="ml-auto shrink-0"
+                                  checked={toolInChat(tool)}
+                                  onCheckedChange={(checked) =>
+                                    updateToolStatus(tool.id, checked)
+                                  }
+                                  aria-label={t(
+                                    'settings.tools.useInMyChatsAria',
+                                    {
+                                      interpolation: { escapeValue: false },
+                                      toolName:
+                                        tool.customName || tool.displayName,
+                                    },
+                                  )}
+                                />
+                              )}
                             </CardFooter>
                           )}
                         </Card>
@@ -574,6 +652,7 @@ export default function Tools() {
             submitLabel={t('settings.tools.delete')}
             variant="destructive"
           />
+          {signInModals}
           <MCPServerModal
             modalState={reconnectModalState}
             setModalState={setReconnectModalState}
