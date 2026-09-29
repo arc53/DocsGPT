@@ -24,7 +24,7 @@ The easiest and recommended way to configure basic settings is by using a `.env`
 ```
 LLM_PROVIDER=openai
 API_KEY=YOUR_OPENAI_API_KEY
-LLM_NAME=gpt-4o
+LLM_NAME=gpt-5.5
 ```
 
 ### 2. Configuration in code (Advanced)
@@ -44,15 +44,16 @@ Here are some of the most fundamental settings you'll likely want to configure:
   - **Common values:**
     - `docsgpt`: Use the DocsGPT Public API Endpoint (simple and free, as offered in `setup.sh` option 1).
     - `openai`: Use OpenAI's API (requires an API key).
-    - `google`: Use Google's Vertex AI or Gemini models.
+    - `google`: Use Google Gemini models with an AI Studio API key (Vertex AI is not supported).
     - `anthropic`: Use Anthropic's Claude models.
     - `groq`: Use Groq's models.
+    - `openrouter`, `novita`: Use OpenRouter or Novita.
     - `openai` (when using local inference engines like Ollama, Llama.cpp, TGI, etc.): This signals DocsGPT to use an OpenAI-compatible API format, even if the actual LLM is running locally.
 
-- **`LLM_NAME`**: Specifies the specific model to use from the chosen LLM provider. The available models depend on the `LLM_PROVIDER` you've selected.
+- **`LLM_NAME`**: The default model. For a cloud provider it must be a model id from the [model catalog](https://github.com/arc53/DocsGPT/tree/main/docsgpt/core/models) or from a [custom model YAML](#adding-custom-models-models_config_dir); any other name is ignored, with a warning in the log, and the provider's first model is used. With `OPENAI_BASE_URL` it is required and names the model(s) your server serves, comma-separated. See [Default Model Selection](/Models/local-inference#default-model-selection).
 
   - **Examples:**
-    - For `LLM_PROVIDER=openai`: `gpt-4o`
+    - For `LLM_PROVIDER=openai`: `gpt-5.5`
     - For `LLM_PROVIDER=google`: `gemini-3.5-flash`
     - For local models (e.g., Ollama): `llama3.2:1b` (or any model name available in your setup).
 
@@ -62,7 +63,7 @@ Here are some of the most fundamental settings you'll likely want to configure:
   - **Other options:** Any FastEmbed built-in model, or any Hugging Face repository shipping an ONNX export. See [Embeddings](/Models/embeddings).
   - **Changing it on an existing index requires re-embedding** — same-width models swap without any error and silently degrade retrieval. Run `python -m docsgpt.scripts.reembed`.
 
-- **`API_KEY`**: Required for most cloud-based LLM providers. This is your authentication key to access the LLM provider's API. You'll need to obtain this key from your chosen provider's platform.
+- **`API_KEY`**: Required for most cloud-based LLM providers. This is your authentication key for the provider named in `LLM_PROVIDER`. Each provider also has its own variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ...); see [Provider API keys](/Models/cloud-providers#provider-api-keys).
 
 - **`OPENAI_BASE_URL`**: Specifically used when `LLM_PROVIDER` is set to `openai` but you are connecting to a local inference engine (like Ollama, Llama.cpp, etc.) that exposes an OpenAI-compatible API. This setting tells DocsGPT where to find your local LLM server.
 
@@ -78,12 +79,12 @@ Let's look at some concrete examples of how to configure these settings in your 
 
 ### Example for Cloud API Provider (OpenAI)
 
-To use OpenAI's `gpt-4o` model, you would configure your `.env` file like this:
+To use OpenAI's `gpt-5.5` model, you would configure your `.env` file like this:
 
 ```
 LLM_PROVIDER=openai
 API_KEY=YOUR_OPENAI_API_KEY  # Replace with your actual OpenAI API key
-LLM_NAME=gpt-4o
+LLM_NAME=gpt-5.5
 ```
 
 Make sure to replace `YOUR_OPENAI_API_KEY` with your actual OpenAI API key.
