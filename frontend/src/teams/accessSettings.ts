@@ -157,8 +157,15 @@ export function capabilityLines(
 }
 
 // A teams API error carries the server's message; anything else (a network
-// failure) falls back to the caller's generic copy.
-export const errorMessage = (error: unknown, fallback: string): string =>
-  error instanceof Error && error.name === 'TeamsApiError' && error.message
-    ? error.message
+// failure) falls back to the caller's generic copy. Matched by shape, not
+// `instanceof`: a thunk's unwrap() rethrows a serialized plain object.
+export const errorMessage = (error: unknown, fallback: string): string => {
+  const e = error as { name?: unknown; message?: unknown } | null;
+  return typeof e === 'object' &&
+    e !== null &&
+    e.name === 'TeamsApiError' &&
+    typeof e.message === 'string' &&
+    e.message
+    ? e.message
     : fallback;
+};

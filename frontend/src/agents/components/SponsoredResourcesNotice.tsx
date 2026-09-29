@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { can, isOwner } from '../../utils/accessUtils';
+import { intlLocale } from '../../utils/dateTimeUtils';
 import type { Agent, ResourceSponsor } from '../types';
 
 type SponsoredResourcesNoticeProps = {
@@ -34,7 +35,7 @@ export default function SponsoredResourcesNotice({
   agent,
   resolveName,
 }: SponsoredResourcesNoticeProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const sponsors = agent.resource_sponsors ?? [];
   const showAttachNote = !isOwner(agent) && can(agent, 'edit');
   const active = groupByPerson(sponsors.filter((s) => s.active));
@@ -42,8 +43,11 @@ export default function SponsoredResourcesNotice({
 
   if (!showAttachNote && sponsors.length === 0) return null;
 
+  const listFormat = new Intl.ListFormat(intlLocale(i18n.language), {
+    type: 'conjunction',
+  });
   const names = (items: ResourceSponsor[]) =>
-    items.map((item) => resolveName(item)).join(', ');
+    listFormat.format(items.map((item) => resolveName(item)));
 
   return (
     <div className="flex flex-col gap-3 sm:col-span-2">
@@ -63,6 +67,7 @@ export default function SponsoredResourcesNotice({
             {active.map(([person, items]) => (
               <p key={person}>
                 {t('agents.form.sponsors.addedBy', {
+                  interpolation: { escapeValue: false },
                   person,
                   names: names(items),
                 })}
@@ -78,6 +83,7 @@ export default function SponsoredResourcesNotice({
             {inactive.map(([person, items]) => (
               <p key={person}>
                 {t('agents.form.sponsors.unavailable', {
+                  interpolation: { escapeValue: false },
                   person,
                   names: names(items),
                 })}

@@ -43,7 +43,7 @@ class AgentsRepository:
             "limited_token_mode", "limited_request_mode",
             "allow_system_prompt_override",
             "shared", "shared_token", "shared_metadata",
-            "tools", "json_schema", "models", "config", "legacy_mongo_id",
+            "tools", "json_schema", "models", "config", "resource_sponsors", "legacy_mongo_id",
             "created_at", "updated_at", "last_used_at",
         }
 

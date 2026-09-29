@@ -10,6 +10,7 @@ vi.mock('../api/services/teamsService', () => ({
 
 import { configureStore } from '@reduxjs/toolkit';
 
+import { errorMessage } from './accessSettings';
 import reducer, { deleteTeam, loadTeams, Team } from './teamsSlice';
 
 const team: Team = { id: 't1', name: 'Ops', slug: 'ops', owner_id: 'u1' };
@@ -39,6 +40,33 @@ describe('teamsSlice', () => {
     const result = await store.dispatch(deleteTeam({ id: 't1', token: null }));
     expect(result.type).toBe('teams/delete/rejected');
     expect(store.getState().teams.teams).toHaveLength(1);
+  });
+
+  it("surfaces the server's reason through unwrap()", async () => {
+    // unwrap() rethrows a serialized plain object, not the Error instance.
+    remove.mockRejectedValue(
+      Object.assign(new Error('Only the owner can delete'), {
+        name: 'TeamsApiError',
+      }),
+    );
+    const store = makeStore();
+    const rejection = await store
+      .dispatch(deleteTeam({ id: 't1', token: null }))
+      .unwrap()
+      .catch((error: unknown) => error);
+    expect(errorMessage(rejection, 'fallback')).toBe(
+      'Only the owner can delete',
+    );
+  });
+
+  it('keeps the fallback for a non-teams rejection', async () => {
+    remove.mockRejectedValue(new Error('network down'));
+    const store = makeStore();
+    const rejection = await store
+      .dispatch(deleteTeam({ id: 't1', token: null }))
+      .unwrap()
+      .catch((error: unknown) => error);
+    expect(errorMessage(rejection, 'fallback')).toBe('fallback');
   });
 
   it('keeps the team when a 2xx body says success:false', async () => {

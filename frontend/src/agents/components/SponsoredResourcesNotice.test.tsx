@@ -1,6 +1,9 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+
 import type { Agent, ResourceSponsor } from '../types';
 import SponsoredResourcesNotice from './SponsoredResourcesNotice';
 
@@ -84,6 +87,36 @@ describe('SponsoredResourcesNotice', () => {
   it('does not show the attach note to a viewer', async () => {
     await render({ ...baseAgent, access: 'viewer', allowed_actions: ['use'] });
     expect(container.innerHTML).toBe('');
+  });
+
+  it('joins names for the app language and does not escape them', async () => {
+    await i18n.use(initReactI18next).init({
+      lng: 'jp',
+      resources: {
+        jp: {
+          translation: {
+            agents: {
+              form: { sponsors: { addedBy: '{{person}}: {{names}}' } },
+            },
+          },
+        },
+      },
+    });
+    try {
+      await render({
+        ...baseAgent,
+        resource_sponsors: [
+          sponsor({ id: 'docs/a' }),
+          sponsor({ id: 'docs/b' }),
+        ],
+      });
+      const expected = new Intl.ListFormat('ja', {
+        type: 'conjunction',
+      }).format(['name-docs/a', 'name-docs/b']);
+      expect(container.textContent).toBe(`bob@example.com: ${expected}`);
+    } finally {
+      await i18n.changeLanguage('en');
+    }
   });
 
   it('splits running and no-longer-running items', async () => {
