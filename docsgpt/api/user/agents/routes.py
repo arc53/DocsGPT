@@ -30,12 +30,14 @@ from docsgpt.api.user.resource_access import (
     AccessDenied,
     agent_refs,
     delete_settings,
+    parse_confirmations,
     payload_for,
+    plan_sponsors,
     require,
     resolve,
     settings_many,
     sponsor_details,
-    sponsors_after_save,
+    sponsor_refusal,
 )
 from docsgpt.api.user.team_sharing import (
     can_access,
@@ -566,7 +568,7 @@ class GetAgent(Resource):
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
                 # Edit-page detail: who vouches for resources the owner can't use.
                 if agent and ra.can("view"):
-                    sponsored = sponsor_details(conn, "agent", agent)
+                    sponsored = sponsor_details(conn, "agent", agent, viewer=user)
             if not agent:
                 return {"status": "Not found"}, 404
             is_owner = ra.access == "owner"
@@ -1429,18 +1431,6 @@ class UpdateAgent(Resource):
                                 403,
                             )
 
-                # A resource the owner can't use runs as the editor who
-                # attached it (its sponsor); record who that is.
-                after_save = dict(existing_agent)
-                for ref_field in ("source_id", "extra_source_ids", "prompt_id", "tools"):
-                    if ref_field in update_fields:
-                        after_save[ref_field] = update_fields[ref_field]
-                sponsors = sponsors_after_save(
-                    conn, "agent", existing_agent, owner_id, user, agent_refs(after_save)
-                )
-                if sponsors != (existing_agent.get("resource_sponsors") or {}):
-                    update_fields["resource_sponsors"] = sponsors
-
                 # Guardrails and the pooled quota are policy: an unchanged
                 # value re-sent by a full-form save is fine, a change needs
                 # ``edit_policy``.
@@ -1448,6 +1438,34 @@ class UpdateAgent(Resource):
                     return _denied(
                         AccessDenied(403, "Your access doesn't allow changing guardrails or limits")
                     )
+
+                # A resource the owner can't use runs as the editor who
+                # attached it (its sponsor). Only someone who owns or edits
+                # it may sponsor it, and only after confirming: the save is
+                # refused (409) until ``confirm_sponsor`` lists every
+                # resource it would newly sponsor.
+                after_save = dict(existing_agent)
+                for ref_field in ("source_id", "extra_source_ids", "prompt_id", "tools"):
+                    if ref_field in update_fields:
+                        after_save[ref_field] = update_fields[ref_field]
+                plan = plan_sponsors(
+                    conn,
+                    "agent",
+                    existing_agent,
+                    owner_id,
+                    user,
+                    agent_refs(after_save),
+                    previous_refs=agent_refs(existing_agent),
+                    confirmed=parse_confirmations(data.get("confirm_sponsor")),
+                )
+                refusal = sponsor_refusal(
+                    conn, "agent", existing_agent, plan, api_key=bool(update_fields.get("key")) or None
+                )
+                if refusal is not None:
+                    body, status = refusal
+                    return make_response(jsonify(body), status)
+                if plan.sponsors != (existing_agent.get("resource_sponsors") or {}):
+                    update_fields["resource_sponsors"] = plan.sponsors
 
                 # Apply update. Owner writes use the dual-key guard; team-editor
                 # writes go by-id (already authorized) with an optimistic-lock

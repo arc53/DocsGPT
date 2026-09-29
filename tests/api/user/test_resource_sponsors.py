@@ -20,10 +20,10 @@ from flask import Flask
 from docsgpt.api.user.resource_access import (
     active_sponsor,
     agent_refs,
+    plan_sponsors,
     ref_principal,
     set_settings,
     sponsor_key,
-    sponsors_after_save,
 )
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -123,6 +123,20 @@ def _editor_resources(conn):
     return tool, prompt, source
 
 
+def _confirm(*refs):
+    """``confirm_sponsor`` for ``(type, id)`` pairs."""
+    return [sponsor_key(t, i) for t, i in refs]
+
+
+def sponsors_after_save(conn, holder_type, holder, owner_id, caller, refs, previous_refs=(), confirm_all=True):
+    """The stored map after a save that confirms every sponsorship it can."""
+    refs = list(refs)
+    confirmed = [sponsor_key(t, i) for t, i in refs] if confirm_all else []
+    plan = plan_sponsors(conn, holder_type, holder, owner_id, caller, refs,
+                         previous_refs=previous_refs, confirmed=confirmed)
+    return plan.sponsors
+
+
 def _put(app, conn, agent_id, user, body):
     from docsgpt.api.user.agents.routes import UpdateAgent
 
@@ -165,8 +179,16 @@ class TestSponsorsAfterSave:
         AgentsRepository(pg_conn).update_by_id(
             agent_id, {"tools": [tool], "resource_sponsors": {sponsor_key("tool", tool): EDITOR}}
         )
-        out = sponsors_after_save(pg_conn, "agent", _row(pg_conn, agent_id), OWNER, OWNER, [("tool", tool)])
+        out = sponsors_after_save(pg_conn, "agent", _row(pg_conn, agent_id), OWNER, OWNER, [("tool", tool)],
+                                  previous_refs=[("tool", tool)], confirm_all=False)
         assert out == {sponsor_key("tool", tool): EDITOR}
+
+    def test_unconfirmed_new_sponsorship_is_not_recorded(self, pg_conn):
+        agent_id, _ = _agent(pg_conn)
+        tool, _, _ = _editor_resources(pg_conn)
+        plan = plan_sponsors(pg_conn, "agent", _row(pg_conn, agent_id), OWNER, EDITOR, [("tool", tool)])
+        assert plan.sponsors == {}
+        assert plan.needs_confirmation == [("tool", tool)]
 
     def test_removed_ref_drops_out(self, pg_conn):
         agent_id, _ = _agent(pg_conn)
@@ -176,12 +198,12 @@ class TestSponsorsAfterSave:
         )
         assert sponsors_after_save(pg_conn, "agent", _row(pg_conn, agent_id), OWNER, EDITOR, []) == {}
 
-    def test_another_editor_takes_over_when_sponsor_lost_access(self, pg_conn):
+    def test_another_editor_takes_over_only_by_confirming(self, pg_conn):
         agent_id, team_id = _agent(pg_conn)
-        # A tool shared with the whole team: both editors may use it in their agents.
+        # A tool the whole team may edit: both editors may sponsor it.
         tool = str(UserToolsRepository(pg_conn).create(OTHER, "api_tool")["id"])
         TeamMembersRepository(pg_conn).add_member(team_id, OTHER)
-        TeamResourceGrantsRepository(pg_conn).grant(team_id, "tool", tool, OTHER, OTHER)
+        TeamResourceGrantsRepository(pg_conn).grant(team_id, "tool", tool, OTHER, OTHER, access_level="editor")
         TeamResourceGrantsRepository(pg_conn).grant(
             team_id, "agent", agent_id, OWNER, OWNER, access_level="editor", target_user_id=OTHER
         )
@@ -190,7 +212,12 @@ class TestSponsorsAfterSave:
         )
         TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", agent_id, target_user_id=EDITOR)
 
-        out = sponsors_after_save(pg_conn, "agent", _row(pg_conn, agent_id), OWNER, OTHER, [("tool", tool)])
+        refs = [("tool", tool)]
+        agent = _row(pg_conn, agent_id)
+        kept = sponsors_after_save(pg_conn, "agent", agent, OWNER, OTHER, refs, previous_refs=refs,
+                                   confirm_all=False)
+        assert kept == {sponsor_key("tool", tool): EDITOR}
+        out = sponsors_after_save(pg_conn, "agent", agent, OWNER, OTHER, refs, previous_refs=refs)
         assert out == {sponsor_key("tool", tool): OTHER}
 
     def test_dead_sponsor_record_kept_when_nobody_qualifies(self, pg_conn):
@@ -200,7 +227,8 @@ class TestSponsorsAfterSave:
             agent_id, {"tools": [tool], "resource_sponsors": {sponsor_key("tool", tool): EDITOR}}
         )
         TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", agent_id, target_user_id=EDITOR)
-        out = sponsors_after_save(pg_conn, "agent", _row(pg_conn, agent_id), OWNER, OWNER, [("tool", tool)])
+        out = sponsors_after_save(pg_conn, "agent", _row(pg_conn, agent_id), OWNER, OWNER, [("tool", tool)],
+                                  previous_refs=[("tool", tool)])
         assert out == {sponsor_key("tool", tool): EDITOR}
 
 
@@ -248,12 +276,25 @@ class TestActiveSponsor:
         agent_id, team_id = _agent(pg_conn)
         tool = str(UserToolsRepository(pg_conn).create(OTHER, "api_tool")["id"])
         TeamResourceGrantsRepository(pg_conn).grant(
-            team_id, "tool", tool, OTHER, OTHER, target_user_id=EDITOR
+            team_id, "tool", tool, OTHER, OTHER, access_level="editor", target_user_id=EDITOR
         )
         AgentsRepository(pg_conn).update_by_id(
             agent_id, {"resource_sponsors": {sponsor_key("tool", tool): EDITOR}}
         )
         assert active_sponsor(pg_conn, "agent", _row(pg_conn, agent_id), "tool", tool) == EDITOR
+        TeamResourceGrantsRepository(pg_conn).revoke(team_id, "tool", tool, target_user_id=EDITOR)
+        assert active_sponsor(pg_conn, "agent", _row(pg_conn, agent_id), "tool", tool) is None
+
+    def test_use_only_sponsor_never_runs(self, pg_conn):
+        agent_id, team_id = _agent(pg_conn)
+        tool = str(UserToolsRepository(pg_conn).create(OTHER, "api_tool")["id"])
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team_id, "tool", tool, OTHER, OTHER, target_user_id=EDITOR
+        )
+        AgentsRepository(pg_conn).update_by_id(
+            agent_id, {"resource_sponsors": {sponsor_key("tool", tool): EDITOR}}
+        )
+        assert active_sponsor(pg_conn, "agent", _row(pg_conn, agent_id), "tool", tool) is None
         set_settings(pg_conn, "tool", tool, {"viewers_can_use_in_agents": False}, OTHER)
         assert active_sponsor(pg_conn, "agent", _row(pg_conn, agent_id), "tool", tool) is None
 
@@ -273,7 +314,8 @@ class TestAgentRoutes:
         agent_id, _ = _agent(pg_conn)
         tool, prompt, source = _editor_resources(pg_conn)
         resp = _put(app, pg_conn, agent_id, EDITOR,
-                    {"tools": [tool], "prompt_id": prompt, "source": source})
+                    {"tools": [tool], "prompt_id": prompt, "source": source,
+                     "confirm_sponsor": _confirm(("tool", tool), ("prompt", prompt), ("source", source))})
         assert _status(resp) == 200
         row = _row(pg_conn, agent_id)
         assert row["resource_sponsors"] == {
@@ -286,14 +328,16 @@ class TestAgentRoutes:
     def test_owner_save_does_not_wipe_sponsors(self, app, pg_conn):
         agent_id, _ = _agent(pg_conn)
         tool, _, _ = _editor_resources(pg_conn)
-        assert _status(_put(app, pg_conn, agent_id, EDITOR, {"tools": [tool]})) == 200
+        assert _status(_put(app, pg_conn, agent_id, EDITOR,
+                            {"tools": [tool], "confirm_sponsor": _confirm(("tool", tool))})) == 200
         assert _status(_put(app, pg_conn, agent_id, OWNER, {"name": "Renamed", "tools": [tool]})) == 200
         assert _row(pg_conn, agent_id)["resource_sponsors"] == {sponsor_key("tool", tool): EDITOR}
 
     def test_detaching_clears_sponsor(self, app, pg_conn):
         agent_id, _ = _agent(pg_conn)
         tool, _, _ = _editor_resources(pg_conn)
-        assert _status(_put(app, pg_conn, agent_id, EDITOR, {"tools": [tool]})) == 200
+        assert _status(_put(app, pg_conn, agent_id, EDITOR,
+                            {"tools": [tool], "confirm_sponsor": _confirm(("tool", tool))})) == 200
         assert _status(_put(app, pg_conn, agent_id, EDITOR, {"tools": []})) == 200
         assert _row(pg_conn, agent_id)["resource_sponsors"] == {}
 
@@ -304,12 +348,15 @@ class TestAgentRoutes:
         agent_id, team_id = _agent(pg_conn)
         tool, _, _ = _editor_resources(pg_conn)
         UsersRepository(pg_conn).upsert(EDITOR, email="bob@example.com")
-        assert _status(_put(app, pg_conn, agent_id, EDITOR, {"tools": [tool]})) == 200
+        assert _status(_put(app, pg_conn, agent_id, EDITOR,
+                            {"tools": [tool], "confirm_sponsor": _confirm(("tool", tool))})) == 200
 
         path = f"/api/get_agent?id={agent_id}"
         owner_view = _call(app, pg_conn, GetAgent, "get", path, OWNER).get_json()
         assert owner_view["resource_sponsors"] == [
-            {"type": "tool", "id": tool, "user_id": EDITOR, "label": "bob@example.com", "active": True}
+            {"key": f"tool:{tool}", "type": "tool", "id": tool, "name": "api_tool", "user_id": EDITOR,
+             "label": "bob@example.com", "state": "active", "reason": None, "active": True,
+             "can_confirm": False}
         ]
         viewer_view = _call(app, pg_conn, GetAgent, "get", path, VIEWER).get_json()
         assert viewer_view["resource_sponsors"] == []
@@ -329,7 +376,8 @@ class TestRunTime:
         agent_id, team_id = _agent(pg_conn)
         tool, prompt, source = _editor_resources(pg_conn)
         resp = _put(app, pg_conn, agent_id, EDITOR,
-                    {"tools": [tool], "prompt_id": prompt, "source": source})
+                    {"tools": [tool], "prompt_id": prompt, "source": source,
+                     "confirm_sponsor": _confirm(("tool", tool), ("prompt", prompt), ("source", source))})
         assert _status(resp) == 200
         return _row(pg_conn, agent_id), team_id, tool, prompt, source
 
@@ -509,12 +557,13 @@ class TestToolPrefetch:
 # ---------------------------------------------------------------------------
 
 
-def _wf_body(tool=None, source=None, tools=None):
+def _wf_body(tool=None, source=None, tools=None, confirm=()):
     if tools is None:
         tools = [tool] if tool else []
     agent_cfg = {"agent_type": "classic", "system_prompt": "s", "tools": tools,
                  "sources": [source] if source else []}
     return {
+        "confirm_sponsor": list(confirm),
         "name": "WF",
         "description": "d",
         "nodes": [
@@ -545,7 +594,8 @@ class TestWorkflows:
     def test_editor_node_resources_are_sponsored(self, app, pg_conn):
         wid, _ = self._setup(pg_conn)
         tool, _, source = _editor_resources(pg_conn)
-        resp = self._put(app, pg_conn, wid, EDITOR, _wf_body(tool, source))
+        resp = self._put(app, pg_conn, wid, EDITOR,
+                         _wf_body(tool, source, confirm=_confirm(("tool", tool), ("source", source))))
         assert _status(resp) == 200, resp.get_json()
         row = WorkflowsRepository(pg_conn).get_by_id(wid)
         assert row["resource_sponsors"] == {
@@ -561,7 +611,8 @@ class TestWorkflows:
 
         wid, team_id = self._setup(pg_conn)
         tool, _, source = _editor_resources(pg_conn)
-        assert _status(self._put(app, pg_conn, wid, EDITOR, _wf_body(tool, source))) == 200
+        confirm = _confirm(("tool", tool), ("source", source))
+        assert _status(self._put(app, pg_conn, wid, EDITOR, _wf_body(tool, source, confirm=confirm))) == 200
 
         engine = WorkflowEngine.__new__(WorkflowEngine)
         engine.agent = SimpleNamespace(
@@ -626,7 +677,8 @@ class TestWorkflows:
         wid, _ = self._setup(pg_conn)
         owner_tool = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
         editor_tool, _, _ = _editor_resources(pg_conn)
-        assert _status(self._put(app, pg_conn, wid, EDITOR, _wf_body(editor_tool))) == 200
+        assert _status(self._put(app, pg_conn, wid, EDITOR,
+                                 _wf_body(editor_tool, confirm=_confirm(("tool", editor_tool))))) == 200
         tools = [owner_tool, editor_tool]
         assert _status(self._put(app, pg_conn, wid, OWNER, _wf_body(tools=tools))) == 200
 

@@ -188,6 +188,8 @@ class TestGetAgentResolvesNames:
 
 
 def _update_patches(sub, repo, team_access, can_access_mock):
+    from docsgpt.api.user.resource_access import SponsorPlan
+
     return [
         patch("docsgpt.app.handle_auth", return_value={"sub": sub}),
         patch("docsgpt.app.resolve_roles", return_value=["user"]),
@@ -197,7 +199,7 @@ def _update_patches(sub, repo, team_access, can_access_mock):
         patch("docsgpt.api.user.agents.routes.can_access", can_access_mock),
         # Sponsor bookkeeping queries the (mocked) connection; covered with a
         # real database in tests/api/user/test_resource_sponsors.py.
-        patch("docsgpt.api.user.agents.routes.sponsors_after_save", return_value={}),
+        patch("docsgpt.api.user.agents.routes.plan_sponsors", return_value=SponsorPlan()),
     ]
 
 

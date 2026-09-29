@@ -13,9 +13,11 @@ from docsgpt.agents.workflows.cel_evaluator import (
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     can_use_ref,
+    parse_confirmations,
+    plan_sponsors,
     resolve,
     sponsor_details,
-    sponsors_after_save,
+    sponsor_refusal,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
@@ -631,7 +633,7 @@ class WorkflowDetail(Resource):
                 edges = WorkflowEdgesRepository(conn).find_by_version(
                     pg_workflow_id, graph_version,
                 )
-                sponsored = sponsor_details(conn, "workflow", workflow)
+                sponsored = sponsor_details(conn, "workflow", workflow, viewer=user_id)
         except Exception as err:
             return _workflow_error_response("Failed to fetch workflow", err)
 
@@ -674,16 +676,34 @@ class WorkflowDetail(Resource):
                 nodes_data = normalize_agent_node_json_schemas(nodes_data)
                 pg_workflow_id = str(workflow["id"])
                 current_graph_version = get_workflow_graph_version(workflow)
+                previous_nodes = [
+                    serialize_node(n)
+                    for n in WorkflowNodesRepository(conn).find_by_version(
+                        pg_workflow_id, current_graph_version,
+                    )
+                ]
                 if acting != user_id:
-                    previous_nodes = [
-                        serialize_node(n)
-                        for n in WorkflowNodesRepository(conn).find_by_version(
-                            pg_workflow_id, current_graph_version,
-                        )
-                    ]
                     denied = _new_node_ref_denied(conn, previous_nodes, nodes_data, user_id)
                     if denied is not None:
                         return _denied(denied)
+                # A node tool/source the owner can't use runs as the editor
+                # who attached it (its sponsor): only someone who owns or
+                # edits it, and only once ``confirm_sponsor`` lists it.
+                plan = plan_sponsors(
+                    conn,
+                    "workflow",
+                    workflow,
+                    acting,
+                    user_id,
+                    _node_refs(nodes_data),
+                    previous_refs=_node_refs(previous_nodes),
+                    confirmed=parse_confirmations(data.get("confirm_sponsor")),
+                )
+                refusal = sponsor_refusal(conn, "workflow", workflow, plan)
+                if refusal is not None:
+                    body, status = refusal
+                    body.setdefault("error", body["message"])
+                    return make_response(jsonify(body), status)
                 next_graph_version = current_graph_version + 1
 
                 _write_graph(
@@ -695,13 +715,8 @@ class WorkflowDetail(Resource):
                     "description": description,
                     "current_graph_version": next_graph_version,
                 }
-                # A node tool/source the owner can't use runs as the editor
-                # who attached it (its sponsor); record who that is.
-                sponsors = sponsors_after_save(
-                    conn, "workflow", workflow, acting, user_id, _node_refs(nodes_data)
-                )
-                if sponsors != (workflow.get("resource_sponsors") or {}):
-                    workflow_fields["resource_sponsors"] = sponsors
+                if plan.sponsors != (workflow.get("resource_sponsors") or {}):
+                    workflow_fields["resource_sponsors"] = plan.sponsors
                 repo.update(pg_workflow_id, acting, workflow_fields)
                 WorkflowNodesRepository(conn).delete_other_versions(
                     pg_workflow_id, next_graph_version,
