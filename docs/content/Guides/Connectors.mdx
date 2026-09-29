@@ -17,7 +17,7 @@ Connections are the single place credentials live. A synced source and an agent 
 Open **Settings > Connectors**. Filters narrow the list by category, and **Connected** shows what you already use.
 
 1. Pick a connector. Services with OAuth open the provider's sign-in page in a pop-up; API-key services ask for the key.
-2. Choose what the connection sets up. File services offer a synced source (pick files or folders, then how often to sync: never, daily, weekly or monthly). Tool services create their tools right away.
+2. Choose what the connection sets up. Tool services create their tools right away. Services that can sync ask whether to **Sync into Knowledge**: off by default, on when you started from **Add knowledge** or from Knowledge's **Connect a service**. Left off, the account is still connected and you can sync later with **Sync more content** on its page. Turned on, pick files or folders, how often to sync (never, daily, weekly or monthly) and, under **Advanced retrieval settings**, the same chunking and retrieval options as an upload.
 3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
 
 **Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
@@ -141,7 +141,7 @@ CONFLUENCE_CLIENT_SECRET=your-client-secret
 
 ### GitHub
 
-One GitHub connection syncs repositories into Knowledge and gives agents GitHub's own [MCP server](https://github.com/github/github-mcp-server) as a tool. When connecting, members choose both on one screen: **Let agents use GitHub** (on by default) and a repository to sync. A connection set up without tools can add them later from its page.
+One GitHub connection syncs repositories into Knowledge and gives agents GitHub's own [MCP server](https://github.com/github/github-mcp-server) as a tool. When connecting, members choose both on one screen: **Let agents use GitHub** (on by default) and **Sync into Knowledge** with a repository to sync. A connection set up without tools can add them later from its page.
 
 - **Knowledge.** The repository picker lists what the connection can read. Each synced repository is one source, read with the connection's token and synced on the chosen schedule.
 - **Tools.** By default the tool is the read-only endpoint `https://api.githubcopilot.com/mcp/readonly`: agents can read code, issues, pull requests and more, and cannot change anything unless the connection [lets them make changes](#letting-agents-make-changes). Its actions are discovered when the tool is created; **Refresh tools** re-reads them.
@@ -237,7 +237,7 @@ Notion, Linear, Atlassian, Sentry, Asana and Stripe are remote MCP servers that 
 
 ### Linear
 
-One Linear sign-in gives agents Linear's tools and syncs Linear into Knowledge. After signing in, members choose what to sync, or skip to keep only the tools; a connection's page adds more with **Sync more**.
+One Linear sign-in gives agents Linear's tools and syncs Linear into Knowledge. After signing in, members turn on **Sync into Knowledge** and choose what to sync, or leave it off to keep only the tools; a connection's page adds more with **Sync more content**.
 
 - **Teams and projects.** Each picked team or project brings its issues. An issue in both is synced once.
 - **Include comments** (on by default) adds each issue's comments to it.
