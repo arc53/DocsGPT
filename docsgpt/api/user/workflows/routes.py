@@ -10,14 +10,18 @@ from docsgpt.agents.workflows.cel_evaluator import (
     CelEvaluationError,
     validate_cel_expression,
 )
+from docsgpt.api.user import resource_access
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     can_use_ref,
     parse_confirmations,
     plan_sponsors,
     resolve,
+    resource_states,
+    sponsor_audience,
     sponsor_details,
     sponsor_refusal,
+    visible_ref_ids,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
@@ -127,24 +131,35 @@ def _node_refs(nodes: List[Dict]) -> List[Tuple[str, str]]:
     return refs
 
 
-def _node_ref_details(nodes: List[Dict]) -> Dict[str, List[Dict]]:
-    """Names of every tool and source the graph's agent nodes reference.
+def _node_ref_details(nodes: List[Dict], visible: Optional[Set[str]] = None) -> Dict[str, List[Dict]]:
+    """Names of the tools and sources the graph's agent nodes reference.
 
     Looked up by id whoever owns them, so an editor's node pickers can show
-    (and remove) the owner's private tools and sources.
+    (and remove) the owner's private tools and sources. Builtin tool ids
+    always resolve; any other id only when its ``"<type>:<id>"`` key is in
+    ``visible`` (see ``resource_access.visible_ref_ids``), so a node naming
+    someone else's resource never reveals its name.
 
     Args:
         nodes: Nodes in builder shape.
+        visible: Keys whose names may be read; None allows every id.
 
     Returns:
         dict: ``tools`` as ``[{id, name, display_name}]`` and ``sources`` as
         ``[{id, name}]``, each id once.
     """
+    from docsgpt.agents.default_tools import is_synthesized_tool_id
     from docsgpt.api.user.base import resolve_source_details, resolve_tool_details
 
     tool_ids: List[str] = []
     source_ids: List[str] = []
     for resource_type, resource_id in _node_refs(nodes):
+        if (
+            visible is not None
+            and not (resource_type == "tool" and is_synthesized_tool_id(resource_id))
+            and f"{resource_type}:{resource_id.lower()}" not in visible
+        ):
+            continue
         bucket = tool_ids if resource_type == "tool" else source_ids
         if resource_id not in bucket:
             bucket.append(resource_id)
@@ -162,13 +177,16 @@ def _new_node_ref_denied(
     A workflow runs as its owner, so an editor saving the owner's graph must
     not reference the owner's private tools or sources: the caller's own
     access counts (``use_in_own`` for a tool, ``use`` for a source), not the
-    owner's. Refs already in the stored graph stay, like an agent's.
+    owner's. The owner's own saves are checked the same way, so no graph
+    names a resource its owner never could use. Refs already in the stored
+    graph stay, like an agent's.
 
     Args:
         conn: Open database connection.
-        previous_nodes: The stored graph's nodes, in builder shape.
+        previous_nodes: The stored graph's nodes, in builder shape (empty
+            when creating the workflow).
         new_nodes: The nodes being saved.
-        caller: The editor saving.
+        caller: The user saving, owner or editor.
 
     Returns:
         An :class:`AccessDenied` to return, or None when every new ref is fine.
@@ -629,6 +647,9 @@ class WorkflowList(Resource):
 
         try:
             with db_session() as conn:
+                denied = _new_node_ref_denied(conn, [], nodes_data, user_id)
+                if denied is not None:
+                    return _denied(denied)
                 repo = WorkflowsRepository(conn)
                 workflow = repo.create(user_id, name, description=description)
                 pg_workflow_id = str(workflow["id"])
@@ -660,9 +681,24 @@ class WorkflowDetail(Resource):
                 edges = WorkflowEdgesRepository(conn).find_by_version(
                     pg_workflow_id, graph_version,
                 )
-                sponsored = sponsor_details(conn, "workflow", workflow, viewer=user_id)
-            serialized_nodes = [serialize_node(n) for n in nodes]
-            ref_details = _node_ref_details(serialized_nodes)
+                serialized_nodes = [serialize_node(n) for n in nodes]
+                # Edit-page detail (sponsors, run state, names of node
+                # resources) only for people who may edit the workflow.
+                sponsored: list = []
+                states: list = []
+                audience = None
+                visible: Optional[Set[str]] = None
+                if resource_access.holder_editable_by(conn, "workflow", workflow, user_id):
+                    refs = _node_refs(serialized_nodes)
+                    sponsored = sponsor_details(conn, "workflow", workflow, viewer=user_id)
+                    states = resource_states(conn, "workflow", workflow, refs, user_id)
+                    audience = sponsor_audience(conn, "workflow", workflow, states, sponsored)
+                    visible = visible_ref_ids(conn, "workflow", workflow, refs, user_id)
+            ref_details = (
+                _node_ref_details(serialized_nodes, visible)
+                if visible is not None
+                else {"tools": [], "sources": []}
+            )
         except Exception as err:
             return _workflow_error_response("Failed to fetch workflow", err)
 
@@ -672,7 +708,9 @@ class WorkflowDetail(Resource):
                 "nodes": serialized_nodes,
                 "edges": [serialize_edge(e) for e in edges],
                 "resource_sponsors": sponsored,
+                "resource_states": states,
                 "ref_details": ref_details,
+                **({"sponsor_audience": audience} if audience is not None else {}),
             }
         )
 
@@ -712,10 +750,11 @@ class WorkflowDetail(Resource):
                         pg_workflow_id, current_graph_version,
                     )
                 ]
-                if acting != user_id:
-                    denied = _new_node_ref_denied(conn, previous_nodes, nodes_data, user_id)
-                    if denied is not None:
-                        return _denied(denied)
+                # Every newly referenced node tool or source must be one the
+                # caller may use, the owner included.
+                denied = _new_node_ref_denied(conn, previous_nodes, nodes_data, user_id)
+                if denied is not None:
+                    return _denied(denied)
                 # A node tool/source the owner can't use runs as the editor
                 # who attached it (its sponsor): only someone who owns or
                 # edits it, and only once ``confirm_sponsor`` lists it.

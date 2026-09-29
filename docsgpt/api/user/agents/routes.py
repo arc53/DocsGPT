@@ -35,7 +35,9 @@ from docsgpt.api.user.resource_access import (
     plan_sponsors,
     require,
     resolve,
+    resource_states,
     settings_many,
+    sponsor_audience,
     sponsor_details,
     sponsor_refusal,
 )
@@ -560,6 +562,8 @@ class GetAgent(Resource):
             user = decoded_token["sub"]
             agent = None
             sponsored: list = []
+            states: list = []
+            audience = None
             with db_readonly() as conn:
                 # Anyone who can see the agent reads it (a viewer needs it to
                 # chat); what they get back is trimmed by their actions.
@@ -567,10 +571,13 @@ class GetAgent(Resource):
                 if ra is not None:
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
                 # Edit-page detail: who vouches for resources the owner can't
-                # use, with their names. Only for people who may edit the
-                # agent: the names can be an editor's private resources.
+                # use, and which attached resources stopped running and why,
+                # with their names. Only for people who may edit the agent:
+                # the names can be an editor's private resources.
                 if agent and ra.can("edit"):
                     sponsored = sponsor_details(conn, "agent", agent, viewer=user)
+                    states = resource_states(conn, "agent", agent, agent_refs(agent), user)
+                    audience = sponsor_audience(conn, "agent", agent, states, sponsored)
             if not agent:
                 return {"status": "Not found"}, 404
             is_owner = ra.access == "owner"
@@ -582,6 +589,9 @@ class GetAgent(Resource):
                 access=ra.payload(),
             )
             data["resource_sponsors"] = sponsored
+            data["resource_states"] = states
+            if audience is not None:
+                data["sponsor_audience"] = audience
             return make_response(jsonify(data), 200)
         except Exception as e:
             current_app.logger.error(f"Agent fetch error: {e}", exc_info=True)

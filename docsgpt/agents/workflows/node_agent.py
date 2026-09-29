@@ -21,6 +21,7 @@ class _WorkflowNodeMixin:
         tool_ids: Optional[List[str]] = None,
         tool_principals: Optional[Dict[str, str]] = None,
         tool_owner: Optional[str] = None,
+        tool_holder: Optional[dict] = None,
         **kwargs,
     ):
         super().__init__(
@@ -40,6 +41,8 @@ class _WorkflowNodeMixin:
         # owner can't use resolve as the editor who attached them.
         self.tool_executor.tool_owner = tool_owner
         self.tool_executor.tool_principals = dict(tool_principals or {})
+        # The workflow row, so a dropped tool is logged with why.
+        self.tool_executor.tool_holder = tool_holder
 
 
 class WorkflowNodeClassicAgent(_WorkflowNodeMixin, ClassicAgent):

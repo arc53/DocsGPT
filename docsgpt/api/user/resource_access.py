@@ -513,12 +513,148 @@ def ref_principal(
 
     The owner when they may use it (the default), else a live sponsor.
     """
+    return ref_access(conn, holder_type, holder, resource_type, resource_id).principal
+
+
+# --- Run state of attached resources ----------------------------------------
+#
+# One check decides whether an attached resource runs, for the run and for the
+# edit page alike (``ref_access``, ``resolve_holder_tool``), so the page never
+# says a resource runs when the run drops it, or the other way round.
+
+# Why an attached resource doesn't run (``resource_states`` ``reason``), next
+# to the sponsor reasons above.
+REASON_DELETED = "deleted"
+REASON_OWNER_LOST_ACCESS = "owner_lost_access"
+REASON_CONNECTION_NEEDS_RECONNECT = "connection_needs_reconnect"
+REASON_CONNECTION_REMOVED = "connection_removed"
+REASON_CONNECTOR_DISABLED = "connector_disabled"
+
+_REF_TABLES = {"source": "sources", "prompt": "prompts", "tool": "user_tools"}
+
+
+@dataclass(frozen=True)
+class RefAccess:
+    """Who a holder runs one referenced resource as, or why it doesn't run.
+
+    Attributes:
+        principal: The user it is authorized as (the holder's owner or a live
+            sponsor); None when it doesn't run.
+        reason: None while it runs; else :data:`REASON_DELETED`,
+            :data:`REASON_OWNER_LOST_ACCESS` or a sponsor reason.
+        sponsor: The recorded sponsor, running or not.
+    """
+
+    principal: Optional[str]
+    reason: Optional[str] = None
+    sponsor: Optional[str] = None
+
+
+def _ref_exists(conn: Connection, resource_type: str, resource_id: str) -> bool:
+    """Whether a row with this id exists, whoever owns it."""
+    table = _REF_TABLES.get(resource_type)
+    if table is None or not looks_like_uuid(str(resource_id)):
+        return False
+    return conn.execute(
+        text(f"SELECT 1 FROM {table} WHERE id = CAST(:id AS uuid)"), {"id": str(resource_id)}
+    ).first() is not None
+
+
+def ref_access(
+    conn: Connection, holder_type: str, holder: Optional[dict], resource_type: str, resource_id: str
+) -> RefAccess:
+    """Whether and as whom a holder runs one referenced resource.
+
+    The run and the edit page both ask this. The owner runs it when they may
+    use it, else a live sponsor does; otherwise it is stopped, because the row
+    is gone, a recorded sponsor no longer qualifies, or the owner lost access.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row (needs ``user_id``; ``id`` and
+            ``resource_sponsors`` for sponsors).
+        resource_type: ``source``, ``prompt`` or ``tool``.
+        resource_id: The referenced id.
+
+    Returns:
+        RefAccess: The principal, or the reason it doesn't run.
+    """
     if not holder:
-        return None
+        return RefAccess(None, REASON_OWNER_LOST_ACCESS)
+    rid = str(resource_id)
     owner = holder.get("user_id")
-    if can_use_ref(conn, resource_type, str(resource_id), owner):
-        return owner
-    return active_sponsor(conn, holder_type, holder, resource_type, resource_id)
+    if can_use_ref(conn, resource_type, rid, owner):
+        return RefAccess(owner)
+    sponsor, sponsor_reason = sponsor_state(conn, holder_type, holder, resource_type, rid)
+    if sponsor and sponsor_reason is None:
+        return RefAccess(sponsor, None, sponsor)
+    if not _ref_exists(conn, resource_type, rid):
+        return RefAccess(None, REASON_DELETED, sponsor)
+    return RefAccess(None, sponsor_reason or REASON_OWNER_LOST_ACCESS, sponsor)
+
+
+def resolve_holder_tool(
+    conn: Connection, holder_type: str, holder: Optional[dict], tool_id: str, *, tools_repo=None
+) -> tuple[Optional[dict], RefAccess]:
+    """The tool row a holder runs ``tool_id`` with, and its access.
+
+    Builtin and default tool ids resolve to their synthesized rows. A
+    ``user_tools`` row resolves as the holder's owner, else as its live
+    sponsor (see :func:`ref_access`); the row is the tool owner's either way.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row.
+        tool_id: The referenced tool id.
+        tools_repo: A ``UserToolsRepository`` on ``conn`` to reuse.
+
+    Returns:
+        ``(row, access)``: the row, None when it doesn't run, and why.
+    """
+    # Lazy: default_tools imports this module lazily too.
+    from docsgpt.agents.default_tools import resolve_tool_by_id
+
+    repo = tools_repo or UserToolsRepository(conn)
+    owner = (holder or {}).get("user_id")
+    row = resolve_tool_by_id(tool_id, owner, user_tools_repo=repo)
+    if row is not None:
+        return row, RefAccess(owner)
+    access = ref_access(conn, holder_type, holder, "tool", str(tool_id))
+    if access.principal:
+        row = resolve_tool_by_id(tool_id, access.principal, user_tools_repo=repo)
+    if row is None:
+        reason = access.reason or REASON_DELETED
+        return None, RefAccess(None, reason, access.sponsor)
+    return row, access
+
+
+def log_stopped(
+    holder_type: str, holder: Optional[dict], resource_type: str, resource_id, reason: Optional[str]
+) -> None:
+    """Log one attached resource a run leaves out, greppable by ``resource_stopped``.
+
+    Args:
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row.
+        resource_type: ``source``, ``prompt`` or ``tool``.
+        resource_id: The referenced id.
+        reason: Why it doesn't run.
+    """
+    holder_id = str((holder or {}).get("id") or "")
+    logger.info(
+        "resource_stopped holder=%s:%s type=%s id=%s reason=%s",
+        holder_type, holder_id, resource_type, resource_id, reason,
+        extra={
+            "event": "resource_stopped",
+            "holder_type": holder_type,
+            "holder_id": holder_id,
+            "resource_type": resource_type,
+            "resource_id": str(resource_id),
+            "reason": reason,
+        },
+    )
 
 
 def _sponsorable(resource_type: str, resource_id: str) -> bool:
@@ -879,3 +1015,264 @@ def sponsor_details(
             }
         )
     return out
+
+
+def holder_editable_by(conn: Connection, holder_type: str, holder: dict, user_id: Optional[str]) -> bool:
+    """Whether ``user_id`` may edit the agent or workflow ``holder``.
+
+    Its owner always may; anyone else needs ``edit`` on the agent (for a
+    workflow, on one of its owner's agents that run it).
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row.
+        user_id: The reader.
+
+    Returns:
+        bool: Whether they may edit it.
+    """
+    if not user_id or not holder:
+        return False
+    if user_id == holder.get("user_id"):
+        return True
+    return _holder_editable_by(conn, holder_type, holder, user_id)
+
+
+def _ref_rows(conn: Connection, refs: Iterable[tuple[str, str]]) -> dict[str, dict]:
+    """``"<type>:<id>" -> {name, user_id}`` for referenced rows, owner-agnostic, per type in one query."""
+    queries = {
+        "source": "SELECT id, name, user_id FROM sources WHERE id = ANY(CAST(:ids AS uuid[]))",
+        "prompt": "SELECT id, name, user_id FROM prompts WHERE id = ANY(CAST(:ids AS uuid[]))",
+        "tool": (
+            "SELECT id, COALESCE(NULLIF(custom_name, ''), NULLIF(display_name, ''), name), user_id "
+            "FROM user_tools WHERE id = ANY(CAST(:ids AS uuid[]))"
+        ),
+    }
+    by_type: dict[str, list[str]] = {}
+    for resource_type, resource_id in refs:
+        if resource_type in queries and looks_like_uuid(str(resource_id)):
+            by_type.setdefault(resource_type, []).append(str(resource_id))
+    out: dict[str, dict] = {}
+    for resource_type, ids in by_type.items():
+        for rid, name, owner in conn.execute(text(queries[resource_type]), {"ids": ids}).fetchall():
+            out[sponsor_key(resource_type, str(rid))] = {"name": name, "user_id": owner}
+    return out
+
+
+def _user_labels(conn: Connection, user_ids: Iterable[Optional[str]]) -> dict[str, str]:
+    """``user_id -> email`` for the ones with an email on file."""
+    ids = sorted({u for u in user_ids if u})
+    if not ids:
+        return {}
+    return dict(
+        conn.execute(
+            text(
+                "SELECT user_id, email FROM users WHERE user_id = ANY(:ids) "
+                "AND email IS NOT NULL AND email <> ''"
+            ),
+            {"ids": ids},
+        ).fetchall()
+    )
+
+
+def _connection_state(conn: Connection, tool: dict, owner: Optional[str], policies_box: list) -> tuple:
+    """``(reason, connection)`` for a connection-backed tool the holder runs as ``owner``."""
+    from docsgpt.connectors import catalog, service
+    from docsgpt.connectors.resolve import connection_stop_reason, resolve_connection
+
+    if not tool.get("connection_id") and not catalog.definition_for_tool(tool.get("name") or ""):
+        return None, None
+    if not policies_box:
+        policies_box.append(service.load_policies(conn))
+    resolved = resolve_connection(tool, owner, conn=conn, policies=policies_box[0])
+    reason = connection_stop_reason(tool, resolved)
+    if reason is None:
+        return None, None
+    if resolved is not None:
+        connection = {
+            "id": resolved.connection_id,
+            "connector_key": resolved.connector_key,
+            "name": resolved.connector_name,
+        }
+    else:
+        definition = catalog.definition_for_tool(tool.get("name") or "")
+        connection = {"id": None, "connector_key": definition.key, "name": definition.name}
+    return reason, connection
+
+
+def resource_states(
+    conn: Connection,
+    holder_type: str,
+    holder: dict,
+    refs: Iterable[tuple[str, str]],
+    viewer: Optional[str],
+) -> list[dict]:
+    """Whether each resource a holder references runs, for its edit page.
+
+    Uses the run's own checks (:func:`ref_access`, :func:`resolve_holder_tool`
+    and the tool's connection as the run resolves it for the owner), so a
+    resource shown as stopped is one the run leaves out. Presets and builtin
+    tools always run and are not listed. Only for readers who may edit the
+    holder: the caller checks that.
+
+    A name is given only for a resource that runs, that the reader can see
+    themselves, that someone sponsored on the holder, or that is attached to
+    an agent (agent saves check every reference), so a reference to someone
+    else's resource never reveals its name.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row.
+        refs: The ``(type, id)`` resources it references.
+        viewer: The user reading the page.
+
+    Returns:
+        list: Per resource ``{key, type, id, name, state, reason, sponsor,
+        contact, connection, can_confirm, can_reconnect}``. ``state`` is
+        ``active`` or ``stopped``; ``reason`` (None while active) is one of
+        ``deleted``, ``owner_lost_access``, the sponsor reasons,
+        ``connection_needs_reconnect``, ``connection_removed`` or
+        ``connector_disabled``. ``sponsor`` and ``contact`` are
+        ``{user_id, label}`` or None: the recorded sponsor, and someone other
+        than the reader who can fix it. ``connection`` (``{id,
+        connector_key, name}``) names the service for a connection reason.
+        ``can_confirm``: the reader may take it over on their next save;
+        ``can_reconnect``: the reader owns the connection that needs signing
+        in again.
+    """
+    owner = holder.get("user_id")
+    seen: set[str] = set()
+    pairs: list[tuple[str, str]] = []
+    for resource_type, resource_id in refs:
+        rid = str(resource_id).lower()
+        key = sponsor_key(resource_type, rid)
+        if key in seen or resource_type not in REF_USE_ACTION or not _sponsorable(resource_type, rid):
+            continue
+        seen.add(key)
+        pairs.append((resource_type, rid))
+    if not pairs:
+        return []
+    rows = _ref_rows(conn, pairs)
+    recorded = {k.lower(): v for k, v in (holder.get("resource_sponsors") or {}).items()}
+    viewer_edits = bool(viewer and viewer != owner and _holder_editable_by(conn, holder_type, holder, viewer))
+    tools_repo = UserToolsRepository(conn)
+    policies_box: list = []
+    entries = []
+    for resource_type, rid in pairs:
+        key = sponsor_key(resource_type, rid)
+        info = rows.get(key) or {}
+        connection = None
+        if resource_type == "tool":
+            tool_row, access = resolve_holder_tool(conn, holder_type, holder, rid, tools_repo=tools_repo)
+            reason = access.reason
+            if tool_row is not None and reason is None:
+                reason, connection = _connection_state(conn, tool_row, owner, policies_box)
+        else:
+            access = ref_access(conn, holder_type, holder, resource_type, rid)
+            reason = access.reason
+        sponsor = recorded.get(key)
+        sponsor = sponsor if sponsor and sponsor != owner else None
+        resource_owner = info.get("user_id")
+        can_confirm = bool(
+            reason in (REASON_OWNER_LOST_ACCESS, REASON_CANNOT_EDIT_HOLDER, REASON_CANNOT_EDIT_RESOURCE)
+            and viewer_edits
+            and can_sponsor_ref(conn, resource_type, rid, viewer)
+        )
+        contact = None
+        if reason == REASON_OWNER_LOST_ACCESS:
+            # The owner asks whoever shared it; an editor asks the owner.
+            contact = resource_owner if viewer == owner else owner
+        elif reason in (REASON_CONNECTION_NEEDS_RECONNECT, REASON_CONNECTION_REMOVED):
+            contact = resource_owner
+        if contact == viewer:
+            contact = None
+        name_visible = bool(
+            reason is None
+            or sponsor
+            or holder_type == "agent"
+            or (viewer and resolve(conn, resource_type, rid, viewer) is not None)
+        )
+        entries.append({
+            "key": key,
+            "type": resource_type,
+            "id": rid,
+            "name": info.get("name") if name_visible else None,
+            "state": "active" if reason is None else "stopped",
+            "reason": reason,
+            "sponsor": sponsor,
+            "contact": contact,
+            "connection": connection,
+            "can_confirm": can_confirm,
+            "can_reconnect": bool(
+                reason == REASON_CONNECTION_NEEDS_RECONNECT
+                and connection
+                and connection.get("id")
+                and viewer
+                and viewer == resource_owner
+            ),
+        })
+    labels = _user_labels(conn, [u for e in entries for u in (e["sponsor"], e["contact"])])
+    for entry in entries:
+        for field_name in ("sponsor", "contact"):
+            user_id = entry[field_name]
+            entry[field_name] = {"user_id": user_id, "label": labels.get(user_id) or user_id} if user_id else None
+    return entries
+
+
+def visible_ref_ids(
+    conn: Connection, holder_type: str, holder: dict, refs: Iterable[tuple[str, str]], viewer: Optional[str]
+) -> set[str]:
+    """Keys of references whose names ``viewer`` may read on the holder's edit page.
+
+    Those the holder runs (its owner or a live sponsor may use them), those
+    someone sponsored on it, and those the reader can see themselves.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row.
+        refs: ``(type, id)`` pairs.
+        viewer: The reader.
+
+    Returns:
+        set: ``"<type>:<id>"`` keys, ids lowercased.
+    """
+    recorded = {k.lower() for k in (holder.get("resource_sponsors") or {})}
+    out: set[str] = set()
+    for resource_type, resource_id in refs:
+        rid = str(resource_id).lower()
+        key = sponsor_key(resource_type, rid)
+        if key in out or resource_type not in REF_USE_ACTION:
+            continue
+        if (
+            key in recorded
+            or ref_access(conn, holder_type, holder, resource_type, rid).principal
+            or (viewer and resolve(conn, resource_type, rid, viewer) is not None)
+        ):
+            out.add(key)
+    return out
+
+
+def sponsor_audience(
+    conn: Connection, holder_type: str, holder: dict, states: list[dict], sponsors: list[dict]
+) -> Optional[dict]:
+    """The holder's audience when the reader may take something over, else None.
+
+    A take-over runs the resource with the reader's access for everyone who
+    uses the holder, so the page shows them who that is before they agree.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row.
+        states: :func:`resource_states` for the reader.
+        sponsors: :func:`sponsor_details` for the reader.
+
+    Returns:
+        dict or None: :func:`holder_audience`, when any item has ``can_confirm``.
+    """
+    if not any(item.get("can_confirm") for item in [*states, *sponsors]):
+        return None
+    return holder_audience(conn, holder_type, holder)

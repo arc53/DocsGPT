@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 MODE_OWNER = "owner"
 MODE_MEMBER = "member"
 
+# Why a connection-backed tool can't run (``connection_stop_reason``).
+CONNECTION_NEEDS_RECONNECT = "connection_needs_reconnect"
+CONNECTION_REMOVED = "connection_removed"
+CONNECTOR_DISABLED = "connector_disabled"
+
 
 @dataclass(frozen=True)
 class ResolvedConnection:
@@ -36,6 +41,7 @@ class ResolvedConnection:
         delegated: The row belongs to someone other than the invoker.
         writes_allowed: Whether an admin lets agents make changes through a
             connector that offers them as an opt-in (GitHub); True elsewhere.
+        enabled: Whether the connector is switched on (an admin can turn it off).
     """
 
     row: Optional[dict]
@@ -44,6 +50,7 @@ class ResolvedConnection:
     connector_name: Optional[str]
     delegated: bool = False
     writes_allowed: bool = True
+    enabled: bool = True
 
     @property
     def connection_id(self) -> Optional[str]:
@@ -57,7 +64,13 @@ def _name_for(row: Optional[dict], fallback_key: Optional[str]) -> Optional[str]
     return definition.name if definition else None
 
 
-def resolve_connection(resource: dict, invoker_user_id: Optional[str]) -> Optional[ResolvedConnection]:
+def resolve_connection(
+    resource: dict,
+    invoker_user_id: Optional[str],
+    *,
+    conn=None,
+    policies: Optional[dict] = None,
+) -> Optional[ResolvedConnection]:
     """Pick the connection a tool or source uses for ``invoker_user_id``.
 
     ``owner`` mode uses ``resource.connection_id``. ``member`` mode uses the
@@ -67,39 +80,50 @@ def resolve_connection(resource: dict, invoker_user_id: Optional[str]) -> Option
     Args:
         resource: A ``user_tools`` or ``sources`` row.
         invoker_user_id: Who is running it.
+        conn: An open connection to reuse; a read-only one is opened when None.
+        policies: Connector policies already loaded with ``service.load_policies``,
+            so a caller resolving many resources loads them once.
 
     Returns:
         None when the resource has no connection at all; otherwise the
         resolution, possibly with ``available=False``.
     """
-    connection_id = resource.get("connection_id")
-    if not connection_id:
+    if not resource.get("connection_id"):
         return None
+    if conn is None:
+        with db_readonly() as own_conn:
+            return _resolve(own_conn, resource, invoker_user_id, policies)
+    return _resolve(conn, resource, invoker_user_id, policies)
+
+
+def _resolve(conn, resource: dict, invoker_user_id: Optional[str], policies: Optional[dict]) -> ResolvedConnection:
+    connection_id = resource.get("connection_id")
     mode = resource.get("credential_mode") or MODE_OWNER
     owner = resource.get("user_id")
-    with db_readonly() as conn:
-        repo = ConnectorSessionsRepository(conn)
-        owned = repo.get(str(connection_id))
-        owned_key = catalog.connector_key_for_row(owned) if owned else None
+    repo = ConnectorSessionsRepository(conn)
+    owned = repo.get(str(connection_id))
+    owned_key = catalog.connector_key_for_row(owned) if owned else None
+    if policies is None:
         policies = service.load_policies(conn)
-        policy = (policies.get(owned_key) or {}) if owned_key else {}
-        if policy.get("credential_mode") in (MODE_OWNER, MODE_MEMBER):
-            # An admin forces whose account every share of this connector uses.
-            mode = policy["credential_mode"]
-        if owned is not None and owner and owned.get("user_id") != owner:
-            # A resource may only point at its own owner's connection.
-            logger.warning(
-                "resource %s points at a connection it does not own", resource.get("id"),
-            )
-            owned = None
-        row = owned
-        if mode == MODE_MEMBER and invoker_user_id and invoker_user_id != owner:
-            row = _member_connection(repo, owned, invoker_user_id)
+    policy = (policies.get(owned_key) or {}) if owned_key else {}
+    if policy.get("credential_mode") in (MODE_OWNER, MODE_MEMBER):
+        # An admin forces whose account every share of this connector uses.
+        mode = policy["credential_mode"]
+    if owned is not None and owner and owned.get("user_id") != owner:
+        # A resource may only point at its own owner's connection.
+        logger.warning(
+            "resource %s points at a connection it does not own", resource.get("id"),
+        )
+        owned = None
+    row = owned
+    if mode == MODE_MEMBER and invoker_user_id and invoker_user_id != owner:
+        row = _member_connection(repo, owned, invoker_user_id)
     key = catalog.connector_key_for_row(row or owned or {})
+    enabled = service.connector_is_enabled(policies, key)
     available = (
         row is not None
         and service.normalize_status(row) == service.STATUS_CONNECTED
-        and service.connector_is_enabled(policies, key)
+        and enabled
     )
     return ResolvedConnection(
         row=row,
@@ -108,7 +132,38 @@ def resolve_connection(resource: dict, invoker_user_id: Optional[str]) -> Option
         connector_name=_name_for(row or owned, key),
         delegated=bool(row and invoker_user_id and row.get("user_id") != invoker_user_id),
         writes_allowed=_writes_allowed(policies, key),
+        enabled=enabled,
     )
+
+
+def connection_stop_reason(tool: dict, resolved: Optional[ResolvedConnection]) -> Optional[str]:
+    """Why a tool's connection keeps it from running, or None when it can run.
+
+    Args:
+        tool: The ``user_tools`` row.
+        resolved: What :func:`resolve_connection` returned for it.
+
+    Returns:
+        :data:`CONNECTION_REMOVED` when the connection is gone (its row was
+        deleted, or a built-in service's tool lost its connection and has no
+        credentials of its own), :data:`CONNECTOR_DISABLED` when an admin
+        turned the service off, :data:`CONNECTION_NEEDS_RECONNECT` when the
+        account must sign in again; else None.
+    """
+    if resolved is None:
+        if tool.get("connection_id") or not catalog.definition_for_tool(tool.get("name") or ""):
+            return None
+        # Removing a connection but keeping its tools nulls their link; a
+        # built-in service's tool has no secrets of its own to fall back to.
+        config = tool.get("config") or {}
+        return None if config.get("encrypted_credentials") else CONNECTION_REMOVED
+    if resolved.row is None:
+        return CONNECTION_REMOVED
+    if not resolved.enabled:
+        return CONNECTOR_DISABLED
+    if not resolved.available:
+        return CONNECTION_NEEDS_RECONNECT
+    return None
 
 
 def _writes_allowed(policies: dict, key: Optional[str]) -> bool:

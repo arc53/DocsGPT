@@ -74,6 +74,8 @@ def _patches(sub, repo, team_access, *, prompt_name="Resolved Prompt", source_de
             "docsgpt.api.user.agents.routes.resolve_source_details",
             return_value=source_details,
         ),
+        # Run state reads the grants live; covered in test_resource_states.
+        patch("docsgpt.api.user.agents.routes.resource_states", return_value=[]),
     ]
 
 

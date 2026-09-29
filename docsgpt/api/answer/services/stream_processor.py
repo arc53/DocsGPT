@@ -156,20 +156,27 @@ def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Option
     pid = str(prompt_id)
     if is_composed_preset(pid) or pid in _PROMPT_PRESETS_WITHOUT_ROW:
         return prompt_id
-    from docsgpt.api.user.resource_access import active_sponsor, resolve
+    from docsgpt.api.user.resource_access import (
+        REASON_OWNER_LOST_ACCESS,
+        log_stopped,
+        ref_access,
+    )
 
+    # The same check the agent page's run state uses: the principal, else a
+    # live sponsor on the agent.
+    holder = {**agent, "user_id": principal} if agent and agent.get("id") else {"user_id": principal}
     try:
         with db_readonly() as conn:
-            ra = resolve(conn, "prompt", pid, principal) if principal else None
-            usable = ra is not None and ra.can("use")
-            if not usable and agent and agent.get("id"):
-                usable = active_sponsor(conn, "agent", agent, "prompt", pid) is not None
+            access = ref_access(conn, "agent", holder, "prompt", pid) if principal else None
     except Exception:
         logger.exception("Prompt access check failed for %s", pid)
-        usable = False
-    if usable:
+        access = None
+    if access is not None and access.principal:
         return prompt_id
-    logger.info("prompt %s not usable by %s; using the default prompt", pid, principal)
+    log_stopped(
+        "agent" if agent else "chat", holder, "prompt", pid,
+        access.reason if access is not None else REASON_OWNER_LOST_ACCESS,
+    )
     return "default"
 
 
@@ -180,10 +187,11 @@ def _agent_source_doc(conn: Any, sources_repo: Any, agent: dict, source_id: Any)
     editor who attached it while they still qualify. Read unscoped once
     authorized: an owner-scoped read misses a team-shared source.
     """
-    from docsgpt.api.user.resource_access import ref_principal
+    from docsgpt.api.user.resource_access import log_stopped, ref_access
 
-    if not ref_principal(conn, "agent", agent, "source", str(source_id)):
-        logger.info("agent %s source %s not usable; skipped", agent.get("id"), source_id)
+    access = ref_access(conn, "agent", agent, "source", str(source_id))
+    if not access.principal:
+        log_stopped("agent", agent, "source", source_id, access.reason)
         return None
     return sources_repo.get_by_id(str(source_id))
 

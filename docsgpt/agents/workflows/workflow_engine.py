@@ -407,6 +407,7 @@ class WorkflowEngine:
             "tool_ids": node_config.tools,
             "tool_owner": self._workflow_owner_id(),
             "tool_principals": self._node_tool_principals(node_config.tools),
+            "tool_holder": getattr(self.agent, "workflow_row", None),
             "prompt": node_prompt,
             "chat_history": self.agent.chat_history,
             "decoded_token": self.agent.decoded_token,
@@ -1407,25 +1408,21 @@ class WorkflowEngine:
             logger.warning("Workflow node sources dropped: no owner to authorize.")
             return []
 
-        from docsgpt.api.user.resource_access import active_sponsor
-        from docsgpt.api.user.team_sharing import can_access
+        from docsgpt.api.user.resource_access import log_stopped, ref_access
         from docsgpt.storage.db.session import db_readonly
 
-        workflow_row = getattr(self.agent, "workflow_row", None)
+        # The same check the workflow page's run state uses: the owner, else
+        # the editor who attached it while they still qualify.
+        holder = {**(getattr(self.agent, "workflow_row", None) or {}), "user_id": owner}
         allowed = []
         try:
             with db_readonly() as conn:
                 for sid in ids:
-                    if sid and (
-                        can_access(conn, "source", str(sid), owner)
-                        or active_sponsor(conn, "workflow", workflow_row, "source", str(sid))
-                    ):
+                    access = ref_access(conn, "workflow", holder, "source", str(sid)) if sid else None
+                    if access is not None and access.principal:
                         allowed.append(sid)
                     else:
-                        logger.warning(
-                            "Workflow node source %s dropped: %s has no access.",
-                            sid, owner,
-                        )
+                        log_stopped("workflow", holder, "source", sid, access.reason if access else None)
         except Exception:
             logger.exception("Workflow node source authorization failed; dropping all.")
             return []

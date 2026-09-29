@@ -564,6 +564,9 @@ class ToolExecutor:
         # Tool id -> the user to resolve it as, for a workflow node's tools
         # sponsored by an editor (see resource_access.active_sponsor).
         self.tool_principals: Dict[str, str] = {}
+        # The workflow row a node's tools belong to, so a dropped one is
+        # logged with why it doesn't run.
+        self.tool_holder: Optional[Dict] = None
         self.conversation_id: Optional[str] = None
         # Set by the workflow engine for agent nodes so run-scoped tools
         # (artifact_generator / code_executor) address artifacts by the
@@ -638,12 +641,26 @@ class ToolExecutor:
                 if row is None and str(tid) in self.tool_principals:
                     row = resolve_tool_by_id(tid, self.tool_principals[str(tid)], user_tools_repo=tools_repo)
                 if row is None:
-                    logger.warning("tool id %s did not resolve; dropped from scoped toolset", tid)
+                    self._log_dropped_scoped_tool(conn, tid, principal)
                     continue
                 if self.headless and is_headless_excluded_tool(row.get("name")):
                     continue
                 tools.append(row)
         return {str(tool["id"]): tool for tool in tools}
+
+    def _log_dropped_scoped_tool(self, conn, tool_id: str, principal: Optional[str]) -> None:
+        """Log a node tool the scoped toolset leaves out, with why when the workflow is known."""
+        # Lazy: docsgpt.api's package import pulls in every route module.
+        from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+
+        holder = {**(self.tool_holder or {}), "user_id": principal}
+        reason = None
+        try:
+            _row, access = resolve_holder_tool(conn, "workflow", holder, tool_id)
+            reason = access.reason
+        except Exception:
+            logger.exception("Could not tell why tool %s does not resolve", tool_id)
+        log_stopped("workflow", holder, "tool", tool_id, reason)
 
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
         """Resolve an agent's toolset — exactly ``agents.tools``, no defaults."""
@@ -660,13 +677,14 @@ class ToolExecutor:
                 row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
                 if row is None:
                     # A tool the owner can't use runs as the editor who
-                    # attached it, while they still qualify.
+                    # attached it, while they still qualify: the same check
+                    # the agent page's run state uses.
                     # Lazy: docsgpt.api's package import pulls in every route module.
-                    from docsgpt.api.user.resource_access import active_sponsor
+                    from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
 
-                    sponsor = active_sponsor(conn, "agent", agent_data, "tool", str(tid))
-                    if sponsor:
-                        row = resolve_tool_by_id(tid, sponsor, user_tools_repo=tools_repo)
+                    row, access = resolve_holder_tool(conn, "agent", agent_data, tid, tools_repo=tools_repo)
+                    if row is None:
+                        log_stopped("agent", agent_data, "tool", tid, access.reason)
                 if row is None:
                     continue
                 # Workflow-only builtins (read_document) never resolve for a
