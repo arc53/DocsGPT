@@ -767,20 +767,32 @@
           "title": "Qué usa este agente",
           "intro": "Todos los que usan este agente reciben estos elementos, cada uno con el acceso indicado.",
           "stopped": "Detenido",
-          "writesOff": "Sin cambios por API",
-          "writesNote": "Los usuarios de la API, el widget y el enlace público no pueden hacer cambios con los elementos marcados «Sin cambios por API» hasta que los permitas en Access Details.",
-          "writesNoteEditor": "Los usuarios de la API, el widget y el enlace público no pueden hacer cambios con los elementos marcados «Sin cambios por API» hasta que el propietario los permita en Access Details.",
+          "writesOff": "Cambios por API desactivados",
+          "writesNote": "Los usuarios de la API, el widget y el enlace público no pueden hacer los cambios marcados aquí hasta que los permitas en Access Details.",
+          "writesNoteEditor": "Los usuarios de la API, el widget y el enlace público no pueden hacer los cambios marcados aquí hasta que el propietario los permita en Access Details.",
           "access": {
             "you": "Tu acceso",
             "person": "Acceso de {{person}}",
             "owner": "Acceso del propietario",
-            "member": "La propia cuenta de {{service}} de cada persona",
-            "memberNoService": "La propia cuenta de cada persona",
+            "member": "La propia cuenta de {{service}} de cada persona (API y widget: la tuya)",
+            "memberNoService": "La propia cuenta de cada persona (API y widget: la tuya)",
             "yourAccount": "Tu cuenta de {{service}}",
             "yourAccountNoService": "Tu cuenta",
             "personAccount": "Cuenta de {{service}} de {{person}}",
-            "personAccountNoService": "Cuenta de {{person}}"
-          }
+            "personAccountNoService": "Cuenta de {{person}}",
+            "memberShared": "La propia cuenta de {{service}} de cada persona (API y widget: la del propietario)",
+            "memberSharedNoService": "La propia cuenta de cada persona (API y widget: la del propietario)",
+            "otherAccount": "Cuenta de {{service}} de otra persona",
+            "otherAccountNoService": "Cuenta de otra persona",
+            "yourCredentials": "Tus credenciales guardadas",
+            "personCredentials": "Credenciales guardadas de {{person}}",
+            "otherCredentials": "Credenciales guardadas de otra persona"
+          },
+          "writesSomeOff": "Algunos cambios por API desactivados",
+          "adminOff": "Cambios desactivados por un administrador",
+          "writesNoteApi": "Los usuarios de la API y el widget no pueden hacer los cambios marcados aquí hasta que los permitas en Access Details.",
+          "writesNoteApiEditor": "Los usuarios de la API y el widget no pueden hacer los cambios marcados aquí hasta que el propietario los permita en Access Details.",
+          "writesNoteMemberTail": "En las herramientas donde cada persona usa su propia cuenta, los usuarios del enlace público hacen cambios con su propia cuenta."
         }
       },
       "memberCount_one": "{{formatted}} miembro",
@@ -1568,7 +1580,7 @@
         "ownerWarningShared": "Los miembros del equipo actuarán con la cuenta de {{name}} del propietario.",
         "confirmWrite": "Entiendo que los miembros del equipo pueden realizar acciones con mi cuenta.",
         "confirmWriteShared": "Entiendo que los miembros del equipo pueden realizar acciones con la cuenta de {{name}} del propietario.",
-        "memberNote": "Cada persona usa su propia cuenta de {{name}} y la conecta la primera vez que usa esta herramienta.",
+        "memberNote": "Cada persona usa su propia cuenta de {{name}} y la conecta la primera vez que usa esta herramienta. A través de la clave de API o el widget de un agente, se usa la cuenta del propietario del agente.",
         "forced": "Un administrador eligió esto para todos los recursos compartidos de este conector.",
         "ownerChooses": "Solo el propietario puede cambiar esto.",
         "saveFailed": "No se pudo guardar el cambio. Inténtalo de nuevo."

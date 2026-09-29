@@ -67,12 +67,19 @@ export type ResourceState = {
     connector_key: string | null;
     name: string | null;
   } | null;
+  /** The live sponsor a running item runs as; null for the owner. */
+  runs_as?: ResourcePerson | null;
   /** A running connected tool's mode: the owner's account or each person's own. */
   credential_mode?: 'owner' | 'member' | null;
-  /** Whose account an owner-mode connection acts as. */
-  account?: ResourcePerson | null;
+  /**
+   * Whose saved credentials or owner-mode connection a running tool uses
+   * (the tool's owner); both null when the reader may not see who.
+   */
+  account?: { user_id: string | null; label: string | null } | null;
   /** Its write actions on credentials its owner stored (the API write allowlist's). */
   owner_credential_writes?: string[];
+  /** False when an admin turned off changes through its connector. */
+  writes_allowed?: boolean;
   /** The reader may run it with their access by confirming on a save. */
   can_confirm?: boolean;
   /** The reader owns the connection that needs signing in again. */

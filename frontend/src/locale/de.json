@@ -767,20 +767,32 @@
           "title": "Was dieser Agent nutzt",
           "intro": "Alle, die diesen Agenten nutzen, erhalten diese Elemente, jeweils mit dem angezeigten Zugriff.",
           "stopped": "Gestoppt",
-          "writesOff": "Keine API-Änderungen",
-          "writesNote": "API-, Widget- und Link-Nutzer können mit Elementen, die mit „Keine API-Änderungen“ markiert sind, nichts ändern, bis du es unter Zugangsdaten erlaubst.",
-          "writesNoteEditor": "API-, Widget- und Link-Nutzer können mit Elementen, die mit „Keine API-Änderungen“ markiert sind, nichts ändern, bis der Eigentümer es unter Zugangsdaten erlaubt.",
+          "writesOff": "API-Änderungen aus",
+          "writesNote": "API-, Widget- und Link-Nutzer können die hier markierten Änderungen erst vornehmen, wenn du sie unter Zugangsdaten erlaubst.",
+          "writesNoteEditor": "API-, Widget- und Link-Nutzer können die hier markierten Änderungen erst vornehmen, wenn der Eigentümer sie unter Zugangsdaten erlaubt.",
           "access": {
             "you": "Dein Zugriff",
             "person": "Zugriff von {{person}}",
             "owner": "Zugriff des Eigentümers",
-            "member": "Das eigene {{service}}-Konto jeder Person",
-            "memberNoService": "Das eigene Konto jeder Person",
+            "member": "Das eigene {{service}}-Konto jeder Person (API und Widget: deins)",
+            "memberNoService": "Das eigene Konto jeder Person (API und Widget: deins)",
             "yourAccount": "Dein {{service}}-Konto",
             "yourAccountNoService": "Dein Konto",
             "personAccount": "{{service}}-Konto von {{person}}",
-            "personAccountNoService": "Konto von {{person}}"
-          }
+            "personAccountNoService": "Konto von {{person}}",
+            "memberShared": "Das eigene {{service}}-Konto jeder Person (API und Widget: das des Eigentümers)",
+            "memberSharedNoService": "Das eigene Konto jeder Person (API und Widget: das des Eigentümers)",
+            "otherAccount": "{{service}}-Konto einer anderen Person",
+            "otherAccountNoService": "Konto einer anderen Person",
+            "yourCredentials": "Deine gespeicherten Zugangsdaten",
+            "personCredentials": "Gespeicherte Zugangsdaten von {{person}}",
+            "otherCredentials": "Gespeicherte Zugangsdaten einer anderen Person"
+          },
+          "writesSomeOff": "Einige API-Änderungen aus",
+          "adminOff": "Änderungen von einem Admin deaktiviert",
+          "writesNoteApi": "API- und Widget-Nutzer können die hier markierten Änderungen erst vornehmen, wenn du sie unter Zugangsdaten erlaubst.",
+          "writesNoteApiEditor": "API- und Widget-Nutzer können die hier markierten Änderungen erst vornehmen, wenn der Eigentümer sie unter Zugangsdaten erlaubt.",
+          "writesNoteMemberTail": "Bei Werkzeugen, bei denen jede Person ihr eigenes Konto nutzt, ändern Link-Nutzer mit ihrem eigenen Konto."
         }
       },
       "memberCount_one": "{{formatted}} Mitglied",
@@ -1568,7 +1580,7 @@
         "ownerWarningShared": "Teammitglieder handeln mit dem {{name}}-Konto des Eigentümers.",
         "confirmWrite": "Ich verstehe, dass Teammitglieder mit meinem Konto Aktionen ausführen können.",
         "confirmWriteShared": "Ich verstehe, dass Teammitglieder mit dem {{name}}-Konto des Eigentümers Aktionen ausführen können.",
-        "memberNote": "Jede Person nutzt ihr eigenes {{name}}-Konto und verbindet es, wenn sie dieses Werkzeug zum ersten Mal nutzt.",
+        "memberNote": "Jede Person nutzt ihr eigenes {{name}}-Konto und verbindet es, wenn sie dieses Werkzeug zum ersten Mal nutzt. Über den API-Schlüssel oder das Widget eines Agenten wird das Konto des Agent-Eigentümers genutzt.",
         "forced": "Ein Admin hat das für alle Freigaben dieses Konnektors festgelegt.",
         "ownerChooses": "Nur der Eigentümer kann das ändern.",
         "saveFailed": "Die Änderung konnte nicht gespeichert werden. Versuche es erneut."

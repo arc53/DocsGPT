@@ -766,20 +766,32 @@
           "title": "此智能体使用的内容",
           "intro": "使用此智能体的每个人都会用到这些内容，各自按所示的访问权限运行。",
           "stopped": "已停止",
-          "writesOff": "API 不可更改",
-          "writesNote": "在你于 Access Details 中允许之前，API、小组件和公开链接的用户无法通过标记为“API 不可更改”的项目进行更改。",
-          "writesNoteEditor": "在所有者于 Access Details 中允许之前，API、小组件和公开链接的用户无法通过标记为“API 不可更改”的项目进行更改。",
+          "writesOff": "API 更改已关闭",
+          "writesNote": "在你于 Access Details 中允许之前，API、小组件和公开链接的用户无法进行此处标记的更改。",
+          "writesNoteEditor": "在所有者于 Access Details 中允许之前，API、小组件和公开链接的用户无法进行此处标记的更改。",
           "access": {
             "you": "你的访问权限",
             "person": "{{person}} 的访问权限",
             "owner": "所有者的访问权限",
-            "member": "每个人自己的 {{service}} 账号",
-            "memberNoService": "每个人自己的账号",
+            "member": "每个人自己的 {{service}} 账号（API 和小组件：你的）",
+            "memberNoService": "每个人自己的账号（API 和小组件：你的）",
             "yourAccount": "你的 {{service}} 账号",
             "yourAccountNoService": "你的账号",
             "personAccount": "{{person}} 的 {{service}} 账号",
-            "personAccountNoService": "{{person}} 的账号"
-          }
+            "personAccountNoService": "{{person}} 的账号",
+            "memberShared": "每个人自己的 {{service}} 账号（API 和小组件：所有者的）",
+            "memberSharedNoService": "每个人自己的账号（API 和小组件：所有者的）",
+            "otherAccount": "其他人的 {{service}} 账号",
+            "otherAccountNoService": "其他人的账号",
+            "yourCredentials": "你保存的凭据",
+            "personCredentials": "{{person}} 保存的凭据",
+            "otherCredentials": "其他人保存的凭据"
+          },
+          "writesSomeOff": "部分 API 更改已关闭",
+          "adminOff": "管理员已关闭更改",
+          "writesNoteApi": "在你于 Access Details 中允许之前，API 和小组件的用户无法进行此处标记的更改。",
+          "writesNoteApiEditor": "在所有者于 Access Details 中允许之前，API 和小组件的用户无法进行此处标记的更改。",
+          "writesNoteMemberTail": "在每个人使用自己账号的工具上，公开链接的用户用自己的账号进行更改。"
         }
       },
       "memberCount_one": "{{formatted}} 名成员",
@@ -1558,7 +1570,7 @@
         "ownerWarningShared": "团队成员将以所有者的 {{name}} 账号操作。",
         "confirmWrite": "我了解团队成员可以使用我的账号执行操作。",
         "confirmWriteShared": "我了解团队成员可以使用所有者的 {{name}} 账号执行操作。",
-        "memberNote": "每个人使用自己的 {{name}} 账号，并在首次使用此工具时连接。",
+        "memberNote": "每个人使用自己的 {{name}} 账号，并在首次使用此工具时连接。通过智能体的 API 密钥或小组件使用时，使用智能体所有者的账号。",
         "forced": "管理员已为此连接器的所有共享设定了此项。",
         "ownerChooses": "只有所有者可以更改此项。",
         "saveFailed": "无法保存更改。请重试。"

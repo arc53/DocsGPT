@@ -773,20 +773,32 @@
           "title": "What this agent uses",
           "intro": "Everyone who uses this agent gets these, each with the access shown.",
           "stopped": "Stopped",
-          "writesOff": "No API changes",
-          "writesNote": "API, widget and public-link users can't make changes with items marked “No API changes” until you allow them in Access Details.",
-          "writesNoteEditor": "API, widget and public-link users can't make changes with items marked “No API changes” until the owner allows them in Access Details.",
+          "writesOff": "API changes off",
+          "writesNote": "API, widget and public-link users can't make the changes marked here until you allow them in Access Details.",
+          "writesNoteEditor": "API, widget and public-link users can't make the changes marked here until the owner allows them in Access Details.",
           "access": {
             "you": "Your access",
             "person": "{{person}}'s access",
             "owner": "The owner's access",
-            "member": "Each person's own {{service}} account",
-            "memberNoService": "Each person's own account",
+            "member": "Each person's own {{service}} account (API and widget: yours)",
+            "memberNoService": "Each person's own account (API and widget: yours)",
             "yourAccount": "Your {{service}} account",
             "yourAccountNoService": "Your account",
             "personAccount": "{{person}}'s {{service}} account",
-            "personAccountNoService": "{{person}}'s account"
-          }
+            "personAccountNoService": "{{person}}'s account",
+            "memberShared": "Each person's own {{service}} account (API and widget: the owner's)",
+            "memberSharedNoService": "Each person's own account (API and widget: the owner's)",
+            "otherAccount": "Someone else's {{service}} account",
+            "otherAccountNoService": "Someone else's account",
+            "yourCredentials": "Your saved credentials",
+            "personCredentials": "{{person}}'s saved credentials",
+            "otherCredentials": "Someone else's saved credentials"
+          },
+          "writesSomeOff": "Some API changes off",
+          "adminOff": "Changes off by an admin",
+          "writesNoteApi": "API and widget users can't make the changes marked here until you allow them in Access Details.",
+          "writesNoteApiEditor": "API and widget users can't make the changes marked here until the owner allows them in Access Details.",
+          "writesNoteMemberTail": "On tools where each person uses their own account, public-link users make changes with their own account."
         }
       },
       "memberCount_one": "{{formatted}} member",
@@ -1574,7 +1586,7 @@
         "ownerWarningShared": "Team members will act as the owner's {{name}} account.",
         "confirmWrite": "I understand teammates can take actions with my account.",
         "confirmWriteShared": "I understand teammates can take actions with the owner's {{name}} account.",
-        "memberNote": "Each person uses their own {{name}} account, and connects it the first time they use this tool.",
+        "memberNote": "Each person uses their own {{name}} account, and connects it the first time they use this tool. Through an agent's API key or widget, it uses the agent owner's account.",
         "forced": "An admin chose this for every share of this connector.",
         "ownerChooses": "Only the owner can change this.",
         "saveFailed": "Could not save the change. Try again."

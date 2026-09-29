@@ -10,6 +10,7 @@ import { SectionHeader } from '../components/ui/section-header';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { Agent, AgentConfig } from './types';
+import useAgentResourceStates from './useAgentResourceStates';
 import { actionTitle } from '../connectors/i18n';
 
 type WriteAction = {
@@ -21,16 +22,7 @@ type WriteAction = {
 
 type UserTool = {
   id: string;
-  displayName?: string;
-  customName?: string;
-  connection_id?: string | null;
-  owner_credential_writes?: string[];
-  actions?: {
-    name: string;
-    description?: string;
-    access?: string;
-    active?: boolean;
-  }[];
+  actions?: { name: string; description?: string }[];
 };
 
 /**
@@ -38,7 +30,9 @@ type UserTool = {
  * anyone reaching this agent through its API key, widget or its public link
  * may run. Nobody there can approve an action for the owner, so
  * the server refuses every other such write. The server names these writes
- * per tool (`owner_credential_writes`).
+ * per running tool in the agent's `resource_states` (`owner_credential_writes`),
+ * which covers tools an editor sponsored and a workflow agent's node tools
+ * too; the owner's own tool list only adds action descriptions.
  *
  * A toggle saves at once, on top of the agent's last saved config
  * (`getSavedConfig`), so edits still pending in the form are not saved with
@@ -56,47 +50,47 @@ export default function ApiWriteAllowlist({
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
-  const [actions, setActions] = useState<WriteAction[]>([]);
+  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const [allowed, setAllowed] = useState<string[]>(
     agent.config?.api_write_allowlist ?? [],
   );
+  const loaded = useAgentResourceStates(agent.id, (agent.tools ?? []).join());
 
   useEffect(() => {
     setAllowed(agent.config?.api_write_allowlist ?? []);
   }, [agent.config?.api_write_allowlist]);
 
+  // Descriptions of the actions of tools the owner can open themselves.
   useEffect(() => {
-    if (!agent.id || !agent.tools?.length) {
-      setActions([]);
-      return;
-    }
     let cancelled = false;
     userService
       .getUserTools(token)
       .then((response: Response) => response.json())
       .then((data: { tools?: UserTool[] }) => {
         if (cancelled) return;
-        const agentTools = new Set(agent.tools);
-        setActions(
-          (data.tools ?? [])
-            .filter((tool) => agentTools.has(tool.id))
-            .flatMap((tool) =>
-              (tool.owner_credential_writes ?? []).map((name) => ({
-                entry: `${tool.id}:${name}`,
-                tool: tool.customName || tool.displayName || '',
-                action: name,
-                description:
-                  tool.actions?.find((action) => action.name === name)
-                    ?.description ?? '',
-              })),
-            ),
-        );
+        const found: Record<string, string> = {};
+        for (const tool of data.tools ?? [])
+          for (const action of tool.actions ?? [])
+            if (action.description)
+              found[`${tool.id}:${action.name}`] = action.description;
+        setDescriptions(found);
       })
-      .catch(() => !cancelled && setActions([]));
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [agent.id, agent.tools, token]);
+  }, [token]);
+
+  const actions: WriteAction[] = (loaded?.items ?? [])
+    .filter((item) => item.type === 'tool' && item.state === 'active')
+    .flatMap((item) =>
+      (item.owner_credential_writes ?? []).map((name) => ({
+        entry: `${item.id}:${name}`,
+        tool: item.name || t('agents.form.sponsors.unknownItem'),
+        action: name,
+        description: descriptions[`${item.id}:${name}`] ?? '',
+      })),
+    );
 
   if (actions.length === 0) return null;
 

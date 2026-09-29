@@ -11,10 +11,14 @@ vi.mock('react-i18next', () => ({
 }));
 
 const getUserTools = vi.fn();
+const getAgent = vi.fn();
+const getWorkflow = vi.fn();
 const updateAgent = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: (...args: unknown[]) => getUserTools(...args),
+    getAgent: (...args: unknown[]) => getAgent(...args),
+    getWorkflow: (...args: unknown[]) => getWorkflow(...args),
     updateAgent: (...args: unknown[]) => updateAgent(...args),
   },
 }));
@@ -24,7 +28,7 @@ import actionToastReducer, {
 } from '../notifications/actionToastSlice';
 import { prefSlice } from '../preferences/preferenceSlice';
 import ApiWriteAllowlist from './ApiWriteAllowlist';
-import type { Agent } from './types';
+import type { Agent, ResourceState } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -57,6 +61,58 @@ const TOOLS = {
   ],
 };
 
+// What the agent read says each tool may write on stored credentials: the
+// owner's own tools, one an editor sponsored that the owner can't see, and
+// one that stopped.
+const state = (over: Partial<ResourceState>): ResourceState => ({
+  key: `tool:${over.id}`,
+  type: 'tool',
+  id: 'x',
+  name: 'Tool',
+  state: 'active',
+  reason: null,
+  owner_credential_writes: [],
+  ...over,
+});
+
+const STATES: ResourceState[] = [
+  state({
+    id: 'tg',
+    name: 'Telegram',
+    owner_credential_writes: ['telegram_send_message'],
+  }),
+  state({ id: 'memory', name: 'Memory' }),
+  state({
+    id: 'crm',
+    name: 'CRM API',
+    owner_credential_writes: ['create_lead'],
+  }),
+  state({
+    id: 'bob-jira',
+    name: 'Bob Jira',
+    runs_as: { user_id: 'bob', label: 'bob@example.com' },
+    owner_credential_writes: ['create_issue'],
+  }),
+  state({
+    id: 'gone',
+    name: 'Gone',
+    state: 'stopped',
+    reason: 'deleted',
+    owner_credential_writes: ['delete_all'],
+  }),
+];
+
+const readAgent = (tools: string[], extra: Partial<Agent> = {}) => ({
+  ok: true,
+  json: async () => ({
+    id: 'agent-1',
+    agent_type: 'classic',
+    tools,
+    resource_states: STATES.filter((s) => tools.includes(s.id)),
+    ...extra,
+  }),
+});
+
 const agent = (overrides: Partial<Agent> = {}): Agent =>
   ({
     id: 'agent-1',
@@ -79,6 +135,10 @@ describe('ApiWriteAllowlist', () => {
 
   beforeEach(() => {
     getUserTools.mockResolvedValue({ json: async () => TOOLS });
+    getAgent
+      .mockReset()
+      .mockImplementation(async () => readAgent(currentTools));
+    getWorkflow.mockReset();
     updateAgent.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -90,11 +150,13 @@ describe('ApiWriteAllowlist', () => {
     container.remove();
   });
 
+  let currentTools: string[] = [];
   const render = async (
     a: Agent,
     onConfigChange = vi.fn(),
     getSavedConfig?: () => Agent['config'],
   ) => {
+    currentTools = a.tools ?? [];
     store = makeStore();
     await act(async () => {
       root.render(
@@ -181,6 +243,39 @@ describe('ApiWriteAllowlist', () => {
       (l) => l.textContent,
     );
     expect(labels).toEqual(['CRM API: Create lead']);
+  });
+
+  it("lists a sponsor's tool the owner can't see, but not a stopped one", async () => {
+    await render(agent({ tools: ['bob-jira', 'gone'] }));
+    const labels = Array.from(container.querySelectorAll('label')).map(
+      (l) => l.textContent,
+    );
+    expect(labels).toEqual(['Bob Jira: Create issue']);
+  });
+
+  it("lists writes of a workflow agent's node tools", async () => {
+    getAgent.mockResolvedValue(
+      readAgent([], { agent_type: 'workflow', workflow: 'w1' }),
+    );
+    getWorkflow.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          resource_states: [
+            state({
+              id: 'node-tool',
+              name: 'Node Slack',
+              owner_credential_writes: ['post_message'],
+            }),
+          ],
+        },
+      }),
+    });
+    await render(agent({ tools: [] }));
+    const labels = Array.from(container.querySelectorAll('label')).map(
+      (l) => l.textContent,
+    );
+    expect(labels).toEqual(['Node Slack: Post message']);
   });
 
   it('renders nothing for an agent without connected tools', async () => {

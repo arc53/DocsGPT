@@ -136,7 +136,7 @@ describe('AgentUsesSection', () => {
         item({
           id: 't2',
           name: 'Bobs',
-          sponsor: { user_id: 'bob', label: 'bob@example.com' },
+          runs_as: { user_id: 'bob', label: 'bob@example.com' },
         }),
         item({
           id: 't3',
@@ -166,6 +166,7 @@ describe('AgentUsesSection', () => {
     expect(rowOf('Bobs')?.textContent).toContain(
       `${K}.access.person(person=bob@example.com)`,
     );
+    // API and widget callers run it as the owner: the owner's account.
     expect(rowOf('Slack tool')?.textContent).toContain(
       `${K}.access.member(service=Slack)`,
     );
@@ -173,7 +174,7 @@ describe('AgentUsesSection', () => {
       `${K}.access.yourAccount(service=Notion)`,
     );
     expect(rowOf('Jira tool')?.textContent).toContain(
-      `${K}.access.personAccount(person=carol@example.com,service=Jira)`,
+      `${K}.access.personAccount(service=Jira,person=carol@example.com)`,
     );
     expect(rowOf('Tone')?.textContent).toContain(`${K}.access.you`);
   });
@@ -186,7 +187,13 @@ describe('AgentUsesSection', () => {
           item({
             id: 't2',
             name: 'Editors',
-            sponsor: { user_id: 'me', label: 'me@example.com' },
+            runs_as: { user_id: 'me', label: 'me@example.com' },
+          }),
+          item({
+            id: 't3',
+            name: 'Slack tool',
+            credential_mode: 'member',
+            connection: { id: null, connector_key: 'slack', name: 'Slack' },
           }),
         ],
         { access: 'editor', allowed_actions: ['edit', 'share', 'use'] },
@@ -195,6 +202,67 @@ describe('AgentUsesSection', () => {
     await open();
     expect(rowOf('Owners')?.textContent).toContain(`${K}.access.owner`);
     expect(rowOf('Editors')?.textContent).toContain(`${K}.access.you`);
+    expect(rowOf('Slack tool')?.textContent).toContain(
+      `${K}.access.memberShared(service=Slack)`,
+    );
+  });
+
+  it('follows who it runs as now, not a sponsor on record', async () => {
+    await render(
+      agentWith([
+        item({
+          id: 't1',
+          name: 'Once sponsored',
+          sponsor: { user_id: 'bob', label: 'bob@example.com' },
+          runs_as: null,
+        }),
+      ]),
+    );
+    await open();
+    expect(rowOf('Once sponsored')?.textContent).toContain(`${K}.access.you`);
+    expect(rowOf('Once sponsored')?.textContent).not.toContain('bob');
+  });
+
+  it('names whose saved credentials a tool without a connection uses', async () => {
+    await render(
+      agentWith([
+        item({
+          id: 't1',
+          name: 'My API',
+          account: { user_id: 'me', label: 'me@example.com' },
+        }),
+        item({
+          id: 't2',
+          name: 'Carols API',
+          account: { user_id: 'carol', label: 'carol@example.com' },
+        }),
+        item({
+          id: 't3',
+          name: 'Hidden API',
+          account: { user_id: null, label: null },
+        }),
+        item({
+          id: 't4',
+          name: 'Hidden Jira',
+          credential_mode: 'owner',
+          account: { user_id: null, label: null },
+          connection: { id: null, connector_key: 'jira', name: 'Jira' },
+        }),
+      ]),
+    );
+    await open();
+    expect(rowOf('My API')?.textContent).toContain(
+      `${K}.access.yourCredentials`,
+    );
+    expect(rowOf('Carols API')?.textContent).toContain(
+      `${K}.access.personCredentials(person=carol@example.com)`,
+    );
+    expect(rowOf('Hidden API')?.textContent).toContain(
+      `${K}.access.otherCredentials`,
+    );
+    expect(rowOf('Hidden Jira')?.textContent).toContain(
+      `${K}.access.otherAccount(service=Jira)`,
+    );
   });
 
   it('opens by itself and marks a stopped item with why it stopped', async () => {
@@ -234,11 +302,76 @@ describe('AgentUsesSection', () => {
       ),
     );
     await open();
-    expect(rowOf('Blocked')?.textContent).toContain(`${K}.writesOff`);
-    expect(rowOf('Allowed')?.textContent).not.toContain(`${K}.writesOff`);
-    expect(rowOf('Reads')?.textContent).not.toContain(`${K}.writesOff`);
+    // One of two writes still blocked: some, not all.
+    expect(rowOf('Blocked')?.textContent).toContain(`${K}.writesSomeOff`);
+    expect(rowOf('Allowed')?.textContent).not.toContain(`${K}.writes`);
+    expect(rowOf('Reads')?.textContent).not.toContain(`${K}.writes`);
     const alert = container.querySelector('[data-slot="alert"]');
     expect(alert?.textContent).toContain(`${K}.writesNote`);
+    expect(alert?.textContent).not.toContain(`${K}.writesNoteMemberTail`);
+  });
+
+  it('marks a tool with every write blocked', async () => {
+    await render(
+      agentWith([
+        item({ id: 't1', name: 'Blocked', owner_credential_writes: ['a'] }),
+      ]),
+    );
+    await open();
+    expect(rowOf('Blocked')?.textContent).toContain(`${K}.writesOff`);
+    expect(rowOf('Blocked')?.textContent).not.toContain(`${K}.writesSomeOff`);
+  });
+
+  it('names only API and widget users for tools each person connects', async () => {
+    await render(
+      agentWith([
+        item({
+          id: 't1',
+          name: 'Slack tool',
+          credential_mode: 'member',
+          connection: { id: null, connector_key: 'slack', name: 'Slack' },
+          owner_credential_writes: ['send'],
+        }),
+      ]),
+    );
+    await open();
+    const alert = container.querySelector('[data-slot="alert"]');
+    expect(alert?.textContent).toBe(`${K}.writesNoteApi`);
+  });
+
+  it('says public-link users use their own account on mixed tools', async () => {
+    await render(
+      agentWith([
+        item({ id: 't1', name: 'Mine', owner_credential_writes: ['a'] }),
+        item({
+          id: 't2',
+          name: 'Slack tool',
+          credential_mode: 'member',
+          owner_credential_writes: ['send'],
+        }),
+      ]),
+    );
+    await open();
+    const alert = container.querySelector('[data-slot="alert"]');
+    expect(alert?.textContent).toBe(
+      `${K}.writesNote ${K}.writesNoteMemberTail`,
+    );
+  });
+
+  it('says when an admin turned changes off', async () => {
+    await render(
+      agentWith([
+        item({
+          id: 't1',
+          name: 'GitHub tool',
+          writes_allowed: false,
+          owner_credential_writes: [],
+        }),
+      ]),
+    );
+    await open();
+    expect(rowOf('GitHub tool')?.textContent).toContain(`${K}.adminOff`);
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
   });
 
   it('tells an editor the owner allows the writes', async () => {

@@ -766,20 +766,32 @@
           "title": "此代理使用的內容",
           "intro": "使用此代理的每個人都會用到這些內容，各自依所示的存取權限執行。",
           "stopped": "已停止",
-          "writesOff": "API 無法變更",
-          "writesNote": "在你於 Access Details 中允許之前，API、小工具和公開連結的使用者無法透過標示為「API 無法變更」的項目進行變更。",
-          "writesNoteEditor": "在擁有者於 Access Details 中允許之前，API、小工具和公開連結的使用者無法透過標示為「API 無法變更」的項目進行變更。",
+          "writesOff": "API 變更已關閉",
+          "writesNote": "在你於 Access Details 中允許之前，API、小工具和公開連結的使用者無法進行此處標示的變更。",
+          "writesNoteEditor": "在擁有者於 Access Details 中允許之前，API、小工具和公開連結的使用者無法進行此處標示的變更。",
           "access": {
             "you": "你的存取權限",
             "person": "{{person}} 的存取權限",
             "owner": "擁有者的存取權限",
-            "member": "每個人自己的 {{service}} 帳號",
-            "memberNoService": "每個人自己的帳號",
+            "member": "每個人自己的 {{service}} 帳號（API 和小工具：你的）",
+            "memberNoService": "每個人自己的帳號（API 和小工具：你的）",
             "yourAccount": "你的 {{service}} 帳號",
             "yourAccountNoService": "你的帳號",
             "personAccount": "{{person}} 的 {{service}} 帳號",
-            "personAccountNoService": "{{person}} 的帳號"
-          }
+            "personAccountNoService": "{{person}} 的帳號",
+            "memberShared": "每個人自己的 {{service}} 帳號（API 和小工具：擁有者的）",
+            "memberSharedNoService": "每個人自己的帳號（API 和小工具：擁有者的）",
+            "otherAccount": "其他人的 {{service}} 帳號",
+            "otherAccountNoService": "其他人的帳號",
+            "yourCredentials": "你儲存的憑證",
+            "personCredentials": "{{person}} 儲存的憑證",
+            "otherCredentials": "其他人儲存的憑證"
+          },
+          "writesSomeOff": "部分 API 變更已關閉",
+          "adminOff": "管理員已關閉變更",
+          "writesNoteApi": "在你於 Access Details 中允許之前，API 和小工具的使用者無法進行此處標示的變更。",
+          "writesNoteApiEditor": "在擁有者於 Access Details 中允許之前，API 和小工具的使用者無法進行此處標示的變更。",
+          "writesNoteMemberTail": "在每個人使用自己帳號的工具上，公開連結的使用者以自己的帳號進行變更。"
         }
       },
       "memberCount_one": "{{formatted}} 位成員",
@@ -1558,7 +1570,7 @@
         "ownerWarningShared": "團隊成員將以擁有者的 {{name}} 帳號操作。",
         "confirmWrite": "我了解團隊成員可以使用我的帳號執行操作。",
         "confirmWriteShared": "我了解團隊成員可以使用擁有者的 {{name}} 帳號執行操作。",
-        "memberNote": "每個人使用自己的 {{name}} 帳號，並在首次使用此工具時連線。",
+        "memberNote": "每個人使用自己的 {{name}} 帳號，並在首次使用此工具時連線。透過代理的 API 金鑰或小工具使用時，會使用代理擁有者的帳號。",
         "forced": "管理員已為此連接器的所有共用設定此項。",
         "ownerChooses": "只有擁有者可以變更此項。",
         "saveFailed": "無法儲存變更。請再試一次。"

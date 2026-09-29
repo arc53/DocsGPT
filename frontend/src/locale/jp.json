@@ -766,20 +766,32 @@
           "title": "このエージェントが使うもの",
           "intro": "このエージェントを使うすべての人が、表示されたアクセスでこれらを使います。",
           "stopped": "停止中",
-          "writesOff": "API から変更不可",
-          "writesNote": "API、ウィジェット、公開リンクの利用者は、「API から変更不可」の項目で変更を行えません。Access Details で許可すると行えます。",
-          "writesNoteEditor": "API、ウィジェット、公開リンクの利用者は、「API から変更不可」の項目で変更を行えません。オーナーが Access Details で許可すると行えます。",
+          "writesOff": "API からの変更はオフ",
+          "writesNote": "API、ウィジェット、公開リンクの利用者は、ここで示された変更を行えません。Access Details で許可すると行えます。",
+          "writesNoteEditor": "API、ウィジェット、公開リンクの利用者は、ここで示された変更を行えません。オーナーが Access Details で許可すると行えます。",
           "access": {
             "you": "あなたのアクセス",
             "person": "{{person}} のアクセス",
             "owner": "オーナーのアクセス",
-            "member": "各自の {{service}} アカウント",
-            "memberNoService": "各自のアカウント",
+            "member": "各自の {{service}} アカウント（API とウィジェット：あなたのもの）",
+            "memberNoService": "各自のアカウント（API とウィジェット：あなたのもの）",
             "yourAccount": "あなたの {{service}} アカウント",
             "yourAccountNoService": "あなたのアカウント",
             "personAccount": "{{person}} の {{service}} アカウント",
-            "personAccountNoService": "{{person}} のアカウント"
-          }
+            "personAccountNoService": "{{person}} のアカウント",
+            "memberShared": "各自の {{service}} アカウント（API とウィジェット：オーナーのもの）",
+            "memberSharedNoService": "各自のアカウント（API とウィジェット：オーナーのもの）",
+            "otherAccount": "他の人の {{service}} アカウント",
+            "otherAccountNoService": "他の人のアカウント",
+            "yourCredentials": "あなたの保存済み認証情報",
+            "personCredentials": "{{person}} の保存済み認証情報",
+            "otherCredentials": "他の人の保存済み認証情報"
+          },
+          "writesSomeOff": "一部の API からの変更はオフ",
+          "adminOff": "管理者が変更をオフにしています",
+          "writesNoteApi": "API とウィジェットの利用者は、ここで示された変更を行えません。Access Details で許可すると行えます。",
+          "writesNoteApiEditor": "API とウィジェットの利用者は、ここで示された変更を行えません。オーナーが Access Details で許可すると行えます。",
+          "writesNoteMemberTail": "各自のアカウントを使うツールでは、公開リンクの利用者は自分のアカウントで変更します。"
         }
       },
       "memberCount_one": "{{formatted}}人のメンバー",
@@ -1558,7 +1570,7 @@
         "ownerWarningShared": "チームメンバーは所有者の {{name}} アカウントで操作します。",
         "confirmWrite": "チームメンバーが自分のアカウントで操作を行えることを理解しました。",
         "confirmWriteShared": "チームメンバーが所有者の {{name}} アカウントで操作を行えることを理解しました。",
-        "memberNote": "各自が自分の {{name}} アカウントを使い、このツールを初めて使うときに接続します。",
+        "memberNote": "各自が自分の {{name}} アカウントを使い、このツールを初めて使うときに接続します。エージェントの API キーやウィジェット経由では、エージェントのオーナーのアカウントが使われます。",
         "forced": "このコネクタのすべての共有に対して管理者が設定しています。",
         "ownerChooses": "これを変更できるのは所有者だけです。",
         "saveFailed": "変更を保存できませんでした。もう一度お試しください。"
