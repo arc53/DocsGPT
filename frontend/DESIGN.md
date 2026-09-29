@@ -983,7 +983,11 @@ the current page size, so picking a bigger size never hides the way back
 ("Page 1 of 1", chevrons off). Counts and numbers in the UI format on the app
 language: `formatCount` (`utils/dateTimeUtils`, `Intl` on `intlLocale()`), never
 `toLocaleString()` or a raw `{{count}}`; plural keys get the number as `count`
-and the formatted text as its own param. The one exception is a headline
+and the formatted text as `formatted` (`{{formatted}} members`), a key with no
+plural passes only `formatted`, and a count is never baked into the key name
+(`memberCountOne`). `jp` and `zhTW` aren't language tags i18next knows, so it
+plurals them by English rules: every plural key there has an `_one` form too
+(the same text as `_other`), or a count of 1 falls back to English. The one exception is a headline
 total that can reach tens of thousands (the chunk count in the Chunks byline
 and embedded toolbar): it may use `abbreviateCount` (`components/chunkUtils`,
 `Intl` compact notation: "12K", "12 тыс.", "1.2万"; grouped digits where the

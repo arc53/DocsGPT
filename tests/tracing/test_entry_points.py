@@ -149,7 +149,7 @@ def _search_env(agent):
 
     store = MagicMock()
     store.search.return_value = [{"text": "hit", "metadata": {"title": "T", "source": "s"}}]
-    with patch("docsgpt.api.user.team_sharing.can_access", return_value=True), \
+    with patch("docsgpt.api.user.resource_access.ref_principal", return_value="owner"), \
          patch("docsgpt.services.search_service.db_readonly", _conn), \
          patch("docsgpt.services.search_service.AgentsRepository", return_value=repo), \
          patch(

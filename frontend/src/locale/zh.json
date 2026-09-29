@@ -176,6 +176,7 @@
           }
         },
         "badge": "动态 Wiki",
+        "byline_one": "{{pages}} 个页面 · {{tokens}} 个 token",
         "byline_other": "{{pages}} 个页面 · {{tokens}} 个 token",
         "explainer": "代理在工作时会阅读并改写这些页面。",
         "explainerEditable": "代理在工作时会阅读并改写这些页面；任何使用此来源的代理都可以编辑它。",
@@ -234,6 +235,7 @@
           "byConnections": "（按连接数）",
           "typeFilter": "按类型筛选",
           "otherTypes": "其他：{{types}}",
+          "otherTypesMore_one": "另外 {{formatted}} 个",
           "otherTypesMore_other": "另外 {{formatted}} 个",
           "untyped": "无类型",
           "loadFailed": "无法加载图谱。",
@@ -245,6 +247,7 @@
           "showMore": "显示更多",
           "showLess": "收起",
           "relationships": "关系",
+          "relationshipsCapped_one": "显示 {{total}} 个关系中最强的 {{shown}} 个。",
           "relationshipsCapped_other": "显示 {{total}} 个关系中最强的 {{shown}} 个。",
           "noRelationships": "此实体没有关系。",
           "relatedTo": "相关",
@@ -253,8 +256,11 @@
           "sourceChunks": "来源分块",
           "showInGraph": "在图谱中显示",
           "allTypes": "所有类型",
+          "chunkCount_one": "{{formatted}} 个分块",
           "chunkCount_other": "{{formatted}} 个分块",
+          "entityCount_one": "{{formatted}} 个实体",
           "entityCount_other": "{{formatted}} 个实体",
+          "relationshipCount_one": "{{formatted}} 个关系",
           "relationshipCount_other": "{{formatted}} 个关系",
           "chunk": "分块",
           "chunkMeta": "{{file}} · {{tokens}} 个令牌",
@@ -420,9 +426,11 @@
       "chunkTitleHint": "回答引用此文本块时使用的名称。",
       "files": "文件",
       "filesLoadError": "无法加载文件",
+      "filesByline_one": "{{files}} 个文件 · {{tokens}} 个令牌",
       "filesByline_other": "{{files}} 个文件 · {{tokens}} 个令牌",
       "filterFiles": "筛选文件",
       "searchChunks": "搜索文本块",
+      "chunkCount_one": "{{formatted}} 个文本块",
       "chunkCount_other": "{{formatted}} 个文本块",
       "editor": {
         "write": "编辑",
@@ -667,9 +675,10 @@
       "createTeamError": "无法创建团队。",
       "noTeams": "暂无团队。",
       "noDescription": "无描述",
-      "memberCountOne": "{{count}} 名成员",
-      "memberCountOther": "{{count}} 名成员",
-      "sharedCount": "{{count}} 项共享",
+      "memberCount_one": "{{formatted}} 名成员",
+      "memberCount_other": "{{formatted}} 名成员",
+      "sharedCount_one": "{{formatted}} 项共享",
+      "sharedCount_other": "{{formatted}} 项共享",
       "loadError": "加载团队失败。",
       "roleAdmin": "管理员",
       "roleMember": "成员",
@@ -737,8 +746,9 @@
         "viaTeam": "通过 {{team}}",
         "removeAccess": "移除访问权限",
         "access": "访问权限",
-        "showAll": "显示全部 {{count}} 个",
-        "andMore": "还有 {{count}} 个",
+        "showAll": "显示全部 {{formatted}} 个",
+        "andMore_one": "还有 {{formatted}} 个",
+        "andMore_other": "还有 {{formatted}} 个",
         "back": "返回",
         "allSummary": "{{name}} · 团队：{{teams}} · 人员：{{people}}",
         "searchAccess": "搜索人员和团队…",
@@ -878,7 +888,8 @@
         }
       },
       "sharedList": {
-        "badgeWithEditors": "{{level}} · +{{count}} 编辑者",
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} 编辑者",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} 编辑者",
         "meta": "{{type}} · {{owner}}",
         "filterLabel": "筛选共享资源",
         "filter": {
@@ -1994,6 +2005,13 @@
       },
       "status": {
         "published": "已发布"
+      },
+      "sponsors": {
+        "attachNote": "你从自己的资料库添加的工具、来源和提示词，会以你的访问权限为所有使用此智能体的人运行。",
+        "publicLinkNote": "此智能体有公开链接，任何拥有该链接的人都可以从中获得回答。",
+        "addedBy": "由 {{person}} 添加：{{names}}",
+        "unavailable": "未运行：{{names}}。添加它们的 {{person}} 已失去访问权限。请移除它们，或选择所有者可以使用的项目。",
+        "unknownItem": "未命名项目"
       }
     },
     "logs": {
@@ -2455,6 +2473,7 @@
         "empty": "暂无待办事项"
       },
       "note": {
+        "lines_one": "{{count}} 行",
         "lines_other": "{{count}} 行",
         "empty": "空笔记"
       },

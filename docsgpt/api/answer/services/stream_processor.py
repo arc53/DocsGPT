@@ -112,16 +112,19 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
 _PROMPT_PRESETS_WITHOUT_ROW = ("reduce",)
 
 
-def authorized_prompt_id(prompt_id: Any, principal: Optional[str]) -> Any:
-    """``prompt_id`` if ``principal`` may use it, else ``"default"``.
+def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Optional[dict] = None) -> Any:
+    """``prompt_id`` if ``principal`` (or the agent's sponsor) may use it, else ``"default"``.
 
     Presets pass through. A custom prompt must be owned by ``principal`` or
-    reach them through a team grant with ``use`` (checked live); a revoked,
-    deleted or foreign prompt falls back to the default prompt.
+    reach them through a team grant with ``use`` (checked live). On an agent
+    run, a prompt the owner can't use still renders while the editor who
+    attached it (its sponsor) qualifies. A revoked, deleted or foreign prompt
+    falls back to the default prompt.
 
     Args:
         prompt_id: The configured prompt (preset name, UUID or legacy id).
         principal: The agent owner for an agent run, else the caller.
+        agent: The agent row on an agent run, for its ``resource_sponsors``.
 
     Returns:
         The prompt id to render.
@@ -131,18 +134,36 @@ def authorized_prompt_id(prompt_id: Any, principal: Optional[str]) -> Any:
     pid = str(prompt_id)
     if is_composed_preset(pid) or pid in _PROMPT_PRESETS_WITHOUT_ROW:
         return prompt_id
-    from docsgpt.api.user.resource_access import resolve
+    from docsgpt.api.user.resource_access import active_sponsor, resolve
 
     try:
         with db_readonly() as conn:
             ra = resolve(conn, "prompt", pid, principal) if principal else None
+            usable = ra is not None and ra.can("use")
+            if not usable and agent and agent.get("id"):
+                usable = active_sponsor(conn, "agent", agent, "prompt", pid) is not None
     except Exception:
         logger.exception("Prompt access check failed for %s", pid)
-        ra = None
-    if ra is not None and ra.can("use"):
+        usable = False
+    if usable:
         return prompt_id
     logger.info("prompt %s not usable by %s; using the default prompt", pid, principal)
     return "default"
+
+
+def _agent_source_doc(conn: Any, sources_repo: Any, agent: dict, source_id: Any) -> Optional[dict]:
+    """The source row an agent may retrieve from, or None.
+
+    Authorized as the owner (owned or team-shared to them), else as the
+    editor who attached it while they still qualify. Read unscoped once
+    authorized: an owner-scoped read misses a team-shared source.
+    """
+    from docsgpt.api.user.resource_access import ref_principal
+
+    if not ref_principal(conn, "agent", agent, "source", str(source_id)):
+        logger.info("agent %s source %s not usable; skipped", agent.get("id"), source_id)
+        return None
+    return sources_repo.get_by_id(str(source_id))
 
 
 def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
@@ -720,13 +741,12 @@ class StreamProcessor:
             # the legacy ``data["source"]`` slot.
             sources_list: list = []
             seen: set = set()
-            owner = agent.get("user_id")
             primary_id = agent.get("source_id")
             # ``sources`` row may have NULL ``retriever``/``chunks`` —
             # fall back to the agent's value (``dict.get`` returns None
             # even when the key exists with value None).
             if primary_id:
-                source_doc = sources_repo.get(str(primary_id), owner)
+                source_doc = _agent_source_doc(conn, sources_repo, agent, primary_id)
                 if source_doc:
                     sid = str(source_doc["id"])
                     data["source"] = sid
@@ -759,7 +779,7 @@ class StreamProcessor:
             for sid_raw in agent.get("extra_source_ids") or []:
                 if not sid_raw:
                     continue
-                source_doc = sources_repo.get(str(sid_raw), owner)
+                source_doc = _agent_source_doc(conn, sources_repo, agent, sid_raw)
                 if not source_doc:
                     continue
                 sid = str(source_doc["id"])
@@ -983,6 +1003,7 @@ class StreamProcessor:
                     "prompt_id": authorized_prompt_id(
                         self._agent_data.get("prompt_id", "default"),
                         self._agent_data.get("user"),
+                        self._agent_data,
                     ),
                     "agent_type": self._agent_data.get("agent_type", settings.AGENT_NAME),
                     "user_api_key": effective_key,

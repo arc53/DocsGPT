@@ -934,7 +934,7 @@ export default function ShareToTeamModal({
                     onClick={openAllStep}
                   >
                     {t('settings.teams.share.showAll', {
-                      count: formatCount(shares.length),
+                      formatted: formatCount(shares.length),
                     })}
                     <ArrowRight className="size-3" aria-hidden />
                   </Button>
@@ -948,7 +948,8 @@ export default function ShareToTeamModal({
             {isLongList && (
               <p className="text-muted-foreground px-4 text-xs">
                 {t('settings.teams.share.andMore', {
-                  count: formatCount(shares.length - previewShares.length),
+                  count: shares.length - previewShares.length,
+                  formatted: formatCount(shares.length - previewShares.length),
                 })}
               </p>
             )}

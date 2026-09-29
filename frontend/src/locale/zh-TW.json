@@ -176,6 +176,7 @@
           }
         },
         "badge": "動態 Wiki",
+        "byline_one": "{{pages}} 個頁面 · {{tokens}} 個 token",
         "byline_other": "{{pages}} 個頁面 · {{tokens}} 個 token",
         "explainer": "代理在工作時會閱讀並改寫這些頁面。",
         "explainerEditable": "代理在工作時會閱讀並改寫這些頁面；任何使用此來源的代理都可以編輯它。",
@@ -234,6 +235,7 @@
           "byConnections": "（依連結數）",
           "typeFilter": "依類型篩選",
           "otherTypes": "其他：{{types}}",
+          "otherTypesMore_one": "另外 {{formatted}} 個",
           "otherTypesMore_other": "另外 {{formatted}} 個",
           "untyped": "無類型",
           "loadFailed": "無法載入圖譜。",
@@ -245,6 +247,7 @@
           "showMore": "顯示更多",
           "showLess": "收合",
           "relationships": "關係",
+          "relationshipsCapped_one": "顯示 {{total}} 個關係中最強的 {{shown}} 個。",
           "relationshipsCapped_other": "顯示 {{total}} 個關係中最強的 {{shown}} 個。",
           "noRelationships": "此實體沒有關係。",
           "relatedTo": "相關",
@@ -253,8 +256,11 @@
           "sourceChunks": "來源區塊",
           "showInGraph": "在圖譜中顯示",
           "allTypes": "所有類型",
+          "chunkCount_one": "{{formatted}} 個區塊",
           "chunkCount_other": "{{formatted}} 個區塊",
+          "entityCount_one": "{{formatted}} 個實體",
           "entityCount_other": "{{formatted}} 個實體",
+          "relationshipCount_one": "{{formatted}} 個關係",
           "relationshipCount_other": "{{formatted}} 個關係",
           "chunk": "區塊",
           "chunkMeta": "{{file}} · {{tokens}} Token",
@@ -420,9 +426,11 @@
       "chunkTitleHint": "回答引用此文本塊時使用的名稱。",
       "files": "檔案",
       "filesLoadError": "無法載入檔案",
+      "filesByline_one": "{{files}} 個檔案 · {{tokens}} Token",
       "filesByline_other": "{{files}} 個檔案 · {{tokens}} Token",
       "filterFiles": "篩選檔案",
       "searchChunks": "搜尋文本塊",
+      "chunkCount_one": "{{formatted}} 個文本塊",
       "chunkCount_other": "{{formatted}} 個文本塊",
       "editor": {
         "write": "編輯",
@@ -667,9 +675,10 @@
       "createTeamError": "無法建立團隊。",
       "noTeams": "尚無團隊。",
       "noDescription": "無描述",
-      "memberCountOne": "{{count}} 位成員",
-      "memberCountOther": "{{count}} 位成員",
-      "sharedCount": "已分享 {{count}} 項",
+      "memberCount_one": "{{formatted}} 位成員",
+      "memberCount_other": "{{formatted}} 位成員",
+      "sharedCount_one": "已分享 {{formatted}} 項",
+      "sharedCount_other": "已分享 {{formatted}} 項",
       "loadError": "載入團隊失敗。",
       "roleAdmin": "管理員",
       "roleMember": "成員",
@@ -737,8 +746,9 @@
         "viaTeam": "透過 {{team}}",
         "removeAccess": "移除存取權",
         "access": "存取權",
-        "showAll": "顯示全部 {{count}} 個",
-        "andMore": "還有 {{count}} 個",
+        "showAll": "顯示全部 {{formatted}} 個",
+        "andMore_one": "還有 {{formatted}} 個",
+        "andMore_other": "還有 {{formatted}} 個",
         "back": "返回",
         "allSummary": "{{name}} · 團隊：{{teams}} · 人員：{{people}}",
         "searchAccess": "搜尋人員和團隊…",
@@ -878,7 +888,8 @@
         }
       },
       "sharedList": {
-        "badgeWithEditors": "{{level}} · +{{count}} 編輯者",
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} 編輯者",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} 編輯者",
         "meta": "{{type}} · {{owner}}",
         "filterLabel": "篩選共用資源",
         "filter": {
@@ -1994,6 +2005,13 @@
       },
       "status": {
         "published": "已發佈"
+      },
+      "sponsors": {
+        "attachNote": "你從自己的資料庫新增的工具、來源和提示詞，會以你的存取權限為所有使用此智慧代理的人執行。",
+        "publicLinkNote": "此智慧代理有公開連結，任何擁有該連結的人都可以從中取得回答。",
+        "addedBy": "由 {{person}} 新增：{{names}}",
+        "unavailable": "未執行：{{names}}。新增它們的 {{person}} 已失去存取權限。請移除它們，或選擇擁有者可以使用的項目。",
+        "unknownItem": "未命名項目"
       }
     },
     "logs": {
@@ -2455,6 +2473,7 @@
         "empty": "尚無待辦事項"
       },
       "note": {
+        "lines_one": "{{count}} 行",
         "lines_other": "{{count}} 行",
         "empty": "空白筆記"
       },

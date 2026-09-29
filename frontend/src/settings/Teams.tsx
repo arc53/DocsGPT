@@ -697,7 +697,8 @@ export default function Teams() {
         ? t('settings.teams.sharedList.badgeWithEditors', {
             interpolation: { escapeValue: false },
             level,
-            count: formatCount(memberEditors),
+            count: memberEditors,
+            formatted: formatCount(memberEditors),
           })
         : level;
     }
@@ -863,17 +864,16 @@ export default function Teams() {
                     <CardFooter className="gap-1.5">
                       <Users className="size-3.5" aria-hidden />
                       <span>
-                        {t(
-                          (team.member_count ?? 0) === 1
-                            ? 'settings.teams.memberCountOne'
-                            : 'settings.teams.memberCountOther',
-                          { count: formatCount(team.member_count ?? 0) },
-                        )}
+                        {t('settings.teams.memberCount', {
+                          count: team.member_count ?? 0,
+                          formatted: formatCount(team.member_count ?? 0),
+                        })}
                       </span>
                       <span aria-hidden>·</span>
                       <span>
                         {t('settings.teams.sharedCount', {
-                          count: formatCount(team.shared_count ?? 0),
+                          count: team.shared_count ?? 0,
+                          formatted: formatCount(team.shared_count ?? 0),
                         })}
                       </span>
                     </CardFooter>

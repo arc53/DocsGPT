@@ -718,9 +718,14 @@
       "createTeamError": "Не удалось создать команду.",
       "noTeams": "Команд пока нет.",
       "noDescription": "Без описания",
-      "memberCountOne": "{{count}} участник",
-      "memberCountOther": "Участников: {{count}}",
-      "sharedCount": "Общих ресурсов: {{count}}",
+      "memberCount_one": "{{formatted}} участник",
+      "memberCount_few": "{{formatted}} участника",
+      "memberCount_many": "{{formatted}} участников",
+      "memberCount_other": "{{formatted}} участника",
+      "sharedCount_one": "{{formatted}} общий ресурс",
+      "sharedCount_few": "{{formatted}} общих ресурса",
+      "sharedCount_many": "{{formatted}} общих ресурсов",
+      "sharedCount_other": "{{formatted}} общих ресурса",
       "loadError": "Не удалось загрузить команды.",
       "roleAdmin": "администратор",
       "roleMember": "участник",
@@ -788,8 +793,11 @@
         "viaTeam": "через {{team}}",
         "removeAccess": "Убрать доступ",
         "access": "Доступ",
-        "showAll": "Показать все ({{count}})",
-        "andMore": "и ещё {{count}}",
+        "showAll": "Показать все ({{formatted}})",
+        "andMore_one": "и ещё {{formatted}}",
+        "andMore_few": "и ещё {{formatted}}",
+        "andMore_many": "и ещё {{formatted}}",
+        "andMore_other": "и ещё {{formatted}}",
         "back": "Назад",
         "allSummary": "{{name}} · Команды: {{teams}} · Люди: {{people}}",
         "searchAccess": "Поиск людей и команд…",
@@ -929,7 +937,10 @@
         }
       },
       "sharedList": {
-        "badgeWithEditors": "{{level}} · +{{count}} ред.",
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} редактор",
+        "badgeWithEditors_few": "{{level}} · +{{formatted}} редактора",
+        "badgeWithEditors_many": "{{level}} · +{{formatted}} редакторов",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} редактора",
         "meta": "{{type}} · {{owner}}",
         "filterLabel": "Фильтр общих ресурсов",
         "filter": {
@@ -2071,6 +2082,13 @@
       },
       "status": {
         "published": "Опубликован"
+      },
+      "sponsors": {
+        "attachNote": "Инструменты, источники и промпты, которые вы добавляете из своей библиотеки, работают с вашим доступом для всех, кто пользуется этим агентом.",
+        "publicLinkNote": "У этого агента есть публичная ссылка, поэтому любой, у кого она есть, может получать ответы на их основе.",
+        "addedBy": "Добавил(а) {{person}}: {{names}}",
+        "unavailable": "Не работают: {{names}}. {{person}} добавил(а) их и больше не имеет доступа. Удалите их или выберите те, которые может использовать владелец.",
+        "unknownItem": "Элемент без названия"
       }
     },
     "logs": {

@@ -676,9 +676,10 @@
       "createTeamError": "No se pudo crear el equipo.",
       "noTeams": "Aún no hay equipos.",
       "noDescription": "Sin descripción",
-      "memberCountOne": "{{count}} miembro",
-      "memberCountOther": "{{count}} miembros",
-      "sharedCount": "{{count}} compartidos",
+      "memberCount_one": "{{formatted}} miembro",
+      "memberCount_other": "{{formatted}} miembros",
+      "sharedCount_one": "{{formatted}} compartido",
+      "sharedCount_other": "{{formatted}} compartidos",
       "loadError": "No se pudieron cargar los equipos.",
       "roleAdmin": "admin",
       "roleMember": "miembro",
@@ -746,8 +747,9 @@
         "viaTeam": "vía {{team}}",
         "removeAccess": "Quitar acceso",
         "access": "Acceso",
-        "showAll": "Ver los {{count}}",
-        "andMore": "y {{count}} más",
+        "showAll": "Ver los {{formatted}}",
+        "andMore_one": "y {{formatted}} más",
+        "andMore_other": "y {{formatted}} más",
         "back": "Atrás",
         "allSummary": "{{name}} · Equipos: {{teams}} · Personas: {{people}}",
         "searchAccess": "Buscar personas y equipos…",
@@ -887,7 +889,8 @@
         }
       },
       "sharedList": {
-        "badgeWithEditors": "{{level}} · +{{count}} Editor",
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} editor",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} editores",
         "meta": "{{type}} · {{owner}}",
         "filterLabel": "Filtrar recursos compartidos",
         "filter": {
@@ -2007,6 +2010,13 @@
       },
       "status": {
         "published": "Publicado"
+      },
+      "sponsors": {
+        "attachNote": "Las herramientas, fuentes y prompts que añadas desde tu propia biblioteca se ejecutan con tu acceso para todos los que usen este agente.",
+        "publicLinkNote": "Este agente tiene un enlace público, así que cualquiera con el enlace puede obtener respuestas de ellos.",
+        "addedBy": "Añadido por {{person}}: {{names}}",
+        "unavailable": "Sin ejecutarse: {{names}}. {{person}} los añadió y ya no tiene acceso. Quítalos o elige otros que el propietario pueda usar.",
+        "unknownItem": "Elemento sin nombre"
       }
     },
     "logs": {

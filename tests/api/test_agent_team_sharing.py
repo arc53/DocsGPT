@@ -195,6 +195,9 @@ def _update_patches(sub, repo, team_access, can_access_mock):
         patch("docsgpt.api.user.agents.routes.AgentsRepository", return_value=repo),
         *_access_patches(sub, repo, team_access),
         patch("docsgpt.api.user.agents.routes.can_access", can_access_mock),
+        # Sponsor bookkeeping queries the (mocked) connection; covered with a
+        # real database in tests/api/user/test_resource_sponsors.py.
+        patch("docsgpt.api.user.agents.routes.sponsors_after_save", return_value={}),
     ]
 
 

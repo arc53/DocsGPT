@@ -6,6 +6,17 @@ export type ToolSummary = {
   display_name: string;
 };
 
+/** A tool, source or prompt that runs with the editor's access who added it. */
+export type ResourceSponsor = {
+  type: 'tool' | 'source' | 'prompt';
+  id: string;
+  user_id: string;
+  /** The person's email when on file, else their user id. */
+  label: string;
+  /** False once that person can no longer edit the agent or use the item. */
+  active: boolean;
+};
+
 export type Agent = {
   id?: string;
   name: string;
@@ -41,6 +52,9 @@ export type Agent = {
   // names for resources the caller themselves owns).
   prompt_name?: string | null;
   source_details?: { id: string; name: string | null }[];
+  // Resources the owner can't use that run as the editor who attached them
+  // (GET /api/get_agent, callers who may view the config).
+  resource_sponsors?: ResourceSponsor[];
   created_at?: string;
   updated_at?: string;
   last_used_at?: string;

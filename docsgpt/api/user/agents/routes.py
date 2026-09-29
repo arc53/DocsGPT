@@ -28,11 +28,14 @@ from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.api.user.resource_access import (
     AccessDenied,
+    agent_refs,
     delete_settings,
     payload_for,
     require,
     resolve,
     settings_many,
+    sponsor_details,
+    sponsors_after_save,
 )
 from docsgpt.api.user.team_sharing import (
     can_access,
@@ -536,12 +539,16 @@ class GetAgent(Resource):
         try:
             user = decoded_token["sub"]
             agent = None
+            sponsored: list = []
             with db_readonly() as conn:
                 # Anyone who can see the agent reads it (a viewer needs it to
                 # chat); what they get back is trimmed by their actions.
                 ra = resolve(conn, "agent", agent_id, user)
                 if ra is not None:
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
+                # Edit-page detail: who vouches for resources the owner can't use.
+                if agent and ra.can("view"):
+                    sponsored = sponsor_details(conn, "agent", agent)
             if not agent:
                 return {"status": "Not found"}, 404
             is_owner = ra.access == "owner"
@@ -552,6 +559,7 @@ class GetAgent(Resource):
                 resolve_names=True,
                 access=ra.payload(),
             )
+            data["resource_sponsors"] = sponsored
             return make_response(jsonify(data), 200)
         except Exception as e:
             current_app.logger.error(f"Agent fetch error: {e}", exc_info=True)
@@ -1382,6 +1390,18 @@ class UpdateAgent(Resource):
                                 ),
                                 403,
                             )
+
+                # A resource the owner can't use runs as the editor who
+                # attached it (its sponsor); record who that is.
+                after_save = dict(existing_agent)
+                for ref_field in ("source_id", "extra_source_ids", "prompt_id", "tools"):
+                    if ref_field in update_fields:
+                        after_save[ref_field] = update_fields[ref_field]
+                sponsors = sponsors_after_save(
+                    conn, "agent", existing_agent, owner_id, user, agent_refs(after_save)
+                )
+                if sponsors != (existing_agent.get("resource_sponsors") or {}):
+                    update_fields["resource_sponsors"] = sponsors
 
                 # Guardrails and the pooled quota are policy: an unchanged
                 # value re-sent by a full-form save is fine, a change needs

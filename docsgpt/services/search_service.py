@@ -48,7 +48,7 @@ def _collect_source_ids(agent: Dict[str, Any]) -> List[str]:
 
 
 def _authorized_source_ids(conn, agent: Dict[str, Any], source_ids: List[str]) -> List[str]:
-    """Drop source ids the agent's owner may not read.
+    """Drop source ids the agent may not read.
 
     ``_collect_source_ids`` trusts whatever the agent row carries, and this
     service searches those ids directly. That made it the second half of a
@@ -64,20 +64,23 @@ def _authorized_source_ids(conn, agent: Dict[str, Any], source_ids: List[str]) -
         agent: The agent row resolved from the API key.
         source_ids: Ids extracted from that row.
 
+    A source the owner can't read still searches while the editor who
+    attached it (its sponsor) can edit the agent and read the source.
+
     Returns:
-        list: The subset the agent's owner may read.
+        list: The subset the agent's owner (or a live sponsor) may read.
     """
     owner = agent.get("user_id")
     if not owner:
         logger.warning("Agent %s has no owner; refusing to search its sources.", agent.get("id"))
         return []
 
-    from docsgpt.api.user.team_sharing import can_access
+    from docsgpt.api.user.resource_access import ref_principal
 
     allowed = []
     for sid in source_ids:
         try:
-            permitted = can_access(conn, "source", str(sid), owner)
+            permitted = ref_principal(conn, "agent", agent, "source", str(sid)) is not None
         except Exception:
             # Fail closed, matching the answer path.
             logger.warning("Access check failed for source %s; dropping it.", sid)

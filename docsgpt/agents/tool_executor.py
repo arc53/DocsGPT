@@ -505,6 +505,9 @@ class ToolExecutor:
         # get_tools() resolves EXACTLY these ids — builtin synthetic ids and
         # user_tools rows alike — with no defaults mixed in. None = unscoped.
         self.allowed_tool_ids: Optional[List[str]] = None
+        # Tool id -> the user to resolve it as, for a workflow node's tools
+        # sponsored by an editor (see resource_access.active_sponsor).
+        self.tool_principals: Dict[str, str] = {}
         self.conversation_id: Optional[str] = None
         # Set by the workflow engine for agent nodes so run-scoped tools
         # (artifact_generator / code_executor) address artifacts by the
@@ -567,6 +570,8 @@ class ToolExecutor:
             tools: List[Dict] = []
             for tid in tool_ids:
                 row = resolve_tool_by_id(tid, self.user, user_tools_repo=tools_repo)
+                if row is None and str(tid) in self.tool_principals:
+                    row = resolve_tool_by_id(tid, self.tool_principals[str(tid)], user_tools_repo=tools_repo)
                 if row is None:
                     logger.warning("tool id %s did not resolve; dropped from scoped toolset", tid)
                     continue
@@ -588,6 +593,15 @@ class ToolExecutor:
             tools: List[Dict] = []
             for tid in tool_ids:
                 row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
+                if row is None:
+                    # A tool the owner can't use runs as the editor who
+                    # attached it, while they still qualify.
+                    # Lazy: docsgpt.api's package import pulls in every route module.
+                    from docsgpt.api.user.resource_access import active_sponsor
+
+                    sponsor = active_sponsor(conn, "agent", agent_data, "tool", str(tid))
+                    if sponsor:
+                        row = resolve_tool_by_id(tid, sponsor, user_tools_repo=tools_repo)
                 if row is None:
                     continue
                 # Workflow-only builtins (read_document) never resolve for a

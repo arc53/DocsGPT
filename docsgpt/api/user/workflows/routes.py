@@ -1,6 +1,6 @@
 """Workflow management routes."""
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource
@@ -10,7 +10,12 @@ from docsgpt.agents.workflows.cel_evaluator import (
     CelEvaluationError,
     validate_cel_expression,
 )
-from docsgpt.api.user.resource_access import AccessDenied, resolve
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    resolve,
+    sponsor_details,
+    sponsors_after_save,
+)
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
@@ -93,6 +98,30 @@ def _workflow_access(conn, workflow_id: str, user_id: str, action: str):
     if not visible:
         raise AccessDenied(404, "Workflow not found")
     raise AccessDenied(403, "Your access to this item doesn't allow that")
+
+
+def _node_refs(nodes: List[Dict]) -> List[Tuple[str, str]]:
+    """The ``(type, id)`` tools and sources a workflow's agent nodes reference.
+
+    Args:
+        nodes: Nodes as the builder sends them (config under ``data`` or
+            ``data.config``, like the engine reads it).
+
+    Returns:
+        list: ``("tool", id)`` and ``("source", id)`` pairs.
+    """
+    refs: List[Tuple[str, str]] = []
+    for node in nodes or []:
+        if not isinstance(node, dict) or node.get("type") != "agent":
+            continue
+        data = node.get("data") or {}
+        cfg = data.get("config") if isinstance(data.get("config"), dict) else data
+        for resource_type, key in (("tool", "tools"), ("source", "sources")):
+            values = cfg.get(key) or []
+            if isinstance(values, (str, int)):
+                values = [values]
+            refs.extend((resource_type, str(v)) for v in values if v)
+    return refs
 
 
 def _denied(err: AccessDenied):
@@ -567,6 +596,7 @@ class WorkflowDetail(Resource):
                 edges = WorkflowEdgesRepository(conn).find_by_version(
                     pg_workflow_id, graph_version,
                 )
+                sponsored = sponsor_details(conn, "workflow", workflow)
         except Exception as err:
             return _workflow_error_response("Failed to fetch workflow", err)
 
@@ -575,6 +605,7 @@ class WorkflowDetail(Resource):
                 "workflow": serialize_workflow(workflow),
                 "nodes": [serialize_node(n) for n in nodes],
                 "edges": [serialize_edge(e) for e in edges],
+                "resource_sponsors": sponsored,
             }
         )
 
@@ -614,14 +645,19 @@ class WorkflowDetail(Resource):
                     conn, pg_workflow_id, next_graph_version,
                     nodes_data, edges_data,
                 )
-                repo.update(
-                    pg_workflow_id, acting,
-                    {
-                        "name": name,
-                        "description": description,
-                        "current_graph_version": next_graph_version,
-                    },
+                workflow_fields = {
+                    "name": name,
+                    "description": description,
+                    "current_graph_version": next_graph_version,
+                }
+                # A node tool/source the owner can't use runs as the editor
+                # who attached it (its sponsor); record who that is.
+                sponsors = sponsors_after_save(
+                    conn, "workflow", workflow, acting, user_id, _node_refs(nodes_data)
                 )
+                if sponsors != (workflow.get("resource_sponsors") or {}):
+                    workflow_fields["resource_sponsors"] = sponsors
+                repo.update(pg_workflow_id, acting, workflow_fields)
                 WorkflowNodesRepository(conn).delete_other_versions(
                     pg_workflow_id, next_graph_version,
                 )

@@ -259,10 +259,12 @@ describe('ShareToTeamModal', () => {
       expect(rows).toHaveLength(4);
       // Most recent first: user-7, user-6, user-5.
       expect(rows[1].textContent).toContain('user-7');
-      expect(text()).toContain('settings.teams.share.andMore(count=#5)');
+      expect(text()).toContain(
+        'settings.teams.share.andMore(count=5,formatted=#5)',
+      );
       const showAll = buttonByText('settings.teams.share.showAll');
       expect(showAll?.textContent).toContain(
-        'settings.teams.share.showAll(count=#8)',
+        'settings.teams.share.showAll(formatted=#8)',
       );
       expect(showAll?.getAttribute('data-variant')).toBe('link');
       expect(body().querySelector('.max-h-72')).toBeNull();

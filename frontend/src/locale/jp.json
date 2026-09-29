@@ -176,6 +176,7 @@
           }
         },
         "badge": "リビングWiki",
+        "byline_one": "{{pages}} ページ · {{tokens}} トークン",
         "byline_other": "{{pages}} ページ · {{tokens}} トークン",
         "explainer": "エージェントは作業しながらこれらのページを読み、書き換えます。",
         "explainerEditable": "エージェントは作業しながらこれらのページを読み、書き換えます。このソースを使うエージェントは誰でも編集できます。",
@@ -234,6 +235,7 @@
           "byConnections": "（接続数順）",
           "typeFilter": "種類で絞り込む",
           "otherTypes": "その他: {{types}}",
+          "otherTypesMore_one": "他{{formatted}}件",
           "otherTypesMore_other": "他{{formatted}}件",
           "untyped": "種類なし",
           "loadFailed": "グラフを読み込めませんでした。",
@@ -245,6 +247,7 @@
           "showMore": "もっと見る",
           "showLess": "表示を減らす",
           "relationships": "関係",
+          "relationshipsCapped_one": "{{total}}件の関係のうち、強い順に{{shown}}件を表示しています。",
           "relationshipsCapped_other": "{{total}}件の関係のうち、強い順に{{shown}}件を表示しています。",
           "noRelationships": "このエンティティには関係がありません。",
           "relatedTo": "関連",
@@ -253,8 +256,11 @@
           "sourceChunks": "ソースチャンク",
           "showInGraph": "グラフで表示",
           "allTypes": "すべての種類",
+          "chunkCount_one": "{{formatted}}件のチャンク",
           "chunkCount_other": "{{formatted}}件のチャンク",
+          "entityCount_one": "{{formatted}}件のエンティティ",
           "entityCount_other": "{{formatted}}件のエンティティ",
+          "relationshipCount_one": "{{formatted}}件の関係",
           "relationshipCount_other": "{{formatted}}件の関係",
           "chunk": "チャンク",
           "chunkMeta": "{{file}} · {{tokens}} トークン",
@@ -420,9 +426,11 @@
       "chunkTitleHint": "回答がこのチャンクを引用するときの名前です。",
       "files": "ファイル",
       "filesLoadError": "ファイルを読み込めませんでした",
+      "filesByline_one": "{{files}} ファイル · {{tokens}} トークン",
       "filesByline_other": "{{files}} ファイル · {{tokens}} トークン",
       "filterFiles": "ファイルを絞り込む",
       "searchChunks": "チャンクを検索",
+      "chunkCount_one": "{{formatted}} 件のチャンク",
       "chunkCount_other": "{{formatted}} 件のチャンク",
       "editor": {
         "write": "編集",
@@ -667,9 +675,10 @@
       "createTeamError": "チームを作成できませんでした。",
       "noTeams": "チームはまだありません。",
       "noDescription": "説明なし",
-      "memberCountOne": "{{count}}人のメンバー",
-      "memberCountOther": "{{count}}人のメンバー",
-      "sharedCount": "{{count}}件の共有",
+      "memberCount_one": "{{formatted}}人のメンバー",
+      "memberCount_other": "{{formatted}}人のメンバー",
+      "sharedCount_one": "{{formatted}}件の共有",
+      "sharedCount_other": "{{formatted}}件の共有",
       "loadError": "チームの読み込みに失敗しました。",
       "roleAdmin": "管理者",
       "roleMember": "メンバー",
@@ -737,8 +746,9 @@
         "viaTeam": "{{team}}経由",
         "removeAccess": "アクセス権を削除",
         "access": "アクセス",
-        "showAll": "すべて表示（{{count}}）",
-        "andMore": "ほか {{count}} 件",
+        "showAll": "すべて表示（{{formatted}}）",
+        "andMore_one": "ほか {{formatted}} 件",
+        "andMore_other": "ほか {{formatted}} 件",
         "back": "戻る",
         "allSummary": "{{name}} · チーム: {{teams}} · ユーザー: {{people}}",
         "searchAccess": "ユーザーとチームを検索…",
@@ -878,7 +888,8 @@
         }
       },
       "sharedList": {
-        "badgeWithEditors": "{{level}} · +{{count}} 編集者",
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} 編集者",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} 編集者",
         "meta": "{{type}} · {{owner}}",
         "filterLabel": "共有リソースを絞り込む",
         "filter": {
@@ -1994,6 +2005,13 @@
       },
       "status": {
         "published": "公開済み"
+      },
+      "sponsors": {
+        "attachNote": "自分のライブラリから追加したツール、ソース、プロンプトは、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。",
+        "publicLinkNote": "このエージェントには公開リンクがあるため、リンクを知っている人は誰でもそれらから回答を得られます。",
+        "addedBy": "{{person}} が追加: {{names}}",
+        "unavailable": "実行されていません: {{names}}。追加した {{person}} はアクセス権を失いました。削除するか、オーナーが使用できるものを選んでください。",
+        "unknownItem": "名前のない項目"
       }
     },
     "logs": {
@@ -2455,6 +2473,7 @@
         "empty": "ToDo はまだありません"
       },
       "note": {
+        "lines_one": "{{count}} 行",
         "lines_other": "{{count}} 行",
         "empty": "空のメモ"
       },

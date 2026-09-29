@@ -223,7 +223,7 @@ describe('Teams page', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain('Key Accounts');
     expect(rows[0].textContent).toContain(
-      'settings.teams.sharedList.badgeWithEditors(level=viewer,count=#1)',
+      'settings.teams.sharedList.badgeWithEditors(level=viewer,count=1,formatted=#1)',
     );
     expect(rows[0].textContent).toContain(
       'settings.teams.sharedList.meta(type=settings.teams.resourceType.source,owner=Lena Fischer)',

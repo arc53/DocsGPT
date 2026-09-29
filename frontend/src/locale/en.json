@@ -682,9 +682,10 @@
       "createTeamError": "Could not create team.",
       "noTeams": "No teams yet.",
       "noDescription": "No description",
-      "memberCountOne": "{{count}} member",
-      "memberCountOther": "{{count}} members",
-      "sharedCount": "{{count}} shared",
+      "memberCount_one": "{{formatted}} member",
+      "memberCount_other": "{{formatted}} members",
+      "sharedCount_one": "{{formatted}} shared",
+      "sharedCount_other": "{{formatted}} shared",
       "loadError": "Failed to load teams.",
       "roleAdmin": "admin",
       "roleMember": "member",
@@ -752,8 +753,9 @@
         "viaTeam": "via {{team}}",
         "removeAccess": "Remove access",
         "access": "Access",
-        "showAll": "Show all {{count}}",
-        "andMore": "and {{count}} more",
+        "showAll": "Show all {{formatted}}",
+        "andMore_one": "and {{formatted}} more",
+        "andMore_other": "and {{formatted}} more",
         "back": "Back",
         "allSummary": "{{name}} · Teams: {{teams}} · People: {{people}}",
         "searchAccess": "Search people and teams…",
@@ -893,7 +895,8 @@
         }
       },
       "sharedList": {
-        "badgeWithEditors": "{{level}} · +{{count}} Editor",
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} editor",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} editors",
         "meta": "{{type}} · {{owner}}",
         "filterLabel": "Filter shared resources",
         "filter": {
@@ -2025,6 +2028,13 @@
       },
       "status": {
         "published": "Published"
+      },
+      "sponsors": {
+        "attachNote": "Tools, sources and prompts you add from your own library run with your access for everyone who uses this agent.",
+        "publicLinkNote": "This agent has a public link, so anyone with the link can get answers from them.",
+        "addedBy": "Added by {{person}}: {{names}}",
+        "unavailable": "Not running: {{names}}. {{person}} added them and no longer has access. Remove them or choose ones the owner can use.",
+        "unknownItem": "Unnamed item"
       }
     },
     "logs": {

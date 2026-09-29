@@ -400,6 +400,9 @@ agents_table = Table(
     # Per-agent behavior contract (AgentConfig — guardrails today). Empty
     # ``{}`` parses to guardrails-disabled.
     Column("config", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # ``"<type>:<id>" -> user_id`` of the editor vouching for a referenced
+    # resource the owner can't use (migration 0039, see resource_access.py).
+    Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("default_model_id", Text),
     Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
@@ -958,6 +961,8 @@ workflows_table = Table(
     Column("name", Text, nullable=False),
     Column("description", Text),
     Column("current_graph_version", Integer, nullable=False, server_default="1"),
+    # Same shape as ``agents.resource_sponsors``, for node tools and sources.
+    Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),

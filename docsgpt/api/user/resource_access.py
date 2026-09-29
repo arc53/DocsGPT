@@ -21,6 +21,7 @@ revoked grant or membership denies on the next request.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
@@ -35,6 +36,8 @@ from docsgpt.storage.db.repositories.team_resource_grants import (
 )
 from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+logger = logging.getLogger(__name__)
 
 RESOURCE_TYPES = ("agent", "source", "tool", "prompt")
 
@@ -332,3 +335,217 @@ def require(
     if not ra.can(action):
         raise AccessDenied(403, "Your access to this item doesn't allow that")
     return ra
+
+
+# --- Resource sponsors ------------------------------------------------------
+#
+# An agent (or workflow) runs as its owner, so a source, prompt or tool it
+# references is authorized against the owner. When a team editor attaches one
+# the owner can't use, the editor becomes its *sponsor*: the holder row's
+# ``resource_sponsors`` maps ``"<type>:<id>"`` to the editor's id, and at run
+# time the resource is authorized as the sponsor while they can still edit the
+# holder and still use the resource. A tool still runs with its own row's
+# credentials (the tool owner's), whoever the principal is.
+
+# Action a principal needs on a referenced resource for a holder to run it.
+REF_USE_ACTION = {"source": "use", "prompt": "use", "tool": "use_in_own"}
+
+
+def sponsor_key(resource_type: str, resource_id: str) -> str:
+    """The ``resource_sponsors`` key for one referenced resource."""
+    return f"{resource_type}:{resource_id}"
+
+
+def can_use_ref(conn: Connection, resource_type: str, resource_id: str, user_id: Optional[str]) -> bool:
+    """Whether ``user_id`` may have ``resource_id`` run inside something they hold.
+
+    Args:
+        conn: Open database connection.
+        resource_type: ``source``, ``prompt`` or ``tool``.
+        resource_id: The referenced id.
+        user_id: The would-be principal.
+
+    Returns:
+        True when the user owns the resource or a team grant gives them
+        ``use`` (``use_in_own`` for a tool).
+    """
+    if not user_id or not resource_id:
+        return False
+    ra = resolve(conn, resource_type, str(resource_id), user_id)
+    return ra is not None and ra.can(REF_USE_ACTION[resource_type])
+
+
+def _holder_editable_by(conn: Connection, holder_type: str, holder: dict, user_id: str) -> bool:
+    """Whether ``user_id`` may still edit the agent or workflow ``holder``.
+
+    A workflow is edited through an agent of its owner that uses it, so the
+    check is ``edit`` on any such agent (mirrors the workflow routes).
+    """
+    if holder_type == "agent":
+        ra = resolve(conn, "agent", str(holder["id"]), user_id)
+        return ra is not None and ra.can("edit")
+    if holder_type == "workflow":
+        agent_ids = conn.execute(
+            text("SELECT id FROM agents WHERE workflow_id = CAST(:wid AS uuid) AND user_id = :owner"),
+            {"wid": str(holder["id"]), "owner": holder.get("user_id")},
+        ).scalars().all()
+        for agent_id in agent_ids:
+            ra = resolve(conn, "agent", str(agent_id), user_id)
+            if ra is not None and ra.can("edit"):
+                return True
+        return False
+    raise ValueError(f"Unknown sponsor holder type: {holder_type}")
+
+
+def active_sponsor(
+    conn: Connection, holder_type: str, holder: Optional[dict], resource_type: str, resource_id: str
+) -> Optional[str]:
+    """The sponsor a holder may run ``resource_id`` as, checked live.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row (needs ``id``, ``user_id``, ``resource_sponsors``).
+        resource_type: ``source``, ``prompt`` or ``tool``.
+        resource_id: The referenced id.
+
+    Returns:
+        The sponsor's id when one is recorded, still edits the holder and
+        can still use the resource; else None.
+    """
+    if not holder or not resource_id:
+        return None
+    sponsor = (holder.get("resource_sponsors") or {}).get(sponsor_key(resource_type, str(resource_id)))
+    if not sponsor or sponsor == holder.get("user_id"):
+        return None
+    try:
+        if not _holder_editable_by(conn, holder_type, holder, sponsor):
+            return None
+        return sponsor if can_use_ref(conn, resource_type, str(resource_id), sponsor) else None
+    except Exception:
+        logger.exception("Sponsor check failed for %s %s", resource_type, resource_id)
+        return None
+
+
+def ref_principal(
+    conn: Connection, holder_type: str, holder: Optional[dict], resource_type: str, resource_id: str
+) -> Optional[str]:
+    """The user a holder's referenced resource is authorized as, or None.
+
+    The owner when they may use it (the default), else a live sponsor.
+    """
+    if not holder:
+        return None
+    owner = holder.get("user_id")
+    if can_use_ref(conn, resource_type, str(resource_id), owner):
+        return owner
+    return active_sponsor(conn, holder_type, holder, resource_type, resource_id)
+
+
+def _sponsorable(resource_type: str, resource_id: str) -> bool:
+    """Only real rows need a principal: skip presets and builtin tool ids."""
+    rid = str(resource_id or "")
+    if not looks_like_uuid(rid):
+        return False
+    if resource_type == "tool":
+        # Lazy: default_tools imports this module lazily too.
+        from docsgpt.agents.default_tools import is_synthesized_tool_id
+
+        return not is_synthesized_tool_id(rid)
+    return True
+
+
+def agent_refs(agent: dict) -> list[tuple[str, str]]:
+    """The ``(type, id)`` resources an agent row references."""
+    refs = [("source", str(s)) for s in [agent.get("source_id"), *(agent.get("extra_source_ids") or [])] if s]
+    if agent.get("prompt_id"):
+        refs.append(("prompt", str(agent["prompt_id"])))
+    refs.extend(("tool", str(t)) for t in agent.get("tools") or [] if t)
+    return refs
+
+
+def sponsors_after_save(
+    conn: Connection,
+    holder_type: str,
+    holder: Optional[dict],
+    owner_id: str,
+    caller: str,
+    refs: Iterable[tuple[str, str]],
+) -> dict[str, str]:
+    """The ``resource_sponsors`` map to store after ``caller`` saves ``refs``.
+
+    Per referenced resource the owner can't use: a recorded sponsor who still
+    qualifies is kept; otherwise the caller takes it over when they can use it
+    (a new attachment, or one whose sponsor lost access); otherwise the old
+    record is kept so the editor can show who added it. Resources the owner
+    can use, presets and builtin tools need no sponsor. Removed refs drop out.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row before the save (None when creating it).
+        owner_id: The holder's owner.
+        caller: The user saving.
+        refs: Every ``(type, id)`` the holder references after the save.
+
+    Returns:
+        dict: ``"<type>:<id>" -> user_id``.
+    """
+    previous = (holder or {}).get("resource_sponsors") or {}
+    out: dict[str, str] = {}
+    for resource_type, resource_id in refs:
+        key = sponsor_key(resource_type, resource_id)
+        if key in out or not _sponsorable(resource_type, resource_id):
+            continue
+        if can_use_ref(conn, resource_type, resource_id, owner_id):
+            continue
+        if active_sponsor(conn, holder_type, holder, resource_type, resource_id):
+            out[key] = previous[key]
+        elif caller != owner_id and can_use_ref(conn, resource_type, resource_id, caller):
+            out[key] = caller
+        elif previous.get(key):
+            out[key] = previous[key]
+    return out
+
+
+def sponsor_details(conn: Connection, holder_type: str, holder: dict) -> list[dict]:
+    """The holder's sponsored resources for its edit page.
+
+    Args:
+        conn: Open database connection.
+        holder_type: ``agent`` or ``workflow``.
+        holder: The holder row.
+
+    Returns:
+        list: ``{type, id, user_id, label, active}`` per sponsored resource;
+        ``label`` is the sponsor's email when on file, ``active`` whether it
+        runs (the sponsor still edits the holder and can use the resource).
+    """
+    sponsors = holder.get("resource_sponsors") or {}
+    if not sponsors:
+        return []
+    user_ids = sorted({u for u in sponsors.values() if u})
+    labels = dict(
+        conn.execute(
+            text(
+                "SELECT user_id, email FROM users WHERE user_id = ANY(:ids) "
+                "AND email IS NOT NULL AND email <> ''"
+            ),
+            {"ids": user_ids},
+        ).fetchall()
+    ) if user_ids else {}
+    out = []
+    for key, user_id in sponsors.items():
+        resource_type, _, resource_id = key.partition(":")
+        if resource_type not in REF_USE_ACTION or not resource_id:
+            continue
+        out.append(
+            {
+                "type": resource_type,
+                "id": resource_id,
+                "user_id": user_id,
+                "label": labels.get(user_id) or user_id,
+                "active": active_sponsor(conn, holder_type, holder, resource_type, resource_id) is not None,
+            }
+        )
+    return out

@@ -676,9 +676,10 @@
       "createTeamError": "Team konnte nicht erstellt werden.",
       "noTeams": "Noch keine Teams.",
       "noDescription": "Keine Beschreibung",
-      "memberCountOne": "{{count}} Mitglied",
-      "memberCountOther": "{{count}} Mitglieder",
-      "sharedCount": "{{count}} geteilt",
+      "memberCount_one": "{{formatted}} Mitglied",
+      "memberCount_other": "{{formatted}} Mitglieder",
+      "sharedCount_one": "{{formatted}} geteilt",
+      "sharedCount_other": "{{formatted}} geteilt",
       "loadError": "Teams konnten nicht geladen werden.",
       "roleAdmin": "Admin",
       "roleMember": "Mitglied",
@@ -746,8 +747,9 @@
         "viaTeam": "über {{team}}",
         "removeAccess": "Zugriff entfernen",
         "access": "Zugriff",
-        "showAll": "Alle {{count}} anzeigen",
-        "andMore": "und {{count}} weitere",
+        "showAll": "Alle {{formatted}} anzeigen",
+        "andMore_one": "und {{formatted}} weitere",
+        "andMore_other": "und {{formatted}} weitere",
         "back": "Zurück",
         "allSummary": "{{name}} · Teams: {{teams}} · Personen: {{people}}",
         "searchAccess": "Personen und Teams suchen…",
@@ -887,7 +889,8 @@
         }
       },
       "sharedList": {
-        "badgeWithEditors": "{{level}} · +{{count}} Bearbeiter",
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} Bearbeiter",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} Bearbeiter",
         "meta": "{{type}} · {{owner}}",
         "filterLabel": "Geteilte Ressourcen filtern",
         "filter": {
@@ -2007,6 +2010,13 @@
       },
       "status": {
         "published": "Veröffentlicht"
+      },
+      "sponsors": {
+        "attachNote": "Tools, Quellen und Prompts, die du aus deiner eigenen Bibliothek hinzufügst, laufen für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
+        "publicLinkNote": "Dieser Agent hat einen öffentlichen Link, daher kann jeder mit dem Link Antworten daraus erhalten.",
+        "addedBy": "Hinzugefügt von {{person}}: {{names}}",
+        "unavailable": "Nicht aktiv: {{names}}. {{person}} hat sie hinzugefügt und hat keinen Zugriff mehr. Entferne sie oder wähle welche, die der Eigentümer nutzen kann.",
+        "unknownItem": "Unbenanntes Element"
       }
     },
     "logs": {

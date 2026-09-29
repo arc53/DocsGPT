@@ -91,7 +91,8 @@ import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
 import SectionShell from '../navigation/SectionShell';
-import { Agent, ToolSummary } from './types';
+import SponsoredResourcesNotice from './components/SponsoredResourcesNotice';
+import { Agent, ResourceSponsor, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
@@ -280,6 +281,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       return t('agents.form.externalKb');
     },
     [agent.source_details, sourceDocs, t],
+  );
+
+  // Name of a tool/source/prompt that runs with an editor's access, from the
+  // same owner-agnostic details the pickers show.
+  const resolveSponsoredName = useCallback(
+    (sponsor: ResourceSponsor): string => {
+      if (sponsor.type === 'source') return resolveSourceLabel(sponsor.id);
+      if (sponsor.type === 'prompt') {
+        return (
+          prompts.find((prompt) => prompt.id === sponsor.id)?.name ||
+          agent.prompt_name ||
+          t('agents.form.sponsors.unknownItem')
+        );
+      }
+      const tool = selectedTools.find((item) => item.id === sponsor.id);
+      return tool
+        ? getToolDisplayName(tool)
+        : t('agents.form.sponsors.unknownItem');
+    },
+    [agent.prompt_name, prompts, resolveSourceLabel, selectedTools, t],
   );
 
   const sourceItems = useMemo(() => {
@@ -1185,6 +1206,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 {t('agents.form.buttons.add')}
               </Button>
             </div>
+            <SponsoredResourcesNotice
+              agent={agent}
+              resolveName={resolveSponsoredName}
+            />
           </div>
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
