@@ -49,10 +49,13 @@ function ToolAllowlist({
   tool,
   allowed,
   onChange,
+  disabled = false,
 }: {
   tool: ToolWrites;
   allowed: Set<string>;
   onChange: (entries: string[], allow: boolean) => void;
+  /** While a save is in flight, so saves never overlap. */
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [unfolded, setUnfolded] = useState(false);
@@ -86,6 +89,7 @@ function ToolAllowlist({
             type="single"
             size="xs"
             value={choice}
+            disabled={disabled}
             aria-label={t(`${K}.toolLabel`, { ...plain, tool: tool.name })}
             onValueChange={(value) =>
               value &&
@@ -136,6 +140,7 @@ function ToolAllowlist({
                 <Switch
                   id={id}
                   checked={allowed.has(item.entry)}
+                  disabled={disabled}
                   onCheckedChange={(checked) => onChange([item.entry], checked)}
                 />
               </SettingRow>
@@ -181,6 +186,10 @@ export default function ApiWriteAllowlist({
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [open, setOpen] = useState(defaultOpen);
+  // One save at a time: overlapping saves can land out of order, and a
+  // failed one would put back a list that drops the later choice.
+  const [saving, setSaving] = useState(false);
+
   const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const [allowed, setAllowed] = useState<string[]>(
     agent.config?.api_write_allowlist ?? [],
@@ -260,6 +269,8 @@ export default function ApiWriteAllowlist({
 
   /** Allow or refuse these entries, and save the list. */
   const change = async (entries: string[], allow: boolean) => {
+    if (saving) return;
+    setSaving(true);
     const previous = allowed;
     const next = allow
       ? [...allowed, ...entries.filter((entry) => !allowed.includes(entry))]
@@ -287,6 +298,8 @@ export default function ApiWriteAllowlist({
           message: t(`${K}.saveFailed`),
         }),
       );
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -330,6 +343,7 @@ export default function ApiWriteAllowlist({
                 tool={tool}
                 allowed={allowedSet}
                 onChange={change}
+                disabled={saving}
               />
             ))}
           </Card>

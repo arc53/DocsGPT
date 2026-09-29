@@ -297,6 +297,23 @@ describe('ApiWriteAllowlist', () => {
     );
   });
 
+  it('locks the choices while a save is in flight, so saves never overlap', async () => {
+    let finish: (value: { ok: boolean }) => void = () => undefined;
+    updateAgent.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await render(agent());
+    await expand();
+    await act(async () => choice('tg', 'all').click());
+    expect(choice('tg', 'off').hasAttribute('disabled')).toBe(true);
+    await act(async () => choice('tg', 'off').click());
+    expect(updateAgent).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ ok: true }));
+    expect(choice('tg', 'off').hasAttribute('disabled')).toBe(false);
+  });
+
   it('turns a tool off again, keeping entries of tools no longer listed', async () => {
     updateAgent.mockResolvedValue({ ok: true });
     await render(
