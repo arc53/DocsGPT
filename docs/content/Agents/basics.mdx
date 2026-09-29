@@ -68,6 +68,8 @@ A multi-phase agent designed for in-depth research tasks:
 
 Includes budget controls for max steps, timeout, and token limits to keep research bounded.
 
+Research steps can't stop to ask you anything, so a tool action that needs approval, a connection or the user's app isn't run there; the step is told why and carries on. The same goes for actions an API, widget or public-link user can't take on the owner's accounts.
+
 **Best for:** Complex questions that require multi-step investigation, gathering information from multiple sources, and producing structured reports with citations.
 
 ### 4. Workflow Agent
