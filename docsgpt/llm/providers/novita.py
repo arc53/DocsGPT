@@ -13,6 +13,7 @@ from docsgpt.llm.providers.base import Provider
 class NovitaProvider(Provider):
     name = "novita"
     llm_class = NovitaLLM
+    api_key_setting = "NOVITA_API_KEY"
 
     def get_api_key(self, settings) -> Optional[str]:
         return get_api_key(settings, self.name, settings.NOVITA_API_KEY)

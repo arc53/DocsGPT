@@ -9,6 +9,7 @@ from docsgpt.llm.providers.base import Provider
 class OpenAIProvider(Provider):
     name = "openai"
     llm_class = OpenAILLM
+    api_key_setting = "OPENAI_API_KEY"
 
     def get_api_key(self, settings) -> Optional[str]:
         if settings.OPENAI_API_KEY:
@@ -32,6 +33,10 @@ class OpenAIProvider(Provider):
         # corresponding dynamic models live in OpenAICompatibleProvider.
         if settings.OPENAI_BASE_URL:
             return []
-        if not settings.OPENAI_API_KEY:
+        # Same key rule as ``get_api_key``: ``OPENAI_API_KEY``, or the
+        # generic ``API_KEY`` when ``LLM_PROVIDER=openai``. Requiring
+        # ``OPENAI_API_KEY`` here left an ``API_KEY``-only setup with no
+        # OpenAI model, so it silently defaulted to the hosted DocsGPT API.
+        if not self.get_api_key(settings):
             return []
         return models

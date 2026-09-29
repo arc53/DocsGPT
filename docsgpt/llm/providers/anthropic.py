@@ -13,6 +13,7 @@ from docsgpt.llm.providers.base import Provider
 class AnthropicProvider(Provider):
     name = "anthropic"
     llm_class = AnthropicLLM
+    api_key_setting = "ANTHROPIC_API_KEY"
 
     def get_api_key(self, settings) -> Optional[str]:
         return get_api_key(settings, self.name, settings.ANTHROPIC_API_KEY)

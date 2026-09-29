@@ -13,6 +13,7 @@ from docsgpt.llm.providers.base import Provider
 class GoogleProvider(Provider):
     name = "google"
     llm_class = GoogleLLM
+    api_key_setting = "GOOGLE_API_KEY"
 
     def get_api_key(self, settings) -> Optional[str]:
         return get_api_key(settings, self.name, settings.GOOGLE_API_KEY)

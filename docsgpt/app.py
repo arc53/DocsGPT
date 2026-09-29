@@ -98,6 +98,15 @@ from docsgpt.agents.default_tools import (  # noqa: E402
 
 validate_default_chat_tools()
 
+from docsgpt.core.model_registry import check_model_setup  # noqa: E402
+
+# The API and the Celery worker both import this module, so this runs at the
+# start of each. It logs an ERROR when LLM_PROVIDER names a provider but chats
+# would still go to the hosted DocsGPT API (a missing key, an unknown provider),
+# and a WARNING when LLM_NAME is ignored or no model is registered. It never
+# stops the app from booting; ``docsgpt doctor`` reports the same findings.
+check_model_setup()
+
 app = Flask(__name__)
 app.register_blueprint(user)
 app.register_blueprint(answer)

@@ -13,6 +13,7 @@ from docsgpt.llm.providers.base import Provider
 class GroqProvider(Provider):
     name = "groq"
     llm_class = GroqLLM
+    api_key_setting = "GROQ_API_KEY"
 
     def get_api_key(self, settings) -> Optional[str]:
         return get_api_key(settings, self.name, settings.GROQ_API_KEY)
