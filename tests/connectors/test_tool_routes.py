@@ -245,3 +245,52 @@ class TestAvailableTools:
         assert tools["telegram"]["displayName"] == "Telegram"
         assert tools["ntfy"]["displayName"] == "ntfy"
         assert tools["postgres"]["displayName"] == "PostgreSQL"
+
+
+def _telegram_connection(conn, user, label, name=None):
+    row = conn.execute(
+        text(
+            "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status, account_label, "
+            "account_name, encrypted_credentials) VALUES (:u, 'telegram', 'telegram', 'api_key', 'connected', "
+            ":l, :n, :e) RETURNING *"
+        ),
+        {"u": user, "l": label, "n": name, "e": encrypt_json({"credentials": {"token": label}}, user)},
+    ).one()
+    return dict(row._mapping)
+
+
+class TestAccountNamesInToolNames:
+    def _listed(self, app, pg_conn, user="alice"):
+        from docsgpt.api.user.tools.routes import GetTools
+
+        with _db(pg_conn), app.test_request_context("/api/get_tools"):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            tools = GetTools().get().get_json()["tools"]
+        return sorted(t["customName"] for t in tools if t.get("name") == "telegram")
+
+    def test_two_accounts_are_named_after_their_accounts(self, app, pg_conn):
+        for label, name in (("…aaaa", "Alerts bot"), ("…bbbb", None)):
+            service.ensure_connection_tools(pg_conn, "alice", _telegram_connection(pg_conn, "alice", label, name))
+        assert self._listed(app, pg_conn) == ["Telegram · Alerts bot", "Telegram · …bbbb"]
+
+    def test_one_account_keeps_the_plain_name(self, app, pg_conn):
+        connection = _telegram_connection(pg_conn, "alice", "…aaaa", "Alerts bot")
+        service.ensure_connection_tools(pg_conn, "alice", connection)
+        assert self._listed(app, pg_conn) == ["Telegram"]
+
+    def test_a_name_the_user_chose_is_kept(self, app, pg_conn):
+        for label in ("…aaaa", "…bbbb"):
+            service.ensure_connection_tools(pg_conn, "alice", _telegram_connection(pg_conn, "alice", label))
+        pg_conn.execute(text("UPDATE user_tools SET custom_name = 'Ops' WHERE name = 'telegram' "
+                             "AND connection_id = (SELECT id FROM connector_sessions WHERE account_label = '…aaaa')"))
+        assert self._listed(app, pg_conn) == ["Ops", "Telegram · …bbbb"]
+
+    def test_the_drawer_names_the_tool_after_its_account_too(self, pg_conn):
+        named = _telegram_connection(pg_conn, "alice", "…aaaa", "Alerts bot")
+        for connection in (named, _telegram_connection(pg_conn, "alice", "…bbbb")):
+            service.ensure_connection_tools(pg_conn, "alice", connection)
+        detail = service.connection_detail(pg_conn, named)
+        assert detail["account_name"] == "Alerts bot"
+        assert detail["tools"][0]["display_name"] == "Telegram · Alerts bot"

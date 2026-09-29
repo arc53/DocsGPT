@@ -96,6 +96,78 @@ def account_label(row: dict) -> str:
     )
 
 
+#: Longest name a user can give an account.
+ACCOUNT_NAME_MAX = 80
+
+
+def account_name(row: dict) -> str:
+    """What the user calls the account, falling back to its label."""
+    return (row.get("account_name") or "").strip() or account_label(row)
+
+
+def rename_connection(conn, row: dict, name: str) -> dict:
+    """Give an account a name (an empty one clears it).
+
+    The name is only a name: the account is still found by its label when
+    its owner signs in again.
+
+    Args:
+        conn: Open connection inside a transaction.
+        row: The connection, already authorised for its owner.
+        name: The new name; surrounding spaces are dropped.
+
+    Returns:
+        The connection's public shape after the change.
+    """
+    repo = ConnectorSessionsRepository(conn)
+    repo.update(str(row["id"]), {"account_name": name.strip() or None})
+    return serialize_connection(repo.get(str(row["id"])))
+
+
+def with_account(name: str, account: str) -> str:
+    """``Telegram · Alerts bot``: a tool's name with the account it uses."""
+    return f"{name} · {account}" if account and account not in name else name
+
+
+def account_tool_names(conn, tools: Iterable[dict]) -> dict[str, str]:
+    """Names for tools whose owner has several accounts of the tool's service.
+
+    With one Telegram bot a tool is just "Telegram"; with two, each tool
+    still named after the service becomes "Telegram · <account>", so people
+    (and the model) can tell them apart. A name the user chose is kept.
+
+    Args:
+        conn: Open database connection.
+        tools: ``user_tools`` rows.
+
+    Returns:
+        Tool id to its name, only for tools whose name changes.
+    """
+    repo = ConnectorSessionsRepository(conn)
+    connections: dict[str, dict] = {}
+    for tool in tools:
+        connection_id = str(tool.get("connection_id") or "")
+        if connection_id and connection_id not in connections:
+            row = repo.get(connection_id)
+            if row is not None:
+                connections[connection_id] = row
+    counts: dict[tuple, int] = {}
+    for owner in {row["user_id"] for row in connections.values()}:
+        for row in repo.list_for_user(owner):
+            if normalize_status(row) != STATUS_PENDING:
+                key = (owner, catalog.connector_key_for_row(row))
+                counts[key] = counts.get(key, 0) + 1
+    names = {}
+    for tool in tools:
+        row = connections.get(str(tool.get("connection_id") or ""))
+        if row is None or counts.get((row["user_id"], catalog.connector_key_for_row(row)), 0) < 2:
+            continue
+        name = tool.get("custom_name") or tool.get("display_name") or ""
+        if name == serialize_connection(row)["name"]:
+            names[str(tool["id"])] = with_account(name, account_name(row))
+    return names
+
+
 def _iso(value: Any) -> Optional[str]:
     return value.isoformat() if hasattr(value, "isoformat") else value
 
@@ -114,6 +186,7 @@ def serialize_connection(row: dict, counts: Optional[dict] = None) -> dict:
         "display_name": row.get("display_name"),
         "icon": definition.icon if definition else "tool_mcp_tool",
         "account_label": account_label(row),
+        "account_name": (row.get("account_name") or "").strip() or None,
         "auth_kind": row.get("auth_kind") or (definition.auth_kind if definition else None),
         "status": normalize_status(row),
         "server_url": row.get("server_url"),
@@ -181,13 +254,17 @@ def serialize_parameters(action: dict, account_parameters: Optional[dict] = None
     return parameters
 
 
-def serialize_tool(row: dict, account_parameters: Optional[dict] = None) -> dict:
+def serialize_tool(
+    row: dict, account_parameters: Optional[dict] = None, display_name: Optional[str] = None,
+) -> dict:
     """A tool linked to a connection, with its actions, permissions and parameters.
 
     Args:
         row: The ``user_tools`` row.
         account_parameters: Parameters its connection sets, from
             :func:`connection_parameters`.
+        display_name: The name to show instead of the stored one, from
+            :func:`account_tool_names`.
     """
     from docsgpt.connectors.permissions import action_access, action_permission
 
@@ -208,7 +285,7 @@ def serialize_tool(row: dict, account_parameters: Optional[dict] = None) -> dict
     return {
         "id": str(row["id"]),
         "name": row.get("name"),
-        "display_name": row.get("custom_name") or row.get("display_name") or row.get("name"),
+        "display_name": display_name or row.get("custom_name") or row.get("display_name") or row.get("name"),
         "status": bool(row.get("status")),
         "credential_mode": row.get("credential_mode") or "owner",
         "actions": actions,
@@ -221,7 +298,9 @@ def connection_detail(conn, row: dict) -> dict:
     status = normalize_status(row)
     sources = [serialize_source(s, status) for s in repo.list_sources(str(row["id"]))]
     account_parameters = connection_parameters(row) if status == STATUS_CONNECTED else {}
-    tools = [serialize_tool(t, account_parameters) for t in repo.list_tools(str(row["id"]))]
+    tool_rows = repo.list_tools(str(row["id"]))
+    names = account_tool_names(conn, tool_rows)
+    tools = [serialize_tool(t, account_parameters, names.get(str(t["id"]))) for t in tool_rows]
     detail = serialize_connection(row, {"sources": len(sources), "tools": len(tools)})
     detail["sources"] = sources
     detail["tools"] = tools

@@ -417,6 +417,41 @@ class TestParameters:
         assert chat_id["filled_by_llm"] is True
 
 
+class TestRename:
+    @staticmethod
+    def _patch(app, cid, body, user="alice"):
+        from docsgpt.api.connector.connections import ConnectionDetail
+
+        return _call(app, ConnectionDetail, "patch", f"/api/connections/{cid}", user=user, body=body, args=[cid])
+
+    def test_owner_names_and_unnames_an_account(self, app, pg_conn):
+        cid = _connection(pg_conn, secrets={"credentials": {"token": "t"}})
+        with _db(pg_conn):
+            named = self._patch(app, cid, {"name": "  Alerts bot "})
+            assert named.status_code == 200
+            connection = named.get_json()["connection"]
+            assert connection["account_name"] == "Alerts bot"
+            # The label stays the account's identity.
+            assert connection["account_label"] == "…abcd"
+            cleared = self._patch(app, cid, {"name": ""})
+        assert cleared.get_json()["connection"]["account_name"] is None
+
+    @pytest.mark.parametrize("body", [{"name": "x" * 81}, {"name": 5}, {}])
+    def test_rejects_bad_names(self, app, pg_conn, body):
+        cid = _connection(pg_conn, secrets={})
+        with _db(pg_conn):
+            assert self._patch(app, cid, body).status_code == 400
+
+    def test_another_user_cannot_rename(self, app, pg_conn):
+        cid = _connection(pg_conn, secrets={})
+        with _db(pg_conn):
+            assert self._patch(app, cid, {"name": "Mine now"}, user="mallory").status_code == 404
+        name = pg_conn.execute(
+            text("SELECT account_name FROM connector_sessions WHERE id = CAST(:i AS uuid)"), {"i": cid}
+        ).scalar()
+        assert name is None
+
+
 class TestDelete:
     def test_delete_with_source_removal(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionDetail

@@ -36,7 +36,7 @@ from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 _UPDATABLE_SCALARS = {
     "server_url", "session_token", "user_email", "status", "expires_at",
     "connector_key", "display_name", "account_label", "auth_kind",
-    "encrypted_credentials", "has_refresh_token", "last_error", "last_used_at",
+    "encrypted_credentials", "has_refresh_token", "last_error", "last_used_at", "account_name",
 }
 _UPDATABLE_JSONB = {"session_data", "token_info", "scopes"}
 

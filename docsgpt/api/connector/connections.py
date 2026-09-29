@@ -161,6 +161,21 @@ class ConnectionDetail(Resource):
             return make_response(jsonify({"success": False, "error": "Failed to load connection"}), 500)
         return make_response(jsonify({"success": True, "connection": detail}), 200)
 
+    @api.doc(description="Name an account: {name}. An empty name clears it. Owner only.")
+    def patch(self, connection_id: str):
+        user_id = _user_id()
+        if not user_id:
+            return _unauthorized()
+        name = _json_body().get("name")
+        if not isinstance(name, str) or len(name.strip()) > service.ACCOUNT_NAME_MAX:
+            return _error(f"name must be text of at most {service.ACCOUNT_NAME_MAX} characters", 400)
+        with db_session() as conn:
+            row = _owned(conn, connection_id, user_id)
+            if row is None:
+                return _not_found()
+            connection = service.rename_connection(conn, row, name)
+        return make_response(jsonify({"success": True, "connection": connection}), 200)
+
     @api.doc(
         description=(
             "Remove a connection: {sources: keep | delete, tools: delete | keep}. "

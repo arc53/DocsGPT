@@ -608,6 +608,9 @@ connector_sessions_table = Table(
     Column("scopes", JSONB, nullable=False, server_default="[]"),
     Column("last_error", Text),
     Column("last_used_at", DateTime(timezone=True)),
+    # Added in ``0039_connection_account_name``: what the user calls the
+    # account; ``account_label`` stays its identity.
+    Column("account_name", Text),
 )
 
 

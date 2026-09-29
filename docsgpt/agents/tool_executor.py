@@ -149,6 +149,16 @@ def _requires_approval(tool: Dict, action: Dict) -> bool:
     return bool((tool.get("config") or {}).get("require_approval"))
 
 
+def _account_slug(account: Optional[str], limit: int = 24) -> str:
+    """An account name as a function-name suffix: ``Ops: on-call!`` → ``ops_on_call``.
+
+    Empty when nothing ASCII is left (a name in another script); the caller
+    then numbers the duplicates instead.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "_", str(account or "").lower()).strip("_")
+    return slug[:limit].rstrip("_")
+
+
 def _sanitize_tool_prefix(tool_name: Optional[str]) -> str:
     """Reduce a tool name to characters allowed in function-call names."""
     return re.sub(r"[^a-zA-Z0-9_-]+", "_", str(tool_name or "")).strip("_")
@@ -723,15 +733,38 @@ class ToolExecutor:
         self._tool_to_name = {}
         all_llm_names: set = set()
 
+        # Connection tools that share an action name are told apart by what
+        # they connect to: the service ("search" on Notion and on Linear), or
+        # the account when one service is connected twice (two Telegram bots).
+        connected: Dict[int, Tuple[str, str]] = {}
+        for index, (tool_id, _tool_name, action_name, _action, is_client) in enumerate(entries):
+            if name_counts[action_name] > 1 and not is_client:
+                names = self._connection_names(tools_dict[tool_id])
+                if names:
+                    connected[index] = names
+        per_service = Counter((entries[i][2], service) for i, (service, _account) in connected.items())
+
         result = []
-        for tool_id, tool_name, action_name, action, is_client in entries:
+        for index, (tool_id, tool_name, action_name, action, is_client) in enumerate(entries):
+            service, account = connected.get(index, (None, None))
+            if service is None:
+                slug = ""
+            elif per_service[(action_name, service)] > 1:
+                slug = _account_slug(account)
+            else:
+                slug = _account_slug(service)
             if name_counts[action_name] == 1 and len(action_name) <= _MAX_LLM_NAME_LEN:
                 llm_name = action_name
             else:
                 # An over-long unique name skips the prefix — it needs
                 # truncation, not disambiguation.
                 prefix = _sanitize_tool_prefix(tool_name) if name_counts[action_name] > 1 else ""
-                base = f"{prefix}_{action_name}" if prefix and not action_name.startswith(f"{prefix}_") else action_name
+                if slug:
+                    base = f"{action_name}_{slug}"
+                elif prefix and not action_name.startswith(f"{prefix}_"):
+                    base = f"{prefix}_{action_name}"
+                else:
+                    base = action_name
                 base = base[:_MAX_LLM_NAME_LEN]
                 # A duplicated bare name stays ambiguous, and a candidate
                 # must not steal a unique action's name or one already taken.
@@ -754,17 +787,31 @@ class ToolExecutor:
                     action, hidden=set(self._connection_parameters(tools_dict[tool_id])),
                 )
 
+            description = action.get("description", "")
+            if service:
+                description = f"{description} ({service} account: {account})".strip()
             result.append(
                 {
                     "type": "function",
                     "function": {
                         "name": llm_name,
-                        "description": action.get("description", ""),
+                        "description": description,
                         "parameters": params,
                     },
                 }
             )
         return result
+
+    def _connection_names(self, tool_data: Dict) -> Optional[Tuple[str, str]]:
+        """``(service, account)`` a connection tool runs with, e.g. ``("Telegram", "Alerts bot")``."""
+        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+            return None
+        resolved = self._resolve_connection(tool_data)
+        if resolved is None or resolved.row is None:
+            return None
+        from docsgpt.connectors.service import account_name
+
+        return resolved.connector_name or tool_data.get("name") or "", account_name(resolved.row)
 
     def _build_tool_parameters(self, action: Dict, hidden: Optional[set] = None) -> Dict:
         """The JSON schema the model sees for ``action``.

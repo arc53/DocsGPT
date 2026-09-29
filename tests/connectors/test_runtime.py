@@ -276,6 +276,55 @@ class TestTelegramDefaultChat:
         assert call.kwargs == {"text": "hi", "chat_id": "-2002"}
 
 
+class TestAccountsTellApartForTheModel:
+    @staticmethod
+    def _two_bots(pg_conn, names):
+        tools = {}
+        for index, name in enumerate(names):
+            cid = _connection(pg_conn)
+            pg_conn.execute(text(
+                "UPDATE connector_sessions SET account_label = :l, account_name = :n WHERE id = CAST(:i AS uuid)"
+            ), {"l": f"…{index}abc", "n": name, "i": cid})
+            tools[f"t{index}"] = {**_telegram_tool(cid), "id": f"tool-{index}"}
+        return tools
+
+    def test_named_accounts_name_the_functions(self, pg_conn):
+        tools = self._two_bots(pg_conn, ["Alerts bot", "Ops: on-call!"])
+        with _service_db(pg_conn):
+            executor = _executor()
+            functions = {f["function"]["name"]: f["function"] for f in executor.prepare_tools_for_llm(tools)}
+        assert {"telegram_send_message_alerts_bot", "telegram_send_message_ops_on_call"} <= set(functions)
+        assert "Alerts bot" in functions["telegram_send_message_alerts_bot"]["description"]
+        assert executor._name_to_tool["telegram_send_message_ops_on_call"] == ("t1", "telegram_send_message")
+
+    def test_unnamed_accounts_use_their_labels(self, pg_conn):
+        tools = self._two_bots(pg_conn, [None, None])
+        with _service_db(pg_conn):
+            names = {f["function"]["name"] for f in _executor().prepare_tools_for_llm(tools)}
+        assert {"telegram_send_message_0abc", "telegram_send_message_1abc"} <= names
+
+    def test_different_services_are_named_after_the_service(self, pg_conn):
+        tools = {}
+        for index, (host, name) in enumerate((("a.example.com", "Wiki"), ("b.example.com", "Tracker"))):
+            cid = _connection(pg_conn, provider=f"mcp:https://{host}", auth_kind="mcp_oauth",
+                              server_url=f"https://{host}", secrets={"tokens": {"access_token": "x"}})
+            pg_conn.execute(text("UPDATE connector_sessions SET connector_key = 'custom_mcp', display_name = :n "
+                                 "WHERE id = CAST(:i AS uuid)"), {"n": name, "i": cid})
+            tools[f"t{index}"] = {**_tool(cid, name="mcp_tool", tool_id=f"tool-{index}"),
+                                  "actions": [{"name": "search", "description": "Search", "active": True}]}
+        with _service_db(pg_conn):
+            functions = {f["function"]["name"]: f["function"] for f in _executor().prepare_tools_for_llm(tools)}
+        assert set(functions) == {"search_wiki", "search_tracker"}
+        assert functions["search_wiki"]["description"].startswith("Search (Wiki account:")
+
+    def test_names_stay_within_provider_limits(self, pg_conn):
+        tools = self._two_bots(pg_conn, ["x" * 80, "x" * 80])
+        with _service_db(pg_conn):
+            names = [f["function"]["name"] for f in _executor().prepare_tools_for_llm(tools)]
+        assert len(names) == len(set(names))
+        assert all(len(n) <= 64 and n.replace("_", "").replace("-", "").isalnum() for n in names)
+
+
 class TestScheduledSync:
     def test_connector_sources_with_a_connection_are_dispatched(self, pg_conn):
         from docsgpt import worker

@@ -23,6 +23,7 @@ from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
 from docsgpt.api.user.team_sharing import effective_write_owner, visible_with_access
 from docsgpt.connectors.catalog import definition_for_tool
+from docsgpt.connectors.service import account_tool_names
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
@@ -290,6 +291,8 @@ class GetTools(Resource):
                 team_shared = visible_with_access(conn, user, "tool")
                 shared_ids = [tid for tid in team_shared if tid not in owned_ids]
                 shared_rows = tools_repo.list_by_ids(shared_ids)
+                # "Telegram · Alerts bot" when the owner has several bots.
+                account_names = account_tool_names(conn, [*rows, *shared_rows])
             user_tools = []
 
             def _shape_tool(row, *, ownership="user", force_strip_secret=False):
@@ -313,6 +316,8 @@ class GetTools(Resource):
                     # ask for it again.
                     tool_copy.setdefault("config", {})["has_encrypted_credentials"] = True
                 tool_copy["ownership"] = ownership
+                if str(row["id"]) in account_names:
+                    tool_copy["customName"] = tool_copy["displayName"] = account_names[str(row["id"])]
                 return tool_copy
 
             for row in rows:
