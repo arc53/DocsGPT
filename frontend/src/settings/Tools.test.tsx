@@ -88,6 +88,7 @@ vi.mock('../api/services/connectorsService', () => ({
           icon: 'tool_telegram',
           status: 'connected',
           account_label: '…abcd',
+          account_name: 'Alerts bot',
         },
         {
           id: 'conn-2',
@@ -203,7 +204,7 @@ describe('Tools page', () => {
     const telegram = card('Telegram');
     expect(telegram.querySelector('[role="switch"]')).not.toBeNull();
     // Which account this card is, and the catalog's plain description.
-    expect(telegram.textContent).toContain('…abcd');
+    expect(telegram.textContent).toContain('Alerts bot');
     expect(telegram.textContent).toContain(
       'settings.connectors.descriptions.telegram',
     );

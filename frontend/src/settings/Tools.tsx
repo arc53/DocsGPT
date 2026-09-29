@@ -275,14 +275,17 @@ export default function Tools() {
   const { launch, modals } = useConnectorLauncher({
     onConnected: () => getUserTools(),
   });
-  // What tells two accounts of one service apart on their cards.
+  // What tells two accounts of one service apart on their cards: the name
+  // the owner gave it, else what identifies it.
   const accountLine = (connection: Connection) =>
-    connection.auth_kind === 'api_key'
-      ? t('settings.connectors.detail.keyEnding', {
-          hint: connection.account_label,
-          interpolation: { escapeValue: false },
-        })
-      : connection.account_label;
+    connection.account_name
+      ? connection.account_name
+      : connection.auth_kind === 'api_key'
+        ? t('settings.connectors.detail.keyEnding', {
+            hint: connection.account_label,
+            interpolation: { escapeValue: false },
+          })
+        : connection.account_label;
 
   const handleGoBack = () => {
     setSelectedTool(null);
