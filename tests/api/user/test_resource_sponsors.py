@@ -386,6 +386,64 @@ class TestRunTime:
         assert _authorized_source_ids(pg_conn, agent, [source]) == []
 
 
+class TestToolPrefetch:
+    """Prompt tool pre-fetch runs the agent's tools, as the agent run resolves them."""
+
+    def _prefetched(self, pg_conn, agent_id, caller, required):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+        from docsgpt.core.settings import settings
+
+        agent = _row(pg_conn, agent_id)
+        processor = StreamProcessor({"agent_id": agent_id}, {"sub": caller})
+        processor.agent_id = agent_id
+        processor.agent_config = {"user_api_key": agent["key"]}
+        processor._required_tool_actions = required
+        fetched = {}
+
+        def _fake_fetch(tool_doc, required_actions):
+            fetched[str(tool_doc["id"])] = required_actions
+            return {"ok": True}
+
+        with _patch_db(pg_conn), patch.object(settings, "ENABLE_TOOL_PREFETCH", True), \
+                patch.object(processor, "_fetch_tool_data", _fake_fetch):
+            processor.pre_fetch_tools()
+        return fetched
+
+    def _tool(self, pg_conn, user, name, actions, **extra):
+        return str(UserToolsRepository(pg_conn).create(user, name, actions=actions, **extra)["id"])
+
+    def test_prefetch_runs_the_agents_tools_not_the_callers(self, pg_conn):
+        agent_id, _ = _agent(pg_conn)
+        owner_tool = self._tool(pg_conn, OWNER, "read_webpage", [{"name": "fetch", "active": True}])
+        self._tool(pg_conn, VIEWER, "cryptoprice", [{"name": "price", "active": True}])
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [owner_tool]})
+        required = {"read_webpage": {None}, "cryptoprice": {None}}
+        assert self._prefetched(pg_conn, agent_id, OWNER, required) == {owner_tool: {None}}
+        assert list(self._prefetched(pg_conn, agent_id, VIEWER, required)) == [owner_tool]
+
+    def test_someone_elses_tool_prefetches_only_what_runs_unasked(self, pg_conn):
+        from sqlalchemy import text
+
+        agent_id, _ = _agent(pg_conn)
+        api = self._tool(pg_conn, OWNER, "read_webpage", [
+            {"name": "fetch", "active": True},
+            {"name": "post", "active": True, "require_approval": True},
+        ])
+        connection = str(pg_conn.execute(text(
+            "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status) "
+            "VALUES (:u, 'telegram', 'telegram', 'api_key', 'connected') RETURNING id"
+        ), {"u": OWNER}).scalar())
+        connected = self._tool(pg_conn, OWNER, "telegram", [{"name": "telegram_get_updates", "active": True}],
+                               connection_id=connection)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [api, connected]})
+        required = {"read_webpage": {None}, "telegram": {None}}
+
+        assert self._prefetched(pg_conn, agent_id, OWNER, required) == {api: {None}, connected: {None}}
+        # Nobody is asked during pre-fetch: a teammate gets no approval-gated
+        # action and nothing on the owner's connected account.
+        assert self._prefetched(pg_conn, agent_id, VIEWER, required) == {api: {"fetch"}}
+
+
 # ---------------------------------------------------------------------------
 # workflows
 # ---------------------------------------------------------------------------

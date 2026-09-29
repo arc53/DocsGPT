@@ -10,7 +10,6 @@ from flask import after_this_request
 
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
-from docsgpt.agents.default_tools import synthesized_default_tools
 from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
@@ -38,8 +37,6 @@ from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
-from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
-from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.api.user.team_sharing import can_access
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
@@ -1376,7 +1373,16 @@ class StreamProcessor:
             return None, None
 
     def pre_fetch_tools(self) -> Optional[Dict[str, Any]]:
-        """Pre-fetch tool data for template rendering before agent creation"""
+        """Pre-fetch tool data for template rendering before agent creation.
+
+        Runs the actions the prompt template names on the toolset the agent
+        run gets, so a teammate or public-link user renders the owner's
+        prompt with the owner's tools, never their own.
+
+        Returns:
+            Action results keyed by tool name and tool id, or None when
+            nothing was fetched.
+        """
         if not settings.ENABLE_TOOL_PREFETCH:
             logger.info(
                 "Tool pre-fetching disabled globally via ENABLE_TOOL_PREFETCH setting"
@@ -1392,17 +1398,14 @@ class StreamProcessor:
 
         try:
             user_id = self.initial_user_id or "local"
-            agentless = self.agent_id is None
-            with db_readonly() as conn:
-                user_tools = UserToolsRepository(conn).list_active_for_user(user_id)
-                user_doc = (
-                    UsersRepository(conn).get(user_id) if agentless else None
-                )
-
-            default_docs = (
-                synthesized_default_tools(user_doc) if agentless else []
-            )
-            tool_docs = list(user_tools) + default_docs
+            # The same toolset the run gets: an agent's own tools (resolved as
+            # its owner, or the editor who attached them), else the caller's
+            # tools plus defaults. Explicit rows first, so they claim names.
+            run_tools = [
+                tool for tool in self._run_tool_executor().get_tools().values()
+                if isinstance(tool, dict) and not tool.get("client_side")
+            ]
+            tool_docs = sorted(run_tools, key=lambda tool: bool(tool.get("default")))
             if not tool_docs:
                 return None
 
@@ -1430,6 +1433,14 @@ class StreamProcessor:
                         continue
                     required_actions = None
 
+                owner = tool_doc.get("user_id")
+                if owner and owner != user_id:
+                    # Someone else's tool: pre-fetch asks nobody, so only
+                    # what the run would do without asking.
+                    required_actions = self._unasked_actions(tool_doc, required_actions)
+                    if not required_actions:
+                        continue
+
                 tool_data = self._fetch_tool_data(tool_doc, required_actions)
                 if tool_data:
                     # Explicit rows claim the name key; a default tool takes
@@ -1446,6 +1457,57 @@ class StreamProcessor:
             logger.warning(f"Failed to pre-fetch tools: {type(e).__name__}")
             return None
 
+    @staticmethod
+    def _unasked_actions(
+        tool_doc: Dict[str, Any], required_actions: Optional[Set[Optional[str]]]
+    ) -> Set[Optional[str]]:
+        """The required actions of someone else's tool that run without asking.
+
+        A tool on someone else's connected account runs on their account or
+        needs the caller's own connection, and an approval-gated action waits
+        for a person; pre-fetch has neither, so both are left out.
+
+        Args:
+            tool_doc: The tool row, owned by someone other than the caller.
+            required_actions: Action names the template needs; None, or a set
+                holding None, means all of them.
+
+        Returns:
+            The action names to run, empty when there are none.
+        """
+        if tool_doc.get("connection_id"):
+            return set()
+        if tool_doc.get("name") == "api_tool":
+            actions = [
+                {"name": name, **(action or {})}
+                for name, action in ((tool_doc.get("config") or {}).get("actions") or {}).items()
+            ]
+        else:
+            actions = tool_doc.get("actions") or []
+        unasked = {
+            action.get("name") for action in actions
+            if action.get("name") and action.get("active", True) and not action.get("require_approval")
+        }
+        if required_actions is None or None in required_actions:
+            return unasked
+        return {name for name in required_actions if name in unasked}
+
+    def _run_tool_executor(self):
+        """A ``ToolExecutor`` resolving the toolset this turn's agent run gets.
+
+        Returns:
+            ToolExecutor: Built with the run's key, user and agent.
+        """
+        from docsgpt.agents.tool_executor import ToolExecutor
+
+        user = self.decoded_token.get("sub") if self.decoded_token else None
+        return ToolExecutor(
+            user_api_key=self.agent_config.get("user_api_key"),
+            user=user,
+            decoded_token=self.decoded_token,
+            agent_id=self.agent_id,
+        )
+
     def _enabled_tool_names(self) -> Optional[set]:
         """Resolve the tool names enabled for this turn, for ``tools.enabled`` gating.
 
@@ -1455,15 +1517,7 @@ class StreamProcessor:
         (keeps the section) rather than hiding guidance when resolution breaks.
         """
         try:
-            from docsgpt.agents.tool_executor import ToolExecutor
-
-            user = self.decoded_token.get("sub") if self.decoded_token else None
-            tool_executor = ToolExecutor(
-                user_api_key=self.agent_config.get("user_api_key"),
-                user=user,
-                decoded_token=self.decoded_token,
-                agent_id=self.agent_id,
-            )
+            tool_executor = self._run_tool_executor()
             client_tools = self.data.get("client_tools")
             if client_tools:
                 tool_executor.client_tools = client_tools
