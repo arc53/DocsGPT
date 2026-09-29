@@ -1191,27 +1191,11 @@ class LLMHandler(ABC):
                     )
                     if hasattr(agent.tool_executor, "headless_denials"):
                         agent.tool_executor.headless_denials.append(pause_info)
-                    from docsgpt.agents.tool_executor import (
-                        _mark_failed,
-                        _record_proposed,
-                    )
+                    from docsgpt.agents.tool_executor import journal_refused_call
 
-                    if _record_proposed(
-                        pause_info["call_id"],
-                        pause_info["tool_name"],
-                        pause_info["action_name"],
-                        pause_info.get("arguments") or {},
-                        tool_id=pause_info.get("tool_id"),
-                        message_id=agent.tool_executor.message_id,
-                        user_id=agent.tool_executor.user,
-                        agent_id=agent.tool_executor.agent_id,
-                    ):
-                        _mark_failed(
-                            pause_info["call_id"],
-                            f"headless: {deny_reason}",
-                            message_id=agent.tool_executor.message_id,
-                            user_id=agent.tool_executor.user,
-                        )
+                    journal_refused_call(
+                        agent.tool_executor, pause_info, f"headless: {deny_reason}"
+                    )
                     denied_data = {
                         "tool_name": pause_info["tool_name"],
                         "call_id": pause_info["call_id"],

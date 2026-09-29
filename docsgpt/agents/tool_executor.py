@@ -483,6 +483,36 @@ def _mark_failed(
         logger.exception("tool_call_attempts failed-write failed for %s", call_id)
 
 
+def journal_refused_call(executor: Any, pause_info: Dict, error: str) -> None:
+    """Journal a tool call that was refused instead of paused, as failed.
+
+    A headless run and a research step can't pause for anyone, so a call
+    ``check_pause`` would pause on is answered with a refusal. Journaling it
+    keeps the refusal visible to the reconciler and tool analytics.
+
+    Args:
+        executor: The run's ``ToolExecutor``.
+        pause_info: What ``check_pause`` returned for the call.
+        error: The failure recorded on the journal row.
+    """
+    if _record_proposed(
+        pause_info["call_id"],
+        pause_info["tool_name"],
+        pause_info["action_name"],
+        pause_info.get("arguments") or {},
+        tool_id=pause_info.get("tool_id"),
+        message_id=getattr(executor, "message_id", None),
+        user_id=getattr(executor, "user", None),
+        agent_id=getattr(executor, "agent_id", None),
+    ):
+        _mark_failed(
+            pause_info["call_id"],
+            error,
+            message_id=getattr(executor, "message_id", None),
+            user_id=getattr(executor, "user", None),
+        )
+
+
 class ToolExecutor:
     """Handles tool discovery, preparation, and execution.
 
