@@ -2189,6 +2189,9 @@ def agent_webhook_worker(self, agent_id, payload):
             input_data,
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
+            # The payload comes from outside: nobody there can approve for
+            # the owner, so owner-account writes need the API allowlist.
+            external_caller=True,
             request_id=getattr(getattr(self, "request", None), "id", None),
         )
         result = {

@@ -8,6 +8,7 @@ account (member mode) stays theirs to approve, and teammates keep the card.
 
 from __future__ import annotations
 
+import json
 import uuid
 from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
@@ -306,3 +307,30 @@ class TestScheduledRunsForOthers:
         cid = _connection(pg_conn, "alice")
         with _db(pg_conn):
             assert _pause(ToolExecutor(user="alice", headless=True), _tool(cid)) is None
+
+
+class TestSchedulesSetThroughTheApi:
+    def test_scheduler_loaded_for_an_api_caller_records_it(self):
+        from docsgpt.agents.tool_executor import ToolExecutor
+
+        executor = ToolExecutor(user="alice", agent_id="11111111-1111-1111-1111-111111111111", external_caller=True)
+        row = {"id": "sched", "name": "scheduler", "config": {}, "actions": []}
+        with patch("docsgpt.agents.tool_executor.ToolManager") as manager:
+            executor._get_or_load_tool(row, "sched", "schedule_task")
+        assert manager.return_value.load_tool.call_args.kwargs["tool_config"]["created_via"] == "api"
+
+    def test_api_schedule_is_stored_as_such(self, pg_conn):
+        from docsgpt.agents.tools.scheduler import SchedulerTool
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.schedules import SchedulesRepository
+
+        agent_id = str(AgentsRepository(pg_conn).create("alice", "A", "published", key=f"k-{uuid.uuid4().hex}")["id"])
+        tool = SchedulerTool({"agent_id": agent_id, "created_via": "api"}, user_id="alice")
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        with patch.multiple("docsgpt.agents.tools.scheduler", db_session=_yield, db_readonly=_yield):
+            created = json.loads(tool.execute_action("schedule_task", instruction="ping", delay="1h"))
+        assert SchedulesRepository(pg_conn).get_internal(created["task_id"])["created_via"] == "api"

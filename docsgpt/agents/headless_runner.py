@@ -20,6 +20,7 @@ from docsgpt.api.answer.services.stream_processor import (
     get_prompt,
 )
 from docsgpt.core.settings import settings
+from docsgpt.guardrails.config import AgentConfig
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
@@ -75,6 +76,8 @@ def run_agent_headless(
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
     conversation_id: Optional[str] = None,
+    external_caller: bool = False,
+    public_link_caller: bool = False,
     request_id: Optional[str] = None,
     trace_user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -87,6 +90,11 @@ def run_agent_headless(
     ``trace_user_id`` owns the trace when the run belongs to someone other
     than the agent's owner (a schedule a user set on a shared agent), so the
     trace is visible wherever that user sees the run; it defaults to the owner.
+    ``external_caller`` (a webhook, a schedule set through the API) and
+    ``public_link_caller`` (a schedule a public-link user set) mark a run for
+    someone who can't approve for the owner: writes on the owner's accounts
+    and credentials then run only when the agent's API write allowlist has
+    them.
 
     Raises:
         QuotaExceededError: If the agent owner's usage quota is exhausted.
@@ -109,6 +117,8 @@ def run_agent_headless(
                 endpoint=endpoint,
                 chat_history=chat_history,
                 conversation_id=conversation_id,
+                external_caller=external_caller,
+                public_link_caller=public_link_caller,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -129,6 +139,8 @@ def _run_agent_headless(
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
     conversation_id: Optional[str] = None,
+    external_caller: bool = False,
+    public_link_caller: bool = False,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -232,6 +244,9 @@ def _run_agent_headless(
         agent_id=agent_id,
         headless=True,
         tool_allowlist=list(tool_allowlist or []),
+        external_caller=external_caller,
+        public_link_caller=public_link_caller,
+        api_write_allowlist=AgentConfig.parse(agent_config.get("config")).api_write_allowlist,
     )
     if conversation_id:
         tool_executor.conversation_id = str(conversation_id)

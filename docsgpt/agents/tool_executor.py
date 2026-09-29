@@ -1908,6 +1908,9 @@ class ToolExecutor:
                 # falls back to ``origin_conversation_id`` as the schedule's
                 # conversation home.
                 tool_config["agent_id"] = str(self.agent_id) if self.agent_id else None
+                if self.external_caller:
+                    # Its runs act as the owner for an API-key caller.
+                    tool_config["created_via"] = "api"
             if tool_data["name"] == "mcp_tool":
                 tool_config["query_mode"] = True
 

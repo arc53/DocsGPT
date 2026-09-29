@@ -75,6 +75,8 @@ class TestAgentWebhookWorker:
         assert captured["input"] == '{"event": "ping"}'
         # Webhook caller should pass endpoint='webhook'.
         assert captured["kwargs"].get("endpoint") == "webhook"
+        # The payload comes from outside: nobody there can approve for the owner.
+        assert captured["kwargs"].get("external_caller") is True
 
     def test_missing_agent_raises(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
