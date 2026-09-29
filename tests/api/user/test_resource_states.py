@@ -259,7 +259,10 @@ class TestCredentials:
         assert state["credential_mode"] == "owner"
         assert state["account"] == {"user_id": OWNER, "label": OWNER}
         assert state["connection"]["name"] == "Telegram"
+        # A running tool's connection id is never sent.
+        assert state["connection"]["id"] is None
         assert state["owner_credential_writes"] == ["send_message"]
+        assert state["writes_allowed"] is True
 
     def test_member_mode_connection_has_no_account_holder(self, pg_conn):
         tool = str(UserToolsRepository(pg_conn).create(
@@ -325,7 +328,92 @@ class TestCredentials:
             OWNER, "api_tool", config={"actions": actions},
         )["id"])
         agent_id, _ = _agent(pg_conn, tools=[tool])
-        assert _states(pg_conn, agent_id)[f"tool:{tool}"]["owner_credential_writes"] == ["create_ticket"]
+        state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert state["owner_credential_writes"] == ["create_ticket"]
+        # The saved key is its owner's, whoever runs it.
+        assert state["account"] == {"user_id": OWNER, "label": OWNER}
+        assert state["credential_mode"] is None
+
+    def test_mcp_server_signed_in_by_a_teammate(self, pg_conn):
+        agent_id, team_id = _agent(pg_conn)
+        for member in (OWNER, OTHER):
+            if not TeamMembersRepository(pg_conn).is_member(member, team_id):
+                TeamMembersRepository(pg_conn).add_member(team_id, member)
+        tool = str(UserToolsRepository(pg_conn).create(
+            OTHER, "mcp_tool", config={"server_url": "https://mcp.example.com", "auth_type": "bearer"},
+        )["id"])
+        TeamResourceGrantsRepository(pg_conn).grant(team_id, "tool", tool, OTHER, OTHER)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [tool]})
+        assert _states(pg_conn, agent_id)[f"tool:{tool}"]["account"] == {"user_id": OTHER, "label": OTHER}
+
+    def test_account_holder_the_reader_shares_no_team_with_is_not_named(self, pg_conn):
+        """An editor outside the team that shares the tool learns only that it's someone else's."""
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        agent_id, _ = _agent(pg_conn)
+        private = str(TeamsRepository(pg_conn).create("P", f"p-{uuid.uuid4().hex[:8]}", OTHER)["id"])
+        TeamMembersRepository(pg_conn).add_member(private, OWNER)
+        if not TeamMembersRepository(pg_conn).is_member(OTHER, private):
+            TeamMembersRepository(pg_conn).add_member(private, OTHER)
+        tool = str(UserToolsRepository(pg_conn).create(
+            OTHER, "telegram", connection_id=_connection(pg_conn, user=OTHER),
+        )["id"])
+        TeamResourceGrantsRepository(pg_conn).grant(private, "tool", tool, OTHER, OTHER)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [tool]})
+        with _patch_db(pg_conn):
+            as_owner = _states(pg_conn, agent_id)[f"tool:{tool}"]
+            as_editor = _states(pg_conn, agent_id, viewer=EDITOR)[f"tool:{tool}"]
+        assert as_owner["account"] == {"user_id": OTHER, "label": OTHER}
+        assert as_editor["state"] == "active"
+        assert as_editor["account"] == {"user_id": None, "label": None}
+
+    def test_admin_turned_writes_off(self, pg_conn):
+        from docsgpt.storage.db.repositories.app_metadata import AppMetadataRepository
+        from docsgpt.storage.db.repositories.connector_policies import allow_writes_key
+
+        cid = _connection(pg_conn, provider="github")
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "mcp_tool", connection_id=cid,
+            config={"server_url": "https://api.githubcopilot.com/mcp/", "auth_type": "bearer"},
+            actions=[{"name": "create_issue", "active": True}],
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        with _patch_db(pg_conn):
+            assert _states(pg_conn, agent_id)[f"tool:{tool}"]["writes_allowed"] is True
+            AppMetadataRepository(pg_conn).set(allow_writes_key("github"), "false")
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert state["state"] == "active"
+        assert state["writes_allowed"] is False
+        assert state["owner_credential_writes"] == []
+
+
+class TestRunsAs:
+    """Whose access a running item runs with: the owner's, or a live sponsor's."""
+
+    def test_sponsored_item_runs_as_its_sponsor(self, app, pg_conn):
+        agent_id, _ = _agent(pg_conn)
+        tool, _, _ = _editor_resources(pg_conn)
+        assert _status(_put(app, pg_conn, agent_id, EDITOR,
+                            {"tools": [tool], "confirm_sponsor": _confirm(("tool", tool))})) == 200
+        state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert state["runs_as"] == {"user_id": EDITOR, "label": EDITOR}
+
+    def test_owners_own_item_runs_as_the_owner(self, pg_conn):
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        assert _states(pg_conn, agent_id)[f"tool:{tool}"]["runs_as"] is None
+
+    def test_owner_who_gains_access_runs_it_even_with_a_sponsor_on_record(self, app, pg_conn):
+        agent_id, team_id = _agent(pg_conn)
+        source = str(SourcesRepository(pg_conn).create("editor-src", user_id=EDITOR)["id"])
+        assert _status(_put(app, pg_conn, agent_id, EDITOR,
+                            {"sources": [source], "confirm_sponsor": _confirm(("source", source))})) == 200
+        TeamResourceGrantsRepository(pg_conn).grant(team_id, "source", source, EDITOR, EDITOR)
+        if not TeamMembersRepository(pg_conn).is_member(OWNER, team_id):
+            TeamMembersRepository(pg_conn).add_member(team_id, OWNER)
+        state = _states(pg_conn, agent_id)[f"source:{source}"]
+        assert state["state"] == "active"
+        assert state["runs_as"] is None
 
 
 class TestTakeOver:

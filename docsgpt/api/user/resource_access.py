@@ -27,7 +27,7 @@ from typing import Iterable, Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.connectors.permissions import owner_credential_writes
+from docsgpt.connectors.permissions import holds_owner_credentials, owner_credential_writes
 from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -1078,18 +1078,20 @@ def _user_labels(conn: Connection, user_ids: Iterable[Optional[str]]) -> dict[st
 
 
 def _connection_state(conn: Connection, tool: dict, owner: Optional[str], policies_box: list) -> tuple:
-    """``(reason, connection, mode)`` for a tool the holder runs as ``owner``.
+    """``(reason, connection, mode, writes_allowed)`` for a tool the holder runs as ``owner``.
 
     ``connection`` (``{id, connector_key, name}``) and ``mode`` (``owner`` or
     ``member``, after any mode an admin forces) are set for a tool that has a
     connection, and ``connection`` also for one that lost it. ``reason`` is
     why the connection keeps the tool from running, else None.
+    ``writes_allowed`` is False when an admin turned off changes through the
+    tool's connector.
     """
     from docsgpt.connectors import catalog, service
     from docsgpt.connectors.resolve import connection_stop_reason, effective_credential_mode, resolve_connection
 
     if not tool.get("connection_id") and not catalog.definition_for_tool(tool.get("name") or ""):
-        return None, None, None
+        return None, None, None, True
     if not policies_box:
         policies_box.append(service.load_policies(conn))
     resolved = resolve_connection(tool, owner, conn=conn, policies=policies_box[0])
@@ -1101,11 +1103,59 @@ def _connection_state(conn: Connection, tool: dict, owner: Optional[str], polici
             "name": resolved.connector_name,
         }
         mode = effective_credential_mode(tool, policies_box[0], resolved.connector_key)
-        return reason, connection, mode
+        return reason, connection, mode, resolved.writes_allowed
     if reason is None:
-        return None, None, None
+        return None, None, None, True
     definition = catalog.definition_for_tool(tool.get("name") or "")
-    return reason, {"id": None, "connector_key": definition.key, "name": definition.name}, None
+    return reason, {"id": None, "connector_key": definition.key, "name": definition.name}, None, True
+
+
+def _tool_run_details(conn: Connection, tool: dict, owner: Optional[str], policies_box: list) -> tuple:
+    """``(reason, connection, details)`` for a tool the holder runs as ``owner``.
+
+    ``details`` holds what the share dialog says about a running tool:
+    ``credential_mode``, ``account`` (the user id whose saved credentials or
+    ``owner``-mode connection it acts with: the tool's owner), the
+    ``owner_credential_writes`` outside callers need allowlisted, and
+    ``writes_allowed``. A running tool's connection id is left out.
+    """
+    reason, connection, mode, writes_allowed = _connection_state(conn, tool, owner, policies_box)
+    if reason is None and connection is not None:
+        connection = {**connection, "id": None}
+    holds = mode != "member" and holds_owner_credentials(tool)
+    return reason, connection, {
+        "credential_mode": mode,
+        "account": tool.get("user_id") if holds else None,
+        "owner_credential_writes": owner_credential_writes(tool) if writes_allowed else [],
+        "writes_allowed": writes_allowed,
+    }
+
+
+def _people_visible_to(conn: Connection, viewer: Optional[str], owner: Optional[str], user_ids) -> set:
+    """The ``user_ids`` the reader may see named: themselves, the holder's owner, and teammates."""
+    ids = sorted({u for u in user_ids if u})
+    visible = {u for u in ids if u in (viewer, owner)}
+    rest = [u for u in ids if u not in visible]
+    if viewer and rest:
+        visible.update(row[0] for row in conn.execute(
+            text(
+                "SELECT DISTINCT theirs.user_id FROM team_members mine "
+                "JOIN team_members theirs ON theirs.team_id = mine.team_id "
+                "WHERE mine.user_id = :viewer AND theirs.user_id = ANY(:ids)"
+            ),
+            {"viewer": viewer, "ids": rest},
+        ).fetchall())
+    return visible
+
+
+# What ``resource_states`` says about a running tool's credentials, for
+# anything that isn't a running tool.
+_NO_RUN_DETAILS = {
+    "credential_mode": None,
+    "account": None,
+    "owner_credential_writes": [],
+    "writes_allowed": True,
+}
 
 
 def resource_states(
@@ -1145,13 +1195,17 @@ def resource_states(
         ``{user_id, label}`` or None: the recorded sponsor, and someone other
         than the reader who can fix it. ``connection`` (``{id,
         connector_key, name}``) names the service of a tool with a
-        connection, and of one whose connection reason stopped it.
+        connection (its id only when a connection reason stopped it).
+        ``runs_as`` (``{user_id, label}``) is the live sponsor a running item
+        runs as, None when it runs as the owner or doesn't run.
         For a running tool, ``credential_mode`` is ``owner`` or ``member``
-        when it has a connection (else None), ``account`` (``{user_id,
-        label}``) is whose account an ``owner``-mode connection acts as, and
-        ``owner_credential_writes`` names its write actions on credentials
-        its owner stored (what the API write allowlist covers); empty for
-        everything else.
+        when it has a connection (else None); ``account`` is whose saved
+        credentials or ``owner``-mode connection it acts with (the tool's
+        owner), ``{user_id: None, label: None}`` when the reader shares no
+        team with them; ``owner_credential_writes`` names its write actions
+        on those credentials (what the API write allowlist covers); and
+        ``writes_allowed`` is False when an admin turned off changes through
+        its connector. Other items get None, None, ``[]`` and True.
         ``can_confirm``: the reader may take it over on their next save;
         ``can_reconnect``: the reader owns the connection that needs signing
         in again.
@@ -1177,21 +1231,21 @@ def resource_states(
     for resource_type, rid in pairs:
         key = sponsor_key(resource_type, rid)
         info = rows.get(key) or {}
-        connection = mode = account = None
-        writes: list[str] = []
+        connection = None
+        details = dict(_NO_RUN_DETAILS)
         if resource_type == "tool":
             tool_row, access = resolve_holder_tool(conn, holder_type, holder, rid, tools_repo=tools_repo)
             reason = access.reason
             if tool_row is not None and reason is None:
-                reason, connection, mode = _connection_state(conn, tool_row, owner, policies_box)
-                # Whose account an owner-mode connection acts as: the tool's owner.
-                account = tool_row.get("user_id") if mode == "owner" else None
-                writes = owner_credential_writes(tool_row)
+                reason, connection, details = _tool_run_details(conn, tool_row, owner, policies_box)
         else:
             access = ref_access(conn, holder_type, holder, resource_type, rid)
             reason = access.reason
         sponsor = recorded.get(key)
         sponsor = sponsor if sponsor and sponsor != owner else None
+        # Who it runs as now: a live sponsor, or None for the owner (a
+        # recorded sponsor stops mattering once the owner can use it).
+        runs_as = access.principal if reason is None and access.principal != owner else None
         resource_owner = info.get("user_id")
         can_confirm = bool(
             reason in (REASON_OWNER_LOST_ACCESS, REASON_CANNOT_EDIT_HOLDER, REASON_CANNOT_EDIT_RESOURCE)
@@ -1222,9 +1276,8 @@ def resource_states(
             "sponsor": sponsor,
             "contact": contact,
             "connection": connection,
-            "credential_mode": mode,
-            "account": account,
-            "owner_credential_writes": writes,
+            "runs_as": runs_as,
+            **details,
             "can_confirm": can_confirm,
             "can_reconnect": bool(
                 reason == REASON_CONNECTION_NEEDS_RECONNECT
@@ -1234,11 +1287,24 @@ def resource_states(
                 and viewer == resource_owner
             ),
         })
-    labels = _user_labels(conn, [u for e in entries for u in (e["sponsor"], e["contact"], e["account"])])
+    labels = _user_labels(
+        conn, [u for e in entries for u in (e["sponsor"], e["contact"], e["runs_as"], e["account"])]
+    )
     for entry in entries:
-        for field_name in ("sponsor", "contact", "account"):
+        for field_name in ("sponsor", "contact", "runs_as"):
             user_id = entry[field_name]
             entry[field_name] = {"user_id": user_id, "label": labels.get(user_id) or user_id} if user_id else None
+    # Whose credentials a tool uses is named only to a reader who may see
+    # that person; anyone else learns it's someone else's.
+    named = _people_visible_to(conn, viewer, owner, [e["account"] for e in entries])
+    for entry in entries:
+        user_id = entry["account"]
+        if user_id:
+            entry["account"] = (
+                {"user_id": user_id, "label": labels.get(user_id) or user_id}
+                if user_id in named
+                else {"user_id": None, "label": None}
+            )
     return entries
 
 
