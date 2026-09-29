@@ -773,6 +773,7 @@
           "access": {
             "you": "Tu acceso",
             "person": "Acceso de {{person}}",
+            "other": "Acceso de otra persona",
             "owner": "Acceso del propietario",
             "member": "La propia cuenta de {{service}} de cada persona (API y widget: la tuya)",
             "memberNoService": "La propia cuenta de cada persona (API y widget: la tuya)",
@@ -2400,6 +2401,7 @@
         "attachNote": "Las herramientas, fuentes y prompts que añadas y que el propietario no pueda usar se ejecutan con tu acceso para todos los que usen este agente. Debes ser su propietario o poder editarlos, y se te pedirá que lo confirmes.",
         "publicLinkNote": "Este agente tiene un enlace público, así que cualquiera con el enlace puede obtener respuestas de ellos.",
         "addedBy": "Añadido por {{person}}: {{names}}",
+        "addedByOther": "Añadido por otra persona: {{names}}",
         "unknownItem": "Elemento sin nombre",
         "notAllowed": "No puedes añadir {{names}} a este agente. El propietario no puede usarlos y solo puedes compartir lo que es tuyo o puedes editar.",
         "takeOver": "Ejecutar {{name}} con mi acceso",
@@ -2414,7 +2416,9 @@
           "ownerLostAccessYou": "Ya no puedes usar {{name}}.",
           "ownerLostAccess": "El propietario del agente ya no puede usar {{name}}.",
           "sponsorCannotEditAgent": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editar este agente.",
+          "sponsorCannotEditAgentOther": "{{name}} se ejecutaba con el acceso de otra persona, que ya no puede editar este agente.",
           "sponsorCannotEditItem": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editarlo.",
+          "sponsorCannotEditItemOther": "{{name}} se ejecutaba con el acceso de otra persona, que ya no puede editarlo.",
           "connectionNeedsReconnect": "{{name}} necesita que su cuenta de {{service}} vuelva a iniciar sesión.",
           "connectionRemoved": "Se eliminó la cuenta de {{service}} que usaba {{name}}.",
           "connectorDisabled": "Un administrador desactivó {{service}}, así que {{name}} no puede ejecutarse.",
@@ -2438,9 +2442,6 @@
           "tool": "Herramienta {{id}}",
           "source": "Fuente {{id}}",
           "prompt": "Prompt {{id}}"
-        },
-        "note": {
-          "perUserAccount": "Cada persona usa su propia cuenta"
         },
         "chip": "Sin ejecutar: {{count}}"
       },

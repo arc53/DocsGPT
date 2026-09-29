@@ -142,6 +142,7 @@ describe('AgentUsesSection', () => {
           id: 't3',
           name: 'Slack tool',
           credential_mode: 'member',
+          note: 'per_user_account',
           connection: { id: 'c1', connector_key: 'slack', name: 'Slack' },
         }),
         item({
@@ -193,6 +194,7 @@ describe('AgentUsesSection', () => {
             id: 't3',
             name: 'Slack tool',
             credential_mode: 'member',
+            note: 'per_user_account',
             connection: { id: null, connector_key: 'slack', name: 'Slack' },
           }),
         ],
@@ -221,6 +223,54 @@ describe('AgentUsesSection', () => {
     await open();
     expect(rowOf('Once sponsored')?.textContent).toContain(`${K}.access.you`);
     expect(rowOf('Once sponsored')?.textContent).not.toContain('bob');
+  });
+
+  it('says someone else for a sponsor the reader does not know', async () => {
+    await render(
+      agentWith(
+        [
+          item({
+            id: 't1',
+            name: 'Runs as a stranger',
+            sponsor: { user_id: null, label: null },
+            runs_as: { user_id: null, label: null },
+          }),
+          item({
+            id: 't2',
+            name: 'Stopped',
+            state: 'stopped',
+            reason: 'sponsor_cannot_edit_agent',
+            sponsor: { user_id: null, label: null },
+          }),
+        ],
+        { access: 'editor', allowed_actions: ['edit', 'share', 'use'] },
+      ),
+    );
+    await open();
+    expect(rowOf('Runs as a stranger')?.textContent).toContain(
+      `${K}.access.other`,
+    );
+    expect(rowOf('Stopped')?.textContent).toContain(
+      'agents.form.resourceStates.reason.sponsorCannotEditAgentOther',
+    );
+  });
+
+  it('reads the per_user_account note for a tool each person connects', async () => {
+    await render(
+      agentWith([
+        item({
+          id: 't1',
+          name: 'Slack tool',
+          credential_mode: 'member',
+          note: 'per_user_account',
+          connection: { id: 'c1', connector_key: 'slack', name: 'Slack' },
+        }),
+      ]),
+    );
+    await open();
+    expect(rowOf('Slack tool')?.textContent).toContain(
+      `${K}.access.member(service=Slack)`,
+    );
   });
 
   it('names whose saved credentials a tool without a connection uses', async () => {
@@ -329,6 +379,7 @@ describe('AgentUsesSection', () => {
           id: 't1',
           name: 'Slack tool',
           credential_mode: 'member',
+          note: 'per_user_account',
           connection: { id: null, connector_key: 'slack', name: 'Slack' },
           owner_credential_writes: ['send'],
         }),
@@ -347,6 +398,7 @@ describe('AgentUsesSection', () => {
           id: 't2',
           name: 'Slack tool',
           credential_mode: 'member',
+          note: 'per_user_account',
           owner_credential_writes: ['send'],
         }),
       ]),

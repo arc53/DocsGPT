@@ -772,6 +772,7 @@
           "access": {
             "you": "你的存取權限",
             "person": "{{person}} 的存取權限",
+            "other": "其他人的存取權限",
             "owner": "擁有者的存取權限",
             "member": "每個人自己的 {{service}} 帳號（API 和小工具：你的）",
             "memberNoService": "每個人自己的帳號（API 和小工具：你的）",
@@ -2385,6 +2386,7 @@
         "attachNote": "你新增的、擁有者無法使用的工具、來源和提示詞，會以你的存取權限為所有使用此智慧代理的人執行。你必須擁有它們或能夠編輯它們，並且需要確認。",
         "publicLinkNote": "此智慧代理有公開連結，任何擁有該連結的人都可以從中取得回答。",
         "addedBy": "由 {{person}} 新增：{{names}}",
+        "addedByOther": "由其他人新增：{{names}}",
         "unknownItem": "未命名項目",
         "notAllowed": "無法將 {{names}} 新增到此智慧代理。擁有者無法使用它們，而你只能分享自己擁有或可以編輯的項目。",
         "takeOver": "以我的存取權限執行 {{name}}",
@@ -2399,7 +2401,9 @@
           "ownerLostAccessYou": "你已無法使用 {{name}}。",
           "ownerLostAccess": "代理的擁有者已無法使用 {{name}}。",
           "sponsorCannotEditAgent": "{{name}} 先前以 {{person}} 的存取權限執行，而對方已無法編輯此代理。",
+          "sponsorCannotEditAgentOther": "{{name}} 先前以其他人的存取權限執行，而對方已無法編輯此代理。",
           "sponsorCannotEditItem": "{{name}} 先前以 {{person}} 的存取權限執行，而對方已無法編輯它。",
+          "sponsorCannotEditItemOther": "{{name}} 先前以其他人的存取權限執行，而對方已無法編輯它。",
           "connectionNeedsReconnect": "{{name}} 的 {{service}} 帳戶需要重新登入。",
           "connectionRemoved": "{{name}} 使用的 {{service}} 帳戶已被移除。",
           "connectorDisabled": "管理員已關閉 {{service}}，因此 {{name}} 無法執行。",
@@ -2423,9 +2427,6 @@
           "tool": "工具 {{id}}",
           "source": "來源 {{id}}",
           "prompt": "提示詞 {{id}}"
-        },
-        "note": {
-          "perUserAccount": "每個人使用自己的帳戶"
         },
         "chip": "未在執行：{{count}}"
       },

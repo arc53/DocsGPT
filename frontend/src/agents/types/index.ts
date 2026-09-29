@@ -19,9 +19,10 @@ export type ResourceSponsor = {
   id: string;
   /** The item's name, looked up whoever owns it. */
   name?: string | null;
-  user_id: string;
+  /** Null, with `label`, for someone the reader doesn't know. */
+  user_id: string | null;
   /** The person's email when on file, else their user id. */
-  label: string;
+  label: string | null;
   state?: 'active' | 'inactive';
   /** Null while it runs; else whether the person lost the agent or the item. */
   reason?: ResourceSponsorReason | null;
@@ -43,8 +44,11 @@ export type ResourceStateReason =
 /** Something to know about an item that runs (`ResourceState.note`). */
 export type ResourceStateNote = 'per_user_account';
 
-/** A person the page names: their email when on file, else their user id. */
-export type ResourcePerson = { user_id: string; label: string };
+/**
+ * A person the page names: their email when on file, else their user id.
+ * Both are null for someone the reader doesn't know.
+ */
+export type ResourcePerson = { user_id: string | null; label: string | null };
 
 /**
  * Whether an attached tool, source or prompt runs (`resource_states` on the
@@ -64,7 +68,7 @@ export type ResourceState = {
   note?: ResourceStateNote | null;
   /** Who it ran with the access of, when someone else added it. */
   sponsor?: ResourcePerson | null;
-  /** Someone other than the reader who can fix it, when the reader may know them. */
+  /** Someone other than the reader who can fix it, when the reader knows them. */
   contact?: ResourcePerson | null;
   /** Who can fix it (`resource_owner`), named or not. */
   contact_role?: 'resource_owner' | null;
@@ -86,7 +90,7 @@ export type ResourceState = {
    * Whose saved credentials or owner-mode connection a running tool uses
    * (the tool's owner); both null when the reader may not see who.
    */
-  account?: { user_id: string | null; label: string | null } | null;
+  account?: ResourcePerson | null;
   /** Its write actions on credentials its owner stored (the API write allowlist's). */
   owner_credential_writes?: string[];
   /** False when an admin turned off changes through its connector. */

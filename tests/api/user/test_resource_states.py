@@ -874,6 +874,112 @@ class TestContact:
         assert state["name"] is None
 
 
+class TestNamingPeople:
+    """One rule names every person on the page: only people the reader knows."""
+
+    def test_contact_the_reader_shares_no_team_with_is_not_named(self, pg_conn):
+        """Seeing the item isn't enough: its owner left every team the reader is in."""
+        agent_id, team_id = _agent(pg_conn)
+        source = _team_source(pg_conn, team_id)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"extra_source_ids": [source]})
+        TeamResourceGrantsRepository(pg_conn).revoke(team_id, "source", source)
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team_id, "source", source, OTHER, OTHER, target_user_id=EDITOR
+        )
+        TeamMembersRepository(pg_conn).remove_member(team_id, OTHER)
+        state = _states(pg_conn, agent_id, viewer=EDITOR)[f"source:{source}"]
+        assert state["reason"] == REASON_OWNER_LOST_ACCESS
+        assert state["contact"] is None
+        assert state["contact_role"] == "resource_owner"
+
+    def test_account_of_a_teammate_whose_tool_the_reader_cannot_see_is_not_named(self, pg_conn):
+        agent_id, team_id = _agent(pg_conn)
+        TeamMembersRepository(pg_conn).add_member(team_id, OWNER)
+        TeamMembersRepository(pg_conn).add_member(team_id, OTHER)
+        tool = str(UserToolsRepository(pg_conn).create(
+            OTHER, "telegram", connection_id=_connection(pg_conn, user=OTHER),
+        )["id"])
+        TeamResourceGrantsRepository(pg_conn).grant(team_id, "tool", tool, OTHER, OTHER, target_user_id=OWNER)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [tool]})
+        with _patch_db(pg_conn):
+            as_owner = _states(pg_conn, agent_id)[f"tool:{tool}"]
+            as_editor = _states(pg_conn, agent_id, viewer=EDITOR)[f"tool:{tool}"]
+        assert as_owner["account"] == {"user_id": OTHER, "label": OTHER}
+        assert as_editor["account"] == {"user_id": None, "label": None}
+
+    def test_a_sponsor_from_another_team_is_named_to_the_owner_only(self, app, pg_conn):
+        from docsgpt.api.user.resource_access import sponsor_details
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        second = "sp-editor-2"
+        agent_id, _ = _agent(pg_conn)
+        other_team = str(TeamsRepository(pg_conn).create("T2", f"t2-{uuid.uuid4().hex[:8]}", OWNER)["id"])
+        TeamMembersRepository(pg_conn).add_member(other_team, second)
+        TeamResourceGrantsRepository(pg_conn).grant(
+            other_team, "agent", agent_id, OWNER, OWNER, access_level="editor", target_user_id=second
+        )
+        tool = str(UserToolsRepository(pg_conn).create(second, "api_tool")["id"])
+        assert _status(_put(app, pg_conn, agent_id, second,
+                            {"tools": [tool], "confirm_sponsor": _confirm(("tool", tool))})) == 200
+        agent = _row(pg_conn, agent_id)
+        as_owner = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        as_editor = _states(pg_conn, agent_id, viewer=EDITOR)[f"tool:{tool}"]
+        assert as_owner["runs_as"] == {"user_id": second, "label": second}
+        assert as_owner["sponsor"] == {"user_id": second, "label": second}
+        assert as_editor["runs_as"] == {"user_id": None, "label": None}
+        assert as_editor["sponsor"] == {"user_id": None, "label": None}
+        [owner_detail] = sponsor_details(pg_conn, "agent", agent, viewer=OWNER)
+        [editor_detail] = sponsor_details(pg_conn, "agent", agent, viewer=EDITOR)
+        assert (owner_detail["user_id"], owner_detail["label"]) == (second, second)
+        assert (editor_detail["user_id"], editor_detail["label"]) == (None, None)
+        assert editor_detail["active"] is True
+
+
+class TestRemovedConnectionMarker:
+    def test_removed_connection_without_a_catalog_key_is_still_marked(self, pg_conn):
+        from docsgpt.connectors import service
+
+        cid = str(pg_conn.execute(
+            text(
+                "INSERT INTO connector_sessions (user_id, provider, auth_kind, status) "
+                "VALUES (:u, 'legacy-service', 'api_key', 'connected') RETURNING id"
+            ),
+            {"u": OWNER},
+        ).scalar())
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, "telegram", connection_id=cid)["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        row = pg_conn.execute(text("SELECT * FROM connector_sessions WHERE id = CAST(:id AS uuid)"),
+                              {"id": cid}).mappings().one()
+        service.remove_connection(pg_conn, dict(row), tools="keep")
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert (state["state"], state["reason"]) == ("stopped", REASON_CONNECTION_REMOVED)
+        assert state["connection"]["name"] == "Telegram"
+
+    def test_kept_tool_given_its_own_credentials_runs(self, pg_conn):
+        from docsgpt.security.encryption import encrypt_credentials
+
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, "telegram", config={
+            "removed_connection": "telegram",
+            "encrypted_credentials": encrypt_credentials({"token": "t"}, OWNER),
+        })["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert (state["state"], state["reason"]) == ("active", None)
+
+    def test_a_stopped_tool_says_nothing_about_how_it_runs(self, pg_conn):
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "telegram", connection_id=_connection(pg_conn, status="reconnect_needed"),
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert state["reason"] == REASON_CONNECTION_NEEDS_RECONNECT
+        assert (state["note"], state["credential_mode"], state["account"]) == (None, None, None)
+        assert (state["owner_credential_writes"], state["writes_allowed"]) == ([], True)
+
+
 # ---------------------------------------------------------------------------
 # Reads never fail on run state
 # ---------------------------------------------------------------------------

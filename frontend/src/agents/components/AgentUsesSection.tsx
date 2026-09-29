@@ -77,6 +77,9 @@ export default function AgentUsesSection({
   // Without a user id (authentication off) the one local user is everyone.
   const isYou = (userId: string) =>
     readerId ? userId === readerId : ownerReads;
+  // A tool each person connects runs on their own account (the notice's
+  // note), except for API and widget users.
+  const perUser = (item: ResourceState) => item.note === 'per_user_account';
   const allowlist = agent.config?.api_write_allowlist ?? [];
   const nameOf = (item: ResourceState) =>
     item.name || t('agents.form.sponsors.unknownItem');
@@ -86,7 +89,7 @@ export default function AgentUsesSection({
     const service = item.connection?.name;
     const suffix = service ? '' : 'NoService';
     const named = service ? { ...plain, service } : plain;
-    if (item.credential_mode === 'member')
+    if (perUser(item))
       // API and widget callers run the agent as its owner, so they use the
       // owner's own account.
       return t(
@@ -111,18 +114,18 @@ export default function AgentUsesSection({
   const accessLabel = (item: ResourceState): string => {
     const credentials = credentialsLabel(item);
     if (credentials) return credentials;
-    if (item.runs_as)
-      return isYou(item.runs_as.user_id)
+    if (item.runs_as) {
+      const { user_id: userId, label } = item.runs_as;
+      if (!userId) return t(`${K}.access.other`);
+      return isYou(userId)
         ? t(`${K}.access.you`)
-        : t(`${K}.access.person`, {
-            ...plain,
-            person: item.runs_as.label || item.runs_as.user_id,
-          });
+        : t(`${K}.access.person`, { ...plain, person: label || userId });
+    }
     return ownerReads ? t(`${K}.access.you`) : t(`${K}.access.owner`);
   };
 
   const stoppedText = (item: ResourceState) =>
-    t(reasonKey(item.reason, ownerReads), {
+    t(reasonKey(item.reason, ownerReads, Boolean(item.sponsor?.user_id)), {
       ...plain,
       name: nameOf(item),
       service:
@@ -154,12 +157,8 @@ export default function AgentUsesSection({
       item.writes_allowed !== false &&
       blockedWrites(item, allowlist).length > 0,
   );
-  const blockedMember = blocked.some(
-    (item) => item.credential_mode === 'member',
-  );
-  const blockedOwned = blocked.some(
-    (item) => item.credential_mode !== 'member',
-  );
+  const blockedMember = blocked.some(perUser);
+  const blockedOwned = blocked.some((item) => !perUser(item));
   const editor = ownerReads ? '' : 'Editor';
   const writesNote = blockedOwned
     ? [

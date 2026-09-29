@@ -11,7 +11,6 @@ import type {
   Agent,
   ResourceSponsor,
   ResourceState,
-  ResourceStateNote,
   ResourceStateReason,
 } from '../types';
 
@@ -39,11 +38,16 @@ type ResourceStatusNoticeProps = {
   showAttachNote?: boolean;
 };
 
-/** The message key that says why an item stopped. */
+/**
+ * The message key that says why an item stopped. `sponsorNamed` is false
+ * when the read doesn't name the sponsor, who is then "someone else".
+ */
 export function reasonKey(
   reason: ResourceStateReason | null,
   ownerReads: boolean,
+  sponsorNamed = true,
 ) {
+  const other = sponsorNamed ? '' : 'Other';
   switch (reason) {
     case 'deleted':
       return 'agents.form.resourceStates.reason.deleted';
@@ -52,9 +56,9 @@ export function reasonKey(
         ? 'agents.form.resourceStates.reason.ownerLostAccessYou'
         : 'agents.form.resourceStates.reason.ownerLostAccess';
     case 'sponsor_cannot_edit_agent':
-      return 'agents.form.resourceStates.reason.sponsorCannotEditAgent';
+      return `agents.form.resourceStates.reason.sponsorCannotEditAgent${other}`;
     case 'sponsor_cannot_edit_resource':
-      return 'agents.form.resourceStates.reason.sponsorCannotEditItem';
+      return `agents.form.resourceStates.reason.sponsorCannotEditItem${other}`;
     case 'connection_needs_reconnect':
       return 'agents.form.resourceStates.reason.connectionNeedsReconnect';
     case 'connection_removed':
@@ -64,13 +68,6 @@ export function reasonKey(
     default:
       return 'agents.form.resourceStates.reason.unknown';
   }
-}
-
-/** The words for a running item's `note`, or null when it has none. */
-export function noteKey(note: ResourceStateNote | null | undefined) {
-  return note === 'per_user_account'
-    ? 'agents.form.resourceStates.note.perUserAccount'
-    : null;
 }
 
 /** A name for an item the reader may not see: its kind and a short id. */
@@ -106,11 +103,14 @@ function askKey(item: ResourceState): string | null {
   return null;
 }
 
-/** Items grouped by the person who added them, in first-seen order. */
+/**
+ * Items grouped by the person who added them, in first-seen order; people
+ * the reader doesn't know form one group.
+ */
 function groupByPerson(sponsors: ResourceSponsor[]) {
   const groups = new Map<string, ResourceSponsor[]>();
   for (const sponsor of sponsors) {
-    const key = sponsor.label || sponsor.user_id;
+    const key = sponsor.label || sponsor.user_id || '';
     groups.set(key, [...(groups.get(key) ?? []), sponsor]);
   }
   return Array.from(groups.values());
@@ -170,11 +170,16 @@ export default function ResourceStatusNotice({
           <AlertDescription>
             {running.map((items) => (
               <p key={items[0].key || `${items[0].type}:${items[0].id}`}>
-                {t('agents.form.sponsors.addedBy', {
-                  ...plain,
-                  person: items[0].label || items[0].user_id,
-                  names: listFormat.format(items.map(resolveName)),
-                })}
+                {t(
+                  items[0].user_id
+                    ? 'agents.form.sponsors.addedBy'
+                    : 'agents.form.sponsors.addedByOther',
+                  {
+                    ...plain,
+                    person: items[0].label || items[0].user_id,
+                    names: listFormat.format(items.map(resolveName)),
+                  },
+                )}
               </p>
             ))}
           </AlertDescription>
@@ -196,12 +201,19 @@ export default function ResourceStatusNotice({
                 return (
                   <li key={item.key} className="flex flex-col gap-1.5">
                     <p>
-                      {t(reasonKey(item.reason, ownerReads), {
-                        ...plain,
-                        name,
-                        service,
-                        person: item.sponsor?.label || item.sponsor?.user_id,
-                      })}
+                      {t(
+                        reasonKey(
+                          item.reason,
+                          ownerReads,
+                          Boolean(item.sponsor?.user_id),
+                        ),
+                        {
+                          ...plain,
+                          name,
+                          service,
+                          person: item.sponsor?.label || item.sponsor?.user_id,
+                        },
+                      )}
                       {ask
                         ? ` ${t(ask, { ...plain, person: item.contact?.label })}`
                         : ''}

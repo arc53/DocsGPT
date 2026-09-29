@@ -772,6 +772,7 @@
           "access": {
             "you": "あなたのアクセス",
             "person": "{{person}} のアクセス",
+            "other": "他の人のアクセス",
             "owner": "オーナーのアクセス",
             "member": "各自の {{service}} アカウント（API とウィジェット：あなたのもの）",
             "memberNoService": "各自のアカウント（API とウィジェット：あなたのもの）",
@@ -2385,6 +2386,7 @@
         "attachNote": "オーナーが使用できないツール、ソース、プロンプトを追加すると、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。自分が所有しているか編集できるものに限られ、追加時に確認を求められます。",
         "publicLinkNote": "このエージェントには公開リンクがあるため、リンクを知っている人は誰でもそれらから回答を得られます。",
         "addedBy": "{{person}} が追加: {{names}}",
+        "addedByOther": "他の人が追加: {{names}}",
         "unknownItem": "名前のない項目",
         "notAllowed": "{{names}} をこのエージェントに追加できません。オーナーはそれらを使用できず、共有できるのは自分が所有しているか編集できるものだけです。",
         "takeOver": "{{name}} を自分のアクセス権で実行",
@@ -2399,7 +2401,9 @@
           "ownerLostAccessYou": "{{name}} を使用できなくなりました。",
           "ownerLostAccess": "エージェントの所有者は {{name}} を使用できなくなりました。",
           "sponsorCannotEditAgent": "{{name}} は {{person}} のアクセス権で実行されていましたが、この人はこのエージェントを編集できなくなりました。",
+          "sponsorCannotEditAgentOther": "{{name}} は他の人のアクセス権で実行されていましたが、この人はこのエージェントを編集できなくなりました。",
           "sponsorCannotEditItem": "{{name}} は {{person}} のアクセス権で実行されていましたが、この人はそれを編集できなくなりました。",
+          "sponsorCannotEditItemOther": "{{name}} は他の人のアクセス権で実行されていましたが、この人はそれを編集できなくなりました。",
           "connectionNeedsReconnect": "{{name}} の {{service}} アカウントに再度サインインする必要があります。",
           "connectionRemoved": "{{name}} が使っていた {{service}} アカウントは削除されました。",
           "connectorDisabled": "管理者が {{service}} をオフにしたため、{{name}} は実行できません。",
@@ -2423,9 +2427,6 @@
           "tool": "ツール {{id}}",
           "source": "ソース {{id}}",
           "prompt": "プロンプト {{id}}"
-        },
-        "note": {
-          "perUserAccount": "各自が自分のアカウントを使用します"
         },
         "chip": "実行されていません: {{count}}"
       },

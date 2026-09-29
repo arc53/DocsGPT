@@ -779,6 +779,7 @@
           "access": {
             "you": "Your access",
             "person": "{{person}}'s access",
+            "other": "Someone else's access",
             "owner": "The owner's access",
             "member": "Each person's own {{service}} account (API and widget: yours)",
             "memberNoService": "Each person's own account (API and widget: yours)",
@@ -2418,6 +2419,7 @@
         "attachNote": "Tools, sources and prompts you add that the owner can't use run with your access for everyone who uses this agent. You need to own them or be able to edit them, and you'll be asked to confirm.",
         "publicLinkNote": "This agent has a public link, so anyone with the link can get answers from them.",
         "addedBy": "Added by {{person}}: {{names}}",
+        "addedByOther": "Added by someone else: {{names}}",
         "unknownItem": "Unnamed item",
         "notAllowed": "You can't add {{names}} to this agent. The owner can't use them, and you can only share what you own or can edit.",
         "takeOver": "Run {{name}} with my access",
@@ -2432,7 +2434,9 @@
           "ownerLostAccessYou": "You can no longer use {{name}}.",
           "ownerLostAccess": "The agent's owner can no longer use {{name}}.",
           "sponsorCannotEditAgent": "{{name}} ran with {{person}}'s access, and they can no longer edit this agent.",
+          "sponsorCannotEditAgentOther": "{{name}} ran with someone else's access, and they can no longer edit this agent.",
           "sponsorCannotEditItem": "{{name}} ran with {{person}}'s access, and they can no longer edit it.",
+          "sponsorCannotEditItemOther": "{{name}} ran with someone else's access, and they can no longer edit it.",
           "connectionNeedsReconnect": "{{name}} needs its {{service}} account signed in again.",
           "connectionRemoved": "The {{service}} account {{name}} used was removed.",
           "connectorDisabled": "An admin turned off {{service}}, so {{name}} can't run.",
@@ -2456,9 +2460,6 @@
           "tool": "Tool {{id}}",
           "source": "Source {{id}}",
           "prompt": "Prompt {{id}}"
-        },
-        "note": {
-          "perUserAccount": "Each person uses their own account"
         },
         "chip": "Not running: {{count}}"
       },

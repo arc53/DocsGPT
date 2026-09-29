@@ -6,7 +6,6 @@ import { initReactI18next } from 'react-i18next';
 
 import type { Agent, ResourceSponsor, ResourceState } from '../types';
 import ResourceStatusNotice, {
-  noteKey,
   unnamedResourceLabel,
 } from './ResourceStatusNotice';
 
@@ -202,6 +201,38 @@ describe('ResourceStatusNotice', () => {
     );
   });
 
+  it('says someone else for a sponsor the reader does not know', async () => {
+    await render(
+      {
+        ...editorAgent,
+        resource_sponsors: [
+          sponsor({ id: 't1', user_id: null, label: null }),
+          sponsor({ id: 't2', user_id: null, label: null }),
+        ],
+      },
+      [
+        stoppedItem({
+          reason: 'sponsor_cannot_edit_resource',
+          sponsor: { user_id: null, label: null },
+        }),
+        stoppedItem({
+          key: 'tool:t3',
+          id: 't3',
+          reason: 'sponsor_cannot_edit_agent',
+          sponsor: { user_id: 'bob', label: 'bob@example.com' },
+        }),
+      ],
+    );
+    const text = container.textContent ?? '';
+    expect(text).toContain('agents.form.sponsors.addedByOther');
+    expect(text).not.toContain('agents.form.sponsors.addedBy.');
+    expect(text).toContain(
+      'agents.form.resourceStates.reason.sponsorCannotEditItemOther',
+    );
+    // A sponsor the reader knows is named.
+    expect(text).toMatch(/reason\.sponsorCannotEditAgent(?!Other)/);
+  });
+
   it('tells the owner they lost access, and an editor that the owner did', async () => {
     const item = stoppedItem({ reason: 'owner_lost_access' });
     await render(baseAgent, [item]);
@@ -278,13 +309,6 @@ describe('ResourceStatusNotice', () => {
         id: '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0',
       }),
     ).toBe('agents.form.resourceStates.unnamed.source|0f1e2d3c');
-  });
-
-  it("has words for a tool on each person's own account", () => {
-    expect(noteKey('per_user_account')).toBe(
-      'agents.form.resourceStates.note.perUserAccount',
-    );
-    expect(noteKey(null)).toBeNull();
   });
 
   it('notes that a stopped prompt falls back to the default', async () => {
