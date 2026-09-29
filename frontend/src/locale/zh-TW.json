@@ -1804,7 +1804,8 @@
       },
       "connectData": {
         "title": "連接你的資料",
-        "description": "同步 Google Drive、SharePoint、Confluence 等"
+        "description": "同步 {{services}}",
+        "more": "更多服務"
       }
     },
     "createAPIKey": {

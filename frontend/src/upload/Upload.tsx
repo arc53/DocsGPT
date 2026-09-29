@@ -29,6 +29,8 @@ import { Separator } from '../components/ui/separator';
 import { OptionCard } from '../components/ui/option-card';
 import ConnectorSetupNotice from '../connectors/ConnectorSetupNotice';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
+import { connectorName } from '../connectors/i18n';
+import { intlLocale } from '../utils/dateTimeUtils';
 import {
   loadConnectors,
   selectConnections,
@@ -474,7 +476,7 @@ function Upload({
   }));
   const [nameTouched, setNameTouched] = useState(false);
 
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const store = useStore<RootState>();
 
@@ -1152,10 +1154,27 @@ function Upload({
   };
 
   // Services that sync into Knowledge are connected on the Connectors page,
-  // so the picker offers one way there instead of a tile per service.
-  const offersConnect =
-    connectorsEnabled &&
-    connectorCatalog.some((c) => c.capabilities?.includes('sync'));
+  // so the picker offers one way there instead of a tile per service, named
+  // after the first few this instance can sync.
+  const syncServices = connectorsEnabled
+    ? connectorCatalog
+        .filter((c) => c.available && c.capabilities?.includes('sync'))
+        .map((c) => connectorName(t, c))
+    : [];
+  const SERVICES_NAMED = 3;
+  const connectDescription = t('modals.uploadDoc.connectData.description', {
+    services: new Intl.ListFormat(intlLocale(i18n.language), {
+      type: 'conjunction',
+    }).format(
+      syncServices.length > SERVICES_NAMED
+        ? [
+            ...syncServices.slice(0, SERVICES_NAMED),
+            t('modals.uploadDoc.connectData.more'),
+          ]
+        : syncServices,
+    ),
+    interpolation: { escapeValue: false },
+  });
 
   const renderIngestorSelection = () => {
     const options = UPLOAD_AND_WEB_INGESTORS.map((type) =>
@@ -1173,11 +1192,12 @@ function Upload({
             onClick={() => handleIngestorTypeChange(option.value)}
           />
         ))}
-        {offersConnect && (
+        {syncServices.length > 0 && (
           <OptionCard
+            className="sm:col-span-2 md:col-span-3"
             icon={<Plug />}
             title={t('modals.uploadDoc.connectData.title')}
-            description={t('modals.uploadDoc.connectData.description')}
+            description={connectDescription}
             onClick={() => {
               handleClose();
               navigate('/settings/connectors?capability=sync');

@@ -1815,7 +1815,8 @@
       },
       "connectData": {
         "title": "Conecta tus datos",
-        "description": "Sincroniza Google Drive, SharePoint, Confluence y más"
+        "description": "Sincroniza {{services}}",
+        "more": "más"
       }
     },
     "createAPIKey": {

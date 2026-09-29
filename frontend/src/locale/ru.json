@@ -1899,7 +1899,8 @@
       },
       "connectData": {
         "title": "Подключите свои данные",
-        "description": "Синхронизируйте Google Drive, SharePoint, Confluence и другие сервисы"
+        "description": "Синхронизируйте {{services}}",
+        "more": "другие сервисы"
       }
     },
     "createAPIKey": {

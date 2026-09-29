@@ -1804,7 +1804,8 @@
       },
       "connectData": {
         "title": "データを接続",
-        "description": "Google Drive、SharePoint、Confluence などを同期"
+        "description": "{{services}} を同期",
+        "more": "その他"
       }
     },
     "createAPIKey": {

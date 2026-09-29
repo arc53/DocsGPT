@@ -2,7 +2,11 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { services?: string }) =>
+      opts?.services ? `${key}(${opts.services})` : key,
+    i18n: { language: 'en' },
+  }),
 }));
 
 const connectorsState = vi.hoisted(() => ({
@@ -136,6 +140,7 @@ describe('Upload source-type tiles', () => {
 
   const DRIVE = {
     key: 'google_drive',
+    name: 'Google Drive',
     icon: 'drive',
     sync_ingestor: 'google_drive',
     capabilities: ['sync'],
@@ -168,8 +173,27 @@ describe('Upload source-type tiles', () => {
         false,
       );
     expect(labels.at(-1)).toContain('modals.uploadDoc.connectData.title');
-    expect(labels.at(-1)).toContain('modals.uploadDoc.connectData.description');
+    // Named after what this instance can sync.
+    expect(labels.at(-1)).toContain(
+      'modals.uploadDoc.connectData.description(Google Drive)',
+    );
     expect(document.body.querySelector('h3')).toBeNull();
+    connectorsState.catalog = [];
+  });
+
+  it('names three syncing services, then the rest as more', async () => {
+    connectorsState.catalog = [
+      DRIVE,
+      { ...DRIVE, key: 'share_point', name: 'SharePoint' },
+      { ...DRIVE, key: 'confluence', name: 'Confluence' },
+      { ...DRIVE, key: 's3', name: 'Amazon S3' },
+      { ...DRIVE, key: 'off', name: 'Needs setup', available: false },
+      { key: 'telegram', name: 'Telegram', capabilities: ['write'] },
+    ];
+    await render();
+    expect(connectTile()!.textContent).toContain(
+      'modals.uploadDoc.connectData.description(Google Drive, SharePoint, Confluence, and modals.uploadDoc.connectData.more)',
+    );
     connectorsState.catalog = [];
   });
 
@@ -190,6 +214,7 @@ describe('Upload source-type tiles', () => {
   it('offers no Connect tile when no service can sync', async () => {
     connectorsState.catalog = [
       { key: 'telegram', capabilities: ['write'], available: true },
+      { ...DRIVE, available: false },
     ];
     await render();
     expect(connectTile()).toBeUndefined();
