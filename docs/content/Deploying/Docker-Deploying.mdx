@@ -333,7 +333,7 @@ There are two Ollama optional files:
 
     `ollama` is the service the overlay adds, reachable from the DocsGPT containers by that name. `LLM_NAME` is the model you pull in step 3; it is required, and several models can be listed separated by commas. See [Local Inference](/Models/local-inference) for the other settings.
 
-    The overlays only fit the Compose files in the checkout. With the standalone Compose file or `docsgpt up`, run Ollama on the host instead and use `OPENAI_BASE_URL=http://host.docker.internal:11434/v1` (on Linux, also make Ollama listen beyond localhost with `OLLAMA_HOST=0.0.0.0`).
+    The overlays only fit the Compose files in the checkout. With the standalone Compose file or `docsgpt up` (Docker mode), run Ollama on the host instead and use `OPENAI_BASE_URL=http://host.docker.internal:11434/v1` (on Linux, also make Ollama listen beyond localhost with `OLLAMA_HOST=0.0.0.0`). With `docsgpt up --native`, DocsGPT runs on the host itself, so use `OPENAI_BASE_URL=http://localhost:11434/v1`.
 
 2.  **Launch DocsGPT with Ollama Docker Compose:**
 

@@ -37,7 +37,7 @@ LLM_NAME=local-model
 API_KEY=None
 ```
 
-`--jinja` lets the server handle tool calls, which agents with tools need.
+`--jinja` lets the server handle tool calls, which agents with tools need; recent `llama-server` builds turn it on by default.
 
 ## Supported Local Inference Engines (OpenAI API Compatible)
 
@@ -86,4 +86,9 @@ You can configure multiple API keys simultaneously (e.g., both `OPENAI_API_KEY` 
 
 ## Adding Support for Other Local Engines
 
-While DocsGPT currently focuses on OpenAI API compatible local engines, you can extend its capabilities to support other local inference solutions.  To do this, navigate to the `docsgpt/llm` directory in the DocsGPT repository.  Examine the existing Python files for examples of LLM integrations. You can create a new module for your desired local engine, and then register it in the `llm_creator.py` file within the same directory. This allows for custom integration with a wide range of local LLM servers beyond those listed above.
+While DocsGPT currently focuses on OpenAI API compatible local engines, you can extend it to support other local inference solutions. An integration has two parts:
+
+1. An LLM class in `docsgpt/llm/` (a subclass of `BaseLLM` in `docsgpt/llm/base.py`) that calls your engine. The existing modules, such as `openai.py` and `anthropic.py`, are examples.
+2. A provider plugin in `docsgpt/llm/providers/` (a subclass of `Provider` in `base.py`) that names the provider, points at the LLM class and says how to find its API key. Add an instance to `ALL_PROVIDERS` in `docsgpt/llm/providers/__init__.py`, add its name to `ModelProvider` in `docsgpt/core/model_settings.py`, and list its models in a YAML under `docsgpt/core/models/` or in `MODELS_CONFIG_DIR`.
+
+For any engine with an OpenAI-compatible API, no code is needed: use `OPENAI_BASE_URL` as above, or an `openai_compatible` model YAML.
