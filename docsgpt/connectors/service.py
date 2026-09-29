@@ -1442,8 +1442,15 @@ def remove_connection(conn, row: dict, *, sources: str = "keep", tools: str = "d
     except CredentialDecryptionError:
         pass
     if tools == "delete":
+        # Team grants go with the tools (delete trigger) and chat preferences
+        # by FK cascade; the owner's sharing switches have no FK.
         conn.execute(
-            text("DELETE FROM user_tools WHERE connection_id = CAST(:id AS uuid) AND user_id = :user_id"),
+            text(
+                "WITH gone AS (DELETE FROM user_tools WHERE connection_id = CAST(:id AS uuid) "
+                "AND user_id = :user_id RETURNING id) "
+                "DELETE FROM resource_share_settings WHERE resource_type = 'tool' "
+                "AND resource_id IN (SELECT id FROM gone)"
+            ),
             {"id": connection_id, "user_id": row["user_id"]},
         )
     else:

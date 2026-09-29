@@ -469,6 +469,28 @@ class TestRemove:
         ).one()
         assert kept.connection_id is None and kept.sync_frequency == "never"
 
+    def test_deleted_tools_leave_no_sharing_rows(self, pg_conn):
+        from docsgpt.api.user.resource_access import set_settings
+        from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
+
+        cid = _connection(pg_conn, provider="telegram", auth_kind="api_key", secrets={"credentials": {"token": "t"}})
+        tool_id = str(pg_conn.execute(
+            text(
+                "INSERT INTO user_tools (user_id, name, connection_id) "
+                "VALUES ('alice', 'telegram', CAST(:c AS uuid)) RETURNING id"
+            ),
+            {"c": cid},
+        ).scalar())
+        set_settings(pg_conn, "tool", tool_id, {"editors_can_share": True}, "alice")
+        UserToolPreferencesRepository(pg_conn).set_in_chat("bob", tool_id, True)
+        with patch("docsgpt.connectors.service.revoke_at_provider"):
+            service.remove_connection(pg_conn, _row(pg_conn, cid))
+        for table, column in (("resource_share_settings", "resource_id"), ("user_tool_preferences", "tool_id")):
+            count = pg_conn.execute(
+                text(f"SELECT count(*) FROM {table} WHERE {column} = CAST(:i AS uuid)"), {"i": tool_id}
+            ).scalar()
+            assert count == 0, table
+
     def test_delete_sources_returns_them(self, pg_conn):
         cid = _connection(pg_conn, secrets={})
         source = _source(pg_conn, cid)
