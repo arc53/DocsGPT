@@ -9,6 +9,7 @@ on the action itself: ``active`` off means "Off", ``require_approval`` means
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 ACCESS_READ = "read"
@@ -19,7 +20,25 @@ PERMISSION_ASK = "ask"
 PERMISSION_OFF = "off"
 PERMISSIONS = (PERMISSION_ALWAYS, PERMISSION_ASK, PERMISSION_OFF)
 
-_READ_WORDS = ("search", "query", "find", "list", "get", "read", "fetch", "lookup", "describe", "retrieve")
+_READ_WORDS = frozenset(
+    ("search", "query", "find", "list", "get", "read", "fetch", "lookup", "describe", "retrieve")
+)
+# A name holding any of these is a write even when it also holds a read word
+# (``get_or_create_page``, ``search_and_replace``).
+_WRITE_WORDS = frozenset((
+    "create", "update", "delete", "remove", "set", "send", "post", "put", "patch", "write", "add", "insert",
+    "upsert", "append", "replace", "edit", "modify", "rename", "move", "copy", "upload", "save", "submit",
+    "publish", "share", "invite", "assign", "archive", "restore", "reset", "clear", "purge", "drop", "execute",
+    "run", "invoke", "trigger", "start", "stop", "cancel", "close", "merge", "approve", "reject", "reply",
+    "comment", "mark", "enable", "disable", "grant", "revoke", "transfer", "import", "sync", "lock", "unlock",
+))
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+_NON_WORD = re.compile(r"[^A-Za-z0-9]+")
+
+
+def _name_words(name: str) -> set[str]:
+    """The lower-cased words of an action name (``snake``, ``kebab``, ``camelCase``)."""
+    return {word.lower() for word in _NON_WORD.split(_CAMEL_BOUNDARY.sub(" ", name)) if word}
 
 
 def action_access(tool_name: Optional[str], action: dict) -> str:
@@ -27,7 +46,8 @@ def action_access(tool_name: Optional[str], action: dict) -> str:
 
     Order of evidence: an explicit ``access`` on the action metadata, MCP tool
     annotations (``readOnlyHint`` / ``destructiveHint``), the HTTP method of an
-    API tool action, then the action's name.
+    API tool action, then the action's name: a read only when one of its
+    words is a read verb and none is a write verb.
 
     Args:
         tool_name: The ``user_tools`` name the action belongs to.
@@ -48,8 +68,8 @@ def action_access(tool_name: Optional[str], action: dict) -> str:
     method = (action.get("method") or "").upper()
     if tool_name == "api_tool" and method:
         return ACCESS_READ if method in ("GET", "HEAD", "OPTIONS") else ACCESS_WRITE
-    name = (action.get("name") or "").lower()
-    return ACCESS_READ if any(word in name for word in _READ_WORDS) else ACCESS_WRITE
+    words = _name_words(action.get("name") or "")
+    return ACCESS_READ if words & _READ_WORDS and not words & _WRITE_WORDS else ACCESS_WRITE
 
 
 def action_permission(action: dict) -> str:

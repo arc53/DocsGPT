@@ -26,6 +26,23 @@ class TestActionAccess:
     def test_name_heuristic(self, name, expected):
         assert p.action_access("mcp_tool", {"name": name}) == expected
 
+    @pytest.mark.parametrize(
+        "name",
+        ["update_spreadsheet", "create_thread", "set_budget", "update_target", "enlist_member", "threadReply"],
+    )
+    def test_read_word_inside_another_word_is_not_a_read(self, name):
+        assert p.action_access("mcp_tool", {"name": name}) == "write"
+
+    @pytest.mark.parametrize(
+        "name", ["get_or_create_page", "search_and_replace", "list-and-delete", "findAndUpdateRecord"]
+    )
+    def test_a_write_verb_wins_over_a_read_verb(self, name):
+        assert p.action_access("mcp_tool", {"name": name}) == "write"
+
+    @pytest.mark.parametrize("name", ["getSpreadsheet", "list-issues", "Search Pages", "fetchURLContent", "get"])
+    def test_read_verbs_match_as_whole_words(self, name):
+        assert p.action_access("mcp_tool", {"name": name}) == "read"
+
 
 class TestPermissions:
     def test_permission_from_flags(self):
