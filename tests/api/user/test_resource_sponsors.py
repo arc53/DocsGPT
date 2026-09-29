@@ -491,9 +491,10 @@ class TestToolPrefetch:
     def test_api_key_callers_prefetch_like_someone_else(self, pg_conn):
         """A widget or API run carries the owner's id, but the caller is not the owner."""
         agent_id, _ = _agent(pg_conn)
+        key = {"type": "object", "properties": {"X-Key": {"type": "string", "value": "", "has_value": True}}}
         api = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool", config={"actions": {
-            "status": {"url": "https://x.test/s", "method": "GET", "active": True},
-            "notify": {"url": "https://x.test/n", "method": "POST", "active": True},
+            "status": {"url": "https://x.test/s", "method": "GET", "active": True, "headers": key},
+            "notify": {"url": "https://x.test/n", "method": "POST", "active": True, "headers": key},
         }})["id"])
         AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [api]})
         required = {"api_tool": {None}}

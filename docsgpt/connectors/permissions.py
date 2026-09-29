@@ -115,24 +115,46 @@ def tool_actions(tool: dict) -> list[dict]:
     return [action for action in tool.get("actions") or [] if isinstance(action, dict)]
 
 
-def holds_owner_credentials(tool: dict) -> bool:
-    """Whether ``tool`` acts with credentials stored by its owner.
+# Where an API tool keeps the values it sends: header and query values are
+# the owner's (sealed per action, flagged ``has_value``; legacy rows hold them
+# in plain ``value``). Mirrors ``tool_executor.API_TOOL_SECRET_SECTIONS``.
+_API_TOOL_SECRET_SECTIONS = ("headers", "query_params")
 
-    A connection's account, an API tool (its headers and query values carry
-    the owner's keys), a stored secret, or an MCP server the owner signed in
-    to. Anyone running it acts as the owner there, whoever they are.
+
+def _api_action_sends_credentials(action: dict) -> bool:
+    """Whether an API tool action sends a header or query value the owner stored."""
+    for section in _API_TOOL_SECRET_SECTIONS:
+        block = action.get(section)
+        props = block.get("properties") if isinstance(block, dict) else None
+        for spec in (props or {}).values():
+            if isinstance(spec, dict) and (spec.get("has_value") or spec.get("value") not in (None, "")):
+                return True
+    return False
+
+
+def holds_owner_credentials(tool: dict, action_name: Optional[str] = None) -> bool:
+    """Whether ``tool`` (or its ``action_name``) acts with credentials its owner stored.
+
+    A connection's account, a stored secret, an MCP server the owner signed
+    in to, or an API tool action that sends a header or query value the
+    owner saved (a key, a token). Anyone running it acts as the owner there,
+    whoever they are. An API tool action that sends nothing stored does not.
 
     Args:
         tool: A ``user_tools`` row.
+        action_name: One action to judge; None judges the tool as a whole.
 
     Returns:
-        True when the tool runs on the owner's credentials.
+        True when the tool (or that action) runs on the owner's credentials.
     """
-    if tool.get("connection_id") or tool.get("name") == "api_tool":
-        return True
     config = tool.get("config") or {}
-    if config.get("encrypted_credentials"):
+    if tool.get("connection_id") or config.get("encrypted_credentials"):
         return True
+    if tool.get("name") == "api_tool":
+        actions = config.get("actions") or {}
+        if action_name is not None:
+            return _api_action_sends_credentials(actions.get(action_name) or {})
+        return any(_api_action_sends_credentials(action or {}) for action in actions.values())
     return tool.get("name") == "mcp_tool" and (config.get("auth_type") or "none") != "none"
 
 
@@ -149,10 +171,9 @@ def owner_credential_writes(tool: dict) -> list[str]:
     Returns:
         Action names, empty when the tool holds no owner credentials.
     """
-    if not holds_owner_credentials(tool):
-        return []
     return [
         action["name"] for action in tool_actions(tool)
         if action.get("name") and action.get("active") is not False
         and action_access(tool.get("name"), action) == ACCESS_WRITE
+        and holds_owner_credentials(tool, action["name"])
     ]

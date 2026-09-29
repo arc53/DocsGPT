@@ -1162,7 +1162,9 @@ class ToolExecutor:
         # was the owner's choice for themselves, not for anyone with the key.
         # A public-link user is a stranger to the owner, so their approval
         # can't stand in for the owner's either.
-        if (self.external_caller or self.public_link_caller) and self._on_owner_credentials(tool_data, resolved):
+        if (self.external_caller or self.public_link_caller) and self._on_owner_credentials(
+            tool_data, resolved, action_name
+        ):
             from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
 
             if action_access(tool_data.get("name"), action_data) == ACCESS_WRITE:
@@ -1242,7 +1244,7 @@ class ToolExecutor:
 
         return None
 
-    def _on_owner_credentials(self, tool_data: Dict, resolved) -> bool:
+    def _on_owner_credentials(self, tool_data: Dict, resolved, action_name: Optional[str] = None) -> bool:
         """Whether a call would act with credentials the caller doesn't hold.
 
         The connection's account when there is one, else the tool owner's
@@ -1253,6 +1255,8 @@ class ToolExecutor:
         Args:
             tool_data: The ``user_tools`` row being called.
             resolved: The connection ``resolve_connection`` picked, or None.
+            action_name: The action called; an API tool action carries its
+                own headers and query values.
 
         Returns:
             True when the call would use someone else's credentials.
@@ -1261,7 +1265,7 @@ class ToolExecutor:
 
         if resolved is not None:
             holder = (resolved.row or {}).get("user_id")
-        elif holds_owner_credentials(tool_data):
+        elif holds_owner_credentials(tool_data, action_name):
             holder = tool_data.get("user_id")
         else:
             return False

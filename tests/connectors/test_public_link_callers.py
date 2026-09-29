@@ -244,9 +244,18 @@ def _stored_tool(name: str, action: dict, config: dict) -> dict:
     return {"id": "tool-9", "user_id": "alice", "name": name, "config": config, "actions": [action]}
 
 
-def _api_tool(method: str) -> dict:
-    tool = _stored_tool("api_tool", {}, {"actions": {"call": {"url": "https://x.test", "method": method,
-                                                              "active": True, "require_approval": False}}})
+def _api_tool(method: str, header: dict | None = None, **config) -> dict:
+    """An API tool with one ``call`` action; ``header`` is its Authorization header spec.
+
+    By default the header holds a sealed secret (``has_value``), the way a
+    saved key is stored.
+    """
+    action = {"url": "https://x.test", "method": method, "active": True, "require_approval": False}
+    if header is None:
+        header = {"type": "string", "value": "", "has_value": True}
+    if header:
+        action["headers"] = {"type": "object", "properties": {"Authorization": header}}
+    tool = _stored_tool("api_tool", {}, {"actions": {"call": action}, **config})
     tool["actions"] = []
     return tool
 
@@ -265,6 +274,23 @@ class TestOwnerHeldCredentialsWithoutAConnection:
         pause = _pause(self._caller(**flags), _api_tool("POST"), action="call")
         assert pause["pause_type"] == "headless_denied"
         assert "Access details" in pause["deny_reason"]
+
+    @pytest.mark.parametrize("header", [
+        {"type": "string", "value": "", "has_value": True},
+        {"type": "string", "value": "Bearer legacy-plaintext"},
+    ])
+    def test_api_tool_with_a_stored_header_value_is_gated(self, header):
+        pause = _pause(self._caller(public_link_caller=True), _api_tool("POST", header), action="call")
+        assert pause["pause_type"] == "headless_denied"
+
+    def test_api_tool_with_stored_credentials_in_config_is_gated(self):
+        tool = _api_tool("POST", {}, encrypted_credentials="blob")
+        assert _pause(self._caller(public_link_caller=True), tool, action="call")["pause_type"] == "headless_denied"
+
+    @pytest.mark.parametrize("header", [{}, {"type": "string", "value": "", "has_value": False},
+                                        {"type": "string", "filled_by_llm": True}])
+    def test_api_tool_without_credentials_is_not_gated(self, header):
+        assert _pause(self._caller(public_link_caller=True), _api_tool("POST", header), action="call") is None
 
     def test_api_tool_read_runs(self):
         assert _pause(self._caller(public_link_caller=True), _api_tool("GET"), action="call") is None

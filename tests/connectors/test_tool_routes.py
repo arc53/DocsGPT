@@ -313,9 +313,12 @@ class TestOwnerCredentialWrites:
         from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         repo = UserToolsRepository(pg_conn)
+        key = {"type": "object", "properties": {"X-Key": {"type": "string", "value": "", "has_value": True}}}
         repo.create("alice", "api_tool", config={"actions": {
-            "status": {"url": "https://x.test/s", "method": "GET", "active": True},
-            "notify": {"url": "https://x.test/n", "method": "POST", "active": True},
+            "status": {"url": "https://x.test/s", "method": "GET", "active": True, "headers": key},
+            "notify": {"url": "https://x.test/n", "method": "POST", "active": True, "headers": key},
+            # A write that sends nothing of the owner's is not listed.
+            "ping": {"url": "https://x.test/p", "method": "POST", "active": True},
         }})
         repo.create("alice", "mcp_tool", config={"server_url": "https://m.test/mcp", "auth_type": "bearer"},
                     actions=[{"name": "create_issue", "active": True}, {"name": "list_issues", "active": True}])
