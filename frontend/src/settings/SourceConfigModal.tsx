@@ -4,11 +4,13 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import ViewOnlyNotice from '../components/ViewOnlyNotice';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
 import { selectToken } from '../preferences/preferenceSlice';
+import { can } from '../utils/accessUtils';
 
 import RetrievalOptions, {
   chunkingChanged,
@@ -47,10 +49,9 @@ export default function SourceConfigModal({
   const { t } = useTranslation();
   const token = useSelector(selectToken);
 
-  // 'team' viewers cannot write; the backend rejects with 403, but we also
-  // disable the form up-front for a clearer read-only experience.
-  const isReadOnly =
-    document?.ownership === 'team' && document?.team_access !== 'editor';
+  // Without `edit` (a viewer opening View config) the form is read-only; the
+  // backend rejects a write with 403 anyway.
+  const isReadOnly = !!document && !can(document, 'edit');
 
   const [initial, setInitial] = useState<RetrievalOptionsValue>(() =>
     configToOptions(document?.config),
@@ -148,6 +149,8 @@ export default function SourceConfigModal({
       submitLabel={t('settings.sources.reingest')}
       onSubmit={handleConfirmReingest}
     />
+  ) : isReadOnly ? (
+    <ModalActions cancelLabel={t('common.close')} onCancel={closeModal} />
   ) : (
     <ModalActions
       cancelLabel={t('cancel')}
@@ -156,7 +159,7 @@ export default function SourceConfigModal({
       submitLabel={t('settings.sources.configModal.save')}
       onSubmit={handleSave}
       pending={saving}
-      disabled={isReadOnly || !hasChanges || !prescreenValid}
+      disabled={!hasChanges || !prescreenValid}
     />
   );
 
@@ -189,11 +192,7 @@ export default function SourceConfigModal({
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {isReadOnly && (
-              <div className="bg-muted text-muted-foreground rounded-xl p-3 text-sm">
-                {t('settings.sources.configModal.readOnly')}
-              </div>
-            )}
+            {isReadOnly && <ViewOnlyNotice />}
             <RetrievalOptions
               value={options}
               onChange={setOptions}

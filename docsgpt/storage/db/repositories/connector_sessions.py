@@ -15,7 +15,7 @@ Shape notes:
 * Every secret lives in ``encrypted_credentials``, written and read only by
   ``docsgpt.connectors.service``; ``token_info`` and the ``tokens`` /
   ``client_info`` keys of ``session_data`` are legacy plaintext that
-  migration 0038 moved into it.
+  migration 0040 moved into it.
 * ``session_data`` remains a catch-all JSONB for driver-specific state
   (tokens that don't fit anywhere else, per-provider scratch data).
   Promoted columns (``session_token``, ``user_email``, ``status``,

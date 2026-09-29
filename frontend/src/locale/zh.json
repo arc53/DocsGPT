@@ -92,7 +92,10 @@
         "edit": "编辑提示词",
         "view": "查看提示词",
         "duplicate": "复制提示词",
-        "delete": "删除提示词"
+        "delete": "删除提示词",
+        "deleteFailed": "无法删除此提示词。",
+        "saveFailed": "无法保存此提示词。",
+        "editConflict": "其他人已更改此提示词。请重新打开以查看其版本。"
       }
     },
     "sources": {
@@ -175,7 +178,8 @@
         "pagesTitle": "页面",
         "loadFailed": "无法加载 Wiki 页面。",
         "pageLoadFailed": "无法加载此页面。",
-        "editTitle": "编辑页面"
+        "editTitle": "编辑页面",
+        "byline_one": "{{pages}} 个页面 · {{tokens}} 个 token"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -252,7 +256,12 @@
           "chunkTokens": "{{tokens}} 个令牌",
           "openInFiles": "在文件中打开",
           "editChunk": "编辑分块",
-          "chunkSaved": "分块已保存"
+          "chunkSaved": "分块已保存",
+          "otherTypesMore_one": "另外 {{formatted}} 个",
+          "relationshipsCapped_one": "显示 {{total}} 个关系中最强的 {{shown}} 个。",
+          "chunkCount_one": "{{formatted}} 个分块",
+          "entityCount_one": "{{formatted}} 个实体",
+          "relationshipCount_one": "{{formatted}} 个关系"
         }
       },
       "testRetrieval": {
@@ -386,7 +395,6 @@
         "subtitle": "配置“{{name}}”的分块与检索方式。",
         "subtitleGeneric": "配置此来源的分块与检索方式。",
         "save": "保存",
-        "readOnly": "您对此共享来源仅有查看权限，无法更改其配置。",
         "chunkingChangeHint": "您更改了分块设置。保存后需要重新索引此来源才能生效。",
         "prescreenInvalidHint": "请检查预筛选参数：获取的候选数量至少应等于文本块数量，且保留的文本块数不得超过获取的候选数量。",
         "reingestRequired": "您的更改已保存。修改的分块设置需重新索引后才会生效。立即重新索引？",
@@ -431,7 +439,17 @@
       "nextChunk": "下一个文本块",
       "paused": "同步已暂停。重新连接 {{name}} 以继续。",
       "emptyHint": "上传文件、添加网站，或连接一个服务来同步它的内容。",
-      "connectService": "连接服务"
+      "connectService": "连接服务",
+      "filesByline_one": "{{files}} 个文件 · {{tokens}} 个令牌",
+      "chunkCount_one": "{{formatted}} 个文本块",
+      "viewConfig": "查看来源设置",
+      "errors": {
+        "forbidden": "你无权对此来源执行该操作。",
+        "delete": "无法删除来源。",
+        "sync": "无法同步来源。",
+        "syncFrequency": "无法更改同步频率。",
+        "reingest": "无法开始重新导入。"
+      }
     },
     "analytics": {
       "label": "分析",
@@ -654,9 +672,6 @@
       "createTeamError": "无法创建团队。",
       "noTeams": "暂无团队。",
       "noDescription": "无描述",
-      "memberCountOne": "{{count}} 名成员",
-      "memberCountOther": "{{count}} 名成员",
-      "sharedCount": "{{count}} 项共享",
       "loadError": "加载团队失败。",
       "roleAdmin": "管理员",
       "roleMember": "成员",
@@ -723,7 +738,190 @@
         "teamLabel": "团队",
         "viaTeam": "通过 {{team}}",
         "removeAccess": "移除访问权限",
-        "access": "访问权限"
+        "access": "访问权限",
+        "showAll": "显示全部 {{formatted}} 个",
+        "andMore_one": "还有 {{formatted}} 个",
+        "andMore_other": "还有 {{formatted}} 个",
+        "back": "返回",
+        "allSummary": "{{name}} · 团队：{{teams}} · 人员：{{people}}",
+        "searchAccess": "搜索人员和团队…",
+        "filterLabel": "筛选有权访问的人员",
+        "filter": {
+          "all": "全部",
+          "teams": "团队",
+          "people": "人员",
+          "editors": "编辑者"
+        }
+      },
+      "memberCount_one": "{{formatted}} 名成员",
+      "memberCount_other": "{{formatted}} 名成员",
+      "sharedCount_one": "{{formatted}} 项共享",
+      "sharedCount_other": "{{formatted}} 项共享",
+      "accessChangeError": "无法更改访问权限。",
+      "accessSettings": {
+        "title": "访问设置",
+        "saveError": "无法保存访问设置。",
+        "agent": {
+          "editors_can_share": {
+            "label": "编辑者可以共享",
+            "description": "添加人员和团队并更改其访问权限。"
+          },
+          "editors_can_delete": {
+            "label": "编辑者可以删除",
+            "description": "为所有人删除该代理。"
+          },
+          "editors_can_manage_access_details": {
+            "label": "编辑者可以管理访问详情",
+            "description": "API 密钥、Webhook 和公开链接。"
+          },
+          "viewers_can_see_logs": {
+            "label": "查看者可以查看日志",
+            "description": "该代理的对话和分析。"
+          }
+        },
+        "source": {
+          "editors_can_share": {
+            "label": "编辑者可以共享",
+            "description": "添加人员和团队并更改其访问权限。"
+          },
+          "editors_can_delete": {
+            "label": "编辑者可以删除",
+            "description": "为所有人删除该来源。"
+          },
+          "viewers_can_see_config": {
+            "label": "查看者可以查看设置",
+            "description": "分块、检索器和同步设置，只读。"
+          }
+        },
+        "tool": {
+          "editors_can_change_credentials": {
+            "label": "编辑者可以更改凭据和连接",
+            "description": "他们替换已保存的密钥；任何人都无法读回。"
+          },
+          "editors_can_share": {
+            "label": "编辑者可以共享",
+            "description": "添加人员和团队并更改其访问权限。"
+          },
+          "viewers_can_use_in_agents": {
+            "label": "查看者可以在自己的代理中使用",
+            "description": "它使用你的凭据运行。"
+          }
+        },
+        "prompt": {
+          "editors_can_share": {
+            "label": "编辑者可以共享",
+            "description": "添加人员和团队并更改其访问权限。"
+          },
+          "viewers_can_duplicate": {
+            "label": "查看者可以复制",
+            "description": "创建自己的副本进行编辑。"
+          }
+        }
+      },
+      "editorHint": {
+        "agent": "编辑者可以修改它，包括日志、计划和访问详情。",
+        "agentNoAccessDetails": "编辑者可以修改它，包括日志和计划，但不能修改访问详情。",
+        "source": "编辑者可以编辑分块和文件、同步并更改设置。",
+        "tool": "编辑者可以更改操作并替换凭据，但无法读取密钥。",
+        "toolNoCredentials": "编辑者可以更改操作，但不能更改凭据。",
+        "prompt": "编辑者可以修改文本。",
+        "noShareNoDelete": "他们不能共享或删除它。",
+        "shareOnly": "他们还可以共享它，但不能删除。",
+        "deleteOnly": "他们还可以删除它，但不能共享。",
+        "shareAndDelete": "他们还可以共享和删除它。",
+        "noShare": "他们不能共享或删除它。",
+        "share": "他们还可以共享它，但不能删除。"
+      },
+      "capabilities": {
+        "agent": {
+          "viewers": "查看者：与其对话并置顶",
+          "editors": "编辑者：编辑、发布、查看日志和管理计划"
+        },
+        "source": {
+          "viewers": "查看者：浏览、搜索并在自己的代理中使用",
+          "editors": "编辑者：编辑分块和文件、同步、更改设置"
+        },
+        "tool": {
+          "viewers": "查看者：在所有者的代理中使用",
+          "editors": "编辑者：更改操作和审批"
+        },
+        "prompt": {
+          "viewers": "查看者：阅读并在自己的代理中使用",
+          "editors": "编辑者：修改文本"
+        },
+        "switch": {
+          "editors_can_share": {
+            "on": "编辑者可以共享",
+            "off": "编辑者不能共享"
+          },
+          "editors_can_delete": {
+            "on": "编辑者可以删除",
+            "off": "编辑者不能删除"
+          },
+          "editors_can_manage_access_details": {
+            "on": "编辑者可以管理 API 密钥、Webhook 和公开链接",
+            "off": "编辑者不能管理 API 密钥、Webhook 或公开链接"
+          },
+          "viewers_can_see_logs": {
+            "on": "查看者可以查看日志",
+            "off": "查看者不能查看日志"
+          },
+          "viewers_can_see_config": {
+            "on": "查看者可以查看设置",
+            "off": "查看者不能查看设置"
+          },
+          "editors_can_change_credentials": {
+            "on": "编辑者可以替换凭据",
+            "off": "编辑者不能更改凭据"
+          },
+          "viewers_can_use_in_agents": {
+            "on": "查看者可以在自己的代理中使用",
+            "off": "查看者不能在自己的代理中使用"
+          },
+          "viewers_can_duplicate": {
+            "on": "查看者可以复制",
+            "off": "查看者不能复制"
+          }
+        }
+      },
+      "sharedList": {
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} 编辑者",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} 编辑者",
+        "meta": "{{type}} · {{owner}}",
+        "filterLabel": "筛选共享资源",
+        "filter": {
+          "all": "全部",
+          "agent": "代理",
+          "source": "来源",
+          "tool": "工具",
+          "prompt": "提示词"
+        },
+        "search": "搜索共享…",
+        "noMatches": "没有匹配项。"
+      },
+      "drawer": {
+        "close": "关闭",
+        "subtitle": "{{type}} · 所有者：{{owner}}",
+        "open": "打开{{type}}",
+        "manageSharing": "管理共享",
+        "owner": "所有者",
+        "shared": "共享时间",
+        "sharedOnBy": "{{date}}，由 {{name}}",
+        "yourAccess": "你的访问权限",
+        "yourAccessLevel": {
+          "owner": "所有者",
+          "editor": "编辑者",
+          "viewer": "查看者",
+          "none": "无访问权限"
+        },
+        "accessIn": "{{team}} 中的访问权限",
+        "everyone": "{{team}} 的所有人",
+        "teamGrant": "整个团队",
+        "memberGrant": "仅此人",
+        "removeGrant": "移除访问权限",
+        "otherTeamsHint": "也与其他团队共享了？这些授权在“管理共享”中管理。",
+        "whatPeopleCanDo": "这里的人员可以做什么",
+        "capabilitiesHint": "来自所有者的访问设置。此处只读。"
       }
     },
     "tools": {
@@ -797,7 +995,6 @@
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
         "reconnectServer": "重新连接服务器",
-        "reenterCredentials": "重新输入您的凭据以测试并更新连接。",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -842,7 +1039,18 @@
           "oauthFailed": "OAuth process failed or was cancelled",
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
-        }
+        },
+        "sharedByEditor": "由 {{owner}} 共享 · 你是编辑者",
+        "aTeammate": "一位队友",
+        "sharedCredentialsNotice": "已保存的凭据不会显示。你输入的内容将为所有使用此工具的人替换它们。",
+        "serverChangedNotice": "服务器已更改，因此已保存的{{credential}}将被清除。请为新服务器输入后再保存。",
+        "credentialNames": {
+          "apiKey": "API 密钥",
+          "bearer": "令牌",
+          "password": "密码"
+        },
+        "savedKeyHint": "已保存密钥。留空即可保留（仅在服务器未更改时）。",
+        "sharedOAuthOwnerOnly": "只有所有者可以更改此服务器的连接或重新连接其登录。你仍然可以重命名它并编辑其操作。"
       },
       "configErrors": {
         "required": "{{field}}为必填项",
@@ -855,7 +1063,14 @@
       "groupService": "来自服务",
       "browseConnectors": "浏览所有连接器",
       "viaConnection": "通过 {{name}}",
-      "off": "已关闭"
+      "off": "已关闭",
+      "view": "查看",
+      "inMyChats": "在我的聊天中",
+      "useInMyChatsAria": "在我的聊天中使用 {{toolName}}",
+      "statusUpdateFailed": "无法更改此工具是否用于你的聊天。",
+      "deleteFailed": "无法删除此工具。",
+      "sharedBy": "由 {{team}} 共享",
+      "savedSecretPlaceholder": "已保存 · 输入新值以替换"
     },
     "devices": {
       "label": "设备",
@@ -1664,7 +1879,9 @@
         "description": "在小组件或 API 中无人能批准操作，因此除非你在此允许，否则对已连接账号的更改都会被阻止。",
         "item": "{{tool}}：{{action}}",
         "saveFailed": "无法保存。请重试。"
-      }
+      },
+      "actionFailed": "操作未成功，请重试。",
+      "apiKeyAfterPublish": "发布该代理后即可创建其 API 密钥。"
     },
     "importSpec": {
       "title": "导入 API 规范",
@@ -1931,10 +2148,6 @@
       "team": "团队",
       "shared": "与我共享"
     },
-    "teamBadge": {
-      "editor": "编辑者",
-      "viewer": "查看者"
-    },
     "sections": {
       "template": {
         "title": "由DocsGPT提供",
@@ -2096,7 +2309,6 @@
         "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
         "remove": "Remove",
         "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
         "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
         "floorControl": "{{stage}}: {{action}} — required by the instance policy",
         "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
@@ -2121,6 +2333,13 @@
       },
       "status": {
         "published": "已发布"
+      },
+      "sponsors": {
+        "attachNote": "你从自己的资料库添加的工具、来源和提示词，会以你的访问权限为所有使用此智能体的人运行。",
+        "publicLinkNote": "此智能体有公开链接，任何拥有该链接的人都可以从中获得回答。",
+        "addedBy": "由 {{person}} 添加：{{names}}",
+        "unavailable": "未运行：{{names}}。添加它们的 {{person}} 已失去访问权限。请移除它们，或选择所有者可以使用的项目。",
+        "unknownItem": "未命名项目"
       }
     },
     "logs": {
@@ -2556,7 +2775,9 @@
       "classicDescription": "创建一个使用单一模型、工具和知识来源的标准 AI 智能体",
       "workflowTitle": "工作流智能体",
       "workflowDescription": "设计包含不同模型、条件逻辑和状态管理的复杂多步骤工作流"
-    }
+    },
+    "view": "查看",
+    "deleteFailed": "无法删除该代理，请重试。"
   },
   "components": {
     "fileUpload": {
@@ -2582,7 +2803,8 @@
       },
       "note": {
         "lines_other": "{{count}} 行",
-        "empty": "空笔记"
+        "empty": "空笔记",
+        "lines_one": "{{count}} 行"
       },
       "notFound": "未找到工件",
       "loadFailed": "无法加载工件",
@@ -2686,5 +2908,11 @@
   "connectHero": {
     "title": "连接你的数据",
     "body": "与 {{names}} 等进行对话。"
+  },
+  "common": {
+    "close": "关闭",
+    "viewOnlyNotice": "你可以查看此内容，但你的角色无法更改它。",
+    "credentialsLockedNotice": "只有所有者可以更改此工具的凭据。",
+    "savedSecretHint": "已保存。留空即可保留。"
   }
 }

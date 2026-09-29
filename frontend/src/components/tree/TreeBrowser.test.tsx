@@ -42,6 +42,10 @@ vi.mock('../../api/services/userService', () => ({
         chunks: state.chunks,
       }),
     })),
+    updateChunk: vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ chunk_id: 'c1' }),
+    })),
   },
 }));
 
@@ -252,6 +256,40 @@ describe('TreeBrowser', () => {
     expect(crumbs()).toEqual([SOURCES, 'Contracts', 'readme.md']);
   });
 
+  it('a saved chunk whose place is unknown keeps an unnumbered crumb', async () => {
+    state.chunks = [{ doc_id: 'c1', text: '# Rates', metadata: {} }];
+    await render(NESTED);
+    await openRow('readme.md');
+    await act(async () => tile()!.click());
+    const button = (text: string) =>
+      Array.from(document.body.querySelectorAll('button')).find(
+        (el) => el.textContent?.trim() === text,
+      )!;
+    await act(async () => button('modals.chunk.edit').click());
+    // After the save, the probed positions no longer hold the chunk.
+    state.chunks = [];
+    const field = document.body.querySelector<HTMLTextAreaElement>(
+      '[role="dialog"] textarea',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )!.set!.call(field, '# Rates edited');
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => button('modals.chunk.save').click());
+    expect(crumbs()).toEqual([
+      SOURCES,
+      'Contracts',
+      'readme.md',
+      'settings.sources.chunkCrumbUnplaced',
+    ]);
+
+    await clickCrumb('readme.md');
+    expect(crumbs()).toEqual([SOURCES, 'Contracts', 'readme.md']);
+  });
+
   it('a one-file source opens straight on its chunk list', async () => {
     await render({ 'report.pdf': { type: 'pdf', display_name: 'Report' } });
     expect(
@@ -297,6 +335,17 @@ describe('TreeBrowser', () => {
     expect(
       container.querySelector('button[aria-label="settings.sources.menuAlt"]'),
     ).not.toBeNull();
+  });
+
+  it('canEdit false reaches the chunk list: no Add chunk', async () => {
+    await render({ 'report.pdf': { type: 'pdf' } }, { canEdit: false });
+    expect(chunkListOpen()).toBe(true);
+    expect(container.textContent).not.toContain('settings.sources.addChunk');
+  });
+
+  it('an editable tree keeps Add chunk on the chunk list', async () => {
+    await render({ 'report.pdf': { type: 'pdf' } });
+    expect(container.textContent).toContain('settings.sources.addChunk');
   });
 
   it('a failed load says so and retries', async () => {

@@ -30,6 +30,8 @@ interface GraphChunkSheetProps {
   onOpenInFiles?: (path: string) => void;
   /** Called after a saved edit, to refetch the node detail. */
   onSaved?: () => void;
+  /** Whether the read drawer offers Edit (`can(source, 'edit')`). */
+  canEdit?: boolean;
 }
 
 /**
@@ -45,6 +47,7 @@ export default function GraphChunkSheet({
   onClose,
   onOpenInFiles,
   onSaved,
+  canEdit = true,
 }: GraphChunkSheetProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -90,6 +93,8 @@ export default function GraphChunkSheet({
       : hasTokens
         ? t('settings.sources.graphrag.view.chunkTokens', { tokens })
         : '';
+
+  const showOpenInFiles = !!onOpenInFiles && !!path;
 
   const close = () => {
     setEditing(false);
@@ -173,32 +178,44 @@ export default function GraphChunkSheet({
                 highlight={highlight}
               />
             </div>
-            <Separator />
-            <div className="flex justify-end gap-3 px-6 py-4">
-              {onOpenInFiles && path ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="lg"
-                  shape="pill"
-                  onClick={() => {
-                    close();
-                    onOpenInFiles(path);
-                  }}
-                >
-                  {t('settings.sources.graphrag.view.openInFiles')}
-                </Button>
-              ) : null}
-              <Button type="button" size="lg" shape="pill" onClick={startEdit}>
-                <Pencil />
-                {t('modals.chunk.edit')}
-              </Button>
-            </div>
+            {/* A reader with nothing to open or edit gets no action row. */}
+            {showOpenInFiles || canEdit ? (
+              <>
+                <Separator />
+                <div className="flex justify-end gap-3 px-6 py-4">
+                  {showOpenInFiles ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="lg"
+                      shape="pill"
+                      onClick={() => {
+                        close();
+                        onOpenInFiles?.(path);
+                      }}
+                    >
+                      {t('settings.sources.graphrag.view.openInFiles')}
+                    </Button>
+                  ) : null}
+                  {canEdit ? (
+                    <Button
+                      type="button"
+                      size="lg"
+                      shape="pill"
+                      onClick={startEdit}
+                    >
+                      <Pencil />
+                      {t('modals.chunk.edit')}
+                    </Button>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
           </div>
         </SheetContent>
       </Sheet>
       <SourceEditSheet
-        open={editing}
+        open={canEdit && editing}
         onClose={leaveEdit}
         title={t('settings.sources.graphrag.view.editChunk')}
         description={meta || undefined}

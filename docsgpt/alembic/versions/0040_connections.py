@@ -1,4 +1,4 @@
-"""0038 connections — connector_sessions becomes the connections table.
+"""0040 connections — connector_sessions becomes the connections table.
 
 ``connector_sessions`` already holds one row per signed-in account (OAuth
 ingest providers) or per MCP server. This migration names what each row is
@@ -49,8 +49,8 @@ until then. The instance-wide "Allow custom MCP servers" switch
 is the ``connectors.allow_custom_mcp`` key in ``app_metadata`` (absent means
 allowed).
 
-Revision ID: 0038_connections
-Revises: 0037_request_traces
+Revision ID: 0040_connections
+Revises: 0039_resource_sponsors
 """
 
 from typing import Sequence, Union
@@ -58,8 +58,8 @@ from typing import Sequence, Union
 from alembic import op
 
 
-revision: str = "0038_connections"
-down_revision: Union[str, None] = "0037_request_traces"
+revision: str = "0040_connections"
+down_revision: Union[str, None] = "0039_resource_sponsors"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

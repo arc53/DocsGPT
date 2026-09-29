@@ -25,10 +25,20 @@ from docsgpt.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from docsgpt.core.settings import settings
-from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    agent_refs,
+    delete_settings,
+    payload_for,
+    require,
+    resolve,
+    settings_many,
+    sponsor_details,
+    sponsors_after_save,
+)
 from docsgpt.api.user.team_sharing import (
     can_access,
-    team_access_for,
     visible_with_access,
 )
 from docsgpt.agents.default_tools import is_synthesized_tool_id
@@ -196,6 +206,80 @@ def _resolve_folder_id(conn, folder_id, user):
     return str(folder["id"]), None
 
 
+# What a caller who reached an agent only through its public share link may
+# do: chat with it and pin it. A team grant, when there is one, wins.
+LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
+
+# Agent fields that are the owner's policy (guardrails and the pooled quota).
+POLICY_FIELDS = (
+    "config", "token_limit", "request_limit", "limited_token_mode", "limited_request_mode",
+)
+
+
+def _denied(err: AccessDenied):
+    """The JSON error response for an :class:`AccessDenied`."""
+    return make_response(jsonify({"success": False, "message": err.message}), err.status)
+
+
+def _tool_attachable(conn, tool_id: str, caller: str) -> bool:
+    """Whether ``caller`` may newly attach ``tool_id`` to an agent.
+
+    Builtin synthetic ids belong to no one. Otherwise the caller must own the
+    tool or reach it with ``use_in_own``. The agent owner owning it is not
+    enough: an editor could otherwise wire the owner's private tool (run with
+    the owner's credentials) into an agent the editor controls.
+
+    Args:
+        conn: Open database connection.
+        tool_id: The tool id being attached.
+        caller: The user making the change.
+
+    Returns:
+        True when the attachment is allowed.
+    """
+    tid = str(tool_id)
+    if is_synthesized_tool_id(tid):
+        return True
+    ra = resolve(conn, "tool", tid, caller)
+    return ra is not None and ra.can("use_in_own")
+
+
+def _ref_attachable(conn, resource_type: str, resource_id: str, caller: str) -> bool:
+    """Whether ``caller`` may newly reference a source/prompt from an agent.
+
+    Like tools, the caller's own access counts, not the agent owner's.
+
+    Args:
+        conn: Open database connection.
+        resource_type: ``source`` or ``prompt``.
+        resource_id: The referenced id.
+        caller: The user making the change.
+
+    Returns:
+        True when the caller owns it or a team grant reaches them.
+    """
+    if not resource_id:
+        return True
+    return can_access(conn, resource_type, str(resource_id), caller)
+
+
+def _policy_changed(existing: dict, update_fields: dict) -> bool:
+    """True when ``update_fields`` changes any guardrail or quota value."""
+    for key in POLICY_FIELDS:
+        if key not in update_fields:
+            continue
+        new, old = update_fields[key], existing.get(key)
+        if key == "config":
+            if (new or {}) != (old or {}):
+                return True
+        elif key.startswith("limited_"):
+            if bool(new) != bool(old):
+                return True
+        elif int(new or 0) != int(old or 0):
+            return True
+    return False
+
+
 def _reject(message: str, user: str, field: str = "-"):
     """Log a request-validation rejection at WARN and return its 400 response.
 
@@ -228,6 +312,7 @@ def _format_agent_output(
     ownership: str = "user",
     team_access: str | None = None,
     resolve_names: bool = False,
+    access: dict | None = None,
 ) -> dict:
     """Shape a PG agent row into the outward API response dict.
 
@@ -239,7 +324,16 @@ def _format_agent_output(
     ``ownership`` is ``"user"`` for the caller's own agents or ``"team"`` for
     ones shared with a team they're in; ``team_access`` (``viewer``/``editor``)
     is set on team-shared agents so the UI can gate edit controls.
+
+    ``access`` is the caller's ``{"access", "allowed_actions"}`` payload
+    (owner with default switches when omitted). It is embedded verbatim and
+    decides what leaves the server: the full guardrail ``config`` needs
+    ``view``, the (masked) ``key`` and public ``shared_token`` need
+    ``manage_access_details``.
     """
+    if access is None:
+        access = payload_for("agent", "owner", {})
+    allowed = set(access.get("allowed_actions") or [])
     source_id = agent.get("source_id")
     extra_source_ids = agent.get("extra_source_ids") or []
     source_value = str(source_id) if source_id else ""
@@ -288,7 +382,13 @@ def _format_agent_output(
         ),
         "ownership": ownership,
         "team_access": team_access,
+        "access": access.get("access"),
+        "allowed_actions": sorted(allowed),
     }
+    # Guardrail policy is edit-page config; a chat-only caller doesn't need it
+    # (and reading the banned-term list makes evading it trivial).
+    if "view" not in allowed:
+        out["config"] = {}
     # Resolve prompt/source NAMES by id (owner-agnostic) so a team member
     # viewing a shared agent sees the owner's prompt + source names instead of
     # a blank prompt / "External KB" (the client otherwise resolves these from
@@ -298,9 +398,9 @@ def _format_agent_output(
         out["source_details"] = resolve_source_details(
             ([source_id] if source_id else []) + list(extra_source_ids)
         )
-    # Never expose the owner's share/API secrets to a team grantee — the
-    # public ``shared_token`` and the (masked) agent ``key`` are owner-only.
-    if ownership == "team":
+    # The public ``shared_token`` and the (masked) agent ``key`` are access
+    # details: only a caller who may manage them sees them.
+    if "manage_access_details" not in allowed:
         out["shared_token"] = ""
         return out
     if include_key_masked:
@@ -456,24 +556,28 @@ class GetAgent(Resource):
             return {"success": False, "message": "ID required"}, 400
         try:
             user = decoded_token["sub"]
-            ownership, team_access = "user", None
+            agent = None
+            sponsored: list = []
             with db_readonly() as conn:
-                repo = AgentsRepository(conn)
-                agent = repo.get_any(agent_id, user)
-                if not agent:
-                    # Team fallback: only after a grant check, fetch ownerless.
-                    team_access = team_access_for(conn, user, "agent", agent_id)
-                    if team_access:
-                        agent = repo.get_by_id(agent_id)
-                        ownership = "team"
+                # Anyone who can see the agent reads it (a viewer needs it to
+                # chat); what they get back is trimmed by their actions.
+                ra = resolve(conn, "agent", agent_id, user)
+                if ra is not None:
+                    agent = AgentsRepository(conn).get_by_id(ra.resource_id)
+                # Edit-page detail: who vouches for resources the owner can't use.
+                if agent and ra.can("view"):
+                    sponsored = sponsor_details(conn, "agent", agent)
             if not agent:
                 return {"status": "Not found"}, 404
+            is_owner = ra.access == "owner"
             data = _format_agent_output(
                 agent,
-                ownership=ownership,
-                team_access=team_access,
+                ownership="user" if is_owner else "team",
+                team_access=None if is_owner else ra.access,
                 resolve_names=True,
+                access=ra.payload(),
             )
+            data["resource_sponsors"] = sponsored
             return make_response(jsonify(data), 200)
         except Exception as e:
             current_app.logger.error(f"Agent fetch error: {e}", exc_info=True)
@@ -504,10 +608,18 @@ class GetAgents(Resource):
                 shared_ids = [aid for aid in team_shared if aid not in owned_ids]
                 shared_agents = agents_repo.list_by_ids(shared_ids)
 
+                switches = settings_many(
+                    conn, "agent", [str(a["id"]) for a in agents + shared_agents]
+                )
+
             # Every agent is listed: one with no source skips retrieval and
             # answers from the model and its tools, so it is still runnable.
             list_agents = [
-                _format_agent_output(agent, pinned=str(agent["id"]) in pinned_ids)
+                _format_agent_output(
+                    agent,
+                    pinned=str(agent["id"]) in pinned_ids,
+                    access=payload_for("agent", "owner", switches[str(agent["id"])]),
+                )
                 for agent in agents
             ]
             list_agents += [
@@ -515,6 +627,11 @@ class GetAgents(Resource):
                     agent,
                     ownership="team",
                     team_access=team_shared.get(str(agent["id"])),
+                    access=payload_for(
+                        "agent",
+                        team_shared.get(str(agent["id"])),
+                        switches[str(agent["id"])],
+                    ),
                 )
                 for agent in shared_agents
             ]
@@ -726,11 +843,11 @@ class CreateAgent(Resource):
                         if src == "default":
                             continue
                         if looks_like_uuid(src):
-                            extra_source_ids.append(src)
+                            extra_source_ids.append(canonical_uuid(src))
                 else:
                     source_value = data.get("source", "")
                     if source_value and source_value != "default" and looks_like_uuid(source_value):
-                        source_id_resolved = source_value
+                        source_id_resolved = canonical_uuid(source_value)
 
                 # Team-sharing write gate: you may reference sources/prompts you
                 # own or that a team has shared with you directly. (Transitive
@@ -752,8 +869,20 @@ class CreateAgent(Resource):
                             jsonify({"success": False, "message": "Prompt not accessible"}),
                             403,
                         )
+                # Tools run with the agent owner's credentials: attach only your
+                # own, or ones a team lets you use in your agents.
+                for tid in data.get("tools") or []:
+                    if not _tool_attachable(conn, tid, user):
+                        return make_response(
+                            jsonify({"success": False, "message": "Tool not accessible"}),
+                            403,
+                        )
 
                 build_data = dict(data)
+                if isinstance(data.get("tools"), list):
+                    build_data["tools"] = [canonical_uuid(t) for t in data["tools"]]
+                if looks_like_uuid(data.get("prompt_id")):
+                    build_data["prompt_id"] = canonical_uuid(data["prompt_id"])
                 build_data["folder_id"] = pg_folder_id
                 build_data["workflow_id"] = pg_workflow_id
                 build_data["source_id"] = source_id_resolved
@@ -909,23 +1038,15 @@ class UpdateAgent(Resource):
         try:
             with db_session() as conn:
                 agents_repo = AgentsRepository(conn)
-                is_team_editor = False
-                existing_agent = agents_repo.get_any(agent_id, user)
-                if not existing_agent:
-                    # Team write path: only an 'editor' grant may modify a
-                    # team-shared agent; a 'viewer' is read-only. Fetch the
-                    # ownerless row only AFTER confirming editor access.
-                    access = team_access_for(conn, user, "agent", agent_id)
-                    if access == "editor":
-                        existing_agent = agents_repo.get_by_id(agent_id)
-                        is_team_editor = True
-                    elif access == "viewer":
-                        return make_response(
-                            jsonify(
-                                {"success": False, "message": "Read-only: editor access required"}
-                            ),
-                            403,
-                        )
+                try:
+                    ra = require(conn, "agent", agent_id, user, "edit")
+                except AccessDenied as denied:
+                    return _denied(denied)
+                # Every write lands as the owner; the row is fetched only after
+                # the access check above.
+                owner_id = ra.owner_id
+                is_team_editor = ra.access != "owner"
+                existing_agent = agents_repo.get_by_id(ra.resource_id)
                 if not existing_agent:
                     return make_response(
                         jsonify(
@@ -980,13 +1101,15 @@ class UpdateAgent(Resource):
                                 user,
                                 field,
                             )
+                        if new_status != existing_agent.get("status") and not ra.can("publish"):
+                            return _denied(AccessDenied(403, "Your access to this item doesn't allow that"))
                         update_fields["status"] = new_status
                     elif field == "source":
                         source_id = data.get("source")
                         if not source_id or source_id == "default":
                             update_fields["source_id"] = None
                         elif looks_like_uuid(source_id):
-                            update_fields["source_id"] = source_id
+                            update_fields["source_id"] = canonical_uuid(source_id)
                         else:
                             return _reject(
                                 f"Invalid source ID format: {source_id}", user, field
@@ -1001,7 +1124,7 @@ class UpdateAgent(Resource):
                             if src == "default":
                                 continue
                             if looks_like_uuid(src):
-                                valid.append(src)
+                                valid.append(canonical_uuid(src))
                             else:
                                 return _reject(
                                     f"Invalid source ID in list: {src}", user, field
@@ -1029,7 +1152,7 @@ class UpdateAgent(Resource):
                         tools_list = data.get("tools", [])
                         if not isinstance(tools_list, list):
                             return _reject("Tools must be a list", user, field)
-                        update_fields["tools"] = tools_list
+                        update_fields["tools"] = [canonical_uuid(t) for t in tools_list]
                     elif field == "json_schema":
                         json_schema = data.get("json_schema")
                         if json_schema is not None:
@@ -1107,10 +1230,24 @@ class UpdateAgent(Resource):
                                 field,
                             )
                     elif field == "folder_id":
-                        folder_input = data.get("folder_id")
+                        # Folders are the owner's own organisation; re-sending
+                        # the current folder is a no-op anyone may do.
+                        folder_input = data.get("folder_id") or None
+                        current_folder = (
+                            str(existing_agent["folder_id"])
+                            if existing_agent.get("folder_id")
+                            else None
+                        )
+                        if folder_input == current_folder:
+                            update_fields["folder_id"] = current_folder
+                            continue
+                        if not ra.can("move_folder"):
+                            return _denied(
+                                AccessDenied(403, "Only the owner can move this agent between folders")
+                            )
                         if folder_input:
                             pg_folder_id, folder_err = _resolve_folder_id(
-                                conn, folder_input, user,
+                                conn, folder_input, owner_id,
                             )
                             if folder_err:
                                 return folder_err
@@ -1128,20 +1265,35 @@ class UpdateAgent(Resource):
                         if not normalized:
                             if workflow_required:
                                 return _reject("Workflow is required", user, field)
-                            update_fields["workflow_id"] = None
+                            pg_workflow_id = None
                         else:
+                            # The agent runs its workflow as the owner, so it
+                            # must be one of the owner's workflows.
                             pg_workflow_id, wf_err = _resolve_workflow_for_user(
-                                conn, workflow_input, user,
+                                conn, workflow_input, owner_id,
                             )
                             if wf_err:
                                 return wf_err
-                            update_fields["workflow_id"] = pg_workflow_id
+                        # Only the owner may change which workflow the agent
+                        # uses, detaching included: editing rights on this
+                        # agent extend to the graph it uses, so swapping in the
+                        # workflow of another of the owner's agents would hand
+                        # that graph to the editor. Editing the graph itself
+                        # goes through the workflow routes.
+                        current_workflow = existing_agent.get("workflow_id")
+                        if is_team_editor and pg_workflow_id != (
+                            str(current_workflow) if current_workflow else None
+                        ):
+                            return _denied(
+                                AccessDenied(403, "Only the owner can change this agent's workflow")
+                            )
+                        update_fields["workflow_id"] = pg_workflow_id
                     elif field == "prompt_id":
                         value = data["prompt_id"]
                         if not value or value == "default":
                             update_fields["prompt_id"] = None
                         elif looks_like_uuid(value):
-                            update_fields["prompt_id"] = value
+                            update_fields["prompt_id"] = canonical_uuid(value)
                         else:
                             return _reject(f"Invalid prompt_id: {value}", user, field)
                     elif field == "allow_system_prompt_override":
@@ -1243,7 +1395,7 @@ class UpdateAgent(Resource):
                 for sid in referenced_sources:
                     if str(sid) in existing_source_refs:
                         continue
-                    if not can_access(conn, "source", sid, user):
+                    if not _ref_attachable(conn, "source", sid, user):
                         return make_response(
                             jsonify({"success": False, "message": "Source not accessible"}), 403
                         )
@@ -1251,28 +1403,25 @@ class UpdateAgent(Resource):
                 if (
                     new_prompt_id
                     and str(new_prompt_id) != str(existing_agent.get("prompt_id") or "")
-                    and not can_access(conn, "prompt", new_prompt_id, user)
+                    and not _ref_attachable(conn, "prompt", new_prompt_id, user)
                 ):
                     return make_response(
                         jsonify({"success": False, "message": "Prompt not accessible"}), 403
                     )
-                # A team editor must not attach tools they can't access onto a
-                # shared agent: at run time the agent-key path resolves+decrypts
-                # tools as the OWNER, so an unchecked tool here would let an
-                # editor invoke arbitrary owner credentials. Owners are
-                # unrestricted (they own their tools). Default/builtin synthetic
-                # tool ids belong to no one and are always allowed.
-                if is_team_editor and "tools" in update_fields:
-                    from docsgpt.agents.default_tools import is_synthesized_tool_id
-
+                # Tools run with the OWNER's credentials (the agent-key path
+                # resolves and decrypts them as the owner), so a newly attached
+                # tool must be the caller's own or reach them with
+                # ``use_in_own`` -- the owner owning it is not enough. Tools
+                # already on the agent stay. Builtin synthetic ids belong to no
+                # one and are always allowed.
+                if "tools" in update_fields:
                     existing_tools = {
                         str(t) for t in (existing_agent.get("tools") or [])
                     }
                     for tid in update_fields["tools"] or []:
-                        tid_s = str(tid)
-                        if tid_s in existing_tools or is_synthesized_tool_id(tid_s):
+                        if str(tid) in existing_tools:
                             continue
-                        if not can_access(conn, "tool", tid_s, user):
+                        if not _tool_attachable(conn, tid, user):
                             return make_response(
                                 jsonify(
                                     {"success": False, "message": "Tool not accessible"}
@@ -1280,19 +1429,25 @@ class UpdateAgent(Resource):
                                 403,
                             )
 
-                # Per-agent quota lives on the row and is pooled across all
-                # members; only the owner may resize that shared pool, so a
-                # team editor's quota changes are dropped.
-                if is_team_editor:
-                    for _q in (
-                        "token_limit", "request_limit",
-                        "limited_token_mode", "limited_request_mode",
-                        # Guardrails are the owner's policy for their agent.
-                        # An editor who could clear them would silently strip
-                        # protection from everyone else using it.
-                        "config",
-                    ):
-                        update_fields.pop(_q, None)
+                # A resource the owner can't use runs as the editor who
+                # attached it (its sponsor); record who that is.
+                after_save = dict(existing_agent)
+                for ref_field in ("source_id", "extra_source_ids", "prompt_id", "tools"):
+                    if ref_field in update_fields:
+                        after_save[ref_field] = update_fields[ref_field]
+                sponsors = sponsors_after_save(
+                    conn, "agent", existing_agent, owner_id, user, agent_refs(after_save)
+                )
+                if sponsors != (existing_agent.get("resource_sponsors") or {}):
+                    update_fields["resource_sponsors"] = sponsors
+
+                # Guardrails and the pooled quota are policy: an unchanged
+                # value re-sent by a full-form save is fine, a change needs
+                # ``edit_policy``.
+                if not ra.can("edit_policy") and _policy_changed(existing_agent, update_fields):
+                    return _denied(
+                        AccessDenied(403, "Your access doesn't allow changing guardrails or limits")
+                    )
 
                 # Apply update. Owner writes use the dual-key guard; team-editor
                 # writes go by-id (already authorized) with an optimistic-lock
@@ -1351,7 +1506,9 @@ class UpdateAgent(Resource):
             "id": pg_agent_id,
             "message": "Agent updated successfully",
         }
-        if newly_generated_key:
+        # A freshly minted key is an access detail: returned only to a caller
+        # who may manage it (the key is still stored either way).
+        if newly_generated_key and ra.can("manage_access_details"):
             response_data["key"] = (
                 newly_generated_key
                 if may_see_agent_keys(request)
@@ -1381,10 +1538,13 @@ class RegenerateAgentKey(Resource):
         try:
             with db_session() as conn:
                 agents_repo = AgentsRepository(conn)
-                # Owner-only: rotating a credential is destructive to live
-                # integrations, so this is intentionally stricter than
-                # update_agent (which also allows team editors).
-                existing_agent = agents_repo.get_any(agent_id, user)
+                # Rotating the key is an access detail: the owner, or an editor
+                # while ``editors_can_manage_access_details`` is on.
+                try:
+                    ra = require(conn, "agent", agent_id, user, "manage_access_details")
+                except AccessDenied as denied:
+                    return _denied(denied)
+                existing_agent = agents_repo.get_by_id(ra.resource_id)
                 if not existing_agent:
                     return make_response(
                         jsonify(
@@ -1412,7 +1572,7 @@ class RegenerateAgentKey(Resource):
                     )
 
                 new_key = str(uuid.uuid4())
-                updated = agents_repo.update(pg_agent_id, user, {"key": new_key})
+                updated = agents_repo.update(pg_agent_id, ra.owner_id, {"key": new_key})
                 if not updated:
                     return make_response(
                         jsonify(
@@ -1483,7 +1643,12 @@ class DeleteAgent(Resource):
         try:
             with db_session() as conn:
                 agents_repo = AgentsRepository(conn)
-                agent = agents_repo.get_any(agent_id, user)
+                try:
+                    ra = require(conn, "agent", agent_id, user, "delete")
+                except AccessDenied as denied:
+                    return _denied(denied)
+                owner_id = ra.owner_id
+                agent = agents_repo.get_by_id(ra.resource_id)
                 if not agent:
                     return make_response(
                         jsonify({"success": False, "message": "Agent not found"}), 404
@@ -1499,14 +1664,20 @@ class DeleteAgent(Resource):
                 # that user's graph.
                 if agent.get("agent_type") == "workflow" and workflow_id:
                     try:
-                        WorkflowsRepository(conn).delete(str(workflow_id), user)
+                        WorkflowsRepository(conn).delete(str(workflow_id), owner_id)
                     except Exception as wf_err:
                         current_app.logger.warning(
                             f"Workflow cleanup failed for agent {pg_agent_id}: {wf_err}"
                         )
-                agents_repo.delete(pg_agent_id, user)
-                # Strip pinned/shared entries for this agent from the owner's prefs.
-                UsersRepository(conn).remove_agent_from_all(user, pg_agent_id)
+                # Team grants go with the row (AFTER DELETE trigger, 0021);
+                # the switches table has no FK, so drop it explicitly.
+                agents_repo.delete(pg_agent_id, owner_id)
+                delete_settings(conn, "agent", pg_agent_id)
+                # Strip pinned/shared entries for this agent from the owner's
+                # (and the deleting editor's) prefs.
+                users_repo = UsersRepository(conn)
+                for uid in {owner_id, user}:
+                    users_repo.remove_agent_from_all(uid, pg_agent_id)
                 record_event(
                     conn,
                     "agent.deleted",
@@ -1602,10 +1773,19 @@ class PinnedAgents(Resource):
                     for agent in pinned_agents
                     if _user_may_pin(conn, agent, user_id, shared_with_me)
                 ]
+                # A pin reached only through a share link (or a template)
+                # has no grant: chat + pin, nothing more.
+                access_by_id = {}
+                for agent in pinned_agents:
+                    ra = resolve(conn, "agent", str(agent["id"]), user_id)
+                    access_by_id[str(agent["id"])] = (
+                        ra.payload() if ra is not None else dict(LINK_SHARED_ACCESS)
+                    )
 
             list_pinned_agents = []
             for agent in pinned_agents:
                 source_id = agent.get("source_id")
+                access = access_by_id[str(agent["id"])]
                 list_pinned_agents.append(
                     {
                         "id": str(agent["id"]),
@@ -1631,10 +1811,12 @@ class PinnedAgents(Resource):
                         "last_used_at": agent.get("last_used_at", ""),
                         "key": (
                             f"{agent['key'][:4]}...{agent['key'][-4:]}"
-                            if agent.get("key") and agent.get("user_id") == user_id
+                            if agent.get("key")
+                            and "manage_access_details" in access["allowed_actions"]
                             else ""
                         ),
                         "pinned": True,
+                        **access,
                     }
                 )
         except Exception as err:

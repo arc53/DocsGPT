@@ -36,15 +36,20 @@ export function useSectionContext(): {
     const scoped = matchAgentScopedRoute(pathname);
     if (!scoped) return getSectionForPath(pathname);
 
-    const name = [
+    const record = [
       ...(agents ?? []),
       ...(sharedAgents ?? []),
       ...(selectedAgent ? [selectedAgent] : []),
-    ].find((agent) => agent.id === scoped.agentId)?.name;
+    ].find((agent) => agent.id === scoped.agentId);
 
     // An agent saved moments ago may not be in the store yet; the section
     // falls back to a generic title until it arrives.
-    return buildAgentSection(scoped.agentId, name, scoped.workflow);
+    return buildAgentSection(
+      scoped.agentId,
+      record?.name,
+      scoped.workflow,
+      record,
+    );
   }, [pathname, agents, sharedAgents, selectedAgent]);
 
   return {

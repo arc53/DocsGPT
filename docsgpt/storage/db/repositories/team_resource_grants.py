@@ -107,8 +107,9 @@ class TeamResourceGrantsRepository:
         that one member (the caller must have validated they're a team member).
         ``ON CONFLICT`` on the functional dedup index makes re-sharing
         last-write-wins on ``access_level``. The caller MUST have verified
-        ``granted_by`` owns the resource (dispatched by ``resource_type``) — the
-        polymorphic table has no FK to catch a type/id mismatch.
+        ``granted_by`` holds ``share`` on the resource (``resource_access.require``,
+        dispatched by ``resource_type``) and pass the real owner as ``owner_id`` —
+        the polymorphic table has no FK to catch a type/id mismatch.
         """
         result = self._conn.execute(
             text(

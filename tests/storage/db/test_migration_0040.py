@@ -1,4 +1,4 @@
-"""Migration tests for 0038_connections: columns, backfill and round trip."""
+"""Migration tests for 0040_connections: columns, backfill and round trip."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 pytestmark = pytest.mark.integration
 
-_0037 = "0037_request_traces"
+_0037 = "0039_resource_sponsors"  # the revision before 0040_connections
 
 
 def _alembic_ini() -> Path:
@@ -38,7 +38,7 @@ def _columns(conn, table: str) -> set[str]:
 
 
 def _seed_legacy(conn) -> dict:
-    """Rows as a pre-0038 install left them."""
+    """Rows as a pre-0040 install left them."""
     ids = {}
     ids["drive"] = conn.execute(
         text(
@@ -87,7 +87,7 @@ def _seed_legacy(conn) -> dict:
     return ids
 
 
-class TestMigration0038:
+class TestMigration0040:
     def test_head_has_connection_columns(self, pg_engine):
         with pg_engine.connect() as conn:
             assert {"connector_key", "display_name", "account_label", "auth_kind", "updated_at"} <= _columns(
@@ -156,7 +156,7 @@ class TestMigration0038:
 
 
 def _seed_secrets(conn) -> dict:
-    """Plaintext tokens and v1 tool secrets, as a pre-0038 install stored them."""
+    """Plaintext tokens and v1 tool secrets, as a pre-0040 install stored them."""
     from docsgpt.security.encryption import encrypt_credentials
 
     ids = {}
@@ -210,7 +210,7 @@ def _seed_secrets(conn) -> dict:
     return ids
 
 
-class TestMigration0038Credentials:
+class TestMigration0040Credentials:
     def _upgrade_with(self, pg_engine, seed):
         url = pg_engine.url.render_as_string(hide_password=False)
         _run_alembic(url, "downgrade", _0037)

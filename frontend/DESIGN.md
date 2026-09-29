@@ -17,7 +17,8 @@ from the Tailwind scale, never from arbitrary `[...]` values. Runtime values
 go in CSS custom properties or, when unavoidable, an inline style with a
 disable comment. Conditional classes go through `cn(...)`, never a template
 literal (prettier sorts the classes inside `cn`, and `cn` merges conflicts).
-Every user-visible string, attributes included (`aria-label`, IconButton
+What a role may do is gated with `can(item, action)` and a refused action is
+not rendered (see Access and roles). Every user-visible string, attributes included (`aria-label`, IconButton
 `label`, `placeholder`, `title`, `alt`, `hint`), is a `t()` key in all seven
 locales (`de en es jp ru zh zh-TW`); admin pages are English by design.
 Interpolated user text (a name, a timezone, a date) passes `interpolation: {
@@ -228,13 +229,14 @@ pill`, the only `outline-primary` on the agent pages themselves (the Access
   `outline field pill` (Save draft, Preview with `Play` first), Cancel `ghost
 field pill`, and page-level actions go in the `ActionMenu` (`size="toolbar"`)
   at the end of the title row, through `SectionShell titleAction`: Access
-  details and Share with team on Overview, and Preview until the agent is
+  details and Share with team on Overview (each only when the role allows
+  it, see Access and roles), and Preview until the agent is
   published (before that the preview only says "Publish to preview"). So the
   row never holds more than three buttons and fits a phone, where the main
   one stretches across it (`flex-1 sm:flex-none`; `PageToolbar`'s action slot
   spans the stacked row below `sm`). The workflow builder's toolbar has no
   title row and keeps its ⋯ at the row's end, holding Edit details, Access
-  details and Delete (see Workflow builder). The
+  details, Share with team and Delete (see Workflow builder). The
   agent's Delete is in Overview's danger zone; only the workflow builder's
   toolbar has it in the ⋯ menu, as a `destructive` item. The row itself is
   `agents/components/AgentPageToolbar` (see Page chrome). A row's common
@@ -294,7 +296,10 @@ justify-start` and `aria-expanded`: a lucide `ChevronRight` first
   (`has-[[data-variant=section-toggle]:focus-visible]:ring-3 … ring-inset`,
   inset because a scrolling column clips an outset ring), so pages pass
   nothing for it. Status badges go beside the button, not inside it, or the
-  hover underline runs under them.
+  hover underline runs under them. Because the ring comes from the Card,
+  `section-toggle` only goes inside a Card: a collapsible group in a Modal
+  or drawer (Share's Access settings) is the inline `link sm` disclosure
+  toggle above.
 - Drop `text-white` on default and destructive buttons; the foreground token
   already provides it. Drop `disabled:cursor-not-allowed` on buttons; the
   base disables pointer events. Fields are the other way round (see Focus,
@@ -466,7 +471,10 @@ pill, including schedule and run status pills (`agents/schedules/StatusBadge.tsx
 maps schedule and run statuses to Badge variants), trace chips and statuses,
 token scope chips, "Disabled" and tool chips. A grey chip is `neutral`, never
 a `bg-muted` pill. The admin role is `default` wherever it shows (Teams, Admin
-→ Users); every other role is `neutral`. Chips that show code (token scopes) pass `font-mono`, and
+→ Users); every other role is `neutral`. A shared asset's tile (agent,
+source, tool, prompt) shows the caller's role with `components/RoleBadge`: a
+`neutral` Badge with `Users` first (Editor, Viewer, from `roleOf()`); your own
+assets show none. Chips that show code (token scopes) pass `font-mono`, and
 stat chips `tabular-nums`, as approved exceptions. HTTP method pills take their variant from
 `getMethodBadgeVariant` (`utils/httpMethodColors.ts`): GET `success`, POST
 `info`, PUT `warning`, DELETE `destructive`, PATCH `default`, anything else
@@ -603,6 +611,13 @@ state assignment) is not a bare row: each of its fields has a floating
 label. Never hand-build a label above a field, a
 hand-positioned floating label, or a `div.flex-col` + `Label` + `<p>` stack.
 
+A saved secret (an API key, a tool's credential, a custom header value) never
+comes back from the API, for any role. Its field is empty and `type="password"`;
+in a FormField the saved state is the `hint` ("Saved. Leave empty to keep
+it."), because a placeholder is hidden while the label rests. Only a
+label-less table cell carries it as the placeholder
+(`settings.tools.savedSecretPlaceholder`). Never a `••••` placeholder.
+
 ### SettingRow (`ui/setting-row.tsx`)
 
 A setting with a control on the right (a Switch, a short Input) is
@@ -632,7 +647,10 @@ description use a Switch in a SettingRow instead.
 ### Switch, TimePicker and Calendar (`ui/switch.tsx`, `ui/time-picker.tsx`, `ui/calendar.tsx`)
 
 `Switch` (Radix) is an on/off setting, placed inside a `SettingRow` that names
-it. The track is `primary` when on and `bg-input` when off, with a white
+it. A tile's own on/off (the tool tile's "In my chats") is the one exception:
+a `Label text-muted-foreground text-xs font-normal` + `Switch` pair at the
+tile's bottom-right. For a shared tool it is the caller's own preference,
+never a switch that turns the tool off for everyone. The track is `primary` when on and `bg-input` when off, with a white
 thumb in both themes (see Elevation).
 
 `TimePicker` picks a time of day as two `SelectTrigger`s, hours and minutes,
@@ -680,6 +698,11 @@ row (the Agents filter pills) are not a ToggleGroup: they are `Button asChild
 variant={active ? 'outline' : 'ghost-muted'} size="sm" shape="pill"` around
 each `Link`, with `aria-current="page"` on the current one.
 
+Filtering a list by kind (a team's shared resources, Share's People) is this
+`xs` group in its muted track, each item `{label} {formatCount(n)}`, beside a
+`SearchInput size="sm"` (`w-full sm:w-56`); no match is `EmptyState size="xs"
+illustration="none"`.
+
 ### Separator (`ui/separator.tsx`)
 
 A 1px `bg-border` rule, horizontal or `orientation="vertical"`, decorative
@@ -717,7 +740,9 @@ height of its own). `label` puts a muted caption under the ring (a long job:
 Convert to wiki, Enable GraphRAG); it is also the ring's name. `size` takes
 the Spinner sizes (`default` unless set): `sm` inside a picker (the
 MultiSelect popover's list), `lg` for a full panel (a remote device's
-config). Spinners
+config). A role guard shows it while it resolves, then redirects
+silently: `AdminRoute` at `fill="screen"`, `AgentRouteGuard` at
+`fill="parent"` (it renders inside the app shell's scroll column) (see Access and roles). Spinners
 inside a control (a busy Button, a picker's `sm` ring) stay `Spinner`.
 
 Nothing to show is `EmptyState`: `size` `default | sm | xs` (128 / 96 / 64px
@@ -839,6 +864,43 @@ variant="destructive"` above the form, not text in or beside the button.
   publish validation) is a destructive `Alert` floating at `z-20` on an opaque
   `bg-card rounded-xl shadow-md` wrapper that stays until closed; a toast
   would truncate each error to one line and dismiss itself.
+- A switch moves at once and flips back when the server refuses, with a
+  destructive toast (an Alert inside a modal). A delete removes its row only
+  after the server confirms; a 403 shows `errors.forbidden`.
+
+### Access and roles
+
+Agents, sources, tools and prompts come to the UI with `access` and
+`allowed_actions`. Gate every control with `can(item, action)`
+(`utils/accessUtils`; `canAgent` in `agents/agentAccess.ts` for agents, which
+also refuses Logs, Schedules and Pin on a draft), never on `ownership`,
+`team_access` or the user id.
+
+- An action the role doesn't allow is not rendered. A menu builds its
+  options from `can()`, and a ⋯ with no options is not drawn; a footer or
+  row left empty goes, with its `Separator`. Never a disabled Save or a
+  disabled menu item for a role.
+- A control stays visible but `disabled` only when it shows state the caller
+  should still see (a switch's on/off, a policy's value). Then the reason is
+  on screen (an Alert or a FormField `hint`), never a bare grey control. A
+  control that can't apply to the caller at all (a tool's "In my chats" when
+  the grant doesn't allow it in their chats) is hidden, not disabled.
+- A view-only form opens with the same fields and `ViewOnlyNotice`
+  (`components/ViewOnlyNotice`: an `Alert role="note"` with `Lock` first and
+  `common.viewOnlyNotice`) as its first child. Where only part of an editable
+  form is locked (a tool's credentials when the owner turned off "Editors can
+  change credentials"), the same notice passes its own `message`. There is no Save; Cancel becomes a lone Close.
+  Fields are `disabled` (a group: `<fieldset disabled className="min-w-0">`);
+  long text the user reads or copies (a prompt, a chunk) is `readOnly`, so it
+  keeps full contrast and scrolls. Titles and menu items swap Edit and
+  `Pencil` for View and `Eye`.
+- Source views follow the same rule: every write (Add file, Sync, Add chunk,
+  Edit, Delete) shows only with `can(source, 'edit')`; reading, copying and
+  paging stay.
+- A page the role can't open is refused twice: its tabs and section items
+  are filtered by the same action (`AgentPageHeader`, `navigation/sections`),
+  and its route is wrapped in a guard (`AgentRouteGuard`) that redirects to
+  the list as a deep-link fallback, with `LoadingState` while it resolves.
 
 ### Alert (`ui/alert.tsx`)
 
@@ -891,7 +953,9 @@ line, a trailing control) is `ListRow` inside `ListRows` (`divide-y
 divide-border`, no box of its own; wrap it in `Card padding="none"` or a
 bordered list for one). Rows are `px-4 py-3`, the title `text-sm
 font-medium`. `interactive` (with `asChild` around a `<Link>` or `<button>`)
-hovers to `bg-accent` and draws an inset focus ring. An icon square in
+hovers to `bg-accent` and draws an inset focus ring. `selected` marks the
+row whose detail is open in a drawer beside the list (a team's shared
+resources), exactly as a selected TableRow (see Table). An icon square in
 `leading` is a plain `bg-muted text-muted-foreground size-8 rounded-md` span.
 In a narrow side panel (the graph node panel's relationships) rows are
 `size="sm"`: `px-2 py-1.5`, `gap-2.5`, `rounded-md` and top-aligned so a small
@@ -920,7 +984,11 @@ the current page size, so picking a bigger size never hides the way back
 ("Page 1 of 1", chevrons off). Counts and numbers in the UI format on the app
 language: `formatCount` (`utils/dateTimeUtils`, `Intl` on `intlLocale()`), never
 `toLocaleString()` or a raw `{{count}}`; plural keys get the number as `count`
-and the formatted text as its own param. The one exception is a headline
+and the formatted text as `formatted` (`{{formatted}} members`), a key with no
+plural passes only `formatted`, and a count is never baked into the key name
+(`memberCountOne`). `jp` and `zhTW` aren't language tags i18next knows, so it
+plurals them by English rules: every plural key there has an `_one` form too
+(the same text as `_other`), or a count of 1 falls back to English. The one exception is a headline
 total that can reach tens of thousands (the chunk count in the Chunks byline
 and embedded toolbar): it may use `abbreviateCount` (`components/chunkUtils`,
 `Intl` compact notation: "12K", "12 тыс.", "1.2万"; grouped digits where the
@@ -987,8 +1055,8 @@ The title is for chats only: the open conversation's name, or the agent's
 name on a new agent chat, with the agent's `Avatar` in front. A plain new chat
 has no title. So do section pages (settings, admin, an agent's pages), because
 `SectionShell` already draws their title. When the chat has actions, the title
-is a `ghost sm` Button that opens a `DropdownMenu` with Edit agent (owned
-agents), Share, Rename and Delete. Rename edits the name in place, as the
+is a `ghost sm` Button that opens a `DropdownMenu` with Edit agent (a role
+that may open its edit page), Share, Rename and Delete. Rename edits the name in place, as the
 sidebar row does. A title with no actions (a shared agent's new chat) is
 plain text.
 
@@ -1058,8 +1126,10 @@ variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
   chunk's previous / next (`IconButton ghost-muted icon-sm pill`, and the
   arrow keys), then Edit (`outline sm pill`, `Pencil` first) and an
   `ActionMenu size="toolbar"` (Copy text; a chunk's also has Delete, a
-  destructive item). A wiki page has Edit (editors only) and the same menu
-  with Copy text, and no previous / next; the navigator walks them.
+  destructive item). A wiki page has Edit and the same menu
+  with Copy text, and no previous / next; the navigator walks them. Edit,
+  Delete and Add chunk show only to a role that may edit (see Access and
+  roles).
 - **Read in the page, edit in a drawer**: Edit and Add chunk open
   `SourceEditSheet`, a right `Sheet size="wide"` (a working surface): title
   and a mono description (path, version, tokens), then any `fields` edited
@@ -1113,7 +1183,8 @@ pill`) and Save (`default lg pill`, off until the draft or a field changes, and 
   source chunks as `filled sm interactive` tiles. A tile opens a read drawer
   (`Sheet size="detail"`, one record) with the chunk rendered and the entity's
   name marked in the brand tint (`bg-secondary`), and Open in Files and Edit
-  (the same `SourceEditSheet`) in its footer; Cancel or Discard in that edit
+  (the same `SourceEditSheet`) in its footer, which is omitted when neither
+  applies; Cancel or Discard in that edit
   drawer returns to the read drawer, Save closes both, and closing it leaves
   the node selected. The relationship list is capped server-side: its heading
   counts the true total (`relationships_total`) and, when the list is partial,
@@ -1156,8 +1227,8 @@ opens the workflow details. The status Badge follows (`success` Published,
 `neutral` Draft until the first save), then the tabs. On the right: "Unsaved
 changes" as muted `text-sm` meta while there are any, Preview, Save, and the
 ⋯ (`ActionMenu size="toolbar"`): Edit details first (the same drawer, for
-anyone who doesn't try the name), then Access details and Delete once the
-workflow is saved.
+anyone who doesn't try the name), then Access details, Share with team and
+Delete once the workflow is saved, each only when the role allows it.
 
 The workflow details are a right `Sheet size="default"`
 (`components/WorkflowDetailsSheet.tsx`), built like AgentPreviewSheet (header,
@@ -1251,6 +1322,13 @@ ScheduleFormModal's editable name, the search palette). A step heading
 under a Back button uses the title's classes (`text-xl leading-tight
 font-semibold`), not a larger size.
 
+A list in a modal that can grow long (Share's People) shows the first three
+once it passes five, a `link inline` "Show all N" (12px `ArrowRight`) in its
+SectionHeader's `actions` and a muted `text-xs` "and N more" line, counts
+through `formatCount`. The full list is a second step: a `ghost sm` Back with
+`ArrowLeft`, the title-class heading, then the search and kind filter (see
+ToggleGroup), with `hideTitle` on that step only.
+
 Buttons go in `footer`, never in `children`. The footer stacks full width on
 phones (primary on top) and sits in a right-aligned row from `sm` up. The
 standard pair is `footer={<ModalActions cancelLabel onCancel submitLabel
@@ -1287,7 +1365,12 @@ one shared drawer, `agents/components/AgentPreviewSheet`, for workflow and
 classic agents alike: `size="wide"`, a `SheetTitle`
 and a one-line `SheetDescription` (the agent's name) in a header padded
 `pr-12` to clear the close X, an `info` Running badge while it answers, a
-`Separator`, then the preview. The workflow preview's Execution details and
+`Separator`, then the preview. Every right drawer with a custom header
+(AgentPreviewSheet, SourceEditSheet, GraphChunkSheet, a team's resource
+detail) is that recipe: `SheetContent` `p-0`, a header at `px-6 pt-6 pr-12
+pb-4` that never scrolls, a `Separator`, then the one scrolling body at `px-6
+py-6`. The title wraps (`wrap-break-word`), it doesn't truncate. The row whose
+drawer is open is `selected` (ListRow or TableRow). The workflow preview's Execution details and
 Artifacts rows are the answer's step-row recipe (see Alert), each step a
 `subtle sm` panel with its output in a `filled sm` well.
 

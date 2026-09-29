@@ -1,7 +1,8 @@
 import React from 'react';
-import { ChevronRight, Info, Lock, TriangleAlert } from 'lucide-react';
+import { ChevronRight, Info, TriangleAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import ViewOnlyNotice from '@/components/ViewOnlyNotice';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -101,9 +102,11 @@ type Props = {
   value?: GuardrailsConfig;
   onChange: (next: GuardrailsConfig) => void;
   token: string | null;
+  /**
+   * The caller's role can't change the policy: the controls still show its
+   * state, disabled, under the shared view-only notice.
+   */
   disabled?: boolean;
-  /** Why the controls are read-only, shown in place of a silent lockout. */
-  disabledNotice?: string;
 };
 
 export default function GuardrailsSection({
@@ -111,7 +114,6 @@ export default function GuardrailsSection({
   onChange,
   token,
   disabled = false,
-  disabledNotice,
 }: Props) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = React.useState(false);
@@ -287,12 +289,7 @@ export default function GuardrailsSection({
             />
           )}
 
-          {disabled && disabledNotice && (
-            <Alert role="status" data-testid="guardrails-read-only">
-              <Lock aria-hidden="true" className="size-4" />
-              <AlertDescription>{disabledNotice}</AlertDescription>
-            </Alert>
-          )}
+          {disabled && <ViewOnlyNotice data-testid="guardrails-read-only" />}
 
           {instanceDisabled && (
             <Alert variant="warning" data-testid="guardrails-instance-disabled">

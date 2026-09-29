@@ -473,7 +473,7 @@ def parameter_fields(key: Optional[str]) -> tuple[CredentialField, ...]:
 def connector_key_for_row(row: dict) -> Optional[str]:
     """Catalog key for a ``connector_sessions`` row.
 
-    Rows written before ``0038_connections`` carry no key; they are named from
+    Rows written before ``0040_connections`` carry no key; they are named from
     ``provider``. A custom MCP row whose server matches a preset is reported
     as that preset.
     """

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { ConfigRequirements } from '../modals/types';
 import { FormField, type FormFieldProps } from './ui/form-field';
@@ -43,6 +44,7 @@ export default function ConfigFields({
   hasEncryptedCredentials = false,
   labelSurface,
 }: ConfigFieldsProps) {
+  const { t } = useTranslation();
   const sortedFields = useMemo(
     () =>
       Object.entries(configRequirements).sort(
@@ -59,9 +61,10 @@ export default function ConfigFields({
         if (!shouldShowField(spec, values)) return null;
 
         const value = values[key] ?? spec.default ?? '';
+        // A saved secret never comes back: the field stays empty and the
+        // hint says it is saved.
         const hasEncrypted =
           isEditing && spec.secret && hasEncryptedCredentials;
-        const placeholder = hasEncrypted ? '••••••••' : '';
         const error = errors[key] || undefined;
 
         if (spec.enum) {
@@ -98,6 +101,7 @@ export default function ConfigFields({
             key={key}
             label={spec.label || key}
             required={!!spec.required}
+            hint={hasEncrypted ? t('common.savedSecretHint') : undefined}
             error={error}
             labelSurface={labelSurface}
           >
@@ -122,7 +126,7 @@ export default function ConfigFields({
                   onChange(key, v);
                 }
               }}
-              placeholder={placeholder || spec.description || ''}
+              placeholder={spec.description || ''}
               min={spec.type === 'number' ? 1 : undefined}
               max={
                 spec.type === 'number' && key === 'timeout' ? 300 : undefined

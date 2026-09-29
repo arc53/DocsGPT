@@ -92,7 +92,10 @@
         "edit": "Editar prompt",
         "view": "Ver prompt",
         "duplicate": "Duplicar prompt",
-        "delete": "Eliminar prompt"
+        "delete": "Eliminar prompt",
+        "deleteFailed": "No se pudo eliminar este prompt.",
+        "saveFailed": "No se pudo guardar este prompt.",
+        "editConflict": "Otra persona cambió este prompt. Vuelve a abrirlo para ver su versión."
       }
     },
     "sources": {
@@ -393,7 +396,6 @@
         "subtitle": "Configura cómo se fragmenta y recupera \"{{name}}\".",
         "subtitleGeneric": "Configura cómo se fragmenta y recupera esta fuente.",
         "save": "Guardar",
-        "readOnly": "Tienes acceso de solo lectura a esta fuente compartida y no puedes cambiar su configuración.",
         "chunkingChangeHint": "Cambiaste un ajuste de fragmentación. Al guardar será necesario reindexar esta fuente para que surta efecto.",
         "prescreenInvalidHint": "Revisa los valores de preselección: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
         "reingestRequired": "Tus cambios se guardaron. Los ajustes de fragmentación que cambiaste solo surten efecto tras reindexar. ¿Reindexar ahora?",
@@ -440,7 +442,15 @@
       "nextChunk": "Fragmento siguiente",
       "paused": "Sincronización en pausa. Reconecta {{name}} para reanudarla.",
       "emptyHint": "Sube archivos, añade un sitio web o conecta un servicio para sincronizar su contenido.",
-      "connectService": "Conectar un servicio"
+      "connectService": "Conectar un servicio",
+      "viewConfig": "Ver ajustes de la fuente",
+      "errors": {
+        "forbidden": "No tienes permiso para hacer eso en esta fuente.",
+        "delete": "No se pudo eliminar la fuente.",
+        "sync": "No se pudo sincronizar la fuente.",
+        "syncFrequency": "No se pudo cambiar la frecuencia de sincronización.",
+        "reingest": "No se pudo iniciar la reingesta."
+      }
     },
     "analytics": {
       "label": "Analítica",
@@ -663,9 +673,6 @@
       "createTeamError": "No se pudo crear el equipo.",
       "noTeams": "Aún no hay equipos.",
       "noDescription": "Sin descripción",
-      "memberCountOne": "{{count}} miembro",
-      "memberCountOther": "{{count}} miembros",
-      "sharedCount": "{{count}} compartidos",
       "loadError": "No se pudieron cargar los equipos.",
       "roleAdmin": "admin",
       "roleMember": "miembro",
@@ -732,7 +739,190 @@
         "teamLabel": "Equipo",
         "viaTeam": "vía {{team}}",
         "removeAccess": "Quitar acceso",
-        "access": "Acceso"
+        "access": "Acceso",
+        "showAll": "Ver los {{formatted}}",
+        "andMore_one": "y {{formatted}} más",
+        "andMore_other": "y {{formatted}} más",
+        "back": "Atrás",
+        "allSummary": "{{name}} · Equipos: {{teams}} · Personas: {{people}}",
+        "searchAccess": "Buscar personas y equipos…",
+        "filterLabel": "Filtrar personas con acceso",
+        "filter": {
+          "all": "Todos",
+          "teams": "Equipos",
+          "people": "Personas",
+          "editors": "Editores"
+        }
+      },
+      "memberCount_one": "{{formatted}} miembro",
+      "memberCount_other": "{{formatted}} miembros",
+      "sharedCount_one": "{{formatted}} compartido",
+      "sharedCount_other": "{{formatted}} compartidos",
+      "accessChangeError": "No se pudo cambiar el acceso.",
+      "accessSettings": {
+        "title": "Ajustes de acceso",
+        "saveError": "No se pudo guardar el ajuste de acceso.",
+        "agent": {
+          "editors_can_share": {
+            "label": "Los editores pueden compartir",
+            "description": "Añadir personas y equipos y cambiar su acceso."
+          },
+          "editors_can_delete": {
+            "label": "Los editores pueden eliminar",
+            "description": "Eliminar el agente para todos."
+          },
+          "editors_can_manage_access_details": {
+            "label": "Los editores pueden gestionar los datos de acceso",
+            "description": "Clave de API, webhook y enlace público."
+          },
+          "viewers_can_see_logs": {
+            "label": "Los lectores pueden ver los registros",
+            "description": "Conversaciones y analíticas de este agente."
+          }
+        },
+        "source": {
+          "editors_can_share": {
+            "label": "Los editores pueden compartir",
+            "description": "Añadir personas y equipos y cambiar su acceso."
+          },
+          "editors_can_delete": {
+            "label": "Los editores pueden eliminar",
+            "description": "Eliminar la fuente para todos."
+          },
+          "viewers_can_see_config": {
+            "label": "Los lectores pueden ver los ajustes",
+            "description": "Ajustes de fragmentación, recuperador y sincronización, solo lectura."
+          }
+        },
+        "tool": {
+          "editors_can_change_credentials": {
+            "label": "Los editores pueden cambiar credenciales y conexión",
+            "description": "Sustituyen los secretos guardados; nadie puede volver a leerlos."
+          },
+          "editors_can_share": {
+            "label": "Los editores pueden compartir",
+            "description": "Añadir personas y equipos y cambiar su acceso."
+          },
+          "viewers_can_use_in_agents": {
+            "label": "Los lectores pueden usarla en sus propios agentes",
+            "description": "Se ejecuta con tus credenciales."
+          }
+        },
+        "prompt": {
+          "editors_can_share": {
+            "label": "Los editores pueden compartir",
+            "description": "Añadir personas y equipos y cambiar su acceso."
+          },
+          "viewers_can_duplicate": {
+            "label": "Los lectores pueden duplicarlo",
+            "description": "Hacer su propia copia para editarla."
+          }
+        }
+      },
+      "editorHint": {
+        "agent": "Los editores pueden cambiarlo, incluidos los registros, las programaciones y los datos de acceso.",
+        "agentNoAccessDetails": "Los editores pueden cambiarlo, incluidos los registros y las programaciones, pero no los datos de acceso.",
+        "source": "Los editores pueden editar fragmentos y archivos, sincronizar y cambiar ajustes.",
+        "tool": "Los editores pueden cambiar acciones y sustituir credenciales, pero no pueden leer secretos.",
+        "toolNoCredentials": "Los editores pueden cambiar acciones, pero no las credenciales.",
+        "prompt": "Los editores pueden cambiar el texto.",
+        "noShareNoDelete": "No pueden compartirlo ni eliminarlo.",
+        "shareOnly": "También pueden compartirlo, pero no eliminarlo.",
+        "deleteOnly": "También pueden eliminarlo, pero no compartirlo.",
+        "shareAndDelete": "También pueden compartirlo y eliminarlo.",
+        "noShare": "No pueden compartirlo ni eliminarlo.",
+        "share": "También pueden compartirlo, pero no eliminarlo."
+      },
+      "capabilities": {
+        "agent": {
+          "viewers": "Lectores: chatear con él y fijarlo",
+          "editors": "Editores: editarlo, publicarlo, ver registros y gestionar programaciones"
+        },
+        "source": {
+          "viewers": "Lectores: explorar, buscar y usarla en sus agentes",
+          "editors": "Editores: editar fragmentos y archivos, sincronizar, cambiar ajustes"
+        },
+        "tool": {
+          "viewers": "Lectores: usarla dentro de los agentes del propietario",
+          "editors": "Editores: cambiar acciones y aprobaciones"
+        },
+        "prompt": {
+          "viewers": "Lectores: leerlo y usarlo en sus agentes",
+          "editors": "Editores: cambiar el texto"
+        },
+        "switch": {
+          "editors_can_share": {
+            "on": "Los editores pueden compartirlo",
+            "off": "Los editores no pueden compartirlo"
+          },
+          "editors_can_delete": {
+            "on": "Los editores pueden eliminarlo",
+            "off": "Los editores no pueden eliminarlo"
+          },
+          "editors_can_manage_access_details": {
+            "on": "Los editores pueden gestionar la clave de API, el webhook y el enlace público",
+            "off": "Los editores no pueden gestionar la clave de API, el webhook ni el enlace público"
+          },
+          "viewers_can_see_logs": {
+            "on": "Los lectores pueden ver los registros",
+            "off": "Los lectores no pueden ver los registros"
+          },
+          "viewers_can_see_config": {
+            "on": "Los lectores pueden ver sus ajustes",
+            "off": "Los lectores no pueden ver sus ajustes"
+          },
+          "editors_can_change_credentials": {
+            "on": "Los editores pueden sustituir credenciales",
+            "off": "Los editores no pueden cambiar credenciales"
+          },
+          "viewers_can_use_in_agents": {
+            "on": "Los lectores pueden usarla en sus propios agentes",
+            "off": "Los lectores no pueden usarla en sus propios agentes"
+          },
+          "viewers_can_duplicate": {
+            "on": "Los lectores pueden duplicarlo",
+            "off": "Los lectores no pueden duplicarlo"
+          }
+        }
+      },
+      "sharedList": {
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} editor",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} editores",
+        "meta": "{{type}} · {{owner}}",
+        "filterLabel": "Filtrar recursos compartidos",
+        "filter": {
+          "all": "Todos",
+          "agent": "Agentes",
+          "source": "Fuentes",
+          "tool": "Herramientas",
+          "prompt": "Prompts"
+        },
+        "search": "Buscar compartidos…",
+        "noMatches": "No hay coincidencias."
+      },
+      "drawer": {
+        "close": "Cerrar",
+        "subtitle": "{{type}} · propiedad de {{owner}}",
+        "open": "Abrir {{type}}",
+        "manageSharing": "Gestionar uso compartido",
+        "owner": "Propietario",
+        "shared": "Compartido",
+        "sharedOnBy": "{{date}} por {{name}}",
+        "yourAccess": "Tu acceso",
+        "yourAccessLevel": {
+          "owner": "Propietario",
+          "editor": "Editor",
+          "viewer": "Lector",
+          "none": "Sin acceso"
+        },
+        "accessIn": "Acceso en {{team}}",
+        "everyone": "Todos en {{team}}",
+        "teamGrant": "Todo el equipo",
+        "memberGrant": "Solo esta persona",
+        "removeGrant": "Quitar acceso",
+        "otherTeamsHint": "¿También compartido con otros equipos? Esos accesos se gestionan en «Gestionar uso compartido».",
+        "whatPeopleCanDo": "Qué pueden hacer aquí",
+        "capabilitiesHint": "Según los ajustes de acceso del propietario. Solo lectura aquí."
       }
     },
     "tools": {
@@ -806,7 +996,6 @@
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
         "reconnectServer": "Reconectar servidor",
-        "reenterCredentials": "Vuelve a introducir tus credenciales para probar y actualizar la conexión.",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -851,7 +1040,18 @@
           "oauthFailed": "OAuth process failed or was cancelled",
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
-        }
+        },
+        "sharedByEditor": "Compartido por {{owner}} · eres editor",
+        "aTeammate": "un compañero",
+        "sharedCredentialsNotice": "Las credenciales guardadas permanecen ocultas. Lo que introduzcas las reemplaza para todos los que usan esta herramienta.",
+        "serverChangedNotice": "El servidor cambió, así que se borrarán las credenciales guardadas ({{credential}}). Introdúcelas para el nuevo servidor para guardar.",
+        "credentialNames": {
+          "apiKey": "clave de API",
+          "bearer": "token",
+          "password": "contraseña"
+        },
+        "savedKeyHint": "Hay una clave guardada. Déjalo vacío para conservarla (solo mientras el servidor no cambie).",
+        "sharedOAuthOwnerOnly": "Solo el propietario puede cambiar la conexión de este servidor o volver a conectar su inicio de sesión. Aún puedes cambiarle el nombre y editar sus acciones."
       },
       "configErrors": {
         "required": "{{field}} es obligatorio",
@@ -864,7 +1064,14 @@
       "groupService": "De un servicio",
       "browseConnectors": "Ver todos los conectores",
       "viaConnection": "mediante {{name}}",
-      "off": "Desactivada"
+      "off": "Desactivada",
+      "view": "Ver",
+      "inMyChats": "En mis chats",
+      "useInMyChatsAria": "Usar {{toolName}} en mis chats",
+      "statusUpdateFailed": "No se pudo cambiar si esta herramienta está en tus chats.",
+      "deleteFailed": "No se pudo eliminar esta herramienta.",
+      "sharedBy": "Compartido por {{team}}",
+      "savedSecretPlaceholder": "Guardado · introduce un valor nuevo para reemplazarlo"
     },
     "devices": {
       "label": "Dispositivos",
@@ -1683,7 +1890,9 @@
         "description": "Nadie puede aprobar una acción en el widget ni a través de la API, así que los cambios en tus cuentas conectadas se bloquean salvo que los permitas aquí.",
         "item": "{{tool}}: {{action}}",
         "saveFailed": "No se pudo guardar. Inténtalo de nuevo."
-      }
+      },
+      "actionFailed": "No funcionó. Inténtalo de nuevo.",
+      "apiKeyAfterPublish": "Publica el agente para crear su clave de API."
     },
     "importSpec": {
       "title": "Importar especificación de API",
@@ -1953,10 +2162,6 @@
       "team": "Equipo",
       "shared": "Compartidos conmigo"
     },
-    "teamBadge": {
-      "editor": "Editor",
-      "viewer": "Lector"
-    },
     "sections": {
       "template": {
         "title": "Por DocsGPT",
@@ -2119,7 +2324,6 @@
         "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
         "remove": "Remove",
         "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
         "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
         "floorControl": "{{stage}}: {{action}} — required by the instance policy",
         "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
@@ -2144,6 +2348,13 @@
       },
       "status": {
         "published": "Publicado"
+      },
+      "sponsors": {
+        "attachNote": "Las herramientas, fuentes y prompts que añadas desde tu propia biblioteca se ejecutan con tu acceso para todos los que usen este agente.",
+        "publicLinkNote": "Este agente tiene un enlace público, así que cualquiera con el enlace puede obtener respuestas de ellos.",
+        "addedBy": "Añadido por {{person}}: {{names}}",
+        "unavailable": "Sin ejecutarse: {{names}}. {{person}} los añadió y ya no tiene acceso. Quítalos o elige otros que el propietario pueda usar.",
+        "unknownItem": "Elemento sin nombre"
       }
     },
     "logs": {
@@ -2579,7 +2790,9 @@
       "classicDescription": "Crea un agente de IA estándar con un solo modelo, herramientas y fuentes de conocimiento",
       "workflowTitle": "Agente de flujo de trabajo",
       "workflowDescription": "Diseña flujos de trabajo complejos de varios pasos con distintos modelos, lógica condicional y gestión de estado"
-    }
+    },
+    "view": "Ver",
+    "deleteFailed": "No se pudo eliminar el agente. Inténtalo de nuevo."
   },
   "components": {
     "fileUpload": {
@@ -2710,5 +2923,11 @@
   "connectHero": {
     "title": "Conecta tus datos",
     "body": "Chatea con {{names}} y más."
+  },
+  "common": {
+    "close": "Cerrar",
+    "viewOnlyNotice": "Puedes ver esto, pero tu rol no puede cambiarlo.",
+    "credentialsLockedNotice": "Solo el propietario puede cambiar las credenciales de esta herramienta.",
+    "savedSecretHint": "Guardado. Déjalo vacío para conservarlo."
   }
 }

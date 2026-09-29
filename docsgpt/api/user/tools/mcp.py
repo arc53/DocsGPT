@@ -8,7 +8,16 @@ from flask_restx import Namespace, Resource, fields
 from docsgpt.agents.tool_pins import carry_pins_between
 from docsgpt.agents.tools.mcp_tool import MCPOAuthManager, MCPTool
 from docsgpt.api import api
-from docsgpt.api.user.tools.routes import transform_actions
+from docsgpt.api.user.resource_access import AccessDenied, require
+from docsgpt.api.user.team_sharing import visible_with_access
+from docsgpt.api.user.tools.routes import (
+    _CREDENTIALS_FOR_NEW_SERVER,
+    _MCP_CREDENTIAL_AUTH_TYPES,
+    _mcp_origin_changed,
+    check_oauth_mcp_owner_only,
+    denied_response,
+    transform_actions,
+)
 from docsgpt.cache import get_redis_instance
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
@@ -116,13 +125,14 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
     return str(row["id"]) if row else None
 
 
-def _previous_connection(existing_doc, config, user) -> str | None:
+def _previous_connection(existing_doc, config, owner_id) -> str | None:
     """The saved tool's connection, kept only while the server is unchanged.
 
     An edit that cannot resolve a connection of its own (the default
     encryption key blocks storing a new secret) must not carry the old
     one over to a different server (its key would be sent there), to a
-    connection the caller does not own, or to one that signs in another way.
+    connection the tool's owner does not own, or to one that signs in
+    another way.
     """
     from docsgpt.connectors import catalog
 
@@ -131,7 +141,7 @@ def _previous_connection(existing_doc, config, user) -> str | None:
     if not connection_id or not base:
         return None
     with db_readonly() as conn:
-        row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), user)
+        row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
     if row is None or catalog.base_url(row.get("server_url")) != base:
         return None
     wanted = {"oauth": "mcp_oauth", "none": "none"}.get(config.get("auth_type") or "none", "api_key")
@@ -168,12 +178,97 @@ def _mcp_policy_error(config: dict):
     return None
 
 
+def _stored_mcp_credentials(existing_doc: dict, owner_id: str) -> dict:
+    """The secrets a saved MCP tool authenticates with, for reuse on an edit.
+
+    A legacy tool keeps them encrypted in its config; a connection-backed one
+    on its key-based connection, read only while that connection is the
+    owner's and was stored for the tool's own server.
+
+    Args:
+        existing_doc: The stored ``user_tools`` row.
+        owner_id: The tool's owner.
+
+    Returns:
+        The stored credentials, or ``{}`` when there are none to reuse.
+    """
+    from docsgpt.connectors import catalog, service
+
+    existing_config = existing_doc.get("config") or {}
+    if existing_config.get("encrypted_credentials"):
+        return decrypt_credentials(existing_config["encrypted_credentials"], owner_id)
+    connection_id = existing_doc.get("connection_id")
+    if not connection_id:
+        return {}
+    with db_readonly() as conn:
+        row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
+    if (
+        row is None
+        or (row.get("auth_kind") or "") != "api_key"
+        or catalog.base_url(row.get("server_url")) != catalog.base_url(existing_config.get("server_url"))
+    ):
+        return {}
+    try:
+        return service.get_credentials(row)
+    except service.ConnectionUnavailable:
+        return {}
+
+
+def _existing_mcp_context(tool_id, user, config):
+    """Resolve the stored MCP tool a test/save refers to, and its credentials.
+
+    With no ``tool_id`` the caller acts on their own new server. With one,
+    the caller needs ``edit_credentials`` on that tool and everything runs as
+    its owner. Stored secrets are write-only, so an empty secret field reuses
+    the stored one (on the tool, or on its key-based connection) while the
+    origin (scheme, host, port) is unchanged; a new origin never inherits them.
+    A server that is or would become OAuth is the owner's alone (its tokens
+    are the owner's sign-in).
+
+    Returns:
+        ``(existing_doc, owner_id, is_owner, moved, credentials)``, or a Flask
+        response (404 / 400) to return as is.
+
+    Raises:
+        AccessDenied: the caller can't see the tool (404), can't change its
+            credentials (403), or isn't the owner of an OAuth server (403).
+    """
+    auth_credentials = _extract_auth_credentials(config)
+    if not tool_id:
+        return None, user, True, False, auth_credentials
+    with db_readonly() as conn:
+        ra = require(conn, "tool", tool_id, user, "edit_credentials")
+        existing_doc = UserToolsRepository(conn).get_any(ra.resource_id, ra.owner_id)
+    if not existing_doc or existing_doc.get("name") != "mcp_tool":
+        return make_response(
+            jsonify({"success": False, "message": "Tool not found or access denied"}), 404,
+        )
+    existing_config = existing_doc.get("config") or {}
+    check_oauth_mcp_owner_only(ra, existing_config, config)
+    moved = _mcp_origin_changed(config, existing_config)
+    auth_type = config.get("auth_type", "none")
+    new_secret_keys = set(auth_credentials) - {"api_key_header"}
+    if moved and auth_type in _MCP_CREDENTIAL_AUTH_TYPES and not new_secret_keys:
+        return make_response(
+            jsonify({"success": False, "message": _CREDENTIALS_FOR_NEW_SERVER}), 400
+        )
+    credentials = dict(auth_credentials)
+    stored = {} if moved else _stored_mcp_credentials(existing_doc, ra.owner_id)
+    if stored:
+        credentials = {**stored, **auth_credentials}
+    return existing_doc, ra.owner_id, ra.access == "owner", moved, credentials
+
+
 @tools_mcp_ns.route("/mcp_server/test")
 class TestMCPServerConfig(Resource):
     @api.expect(
         api.model(
             "MCPServerTestModel",
             {
+                "id": fields.String(
+                    required=False,
+                    description="Stored tool to test with (empty secrets reuse its stored ones)",
+                ),
                 "config": fields.Raw(
                     required=True, description="MCP server configuration to test"
                 ),
@@ -207,11 +302,14 @@ class TestMCPServerConfig(Resource):
             if policy_error is not None:
                 return policy_error
 
-            auth_credentials = _extract_auth_credentials(config)
+            ctx = _existing_mcp_context(data.get("id"), user, config)
+            if not isinstance(ctx, tuple):
+                return ctx
+            _existing_doc, owner_id, _is_owner, _moved, auth_credentials = ctx
             test_config = config.copy()
             test_config["auth_credentials"] = auth_credentials
 
-            mcp_tool = MCPTool(config=test_config, user_id=user)
+            mcp_tool = MCPTool(config=test_config, user_id=owner_id)
             result = mcp_tool.test_connection()
 
             if result.get("requires_oauth"):
@@ -244,6 +342,8 @@ class TestMCPServerConfig(Resource):
                 "tools": result.get("tools", []),
             }
             return make_response(jsonify(safe_result), 200)
+        except AccessDenied as e:
+            return denied_response(e)
         except ValueError as e:
             current_app.logger.warning(f"Invalid MCP server test request: {e}")
             return make_response(
@@ -306,16 +406,23 @@ class MCPServerSave(Resource):
             if policy_error is not None:
                 return policy_error
 
-            auth_credentials = _extract_auth_credentials(config)
+            # An existing id is always an update of THAT row, written as its
+            # owner; it never falls through to creating a copy for the caller.
+            ctx = _existing_mcp_context(data.get("id"), user, config)
+            if not isinstance(ctx, tuple):
+                return ctx
+            existing_doc, owner_id, is_owner, _moved, merged_credentials = ctx
             auth_type = config.get("auth_type", "none")
             mcp_config = config.copy()
-            mcp_config["auth_credentials"] = auth_credentials
+            mcp_config["auth_credentials"] = merged_credentials
 
             if auth_type == "oauth" and not config.get("oauth_task_id"):
-                # No new handshake: the caller signed in to this server
-                # before, so its stored tokens answer the discovery.
+                # Only the owner reaches here for an existing server (see
+                # ``_existing_mcp_context``). No new handshake: they signed in
+                # to this server before, so its stored tokens answer the
+                # discovery, and the save below still needs that connection.
                 try:
-                    mcp_tool = MCPTool(config=mcp_config, user_id=user)
+                    mcp_tool = MCPTool(config=mcp_config, user_id=owner_id)
                     mcp_tool.discover_tools()
                     actions_metadata = mcp_tool.get_actions_metadata()
                 except Exception:
@@ -345,8 +452,8 @@ class MCPServerSave(Resource):
                         400,
                     )
                 actions_metadata = result.get("tools", [])
-            elif auth_type == "none" or auth_credentials:
-                mcp_tool = MCPTool(config=mcp_config, user_id=user)
+            elif auth_type == "none" or merged_credentials:
+                mcp_tool = MCPTool(config=mcp_config, user_id=owner_id)
                 mcp_tool.discover_tools()
                 actions_metadata = mcp_tool.get_actions_metadata()
             else:
@@ -355,30 +462,10 @@ class MCPServerSave(Resource):
                 )
             storage_config = config.copy()
 
-            tool_id = data.get("id")
-            existing_doc = None
-            existing_encrypted = None
-            if tool_id:
-                with db_readonly() as conn:
-                    repo = UserToolsRepository(conn)
-                    existing_doc = repo.get_any(tool_id, user)
-                if existing_doc and existing_doc.get("name") == "mcp_tool":
-                    existing_encrypted = (existing_doc.get("config") or {}).get(
-                        "encrypted_credentials"
-                    )
-                else:
-                    existing_doc = None
-
-            if auth_credentials:
-                if existing_encrypted:
-                    existing_secrets = decrypt_credentials(existing_encrypted, user)
-                    existing_secrets.update(auth_credentials)
-                    auth_credentials = existing_secrets
+            if merged_credentials:
                 storage_config["encrypted_credentials"] = encrypt_credentials(
-                    auth_credentials, user
+                    merged_credentials, owner_id
                 )
-            elif existing_encrypted:
-                storage_config["encrypted_credentials"] = existing_encrypted
 
             for field in [
                 "api_key",
@@ -396,9 +483,11 @@ class MCPServerSave(Resource):
             )
 
             display_name = data["displayName"]
+            # The connection is the owner's: an editor's save stores the
+            # secret on the owner's account, as the tool runs as its owner.
             connection_id = _mcp_connection(
-                user, storage_config, auth_type, auth_credentials, display_name,
-            ) or _previous_connection(existing_doc, storage_config, user)
+                owner_id, storage_config, auth_type, merged_credentials, display_name,
+            ) or _previous_connection(existing_doc, storage_config, owner_id)
             if auth_type == "oauth" and not connection_id:
                 # A sign-in server's tokens live on its connection. Without one
                 # (it was removed, and a client cached before that answered the
@@ -415,56 +504,53 @@ class MCPServerSave(Resource):
                 storage_config.pop("encrypted_credentials", None)
             description = f"MCP Server: {storage_config.get('server_url', 'Unknown')}"
             status_bool = bool(data.get("status", True))
+            fields_out = {
+                "display_name": display_name,
+                "custom_name": display_name,
+                "description": description,
+                "config": storage_config,
+                "connection_id": connection_id,
+            }
+            updated_message = (
+                f"MCP server updated successfully! Discovered {len(transformed_actions)} tools."
+            )
 
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
-                if existing_doc:
-                    repo.update(
-                        str(existing_doc["id"]), user,
-                        {
-                            "display_name": display_name,
-                            "custom_name": display_name,
-                            "description": description,
-                            "config": storage_config,
-                            # Fixed values the user set survive a re-save.
-                            "actions": carry_pins_between(existing_doc.get("actions"), transformed_actions),
-                            "status": status_bool,
-                            "connection_id": connection_id,
-                        },
-                    )
+                if existing_doc is not None:
+                    # ``status`` is the owner's own chat switch; an editor's
+                    # save doesn't flip it.
+                    if is_owner:
+                        fields_out["status"] = status_bool
+                    # Fixed values the owner set survive a re-save.
+                    fields_out["actions"] = carry_pins_between(existing_doc.get("actions"), transformed_actions)
+                    repo.update(str(existing_doc["id"]), owner_id, fields_out)
                     saved_id = str(existing_doc["id"])
                     response_data = {
                         "success": True,
                         "id": saved_id,
-                        "message": f"MCP server updated successfully! Discovered {len(transformed_actions)} tools.",
+                        "message": updated_message,
                         "tools_count": len(transformed_actions),
                     }
                 else:
+                    fields_out["status"] = status_bool
                     # Fall back to find_by_user_and_name — the original
                     # dual-write path also ran an existence check before
                     # deciding between insert and update.
                     existing_by_name = repo.find_by_user_and_name(user, "mcp_tool")
-                    if tool_id is None and existing_by_name and (
+                    if existing_by_name and (
                         (existing_by_name.get("config") or {}).get("server_url")
                         == storage_config.get("server_url")
                     ):
-                        repo.update(
-                            str(existing_by_name["id"]), user,
-                            {
-                                "display_name": display_name,
-                                "custom_name": display_name,
-                                "description": description,
-                                "config": storage_config,
-                                "actions": carry_pins_between(existing_by_name.get("actions"), transformed_actions),
-                                "status": status_bool,
-                                "connection_id": connection_id,
-                            },
+                        fields_out["actions"] = carry_pins_between(
+                            existing_by_name.get("actions"), transformed_actions,
                         )
+                        repo.update(str(existing_by_name["id"]), user, fields_out)
                         saved_id = str(existing_by_name["id"])
                         response_data = {
                             "success": True,
                             "id": saved_id,
-                            "message": f"MCP server updated successfully! Discovered {len(transformed_actions)} tools.",
+                            "message": updated_message,
                             "tools_count": len(transformed_actions),
                         }
                     else:
@@ -486,18 +572,9 @@ class MCPServerSave(Resource):
                             "message": f"MCP server created successfully! Discovered {len(transformed_actions)} tools.",
                             "tools_count": len(transformed_actions),
                         }
-                    if tool_id and existing_doc is None:
-                        # Client requested update on a non-existent tool id.
-                        return make_response(
-                            jsonify(
-                                {
-                                    "success": False,
-                                    "error": "Tool not found or access denied",
-                                }
-                            ),
-                            404,
-                        )
             return make_response(jsonify(response_data), 200)
+        except AccessDenied as e:
+            return denied_response(e)
         except ValueError as e:
             current_app.logger.warning(f"Invalid MCP server save request: {e}")
             return make_response(
@@ -586,6 +663,13 @@ class MCPAuthStatus(Resource):
                 tools_repo = UserToolsRepository(conn)
                 sessions_repo = ConnectorSessionsRepository(conn)
                 all_tools = tools_repo.list_for_user(user)
+                owned_ids = {str(t["id"]) for t in all_tools}
+                # Team-shared MCP servers the caller can see run with the
+                # owner's connection, so their status is the owner's.
+                shared_ids = [
+                    tid for tid in visible_with_access(conn, user, "tool") if tid not in owned_ids
+                ]
+                all_tools = all_tools + tools_repo.list_by_ids(shared_ids)
                 mcp_tools = [t for t in all_tools if t.get("name") == "mcp_tool"]
                 if not mcp_tools:
                     return make_response(
@@ -606,8 +690,10 @@ class MCPAuthStatus(Resource):
                         row = sessions_repo.get(str(tool["connection_id"]))
                     elif auth_type == "oauth" and config.get("server_url"):
                         parsed = urlparse(config["server_url"])
+                        # A team-shared server signs in as its owner.
                         row = sessions_repo.get_by_user_provider(
-                            user, service.mcp_provider(f"{parsed.scheme}://{parsed.netloc}"),
+                            tool.get("user_id") or user,
+                            service.mcp_provider(f"{parsed.scheme}://{parsed.netloc}"),
                         )
                     if row is not None:
                         connected = service.normalize_status(row) == service.STATUS_CONNECTED

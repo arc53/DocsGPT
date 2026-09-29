@@ -502,6 +502,9 @@ class TestFkBoundToolsIsInSync:
         "notes": "notes",
         "todos": "todo_list",
     }
+    # FK-bound tables that are not a tool's storage: per-user settings keyed
+    # by a tool row, never written by a running tool.
+    _NOT_TOOL_STORAGE = {"user_tool_preferences"}
 
     def test_fk_bound_tools_matches_metadata(self):
         from docsgpt.storage.db.models import metadata
@@ -509,7 +512,7 @@ class TestFkBoundToolsIsInSync:
         fk_bound_tables = set()
         for tbl in metadata.tables.values():
             tool_id_col = tbl.columns.get("tool_id")
-            if tool_id_col is None:
+            if tool_id_col is None or tbl.name in self._NOT_TOOL_STORAGE:
                 continue
             for fk in tool_id_col.foreign_keys:
                 if fk.target_fullname == "user_tools.id":

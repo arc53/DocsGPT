@@ -405,6 +405,7 @@ class WorkflowEngine:
             "model_user_id": getattr(self.agent, "model_user_id", None),
             "api_key": node_api_key,
             "tool_ids": node_config.tools,
+            "tool_principals": self._node_tool_principals(node_config.tools),
             "prompt": node_prompt,
             "chat_history": self.agent.chat_history,
             "decoded_token": self.agent.decoded_token,
@@ -1321,6 +1322,36 @@ class WorkflowEngine:
         docs_together = "\n\n".join(docs_together_parts) if docs_together_parts else None
         return docs, docs_together
 
+    def _node_tool_principals(self, tool_ids) -> Dict[str, str]:
+        """Node tool id -> the editor to resolve it as, for sponsored tools.
+
+        Only tools with a live sponsor on the workflow appear; the executor
+        still tries the owner first.
+
+        Args:
+            tool_ids: The node's configured tool ids.
+
+        Returns:
+            dict: ``tool_id -> sponsor`` user id.
+        """
+        workflow_row = getattr(self.agent, "workflow_row", None)
+        if not tool_ids or not workflow_row or not workflow_row.get("resource_sponsors"):
+            return {}
+        from docsgpt.api.user.resource_access import active_sponsor
+        from docsgpt.storage.db.session import db_readonly
+
+        principals: Dict[str, str] = {}
+        try:
+            with db_readonly() as conn:
+                for tid in tool_ids:
+                    sponsor = active_sponsor(conn, "workflow", workflow_row, "tool", str(tid))
+                    if sponsor:
+                        principals[str(tid)] = sponsor
+        except Exception:
+            logger.exception("Workflow node tool sponsor lookup failed; using the owner only.")
+            return {}
+        return principals
+
     def _authorized_node_sources(self, sources) -> list:
         """Filter a node's configured source ids to those its owner may read.
 
@@ -1329,7 +1360,9 @@ class WorkflowEngine:
         tenant's source id and the retriever — which filters only on
         ``source_id`` — handed the documents back. Gate on the workflow owner
         (not the runner): a shared workflow legitimately reads its owner's
-        sources, exactly like a shared agent does.
+        sources, exactly like a shared agent does. A source the owner can't
+        read still passes while the editor who attached it (its sponsor)
+        qualifies.
 
         Args:
             sources: Source ids from the stored node config.
@@ -1348,14 +1381,19 @@ class WorkflowEngine:
             logger.warning("Workflow node sources dropped: no owner to authorize.")
             return []
 
+        from docsgpt.api.user.resource_access import active_sponsor
         from docsgpt.api.user.team_sharing import can_access
         from docsgpt.storage.db.session import db_readonly
 
+        workflow_row = getattr(self.agent, "workflow_row", None)
         allowed = []
         try:
             with db_readonly() as conn:
                 for sid in ids:
-                    if sid and can_access(conn, "source", str(sid), owner):
+                    if sid and (
+                        can_access(conn, "source", str(sid), owner)
+                        or active_sponsor(conn, "workflow", workflow_row, "source", str(sid))
+                    ):
                         allowed.append(sid)
                     else:
                         logger.warning(

@@ -19,6 +19,8 @@ WIKI_UPDATED_VIA_AGENT = "agent"
 
 MAX_WIKI_PAGE_BYTES = 1_000_000
 
+_WRITE_ACTIONS = frozenset({"create", "str_replace", "insert", "delete", "rename"})
+
 
 class WikiTool(Tool):
     """Wiki
@@ -48,6 +50,11 @@ class WikiTool(Tool):
 
         if not self.source_id:
             return "Error: WikiTool requires a source_id."
+
+        if action_name in _WRITE_ACTIONS:
+            denied = self._write_denied()
+            if denied:
+                return denied
 
         if action_name == "view":
             return self._view(kwargs.get("path", "/"), kwargs.get("view_range"))
@@ -191,6 +198,37 @@ class WikiTool(Tool):
                 },
             },
         ]
+
+    def _write_denied(self) -> Optional[str]:
+        """Re-check the caller's live ``edit`` right before a write.
+
+        The tool is attached for a writable source when the conversation
+        starts, but a grant can be revoked (or downgraded to viewer) mid-run.
+        Resolving access on every write stops the agent from editing once the
+        caller no longer may. Fails closed on an unknown caller or a failed
+        lookup. Re-embeds still run as the owner.
+
+        Returns:
+            Optional[str]: An error message for the LLM, or None when allowed.
+        """
+        from docsgpt.api.user import resource_access
+
+        message = "Error: You no longer have edit access to this wiki, so it can't be changed."
+        if not self.updated_by:
+            return message
+        try:
+            with db_readonly() as conn:
+                access = resource_access.resolve(
+                    conn, "source", str(self.source_id), self.updated_by
+                )
+        except Exception:
+            logger.exception(
+                "Wiki write access check failed for source %s", self.source_id
+            )
+            return message
+        if access is None or not access.can("edit"):
+            return message
+        return None
 
     def get_config_requirements(self) -> Dict[str, Any]:
         return {}

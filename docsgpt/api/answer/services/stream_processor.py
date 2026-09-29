@@ -129,6 +129,71 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
         raise ValueError(f"Invalid prompt ID: {prompt_id}") from e
 
 
+_PROMPT_PRESETS_WITHOUT_ROW = ("reduce",)
+
+
+def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Optional[dict] = None) -> Any:
+    """``prompt_id`` if ``principal`` (or the agent's sponsor) may use it, else ``"default"``.
+
+    Presets pass through. A custom prompt must be owned by ``principal`` or
+    reach them through a team grant with ``use`` (checked live). On an agent
+    run, a prompt the owner can't use still renders while the editor who
+    attached it (its sponsor) qualifies. A revoked, deleted or foreign prompt
+    falls back to the default prompt.
+
+    Args:
+        prompt_id: The configured prompt (preset name, UUID or legacy id).
+        principal: The agent owner for an agent run, else the caller.
+        agent: The agent row on an agent run, for its ``resource_sponsors``.
+
+    Returns:
+        The prompt id to render.
+    """
+    if prompt_id is None or prompt_id == "":
+        return prompt_id
+    pid = str(prompt_id)
+    if is_composed_preset(pid) or pid in _PROMPT_PRESETS_WITHOUT_ROW:
+        return prompt_id
+    from docsgpt.api.user.resource_access import active_sponsor, resolve
+
+    try:
+        with db_readonly() as conn:
+            ra = resolve(conn, "prompt", pid, principal) if principal else None
+            usable = ra is not None and ra.can("use")
+            if not usable and agent and agent.get("id"):
+                usable = active_sponsor(conn, "agent", agent, "prompt", pid) is not None
+    except Exception:
+        logger.exception("Prompt access check failed for %s", pid)
+        usable = False
+    if usable:
+        return prompt_id
+    logger.info("prompt %s not usable by %s; using the default prompt", pid, principal)
+    return "default"
+
+
+def _agent_source_doc(conn: Any, sources_repo: Any, agent: dict, source_id: Any) -> Optional[dict]:
+    """The source row an agent may retrieve from, or None.
+
+    Authorized as the owner (owned or team-shared to them), else as the
+    editor who attached it while they still qualify. Read unscoped once
+    authorized: an owner-scoped read misses a team-shared source.
+    """
+    from docsgpt.api.user.resource_access import ref_principal
+
+    if not ref_principal(conn, "agent", agent, "source", str(source_id)):
+        logger.info("agent %s source %s not usable; skipped", agent.get("id"), source_id)
+        return None
+    return sources_repo.get_by_id(str(source_id))
+
+
+def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
+    """The owner id to write a wiki source as, when ``caller`` may edit it."""
+    from docsgpt.api.user.resource_access import resolve
+
+    ra = resolve(conn, "source", source_id, caller)
+    return ra.owner_id if ra is not None and ra.can("edit") else None
+
+
 T = TypeVar("T")
 
 
@@ -696,13 +761,12 @@ class StreamProcessor:
             # the legacy ``data["source"]`` slot.
             sources_list: list = []
             seen: set = set()
-            owner = agent.get("user_id")
             primary_id = agent.get("source_id")
             # ``sources`` row may have NULL ``retriever``/``chunks`` —
             # fall back to the agent's value (``dict.get`` returns None
             # even when the key exists with value None).
             if primary_id:
-                source_doc = sources_repo.get(str(primary_id), owner)
+                source_doc = _agent_source_doc(conn, sources_repo, agent, primary_id)
                 if source_doc:
                     sid = str(source_doc["id"])
                     data["source"] = sid
@@ -735,7 +799,7 @@ class StreamProcessor:
             for sid_raw in agent.get("extra_source_ids") or []:
                 if not sid_raw:
                     continue
-                source_doc = sources_repo.get(str(sid_raw), owner)
+                source_doc = _agent_source_doc(conn, sources_repo, agent, sid_raw)
                 if not source_doc:
                     continue
                 sid = str(source_doc["id"])
@@ -954,7 +1018,13 @@ class StreamProcessor:
 
             self.agent_config.update(
                 {
-                    "prompt_id": self._agent_data.get("prompt_id", "default"),
+                    # The agent runs in its owner's context: its prompt must
+                    # be one the owner may use (re-checked on every run).
+                    "prompt_id": authorized_prompt_id(
+                        self._agent_data.get("prompt_id", "default"),
+                        self._agent_data.get("user"),
+                        self._agent_data,
+                    ),
                     "agent_type": self._agent_data.get("agent_type", settings.AGENT_NAME),
                     "user_api_key": effective_key,
                     "json_schema": self._agent_data.get("json_schema"),
@@ -1025,9 +1095,10 @@ class StreamProcessor:
                 if preview_workflow_id:
                     self.agent_config["workflow_id"] = str(preview_workflow_id)
 
+            caller = self.decoded_token.get("sub") if isinstance(self.decoded_token, dict) else None
             self.agent_config.update(
                 {
-                    "prompt_id": self.data.get("prompt_id", "default"),
+                    "prompt_id": authorized_prompt_id(self.data.get("prompt_id", "default"), caller),
                     "agent_type": agent_type,
                     "user_api_key": None,
                     "json_schema": None,
@@ -1161,14 +1232,12 @@ class StreamProcessor:
         """Resolve the WikiTool config for the first writable wiki source.
 
         A source qualifies when ``SourceConfig.parse(config).kind == "wiki"`` and
-        the principal can write it (``effective_write_owner`` returns an owner —
-        owner or team editor; viewers get None and no tool). v1 supports one
+        the principal may ``edit`` it (owner or team editor; viewers get no
+        tool) — resolved live through ``resource_access``. v1 supports one
         writable wiki source; the first match wins and the scan stops there so
         this runs at most one owner+source lookup per chat on the hot path.
         Returns None when no writable wiki source is present.
         """
-        from docsgpt.api.user.team_sharing import effective_write_owner
-
         caller = self.decoded_token.get("sub") if self.decoded_token else None
         if not caller:
             return None
@@ -1182,7 +1251,7 @@ class StreamProcessor:
                     if not sid or sid == "default":
                         continue
                     sid = str(sid)
-                    owner = effective_write_owner(conn, "source", sid, caller)
+                    owner = _wiki_write_owner(conn, sid, caller)
                     if not owner:
                         continue
                     source_doc = repo.get_any(sid, owner)

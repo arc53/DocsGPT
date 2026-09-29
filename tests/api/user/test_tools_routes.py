@@ -1388,16 +1388,24 @@ class TestUpdateToolActionsHappy:
         assert self._stored(pg_conn, tool)["active"] is True
 
     def test_team_editor_can_change_actions_but_not_pins(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
         owner, editor = "u-owner", "u-editor"
         tool = self._seed_actions_tool(pg_conn, owner)
-        with patch("docsgpt.api.user.tools.routes.effective_write_owner", return_value=owner):
-            toggled = self._post(
-                app, pg_conn, editor, str(tool["id"]), [{"name": "telegram_send_message", "active": False}],
-            )
-            pinned = self._post(app, pg_conn, editor, str(tool["id"]), [{
-                "name": "telegram_send_message",
-                "parameters": {"properties": {"chat_id": {"filled_by_llm": False, "value": "666"}}},
-            }])
+        team = TeamsRepository(pg_conn).create("Pins", "t-pins", owner)
+        TeamMembersRepository(pg_conn).add_member(str(team["id"]), editor)
+        TeamResourceGrantsRepository(pg_conn).grant(
+            str(team["id"]), "tool", str(tool["id"]), owner, owner, access_level="editor",
+        )
+        toggled = self._post(
+            app, pg_conn, editor, str(tool["id"]), [{"name": "telegram_send_message", "active": False}],
+        )
+        pinned = self._post(app, pg_conn, editor, str(tool["id"]), [{
+            "name": "telegram_send_message",
+            "parameters": {"properties": {"chat_id": {"filled_by_llm": False, "value": "666"}}},
+        }])
         assert toggled.status_code == 200
         assert pinned.status_code == 403
         stored = self._stored(pg_conn, tool)

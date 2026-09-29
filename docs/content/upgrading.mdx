@@ -13,7 +13,7 @@ import { Callout } from 'nextra/components'
 
 ## Connectors: set ENCRYPTION_SECRET_KEY first
 
-Service credentials (OAuth tokens for Google Drive, SharePoint, Confluence and MCP servers, and API keys for tools) now live on **connections** and are encrypted with a key derived from `ENCRYPTION_SECRET_KEY`. Migration `0038_connections` runs on startup, encrypts the stored tokens and removes their plaintext copies.
+Service credentials (OAuth tokens for Google Drive, SharePoint, Confluence and MCP servers, and API keys for tools) now live on **connections** and are encrypted with a key derived from `ENCRYPTION_SECRET_KEY`. Migration `0040_connections` runs on startup, encrypts the stored tokens and removes their plaintext copies.
 
 <Callout type="warning">
   **Multi-user installs** (any `AUTH_TYPE`): set `ENCRYPTION_SECRET_KEY` to your own value **before** you upgrade, in the environment of the API, the worker and anything that runs migrations. The migration encrypts with the key it sees; changing it afterwards makes every connection ask its owner to reconnect. While the key is still the public default, DocsGPT refuses to store new credentials and Admin > Connectors shows a warning.

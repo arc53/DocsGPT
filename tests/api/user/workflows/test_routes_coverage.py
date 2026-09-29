@@ -474,20 +474,24 @@ class TestWorkflowDetailPut:
 
     def test_validation_failure_returns_400(self, app, pg_conn):
         from docsgpt.api.user.workflows.routes import WorkflowDetail
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
+        # Access is checked before the graph is validated (validation runs as
+        # the workflow's owner), so the workflow has to exist.
+        wid = str(WorkflowsRepository(pg_conn).create("u1", "wf")["id"])
         body = {
             "name": "bad",
             "nodes": [{"id": "end1", "type": "end"}],
             "edges": [],
         }
         with _patch_wf_db(pg_conn), app.test_request_context(
-            "/api/workflows/abc",
+            f"/api/workflows/{wid}",
             method="PUT",
             json=body,
         ):
             from flask import request
             request.decoded_token = {"sub": "u1"}
-            response = WorkflowDetail().put("abc")
+            response = WorkflowDetail().put(wid)
         assert response.status_code == 400
 
     def test_updates_workflow(self, app, pg_conn):

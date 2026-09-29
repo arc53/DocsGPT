@@ -309,6 +309,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/teams/<string:team_id>/members", "GET"): _rule("teams:read"),
     ("/api/teams/<string:team_id>/grants", "GET"): _rule("teams:read"),
     ("/api/resource_shares", "GET"): _rule("teams:read"),
+    ("/api/resource_settings", "GET"): _rule("teams:read"),
     # Chat
     ("/api/answer", "POST"): _rule("chat:run", **_CHAT),
     ("/stream", "POST"): _rule("chat:run", **_CHAT),
@@ -355,6 +356,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/teams/<string:team_id>/members/<string:member_id>": ("*",),
     "/api/teams/<string:team_id>/grants": ("POST", "DELETE"),
     "/api/teams/<string:team_id>/transfer_owner": ("*",),
+    "/api/resource_settings": ("PUT",),
     "/swagger.json": ("*",),
 }
 DENIED_PREFIXES = (

@@ -53,7 +53,7 @@ def has_credentials(row: dict) -> bool:
 
 
 def _has_plaintext_tokens(row: dict) -> bool:
-    """Legacy plaintext tokens on a row not yet converted by migration 0038."""
+    """Legacy plaintext tokens on a row not yet converted by migration 0040."""
     token_info = _json(row.get("token_info")) or {}
     if isinstance(token_info, dict) and token_info.get("access_token"):
         return True
@@ -65,7 +65,7 @@ def _has_plaintext_tokens(row: dict) -> bool:
 def normalize_status(row: dict) -> str:
     """Map a row's stored status onto the connection status set.
 
-    Rows written before ``0038_connections`` use ``authorized`` for a
+    Rows written before ``0040_connections`` use ``authorized`` for a
     finished OAuth sign-in, and MCP rows carry no status at all; both are
     read from whether the row holds credentials.
     """
@@ -496,7 +496,7 @@ def ensure_can_store_credentials() -> None:
 def read_secrets(row: dict) -> dict:
     """Decrypt a connection's secrets.
 
-    Rows not yet converted by migration 0038 (or written by an older process
+    Rows not yet converted by migration 0040 (or written by an older process
     during a rolling deploy) still carry plaintext ``token_info`` and
     ``session_data`` tokens; those are read as they are.
 

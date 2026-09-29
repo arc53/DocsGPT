@@ -13,7 +13,10 @@ import { useSelector } from 'react-redux';
 import userService from '../../api/services/userService';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatCount } from '../../utils/dateTimeUtils';
-import Chunks, { type ChunksController } from '../Chunks';
+import Chunks, {
+  type ChunksController,
+  type OpenChunkPosition,
+} from '../Chunks';
 import ConnectorTree from '../ConnectorTree';
 import FileTree from '../FileTree';
 import GraphView, { type GraphLoadStatus } from '../GraphView';
@@ -47,6 +50,11 @@ interface GraphSourceViewProps {
   onBackToDocuments: () => void;
   /** Extra header control (Test retrieval), right-aligned in the title row. */
   headerAction?: ReactNode;
+  /**
+   * Whether the caller may change the source (`can(source, 'edit')`). False
+   * hides the Files tab's writes and the graph chunk drawer's Edit.
+   */
+  canEdit?: boolean;
 }
 
 /**
@@ -63,6 +71,7 @@ export default function GraphSourceView({
   isNested = true,
   onBackToDocuments,
   headerAction,
+  canEdit = true,
 }: GraphSourceViewProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -80,9 +89,8 @@ export default function GraphSourceView({
   // header shows it while that tab is open.
   const [filesCrumbs, setFilesCrumbs] = useState<Crumb[]>([]);
   // A flat source's open chunk (its crumb), reported by the chunk list.
-  const [openChunkPosition, setOpenChunkPosition] = useState<number | null>(
-    null,
-  );
+  const [openChunkPosition, setOpenChunkPosition] =
+    useState<OpenChunkPosition>(null);
   const chunksControllerRef = useRef<ChunksController | null>(null);
 
   useEffect(() => {
@@ -157,7 +165,10 @@ export default function GraphSourceView({
     ...(openChunkPosition !== null
       ? [
           {
-            label: t('settings.sources.chunkCrumb', { n: openChunkPosition }),
+            label:
+              openChunkPosition === 'unplaced'
+                ? t('settings.sources.chunkCrumbUnplaced')
+                : t('settings.sources.chunkCrumb', { n: openChunkPosition }),
           },
         ]
       : []),
@@ -167,6 +178,7 @@ export default function GraphSourceView({
   const files = !isNested ? (
     <Chunks
       embedded
+      canEdit={canEdit}
       documentId={docId}
       documentName={sourceName}
       handleGoBack={onBackToDocuments}
@@ -176,6 +188,7 @@ export default function GraphSourceView({
   ) : sourceType === 'connector:file' ? (
     <ConnectorTree
       embedded
+      canEdit={canEdit}
       docId={docId}
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
@@ -186,6 +199,7 @@ export default function GraphSourceView({
   ) : (
     <FileTree
       embedded
+      canEdit={canEdit}
       docId={docId}
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
@@ -272,6 +286,7 @@ export default function GraphSourceView({
             onSelect={setSelected}
             active={tab === 'graph'}
             onOpenInFiles={openInFiles}
+            canEdit={canEdit}
           />
         </TabsContent>
         <TabsContent value="entities" className="mt-4">
@@ -281,6 +296,7 @@ export default function GraphSourceView({
             onShowInGraph={showInGraph}
             overview={data}
             onOpenInFiles={openInFiles}
+            canEdit={canEdit}
           />
         </TabsContent>
         <TabsContent value="files" className="mt-4">

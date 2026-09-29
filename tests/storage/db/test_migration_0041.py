@@ -1,4 +1,4 @@
-"""Migration round-trip test for 0039_connection_account_name."""
+"""Migration round-trip test for 0041_connection_account_name."""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ from sqlalchemy import text
 
 pytestmark = pytest.mark.integration
 
-_0039 = "0039_connection_account_name"
-_0038 = "0038_connections"
+_0039 = "0041_connection_account_name"
+_0038 = "0040_connections"
 
 
 def _run_alembic(url: str, *args: str) -> None:
@@ -35,7 +35,7 @@ def _has_column(conn) -> bool:
     ).fetchone() is not None
 
 
-class TestMigration0039RoundTrip:
+class TestMigration0041RoundTrip:
     def test_head_has_account_name(self, pg_engine):
         with pg_engine.connect() as conn:
             assert _has_column(conn)

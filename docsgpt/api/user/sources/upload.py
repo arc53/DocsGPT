@@ -14,7 +14,8 @@ from sqlalchemy import text as sql_text
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
-from docsgpt.api.user.team_sharing import effective_write_owner
+from docsgpt.api.user.resource_access import AccessDenied
+from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
@@ -763,22 +764,10 @@ class ManageSourceFiles(Resource):
         # (owner-agnostic), so running the ops as the owner is correct.
         try:
             with db_readonly() as conn:
-                source = SourcesRepository(conn).get_any(source_id, user)
-                owner = user
-                if source is None:
-                    owner = effective_write_owner(conn, "source", source_id, user)
-                    if owner:
-                        source = SourcesRepository(conn).get_any(source_id, owner)
-            if not source:
-                return make_response(
-                    jsonify(
-                        {
-                            "success": False,
-                            "message": "Source not found or access denied",
-                        }
-                    ),
-                    404,
-                )
+                source, ra = load_source(conn, source_id, user, "edit")
+            owner = ra.owner_id
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(f"Error finding source: {err}", exc_info=True)
             return make_response(

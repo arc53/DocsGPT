@@ -19,6 +19,7 @@ import {
   agentEditPathFor,
   sharedAgentPath,
 } from './agents/paths';
+import { canOpenAgentEditor } from './agents/agentAccess';
 import { Agent } from './agents/types';
 import conversationService from './api/services/conversationService';
 import userService from './api/services/userService';
@@ -392,9 +393,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const currentConversation = conversationId
     ? conversations?.data?.find((c) => c.id === conversationId)
     : undefined;
-  const ownsSelectedAgent = Boolean(
-    selectedAgent?.id && agents?.some((a) => a.id === selectedAgent.id),
-  );
+  // Edit agent is offered to a role that may open the edit page.
+  const canEditSelectedAgent = canOpenAgentEditor(selectedAgent, agents);
   const mobileTitle = routeSection
     ? undefined
     : (currentConversation?.name ?? selectedAgent?.name);
@@ -865,7 +865,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         onRename={updateConversationName}
         onDelete={handleDeleteConversation}
         editAgentPath={
-          !routeSection && ownsSelectedAgent && selectedAgent
+          !routeSection && canEditSelectedAgent && selectedAgent
             ? agentEditPathFor(selectedAgent)
             : undefined
         }

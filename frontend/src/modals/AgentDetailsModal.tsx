@@ -1,5 +1,5 @@
 import { envVar } from '@/env';
-import { ExternalLink } from 'lucide-react';
+import { CircleAlert, ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -8,14 +8,28 @@ import ApiWriteAllowlist from '../agents/ApiWriteAllowlist';
 import { Agent, type AgentConfig } from '../agents/types';
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import { isOwner } from '../utils/accessUtils';
 import ConfirmationModal from './ConfirmationModal';
 
 const baseURL = envVar('VITE_BASE_URL');
+
+/** The backend's `message` on a refused call, else null. */
+const errorMessage = async (response: Response): Promise<string | null> => {
+  try {
+    const body = await response.json();
+    return typeof body?.message === 'string' && body.message.trim()
+      ? body.message
+      : null;
+  } catch {
+    return null;
+  }
+};
 
 type AgentDetailsModalProps = {
   agent: Agent;
@@ -45,6 +59,8 @@ export default function AgentDetailsModal({
   const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
   const [resetKeyConfirmState, setResetKeyConfirmState] =
     useState<ActiveState>('INACTIVE');
+  // A failed generate or reset, shown in the modal until the next attempt.
+  const [error, setError] = useState<string | null>(null);
   const [loadingStates, setLoadingStates] = useState({
     publicLink: false,
     apiKey: false,
@@ -58,48 +74,60 @@ export default function AgentDetailsModal({
     setLoadingStates((prev) => ({ ...prev, [key]: state }));
   };
 
-  const handleGeneratePublicLink = async () => {
-    setLoading('publicLink', true);
-    const response = await userService.shareAgent(
-      { id: agent.id ?? '', shared: true },
-      token,
-    );
-    if (!response.ok) {
-      setLoading('publicLink', false);
-      return;
-    }
-    const data = await response.json();
-    setSharedToken(data.shared_token);
-    setLoading('publicLink', false);
-  };
-
-  const handleGenerateWebhook = async () => {
-    setLoading('webhook', true);
-    const response = await userService.getAgentWebhook(agent.id ?? '', token);
-    if (!response.ok) {
-      setLoading('webhook', false);
-      return;
-    }
-    const data = await response.json();
-    setWebhookUrl(data.webhook_url);
-    setLoading('webhook', false);
-  };
-
-  const handleRegenerateKey = async () => {
-    setLoading('apiKey', true);
+  /**
+   * Runs one of the modal's calls, showing its failure in the Alert.
+   *
+   * @param key Which button shows the spinner.
+   * @param request The call; resolves to the response.
+   * @param onSuccess Receives the parsed body of a successful response.
+   */
+  const run = async (
+    key: 'publicLink' | 'apiKey' | 'webhook',
+    request: () => Promise<Response>,
+    onSuccess: (data: Record<string, string>) => void,
+  ) => {
+    setLoading(key, true);
+    setError(null);
     try {
-      const response = await userService.regenerateAgentKey(
-        agent.id ?? '',
-        token,
-      );
-      if (!response.ok) return;
-      const data = await response.json();
-      setApiKey(data.key);
-      onKeyRegenerated?.(data.key);
+      const response = await request();
+      if (!response.ok) {
+        setError(
+          (await errorMessage(response)) ??
+            t('modals.agentDetails.actionFailed'),
+        );
+        return;
+      }
+      onSuccess(await response.json());
+    } catch {
+      setError(t('modals.agentDetails.actionFailed'));
     } finally {
-      setLoading('apiKey', false);
+      setLoading(key, false);
     }
   };
+
+  const handleGeneratePublicLink = () =>
+    run(
+      'publicLink',
+      () => userService.shareAgent({ id: agent.id ?? '', shared: true }, token),
+      (data) => setSharedToken(data.shared_token),
+    );
+
+  const handleGenerateWebhook = () =>
+    run(
+      'webhook',
+      () => userService.getAgentWebhook(agent.id ?? '', token),
+      (data) => setWebhookUrl(data.webhook_url),
+    );
+
+  const handleRegenerateKey = () =>
+    run(
+      'apiKey',
+      () => userService.regenerateAgentKey(agent.id ?? '', token),
+      (data) => {
+        setApiKey(data.key);
+        onKeyRegenerated?.(data.key);
+      },
+    );
 
   useEffect(() => {
     setSharedToken(agent.shared_token ?? null);
@@ -115,6 +143,12 @@ export default function AgentDetailsModal({
         size="md"
       >
         <div>
+          {error && (
+            <Alert variant="destructive" className="mt-6">
+              <CircleAlert />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
           <div className="mt-8 flex flex-col gap-6">
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
@@ -220,12 +254,27 @@ export default function AgentDetailsModal({
                     )}
                   </div>
                 </div>
+              ) : agent.status === 'draft' ? (
+                // A draft has no key yet: the first one is minted on publish.
+                <p className="text-muted-foreground text-sm">
+                  {t('modals.agentDetails.apiKeyAfterPublish')}
+                </p>
               ) : (
-                <Button type="button" variant="outline-primary" shape="pill">
+                // No key shown on a published agent: minting one replaces
+                // any key it has, so it goes through the reset confirmation.
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  shape="pill"
+                  onClick={() => setResetKeyConfirmState('ACTIVE')}
+                  loading={loadingStates.apiKey}
+                >
                   {t('modals.agentDetails.generate')}
                 </Button>
               )}
-              {apiKey && (
+              {/* The allowlist acts on the owner's connected accounts, so
+                  only the owner changes it (the server keeps it otherwise). */}
+              {apiKey && isOwner(agent) && (
                 <ApiWriteAllowlist
                   agent={agent}
                   onConfigChange={onConfigChange}

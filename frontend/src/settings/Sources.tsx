@@ -21,6 +21,7 @@ import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
 
 import PageToolbar from '../components/PageToolbar';
+import RoleBadge from '../components/RoleBadge';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
@@ -38,6 +39,7 @@ import { useDebouncedValue, useLoaderState } from '../hooks';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import type { Model } from '../models/types';
+import { showActionToast } from '../notifications/actionToastSlice';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
 import {
@@ -52,6 +54,7 @@ import {
   selectUploadTasks,
   updateUploadTask,
 } from '../upload/uploadSlice';
+import { can } from '../utils/accessUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
@@ -149,6 +152,19 @@ export default function Sources({
   // badge survives closing the modal and reflects the real backend state.
   const graphBuilds = useSelector(selectGraphBuilds);
 
+  /**
+   * Shows a failed source action as a destructive toast: the forbidden
+   * message on a 403, else the action's own.
+   */
+  const showActionError = (message: string, status?: number) =>
+    dispatch(
+      showActionToast({
+        variant: 'destructive',
+        message:
+          status === 403 ? t('settings.sources.errors.forbidden') : message,
+      }),
+    );
+
   const refreshDocs = useCallback(
     (
       field: 'date' | 'tokens' | undefined,
@@ -200,10 +216,18 @@ export default function Sources({
     setLoading(true);
     userService
       .manageSync({ source_id: doc.id, sync_frequency }, token)
-      .then(() => {
+      .then((response: Response) => {
+        if (!response.ok) {
+          showActionError(
+            t('settings.sources.errors.syncFrequency'),
+            response.status,
+          );
+          return null;
+        }
         return getDocs(token);
       })
       .then((data) => {
+        if (data === null) return null;
         dispatch(setSourceDocs(data));
         return getDocsWithPagination(
           sortField,
@@ -215,12 +239,16 @@ export default function Sources({
         );
       })
       .then((paginatedData) => {
+        if (paginatedData === null) return;
         dispatch(
           setPaginatedDocuments(paginatedData ? paginatedData.docs : []),
         );
         setTotalPages(paginatedData ? paginatedData.totalPages : 0);
       })
-      .catch((error) => console.error('Error in handleManageSync:', error))
+      .catch((error) => {
+        console.error('Error in handleManageSync:', error);
+        showActionError(t('settings.sources.errors.syncFrequency'));
+      })
       .finally(() => {
         setLoading(false);
       });
@@ -230,25 +258,23 @@ export default function Sources({
     if (!doc.id) {
       return;
     }
+    const syncFailed = t('settings.sources.errors.sync');
     try {
+      let response: Response;
       if (doc.type?.startsWith('connector')) {
-        const response = await userService.syncConnector(doc.id, token);
-        const data = await response.json();
-        if (!data.success) {
-          console.error('Sync now failed:', data.error || data.message);
-        }
-        return;
+        // The server finds the connector from the source itself.
+        response = await userService.syncConnector(doc.id, token);
+      } else {
+        response = await userService.syncSource({ source_id: doc.id }, token);
       }
-      const response = await userService.syncSource(
-        { source_id: doc.id },
-        token,
-      );
-      const data = await response.json();
-      if (!data.success) {
-        console.error('Sync now failed:', data.error || data.message);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        console.error('Sync now failed:', data?.error || data?.message);
+        showActionError(syncFailed, response.status);
       }
     } catch (error) {
       console.error('Error syncing source:', error);
+      showActionError(syncFailed);
     }
   };
 
@@ -277,23 +303,25 @@ export default function Sources({
         { source_id: sourceId },
         token,
       );
-      const data = await response.json();
-      if (!data.success) {
-        console.error('Reingest failed:', data.error || data.message);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.success) {
+        console.error('Reingest failed:', data?.error || data?.message);
         dispatch(
           updateUploadTask({
             id: reingestTaskId,
             updates: {
               status: 'failed',
-              errorMessage: data.error || data.message,
+              errorMessage: data?.error || data?.message,
             },
           }),
         );
+        showActionError(t('settings.sources.errors.reingest'), response.status);
         return;
       }
       refreshDocs(undefined, currentPage, rowsPerPage);
     } catch (error) {
       console.error('Error reingesting source:', error);
+      showActionError(t('settings.sources.errors.reingest'));
       dispatch(
         updateUploadTask({
           id: reingestTaskId,
@@ -326,9 +354,8 @@ export default function Sources({
   const getActionOptions = (index: number, document: Doc): MenuOption[] => {
     const isWiki = document.config?.kind === 'wiki' || document.type === 'wiki';
     const isGraphRAG = document.config?.kind === 'graphrag';
-    // 'team' viewers cannot write; convert is owner/editor only.
-    const canEdit =
-      document.ownership !== 'team' || document.team_access === 'editor';
+    // The server's allowed_actions decide every write (utils/accessUtils).
+    const canEdit = can(document, 'edit');
     const actions: MenuOption[] = [
       {
         icon: isGraphRAG ? Network : Eye,
@@ -361,7 +388,7 @@ export default function Sources({
       });
     }
 
-    if (document.ingestStatus === 'failed') {
+    if (canEdit && document.ingestStatus === 'failed') {
       actions.push({
         icon: RefreshCw,
         label: t('settings.sources.reingest'),
@@ -372,7 +399,7 @@ export default function Sources({
       });
     }
 
-    if (document.syncFrequency) {
+    if (canEdit && document.syncFrequency) {
       // One row per sync frequency; the current one carries the check.
       syncOptions.forEach((opt) => {
         actions.push({
@@ -396,10 +423,13 @@ export default function Sources({
       });
     }
 
-    if (document.id && !isWiki) {
+    // Editors edit the config; a viewer may read it (view_config).
+    if (document.id && !isWiki && (canEdit || can(document, 'view_config'))) {
       actions.push({
-        icon: SlidersHorizontal,
-        label: t('settings.sources.editConfig'),
+        icon: canEdit ? SlidersHorizontal : Eye,
+        label: canEdit
+          ? t('settings.sources.editConfig')
+          : t('settings.sources.viewConfig'),
         onClick: () => {
           setDocumentToConfigure(document);
           setConfigModalState('ACTIVE');
@@ -438,9 +468,8 @@ export default function Sources({
       });
     }
 
-    // Sharing is an owner-only action: hide it for sources shared into the
-    // user's workspace by a team.
-    if (document.ownership !== 'team' && document.id) {
+    // Owner-only unless the owner lets editors share (editors_can_share).
+    if (document.id && can(document, 'share')) {
       actions.push({
         icon: Users,
         label: t('settings.sources.shareWithTeam'),
@@ -451,14 +480,16 @@ export default function Sources({
       });
     }
 
-    actions.push({
-      icon: Trash2,
-      label: t('convTile.delete'),
-      onClick: () => {
-        handleDeleteConfirmation(index, document);
-      },
-      variant: 'destructive',
-    });
+    if (can(document, 'delete')) {
+      actions.push({
+        icon: Trash2,
+        label: t('convTile.delete'),
+        onClick: () => {
+          handleDeleteConfirmation(index, document);
+        },
+        variant: 'destructive',
+      });
+    }
 
     return actions;
   };
@@ -530,6 +561,9 @@ export default function Sources({
     </Button>
   ) : null;
 
+  // Chunk, file, wiki and graph writes follow the source's `edit` action.
+  const viewCanEdit = documentToView ? can(documentToView, 'edit') : false;
+
   return documentToView ? (
     <div className="flex flex-col">
       {documentToView.config?.kind === 'wiki' ||
@@ -537,10 +571,7 @@ export default function Sources({
         <WikiViewer
           docId={documentToView.id || ''}
           sourceName={documentToView.name}
-          canEdit={
-            documentToView.ownership !== 'team' ||
-            documentToView.team_access === 'editor'
-          }
+          canEdit={viewCanEdit}
           onBackToDocuments={() => setDocumentToView(undefined)}
           headerAction={testRetrievalAction}
         />
@@ -550,6 +581,7 @@ export default function Sources({
           sourceName={documentToView.name}
           sourceType={documentToView.type}
           isNested={!!documentToView.isNested}
+          canEdit={viewCanEdit}
           onBackToDocuments={() => setDocumentToView(undefined)}
           headerAction={testRetrievalAction}
         />
@@ -557,6 +589,7 @@ export default function Sources({
         documentToView.type === 'connector:file' ? (
           <ConnectorTree
             docId={documentToView.id || ''}
+            canEdit={viewCanEdit}
             sourceName={documentToView.name}
             onBackToDocuments={() => setDocumentToView(undefined)}
             headerAction={testRetrievalAction}
@@ -564,6 +597,7 @@ export default function Sources({
         ) : (
           <FileTree
             docId={documentToView.id || ''}
+            canEdit={viewCanEdit}
             sourceName={documentToView.name}
             onBackToDocuments={() => setDocumentToView(undefined)}
             headerAction={testRetrievalAction}
@@ -573,6 +607,7 @@ export default function Sources({
         <Chunks
           documentId={documentToView.id || ''}
           documentName={documentToView.name}
+          canEdit={viewCanEdit}
           handleGoBack={() => setDocumentToView(undefined)}
           headerAction={testRetrievalAction}
         />
@@ -710,14 +745,7 @@ export default function Sources({
                       </div>
 
                       <div className="flex flex-col items-start justify-start gap-1">
-                        {document.ownership === 'team' && (
-                          <Badge variant="neutral">
-                            <Users className="size-3" aria-hidden="true" />
-                            {document.team_access === 'editor'
-                              ? t('teamAccess.editor')
-                              : t('teamAccess.viewer')}
-                          </Badge>
-                        )}
+                        <RoleBadge item={document} />
                         {connection && paused && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -760,10 +788,7 @@ export default function Sources({
                                 : null;
                             return (
                               <Badge variant="neutral">
-                                <Network
-                                  className="size-3"
-                                  aria-hidden="true"
-                                />
+                                <Network aria-hidden="true" />
                                 {isBuilding
                                   ? pct !== null
                                     ? t(

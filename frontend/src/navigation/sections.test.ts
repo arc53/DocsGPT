@@ -142,6 +142,48 @@ describe('buildAgentSection', () => {
   });
 });
 
+describe('buildAgentSection tabs for a draft', () => {
+  it('shows only Overview until the agent is published', () => {
+    const items = getSectionItems(
+      buildAgentSection('a1', 'Bot', false, {
+        access: 'owner',
+        status: 'draft',
+        allowed_actions: ['view', 'view_logs', 'manage_schedules'],
+      }),
+    ).map((item) => item.key);
+    expect(items).toEqual(['overview']);
+  });
+});
+
+describe('buildAgentSection tabs by role', () => {
+  const keys = (actions?: string[]) =>
+    getSectionItems(
+      buildAgentSection(
+        'a1',
+        'Bot',
+        false,
+        actions ? { access: 'editor', allowed_actions: actions } : undefined,
+      ),
+    ).map((item) => item.key);
+
+  it('shows every tab before the agent has loaded', () => {
+    expect(keys()).toEqual(['overview', 'logs', 'schedules']);
+  });
+
+  it('shows an editor all three tabs', () => {
+    expect(keys(['view', 'view_logs', 'manage_schedules'])).toEqual([
+      'overview',
+      'logs',
+      'schedules',
+    ]);
+  });
+
+  it('shows a viewer no tabs, or Logs when the owner shares them', () => {
+    expect(keys(['pin', 'use'])).toEqual([]);
+    expect(keys(['pin', 'use', 'view_logs'])).toEqual(['logs']);
+  });
+});
+
 describe('depthOf', () => {
   it('puts chats, sections and records on their own level', () => {
     expect(depthOf(null)).toBe(0);

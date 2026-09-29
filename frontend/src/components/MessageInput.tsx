@@ -72,7 +72,9 @@ import {
 } from '../constants/fileUpload';
 import { UserToolType } from '../settings/types';
 import { sourceItemId, toSourcePickerItems } from '../utils/sourceUtils';
-import { isChatToolVisible } from '../utils/toolUtils';
+import { showActionToast } from '../notifications/actionToastSlice';
+import { isOwner } from '../utils/accessUtils';
+import { isChatPickerToolVisible, toolInChat } from '../utils/toolUtils';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
@@ -1561,7 +1563,7 @@ export default function MessageInput({
       .getUserTools(token)
       .then((res) => res.json())
       .then((data) => {
-        const filtered = (data.tools || []).filter(isChatToolVisible);
+        const filtered = (data.tools || []).filter(isChatPickerToolVisible);
         setUserTools(filtered);
       })
       .catch((error) => {
@@ -1613,6 +1615,14 @@ export default function MessageInput({
               ? t('agents.form.toolsPopup.groupCustom')
               : t('settings.tools.groupBuiltIn')))
           : undefined,
+        // Shared-by line; the sign-in warning below wins when both apply.
+        description:
+          !isOwner(tool) && tool.shared_via
+            ? t('settings.tools.sharedBy', {
+                interpolation: { escapeValue: false },
+                team: tool.shared_via,
+              })
+            : undefined,
         descriptionNode: connectionNeedsSignIn(connection) ? (
           <p className="text-warning text-xs">
             {t('settings.connectors.health.signInAgain')}
@@ -1634,22 +1644,43 @@ export default function MessageInput({
     });
 
   const selectedToolIds = userTools
-    .filter((tool) => tool.status)
+    .filter((tool) => toolInChat(tool))
     .map((tool) => tool.id);
+
+  // Ticks at once and unticks again when the server refuses it.
+  const setToolInChat = (id: string, value: boolean) =>
+    setUserTools((prev) =>
+      prev.map((tool) =>
+        tool.id !== id
+          ? tool
+          : isOwner(tool)
+            ? { ...tool, status: value, in_chat: value }
+            : { ...tool, in_chat: value },
+      ),
+    );
 
   const handleToggleTool = (id: string) => {
     const tool = userTools.find((t) => t.id === id);
     if (!tool) return;
-    const newStatus = !tool.status;
+    const newStatus = !toolInChat(tool);
+    setToolInChat(id, newStatus);
+    const fail = () => {
+      setToolInChat(id, !newStatus);
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('settings.tools.statusUpdateFailed'),
+        }),
+      );
+    };
     userService
       .updateToolStatus({ id, status: newStatus }, token)
-      .then(() => {
-        setUserTools((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t)),
-        );
+      .then((response: Response) => {
+        if (!response.ok) fail();
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         console.error('Failed to update tool status:', error);
+        fail();
       });
   };
 

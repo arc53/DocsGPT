@@ -493,7 +493,7 @@ class TestUnexpectedExceptionMasked:
             raise RuntimeError("internal detail: secret connection string")
 
         with _patch_db(pg_conn), patch.object(
-            SchedulesRepository, "get", side_effect=_boom,
+            SchedulesRepository, "get_internal", side_effect=_boom,
         ), app.test_request_context(
             f"/api/schedules/{s['id']}", method="GET",
         ):

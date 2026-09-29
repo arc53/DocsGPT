@@ -29,6 +29,8 @@ import {
   agentSchedulesPath,
   agentsFilterPath,
 } from '../agents/paths';
+import { type AccessFields } from '../utils/accessUtils';
+import { canAgent } from '../agents/agentAccess';
 
 /** A single destination in a section's vertical nav. */
 export type SectionItem = {
@@ -285,18 +287,54 @@ export const AGENTS_SECTION: Section = {
   ],
 };
 
+/** The action each agent tab's page needs. */
+const TAB_ACTIONS: Record<string, string> = {
+  overview: 'view',
+  logs: 'view_logs',
+  schedules: 'manage_schedules',
+};
+
 /**
  * The nav for a single agent. Built per route rather than declared, because
  * its title is the agent's name and its paths carry the agent's id.
+ *
+ * `access` is the agent's record once loaded: each tab shows only when the
+ * caller's role allows its page (Overview `view`, Logs `view_logs`,
+ * Schedules `manage_schedules`). Until the record arrives every tab shows,
+ * and the route guard sends a caller who may not open a page back to the
+ * list.
  */
 export function buildAgentSection(
   agentId: string,
   agentName: string | undefined,
   workflow: boolean,
+  access?: (AccessFields & { status?: string }) | null,
 ): Section {
+  const allows = (action: string) => !access || canAgent(access, action);
+  const items: SectionItem[] = [
+    {
+      key: 'overview',
+      path: agentEditPath(agentId, workflow),
+      labelKey: 'agents.pageHeader.tabs.overview',
+      icon: SquarePen,
+    },
+    {
+      key: 'logs',
+      path: agentLogsPath(agentId),
+      labelKey: 'agents.pageHeader.tabs.logs',
+      icon: ScrollText,
+    },
+    {
+      key: 'schedules',
+      path: agentSchedulesPath(agentId),
+      labelKey: 'agents.pageHeader.tabs.schedules',
+      icon: CalendarClock,
+    },
+  ];
+  const visible = items.filter((item) => allows(TAB_ACTIONS[item.key]));
   return {
     key: `agent:${agentId}`,
-    rootPath: agentEditPath(agentId, workflow),
+    rootPath: visible[0]?.path ?? agentEditPath(agentId, workflow),
     titleKey: 'agents.pageHeader.fallbackName',
     title: agentName?.trim() || undefined,
     matches: [
@@ -306,31 +344,7 @@ export function buildAgentSection(
     ],
     parentPath: AGENTS_MANAGE_ROOT,
     parentLabelKey: 'navigation.backToAgents',
-    groups: [
-      {
-        key: 'agent',
-        items: [
-          {
-            key: 'overview',
-            path: agentEditPath(agentId, workflow),
-            labelKey: 'agents.pageHeader.tabs.overview',
-            icon: SquarePen,
-          },
-          {
-            key: 'logs',
-            path: agentLogsPath(agentId),
-            labelKey: 'agents.pageHeader.tabs.logs',
-            icon: ScrollText,
-          },
-          {
-            key: 'schedules',
-            path: agentSchedulesPath(agentId),
-            labelKey: 'agents.pageHeader.tabs.schedules',
-            icon: CalendarClock,
-          },
-        ],
-      },
-    ],
+    groups: [{ key: 'agent', items: visible }],
   };
 }
 

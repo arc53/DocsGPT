@@ -158,6 +158,10 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 frontend/pnpm-debug.log*
 frontend/lerna-debug.log*
+# tsc build output (composite tsconfig.node.json); Vite would load vite.config.js before .ts
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # Keep frontend utility helpers tracked (overrides global lib/ ignore)
 !frontend/src/lib/

@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import AgentLogs from './AgentLogs';
+import AgentRouteGuard from './AgentRouteGuard';
 import AgentsList from './AgentsList';
 import NewAgent from './NewAgent';
 import { AGENTS_MANAGE_ROOT } from './paths';
@@ -31,13 +32,40 @@ export default function Agents() {
       <Route path="manage/team" element={<AgentsList />} />
       <Route path="manage/discovered" element={<AgentsList />} />
       <Route path="manage/new" element={<NewAgent mode="new" />} />
-      <Route path="manage/edit/:agentId" element={<NewAgent mode="edit" />} />
-      <Route path="manage/logs/:agentId" element={<AgentLogs />} />
-      <Route path="manage/schedules/:agentId" element={<SchedulesView />} />
+      {/* An agent's pages open only for a role that may use them; the
+          guard sends anyone else back to the list. */}
+      <Route
+        path="manage/edit/:agentId"
+        element={
+          <AgentRouteGuard action="view">
+            <NewAgent mode="edit" />
+          </AgentRouteGuard>
+        }
+      />
+      <Route
+        path="manage/logs/:agentId"
+        element={
+          <AgentRouteGuard action="view_logs">
+            <AgentLogs />
+          </AgentRouteGuard>
+        }
+      />
+      <Route
+        path="manage/schedules/:agentId"
+        element={
+          <AgentRouteGuard action="manage_schedules">
+            <SchedulesView />
+          </AgentRouteGuard>
+        }
+      />
       <Route path="manage/workflow/new" element={<WorkflowBuilder />} />
       <Route
         path="manage/workflow/edit/:agentId"
-        element={<WorkflowBuilder />}
+        element={
+          <AgentRouteGuard action="view">
+            <WorkflowBuilder />
+          </AgentRouteGuard>
+        }
       />
 
       {/* Using an agent someone shared. */}
