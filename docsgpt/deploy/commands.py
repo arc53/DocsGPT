@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import getpass
 import json
+import logging
 import os
 import re
 import secrets
@@ -891,60 +892,125 @@ def _check_redis(urls: Mapping[str, str]) -> Check:
     return Check("redis", "ok", f"answering on {len(urls)} database(s)")
 
 
+@contextmanager
+def _service_environment(env: Mapping[str, str]) -> Iterator[None]:
+    """Make the process look like the service for the duration: its settings file alone, and quiet.
+
+    ``DOCSGPT_ENV_FILE`` points at an empty file, so importing the app's settings reads neither the checkout's
+    ``.env`` (which may be broken, or not the file being checked) nor a ``DOCSGPT_ENV_FILE`` that does not
+    exist. The file's values go into the environment, as the app's ``load_dotenv`` puts them, because the
+    ``openai_compatible`` catalogs read their ``api_key_env`` from there. INFO logging from the model catalog is
+    held back so it does not interleave with the report. Everything is restored on exit.
+    """
+    from docsgpt.core.paths import ENV_FILE_ENV
+
+    saved = dict(os.environ)
+    logging_disabled = logging.root.manager.disable
+    handle, empty_env_file = tempfile.mkstemp(prefix="docsgpt-doctor-", suffix=".env")
+    os.close(handle)
+    try:
+        os.environ[ENV_FILE_ENV] = empty_env_file
+        os.environ.update({key: value for key, value in env.items() if value is not None})
+        logging.disable(max(logging.INFO, logging_disabled))
+        yield
+    finally:
+        logging.disable(logging_disabled)
+        os.environ.clear()
+        os.environ.update(saved)
+        Path(empty_env_file).unlink(missing_ok=True)
+
+
+def _forget_shell_settings(env: Mapping[str, str]) -> None:
+    """Drop settings the shell running doctor exports but the settings file does not set.
+
+    A key exported in that shell is not a key the service has. Call inside :func:`_service_environment`,
+    which puts the environment back afterwards.
+    """
+    from docsgpt.core.settings import Settings
+
+    for name in Settings.model_fields:
+        if name not in env:
+            os.environ.pop(name, None)
+
+
+def _catalog_key_names(env: Mapping[str, str]) -> list[str]:
+    """The ``api_key_env`` variables the ``openai_compatible`` model YAMLs name, built-in and operator ones."""
+    from docsgpt.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
+
+    directories = [BUILTIN_MODELS_DIR]
+    if env.get("MODELS_CONFIG_DIR") and Path(env["MODELS_CONFIG_DIR"]).is_dir():
+        directories.append(Path(env["MODELS_CONFIG_DIR"]))
+    try:
+        catalogs = load_model_yamls(directories)
+    except Exception:  # noqa: BLE001 - the model check reports a catalog that does not load
+        return []
+    return sorted({c.api_key_env for c in catalogs if c.provider == "openai_compatible" and c.api_key_env})
+
+
 def _check_provider(env: Mapping[str, str]) -> Check:
     """Whether a model provider is set up well enough to answer a question."""
-    from docsgpt.llm.providers import PROVIDERS_BY_NAME
-
     provider = env.get("LLM_PROVIDER") or "docsgpt"
     if provider == "docsgpt":
         return Check("provider", "ok", "the DocsGPT public API (no key needed)")
-    plugin = PROVIDERS_BY_NAME.get(provider)
-    own_key = plugin.api_key_setting if plugin is not None else None
-    if not (env.get("API_KEY") or env.get("OPENAI_API_KEY") or (own_key and env.get(own_key))):
+    if provider == "openai_compatible":
+        # Its models carry their own keys, named by each model YAML's api_key_env.
+        keys = _catalog_key_names(env)
+        if not any(env.get(key) for key in keys):
+            example = f" such as {keys[0]}" if keys else ""
+            return Check("provider", "fail", f"openai_compatible is configured but no model YAML's key{example} is set")
+        return Check("provider", "ok", provider)
+    keys = ["API_KEY", "OPENAI_API_KEY"]
+    try:
+        with _service_environment(env):
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+            plugin = PROVIDERS_BY_NAME.get(provider)
+    except Exception:  # noqa: BLE001 - settings that do not load are the model check's finding
+        plugin = None
+    if plugin is not None and plugin.api_key_setting:
+        keys.append(plugin.api_key_setting)
+    if not any(env.get(key) for key in keys):
         return Check("provider", "fail", f"{provider} is configured but no API_KEY is set")
     endpoint = _endpoint(env["OPENAI_BASE_URL"]) if env.get("OPENAI_BASE_URL") else ""
     return Check("provider", "ok", f"{provider}{' at ' + endpoint if endpoint else ''}")
 
 
-@contextmanager
-def _service_environment(env: Mapping[str, str]) -> Iterator[None]:
-    """Make the process environment look like the service's for the duration: the settings file alone.
-
-    Settings fields are removed first, so a key exported in the shell running doctor does not count as a key
-    the service has. The file's values then go in, as the app's ``load_dotenv`` puts them, because the
-    ``openai_compatible`` catalogs read their ``api_key_env`` from the environment. Restored on exit.
-    """
-    from docsgpt.core.settings import Settings
-
-    saved = dict(os.environ)
-    try:
-        for name in Settings.model_fields:
-            os.environ.pop(name, None)
-        os.environ.update({key: value for key, value in env.items() if value is not None})
-        yield
-    finally:
-        os.environ.clear()
-        os.environ.update(saved)
+def _first_error(exc: Exception) -> str:
+    """One line for a settings or catalog error; a validation error is named by its field."""
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            first = errors()[0]
+            field = ".".join(str(part) for part in first.get("loc", ())) or "settings"
+            return f"{field}: {first.get('msg', '').strip()}"
+        except Exception:  # noqa: BLE001 - fall back to the message
+            pass
+    lines = str(exc).strip().splitlines()
+    return lines[0] if lines else type(exc).__name__
 
 
 def _check_model(env: Mapping[str, str]) -> Check:
     """Which model answers by default, and whether that is the provider the settings name.
 
-    Fails when ``LLM_PROVIDER`` names a provider but the default model is served by the hosted DocsGPT API
-    (a missing key, an unknown provider), or when no model is registered at all.
+    Fails when the settings do not load, when ``LLM_PROVIDER`` names a provider but the default model is served
+    by the hosted DocsGPT API (a missing key, an unknown provider), or when no model is registered at all.
     """
-    from docsgpt.core.model_registry import diagnose_model_setup, load_catalog_models, resolve_default_model_id
-    from docsgpt.core.settings import Settings
-
     try:
         with _service_environment(env):
+            from docsgpt.core.model_registry import (
+                diagnose_model_setup,
+                load_catalog_models,
+                resolve_default_model_id,
+            )
+            from docsgpt.core.settings import Settings
+
+            _forget_shell_settings(env)
             settings = Settings(_env_file=None)
             models = load_catalog_models(settings)
+            default = resolve_default_model_id(settings, models)
+            problems = diagnose_model_setup(settings, models, default)
     except Exception as exc:  # noqa: BLE001 - doctor reports a broken setup rather than tracing back on it
-        lines = str(exc).strip().splitlines()
-        return Check("model", "fail", f"the model settings do not load: {lines[0] if lines else type(exc).__name__}")
-    default = resolve_default_model_id(settings, models)
-    problems = diagnose_model_setup(settings, models, default)
+        return Check("model", "fail", f"the settings do not load: {_first_error(exc)}")
     failing = [p for p in problems if p.hosted_fallback or not models]
     if failing:
         return Check("model", "fail", failing[0].message)
