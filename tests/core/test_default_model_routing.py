@@ -128,6 +128,27 @@ class TestDefaultModelMatrix:
         s = _settings(monkeypatch, LLM_PROVIDER="openai", API_KEY="sk", LLM_NAME="gpt-4o")
         assert _default(s) == ("gpt-5.5", "openai")
 
+    @pytest.mark.parametrize(
+        ("provider", "name"),
+        [
+            ("anthropic", "claude-haiku-4-5"),
+            ("google", "gemini-3.5-flash"),
+            ("groq", "llama-3.1-8b-instant"),
+            ("openrouter", "deepseek/deepseek-v3.2"),
+            ("novita", "moonshotai/kimi-k2.6"),
+            ("openai", "gpt-5.4-mini"),
+        ],
+    )
+    def test_llm_name_picks_the_default_without_narrowing_the_picker(self, monkeypatch, provider, name):
+        """LLM_NAME chooses the default; the provider's whole catalog stays in the picker."""
+        s = _settings(monkeypatch, LLM_PROVIDER=provider, API_KEY="k", LLM_NAME=name)
+        models = load_catalog_models(s)
+        catalog = [c for c in load_model_yamls([BUILTIN_MODELS_DIR]) if c.provider == provider]
+        expected = {m.id for c in catalog for m in c.models}
+        assert {m.id for m in models.values() if m.provider.value == provider} == expected
+        assert len(expected) > 1
+        assert resolve_default_model_id(s, models) == name
+
     def test_the_singleton_uses_the_same_rules(self, monkeypatch):
         from unittest.mock import patch
 

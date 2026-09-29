@@ -213,9 +213,8 @@ class TestRegistryPermutations:
         assert ids == EXPECTED_IDS["anthropic"] | EXPECTED_IDS["docsgpt"]
 
     def test_anthropic_via_llm_provider_with_llm_name(self):
-        # Mirrors the historical _add_anthropic_models filter: when only
-        # API_KEY (not ANTHROPIC_API_KEY) is set and LLM_NAME matches a
-        # known model, only that model is loaded.
+        # LLM_NAME picks the default model only: with just API_KEY set,
+        # the picker still lists the whole Anthropic catalog.
         s = _make_settings(
             LLM_PROVIDER="anthropic", API_KEY="key", LLM_NAME="claude-haiku-4-5"
         )
@@ -224,7 +223,8 @@ class TestRegistryPermutations:
         anthropic_ids = {
             m.id for m in reg.get_all_models() if m.provider.value == "anthropic"
         }
-        assert anthropic_ids == {"claude-haiku-4-5"}
+        assert anthropic_ids == EXPECTED_IDS["anthropic"]
+        assert reg.default_model_id == "claude-haiku-4-5"
 
     def test_google_only(self):
         s = _make_settings(GOOGLE_API_KEY="g-test")
