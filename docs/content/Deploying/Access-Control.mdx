@@ -141,31 +141,34 @@ Sharing rules:
 - Only the **owner** of a resource can share it, unless they turn on **Editors can share** in the share dialog's **Access settings**.
 - A share targets either the **whole team** or a **single member**.
 - Each share carries an access level: **`viewer`** (read-only) or **`editor`** (read and modify).
-- `editor` is not the same as owner — an editor can change a resource but cannot delete it or re-share it unless the owner turns on the matching switch.
+- `editor` is not the same as owner — an editor can change a resource but cannot re-share it unless the owner turns on **Editors can share**, or delete it unless the owner turns on **Editors can delete** (agents and sources only; editors never delete tools or prompts).
 - Shared tools run server-side with the **owner's** credentials, or with each member's own account when a connected tool is shared that way; a grantee never sees the owner's secrets.
 - A wiki's editors can edit its pages, but only its owner decides whether API and widget users can edit it through an agent (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
 
 ### Sharing agents and what they use
 
-Sharing an agent lets people use it; it doesn't share its tools, sources or prompt. Those stay yours, and people reach them only through the agent.
+Sharing an agent lets people use it; it doesn't share its tools, sources or prompt. Each stays with whoever owns it, and people reach them only through the agent.
 
 - **Viewers** chat with the agent. They don't see its configuration, and they never open its share dialog.
 - **Editors** open its edit page and change it: its instructions, model, tools, sources and prompt, and its [guardrails](/Agents/guardrails) and limits. They can share it or delete it only when you turn on **Editors can share** or **Editors can delete**.
 
-Every tool, source and prompt on the agent runs with someone's access, the same for everyone who uses the agent. The agent's share dialog lists them under **What this agent uses**, for you and its editors. For a workflow agent, the list also includes the tools and sources on its nodes.
+Every tool, source and prompt on the agent runs with one person's access for everyone who uses the agent. The exception is a connected tool shared as **Each person's own**, which uses the account of whoever is chatting. The agent's share dialog lists them under **What this agent uses**, for you and its editors. For a workflow agent, the list also includes the tools and sources on its nodes.
 
 | The item | Runs with | The list says |
 | --- | --- | --- |
 | Yours, or shared with you | Your access | **Your access** (an editor sees **The owner's access**) |
-| Added by an editor, and you can't use it | The editor's access; they are its [sponsor](#resources-an-editor-adds-to-someone-elses-agent) | **dana@example.com's access** |
+| Added by an editor while you can't use it | The editor's access; they are its [sponsor](#resources-an-editor-adds-to-someone-elses-agent). Once you can use it, it runs with yours again | **dana@example.com's access** |
+| A tool with saved credentials (an API key, an MCP sign-in) | Its owner's credentials | **Your saved credentials**, or **dana@example.com's saved credentials** for a teammate's tool |
 | A connected tool shared as **Your account** | That account on the service | **Your Notion account**, or **dana@example.com's Notion account** for a teammate's tool |
-| A connected tool shared as **Each person's own** | The account of whoever uses the agent; they connect it the first time | **Each person's own Notion account** |
+| A connected tool shared as **Each person's own** | The account of whoever is chatting; they connect it the first time. API and widget users run the agent as its owner, so they get the owner's account | **Each person's own Notion account (API and widget: yours)** |
+
+A teammate's name is shown only to people who share a team with them; anyone else sees **Someone else's** account or credentials.
 
 An editor becomes a sponsor only after confirming who will reach the resource through the agent. A resource whose sponsor or owner loses access stops running and is marked **Stopped** in the list, with the reason (see [When a resource stops working](#when-a-resource-stops-working)).
 
 Some runs are limited, because nobody can approve an action for you there:
 
-- **API key, website widget and public link.** A write action on your connected accounts or saved credentials runs only if you allow it under **Access details > Actions API, widget and public-link users can take as you**. Only the owner can change that list. The share dialog marks tools with actions that aren't allowed as **No API changes**. On a tool shared as **Each person's own**, public-link users act with their own account and approve their own writes. See [Agents used through an API key](/Guides/Connectors#agents-used-through-an-api-key).
+- **API key, website widget and public link.** A write action on your connected accounts or saved credentials runs only if you allow it under **Access details > Actions API, widget and public-link users can take as you**. Only the owner can change that list. It offers every such write on the agent, including tools an editor sponsored and the tools on a workflow's nodes. The share dialog marks a tool **API changes off** when none of its writes are allowed, **Some API changes off** when only some are, and **Changes off by an admin** when an admin turned off changes through its service. On a tool shared as **Each person's own**, public-link users act with their own account, so the list doesn't limit them there; a write that needs approval still asks them first. See [Agents used through an API key](/Guides/Connectors#agents-used-through-an-api-key).
 - **Wikis.** API and widget users edit a wiki only when its owner turns on **Let API and widget users edit this wiki** in its **Wiki settings**. Public-link users edit only wikis they can edit themselves, and approve each edit (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
 - **Research agents.** A research step can't stop to ask, so it skips any action that would need approval or a connection, and any write the caller may not make on your accounts. The step is told why and carries on (see [Research Agent](/Agents/basics#3-research-agent)).
 
@@ -213,7 +216,7 @@ Every run checks each tool, source and prompt on the agent (and each tool and so
 | `connection_removed` | The connection was removed but the tool was kept. | Ask the tool's owner to connect the account again, or remove it. |
 | `connector_disabled` | An admin turned the service off. | Ask an admin to turn it back on, or remove it. |
 
-**Remove** takes the item off the form; save to store it. Through the API, `GET /api/get_agent` and `GET /api/workflows/<id>` return `resource_states` to owners and editors (an empty list to everyone else): one entry per attached resource with `key`, `type`, `id`, `name`, `state` (`active` or `stopped`), `reason`, `sponsor` and `contact` (`{user_id, label}`: the recorded sponsor, and someone else who can fix it), `connection` (the service of a connected tool), `can_confirm` and `can_reconnect`. A running tool also has `credential_mode` (`owner` or `member` for a connected tool, else `null`), `account` (whose account an `owner`-mode connection acts as) and `owner_credential_writes` (its write actions on credentials its owner stored, which the API write allowlist covers). When anything can be taken over, the response also carries `sponsor_audience`, the same shape as `audience` above. A name is shown only for a resource that runs, that someone sponsored, that you can see yourself, or that is on an agent (agent saves check every reference).
+**Remove** takes the item off the form; save to store it. Through the API, `GET /api/get_agent` and `GET /api/workflows/<id>` return `resource_states` to owners and editors (an empty list to everyone else): one entry per attached resource with `key`, `type`, `id`, `name`, `state` (`active` or `stopped`), `reason`, `sponsor` and `contact` (`{user_id, label}`: the recorded sponsor, and someone else who can fix it), `connection` (the service of a connected tool; its `id` only when a connection reason stopped it), `can_confirm` and `can_reconnect`. `runs_as` is the live sponsor a running resource runs as (`null` when it runs as the owner). A running tool also has `credential_mode` (`owner` or `member` for a connected tool, else `null`), `account` (whose saved credentials or `owner`-mode connection it uses; `user_id` and `label` are `null` when you share no team with that person), `owner_credential_writes` (its write actions on those credentials, which the API write allowlist covers) and `writes_allowed` (`false` when an admin turned off changes through its service). When anything can be taken over, the response also carries `sponsor_audience`, the same shape as `audience` above. A name is shown only for a resource that runs, that someone sponsored, that you can see yourself, or that is on an agent (agent saves check every reference).
 
 The check is the one the run uses, so the page never shows a resource as running when the run leaves it out. Each resource a run leaves out is logged as `resource_stopped` with the agent or workflow, the resource's type and id, and the reason.
 

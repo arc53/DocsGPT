@@ -43,7 +43,7 @@ If a provider rejects a token that DocsGPT cannot refresh, the connection is mar
 Sharing a tool that uses a connection asks whose account team members use:
 
 - **Your account.** Everyone acts as your account on that service. When the tool can write, you confirm this before sharing, and a member's write actions always need approval.
-- **Each person's own.** Each person uses their own account, and sees a **Connect** prompt the first time they use the tool.
+- **Each person's own.** Each person uses their own account, and sees a **Connect** prompt the first time they use the tool. Through an agent's API key or widget, the agent runs as its owner, so the tool uses the agent owner's account.
 
 An editor you let share the tool sees your choice as **The owner's account** and can't change it. An agent's share dialog shows the same words for each connected tool on the agent (see [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use)).
 
@@ -51,9 +51,9 @@ Tools from OAuth MCP servers default to each member's own account. An admin can 
 
 ### Agents used through an API key
 
-An agent called with its API key (the website widget, the API) runs with its owner's connections, and nobody can approve an action there. It can read through those connections, but it can't take write actions on them unless the owner allows each one under **Access details > Actions API, widget and public-link users can take as you**. The same goes for tools that hold the owner's own credentials without a connection: an API tool action that sends a header or query value the owner saved (a key or token), or an MCP server the owner signed in to. Only the owner can change that list; team editors can't. The owner previewing their own agent in DocsGPT is not limited.
+An agent called with its API key (the website widget, the API) runs with its owner's connections, and nobody can approve an action there. It can read through those connections, but it can't take write actions on them unless the owner allows each one under **Access details > Actions API, widget and public-link users can take as you**. The same goes for tools that hold the owner's own credentials without a connection: an API tool action that sends a header or query value the owner saved (a key or token), or an MCP server the owner signed in to. The list offers every such write on the agent, including tools a team editor sponsored and the tools on a workflow's nodes. Only the owner can change that list; team editors can't. The owner previewing their own agent in DocsGPT is not limited.
 
-The same list covers people who open the agent from its public link without being on a team it's shared with, and anything they schedule from that chat. They can't approve write actions on the owner's accounts or credentials, so those run only when the owner allows them there. On a tool where each member connects their own account, they approve writes on their own account as usual.
+The same list covers people who open the agent from its public link without being on a team it's shared with, and anything they schedule from that chat. They can't approve write actions on the owner's accounts or credentials, so those run only when the owner allows them there. On a tool where each person connects their own account, they act with their own account, so the list doesn't limit them there; a write that needs approval still asks them first.
 
 Schedules that an API or widget chat set up before this version still run as the owner's own, without this list, until they fire or expire. Schedules set from a public link follow the list from their next run.
 
