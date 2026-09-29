@@ -20,16 +20,22 @@ To connect to a local inference engine, you will generally need to configure the
 *   **`OPENAI_BASE_URL`**:  This is essential. Set this to the base URL of your local inference engine's API endpoint. This tells DocsGPT where to find your local LLM server.
 *   **`API_KEY`**:  Generally, for local inference engines, you can set `API_KEY=None` as authentication is usually not required in local setups.
 
-## Native llama.cpp Support
+## llama.cpp
 
-DocsGPT includes native support for llama.cpp without requiring an OpenAI-compatible server. To use this:
+Run llama.cpp as its OpenAI-compatible server and point DocsGPT at it like any other engine below. There is no separate `llama.cpp` provider: `LLM_PROVIDER=llama.cpp` is not a provider name, and the API logs an error at startup if you set it.
+
+```bash
+llama-server -m ./models/your-model.gguf --port 8000 --alias local-model --jinja
+```
 
 ```
-LLM_PROVIDER=llama.cpp
-LLM_NAME=your-model-name
+LLM_PROVIDER=openai
+OPENAI_BASE_URL=http://localhost:8000/v1
+LLM_NAME=local-model
+API_KEY=None
 ```
 
-This provider integrates directly with llama.cpp Python bindings.
+`--jinja` lets the server handle tool calls, which agents with tools need.
 
 ## Supported Local Inference Engines (OpenAI API Compatible)
 

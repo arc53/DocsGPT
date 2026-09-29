@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from pydantic import Field
 
-from docsgpt.core.paths import home_dir
 from docsgpt.core.settings._shared import SettingsGroup
 
 
@@ -37,10 +35,6 @@ class LLMSettings(SettingsGroup):
     )
     OPENAI_BASE_URL: Optional[str] = Field(
         default=None, description="Base URL for OpenAI-compatible model servers."
-    )
-    LLM_PATH: str = Field(
-        default=os.path.join(str(home_dir()), "models/docsgpt-7b-f16.gguf"),
-        description="Path to the local GGUF model used by the llama.cpp provider.",
     )
 
     FALLBACK_LLM_PROVIDER: Optional[str] = Field(default=None, description="Provider for the fallback LLM.")

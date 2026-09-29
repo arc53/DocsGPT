@@ -139,15 +139,6 @@ class TestGetApiKeyForProvider:
             assert get_api_key_for_provider("docsgpt") == "sk-fallback"
 
     @pytest.mark.unit
-    def test_llama_cpp_returns_fallback(self):
-        with patch("docsgpt.core.settings.settings") as mock_settings:
-            mock_settings.API_KEY = "sk-fallback"
-
-            from docsgpt.core.model_utils import get_api_key_for_provider
-
-            assert get_api_key_for_provider("llama.cpp") == "sk-fallback"
-
-    @pytest.mark.unit
     def test_unknown_provider_returns_fallback(self):
         with patch("docsgpt.core.settings.settings") as mock_settings:
             mock_settings.API_KEY = "sk-fallback"

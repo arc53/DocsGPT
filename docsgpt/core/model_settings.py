@@ -20,7 +20,6 @@ class ModelProvider(str, Enum):
     GROQ = "groq"
     GOOGLE = "google"
     HUGGINGFACE = "huggingface"
-    LLAMA_CPP = "llama.cpp"
     DOCSGPT = "docsgpt"
     NOVITA = "novita"
 

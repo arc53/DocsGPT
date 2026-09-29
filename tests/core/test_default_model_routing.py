@@ -165,6 +165,15 @@ class TestDiagnostics:
         assert "not a known provider" in problems[0].message
         assert "OPENAI_BASE_URL" in problems[0].message
 
+    def test_the_old_native_llama_cpp_recipe_is_flagged(self, monkeypatch):
+        """``LLM_PROVIDER=llama.cpp`` never loaded a model; llama.cpp is reached through its server now."""
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+        assert "llama.cpp" not in PROVIDERS_BY_NAME
+        (problem,) = _problems(_settings(monkeypatch, LLM_PROVIDER="llama.cpp"))
+        assert problem.hosted_fallback
+        assert "not a known provider" in problem.message and "llama.cpp server" in problem.message
+
     def test_openai_compatible_without_a_model(self, monkeypatch):
         problems = _problems(
             _settings(monkeypatch, LLM_PROVIDER="openai_compatible", API_KEY="x", LLM_NAME="deepseek-chat")
