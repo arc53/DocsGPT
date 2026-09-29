@@ -2353,9 +2353,15 @@
         "attachNote": "你添加的、所有者无法使用的工具、来源和提示词，会以你的访问权限为所有使用此智能体的人运行。你必须拥有它们或能够编辑它们，并且需要确认。",
         "publicLinkNote": "此智能体有公开链接，任何拥有该链接的人都可以从中获得回答。",
         "addedBy": "由 {{person}} 添加：{{names}}",
-        "unavailable": "未运行：{{names}}。添加它们的 {{person}} 已失去访问权限。请移除它们，或选择所有者可以使用的项目。",
+        "unavailable": "未运行：{{names}}。添加它们的 {{person}} 已无法再通过此智能体共享它们。请移除它们，或选择所有者可以使用的项目。",
         "unknownItem": "未命名项目",
-        "notAllowed": "无法将 {{names}} 添加到此智能体。所有者无法使用它们，而你只能共享自己拥有或可以编辑的项目。"
+        "notAllowed": "无法将 {{names}} 添加到此智能体。所有者无法使用它们，而你只能共享自己拥有或可以编辑的项目。",
+        "stoppedCannotEditAgent": "未运行：{{names}}。添加它们的 {{person}} 已无法再编辑此智能体。请移除它们，或选择所有者可以使用的项目。",
+        "stoppedCannotEditItem": "未运行：{{names}}。{{person}} 添加了它们，但已无法再编辑它们，而只有拥有或可以编辑某个项目的人才能通过智能体共享它。请移除它们，或选择所有者可以使用的项目。",
+        "takeOver": "以我的访问权限运行 {{name}}",
+        "takeOverPending": "保存后，{{name}} 将以你的访问权限运行。",
+        "undoTakeOver": "撤销",
+        "confirmationOutdated": "在你确认以你的访问权限运行的内容之后，此智能体已更改。请查看提示并重新保存。"
       },
       "sponsorConfirm": {
         "title": "以你的访问权限运行？",
@@ -2366,7 +2372,7 @@
         "audiencePublicLink": "任何拥有此智能体公开链接的人",
         "audienceWebhook": "任何调用此智能体 Webhook 的程序",
         "audienceEditors": "所有可以打开此智能体的人",
-        "stopNote": "如果你失去对它们或此智能体的编辑权限，它们将停止运行。在有编辑权限的人重新添加之前，它们仍附加在智能体上，但不起作用。",
+        "stopNote": "如果你失去对它们或此智能体的编辑权限，它们将停止运行。之后它们仍附加在智能体上但不起作用，直到有编辑权限的人接管它们或将其移除。",
         "confirm": "以我的访问权限添加",
         "types": {
           "tool": "工具",
@@ -2703,7 +2709,8 @@
         "detailsTitle": "工作流详情",
         "detailsDescription": "显示在代理卡片上的名称、描述和图片。",
         "unsavedChanges": "未保存的更改",
-        "editDetailsMenu": "编辑详情"
+        "editDetailsMenu": "编辑详情",
+        "attachedOption": "{{name}}（由其他人添加）"
       },
       "validation": {
         "nameRequired": "工作流名称为必填项",

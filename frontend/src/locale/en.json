@@ -2386,9 +2386,15 @@
         "attachNote": "Tools, sources and prompts you add that the owner can't use run with your access for everyone who uses this agent. You need to own them or be able to edit them, and you'll be asked to confirm.",
         "publicLinkNote": "This agent has a public link, so anyone with the link can get answers from them.",
         "addedBy": "Added by {{person}}: {{names}}",
-        "unavailable": "Not running: {{names}}. {{person}} added them and no longer has access. Remove them or choose ones the owner can use.",
+        "unavailable": "Not running: {{names}}. {{person}} added them and can no longer share them through this agent. Remove them or choose ones the owner can use.",
         "unknownItem": "Unnamed item",
-        "notAllowed": "You can't add {{names}} to this agent. The owner can't use them, and you can only share what you own or can edit."
+        "notAllowed": "You can't add {{names}} to this agent. The owner can't use them, and you can only share what you own or can edit.",
+        "stoppedCannotEditAgent": "Not running: {{names}}. {{person}} added them and can no longer edit this agent. Remove them or choose ones the owner can use.",
+        "stoppedCannotEditItem": "Not running: {{names}}. {{person}} added them but can no longer edit them, and only people who own or can edit an item can share it through an agent. Remove them or choose ones the owner can use.",
+        "takeOver": "Run {{name}} with my access",
+        "takeOverPending": "{{name}} will run with your access when you save.",
+        "undoTakeOver": "Undo",
+        "confirmationOutdated": "This agent changed since you confirmed what runs with your access. Check the notices and save again."
       },
       "sponsorConfirm": {
         "title": "Run with your access?",
@@ -2399,7 +2405,7 @@
         "audiencePublicLink": "Anyone with the agent's public link",
         "audienceWebhook": "Anything that calls the agent's webhook",
         "audienceEditors": "Everyone who can open this agent",
-        "stopNote": "They stop running if you lose edit access to them or to this agent. Until someone who can edit them adds them again, they stay attached but do nothing.",
+        "stopNote": "They stop running if you lose edit access to them or to this agent. They then stay attached but do nothing until someone who can edit them takes them over, or they are removed.",
         "confirm": "Add with my access",
         "types": {
           "tool": "Tool",
@@ -2753,7 +2759,8 @@
         "detailsTitle": "Workflow details",
         "detailsDescription": "Name, description and image shown on the agent card.",
         "unsavedChanges": "Unsaved changes",
-        "editDetailsMenu": "Edit details"
+        "editDetailsMenu": "Edit details",
+        "attachedOption": "{{name}} (added by someone else)"
       },
       "validation": {
         "nameRequired": "Workflow name is required",

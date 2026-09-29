@@ -46,16 +46,25 @@ describe('SponsoredResourcesNotice', () => {
     container.remove();
   });
 
-  const render = async (agent: Agent) => {
+  const render = async (
+    agent: Agent,
+    takeovers: string[] = [],
+    onToggleTakeover = vi.fn(),
+  ) => {
     await act(async () => {
       root.render(
         <SponsoredResourcesNotice
           agent={agent}
           resolveName={(s) => `name-${s.id}`}
+          takeovers={takeovers}
+          onToggleTakeover={onToggleTakeover}
         />,
       );
     });
+    return onToggleTakeover;
   };
+
+  const buttons = () => Array.from(container.querySelectorAll('button'));
 
   const alerts = () =>
     Array.from(container.querySelectorAll('[data-slot="alert"]'));
@@ -132,5 +141,80 @@ describe('SponsoredResourcesNotice', () => {
     expect(running.textContent).toContain('agents.form.sponsors.addedBy');
     expect(stopped.getAttribute('data-variant')).toBe('warning');
     expect(stopped.textContent).toContain('agents.form.sponsors.unavailable');
+  });
+
+  it('says why each item stopped', async () => {
+    await render({
+      ...baseAgent,
+      resource_sponsors: [
+        sponsor({
+          id: 't1',
+          active: false,
+          state: 'inactive',
+          reason: 'sponsor_cannot_edit_agent',
+        }),
+        sponsor({
+          id: 's1',
+          type: 'source',
+          active: false,
+          state: 'inactive',
+          reason: 'sponsor_cannot_edit_resource',
+        }),
+      ],
+    });
+    const text = container.textContent ?? '';
+    expect(text).toContain('agents.form.sponsors.stoppedCannotEditAgent');
+    expect(text).toContain('agents.form.sponsors.stoppedCannotEditItem');
+    expect(text).not.toContain('agents.form.sponsors.unavailable');
+  });
+
+  it('offers a take-over only for items the reader may confirm', async () => {
+    const toggle = await render({
+      ...baseAgent,
+      access: 'editor',
+      allowed_actions: ['edit'],
+      resource_sponsors: [
+        sponsor({ key: 'tool:t1', id: 't1', active: false, can_confirm: true }),
+        sponsor({
+          key: 'tool:t2',
+          id: 't2',
+          active: false,
+          can_confirm: false,
+        }),
+      ],
+    });
+    const takeOver = buttons().filter((b) =>
+      b.textContent?.includes('agents.form.sponsors.takeOver'),
+    );
+    expect(takeOver).toHaveLength(1);
+    await act(async () => takeOver[0].click());
+    expect(toggle).toHaveBeenCalledWith('tool:t1');
+  });
+
+  it('shows a pending take-over with an undo', async () => {
+    const toggle = await render(
+      {
+        ...baseAgent,
+        access: 'editor',
+        allowed_actions: ['edit'],
+        resource_sponsors: [
+          sponsor({
+            key: 'tool:t1',
+            id: 't1',
+            active: false,
+            can_confirm: true,
+          }),
+        ],
+      },
+      ['tool:t1'],
+    );
+    expect(container.textContent).toContain(
+      'agents.form.sponsors.takeOverPending',
+    );
+    const undo = buttons().find((b) =>
+      b.textContent?.includes('agents.form.sponsors.undoTakeOver'),
+    )!;
+    await act(async () => undo.click());
+    expect(toggle).toHaveBeenCalledWith('tool:t1');
   });
 });

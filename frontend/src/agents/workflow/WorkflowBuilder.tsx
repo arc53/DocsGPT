@@ -49,12 +49,12 @@ import { agentEditPath, agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
 import AgentPreviewSheet from '../components/AgentPreviewSheet';
-import SponsorConfirmModal from '../components/SponsorConfirmModal';
 import {
   readSponsorRefusal,
-  type SponsorConfirmation,
+  saveWithSponsorConsent,
   sponsorNotAllowedMessage,
 } from '../sponsorConsent';
+import { useSponsorPrompt } from '../useSponsorPrompt';
 import WorkflowDetailsSheet, {
   type WorkflowDetailsSave,
 } from './components/WorkflowDetailsSheet';
@@ -101,11 +101,14 @@ import {
   validateJsonSchemaConfig,
 } from './workflowHelpers';
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
-import { canAddToolToOwn } from '../../utils/toolUtils';
+import { canAddToolToOwn, getToolDisplayName } from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
 
 const PRIMARY_ACTION_SPINNER_DELAY_MS = 180;
+
+/** How a save ended; `cancelled` when the caller declined to sponsor. */
+type WorkflowSaveOutcome = 'saved' | 'failed' | 'cancelled';
 // A node added from the palette while one is selected lands this far right
 // of it (then moves down until it covers nothing).
 const ADD_BESIDE_GAP_X = 80;
@@ -228,12 +231,9 @@ function WorkflowBuilderInner() {
   const [showPrimaryActionSpinner, setShowPrimaryActionSpinner] =
     useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
-  // A save refused until the caller agrees that a node resource the owner
-  // can't use runs with their access; ``retry`` saves again with that.
-  const [sponsorRequest, setSponsorRequest] = useState<{
-    confirmation: SponsorConfirmation;
-    retry: (keys: string[]) => void;
-  } | null>(null);
+  // Asks before a node resource the owner can't use runs with the
+  // caller's access; the save that asked gets the retried save's result.
+  const sponsorPrompt = useSponsorPrompt();
   const [errorContext, setErrorContext] = useState<'preview' | 'publish'>(
     'publish',
   );
@@ -261,6 +261,13 @@ function WorkflowBuilderInner() {
   );
   const [defaultAgentModelId, setDefaultAgentModelId] = useState('');
   const [availableTools, setAvailableTools] = useState<UserTool[]>([]);
+  // Names of every tool and source the saved graph references, whoever owns
+  // them, so node pickers keep a remove-only option for the owner's private
+  // ones (GET /api/workflows/<id> ``ref_details``).
+  const [nodeRefNames, setNodeRefNames] = useState<{
+    tools: { id: string; label: string }[];
+    sources: { id: string; label: string }[];
+  }>({ tools: [], sources: [] });
   const sourceOptions = useMemo(
     () =>
       (sourceDocs ?? [])
@@ -932,7 +939,22 @@ function WorkflowBuilderInner() {
           workflow,
           nodes: apiNodes,
           edges: apiEdges,
+          ref_details: refDetails,
         } = responseData.data;
+        setNodeRefNames({
+          tools: (refDetails?.tools ?? []).map(
+            (tool: { id: string; name?: string; display_name?: string }) => ({
+              id: tool.id,
+              label: getToolDisplayName(tool),
+            }),
+          ),
+          sources: (refDetails?.sources ?? []).map(
+            (source: { id: string; name: string | null }) => ({
+              id: source.id,
+              label: source.name || '',
+            }),
+          ),
+        });
         const nextWorkflowName = workflow.name;
         const nextWorkflowDescription = workflow.description || '';
         const mappedNodes = apiNodes.map((n: WorkflowNode) => {
@@ -1322,17 +1344,14 @@ function WorkflowBuilderInner() {
       : false;
 
   const persistWorkflow = useCallback(
-    async (
-      navigateAfterSuccess: boolean,
-      confirmSponsor?: string[],
-    ): Promise<boolean> => {
+    async (navigateAfterSuccess: boolean): Promise<WorkflowSaveOutcome> => {
       setPublishErrors([]);
       setErrorContext('publish');
 
       const validationErrors = validateWorkflow();
       if (validationErrors.length > 0) {
         setPublishErrors(validationErrors);
-        return false;
+        return 'failed';
       }
 
       setIsPublishing(true);
@@ -1342,25 +1361,24 @@ function WorkflowBuilderInner() {
 
         let savedWorkflowId = workflowId;
         if (workflowId) {
-          const updateResponse = await userService.updateWorkflow(
-            workflowId,
-            confirmSponsor && confirmSponsor.length > 0
-              ? { ...workflowPayload, confirm_sponsor: confirmSponsor }
-              : workflowPayload,
-            token,
+          // A node tool or source the owner can't use would run with the
+          // caller's access: ask first, then save again with their answer.
+          const updateResponse = await saveWithSponsorConsent(
+            (confirm) =>
+              userService.updateWorkflow(
+                workflowId,
+                confirm.length > 0
+                  ? { ...workflowPayload, confirm_sponsor: confirm }
+                  : workflowPayload,
+                token,
+              ),
+            sponsorPrompt.ask,
           );
+          if (!updateResponse) return 'cancelled';
           if (!updateResponse.ok) {
-            // A node tool or source the owner can't use would run with the
-            // caller's access: ask first, then save again with their answer.
             const refusal = await readSponsorRefusal(updateResponse);
-            if (refusal?.kind === 'confirm') {
-              setSponsorRequest({
-                confirmation: refusal.confirmation,
-                retry: (keys) => {
-                  void persistWorkflow(navigateAfterSuccess, keys);
-                },
-              });
-              return false;
+            if (refusal?.kind === 'unexpected') {
+              throw new Error(t('agents.form.sponsors.confirmationOutdated'));
             }
             if (refusal?.kind === 'notAllowed') {
               throw new Error(
@@ -1415,7 +1433,7 @@ function WorkflowBuilderInner() {
           if (navigateAfterSuccess) {
             navigateBackToAgents();
           }
-          return true;
+          return 'saved';
         }
 
         const createResponse = await userService.createWorkflow(
@@ -1427,7 +1445,7 @@ function WorkflowBuilderInner() {
           const backendErrors = errorData.errors || [];
           if (backendErrors.length > 0) {
             setPublishErrors(backendErrors);
-            return false;
+            return 'failed';
           }
           throw new Error(
             errorData.message ||
@@ -1491,7 +1509,7 @@ function WorkflowBuilderInner() {
         if (navigateAfterSuccess) {
           navigateBackToAgents();
         }
-        return true;
+        return 'saved';
       } catch (error) {
         if (createdWorkflowId) {
           try {
@@ -1515,7 +1533,7 @@ function WorkflowBuilderInner() {
             ? error.message
             : t('agents.workflow.builder.saveFailed'),
         ]);
-        return false;
+        return 'failed';
       } finally {
         setIsPublishing(false);
       }
@@ -1534,6 +1552,7 @@ function WorkflowBuilderInner() {
       navigateBackToAgents,
       t,
       i18n.language,
+      sponsorPrompt.ask,
     ],
   );
 
@@ -1560,10 +1579,11 @@ function WorkflowBuilderInner() {
     setDetailsSaveRequested(false);
     setDetailsSaving(true);
     setDetailsSaveFailed(false);
-    void persistWorkflow(false).then((ok) => {
+    void persistWorkflow(false).then((outcome) => {
       setDetailsSaving(false);
-      if (ok) setShowDetails(false);
-      else setDetailsSaveFailed(true);
+      if (outcome === 'saved') setShowDetails(false);
+      // Declining the sponsor confirmation leaves the sheet open, no error.
+      else if (outcome === 'failed') setDetailsSaveFailed(true);
     });
   }, [detailsSaveRequested, persistWorkflow]);
 
@@ -1884,6 +1904,8 @@ function WorkflowBuilderInner() {
                   availableModels={availableModels}
                   availableTools={availableTools}
                   sourceOptions={sourceOptions}
+                  attachedTools={nodeRefNames.tools}
+                  attachedSources={nodeRefNames.sources}
                   documentOptions={selectedAgentDocumentOptions}
                   jsonSchemaText={selectedAgentJsonSchemaText}
                   jsonSchemaError={selectedAgentJsonSchemaError}
@@ -1981,15 +2003,7 @@ function WorkflowBuilderInner() {
             }}
           />
         </AgentPreviewSheet>
-        <SponsorConfirmModal
-          confirmation={sponsorRequest?.confirmation ?? null}
-          onCancel={() => setSponsorRequest(null)}
-          onConfirm={(keys) => {
-            const retry = sponsorRequest?.retry;
-            setSponsorRequest(null);
-            retry?.(keys);
-          }}
-        />
+        {sponsorPrompt.modal}
         <ConfirmationModal
           message={
             workflowName

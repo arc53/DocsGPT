@@ -33,7 +33,9 @@ export type SponsorConfirmation = {
 
 export type SponsorRefusal =
   | { kind: 'confirm'; confirmation: SponsorConfirmation }
-  | { kind: 'notAllowed'; resources: SponsorResource[] };
+  | { kind: 'notAllowed'; resources: SponsorResource[] }
+  /** The save confirmed something it no longer needs (the agent changed). */
+  | { kind: 'unexpected' };
 
 /**
  * The sponsor refusal a failed agent or workflow save carries, if any.
@@ -41,13 +43,14 @@ export type SponsorRefusal =
  * A save that would run a resource the owner can't use with the caller's
  * access answers 409 `sponsor_confirmation_required` until it is retried
  * with `confirm_sponsor`; one the caller may not sponsor at all answers 403
- * `sponsor_not_allowed`. Reads a clone, so the caller can still read the
- * body for any other error.
+ * `sponsor_not_allowed`; one whose confirmation names something it no
+ * longer needs answers 400 `sponsor_confirmation_unexpected`. Reads a
+ * clone, so the caller can still read the body for any other error.
  */
 export async function readSponsorRefusal(
   response: Response,
 ): Promise<SponsorRefusal | null> {
-  if (response.status !== 409 && response.status !== 403) return null;
+  if (![400, 403, 409].includes(response.status)) return null;
   if (typeof response.clone !== 'function') return null;
   let body: {
     code?: string;
@@ -71,7 +74,66 @@ export async function readSponsorRefusal(
   if (body?.code === 'sponsor_not_allowed') {
     return { kind: 'notAllowed', resources: body.resources ?? [] };
   }
+  if (body?.code === 'sponsor_confirmation_unexpected') {
+    return { kind: 'unexpected' };
+  }
   return null;
+}
+
+/**
+ * Send an agent or workflow save, asking the caller whenever the server
+ * wants their confirmation to sponsor something, and resending with it.
+ *
+ * Args:
+ *   send: Sends the save with these `confirm_sponsor` keys.
+ *   ask: Shows the confirmation; resolves to the agreed keys, or null.
+ *   confirmed: Keys already agreed (items the caller chose to take over).
+ *
+ * Returns:
+ *   The last response, or null when the caller declined.
+ */
+export async function saveWithSponsorConsent(
+  send: (confirm: string[]) => Promise<Response>,
+  ask: (confirmation: SponsorConfirmation) => Promise<string[] | null>,
+  confirmed: string[] = [],
+): Promise<Response | null> {
+  let keys = Array.from(new Set(confirmed));
+  let response = await send(keys);
+  // The agent can change between rounds; three asks is plenty.
+  for (let round = 0; round < 3; round += 1) {
+    const refusal = await readSponsorRefusal(response);
+    if (refusal?.kind !== 'confirm') return response;
+    const agreed = await ask(refusal.confirmation);
+    if (!agreed) return null;
+    keys = Array.from(new Set([...keys, ...agreed]));
+    response = await send(keys);
+  }
+  return response;
+}
+
+/**
+ * A MultiSelect's options plus one for each selected id the caller can't
+ * list (the owner's private tool or source on a workflow node), so it can
+ * be removed. Selecting only removes it; nothing opens.
+ *
+ * Args:
+ *   options: The caller's own options.
+ *   attached: Known names of referenced resources, by id.
+ *   selected: The ids selected now.
+ *   format: Turns a name into the option's label.
+ */
+export function withAttachedOptions(
+  options: { value: string; label: string }[],
+  attached: { id: string; label: string }[],
+  selected: string[],
+  format: (name: string) => string,
+): { value: string; label: string }[] {
+  const listed = new Set(options.map((option) => option.value));
+  const names = new Map(attached.map((item) => [item.id, item.label]));
+  const extra = selected
+    .filter((id, index) => !listed.has(id) && selected.indexOf(id) === index)
+    .map((id) => ({ value: id, label: format(names.get(id) || id) }));
+  return extra.length ? [...options, ...extra] : options;
 }
 
 /** The error for a save that attached resources the caller may not sponsor. */

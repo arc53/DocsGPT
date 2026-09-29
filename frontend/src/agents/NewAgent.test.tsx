@@ -104,15 +104,22 @@ vi.mock('../components/MultiSelectPopover', () => ({
   MultiSelectPopover: ({
     trigger,
     items,
+    onToggle,
   }: {
     trigger: React.ReactNode;
     items: MultiSelectPopoverItem[];
+    onToggle: (id: string) => void;
   }) => (
     <div data-testid="picker">
       {trigger}
       {items.map((item) => (
-        <div key={item.id} data-group={item.group}>
+        <div key={item.id} data-group={item.group} data-item={item.id}>
           {item.descriptionNode}
+          <button
+            type="button"
+            data-toggle={item.id}
+            onClick={() => onToggle(item.id)}
+          />
         </div>
       ))}
     </div>
@@ -482,6 +489,86 @@ describe('NewAgent form', () => {
     expect(
       container.querySelector('[data-testid="confirm-sponsor"]'),
     ).toBeNull();
+  });
+
+  const rename = async (value: string) => {
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, value));
+  };
+
+  it('drops the remove-only row once the removal is saved', async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await renderEdit({
+      tools: ['owners'],
+      tool_details: [
+        { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
+      ],
+    });
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="owners"]')!
+        .click(),
+    );
+    // Still listed until saved, so it can be put back.
+    expect(container.querySelector('[data-item="owners"]')).not.toBeNull();
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    expect(mocks.updateAgent).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-item="owners"]')).toBeNull();
+  });
+
+  it('sends a take-over of a stopped item with the next save', async () => {
+    const stopped = {
+      key: 'tool:t1',
+      type: 'tool',
+      id: 't1',
+      name: 'Jira',
+      user_id: 'bob',
+      label: 'bob@example.com',
+      state: 'inactive',
+      reason: 'sponsor_cannot_edit_agent',
+      active: false,
+      can_confirm: true,
+    };
+    await renderEdit({ resource_sponsors: [stopped] });
+    const save = buttonByText('agents.form.buttons.save');
+    expect(save.disabled).toBe(true);
+    await act(async () =>
+      buttonByText('agents.form.sponsors.takeOver').click(),
+    );
+    expect(save.disabled).toBe(false);
+    await act(async () => save.click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(JSON.parse(sent.get('confirm_sponsor') as string)).toEqual([
+      'tool:t1',
+    ]);
+    // The saved agent is fetched again for its fresh sponsor details.
+    expect(mocks.getAgent).toHaveBeenCalledTimes(2);
+  });
+
+  it('explains an outdated confirmation and reloads the sponsors', async () => {
+    mocks.updateAgent.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: false,
+            code: 'sponsor_confirmation_unexpected',
+            message: 'raw english',
+            unexpected: ['tool:t1'],
+          }),
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderEdit({});
+    await rename('Renamed');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    expect(container.textContent).toContain(
+      'agents.form.sponsors.confirmationOutdated',
+    );
+    expect(container.textContent).not.toContain('raw english');
+    expect(mocks.getAgent).toHaveBeenCalledTimes(2);
   });
 
   it('labels every picker with a floating label', async () => {

@@ -99,14 +99,14 @@ import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
 import SectionShell from '../navigation/SectionShell';
-import SponsorConfirmModal from './components/SponsorConfirmModal';
 import SponsoredResourcesNotice from './components/SponsoredResourcesNotice';
 import {
   readSponsorRefusal,
-  type SponsorConfirmation,
+  saveWithSponsorConsent,
   sponsorNotAllowedMessage,
   withAttachedToolRows,
 } from './sponsorConsent';
+import { useSponsorPrompt } from './useSponsorPrompt';
 import { Agent, ResourceSponsor, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
@@ -201,12 +201,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Tools on the agent when it loaded: the owner's private ones don't come
   // back in the caller's own tool list, so the picker adds a row for each.
   const [attachedTools, setAttachedTools] = useState<ToolSummary[]>([]);
-  // A save the server refused until the caller agrees that what they added
-  // runs with their access; ``retry`` repeats it with ``confirm_sponsor``.
-  const [sponsorRequest, setSponsorRequest] = useState<{
-    confirmation: SponsorConfirmation;
-    retry: (keys: string[]) => void;
-  } | null>(null);
+  // Asks before a save makes what the caller added run with their access.
+  const sponsorPrompt = useSponsorPrompt();
+  // Keys of stopped items the caller chose to keep running with their
+  // access; sent as ``confirm_sponsor`` with the next save.
+  const [takeovers, setTakeovers] = useState<string[]>([]);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
   );
@@ -449,35 +448,80 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
-  /**
-   * The message for a refused save, or null when the refusal only asks the
-   * caller to confirm sponsoring what they added (the dialog then opens and
-   * ``retry`` repeats the save with their confirmation).
-   */
+  // Fresh sponsor details after a save, without touching unsaved fields.
+  const refreshSponsors = useCallback(
+    async (id?: string) => {
+      if (!id) return;
+      try {
+        const response = await userService.getAgent(id, token);
+        if (!response.ok) return;
+        const data = await response.json();
+        const sponsors = data.resource_sponsors ?? [];
+        setAgent((prev) => ({ ...prev, resource_sponsors: sponsors }));
+        if (initialAgentRef.current)
+          initialAgentRef.current = {
+            ...initialAgentRef.current,
+            resource_sponsors: sponsors,
+          };
+      } catch {
+        // The notice keeps what it showed.
+      }
+    },
+    [token],
+  );
+
+  /** The message for a refused save. */
   const saveFailureMessage = async (
     response: Response,
     fallback: string,
-    retry: (keys: string[]) => void,
-  ): Promise<string | null> => {
+  ): Promise<string> => {
     const refusal = await readSponsorRefusal(response);
-    if (refusal?.kind === 'confirm') {
-      setSponsorRequest({ confirmation: refusal.confirmation, retry });
-      return null;
-    }
     if (refusal?.kind === 'notAllowed')
       return sponsorNotAllowedMessage(t, i18n.language, refusal.resources);
+    if (refusal?.kind === 'unexpected') {
+      // Someone changed the agent since the caller chose; show them now.
+      setTakeovers([]);
+      void refreshSponsors(agent.id);
+      return t('agents.form.sponsors.confirmationOutdated');
+    }
     return extractApiError(response, fallback);
   };
 
-  const appendSponsorConfirmation = (
-    formData: FormData,
-    confirmSponsor?: string[],
-  ) => {
-    if (confirmSponsor && confirmSponsor.length > 0)
-      formData.append('confirm_sponsor', JSON.stringify(confirmSponsor));
+  /**
+   * Create or update the agent, asking whenever the server wants the
+   * caller's confirmation to run what they added with their access.
+   * Resolves to null when they decline.
+   */
+  const sendAgent = (formData: FormData) =>
+    saveWithSponsorConsent(
+      (confirm) => {
+        if (confirm.length > 0)
+          formData.set('confirm_sponsor', JSON.stringify(confirm));
+        else formData.delete('confirm_sponsor');
+        return effectiveMode === 'new'
+          ? userService.createAgent(formData, token)
+          : userService.updateAgent(agent.id || '', formData, token);
+      },
+      sponsorPrompt.ask,
+      takeovers,
+    );
+
+  /** Bookkeeping after an update the server accepted. */
+  const afterSaved = (id?: string) => {
+    // What is on the agent now is what the tool picker keeps rows for.
+    setAttachedTools(selectedTools);
+    if (effectiveMode !== 'new') {
+      setTakeovers([]);
+      void refreshSponsors(id);
+    }
   };
 
-  const handleSaveDraft = async (confirmSponsor?: string[]) => {
+  const toggleTakeover = (key: string) =>
+    setTakeovers((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+
+  const handleSaveDraft = async () => {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -535,25 +579,23 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (effectiveMode === 'new' && validatedFolderId) {
       formData.append('folder_id', validatedFolderId);
     }
-    appendSponsorConfirmation(formData, confirmSponsor);
 
     try {
       setDraftLoading(true);
       setSubmitError(null);
-      const response =
-        effectiveMode === 'new'
-          ? await userService.createAgent(formData, token)
-          : await userService.updateAgent(agent.id || '', formData, token);
+      const response = await sendAgent(formData);
+      if (!response) return;
       if (!response.ok) {
-        const message = await saveFailureMessage(
-          response,
-          t('agents.form.errors.saveDraftFailed'),
-          (keys) => handleSaveDraft(keys),
+        setSubmitError(
+          await saveFailureMessage(
+            response,
+            t('agents.form.errors.saveDraftFailed'),
+          ),
         );
-        if (message) setSubmitError(message);
         return;
       }
       const data = await response.json();
+      afterSaved(data.id || agent.id);
 
       const updatedAgent = {
         ...agent,
@@ -571,7 +613,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
-  const handlePublish = async (confirmSponsor?: string[]) => {
+  const handlePublish = async () => {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -629,22 +671,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (effectiveMode === 'new' && validatedFolderId) {
       formData.append('folder_id', validatedFolderId);
     }
-    appendSponsorConfirmation(formData, confirmSponsor);
 
     try {
       setPublishLoading(true);
       setSubmitError(null);
-      const response =
-        effectiveMode === 'new'
-          ? await userService.createAgent(formData, token)
-          : await userService.updateAgent(agent.id || '', formData, token);
+      const response = await sendAgent(formData);
+      if (!response) return;
       if (!response.ok) {
-        const message = await saveFailureMessage(
-          response,
-          t('agents.form.errors.publishFailed'),
-          (keys) => handlePublish(keys),
+        setSubmitError(
+          await saveFailureMessage(
+            response,
+            t('agents.form.errors.publishFailed'),
+          ),
         );
-        if (message) setSubmitError(message);
         return;
       }
       const data = await response.json();
@@ -658,6 +697,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       };
       setAgent(updatedAgent);
       initialAgentRef.current = updatedAgent;
+      afterSaved(updatedAgent.id);
       // The saved agent is what the preview talks to; start its chat over.
       dispatch(resetPreview());
 
@@ -995,9 +1035,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const isChanged =
       !isEqual(agent, initialAgentRef.current) ||
       imageFile !== null ||
-      jsonSchemaText !== initialJsonSchemaText;
+      jsonSchemaText !== initialJsonSchemaText ||
+      takeovers.length > 0;
     setHasChanges(isChanged);
-  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
+  }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText, takeovers]);
 
   const isPublished = agent.status === 'published';
   // What the caller's role allows on this agent (`allowed_actions` from the
@@ -1067,7 +1108,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           shape="pill"
           disabled={isDraftBlocked()}
           loading={draftLoading}
-          onClick={() => handleSaveDraft()}
+          onClick={handleSaveDraft}
         >
           {t('agents.form.buttons.saveDraft')}
         </Button>
@@ -1091,7 +1132,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           shape="pill"
           disabled={!isPublishable() || !hasChanges}
           loading={publishLoading}
-          onClick={() => handlePublish()}
+          onClick={handlePublish}
           className="flex-1 sm:flex-none"
         >
           {modeConfig[effectiveMode].buttonText}
@@ -1359,6 +1400,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             <SponsoredResourcesNotice
               agent={agent}
               resolveName={resolveSponsoredName}
+              takeovers={takeovers}
+              onToggleTakeover={toggleTakeover}
             />
           </div>
         </Card>
@@ -1700,15 +1743,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             </Card>
           )}
       </div>
-      <SponsorConfirmModal
-        confirmation={sponsorRequest?.confirmation ?? null}
-        onCancel={() => setSponsorRequest(null)}
-        onConfirm={(keys) => {
-          const retry = sponsorRequest?.retry;
-          setSponsorRequest(null);
-          retry?.(keys);
-        }}
-      />
+      {sponsorPrompt.modal}
       <ConfirmationModal
         message={t('agents.deleteConfirmation')}
         modalState={deleteConfirmation}
@@ -1825,7 +1860,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     shape="pill"
                     disabled={!isPublishable()}
                     loading={publishLoading}
-                    onClick={() => handlePublish()}
+                    onClick={handlePublish}
                   >
                     {t('agents.form.buttons.publish')}
                   </Button>

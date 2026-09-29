@@ -2353,9 +2353,15 @@
         "attachNote": "你新增的、擁有者無法使用的工具、來源和提示詞，會以你的存取權限為所有使用此智慧代理的人執行。你必須擁有它們或能夠編輯它們，並且需要確認。",
         "publicLinkNote": "此智慧代理有公開連結，任何擁有該連結的人都可以從中取得回答。",
         "addedBy": "由 {{person}} 新增：{{names}}",
-        "unavailable": "未執行：{{names}}。新增它們的 {{person}} 已失去存取權限。請移除它們，或選擇擁有者可以使用的項目。",
+        "unavailable": "未執行：{{names}}。新增它們的 {{person}} 已無法再透過此智慧代理分享它們。請移除它們，或選擇擁有者可以使用的項目。",
         "unknownItem": "未命名項目",
-        "notAllowed": "無法將 {{names}} 新增到此智慧代理。擁有者無法使用它們，而你只能分享自己擁有或可以編輯的項目。"
+        "notAllowed": "無法將 {{names}} 新增到此智慧代理。擁有者無法使用它們，而你只能分享自己擁有或可以編輯的項目。",
+        "stoppedCannotEditAgent": "未執行：{{names}}。新增它們的 {{person}} 已無法再編輯此智慧代理。請移除它們，或選擇擁有者可以使用的項目。",
+        "stoppedCannotEditItem": "未執行：{{names}}。{{person}} 新增了它們，但已無法再編輯它們，而只有擁有或可以編輯某個項目的人才能透過智慧代理分享它。請移除它們，或選擇擁有者可以使用的項目。",
+        "takeOver": "以我的存取權限執行 {{name}}",
+        "takeOverPending": "儲存後，{{name}} 將以你的存取權限執行。",
+        "undoTakeOver": "復原",
+        "confirmationOutdated": "在你確認以你的存取權限執行的內容之後，此智慧代理已變更。請查看提示並重新儲存。"
       },
       "sponsorConfirm": {
         "title": "以你的存取權限執行？",
@@ -2366,7 +2372,7 @@
         "audiencePublicLink": "任何擁有此智慧代理公開連結的人",
         "audienceWebhook": "任何呼叫此智慧代理 Webhook 的程式",
         "audienceEditors": "所有可以開啟此智慧代理的人",
-        "stopNote": "如果你失去對它們或此智慧代理的編輯權限，它們將停止執行。在有編輯權限的人重新新增之前，它們仍附加在智慧代理上，但不起作用。",
+        "stopNote": "如果你失去對它們或此智慧代理的編輯權限，它們將停止執行。之後它們仍附加在智慧代理上但不起作用，直到有編輯權限的人接管它們或將其移除。",
         "confirm": "以我的存取權限新增",
         "types": {
           "tool": "工具",
@@ -2703,7 +2709,8 @@
         "detailsTitle": "工作流程詳細資料",
         "detailsDescription": "顯示在代理卡片上的名稱、說明和圖片。",
         "unsavedChanges": "未儲存的變更",
-        "editDetailsMenu": "編輯詳細資料"
+        "editDetailsMenu": "編輯詳細資料",
+        "attachedOption": "{{name}}（由其他人新增）"
       },
       "validation": {
         "nameRequired": "工作流程名稱為必填",

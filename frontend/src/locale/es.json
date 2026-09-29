@@ -2368,9 +2368,15 @@
         "attachNote": "Las herramientas, fuentes y prompts que añadas y que el propietario no pueda usar se ejecutan con tu acceso para todos los que usen este agente. Debes ser su propietario o poder editarlos, y se te pedirá que lo confirmes.",
         "publicLinkNote": "Este agente tiene un enlace público, así que cualquiera con el enlace puede obtener respuestas de ellos.",
         "addedBy": "Añadido por {{person}}: {{names}}",
-        "unavailable": "Sin ejecutarse: {{names}}. {{person}} los añadió y ya no tiene acceso. Quítalos o elige otros que el propietario pueda usar.",
+        "unavailable": "Sin ejecutarse: {{names}}. {{person}} los añadió y ya no puede compartirlos a través de este agente. Quítalos o elige otros que el propietario pueda usar.",
         "unknownItem": "Elemento sin nombre",
-        "notAllowed": "No puedes añadir {{names}} a este agente. El propietario no puede usarlos y solo puedes compartir lo que es tuyo o puedes editar."
+        "notAllowed": "No puedes añadir {{names}} a este agente. El propietario no puede usarlos y solo puedes compartir lo que es tuyo o puedes editar.",
+        "stoppedCannotEditAgent": "Sin ejecutarse: {{names}}. {{person}} los añadió y ya no puede editar este agente. Quítalos o elige otros que el propietario pueda usar.",
+        "stoppedCannotEditItem": "Sin ejecutarse: {{names}}. {{person}} los añadió pero ya no puede editarlos, y solo quien es propietario de un elemento o puede editarlo puede compartirlo a través de un agente. Quítalos o elige otros que el propietario pueda usar.",
+        "takeOver": "Ejecutar {{name}} con mi acceso",
+        "takeOverPending": "{{name}} se ejecutará con tu acceso cuando guardes.",
+        "undoTakeOver": "Deshacer",
+        "confirmationOutdated": "Este agente cambió desde que confirmaste lo que se ejecuta con tu acceso. Revisa los avisos y vuelve a guardar."
       },
       "sponsorConfirm": {
         "title": "¿Ejecutar con tu acceso?",
@@ -2381,7 +2387,7 @@
         "audiencePublicLink": "Cualquiera con el enlace público del agente",
         "audienceWebhook": "Todo lo que llame al webhook del agente",
         "audienceEditors": "Todos los que pueden abrir este agente",
-        "stopNote": "Dejan de ejecutarse si pierdes el acceso de edición a ellos o a este agente. Hasta que alguien que pueda editarlos los vuelva a añadir, siguen adjuntos pero no hacen nada.",
+        "stopNote": "Dejan de ejecutarse si pierdes el acceso de edición a ellos o a este agente. Entonces siguen adjuntos pero no hacen nada hasta que alguien que pueda editarlos se haga cargo de ellos o se quiten.",
         "confirm": "Añadir con mi acceso",
         "types": {
           "tool": "Herramienta",
@@ -2718,7 +2724,8 @@
         "detailsTitle": "Detalles del flujo de trabajo",
         "detailsDescription": "Nombre, descripción e imagen que se muestran en la tarjeta del agente.",
         "unsavedChanges": "Cambios sin guardar",
-        "editDetailsMenu": "Editar detalles"
+        "editDetailsMenu": "Editar detalles",
+        "attachedOption": "{{name}} (añadido por otra persona)"
       },
       "validation": {
         "nameRequired": "El nombre del flujo de trabajo es obligatorio",
