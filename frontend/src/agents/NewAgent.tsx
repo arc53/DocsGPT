@@ -58,7 +58,8 @@ import { connectionNeedsSignIn } from '../connectors/connectorsSlice';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
-import type { Connection } from '../connectors/types';
+import { toolServiceOf } from '../connectors/toolService';
+import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -633,7 +634,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
   useEffect(() => {
     const getTools = async () => {
-      const [toolsResponse, devicesResult, connectionsResult] =
+      const [toolsResponse, devicesResult, connectionsResult, catalogResult] =
         await Promise.all([
           userService.getUserTools(token),
           // Tolerate failures here: the picker should still render the
@@ -642,12 +643,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           connectorsService
             .listConnections(token)
             .catch(() => ({ connections: [] })),
+          // Names a teammate's connected tool, whose connection the caller
+          // never sees.
+          connectorsService.getCatalog(token).catch(() => ({ connectors: [] })),
         ]);
+      const ownConnections = (connectionsResult?.connections ??
+        []) as Connection[];
+      const catalog = (catalogResult?.connectors ??
+        []) as ConnectorDefinition[];
       const connectionsById = new Map<string, Connection>(
-        ((connectionsResult?.connections ?? []) as Connection[]).map((c) => [
-          c.id,
-          c,
-        ]),
+        ownConnections.map((c) => [c.id, c]),
       );
       if (!toolsResponse.ok) throw new Error('Failed to fetch tools');
       const data = await toolsResponse.json();
@@ -668,24 +673,24 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         devicesById.set(d.id, { online, last_seen_at: d.last_seen_at });
       });
       // Group ordering: builtins -> defaults -> one group per connection
-      // (the service and its account) -> custom tools, via the
-      // MultiSelectPopover first-appearance grouping.
-      const connectionOf = (tool: UserToolType) =>
-        tool.connection_id
-          ? connectionsById.get(tool.connection_id)
-          : undefined;
+      // (the service and its account; a teammate's, only the service) ->
+      // custom tools, via the MultiSelectPopover first-appearance grouping.
+      const serviceOf = (tool: UserToolType) =>
+        toolServiceOf(tool, ownConnections, catalog);
+      const connectionOf = (tool: UserToolType) => serviceOf(tool)?.connection;
       const rank = (tool: UserToolType) =>
-        tool.builtin ? 0 : tool.default ? 1 : connectionOf(tool) ? 2 : 3;
+        tool.builtin ? 0 : tool.default ? 1 : tool.connection_id ? 2 : 3;
       const groupFor = (tool: UserToolType): string => {
         if (tool.builtin) return t('agents.form.toolsPopup.groupBuiltin');
         if (tool.default) return t('agents.form.toolsPopup.groupDefault');
-        const connection = connectionOf(tool);
-        if (connection)
+        const service = serviceOf(tool);
+        if (service?.connection)
           return t('agents.form.toolsPopup.groupConnection', {
-            name: connection.name,
-            account: connection.account_label,
+            name: service.connection.name,
+            account: service.connection.account_label,
             interpolation: { escapeValue: false },
           });
+        if (service) return service.name;
         return t('agents.form.toolsPopup.groupCustom');
       };
       const tools: MultiSelectPopoverItem[] = [...visibleTools]
@@ -697,11 +702,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         )
         .map((tool: UserToolType) => {
           const connection = connectionOf(tool);
+          const serviceIcon = serviceOf(tool)?.icon;
           const base: MultiSelectPopoverItem = {
             id: tool.id,
             label: getToolDisplayName(tool),
-            icon: connection ? (
-              <ConnectorIcon icon={connection.icon} className="size-5" />
+            icon: serviceIcon ? (
+              <ConnectorIcon icon={serviceIcon} className="size-5" />
             ) : (
               <ToolIcon name={tool.name} className="size-5" />
             ),

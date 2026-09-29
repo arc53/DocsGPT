@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => {
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
     tools: null as unknown[] | null,
     connections: [] as unknown[],
+    catalog: [] as unknown[],
     deleteAgent: vi.fn(() => jsonResponse({})),
     guardrailsProps: vi.fn(),
   };
@@ -81,6 +82,8 @@ vi.mock('../api/services/devicesService', () => ({
 vi.mock('../api/services/connectorsService', () => ({
   default: {
     listConnections: () => Promise.resolve({ connections: mocks.connections }),
+    getCatalog: () =>
+      Promise.resolve({ success: true, connectors: mocks.catalog }),
   },
 }));
 
@@ -195,6 +198,7 @@ describe('NewAgent form', () => {
     mocks.createAgent.mockClear();
     mocks.tools = null;
     mocks.connections = [];
+    mocks.catalog = [];
   });
 
   const render = async () => {
@@ -320,6 +324,36 @@ describe('NewAgent form', () => {
       'agents.form.toolsPopup.groupConnection',
       'agents.form.toolsPopup.groupCustom',
     ]);
+  });
+
+  // A teammate's connection is never in the caller's list; its tool still
+  // belongs with the services, named from the catalog.
+  it("groups a teammate's connected tool under its service, before custom", async () => {
+    mocks.tools = [
+      { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      {
+        id: 'shared-tg',
+        name: 'telegram',
+        displayName: 'Telegram',
+        connection_id: 'owner-conn',
+        access: 'viewer',
+        allowed_actions: ['use', 'use_in_own'],
+      },
+    ];
+    mocks.catalog = [
+      {
+        key: 'telegram',
+        name: 'Telegram',
+        icon: 'tool_telegram',
+        publisher: 'built_in',
+        tool_templates: ['telegram'],
+      },
+    ];
+    await render();
+    const groups = Array.from(
+      container.querySelectorAll('[data-testid="picker"] [data-group]'),
+    ).map((item) => item.getAttribute('data-group'));
+    expect(groups).toEqual(['Telegram', 'agents.form.toolsPopup.groupCustom']);
   });
 
   it('labels every picker with a floating label', async () => {

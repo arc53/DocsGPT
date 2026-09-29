@@ -47,7 +47,9 @@ import {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
+  selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
+import { toolServiceOf } from '../connectors/toolService';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
@@ -350,6 +352,7 @@ export default function MessageInput({
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
   const [userTools, setUserTools] = useState<UserToolType[]>([]);
   const connections = useSelector(selectConnections);
+  const catalog = useSelector(selectConnectorCatalog);
   const [toolsLoading, setToolsLoading] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
@@ -1585,32 +1588,33 @@ export default function MessageInput({
 
   // Tools from a connected service sit under that service; the rest are
   // built in. Groups only appear once some tool comes from a connection.
-  const toolConnection = (tool: UserToolType) =>
-    tool.connection_id
-      ? connections.find((c) => c.id === tool.connection_id)
-      : undefined;
-  const anyConnectedTool = userTools.some((tool) => toolConnection(tool));
+  // A teammate's connection is never in the caller's list, so the tool's own
+  // connection id decides, and the service is named from the catalog.
+  const toolService = (tool: UserToolType) =>
+    toolServiceOf(tool, connections, catalog);
+  const anyConnectedTool = userTools.some((tool) => !!tool.connection_id);
   // Same groups as the agent builder: built in, one per service, then custom
   // tools (an API tool, an MCP server with no connection).
   const isCustomTool = (tool: UserToolType) =>
-    !toolConnection(tool) &&
+    !tool.connection_id &&
     (tool.name === 'api_tool' || tool.name === 'mcp_tool');
   const toolRank = (tool: UserToolType) =>
-    toolConnection(tool) ? 1 : isCustomTool(tool) ? 2 : 0;
+    tool.connection_id ? 1 : isCustomTool(tool) ? 2 : 0;
   const toolItems: MultiSelectPopoverItem[] = [...userTools]
     .sort((a, b) => toolRank(a) - toolRank(b))
     .map((tool) => {
-      const connection = toolConnection(tool);
+      const service = toolService(tool);
+      const connection = service?.connection;
       return {
         id: tool.id,
         label: tool.customName || tool.displayName,
-        icon: connection ? (
-          <ConnectorIcon icon={connection.icon} className="size-5" />
+        icon: service?.icon ? (
+          <ConnectorIcon icon={service.icon} className="size-5" />
         ) : (
           <ToolIcon name={tool.name} className="size-5" />
         ),
         group: anyConnectedTool
-          ? (connection?.name ??
+          ? (service?.name ??
             (isCustomTool(tool)
               ? t('agents.form.toolsPopup.groupCustom')
               : t('settings.tools.groupBuiltIn')))
