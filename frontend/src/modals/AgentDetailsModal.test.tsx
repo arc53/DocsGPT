@@ -17,8 +17,11 @@ vi.mock('react-redux', () => ({
 }));
 
 vi.mock('../api/services/userService', () => ({ default: mocks }));
-// Tested on its own; it needs the store and the tool list.
-vi.mock('../agents/ApiWriteAllowlist', () => ({ default: () => null }));
+// Tested on its own; it needs the store and the tool list. Here it only has
+// to show up (or not).
+vi.mock('../agents/ApiWriteAllowlist', () => ({
+  default: () => <div data-testid="api-write-allowlist" />,
+}));
 
 vi.mock('./ConfirmationModal', () => ({
   default: ({
@@ -97,6 +100,33 @@ describe('AgentDetailsModal', () => {
     expect(document.body.textContent).toContain(
       'modals.agentDetails.apiKeyAfterPublish',
     );
+  });
+
+  // The allowlist acts on the owner's connected accounts; the server keeps
+  // it unchanged for anyone else, so only the owner sees it.
+  describe('API write allowlist', () => {
+    const allowlist = () =>
+      document.querySelector('[data-testid="api-write-allowlist"]');
+
+    it('shows it to the owner of an agent with a key', async () => {
+      await render({ status: 'published', key: 'k-1', access: 'owner' });
+      expect(allowlist()).not.toBeNull();
+    });
+
+    it('hides it from an editor, even with a key', async () => {
+      await render({
+        status: 'published',
+        key: 'k-1',
+        access: 'editor',
+        allowed_actions: ['view', 'edit', 'manage_access_details'],
+      });
+      expect(allowlist()).toBeNull();
+    });
+
+    it('hides it until the agent has a key', async () => {
+      await render({ status: 'published', access: 'owner' });
+      expect(allowlist()).toBeNull();
+    });
   });
 
   it('shows a refused public link in an alert', async () => {

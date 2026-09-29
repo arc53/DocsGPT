@@ -737,7 +737,7 @@ export default function Teams() {
         return agent ? agentEditPathFor(agent) : agentEditPath(r.id);
       }
       case 'source':
-        return '/settings/sources';
+        return '/settings/knowledge';
       case 'tool':
         return '/settings/tools';
       case 'prompt':
