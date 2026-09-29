@@ -212,10 +212,11 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     guardrails: GuardrailsConfig = GuardrailsConfig()
-    # Write actions on the owner's connected accounts that anyone calling
-    # the agent with its API key (widget, API) or through its public link may
-    # run. Nobody there can approve for the owner, so any other such write is
-    # refused. ``tool_id:action``.
+    # Write actions on credentials the owner holds (a connected account, a
+    # saved API tool key, a stored secret, an MCP sign-in) that someone who
+    # can't approve for the owner may run: an API-key or widget caller, a
+    # public-link user, and schedules either of them set. Any other such
+    # write is refused for them. ``tool_id:action``.
     api_write_allowlist: List[str] = []
 
     @field_validator("api_write_allowlist")
