@@ -413,3 +413,63 @@ class TestPoolingOverrides:
         with patch.object(embeddings_local.settings, "EMBEDDINGS_POOLING", "banana"):
             spec = embeddings_local._spec_for("some-org/plain-onnx-export")
         assert spec.pooling == embeddings_local._FALLBACK_POOLING
+
+
+class TestIncompleteModelCache:
+    """The chunker caches only a model's ``tokenizer.json`` in the same
+    directory. FastEmbed treats any cached snapshot as the model and then
+    fails to open its ONNX graph, so the loader completes the snapshot first."""
+
+    @staticmethod
+    def _description():
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            model="sentence-transformers/all-mpnet-base-v2",
+            model_file="onnx/model.onnx",
+            additional_files=[],
+            sources=SimpleNamespace(hf="sentence-transformers/all-mpnet-base-v2"),
+        )
+
+    def _complete(self, monkeypatch, tmp_path, cached: set, offline: str = ""):
+        from docsgpt.vectorstore import embeddings_local
+
+        downloads = []
+
+        def hf_hub_download(repo_id, filename, cache_dir=None, local_files_only=False):
+            if filename not in cached:
+                raise FileNotFoundError(filename)
+            return f"{cache_dir}/{filename}"
+
+        def snapshot_download(**kwargs):
+            downloads.append(kwargs)
+            return "/snapshot"
+
+        monkeypatch.setenv("HF_HUB_OFFLINE", offline)
+        with patch("fastembed.TextEmbedding._list_supported_models", return_value=[self._description()]), \
+                patch("huggingface_hub.hf_hub_download", side_effect=hf_hub_download), \
+                patch("huggingface_hub.snapshot_download", side_effect=snapshot_download):
+            embeddings_local._complete_model_cache("sentence-transformers/all-mpnet-base-v2", str(tmp_path))
+        return downloads
+
+    def test_a_snapshot_with_only_the_tokenizer_gets_its_model(self, monkeypatch, tmp_path):
+        downloads = self._complete(monkeypatch, tmp_path, cached={"tokenizer.json"})
+        assert len(downloads) == 1
+        assert downloads[0]["repo_id"] == "sentence-transformers/all-mpnet-base-v2"
+        assert downloads[0]["cache_dir"] == str(tmp_path)
+        assert "onnx/model.onnx" in downloads[0]["allow_patterns"]
+        assert "tokenizer_config.json" in downloads[0]["allow_patterns"]
+
+    def test_a_complete_snapshot_downloads_nothing(self, monkeypatch, tmp_path):
+        assert self._complete(monkeypatch, tmp_path, cached={"tokenizer.json", "onnx/model.onnx"}) == []
+
+    def test_offline_never_downloads(self, monkeypatch, tmp_path):
+        assert self._complete(monkeypatch, tmp_path, cached={"tokenizer.json"}, offline="1") == []
+
+    def test_loading_completes_the_cache_first(self, fake_fastembed, monkeypatch):
+        from docsgpt.vectorstore import embeddings_local
+
+        calls = []
+        monkeypatch.setattr(embeddings_local, "_complete_model_cache", lambda repo, cache: calls.append(repo))
+        embeddings_local.EmbeddingsWrapper("huggingface_sentence-transformers/all-mpnet-base-v2")
+        assert calls == ["sentence-transformers/all-mpnet-base-v2"]
