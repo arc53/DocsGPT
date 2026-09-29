@@ -1147,7 +1147,7 @@
         "custom_mcp": "連接任何遠端 Model Context Protocol 伺服器。",
         "custom_openapi": "匯入 OpenAPI 規格，並將其端點作為工具呼叫。",
         "mcp_notion": "搜尋、閱讀和更新 Notion 頁面與資料庫。",
-        "mcp_linear": "尋找、建立和更新 Linear 議題與專案。",
+        "mcp_linear": "將議題和文件同步到知識庫，並讓代理尋找、建立和更新議題。",
         "mcp_atlassian": "搜尋和更新 Jira 議題與 Confluence 頁面。",
         "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
         "mcp_asana": "尋找和更新 Asana 任務與專案。",
@@ -1334,6 +1334,20 @@
         "repositories": "儲存庫",
         "updated": "更新於 {{date}}",
         "loadFailed": "無法載入你的儲存庫。"
+      },
+      "linear": {
+        "teams": "團隊",
+        "teamsHint": "同步這些團隊的議題。",
+        "projects": "專案",
+        "projectsHint": "同步這些專案的議題。",
+        "search": "搜尋團隊和專案",
+        "noMatches": "沒有符合搜尋的團隊或專案。",
+        "includeComments": "包含留言",
+        "includeCommentsDescription": "將每個議題的留言一併加入。",
+        "includeDocuments": "包含專案文件",
+        "includeDocumentsDescription": "同步所選專案的 Linear 文件。",
+        "loadFailed": "無法載入你的 Linear 團隊和專案。",
+        "empty": "此 Linear 帳戶沒有可同步的團隊或專案。"
       },
       "parameters": {
         "show": "參數",

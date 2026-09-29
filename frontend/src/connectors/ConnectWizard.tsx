@@ -49,6 +49,12 @@ import ConnectorIcon from './ConnectorIcon';
 import CredentialForm, { credentialsComplete } from './CredentialForm';
 import { loadConnectors, selectConnections } from './connectorsSlice';
 import { connectorDescription, connectorName, isKeyHint } from './i18n';
+import LinearPicker, {
+  EMPTY_LINEAR_SELECTION,
+  linearSourceName,
+  linearSyncItems,
+  type LinearSelection,
+} from './LinearPicker';
 import RepoPicker from './RepoPicker';
 import ToolPermissions from './ToolPermissions';
 import useMcpOAuth, { type McpOAuthConfig } from './useMcpOAuth';
@@ -118,6 +124,9 @@ export default function ConnectWizard({
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
+  const [linearSelection, setLinearSelection] = useState<LinearSelection>(
+    EMPTY_LINEAR_SELECTION,
+  );
   // A connector that asks about its tools (GitHub) offers them switched on.
   const [toolsOn, setToolsOn] = useState(true);
   // Changes (GitHub's issues, comments, pull requests) are an opt-in on top.
@@ -239,7 +248,8 @@ export default function ConnectWizard({
         const detail = await connectorsService.getConnection(saved.id, token);
         if (detail?.success) setTools(detail.connection.tools ?? []);
       }
-      setStep('done');
+      // One sign-in also syncs (Linear): choosing what to sync comes next.
+      setStep(canSync && saved && mode === 'connect' ? 'setup' : 'done');
     } catch (err) {
       setError(
         (err instanceof Error && err.message) ||
@@ -309,18 +319,23 @@ export default function ConnectWizard({
   };
 
   const isRepoPicker = connector.key === 'github';
+  const isLinearPicker = connector.sync_ingestor === 'linear';
   const syncItems = (): Record<string, unknown> =>
     PICKER_CONNECTORS.has(connector.key)
       ? { file_ids: selectedFiles, folder_ids: selectedFolders }
       : isRepoPicker
         ? { repo_url: selectedRepo }
-        : setupValues;
+        : isLinearPicker
+          ? linearSyncItems(linearSelection)
+          : setupValues;
 
   const hasSyncSelection = PICKER_CONNECTORS.has(connector.key)
     ? selectedFiles.length + selectedFolders.length > 0
     : isRepoPicker
       ? !!selectedRepo
-      : credentialsComplete(connector.setup_fields, setupValues);
+      : isLinearPicker
+        ? linearSelection.teams.length + linearSelection.projects.length > 0
+        : credentialsComplete(connector.setup_fields, setupValues);
   const wantsTools = offerTools && toolsOn;
   const offerWrites = wantsTools && !!connector.writes_allowed;
   const wantsWrites = offerWrites && writesOn;
@@ -591,6 +606,16 @@ export default function ConnectWizard({
           onChange={(fullName) => {
             setSelectedRepo(fullName);
             if (!nameTouched) setSourceName(fullName);
+          }}
+        />
+      ) : isLinearPicker && connectionId ? (
+        <LinearPicker
+          connectionId={connectionId}
+          token={token}
+          value={linearSelection}
+          onChange={(selection) => {
+            setLinearSelection(selection);
+            if (!nameTouched) setSourceName(linearSourceName(selection));
           }}
         />
       ) : connector.key === 'google_drive' &&

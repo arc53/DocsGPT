@@ -73,6 +73,32 @@ vi.mock('./RepoPicker', () => ({
   ),
 }));
 
+vi.mock('./LinearPicker', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./LinearPicker')>();
+  return {
+    ...original,
+    default: ({
+      value,
+      onChange,
+    }: {
+      value: import('./LinearPicker').LinearSelection;
+      onChange: (selection: import('./LinearPicker').LinearSelection) => void;
+    }) => (
+      <button
+        type="button"
+        onClick={() =>
+          onChange({
+            ...value,
+            teams: [{ id: 't1', key: 'ENG', name: 'Engineering' }],
+          })
+        }
+      >
+        pick-team
+      </button>
+    ),
+  };
+});
+
 import notificationsReducer, {
   sseEventReceived,
 } from '../notifications/notificationsSlice';
@@ -190,7 +216,11 @@ describe('ConnectWizard', () => {
     container.remove();
   });
 
-  const render = async (connector: ConnectorDefinition, onClose = vi.fn()) => {
+  const render = async (
+    connector: ConnectorDefinition,
+    onClose = vi.fn(),
+    props: Partial<Parameters<typeof ConnectWizard>[0]> = {},
+  ) => {
     const store = configureStore({
       reducer: {
         connectors: connectorsReducer,
@@ -207,7 +237,11 @@ describe('ConnectWizard', () => {
               <Route
                 path="/settings/connectors"
                 element={
-                  <ConnectWizard connector={connector} onClose={onClose} />
+                  <ConnectWizard
+                    connector={connector}
+                    onClose={onClose}
+                    {...props}
+                  />
                 }
               />
               <Route path="/c/new" element={<div>NEW_CHAT</div>} />
@@ -663,6 +697,129 @@ describe('ConnectWizard', () => {
       expect(document.body.textContent).toContain(
         'settings.connectors.wizard.toolsUnavailable',
       );
+    });
+  });
+
+  describe('Linear', () => {
+    const linear: ConnectorDefinition = {
+      ...base,
+      key: 'mcp:linear',
+      name: 'Linear',
+      icon: 'linear',
+      category: 'projects',
+      auth_kind: 'mcp_oauth',
+      capabilities: ['sync', 'read', 'write'],
+      credential_fields: [],
+      sync_ingestor: 'linear',
+      tool_templates: ['mcp_tool'],
+      setup: { tools: 'auto', sync: 'ask' },
+      mcp_url: 'https://mcp.linear.app/mcp',
+      publisher: 'preset',
+    };
+
+    const signIn = async (props = {}) => {
+      const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+      const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
+      mcpApi.testMCPConnection.mockResolvedValue({
+        json: async () => ({ requires_oauth: true, task_id: 'task-1' }),
+      });
+      mcpApi.saveMCPServer.mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, id: 'tool-9' }),
+      });
+      service.listConnections.mockResolvedValue({
+        success: true,
+        connections: [
+          {
+            id: 'conn-lin',
+            connector_key: 'mcp:linear',
+            updated_at: '2026-09-28',
+          },
+        ],
+      });
+      service.getConnection.mockResolvedValue({
+        success: true,
+        connection: { tools: [{ ...TELEGRAM_TOOL, display_name: 'Linear' }] },
+      });
+      const store = await render(linear, vi.fn(), props);
+      await click('settings.connectors.wizard.signIn');
+      await act(async () => {
+        store.dispatch(
+          sseEventReceived({
+            id: 'ev-2',
+            type: 'mcp.oauth.completed',
+            scope: { kind: 'mcp_oauth', id: 'task-1' },
+            payload: { tools: [] },
+          }),
+        );
+      });
+      open.mockRestore();
+    };
+
+    it('signs in once, then picks teams to sync with the same connection', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [{ id: 'src-1', name: 'Linear · Engineering' }],
+      });
+      await signIn();
+      // The tools came with the sign-in; syncing is the next question.
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.chooseWhatToSync',
+      );
+      await click('pick-team');
+      await click('modals.uploadDoc.train');
+      const [id, body] = service.setup.mock.calls[0];
+      expect(id).toBe('conn-lin');
+      expect(body).toEqual({
+        create_tools: false,
+        sync: {
+          items: {
+            teams: [{ id: 't1', key: 'ENG', name: 'Engineering' }],
+            projects: [],
+            include_comments: true,
+            include_documents: false,
+          },
+          frequency: 'weekly',
+          name: 'Linear · Engineering',
+        },
+      });
+      // The summary still lists the tools from the sign-in.
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.toolsHeading:1',
+      );
+    });
+
+    it('can skip syncing and keep only the tools', async () => {
+      await signIn();
+      const train = Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.textContent?.trim() === 'modals.uploadDoc.train');
+      // Nothing picked yet: nothing to sync.
+      expect(train?.disabled).toBe(true);
+      await click('settings.connectors.wizard.skip');
+      expect(service.setup).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.doneTitle',
+      );
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.toolsHeading:1',
+      );
+    });
+
+    it('goes straight to the summary after signing in again', async () => {
+      await signIn({ mode: 'reconnect', connectionId: 'conn-lin' });
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.doneTitle',
+      );
+    });
+
+    it('opens on the picker to sync more from the drawer', async () => {
+      await render(linear, vi.fn(), {
+        mode: 'sync',
+        connectionId: 'conn-lin',
+      });
+      expect(document.body.textContent).toContain('pick-team');
     });
   });
 });

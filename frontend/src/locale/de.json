@@ -1156,7 +1156,7 @@
         "custom_mcp": "Einen beliebigen Remote-Server für das Model Context Protocol verbinden.",
         "custom_openapi": "Eine OpenAPI-Spezifikation importieren und ihre Endpunkte als Werkzeuge aufrufen.",
         "mcp_notion": "Notion-Seiten und -Datenbanken durchsuchen, lesen und aktualisieren.",
-        "mcp_linear": "Linear-Issues und -Projekte finden, anlegen und aktualisieren.",
+        "mcp_linear": "Issues und Dokumente in Wissen synchronisieren und Agenten Issues finden, anlegen und aktualisieren lassen.",
         "mcp_atlassian": "Jira-Issues und Confluence-Seiten durchsuchen und aktualisieren.",
         "mcp_sentry": "Sentry-Issues, -Events und -Releases nachschlagen.",
         "mcp_asana": "Asana-Aufgaben und -Projekte finden und aktualisieren.",
@@ -1352,6 +1352,20 @@
         "repositories": "Repositorys",
         "updated": "Aktualisiert {{date}}",
         "loadFailed": "Deine Repositorys konnten nicht geladen werden."
+      },
+      "linear": {
+        "teams": "Teams",
+        "teamsHint": "Die Issues dieser Teams synchronisieren.",
+        "projects": "Projekte",
+        "projectsHint": "Die Issues dieser Projekte synchronisieren.",
+        "search": "Teams und Projekte durchsuchen",
+        "noMatches": "Keine Teams oder Projekte passen zu deiner Suche.",
+        "includeComments": "Kommentare einbeziehen",
+        "includeCommentsDescription": "Jedem Issue seine Kommentare hinzufügen.",
+        "includeDocuments": "Projektdokumente einbeziehen",
+        "includeDocumentsDescription": "Die Linear-Dokumente der ausgewählten Projekte synchronisieren.",
+        "loadFailed": "Deine Linear-Teams und -Projekte konnten nicht geladen werden.",
+        "empty": "Dieses Linear-Konto hat keine Teams oder Projekte zum Synchronisieren."
       },
       "parameters": {
         "show": "Parameter",

@@ -95,6 +95,9 @@ const connectorsService = {
     json(
       await apiClient.get(endpoints.USER.CONNECTION_REPOSITORIES(id), token),
     ),
+  /** Linear: the teams and projects a connection can sync. */
+  linearWorkspace: async (id: string, token: string | null) =>
+    json(await apiClient.get(endpoints.USER.CONNECTION_LINEAR(id), token)),
   refreshTools: async (id: string, token: string | null) =>
     json(
       await apiClient.post(

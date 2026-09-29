@@ -1156,7 +1156,7 @@
         "custom_mcp": "Conecta cualquier servidor remoto de Model Context Protocol.",
         "custom_openapi": "Importa una especificación OpenAPI y usa sus endpoints como herramientas.",
         "mcp_notion": "Busca, lee y actualiza páginas y bases de datos de Notion.",
-        "mcp_linear": "Encuentra, crea y actualiza incidencias y proyectos de Linear.",
+        "mcp_linear": "Sincroniza incidencias y documentos con Conocimiento y deja que los agentes busquen, creen y actualicen incidencias.",
         "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
         "mcp_asana": "Encuentra y actualiza tareas y proyectos de Asana.",
@@ -1352,6 +1352,20 @@
         "repositories": "Repositorios",
         "updated": "Actualizado {{date}}",
         "loadFailed": "No se pudieron cargar tus repositorios."
+      },
+      "linear": {
+        "teams": "Equipos",
+        "teamsHint": "Sincroniza las incidencias de estos equipos.",
+        "projects": "Proyectos",
+        "projectsHint": "Sincroniza las incidencias de estos proyectos.",
+        "search": "Buscar equipos y proyectos",
+        "noMatches": "Ningún equipo ni proyecto coincide con tu búsqueda.",
+        "includeComments": "Incluir comentarios",
+        "includeCommentsDescription": "Añade a cada incidencia sus comentarios.",
+        "includeDocuments": "Incluir documentos de proyecto",
+        "includeDocumentsDescription": "Sincroniza los documentos de Linear de los proyectos que elijas.",
+        "loadFailed": "No se pudieron cargar tus equipos y proyectos de Linear.",
+        "empty": "Esta cuenta de Linear no tiene equipos ni proyectos que sincronizar."
       },
       "parameters": {
         "show": "Parámetros",

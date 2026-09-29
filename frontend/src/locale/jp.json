@@ -1147,7 +1147,7 @@
         "custom_mcp": "任意のリモート Model Context Protocol サーバーに接続します。",
         "custom_openapi": "OpenAPI 仕様をインポートし、そのエンドポイントをツールとして呼び出します。",
         "mcp_notion": "Notion のページやデータベースを検索、閲覧、更新します。",
-        "mcp_linear": "Linear の課題やプロジェクトを検索、作成、更新します。",
+        "mcp_linear": "課題とドキュメントをナレッジに同期し、エージェントが課題を検索、作成、更新できるようにします。",
         "mcp_atlassian": "Jira の課題と Confluence のページを検索、更新します。",
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
         "mcp_asana": "Asana のタスクやプロジェクトを検索、更新します。",
@@ -1334,6 +1334,20 @@
         "repositories": "リポジトリ",
         "updated": "{{date}} に更新",
         "loadFailed": "リポジトリを読み込めませんでした。"
+      },
+      "linear": {
+        "teams": "チーム",
+        "teamsHint": "これらのチームの課題を同期します。",
+        "projects": "プロジェクト",
+        "projectsHint": "これらのプロジェクトの課題を同期します。",
+        "search": "チームとプロジェクトを検索",
+        "noMatches": "検索に一致するチームやプロジェクトはありません。",
+        "includeComments": "コメントを含める",
+        "includeCommentsDescription": "各課題にそのコメントを追加します。",
+        "includeDocuments": "プロジェクトのドキュメントを含める",
+        "includeDocumentsDescription": "選択したプロジェクトの Linear ドキュメントを同期します。",
+        "loadFailed": "Linear のチームとプロジェクトを読み込めませんでした。",
+        "empty": "この Linear アカウントには同期できるチームやプロジェクトがありません。"
       },
       "parameters": {
         "show": "パラメーター",

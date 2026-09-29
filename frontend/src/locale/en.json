@@ -1162,7 +1162,7 @@
         "custom_mcp": "Connect any remote Model Context Protocol server.",
         "custom_openapi": "Import an OpenAPI spec and call its endpoints as tools.",
         "mcp_notion": "Search, read and update Notion pages and databases.",
-        "mcp_linear": "Find, create and update Linear issues and projects.",
+        "mcp_linear": "Sync issues and documents into Knowledge, and let agents find, create and update issues.",
         "mcp_atlassian": "Search and update Jira issues and Confluence pages.",
         "mcp_sentry": "Look up Sentry issues, events and releases.",
         "mcp_asana": "Find and update Asana tasks and projects.",
@@ -1358,6 +1358,20 @@
         "repositories": "Repositories",
         "updated": "Updated {{date}}",
         "loadFailed": "Could not load your repositories."
+      },
+      "linear": {
+        "teams": "Teams",
+        "teamsHint": "Sync the issues of these teams.",
+        "projects": "Projects",
+        "projectsHint": "Sync the issues of these projects.",
+        "search": "Search teams and projects",
+        "noMatches": "No teams or projects match your search.",
+        "includeComments": "Include comments",
+        "includeCommentsDescription": "Add each issue's comments to it.",
+        "includeDocuments": "Include project documents",
+        "includeDocumentsDescription": "Sync the Linear documents of the projects you pick.",
+        "loadFailed": "Could not load your Linear teams and projects.",
+        "empty": "This Linear account has no teams or projects to sync."
       },
       "parameters": {
         "show": "Parameters",

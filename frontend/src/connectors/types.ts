@@ -150,6 +150,23 @@ export type GitHubRepository = {
   html_url: string;
 };
 
+/** A Linear team a Linear connection can sync, for the sync picker. */
+export type LinearTeam = {
+  id: string;
+  /** The issue prefix, `ENG` in `ENG-123`. */
+  key: string;
+  name: string;
+};
+
+/** A Linear project a Linear connection can sync, for the sync picker. */
+export type LinearProject = {
+  id: string;
+  name: string;
+  state: string;
+  /** Names of the teams it belongs to. */
+  teams: string[];
+};
+
 export type ConnectionDetail = Connection & {
   sources: ConnectionSource[];
   tools: ConnectionTool[];
