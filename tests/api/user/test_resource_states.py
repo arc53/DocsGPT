@@ -242,6 +242,92 @@ class TestReasons:
         assert _states(pg_conn, agent_id) == {}
 
 
+class TestCredentials:
+    """Whose account or credentials each running tool uses, for the share dialog."""
+
+    _SEND = {"name": "send_message", "active": True}
+    _READ = {"name": "get_updates", "active": True}
+
+    def test_owner_mode_connection_names_the_account_holder(self, pg_conn):
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "telegram", connection_id=_connection(pg_conn), actions=[self._SEND, self._READ],
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert state["state"] == "active"
+        assert state["credential_mode"] == "owner"
+        assert state["account"] == {"user_id": OWNER, "label": OWNER}
+        assert state["connection"]["name"] == "Telegram"
+        assert state["owner_credential_writes"] == ["send_message"]
+
+    def test_member_mode_connection_has_no_account_holder(self, pg_conn):
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "telegram", connection_id=_connection(pg_conn), credential_mode="member",
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert state["credential_mode"] == "member"
+        assert state["account"] is None
+        assert state["connection"]["connector_key"] == "telegram"
+
+    def test_admin_forced_mode_wins(self, pg_conn):
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "telegram", connection_id=_connection(pg_conn),
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        ConnectorPoliciesRepository(pg_conn).upsert("telegram", credential_mode="member")
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert state["credential_mode"] == "member"
+        assert state["account"] is None
+
+    def test_teammates_owner_mode_tool_uses_their_account(self, pg_conn):
+        agent_id, team_id = _agent(pg_conn)
+        for member in (OWNER, OTHER):
+            if not TeamMembersRepository(pg_conn).is_member(member, team_id):
+                TeamMembersRepository(pg_conn).add_member(team_id, member)
+        tool = str(UserToolsRepository(pg_conn).create(
+            OTHER, "telegram", connection_id=_connection(pg_conn, user=OTHER),
+        )["id"])
+        TeamResourceGrantsRepository(pg_conn).grant(team_id, "tool", tool, OTHER, OTHER)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [tool]})
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert state["state"] == "active"
+        assert state["account"] == {"user_id": OTHER, "label": OTHER}
+
+    def test_tool_without_stored_credentials(self, pg_conn):
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
+        source = str(SourcesRepository(pg_conn).create("mine", user_id=OWNER)["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool], source_id=source)
+        states = _states(pg_conn, agent_id)
+        assert states[f"tool:{tool}"]["credential_mode"] is None
+        assert states[f"tool:{tool}"]["account"] is None
+        assert states[f"tool:{tool}"]["connection"] is None
+        assert states[f"tool:{tool}"]["owner_credential_writes"] == []
+        assert states[f"source:{source}"]["owner_credential_writes"] == []
+        assert states[f"source:{source}"]["credential_mode"] is None
+
+    def test_api_tool_write_that_sends_a_saved_key(self, pg_conn):
+        actions = {
+            "create_ticket": {
+                "method": "POST",
+                "headers": {"properties": {"Authorization": {"has_value": True}}},
+            },
+            "list_tickets": {
+                "method": "GET",
+                "headers": {"properties": {"Authorization": {"has_value": True}}},
+            },
+        }
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "api_tool", config={"actions": actions},
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        assert _states(pg_conn, agent_id)[f"tool:{tool}"]["owner_credential_writes"] == ["create_ticket"]
+
+
 class TestTakeOver:
     def test_editor_who_can_edit_the_item_may_take_over(self, pg_conn):
         """An owner-lost resource the reading editor can edit is theirs to take over."""

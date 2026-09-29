@@ -27,6 +27,7 @@ from typing import Iterable, Optional
 
 from sqlalchemy import Connection, text
 
+from docsgpt.connectors.permissions import owner_credential_writes
 from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -1077,28 +1078,34 @@ def _user_labels(conn: Connection, user_ids: Iterable[Optional[str]]) -> dict[st
 
 
 def _connection_state(conn: Connection, tool: dict, owner: Optional[str], policies_box: list) -> tuple:
-    """``(reason, connection)`` for a connection-backed tool the holder runs as ``owner``."""
+    """``(reason, connection, mode)`` for a tool the holder runs as ``owner``.
+
+    ``connection`` (``{id, connector_key, name}``) and ``mode`` (``owner`` or
+    ``member``, after any mode an admin forces) are set for a tool that has a
+    connection, and ``connection`` also for one that lost it. ``reason`` is
+    why the connection keeps the tool from running, else None.
+    """
     from docsgpt.connectors import catalog, service
-    from docsgpt.connectors.resolve import connection_stop_reason, resolve_connection
+    from docsgpt.connectors.resolve import connection_stop_reason, effective_credential_mode, resolve_connection
 
     if not tool.get("connection_id") and not catalog.definition_for_tool(tool.get("name") or ""):
-        return None, None
+        return None, None, None
     if not policies_box:
         policies_box.append(service.load_policies(conn))
     resolved = resolve_connection(tool, owner, conn=conn, policies=policies_box[0])
     reason = connection_stop_reason(tool, resolved)
-    if reason is None:
-        return None, None
     if resolved is not None:
         connection = {
             "id": resolved.connection_id,
             "connector_key": resolved.connector_key,
             "name": resolved.connector_name,
         }
-    else:
-        definition = catalog.definition_for_tool(tool.get("name") or "")
-        connection = {"id": None, "connector_key": definition.key, "name": definition.name}
-    return reason, connection
+        mode = effective_credential_mode(tool, policies_box[0], resolved.connector_key)
+        return reason, connection, mode
+    if reason is None:
+        return None, None, None
+    definition = catalog.definition_for_tool(tool.get("name") or "")
+    return reason, {"id": None, "connector_key": definition.key, "name": definition.name}, None
 
 
 def resource_states(
@@ -1137,7 +1144,14 @@ def resource_states(
         ``connector_disabled``. ``sponsor`` and ``contact`` are
         ``{user_id, label}`` or None: the recorded sponsor, and someone other
         than the reader who can fix it. ``connection`` (``{id,
-        connector_key, name}``) names the service for a connection reason.
+        connector_key, name}``) names the service of a tool with a
+        connection, and of one whose connection reason stopped it.
+        For a running tool, ``credential_mode`` is ``owner`` or ``member``
+        when it has a connection (else None), ``account`` (``{user_id,
+        label}``) is whose account an ``owner``-mode connection acts as, and
+        ``owner_credential_writes`` names its write actions on credentials
+        its owner stored (what the API write allowlist covers); empty for
+        everything else.
         ``can_confirm``: the reader may take it over on their next save;
         ``can_reconnect``: the reader owns the connection that needs signing
         in again.
@@ -1163,12 +1177,16 @@ def resource_states(
     for resource_type, rid in pairs:
         key = sponsor_key(resource_type, rid)
         info = rows.get(key) or {}
-        connection = None
+        connection = mode = account = None
+        writes: list[str] = []
         if resource_type == "tool":
             tool_row, access = resolve_holder_tool(conn, holder_type, holder, rid, tools_repo=tools_repo)
             reason = access.reason
             if tool_row is not None and reason is None:
-                reason, connection = _connection_state(conn, tool_row, owner, policies_box)
+                reason, connection, mode = _connection_state(conn, tool_row, owner, policies_box)
+                # Whose account an owner-mode connection acts as: the tool's owner.
+                account = tool_row.get("user_id") if mode == "owner" else None
+                writes = owner_credential_writes(tool_row)
         else:
             access = ref_access(conn, holder_type, holder, resource_type, rid)
             reason = access.reason
@@ -1204,6 +1222,9 @@ def resource_states(
             "sponsor": sponsor,
             "contact": contact,
             "connection": connection,
+            "credential_mode": mode,
+            "account": account,
+            "owner_credential_writes": writes,
             "can_confirm": can_confirm,
             "can_reconnect": bool(
                 reason == REASON_CONNECTION_NEEDS_RECONNECT
@@ -1213,9 +1234,9 @@ def resource_states(
                 and viewer == resource_owner
             ),
         })
-    labels = _user_labels(conn, [u for e in entries for u in (e["sponsor"], e["contact"])])
+    labels = _user_labels(conn, [u for e in entries for u in (e["sponsor"], e["contact"], e["account"])])
     for entry in entries:
-        for field_name in ("sponsor", "contact"):
+        for field_name in ("sponsor", "contact", "account"):
             user_id = entry[field_name]
             entry[field_name] = {"user_id": user_id, "label": labels.get(user_id) or user_id} if user_id else None
     return entries

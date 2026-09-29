@@ -96,19 +96,35 @@ def resolve_connection(
     return _resolve(conn, resource, invoker_user_id, policies)
 
 
+def effective_credential_mode(resource: dict, policies: dict, connector_key: Optional[str]) -> str:
+    """Whose account a connection-backed resource runs with: ``owner`` or ``member``.
+
+    The resource's own ``credential_mode``, unless an admin forces one mode
+    for every share of its connector.
+
+    Args:
+        resource: A ``user_tools`` or ``sources`` row.
+        policies: Connector policies from ``service.load_policies``.
+        connector_key: Catalog key of the resource's connection.
+
+    Returns:
+        :data:`MODE_OWNER` or :data:`MODE_MEMBER`.
+    """
+    policy = (policies.get(connector_key) or {}) if connector_key else {}
+    if policy.get("credential_mode") in (MODE_OWNER, MODE_MEMBER):
+        return policy["credential_mode"]
+    return MODE_MEMBER if resource.get("credential_mode") == MODE_MEMBER else MODE_OWNER
+
+
 def _resolve(conn, resource: dict, invoker_user_id: Optional[str], policies: Optional[dict]) -> ResolvedConnection:
     connection_id = resource.get("connection_id")
-    mode = resource.get("credential_mode") or MODE_OWNER
     owner = resource.get("user_id")
     repo = ConnectorSessionsRepository(conn)
     owned = repo.get(str(connection_id))
     owned_key = catalog.connector_key_for_row(owned) if owned else None
     if policies is None:
         policies = service.load_policies(conn)
-    policy = (policies.get(owned_key) or {}) if owned_key else {}
-    if policy.get("credential_mode") in (MODE_OWNER, MODE_MEMBER):
-        # An admin forces whose account every share of this connector uses.
-        mode = policy["credential_mode"]
+    mode = effective_credential_mode(resource, policies, owned_key)
     if owned is not None and owner and owned.get("user_id") != owner:
         # A resource may only point at its own owner's connection.
         logger.warning(
