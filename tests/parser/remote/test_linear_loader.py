@@ -288,3 +288,40 @@ class TestLoadData:
     def test_needs_a_connection(self):
         with pytest.raises(ValueError):
             LinearLoader().load_data({"teams": ["t1"]})
+
+
+class TestOneBadItemDoesNotStopTheSync:
+    """An issue deleted since it was listed, or comments the token cannot
+    read, lose that detail; the rest of the sync still lands."""
+
+    @staticmethod
+    def _refuse(args):
+        from docsgpt.connectors.mcp import MCPToolError
+
+        raise MCPToolError("Entity not found")
+
+    def test_an_issue_that_cannot_be_read_in_full_keeps_what_was_listed(self):
+        clipped = {**ISSUE, "description": "The spinner (truncated, use get_issue to read the full description)"}
+        session = FakeLinear({
+            "list_issues": lambda args: {"issues": [clipped, {**ISSUE, "id": "ENG-2", "title": "Other"}]},
+            "get_issue": self._refuse,
+        })
+        docs = _collect(session, teams=["team-1"], include_comments=False)
+        assert [d.text.splitlines()[0] for d in docs] == ["# ENG-1310: Fix the loader", "# ENG-2: Other"]
+
+    def test_comments_that_cannot_be_read_are_left_out(self):
+        session = FakeLinear({"list_issues": lambda args: [ISSUE], "list_comments": self._refuse})
+        [doc] = _collect(session, teams=["team-1"])
+        assert "## Comments" not in doc.text
+
+    def test_a_document_that_cannot_be_read_is_skipped(self):
+        session = FakeLinear({
+            "list_issues": lambda args: {"issues": []},
+            "list_documents": lambda args: {"documents": [
+                {"id": "d1", "title": "Gone"},
+                {"id": "d2", "title": "Plan", "content": "We ship on Monday."},
+            ]},
+            "get_document": self._refuse,
+        })
+        docs = _collect(session, projects=[{"id": "project-1", "name": "Acme"}], include_documents=True)
+        assert [d.text.splitlines()[0] for d in docs] == ["# Plan"]

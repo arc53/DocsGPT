@@ -19,7 +19,7 @@ import re
 from typing import Any, Optional
 
 from docsgpt.connectors import linear
-from docsgpt.connectors.mcp import run_connection_session
+from docsgpt.connectors.mcp import MCPToolError, run_connection_session
 from docsgpt.parser.remote.base import BaseRemote
 from docsgpt.parser.schema.base import Document
 
@@ -90,9 +90,19 @@ class LinearLoader(BaseRemote):
                     issues.setdefault(key, issue)
         documents = []
         for key, issue in issues.items():
+            # One issue Linear will not read (deleted since it was listed, or
+            # out of the token's reach) loses that detail, not the whole sync.
             if linear.is_truncated(issue.get("description")) or issue.get("descriptionTruncated"):
-                issue = await self._full_issue(session, key, issue)
-            comments = await self._comments(session, key) if selection["include_comments"] else []
+                try:
+                    issue = await self._full_issue(session, key, issue)
+                except MCPToolError as exc:
+                    logger.warning("Linear sync keeps %s as listed: %s", key, exc)
+            comments = []
+            if selection["include_comments"]:
+                try:
+                    comments = await self._comments(session, key)
+                except MCPToolError as exc:
+                    logger.warning("Linear sync leaves out the comments of %s: %s", key, exc)
             documents.append(self._issue_document(issue, comments, selection))
         if selection["include_documents"]:
             documents.extend(await self._project_documents(session, selection["projects"]))
@@ -179,11 +189,16 @@ class LinearLoader(BaseRemote):
             ):
                 content = record.get("content")
                 if (not content or linear.is_truncated(content)) and get_schema is not None and record.get("id"):
-                    full = linear.unwrap(
-                        await session.call("get_document", {linear.argument(get_schema, "id", "documentId"):
-                                                            str(record["id"])}),
-                        "document",
-                    )
+                    try:
+                        full = linear.unwrap(
+                            await session.call("get_document", {linear.argument(get_schema, "id", "documentId"):
+                                                                str(record["id"])}),
+                            "document",
+                        )
+                    except MCPToolError as exc:
+                        # A document that cannot be read is skipped, not the sync.
+                        logger.warning("Linear sync skips document %s: %s", record.get("id"), exc)
+                        continue
                     record = {**record, **{k: v for k, v in full.items() if v not in (None, "")}}
                 document = self._linear_document(record, project)
                 path = document.extra_info["file_path"]
