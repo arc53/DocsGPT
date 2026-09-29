@@ -127,6 +127,33 @@ def _node_refs(nodes: List[Dict]) -> List[Tuple[str, str]]:
     return refs
 
 
+def _node_ref_details(nodes: List[Dict]) -> Dict[str, List[Dict]]:
+    """Names of every tool and source the graph's agent nodes reference.
+
+    Looked up by id whoever owns them, so an editor's node pickers can show
+    (and remove) the owner's private tools and sources.
+
+    Args:
+        nodes: Nodes in builder shape.
+
+    Returns:
+        dict: ``tools`` as ``[{id, name, display_name}]`` and ``sources`` as
+        ``[{id, name}]``, each id once.
+    """
+    from docsgpt.api.user.base import resolve_source_details, resolve_tool_details
+
+    tool_ids: List[str] = []
+    source_ids: List[str] = []
+    for resource_type, resource_id in _node_refs(nodes):
+        bucket = tool_ids if resource_type == "tool" else source_ids
+        if resource_id not in bucket:
+            bucket.append(resource_id)
+    return {
+        "tools": resolve_tool_details(tool_ids),
+        "sources": resolve_source_details(source_ids),
+    }
+
+
 def _new_node_ref_denied(
     conn, previous_nodes: List[Dict], new_nodes: List[Dict], caller: str
 ) -> Optional[AccessDenied]:
@@ -634,15 +661,18 @@ class WorkflowDetail(Resource):
                     pg_workflow_id, graph_version,
                 )
                 sponsored = sponsor_details(conn, "workflow", workflow, viewer=user_id)
+            serialized_nodes = [serialize_node(n) for n in nodes]
+            ref_details = _node_ref_details(serialized_nodes)
         except Exception as err:
             return _workflow_error_response("Failed to fetch workflow", err)
 
         return success_response(
             {
                 "workflow": serialize_workflow(workflow),
-                "nodes": [serialize_node(n) for n in nodes],
+                "nodes": serialized_nodes,
                 "edges": [serialize_edge(e) for e in edges],
                 "resource_sponsors": sponsored,
+                "ref_details": ref_details,
             }
         )
 

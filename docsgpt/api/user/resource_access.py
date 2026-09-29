@@ -615,7 +615,9 @@ def plan_sponsors(
     * a newly attached one the caller may sponsor but didn't confirm goes to
       ``needs_confirmation``; one they may not sponsor goes to ``not_allowed``;
     * one already attached keeps its old record even when that sponsor lost
-      access: it stays stopped until someone confirms taking it over.
+      access: it stays stopped until someone confirms taking it over;
+    * a newly attached one ignores any record left from before it was
+      removed, so a stale sponsor never vouches for it again.
 
     Resources the owner can use, presets and builtin tools need no sponsor.
     Removed refs drop out. A confirmed key that names none of the refs the
@@ -652,17 +654,36 @@ def plan_sponsors(
         caller_may = caller != owner_id and can_sponsor_ref(conn, resource_type, resource_id, caller)
         if caller_may:
             eligible.add(key)
-        live = active_sponsor(conn, holder_type, holder, resource_type, resource_id)
+        # A record only vouches for a resource that stayed attached: one left
+        # behind by a path that dropped the resource never covers it again.
+        live = None if is_new else active_sponsor(conn, holder_type, holder, resource_type, resource_id)
         if live:
             plan.sponsors[key] = live
         elif caller_may and key in confirmed:
             plan.sponsors[key] = caller
         elif is_new and caller != owner_id:
             (plan.needs_confirmation if caller_may else plan.not_allowed).append((resource_type, resource_id))
-        elif previous.get(key):
+        elif not is_new and previous.get(key):
             plan.sponsors[key] = previous[key]
     plan.unexpected = sorted(confirmed - eligible)
     return plan
+
+
+def prune_sponsors(sponsors: Optional[dict], refs: Iterable[tuple[str, str]]) -> dict:
+    """``sponsors`` without the keys of resources no longer referenced.
+
+    For paths that rewrite a holder's references without going through
+    :func:`plan_sponsors` (YAML import, a workflow graph written by import).
+
+    Args:
+        sponsors: The stored ``resource_sponsors`` map.
+        refs: Every ``(type, id)`` the holder references now.
+
+    Returns:
+        dict: The map to store.
+    """
+    keep = {sponsor_key(t, str(i).lower()) for t, i in refs}
+    return {k: v for k, v in (sponsors or {}).items() if k.lower() in keep}
 
 
 def ref_names(conn: Connection, refs: Iterable[tuple[str, str]]) -> dict[str, str]:

@@ -431,3 +431,183 @@ class TestWorkflowConsent:
         resp = _call(app, pg_conn, WorkflowDetail, "get", f"/api/workflows/{wid}", OWNER, args=(wid,))
         [detail] = _body(resp)["data"]["resource_sponsors"]
         assert detail["state"] == "active" and detail["reason"] is None and detail["name"] == "api_tool"
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups
+# ---------------------------------------------------------------------------
+
+
+def _viewer_share(conn, team_id, resource_type, resource_id, owner, user):
+    TeamResourceGrantsRepository(conn).grant(team_id, resource_type, resource_id, owner, owner,
+                                             access_level="viewer", target_user_id=user)
+
+
+class TestNoResurrectedSponsor:
+    """A sponsor record left behind never vouches for a newly attached resource."""
+
+    def _setup(self, app, pg_conn):
+        """EDITOR sponsors OTHER's tool T (edit share); STRANGER edits the agent, views T."""
+        agent_id, team_id = _agent(pg_conn)
+        tool = str(UserToolsRepository(pg_conn).create(OTHER, "api_tool")["id"])
+        TeamMembersRepository(pg_conn).add_member(team_id, OTHER)
+        TeamResourceGrantsRepository(pg_conn).grant(team_id, "tool", tool, OTHER, OTHER, access_level="editor",
+                                                    target_user_id=EDITOR)
+        _add_agent_editor(pg_conn, team_id, agent_id, STRANGER)
+        _viewer_share(pg_conn, team_id, "tool", tool, OTHER, STRANGER)
+        assert _status(_put(app, pg_conn, agent_id, EDITOR,
+                            {"tools": [tool], "confirm_sponsor": [f"tool:{tool}"]})) == 200
+        return agent_id, team_id, tool
+
+    def test_stale_record_does_not_cover_a_new_attachment(self, app, pg_conn):
+        agent_id, _, tool = self._setup(app, pg_conn)
+        # Some path drops the tool but leaves EDITOR's record behind.
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": []})
+        assert _row(pg_conn, agent_id)["resource_sponsors"] == {sponsor_key("tool", tool): EDITOR}
+        resp = _put(app, pg_conn, agent_id, STRANGER, {"tools": [tool]})
+        assert _status(resp) == 403
+        assert _body(resp)["code"] == CODE_NOT_ALLOWED
+        assert not _row(pg_conn, agent_id)["tools"]
+
+    def test_new_attachment_by_a_sponsor_capable_editor_asks_them(self, app, pg_conn):
+        agent_id, team_id, tool = self._setup(app, pg_conn)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": []})
+        _add_agent_editor(pg_conn, team_id, agent_id, OTHER)
+        resp = _put(app, pg_conn, agent_id, OTHER, {"tools": [tool]})
+        assert _status(resp) == 409
+        resp = _put(app, pg_conn, agent_id, OTHER, {"tools": [tool], "confirm_sponsor": [f"tool:{tool}"]})
+        assert _status(resp) == 200
+        assert _row(pg_conn, agent_id)["resource_sponsors"] == {sponsor_key("tool", tool): OTHER}
+
+    def test_reimport_prunes_dropped_sponsors(self, app, pg_conn):
+        from docsgpt.api.user.agents.portability import API_VERSION, apply_import, ensure_agent_slug
+
+        agent_id, _, tool = self._setup(app, pg_conn)
+        agent = AgentsRepository(pg_conn).get(agent_id, OWNER)
+        slug = ensure_agent_slug(pg_conn, agent, OWNER)
+        doc = {"apiVersion": API_VERSION, "kind": "Agent", "metadata": {"id": agent_id, "slug": slug},
+               "spec": {"name": "Shared", "description": "d", "retriever": "classic"}}
+        assert apply_import(pg_conn, OWNER, doc)["action"] == "updated"
+        row = _row(pg_conn, agent_id)
+        assert not row["tools"]
+        assert row["resource_sponsors"] == {}
+        # The repro: STRANGER only views T, re-adds it, and must not run it as EDITOR.
+        resp = _put(app, pg_conn, agent_id, STRANGER, {"tools": [tool]})
+        assert _status(resp) == 403
+        assert _row(pg_conn, agent_id)["resource_sponsors"] == {}
+
+    def test_workflow_reimport_prunes_dropped_sponsors(self, app, pg_conn):
+        from docsgpt.api.user.agents.portability import (
+            agent_to_yaml,
+            apply_import,
+            parse_agent_yaml,
+            serialize_agent,
+        )
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        wid = str(wf["id"])
+        agent_id, team_id = _agent(pg_conn, agent_type="workflow", workflow_id=wid)
+        tool, _, _ = _editor_resources(pg_conn)
+        resp = _call(app, pg_conn, WorkflowDetail, "put", f"/api/workflows/{wid}", EDITOR,
+                     json={**_wf_body(tool), "confirm_sponsor": [f"tool:{tool}"]}, args=(wid,))
+        assert _status(resp) == 200, _body(resp)
+        assert WorkflowsRepository(pg_conn).get_by_id(wid)["resource_sponsors"]
+
+        agent = AgentsRepository(pg_conn).get(agent_id, OWNER)
+        doc = parse_agent_yaml(agent_to_yaml(serialize_agent(pg_conn, agent, OWNER)))
+        for node in doc["spec"]["workflow"]["nodes"]:
+            if node.get("type") == "agent":
+                node["config"]["tools"] = []
+        apply_import(pg_conn, OWNER, doc)
+        assert WorkflowsRepository(pg_conn).get_by_id(wid)["resource_sponsors"] == {}
+
+
+class TestTakeOver:
+    def test_confirming_a_stopped_attached_item_takes_it_over(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import GetAgent
+
+        agent_id, team_id = _agent(pg_conn)
+        tool = str(UserToolsRepository(pg_conn).create(OTHER, "api_tool")["id"])
+        TeamMembersRepository(pg_conn).add_member(team_id, OTHER)
+        TeamResourceGrantsRepository(pg_conn).grant(team_id, "tool", tool, OTHER, OTHER, access_level="editor")
+        _add_agent_editor(pg_conn, team_id, agent_id, OTHER)
+        assert _status(_put(app, pg_conn, agent_id, EDITOR,
+                            {"tools": [tool], "confirm_sponsor": [f"tool:{tool}"]})) == 200
+        TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", agent_id, target_user_id=EDITOR)
+
+        path = f"/api/get_agent?id={agent_id}"
+        [stopped] = _call(app, pg_conn, GetAgent, "get", path, OTHER).get_json()["resource_sponsors"]
+        assert stopped["can_confirm"] is True and stopped["reason"] == REASON_CANNOT_EDIT_HOLDER
+        # A plain save (no change to the tools) that confirms the stopped key.
+        resp = _put(app, pg_conn, agent_id, OTHER, {"name": "Kept", "confirm_sponsor": [stopped["key"]]})
+        assert _status(resp) == 200, _body(resp)
+        [running] = _call(app, pg_conn, GetAgent, "get", path, OTHER).get_json()["resource_sponsors"]
+        assert running["user_id"] == OTHER and running["state"] == "active"
+
+
+class TestDetailsVisibility:
+    def test_viewers_get_no_sponsor_details(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import GetAgent
+        from tests.api.user.test_resource_sponsors import VIEWER
+
+        agent_id, _ = _agent(pg_conn)
+        tool, _, _ = _editor_resources(pg_conn)
+        assert _status(_put(app, pg_conn, agent_id, EDITOR,
+                            {"tools": [tool], "confirm_sponsor": [f"tool:{tool}"]})) == 200
+        path = f"/api/get_agent?id={agent_id}"
+        assert _call(app, pg_conn, GetAgent, "get", path, VIEWER).get_json()["resource_sponsors"] == []
+        assert _call(app, pg_conn, GetAgent, "get", path, OWNER).get_json()["resource_sponsors"]
+
+    def test_workflow_viewers_are_refused(self, app, pg_conn):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+        from tests.api.user.test_resource_sponsors import VIEWER
+
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        wid = str(wf["id"])
+        _agent(pg_conn, agent_type="workflow", workflow_id=wid)
+        resp = _call(app, pg_conn, WorkflowDetail, "get", f"/api/workflows/{wid}", VIEWER, args=(wid,))
+        assert _status(resp) in (403, 404)
+
+
+class TestWorkflowNodeRefDetails:
+    def test_get_names_every_node_tool_and_source(self, app, pg_conn):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        wid = str(wf["id"])
+        _agent(pg_conn, agent_type="workflow", workflow_id=wid)
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool", display_name="Owner API")["id"])
+        source = str(SourcesRepository(pg_conn).create("owner-src", user_id=OWNER)["id"])
+        assert _status(_call(app, pg_conn, WorkflowDetail, "put", f"/api/workflows/{wid}", OWNER,
+                             json=_wf_body(tool, source), args=(wid,))) == 200
+        data = _body(_call(app, pg_conn, WorkflowDetail, "get", f"/api/workflows/{wid}", EDITOR,
+                           args=(wid,)))["data"]
+        assert data["ref_details"] == {
+            "tools": [{"id": tool, "name": "api_tool", "display_name": "Owner API"}],
+            "sources": [{"id": source, "name": "owner-src"}],
+        }
+
+
+class TestImageAfterSponsorCheck:
+    def test_refused_save_stores_no_image(self, app, pg_conn):
+        import io
+        from unittest.mock import patch as _patch
+
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from tests.api.user.test_resource_sponsors import _patch_db
+
+        agent_id, _ = _agent(pg_conn)
+        tool, _, _ = _editor_resources(pg_conn)
+        data = {"tools": f'["{tool}"]', "image": (io.BytesIO(b"png"), "a.png")}
+        with _patch_db(pg_conn), \
+                _patch("docsgpt.api.user.agents.routes.handle_image_upload",
+                       return_value=("stored.png", None)) as upload, \
+                app.test_request_context(f"/api/update_agent/{agent_id}", method="PUT", data=data,
+                                         content_type="multipart/form-data"):
+            from flask import request
+
+            request.decoded_token = {"sub": EDITOR}
+            resp = UpdateAgent().put(agent_id)
+        assert _status(resp) == 409
+        upload.assert_not_called()

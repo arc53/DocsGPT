@@ -566,8 +566,10 @@ class GetAgent(Resource):
                 ra = resolve(conn, "agent", agent_id, user)
                 if ra is not None:
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
-                # Edit-page detail: who vouches for resources the owner can't use.
-                if agent and ra.can("view"):
+                # Edit-page detail: who vouches for resources the owner can't
+                # use, with their names. Only for people who may edit the
+                # agent: the names can be an editor's private resources.
+                if agent and ra.can("edit"):
                     sponsored = sponsor_details(conn, "agent", agent, viewer=user)
             if not agent:
                 return {"status": "Not found"}, 404
@@ -1058,14 +1060,11 @@ class UpdateAgent(Resource):
                     )
                 pg_agent_id = str(existing_agent["id"])
                 existing_image = existing_agent.get("image", "") or ""
-                image_url, image_error = handle_image_upload(
-                    request,
-                    existing_image,
-                    existing_agent.get("user_id") or user,
-                    storage,
-                )
-                if image_error:
-                    return image_error
+                # The image is stored only once the save is known to go
+                # ahead, so a refused save (a sponsor confirmation round
+                # trip, a validation error) leaves no orphaned file.
+                image_file = request.files.get("image")
+                has_new_image = bool(image_file and image_file.filename)
 
                 update_fields: dict = {}
                 allowed_fields = [
@@ -1313,9 +1312,7 @@ class UpdateAgent(Resource):
                                     f"Field '{field}' cannot be empty", user, field
                                 )
                         update_fields[field] = value
-                if image_url and image_url != existing_image:
-                    update_fields["image"] = image_url
-                if not update_fields:
+                if not update_fields and not has_new_image:
                     return _reject("No valid update data provided", user)
 
                 newly_generated_key = None
@@ -1466,6 +1463,18 @@ class UpdateAgent(Resource):
                     return make_response(jsonify(body), status)
                 if plan.sponsors != (existing_agent.get("resource_sponsors") or {}):
                     update_fields["resource_sponsors"] = plan.sponsors
+
+                if has_new_image:
+                    image_url, image_error = handle_image_upload(
+                        request,
+                        existing_image,
+                        existing_agent.get("user_id") or user,
+                        storage,
+                    )
+                    if image_error:
+                        return image_error
+                    if image_url and image_url != existing_image:
+                        update_fields["image"] = image_url
 
                 # Apply update. Owner writes use the dual-key guard; team-editor
                 # writes go by-id (already authorized) with an optimistic-lock
