@@ -151,9 +151,12 @@ An agent (and its workflow) runs as its owner, so its tools, sources and prompts
 
 - Only someone who **owns** the resource, or has **`editor`** access to it through any team, can sponsor it. `viewer` access lets you use a resource in your own agents, but not extend it to another agent's users: the save is refused with `403` and `code: "sponsor_not_allowed"`.
 - Sponsoring is never implied. A save that would make you a new sponsor is refused with `409` until you confirm it. In DocsGPT, a dialog names each resource and who will reach it through the agent. Through the API, send the save again with `confirm_sponsor` listing every resource from the response as `"<type>:<id>"`. A `confirm_sponsor` entry for anything the save doesn't ask you to sponsor is refused with `400`.
-- A sponsored resource stops running when its sponsor can no longer edit the agent, or no longer owns or edits the resource. It stays on the agent but does nothing, and it doesn't pass to whoever saves the agent next. Another editor who may sponsor it takes it over only by confirming it in a save, or someone removes it.
-- Editors can remove any tool, source or prompt from the agent, including the owner's private ones they can't open.
+- A sponsored resource stops running when its sponsor can no longer edit the agent, or no longer owns or edits the resource. It stays on the agent but does nothing, and it doesn't pass to whoever saves the agent next. The agent's edit page says why it stopped. An editor who may sponsor it can choose **Run … with my access** there, and it runs with their access from their next save. Through the API, include its key in `confirm_sponsor` on any save. Otherwise, someone removes it.
+- A resource that is removed and later added again needs a new confirmation, even if its old sponsor could still sponsor it.
+- Editors can remove any tool, source or prompt from the agent or its workflow nodes, including the owner's private ones they can't open.
 - Workflow nodes follow the same rules, through `PUT /api/workflows/<id>`.
+- The confirmation covers the audience the agent has at that moment. If the owner later shares the agent with more teams, or turns on a public link, sponsored resources reach those people too, and their sponsors aren't asked again.
+- `audience.teams` lists every team the agent is shared with, including teams where only some members were given access.
 
 A save that needs confirmation returns:
 
@@ -167,10 +170,10 @@ A save that needs confirmation returns:
 }
 ```
 
-Owners and editors see sponsored resources on the agent's edit page and in `resource_sponsors` from `GET /api/get_agent` (and `GET /api/workflows/<id>`). Each entry has the resource (`key`, `type`, `id`, `name`), the sponsor (`user_id`, `label`), `state` (`active` or `inactive`), `reason` when inactive (`sponsor_cannot_edit_agent` or `sponsor_cannot_edit_resource`), and `can_confirm`, which says whether you may take an inactive one over.
+Owners and editors see sponsored resources on the agent's edit page and in `resource_sponsors` from `GET /api/get_agent` (and `GET /api/workflows/<id>`). Viewers get an empty list. Each entry has the resource (`key`, `type`, `id`, `name`), the sponsor (`user_id`, `label`), `state` (`active` or `inactive`), `reason` when inactive (`sponsor_cannot_edit_agent` or `sponsor_cannot_edit_resource`), and `can_confirm`, which says whether you may take an inactive one over.
 
 <Callout type="warning" emoji="⚠️">
-After upgrading, resources sponsored by someone with only `viewer` access to them stop running. An editor who owns or can edit such a resource can confirm it to start it again.
+After upgrading, resources sponsored by someone with only `viewer` access to them stop running. An editor who owns or can edit such a resource can choose **Run … with my access** on the agent's edit page to start it again.
 </Callout>
 
 ## Audit log
