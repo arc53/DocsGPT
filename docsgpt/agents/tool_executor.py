@@ -1698,8 +1698,13 @@ class ToolExecutor:
         if tool_data.get("name") == "mcp_tool":
             from docsgpt.connectors import catalog
 
-            # A connection's secret only goes to the server it was stored for.
+            # A connection's secret only goes to the server it was stored for:
+            # a custom server's own URL, or a built-in connector's MCP server
+            # (GitHub's token only ever goes to GitHub's).
             stored_for = catalog.base_url(resolved.row.get("server_url"))
+            definition = catalog.get_definition(resolved.connector_key)
+            if not stored_for and definition is not None and definition.publisher == "built_in":
+                stored_for = definition.mcp_base_url or ""
             if stored_for and stored_for != catalog.base_url(tool_config.get("server_url")):
                 raise service.ConnectionUnavailable(
                     f"{resolved.connector_name or 'This service'} needs to be connected",
@@ -1713,8 +1718,10 @@ class ToolExecutor:
             agent_id=self.agent_id,
         )
         tool_config.pop("encrypted_credentials", None)
-        if (resolved.row.get("auth_kind") or "") in ("api_key", "none"):
-            credentials = service.get_credentials(resolved.row)
+        if (resolved.row.get("auth_kind") or "") in ("api_key", "none", "oauth"):
+            # Pasted keys, or the current access token of a built-in OAuth
+            # sign-in (GitHub's App), refreshed first when it has expired.
+            credentials = service.access_credentials(resolved.row)
             tool_config.update(credentials)
             tool_config["auth_credentials"] = credentials
         if tool_data.get("name") == "mcp_tool":

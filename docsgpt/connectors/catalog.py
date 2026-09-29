@@ -72,12 +72,17 @@ class ConnectorDefinition:
         tool_templates: ``user_tools`` names created on connect.
         setup: What the wizard does after sign-in: ``tools`` is ``auto``
             (created and enabled), ``ask`` or ``off``; ``sync`` likewise.
-        mcp_url: MCP endpoint for presets.
+        mcp_url: MCP endpoint for presets, and for a built-in connector whose
+            tool is its service's own MCP server (GitHub).
         publisher: ``built_in``, ``preset`` or ``custom``.
         docs_url: Setup guide for admins.
         oauth_scopes: Scopes an MCP preset requests.
         part_of: Another connector this one is shown under, for one service
             offered two ways (the Atlassian MCP preset under Confluence).
+        oauth_settings: Server settings that add a second sign-in, OAuth,
+            to an ``api_key`` connector (GitHub's "Sign in with GitHub"
+            through a GitHub App). Unlike ``required_settings`` the
+            connector works without them, with pasted credentials only.
     """
 
     key: str
@@ -99,6 +104,17 @@ class ConnectorDefinition:
     docs_url: Optional[str] = None
     oauth_scopes: tuple[str, ...] = ()
     part_of: Optional[str] = None
+    oauth_settings: tuple[str, ...] = ()
+
+    @property
+    def oauth_configured(self) -> bool:
+        """Whether the optional OAuth sign-in has every server setting it needs."""
+        return bool(self.oauth_settings) and all(getattr(settings, name, None) for name in self.oauth_settings)
+
+    @property
+    def sign_in_methods(self) -> list[str]:
+        """How a user can connect, preferred first: ``auth_kind``, after OAuth when that is set up."""
+        return ["oauth", self.auth_kind] if self.oauth_configured else [self.auth_kind]
 
     @property
     def missing_settings(self) -> list[str]:
@@ -136,6 +152,7 @@ class ConnectorDefinition:
             "docs_url": self.docs_url,
             "oauth_scopes": list(self.oauth_scopes),
             "part_of": self.part_of,
+            "sign_in_methods": self.sign_in_methods,
         }
 
 
@@ -148,6 +165,11 @@ def base_url(url: Optional[str]) -> str:
 
 
 _DOCS = "https://docs.docsgpt.cloud/Guides/Connectors"
+GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/readonly"
+
+# Tool templates any connector's server can use (an MCP server, an OpenAPI
+# spec): a tool made from one belongs to its connection, not to a connector.
+_GENERIC_TOOL_TEMPLATES = frozenset({"mcp_tool", "api_tool"})
 
 _BUILT_IN: tuple[ConnectorDefinition, ...] = (
     ConnectorDefinition(
@@ -188,6 +210,25 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
         sync_ingestor="confluence",
         setup={"tools": "off", "sync": "ask"},
         docs_url=f"{_DOCS}#confluence",
+    ),
+    ConnectorDefinition(
+        key="github",
+        name="GitHub",
+        description="Sync repositories into Knowledge and let agents read code, issues and pull requests.",
+        icon="github",
+        category="dev",
+        # A token works with no admin setup; a GitHub App adds Sign in with GitHub.
+        auth_kind="api_key",
+        capabilities=("sync", "read"),
+        credential_fields=(CredentialField("access_token", "Personal access token"),),
+        oauth_settings=("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_APP_SLUG"),
+        sync_ingestor="github",
+        setup_fields=(CredentialField("repo_url", "Repository", secret=False),),
+        # GitHub's own MCP server, read-only: agents look things up, never change them.
+        tool_templates=("mcp_tool",),
+        mcp_url=GITHUB_MCP_URL,
+        setup={"tools": "ask", "sync": "ask"},
+        docs_url=f"{_DOCS}#github",
     ),
     ConnectorDefinition(
         key="s3",
@@ -373,6 +414,8 @@ def preset_for_url(url: Optional[str]) -> Optional[ConnectorDefinition]:
 
 def definition_for_tool(tool_name: str) -> Optional[ConnectorDefinition]:
     """The built-in connector that provides the ``user_tools`` template ``tool_name``."""
+    if tool_name in _GENERIC_TOOL_TEMPLATES:
+        return None
     for definition in _BUILT_IN:
         if definition.publisher == "built_in" and tool_name in definition.tool_templates:
             return definition
@@ -407,6 +450,7 @@ def tool_connector_keys() -> set[str]:
         for definition in _BUILT_IN
         if definition.publisher == "built_in"
         for name in definition.tool_templates
+        if name not in _GENERIC_TOOL_TEMPLATES
     }
 
 

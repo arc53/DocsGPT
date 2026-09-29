@@ -1123,11 +1123,54 @@ def split_secrets(config: dict, config_requirements: dict) -> tuple[dict, dict]:
     return public, secrets
 
 
-def ensure_connection_tools(conn, user_id: str, connection: dict, permissions: Optional[dict] = None) -> list[dict]:
+def builtin_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dict]:
+    """Tool config of a built-in connector whose tool is its service's MCP server.
+
+    The token is not part of it: the executor reads it from the connection
+    at run time and sends it as a bearer token.
+
+    Returns:
+        The config, or None when the connector has no such tool.
+    """
+    if (
+        definition is None
+        or definition.publisher != "built_in"
+        or not definition.mcp_url
+        or "mcp_tool" not in definition.tool_templates
+    ):
+        return None
+    return {"server_url": definition.mcp_url, "auth_type": "bearer", "transport_type": "http", "timeout": 30}
+
+
+def needs_mcp_discovery(conn, connection: dict) -> bool:
+    """Whether creating this connection's tools first needs its MCP server's actions."""
+    definition = catalog.get_definition(catalog.connector_key_for_row(connection))
+    if builtin_mcp_config(definition) is None:
+        return False
+    have = {tool.get("name") for tool in ConnectorSessionsRepository(conn).list_tools(str(connection["id"]))}
+    return "mcp_tool" not in have
+
+
+def ensure_connection_tools(
+    conn,
+    user_id: str,
+    connection: dict,
+    permissions: Optional[dict] = None,
+    mcp_actions: Optional[list] = None,
+) -> list[dict]:
     """Create the connector's tools once; later calls return the existing ones.
 
     This is what makes the setup step idempotent for tools: a retried or
     repeated setup never creates a second Telegram tool for the same bot.
+
+    Args:
+        conn: Open connection inside a transaction.
+        user_id: The owner.
+        connection: The connection row.
+        permissions: Per-action permission overrides.
+        mcp_actions: The actions of a built-in connector's MCP server
+            (GitHub's), discovered by the caller outside this transaction.
+            Without them that tool is not created.
     """
     repo = ConnectorSessionsRepository(conn)
     existing = repo.list_tools(str(connection["id"]))
@@ -1136,10 +1179,19 @@ def ensure_connection_tools(conn, user_id: str, connection: dict, permissions: O
     if not definition or not definition.tool_templates:
         return existing
     have = {tool.get("name") for tool in existing}
+    mcp_config = builtin_mcp_config(definition)
     created = []
     for template in definition.tool_templates:
-        if template in have or template in ("mcp_tool", "api_tool"):
-            # MCP tools are created by the MCP save flow, which has the
+        if template in have:
+            continue
+        if template == "mcp_tool" and mcp_config is not None and mcp_actions is not None:
+            created.append(create_tool_for_connection(
+                conn, user_id, connection, template=template, config=mcp_config,
+                actions=mcp_actions, permissions=permissions,
+            ))
+            continue
+        if template in ("mcp_tool", "api_tool"):
+            # Other MCP tools are created by the MCP save flow, which has the
             # discovered actions; OpenAPI tools come from an imported spec.
             continue
         created.append(

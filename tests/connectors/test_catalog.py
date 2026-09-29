@@ -39,6 +39,9 @@ class TestDefinitions:
             if definition.publisher != "built_in":
                 continue
             for tool_name in definition.tool_templates:
+                if tool_name == "mcp_tool":
+                    # GitHub's MCP server gets the connection's token as a bearer token.
+                    continue
                 requirements = tools[tool_name].get_config_requirements()
                 secret_keys = {k for k, spec in requirements.items() if spec.get("secret")}
                 field_keys = {f.key for f in definition.credential_fields}

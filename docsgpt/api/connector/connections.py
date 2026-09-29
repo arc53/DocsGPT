@@ -91,10 +91,22 @@ class ConnectionsList(Resource):
         credentials = body.get("credentials")
         if not isinstance(credentials, dict):
             return _error("credentials must be an object", 400)
+        label = body.get("label") or None
+        if definition.key == "github":
+            # Check the token now, not at the first sync, and name the
+            # connection after the account rather than a hint of the token.
+            from docsgpt.connectors import github
+
+            try:
+                label = label or github.token_account(credentials.get("access_token"))
+            except github.TokenRejected as err:
+                return _error(str(err), 400, code="invalid_credentials")
+            except service.TransientConnectionError as err:
+                return _error(str(err), 502)
         try:
             with db_session() as conn:
                 row, created = service.create_api_key_connection(
-                    conn, user_id, definition, credentials, label=(body.get("label") or None),
+                    conn, user_id, definition, credentials, label=label,
                 )
         except service.EncryptionKeyNotConfigured as err:
             return _error(str(err), 400, code="encryption_key_default")
@@ -211,17 +223,38 @@ class ConnectionSetup(Resource):
         if not user_id:
             return _unauthorized()
         body = _json_body()
+        create_tools = body.get("create_tools", True)
         try:
+            mcp_actions = None
+            with db_readonly() as conn:
+                row = _owned(conn, connection_id, user_id)
+                discover = bool(row) and create_tools and service.needs_mcp_discovery(conn, row)
+            if row is None:
+                return _not_found()
+            if service.normalize_status(row) != service.STATUS_CONNECTED:
+                return _error("Reconnect before setting up", 409, code="reconnect")
+            if discover:
+                # GitHub's tool is its MCP server: read its actions before
+                # the write transaction, not while holding it open.
+                from docsgpt.connectors.mcp import discover_builtin_actions
+
+                try:
+                    mcp_actions = discover_builtin_actions(user_id, row)
+                except service.ConnectionUnavailable:
+                    return _error("Reconnect before setting up", 409, code="reconnect")
+                except Exception as err:
+                    current_app.logger.warning(f"Could not list the MCP server's tools: {err}")
+                    return _error("The service's tools could not be reached. Try again.", 502,
+                                  code="tools_unavailable")
             with db_session() as conn:
                 row = _owned(conn, connection_id, user_id)
                 if row is None:
                     return _not_found()
-                if service.normalize_status(row) != service.STATUS_CONNECTED:
-                    return _error("Reconnect before setting up", 409, code="reconnect")
                 tools = []
-                if body.get("create_tools", True):
+                if create_tools:
                     tools = service.ensure_connection_tools(
                         conn, user_id, row, permissions=body.get("tool_permissions") or None,
+                        mcp_actions=mcp_actions,
                     )
                 tool_payload = [service.serialize_tool(tool) for tool in tools]
             sources = []
@@ -258,7 +291,16 @@ def _start_sync(user_id: str, row: dict, sync: dict):
     frequency = sync.get("frequency") or definition.default_sync_frequency
     if frequency not in _FREQUENCIES:
         return ("Unknown sync frequency", 400)
-    name = (sync.get("name") or "").strip() or definition.name
+    name = (sync.get("name") or "").strip()
+    if definition.sync_ingestor == "github":
+        from docsgpt.parser.remote.github_loader import GitHubLoader
+
+        repo = GitHubLoader.normalize_repo(str(items.get("repo_url") or ""))
+        if not repo:
+            return ("Pick a GitHub repository", 400)
+        items = {**items, "repo_url": repo}
+        name = name or repo
+    name = name or definition.name
     # Validate before claiming the idempotency key: a rejected request must
     # leave the key free for the corrected retry.
     if definition.auth_kind == "oauth":
@@ -305,6 +347,49 @@ def _start_sync(user_id: str, row: dict, sync: dict):
         kwargs={**kwargs, "idempotency_key": scoped_key, "source_id": source_id}, **options,
     )
     return {"id": source_id, "task_id": task_id or task.id, "name": name, "sync_frequency": frequency}
+
+
+@connections_ns.route("/connections/<string:connection_id>/repositories")
+class ConnectionRepositories(Resource):
+    @api.doc(
+        description=(
+            "GitHub: the repositories the connection can read, for the sync picker. "
+            "install_url is where a GitHub App sign-in chooses more repositories."
+        )
+    )
+    def get(self, connection_id: str):
+        from docsgpt.connectors import github
+
+        user_id = _user_id()
+        if not user_id:
+            return _unauthorized()
+        with db_readonly() as conn:
+            row = _owned(conn, connection_id, user_id)
+        if row is None or catalog.connector_key_for_row(row) != "github":
+            return _not_found()
+        app_sign_in = (row.get("auth_kind") or "") == "oauth"
+        try:
+            token = service.access_credentials(row).get("access_token")
+            repositories = github.list_repositories(token or "", app=app_sign_in)
+        except service.ConnectionUnavailable:
+            return _error("Reconnect to continue", 409, code="reconnect")
+        except github.TokenRejected as err:
+            service.mark_reconnect_needed(connection_id, str(err))
+            return _error("Reconnect to continue", 409, code="reconnect")
+        except service.TransientConnectionError:
+            return _error("GitHub is not responding. Try again.", 503)
+        except Exception as err:
+            current_app.logger.error(f"Error listing GitHub repositories: {err}", exc_info=True)
+            return _error("Failed to list repositories", 502)
+        install_url = None
+        if app_sign_in:
+            from docsgpt.core.settings import settings
+
+            slug = settings.GITHUB_APP_SLUG
+            install_url = f"https://github.com/apps/{slug}/installations/new" if slug else None
+        return make_response(
+            jsonify({"success": True, "repositories": repositories, "install_url": install_url}), 200,
+        )
 
 
 @connections_ns.route("/connections/<string:connection_id>/reconnect")

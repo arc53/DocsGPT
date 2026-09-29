@@ -106,7 +106,7 @@ def _render_callback_page(
     # The script only carries server-side values: the provider key comes from the
     # supported-connector list rather than the request, and no request text is posted.
     provider_key = next(
-        (key for key in ConnectorCreator.get_supported_connectors() if key == provider_raw.lower()), None,
+        (key for key in ConnectorCreator.get_auth_providers() if key == provider_raw.lower()), None,
     )
     payload = None
     if provider_key and status == "success" and session_token:
@@ -177,12 +177,24 @@ def _render_callback_page(
 
 
 
-def build_authorization(provider: str, user_id: str, connection_id: Optional[str] = None) -> dict:
+def build_authorization(
+    provider: str, user_id: str, connection_id: Optional[str] = None, *, install: bool = False,
+) -> dict:
     """Start an OAuth sign-in for ``provider`` and return its authorization URL.
+
+    Args:
+        provider: The connector, e.g. ``google_drive`` or ``github``.
+        user_id: The caller.
+        connection_id: The caller's connection to sign in again, if any.
+        install: GitHub: send the user to install the GitHub App (where the
+            repositories it can read are chosen) instead of straight to
+            authorization. GitHub returns to the callback with the same
+            state when the app requests authorization during installation.
 
     Raises:
         service.EncryptionKeyNotConfigured: See ``ensure_can_store_credentials``.
         service.ConnectionUnavailable: ``connection_id`` is not the caller's.
+        ValueError: ``install`` for a provider with no installation page.
     """
     service.ensure_can_store_credentials()
     with db_session() as conn:
@@ -191,8 +203,11 @@ def build_authorization(provider: str, user_id: str, connection_id: Optional[str
         json.dumps({"provider": provider, "object_id": str(session_row["id"])}).encode()
     ).decode()
     auth = ConnectorCreator.create_auth(provider)
+    if install and not hasattr(auth, "get_installation_url"):
+        raise ValueError(f"{provider} has no installation page")
+    url = auth.get_installation_url(state=state) if install else auth.get_authorization_url(state=state)
     return {
-        "authorization_url": auth.get_authorization_url(state=state),
+        "authorization_url": url,
         "state": state,
         "callback_origin": _origin_of(settings.CONNECTOR_REDIRECT_BASE_URI),
     }
@@ -207,7 +222,7 @@ class ConnectorAuth(Resource):
             if not provider:
                 return make_response(jsonify({"success": False, "error": "Missing provider"}), 400)
 
-            if not ConnectorCreator.is_supported(provider):
+            if not (ConnectorCreator.is_supported(provider) or ConnectorCreator.has_auth(provider)):
                 return make_response(jsonify({"success": False, "error": f"Unsupported provider: {provider}"}), 400)
 
             decoded_token = request.decoded_token
@@ -215,7 +230,10 @@ class ConnectorAuth(Resource):
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user_id = decoded_token.get('sub')
             try:
-                started = build_authorization(provider, user_id, request.args.get("connection_id") or None)
+                started = build_authorization(
+                    provider, user_id, request.args.get("connection_id") or None,
+                    install=request.args.get("install") in ("1", "true"),
+                )
             except service.EncryptionKeyNotConfigured as err:
                 return make_response(
                     jsonify({"success": False, "error": str(err), "code": "encryption_key_default"}), 400,
@@ -251,12 +269,24 @@ class ConnectorsCallback(Resource):
             state = request.args.get('state')
             error = request.args.get('error')
 
+            if not state and request.args.get('installation_id'):
+                # The GitHub App was installed from GitHub itself, not from a
+                # DocsGPT sign-in: there is no state to tie the code to a user,
+                # so the code is ignored and the user goes back to DocsGPT.
+                return _render_callback_page(
+                    "success",
+                    "The GitHub App is installed. Return to DocsGPT and refresh the repository list.",
+                    "github",
+                )
+
             state_dict = json.loads(base64.urlsafe_b64decode(state.encode()).decode())
             provider = state_dict.get("provider")
             state_object_id = state_dict.get("object_id")
 
             # Validate provider
-            if not provider or not isinstance(provider, str) or not ConnectorCreator.is_supported(provider):
+            if not provider or not isinstance(provider, str) or not (
+                ConnectorCreator.is_supported(provider) or ConnectorCreator.has_auth(provider)
+            ):
                 return redirect(build_callback_redirect({
                     "status": "error",
                     "message": "Invalid provider"
@@ -295,7 +325,9 @@ class ConnectorsCallback(Resource):
                         user_info = drive_service.about().get(fields="user").execute()
                         user_email = user_info.get('user', {}).get('emailAddress', 'Connected User')
                     else:
-                        user_email = token_info.get('user_info', {}).get('email', 'Connected User')
+                        # GitHub names the account by its login, the others by email.
+                        user_info = token_info.get('user_info') or {}
+                        user_email = user_info.get('email') or user_info.get('login') or 'Connected User'
 
                 except Exception as e:
                     current_app.logger.warning(f"Could not get user info: {e}")

@@ -1140,7 +1140,25 @@ Confluence Cloud OAuth client secret.
 
 Type `str`, default unset.
 
-GitHub PAT with read access to repositories.
+Instance-wide GitHub token for the public-repository upload. It raises GitHub's rate limit and is never used to read a private repository; users connect their own GitHub account for those.
+
+### `GITHUB_CLIENT_ID`
+
+Type `str`, default unset.
+
+GitHub App client id. With the secret and slug, offers Sign in with GitHub next to tokens.
+
+### `GITHUB_CLIENT_SECRET`
+
+Type `str`, default unset.
+
+GitHub App client secret.
+
+### `GITHUB_APP_SLUG`
+
+Type `str`, default unset.
+
+GitHub App URL name (github.com/apps/&lt;slug>), for the link where users choose repositories.
 
 ### `MCP_OAUTH_REDIRECT_URI`
 
