@@ -316,8 +316,9 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
                 required=False,
                 parameter="chat_id",
                 hint=(
-                    "Messages go to this chat, and the AI cannot pick another. Add the bot to the chat, send "
-                    "it a message, then find the chat's id in https://api.telegram.org/bot<token>/getUpdates."
+                    "Optional. Messages go to this chat, and the AI cannot pick another. Add the bot to the "
+                    "chat, send it a message, then find the chat's id in "
+                    "https://api.telegram.org/bot<token>/getUpdates."
                 ),
             ),
         ),

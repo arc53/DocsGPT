@@ -1242,7 +1242,8 @@
         "postgres_token": "Verbindungszeichenfolge",
         "brave_token": "API-Schlüssel",
         "github_access_token": "Persönliches Zugriffstoken",
-        "repo_url": "Repository"
+        "repo_url": "Repository",
+        "telegram_chat_id": "Standard-Chat-ID"
       },
       "wizard": {
         "connectTitle": "{{name}} verbinden",
@@ -1356,7 +1357,11 @@
         "valueLabel": "Wert für {{parameter}}",
         "save": "Speichern",
         "saveFailed": "Der Wert konnte nicht gespeichert werden. Versuche es erneut.",
-        "hint": "Ein Wert mit „Immer verwenden“ wird bei jedem Aufruf gesendet. Die KI sieht ihn nicht und kann ihn nicht ändern."
+        "hint": "Ein Wert mit „Immer verwenden“ wird bei jedem Aufruf gesendet. Die KI sieht ihn nicht und kann ihn nicht ändern.",
+        "fromAccount": "In diesem Konto festgelegt: {{value}}"
+      },
+      "fieldHints": {
+        "telegram_chat_id": "Optional. Nachrichten gehen an diesen Chat, und die KI kann keinen anderen wählen. Füge den Bot zum Chat hinzu, sende ihm eine Nachricht und finde die ID des Chats unter https://api.telegram.org/bot<token>/getUpdates."
       }
     }
   },

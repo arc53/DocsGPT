@@ -1230,7 +1230,8 @@
         "postgres_token": "连接字符串",
         "brave_token": "API 密钥",
         "github_access_token": "个人访问令牌",
-        "repo_url": "仓库"
+        "repo_url": "仓库",
+        "telegram_chat_id": "默认聊天 ID"
       },
       "wizard": {
         "connectTitle": "连接 {{name}}",
@@ -1337,7 +1338,11 @@
         "valueLabel": "{{parameter}} 的值",
         "save": "保存",
         "saveFailed": "无法保存该值。请重试。",
-        "hint": "设为“始终使用”的值会在每次调用时发送。AI 看不到它，也无法更改。"
+        "hint": "设为“始终使用”的值会在每次调用时发送。AI 看不到它，也无法更改。",
+        "fromAccount": "已在此账户中设置：{{value}}"
+      },
+      "fieldHints": {
+        "telegram_chat_id": "可选。消息会发送到此聊天，AI 无法选择其他聊天。将机器人加入聊天并给它发一条消息，然后在 https://api.telegram.org/bot<token>/getUpdates 中找到该聊天的 id。"
       }
     }
   },

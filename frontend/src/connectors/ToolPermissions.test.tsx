@@ -243,6 +243,26 @@ describe('ToolPermissions', () => {
     );
   });
 
+  it('shows a chat the account sets as set there, not as a choice', async () => {
+    await render(
+      tool([
+        action('telegram_send_message', 'write', 'ask', [
+          { ...param('chat_id', true, '-100'), set_by: 'account' },
+        ]),
+      ]),
+    );
+    await act(async () =>
+      button('settings.connectors.parameters.show').click(),
+    );
+    const row = container.querySelector<HTMLElement>(
+      '[data-parameter="chat_id"]',
+    )!;
+    expect(row.textContent).toContain(
+      'settings.connectors.parameters.fromAccount',
+    );
+    expect(row.querySelector('[data-mode]')).toBeNull();
+  });
+
   it('says what Ask first means outside chat', async () => {
     await render(tool([action('create_issue', 'write', 'ask')]));
     expect(container.textContent).toContain(

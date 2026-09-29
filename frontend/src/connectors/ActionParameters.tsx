@@ -42,6 +42,21 @@ function ParameterRow({
     }
   };
 
+  if (parameter.set_by === 'account')
+    return (
+      <li data-parameter={parameter.name} className="flex flex-col">
+        <p className="text-foreground font-mono text-xs wrap-anywhere">
+          {parameter.name}
+        </p>
+        <p className="text-muted-foreground text-xs wrap-anywhere">
+          {t('settings.connectors.parameters.fromAccount', {
+            value: String(parameter.value ?? ''),
+            interpolation: { escapeValue: false },
+          })}
+        </p>
+      </li>
+    );
+
   const choiceLabel = t('settings.connectors.parameters.choiceLabel', {
     parameter: parameter.name,
     interpolation: { escapeValue: false },

@@ -33,6 +33,10 @@ export type CredentialField = {
   label: string;
   secret: boolean;
   required: boolean;
+  /** A tool parameter this field sets for every call (Telegram's chat). */
+  parameter?: string | null;
+  /** English help under the field; translated when the locale has it. */
+  hint?: string | null;
 };
 
 export type ConnectorDefinition = {
@@ -100,6 +104,8 @@ export type ActionParameter = {
   /** Sent with `value` on every call; the AI never sees it. */
   fixed: boolean;
   value: string | number | boolean | null;
+  /** Who fixed it: the tool's own setting, or the account (a default chat). */
+  set_by?: 'tool' | 'account' | null;
 };
 
 export type ConnectionToolAction = {

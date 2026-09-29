@@ -1242,7 +1242,8 @@
         "postgres_token": "Cadena de conexión",
         "brave_token": "Clave de API",
         "github_access_token": "Token de acceso personal",
-        "repo_url": "Repositorio"
+        "repo_url": "Repositorio",
+        "telegram_chat_id": "ID del chat predeterminado"
       },
       "wizard": {
         "connectTitle": "Conectar {{name}}",
@@ -1356,7 +1357,11 @@
         "valueLabel": "Valor de {{parameter}}",
         "save": "Guardar",
         "saveFailed": "No se pudo guardar el valor. Inténtalo de nuevo.",
-        "hint": "Un valor con «Usar siempre» se envía en cada llamada. La IA nunca lo ve ni puede cambiarlo."
+        "hint": "Un valor con «Usar siempre» se envía en cada llamada. La IA nunca lo ve ni puede cambiarlo.",
+        "fromAccount": "Definido en esta cuenta: {{value}}"
+      },
+      "fieldHints": {
+        "telegram_chat_id": "Opcional. Los mensajes van a este chat y la IA no puede elegir otro. Añade el bot al chat, envíale un mensaje y busca el id del chat en https://api.telegram.org/bot<token>/getUpdates."
       }
     }
   },

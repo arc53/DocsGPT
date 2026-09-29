@@ -1230,7 +1230,8 @@
         "postgres_token": "接続文字列",
         "brave_token": "API キー",
         "github_access_token": "個人用アクセストークン",
-        "repo_url": "リポジトリ"
+        "repo_url": "リポジトリ",
+        "telegram_chat_id": "既定のチャット ID"
       },
       "wizard": {
         "connectTitle": "{{name}} に接続",
@@ -1337,7 +1338,11 @@
         "valueLabel": "{{parameter}} の値",
         "save": "保存",
         "saveFailed": "値を保存できませんでした。もう一度お試しください。",
-        "hint": "「常に使用」の値は毎回の呼び出しで送信されます。AI はこの値を見ることも変更することもできません。"
+        "hint": "「常に使用」の値は毎回の呼び出しで送信されます。AI はこの値を見ることも変更することもできません。",
+        "fromAccount": "このアカウントで設定済み: {{value}}"
+      },
+      "fieldHints": {
+        "telegram_chat_id": "任意。メッセージはこのチャットに送られ、AI は別のチャットを選べません。ボットをチャットに追加してメッセージを送り、https://api.telegram.org/bot<token>/getUpdates でチャットの id を確認してください。"
       }
     }
   },

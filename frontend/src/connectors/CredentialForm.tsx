@@ -1,5 +1,7 @@
+import type { ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import type { CredentialField } from './types';
 
@@ -7,7 +9,8 @@ import type { CredentialField } from './types';
  * The short form an API-key connector asks for, generated from its catalog
  * `credential_fields` (or `setup_fields`). Secrets are masked. Labels come
  * from `settings.connectors.fields.<connector>_<key>`, then
- * `settings.connectors.fields.<key>`, then the catalog label.
+ * `settings.connectors.fields.<key>`, then the catalog label; a field's hint
+ * from `settings.connectors.fieldHints.<connector>_<key>`, then the catalog.
  */
 export default function CredentialForm({
   connectorKey,
@@ -28,23 +31,49 @@ export default function CredentialForm({
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-5">
-      {fields.map((field) => (
-        <Input
-          key={field.key}
-          id={`${idPrefix}-${field.key}`}
-          label={t(`settings.connectors.fields.${connectorKey}_${field.key}`, {
+      {fields.map((field) => {
+        const id = `${idPrefix}-${field.key}`;
+        const label = t(
+          `settings.connectors.fields.${connectorKey}_${field.key}`,
+          {
             defaultValue: t(`settings.connectors.fields.${field.key}`, {
               defaultValue: field.label,
             }),
-          })}
-          labelSurface={labelSurface}
-          type={field.secret ? 'password' : 'text'}
-          autoComplete={field.secret ? 'new-password' : 'off'}
-          required={field.required}
-          value={values[field.key] ?? ''}
-          onChange={(e) => onChange({ ...values, [field.key]: e.target.value })}
-        />
-      ))}
+          },
+        );
+        const inputProps = {
+          id,
+          type: field.secret ? 'password' : 'text',
+          autoComplete: field.secret ? 'new-password' : 'off',
+          value: values[field.key] ?? '',
+          onChange: (e: ChangeEvent<HTMLInputElement>) =>
+            onChange({ ...values, [field.key]: e.target.value }),
+        };
+        if (!field.hint)
+          return (
+            <Input
+              key={field.key}
+              label={label}
+              labelSurface={labelSurface}
+              required={field.required}
+              {...inputProps}
+            />
+          );
+        return (
+          <FormField
+            key={field.key}
+            label={label}
+            required={field.required}
+            labelSurface={labelSurface}
+            hint={t(
+              `settings.connectors.fieldHints.${connectorKey}_${field.key}`,
+              { defaultValue: field.hint },
+            )}
+          >
+            <Input {...inputProps} />
+          </FormField>
+        );
+      })}
     </div>
   );
 }
