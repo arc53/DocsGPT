@@ -440,6 +440,15 @@ export default function Tools() {
                         : undefined;
                       // A catalog service reads as the catalog describes it;
                       // a custom server keeps the description it came with.
+                      // The account is on the card's own line, so the title
+                      // drops the " · account" the server adds to tell
+                      // accounts apart in pickers.
+                      const fullName = tool.customName || tool.displayName;
+                      const title =
+                        connection &&
+                        fullName.startsWith(`${connection.name} · `)
+                          ? connection.name
+                          : fullName;
                       const description =
                         connector && connector.publisher !== 'custom'
                           ? connectorDescription(t, connector)
@@ -515,10 +524,10 @@ export default function Tools() {
                             <div className="mt-[9px] px-1">
                               <CardTitle
                                 as="h2"
-                                title={tool.customName || tool.displayName}
+                                title={title}
                                 className="truncate capitalize"
                               >
-                                {tool.customName || tool.displayName}
+                                {title}
                               </CardTitle>
                               <CardDescription
                                 size="xs"

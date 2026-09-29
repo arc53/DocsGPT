@@ -12,8 +12,8 @@ const TOOLS = [
   {
     id: 'tg',
     name: 'telegram',
-    displayName: 'Telegram',
-    customName: '',
+    displayName: 'Telegram · Alerts bot',
+    customName: 'Telegram · Alerts bot',
     description: 'Send messages',
     status: true,
     config: {},
