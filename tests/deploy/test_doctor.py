@@ -304,6 +304,17 @@ class TestChecks:
         check = commands._check_provider({"LLM_PROVIDER": "openai_compatible"})
         assert check.level == "fail"
 
+    def test_openai_compatible_with_a_local_endpoint_needs_no_catalog_key(self):
+        """OPENAI_BASE_URL plus LLM_NAME registers the server's models without any model YAML."""
+        env = {"LLM_PROVIDER": "openai_compatible", "OPENAI_BASE_URL": "http://localhost:11434/v1", "LLM_NAME": "llama3"}
+        check = commands._check_provider(env)
+        assert check.level == "ok"
+        assert "localhost:11434" in check.detail
+
+    def test_openai_compatible_with_a_base_url_but_no_model_name_is_still_a_problem(self):
+        check = commands._check_provider({"LLM_PROVIDER": "openai_compatible", "OPENAI_BASE_URL": "http://h:1/v1"})
+        assert check.level == "fail"
+
     def test_the_provider_check_survives_settings_that_do_not_load(self):
         check = commands._check_provider({"LLM_PROVIDER": "openai", "API_KEY": "x", "VECTOR_STORE": "lancedb"})
         assert check.level == "ok"

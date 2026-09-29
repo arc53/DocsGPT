@@ -953,7 +953,10 @@ def _check_provider(env: Mapping[str, str]) -> Check:
     if provider == "docsgpt":
         return Check("provider", "ok", "the DocsGPT public API (no key needed)")
     if provider == "openai_compatible":
-        # Its models carry their own keys, named by each model YAML's api_key_env.
+        # OPENAI_BASE_URL plus LLM_NAME registers the server's own models (Ollama, vLLM, ...), no YAML needed.
+        if env.get("OPENAI_BASE_URL") and env.get("LLM_NAME"):
+            return Check("provider", "ok", f"{provider} at {_endpoint(env['OPENAI_BASE_URL'])}")
+        # Otherwise its models carry their own keys, named by each model YAML's api_key_env.
         keys = _catalog_key_names(env)
         if not any(env.get(key) for key in keys):
             example = f" such as {keys[0]}" if keys else ""
