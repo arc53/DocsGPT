@@ -2004,7 +2004,6 @@
       "selectedCount": "已选 {{count}} 个",
       "groupOwn": "你的",
       "groupTeam": "团队共享",
-      "connectMore": "连接更多",
       "fromConnector": "来自 {{name}}",
       "fromConnectorTitle": "来自 {{name}}：{{title}}",
       "knowledge": "知识库"

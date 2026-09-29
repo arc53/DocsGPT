@@ -103,16 +103,15 @@ export default function Connectors() {
 
   const partsOf = (key: string) => partsOfCatalog(catalog, key);
 
-  // "Connect more" in the composer opens the connectors that can do what the
-  // picker is for: sync content, or give tools.
+  // `?capability=` narrows the list to connectors that can sync content, or
+  // give tools.
   const capability = searchParams.get('capability');
   const clearCapability = () => {
     searchParams.delete('capability');
     setSearchParams(searchParams, { replace: true });
   };
   // Listed for syncing (Knowledge's Connect a service, Add knowledge's Browse
-  // all connectors, the sources picker's Connect more): a connect starts with
-  // Sync into Knowledge on.
+  // all connectors): a connect starts with Sync into Knowledge on.
   const withPurpose = (options: LaunchOptions = {}): LaunchOptions =>
     capability === 'sync' ? { ...options, purpose: 'knowledge' } : options;
 

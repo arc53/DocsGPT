@@ -2006,7 +2006,6 @@
       "selectedCount": "{{count}} 件選択中",
       "groupOwn": "あなたのもの",
       "groupTeam": "チームと共有",
-      "connectMore": "さらに接続",
       "fromConnector": "{{name}} から",
       "fromConnectorTitle": "{{name}} から: {{title}}",
       "knowledge": "ナレッジ"

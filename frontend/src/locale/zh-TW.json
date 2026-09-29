@@ -2006,7 +2006,6 @@
       "selectedCount": "已選 {{count}} 個",
       "groupOwn": "你的",
       "groupTeam": "團隊共享",
-      "connectMore": "連線更多",
       "fromConnector": "來自 {{name}}",
       "fromConnectorTitle": "來自 {{name}}：{{title}}",
       "knowledge": "知識庫"
