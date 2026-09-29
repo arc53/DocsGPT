@@ -8,7 +8,7 @@ import { Steps } from 'nextra/components'
 
 # Connectors
 
-A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Asana, Stripe), and any MCP server or OpenAPI spec you add yourself. A **connection** is one signed-in account or one saved API key for a connector.
+A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Asana, Stripe), and any MCP server or OpenAPI spec you add yourself. A **connection** is one signed-in account or one saved API key for a connector.
 
 Connections are the single place credentials live. A synced source and an agent tool both point at a connection, so you sign in once, reconnect once when a token expires, and disconnect in one place.
 
@@ -20,7 +20,7 @@ Open **Settings > Connectors**. Filters narrow the list by category, and **Conne
 2. Choose what the connection sets up. File services offer a synced source (pick files or folders, then how often to sync: never, daily, weekly or monthly). Tool services create their tools right away.
 3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
 
-**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence.
+**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub does both from one connection: see [GitHub](#github).
 
 A connector's page is the one place to manage it: its accounts (**Reconnect**, **Disconnect**), the Knowledge it syncs (**Sync now**), and its tools (on or off, and what each action may do). On the Knowledge and Tools pages, anything from a connection has **Manage connection** in its menu, which opens that page. Disconnecting keeps synced content but stops its sync.
 
@@ -52,7 +52,7 @@ Admins manage connectors in **Admin > Connectors**. It lists every connector wit
 - **Enabled** turns a connector off for everyone. Members no longer see it (except to manage a connection they already have), its tools stop working, and its sources stop syncing until you turn it back on. Existing connections are kept.
 - **Shared tools use** is **The sharer decides per share** (default), **Always the sharer's account** or **Always each person's own account**. Connectors that only sync content have no tools and show **No tools**.
 - The **MCP server** row decides whether members can add their own MCP servers. Presets are switched one by one.
-- **Setup guide** on an OAuth connector shows the redirect URI to register and which server settings are still missing.
+- **Setup guide** on an OAuth connector shows the redirect URI to register and which server settings are still missing. GitHub works without setup and shows **Tokens only** until its optional GitHub App settings are in place.
 
 A connector that still needs server settings starts turned off and is hidden from members; its switch stays disabled until the settings are present. It turns on once they are, unless you switched it off. On a phone, the page lists the connectors and opens each one's controls in a panel.
 
@@ -127,6 +127,78 @@ Create an **OAuth 2.0 (3LO)** app in the [Atlassian developer console](https://d
 CONFLUENCE_CLIENT_ID=your-client-id
 CONFLUENCE_CLIENT_SECRET=your-client-secret
 ```
+
+### GitHub
+
+One GitHub connection syncs repositories into Knowledge and gives agents GitHub's own [MCP server](https://github.com/github/github-mcp-server) as a tool. When connecting, members choose both on one screen: **Let agents use GitHub** (on by default) and a repository to sync. A connection set up without tools can add them later from its page.
+
+- **Knowledge.** The repository picker lists what the connection can read. Each synced repository is one source, read with the connection's token and synced on the chosen schedule.
+- **Tools.** The tool is the read-only endpoint `https://api.githubcopilot.com/mcp/readonly`: agents can read code, issues, pull requests and more, and cannot change anything. Its actions are discovered when the tool is created; **Refresh tools** re-reads them.
+
+Members connect in one of two ways.
+
+#### A personal access token (no admin setup)
+
+Always available. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new):
+
+<Steps>
+
+### Choose the repositories
+
+Under **Repository access**, pick **Only select repositories** (or all repositories) for the owner whose repositories DocsGPT should read.
+
+### Grant read access
+
+Under **Repository permissions**, set **Contents** to **Read-only**. **Metadata** is read-only by default. Add read-only access to **Issues** and **Pull requests** if agents should read those through the tools.
+
+### Paste it into DocsGPT
+
+DocsGPT checks the token with GitHub and names the connection after the account. A token that expires, or that GitHub stops accepting, marks the connection **Reconnect needed**; reconnect with a new token.
+
+</Steps>
+
+A classic token with the `repo` scope also works, but it can read every repository the account can, so prefer a fine-grained one.
+
+#### Sign in with GitHub (a GitHub App)
+
+When an admin registers a GitHub App, members can also **Sign in with GitHub**. Each member then chooses the repositories on GitHub, when they install the app, and DocsGPT reads only those. Tokens last eight hours and are renewed automatically.
+
+<Steps>
+
+### Register the app
+
+In GitHub, open **Settings > Developer settings > GitHub Apps > New GitHub App** (under an organization's settings to let its members install it).
+
+- **Callback URL**: the redirect URI from Admin > Connectors (`CONNECTOR_REDIRECT_BASE_URI`).
+- Turn on **Request user authorization (OAuth) during installation**. Choosing repositories from DocsGPT then returns to DocsGPT, which reloads the repository list.
+- Leave **Expire user authorization tokens** on (DocsGPT refreshes them).
+- **Webhook**: turn off **Active**; DocsGPT does not use webhooks.
+- **Repository permissions**: **Contents** read-only (**Metadata** read-only is added automatically). Add **Issues** and **Pull requests** read-only for the tools.
+- **Where can this GitHub App be installed?**: **Any account** for members outside your organization, otherwise **Only on this account**.
+
+### Create a client secret
+
+On the app's page, generate a client secret. You do not need a private key: DocsGPT only uses user tokens.
+
+### Set the server settings
+
+```env
+GITHUB_CLIENT_ID=Iv23li...        # the app's Client ID
+GITHUB_CLIENT_SECRET=your-client-secret
+GITHUB_APP_SLUG=docsgpt-acme      # from the app's public link, github.com/apps/<slug>
+```
+
+Restart the API and the worker. **Sign in with GitHub** appears next to the token option.
+
+</Steps>
+
+#### Public repositories and GITHUB_ACCESS_TOKEN
+
+The **GitHub** tile under **Upload & web** in **Add knowledge** still ingests a public repository from its URL, without an account. `GITHUB_ACCESS_TOKEN`, if set, is used only there and only for public repositories, to raise GitHub's rate limit: DocsGPT checks that the repository is public first, because that token belongs to the server and not to the member asking. For a private repository, the form links to the member's GitHub connection.
+
+<Callout type="warning" emoji="⚠️">
+Earlier versions read any repository `GITHUB_ACCESS_TOKEN` could see, private ones included. Sources made that way from private repositories stop syncing; recreate them from a GitHub connection.
+</Callout>
 
 ### Amazon S3
 
