@@ -2254,7 +2254,9 @@
         "groupBuiltin": "Integriert",
         "groupDefault": "Integriert",
         "groupCustom": "Benutzerdefiniert",
-        "groupConnection": "{{name}} · {{account}}"
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "An diesem Agenten",
+        "attachedHint": "Von jemand anderem hinzugefügt. Du kannst es entfernen."
       },
       "modelsPopup": {
         "title": "Modelle auswählen",
@@ -2363,11 +2365,29 @@
         "published": "Veröffentlicht"
       },
       "sponsors": {
-        "attachNote": "Tools, Quellen und Prompts, die du aus deiner eigenen Bibliothek hinzufügst, laufen für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
+        "attachNote": "Tools, Quellen und Prompts, die du hinzufügst und die der Eigentümer nicht nutzen kann, laufen für alle, die diesen Agenten nutzen, mit deinem Zugriff. Du musst sie besitzen oder bearbeiten können und wirst um Bestätigung gebeten.",
         "publicLinkNote": "Dieser Agent hat einen öffentlichen Link, daher kann jeder mit dem Link Antworten daraus erhalten.",
         "addedBy": "Hinzugefügt von {{person}}: {{names}}",
         "unavailable": "Nicht aktiv: {{names}}. {{person}} hat sie hinzugefügt und hat keinen Zugriff mehr. Entferne sie oder wähle welche, die der Eigentümer nutzen kann.",
-        "unknownItem": "Unbenanntes Element"
+        "unknownItem": "Unbenanntes Element",
+        "notAllowed": "Du kannst {{names}} diesem Agenten nicht hinzufügen. Der Eigentümer kann sie nicht nutzen, und du kannst nur teilen, was du besitzt oder bearbeiten kannst."
+      },
+      "sponsorConfirm": {
+        "title": "Mit deinem Zugriff ausführen?",
+        "description": "Der Eigentümer des Agenten kann diese nicht nutzen. Wenn du sie hinzufügst, laufen sie für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
+        "audienceTitle": "Wer sie über diesen Agenten nutzen kann",
+        "audienceTeams": "Mitglieder von {{teams}}",
+        "audienceApiKey": "Alle mit dem API-Schlüssel des Agenten, auch über sein Website-Widget",
+        "audiencePublicLink": "Alle mit dem öffentlichen Link des Agenten",
+        "audienceWebhook": "Alles, was den Webhook des Agenten aufruft",
+        "audienceEditors": "Alle, die diesen Agenten öffnen können",
+        "stopNote": "Sie laufen nicht mehr, wenn du den Bearbeitungszugriff auf sie oder auf diesen Agenten verlierst. Bis jemand, der sie bearbeiten kann, sie erneut hinzufügt, bleiben sie angehängt, tun aber nichts.",
+        "confirm": "Mit meinem Zugriff hinzufügen",
+        "types": {
+          "tool": "Tool",
+          "source": "Quelle",
+          "prompt": "Prompt"
+        }
       }
     },
     "logs": {

@@ -2240,7 +2240,9 @@
         "groupBuiltin": "內建",
         "groupDefault": "內建",
         "groupCustom": "自訂",
-        "groupConnection": "{{name}} · {{account}}"
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "已在此智慧代理上",
+        "attachedHint": "由其他人新增。你可以將其移除。"
       },
       "modelsPopup": {
         "title": "選擇模型",
@@ -2348,11 +2350,29 @@
         "published": "已發佈"
       },
       "sponsors": {
-        "attachNote": "你從自己的資料庫新增的工具、來源和提示詞，會以你的存取權限為所有使用此智慧代理的人執行。",
+        "attachNote": "你新增的、擁有者無法使用的工具、來源和提示詞，會以你的存取權限為所有使用此智慧代理的人執行。你必須擁有它們或能夠編輯它們，並且需要確認。",
         "publicLinkNote": "此智慧代理有公開連結，任何擁有該連結的人都可以從中取得回答。",
         "addedBy": "由 {{person}} 新增：{{names}}",
         "unavailable": "未執行：{{names}}。新增它們的 {{person}} 已失去存取權限。請移除它們，或選擇擁有者可以使用的項目。",
-        "unknownItem": "未命名項目"
+        "unknownItem": "未命名項目",
+        "notAllowed": "無法將 {{names}} 新增到此智慧代理。擁有者無法使用它們，而你只能分享自己擁有或可以編輯的項目。"
+      },
+      "sponsorConfirm": {
+        "title": "以你的存取權限執行？",
+        "description": "智慧代理的擁有者無法使用這些項目。如果新增它們，它們會以你的存取權限為所有使用此智慧代理的人執行。",
+        "audienceTitle": "誰可以透過此智慧代理使用它們",
+        "audienceTeams": "{{teams}} 的成員",
+        "audienceApiKey": "任何擁有此智慧代理 API 金鑰的人，包括其網站小工具",
+        "audiencePublicLink": "任何擁有此智慧代理公開連結的人",
+        "audienceWebhook": "任何呼叫此智慧代理 Webhook 的程式",
+        "audienceEditors": "所有可以開啟此智慧代理的人",
+        "stopNote": "如果你失去對它們或此智慧代理的編輯權限，它們將停止執行。在有編輯權限的人重新新增之前，它們仍附加在智慧代理上，但不起作用。",
+        "confirm": "以我的存取權限新增",
+        "types": {
+          "tool": "工具",
+          "source": "來源",
+          "prompt": "提示詞"
+        }
       }
     },
     "logs": {

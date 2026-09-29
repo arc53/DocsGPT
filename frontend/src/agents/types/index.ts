@@ -6,15 +6,28 @@ export type ToolSummary = {
   display_name: string;
 };
 
+/** Why a sponsored item stopped running (`ResourceSponsor.reason`). */
+export type ResourceSponsorReason =
+  'sponsor_cannot_edit_agent' | 'sponsor_cannot_edit_resource';
+
 /** A tool, source or prompt that runs with the editor's access who added it. */
 export type ResourceSponsor = {
+  /** `"<type>:<id>"`, the value `confirm_sponsor` takes. */
+  key?: string;
   type: 'tool' | 'source' | 'prompt';
   id: string;
+  /** The item's name, looked up whoever owns it. */
+  name?: string | null;
   user_id: string;
   /** The person's email when on file, else their user id. */
   label: string;
-  /** False once that person can no longer edit the agent or use the item. */
+  state?: 'active' | 'inactive';
+  /** Null while it runs; else whether the person lost the agent or the item. */
+  reason?: ResourceSponsorReason | null;
+  /** False once that person can no longer edit the agent, or own or edit the item. */
   active: boolean;
+  /** The reader may take a stopped item over by confirming it on a save. */
+  can_confirm?: boolean;
 };
 
 export type Agent = {

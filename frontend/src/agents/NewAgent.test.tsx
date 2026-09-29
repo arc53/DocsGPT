@@ -34,6 +34,9 @@ const mocks = vi.hoisted(() => {
     connections: [] as unknown[],
     catalog: [] as unknown[],
     deleteAgent: vi.fn(() => jsonResponse({})),
+    updateAgent: vi.fn<
+      (id: string, data: FormData, token: string | null) => Promise<unknown>
+    >(() => jsonResponse({})),
     guardrailsProps: vi.fn(),
     detailsProps: vi.fn(),
   };
@@ -65,7 +68,7 @@ vi.mock('../api/services/userService', () => ({
     getAgentFolders: () => jsonResponse({ folders: [] }),
     getAgent: mocks.getAgent,
     createAgent: mocks.createAgent,
-    updateAgent: () => jsonResponse({}),
+    updateAgent: mocks.updateAgent,
     deleteAgent: mocks.deleteAgent,
     createPrompt: () => jsonResponse({}),
   },
@@ -149,6 +152,24 @@ vi.mock('../modals/ConfirmationModal', () => ({
     ) : null,
 }));
 vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
+vi.mock('./components/SponsorConfirmModal', () => ({
+  default: ({
+    confirmation,
+    onConfirm,
+  }: {
+    confirmation: { resources: { key: string; name: string }[] } | null;
+    onConfirm: (keys: string[]) => void;
+  }) =>
+    confirmation ? (
+      <button
+        type="button"
+        data-testid="confirm-sponsor"
+        onClick={() => onConfirm(confirmation.resources.map((r) => r.key))}
+      >
+        {confirmation.resources.map((r) => r.name).join(',')}
+      </button>
+    ) : null,
+}));
 vi.mock('../navigation/SectionPills', () => ({
   default: () => <div data-testid="section-pills" />,
 }));
@@ -202,6 +223,8 @@ describe('NewAgent form', () => {
     mocks.dispatch.mockClear();
     mocks.getAgent.mockClear();
     mocks.createAgent.mockClear();
+    mocks.updateAgent.mockReset();
+    mocks.updateAgent.mockImplementation(() => jsonResponse({}));
     mocks.tools = null;
     mocks.connections = [];
     mocks.catalog = [];
@@ -360,6 +383,105 @@ describe('NewAgent form', () => {
       container.querySelectorAll('[data-testid="picker"] [data-group]'),
     ).map((item) => item.getAttribute('data-group'));
     expect(groups).toEqual(['Telegram', 'agents.form.toolsPopup.groupCustom']);
+  });
+
+  const renderEdit = async (agent: Record<string, unknown>) => {
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Shared',
+        description: 'd',
+        status: 'published',
+        agent_type: 'classic',
+        prompt_id: 'default',
+        access: 'editor',
+        allowed_actions: ['edit', 'view'],
+        ...agent,
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  // An editor doesn't list the owner's private tools, but must still be able
+  // to take one off the agent.
+  it("adds a remove-only row for an attached tool the editor can't list", async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await renderEdit({
+      tools: ['owners'],
+      tool_details: [
+        { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
+      ],
+    });
+    const toolPicker = Array.from(
+      container.querySelectorAll('[data-testid="picker"]'),
+    ).find((picker) => picker.textContent?.includes('Owner Jira'))!;
+    const groups = Array.from(toolPicker.querySelectorAll('[data-group]')).map(
+      (item) => item.getAttribute('data-group'),
+    );
+    expect(groups).toEqual([
+      'agents.form.toolsPopup.groupCustom',
+      'agents.form.toolsPopup.groupAttached',
+    ]);
+  });
+
+  it('asks before sponsoring and retries the save with the confirmation', async () => {
+    mocks.updateAgent.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: false,
+            code: 'sponsor_confirmation_required',
+            message: 'confirm',
+            resources: [
+              { key: 'tool:t1', type: 'tool', id: 't1', name: 'Jira' },
+            ],
+            audience: {
+              teams: ['Support'],
+              api_key: true,
+              public_link: false,
+              webhook: false,
+            },
+          }),
+          { status: 409 },
+        ),
+      ),
+    );
+    await renderEdit({});
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, 'Renamed'));
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const confirm = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-sponsor"]',
+    )!;
+    expect(confirm.textContent).toBe('Jira');
+    // The refusal is a question, not an error.
+    expect(container.querySelector('[data-variant="destructive"]')).toBeNull();
+    expect(mocks.updateAgent).toHaveBeenCalledTimes(1);
+    const first = mocks.updateAgent.mock.calls[0][1];
+    expect(first.get('confirm_sponsor')).toBeNull();
+
+    await act(async () => confirm.click());
+    expect(mocks.updateAgent).toHaveBeenCalledTimes(2);
+    const retried = mocks.updateAgent.mock.calls[1][1];
+    expect(JSON.parse(retried.get('confirm_sponsor') as string)).toEqual([
+      'tool:t1',
+    ]);
+    expect(
+      container.querySelector('[data-testid="confirm-sponsor"]'),
+    ).toBeNull();
   });
 
   it('labels every picker with a floating label', async () => {

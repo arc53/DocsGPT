@@ -2254,7 +2254,9 @@
         "groupBuiltin": "Integradas",
         "groupDefault": "Integradas",
         "groupCustom": "Personalizadas",
-        "groupConnection": "{{name}} · {{account}}"
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "En este agente",
+        "attachedHint": "Lo añadió otra persona. Puedes quitarlo."
       },
       "modelsPopup": {
         "title": "Seleccionar Modelos",
@@ -2363,11 +2365,29 @@
         "published": "Publicado"
       },
       "sponsors": {
-        "attachNote": "Las herramientas, fuentes y prompts que añadas desde tu propia biblioteca se ejecutan con tu acceso para todos los que usen este agente.",
+        "attachNote": "Las herramientas, fuentes y prompts que añadas y que el propietario no pueda usar se ejecutan con tu acceso para todos los que usen este agente. Debes ser su propietario o poder editarlos, y se te pedirá que lo confirmes.",
         "publicLinkNote": "Este agente tiene un enlace público, así que cualquiera con el enlace puede obtener respuestas de ellos.",
         "addedBy": "Añadido por {{person}}: {{names}}",
         "unavailable": "Sin ejecutarse: {{names}}. {{person}} los añadió y ya no tiene acceso. Quítalos o elige otros que el propietario pueda usar.",
-        "unknownItem": "Elemento sin nombre"
+        "unknownItem": "Elemento sin nombre",
+        "notAllowed": "No puedes añadir {{names}} a este agente. El propietario no puede usarlos y solo puedes compartir lo que es tuyo o puedes editar."
+      },
+      "sponsorConfirm": {
+        "title": "¿Ejecutar con tu acceso?",
+        "description": "El propietario del agente no puede usarlos. Si los añades, se ejecutan con tu acceso para todos los que usen este agente.",
+        "audienceTitle": "Quién puede usarlos a través de este agente",
+        "audienceTeams": "Miembros de {{teams}}",
+        "audienceApiKey": "Cualquiera con la clave API del agente, incluido su widget web",
+        "audiencePublicLink": "Cualquiera con el enlace público del agente",
+        "audienceWebhook": "Todo lo que llame al webhook del agente",
+        "audienceEditors": "Todos los que pueden abrir este agente",
+        "stopNote": "Dejan de ejecutarse si pierdes el acceso de edición a ellos o a este agente. Hasta que alguien que pueda editarlos los vuelva a añadir, siguen adjuntos pero no hacen nada.",
+        "confirm": "Añadir con mi acceso",
+        "types": {
+          "tool": "Herramienta",
+          "source": "Fuente",
+          "prompt": "Prompt"
+        }
       }
     },
     "logs": {

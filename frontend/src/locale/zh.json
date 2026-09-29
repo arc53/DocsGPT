@@ -2240,7 +2240,9 @@
         "groupBuiltin": "内置",
         "groupDefault": "内置",
         "groupCustom": "自定义",
-        "groupConnection": "{{name}} · {{account}}"
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "已在此智能体上",
+        "attachedHint": "由其他人添加。你可以将其移除。"
       },
       "modelsPopup": {
         "title": "选择模型",
@@ -2348,11 +2350,29 @@
         "published": "已发布"
       },
       "sponsors": {
-        "attachNote": "你从自己的资料库添加的工具、来源和提示词，会以你的访问权限为所有使用此智能体的人运行。",
+        "attachNote": "你添加的、所有者无法使用的工具、来源和提示词，会以你的访问权限为所有使用此智能体的人运行。你必须拥有它们或能够编辑它们，并且需要确认。",
         "publicLinkNote": "此智能体有公开链接，任何拥有该链接的人都可以从中获得回答。",
         "addedBy": "由 {{person}} 添加：{{names}}",
         "unavailable": "未运行：{{names}}。添加它们的 {{person}} 已失去访问权限。请移除它们，或选择所有者可以使用的项目。",
-        "unknownItem": "未命名项目"
+        "unknownItem": "未命名项目",
+        "notAllowed": "无法将 {{names}} 添加到此智能体。所有者无法使用它们，而你只能共享自己拥有或可以编辑的项目。"
+      },
+      "sponsorConfirm": {
+        "title": "以你的访问权限运行？",
+        "description": "智能体的所有者无法使用这些项目。如果添加它们，它们会以你的访问权限为所有使用此智能体的人运行。",
+        "audienceTitle": "谁可以通过此智能体使用它们",
+        "audienceTeams": "{{teams}} 的成员",
+        "audienceApiKey": "任何拥有此智能体 API 密钥的人，包括其网站小组件",
+        "audiencePublicLink": "任何拥有此智能体公开链接的人",
+        "audienceWebhook": "任何调用此智能体 Webhook 的程序",
+        "audienceEditors": "所有可以打开此智能体的人",
+        "stopNote": "如果你失去对它们或此智能体的编辑权限，它们将停止运行。在有编辑权限的人重新添加之前，它们仍附加在智能体上，但不起作用。",
+        "confirm": "以我的访问权限添加",
+        "types": {
+          "tool": "工具",
+          "source": "来源",
+          "prompt": "提示词"
+        }
       }
     },
     "logs": {

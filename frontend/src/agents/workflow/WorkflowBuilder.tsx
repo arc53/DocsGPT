@@ -49,6 +49,12 @@ import { agentEditPath, agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
 import AgentPageHeader from '../AgentPageHeader';
 import AgentPreviewSheet from '../components/AgentPreviewSheet';
+import SponsorConfirmModal from '../components/SponsorConfirmModal';
+import {
+  readSponsorRefusal,
+  type SponsorConfirmation,
+  sponsorNotAllowedMessage,
+} from '../sponsorConsent';
 import WorkflowDetailsSheet, {
   type WorkflowDetailsSave,
 } from './components/WorkflowDetailsSheet';
@@ -192,7 +198,7 @@ const NODE_TYPES: NodeTypes = {
 };
 
 function WorkflowBuilderInner() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
   const sourceDocs = useSelector(selectSourceDocs);
@@ -222,6 +228,12 @@ function WorkflowBuilderInner() {
   const [showPrimaryActionSpinner, setShowPrimaryActionSpinner] =
     useState(false);
   const [publishErrors, setPublishErrors] = useState<string[]>([]);
+  // A save refused until the caller agrees that a node resource the owner
+  // can't use runs with their access; ``retry`` saves again with that.
+  const [sponsorRequest, setSponsorRequest] = useState<{
+    confirmation: SponsorConfirmation;
+    retry: (keys: string[]) => void;
+  } | null>(null);
   const [errorContext, setErrorContext] = useState<'preview' | 'publish'>(
     'publish',
   );
@@ -1310,7 +1322,10 @@ function WorkflowBuilderInner() {
       : false;
 
   const persistWorkflow = useCallback(
-    async (navigateAfterSuccess: boolean): Promise<boolean> => {
+    async (
+      navigateAfterSuccess: boolean,
+      confirmSponsor?: string[],
+    ): Promise<boolean> => {
       setPublishErrors([]);
       setErrorContext('publish');
 
@@ -1329,10 +1344,29 @@ function WorkflowBuilderInner() {
         if (workflowId) {
           const updateResponse = await userService.updateWorkflow(
             workflowId,
-            workflowPayload,
+            confirmSponsor && confirmSponsor.length > 0
+              ? { ...workflowPayload, confirm_sponsor: confirmSponsor }
+              : workflowPayload,
             token,
           );
           if (!updateResponse.ok) {
+            // A node tool or source the owner can't use would run with the
+            // caller's access: ask first, then save again with their answer.
+            const refusal = await readSponsorRefusal(updateResponse);
+            if (refusal?.kind === 'confirm') {
+              setSponsorRequest({
+                confirmation: refusal.confirmation,
+                retry: (keys) => {
+                  void persistWorkflow(navigateAfterSuccess, keys);
+                },
+              });
+              return false;
+            }
+            if (refusal?.kind === 'notAllowed') {
+              throw new Error(
+                sponsorNotAllowedMessage(t, i18n.language, refusal.resources),
+              );
+            }
             const errorData = await updateResponse.json().catch(() => ({}));
             throw new Error(
               errorData.message ||
@@ -1499,6 +1533,7 @@ function WorkflowBuilderInner() {
       folderId,
       navigateBackToAgents,
       t,
+      i18n.language,
     ],
   );
 
@@ -1946,6 +1981,15 @@ function WorkflowBuilderInner() {
             }}
           />
         </AgentPreviewSheet>
+        <SponsorConfirmModal
+          confirmation={sponsorRequest?.confirmation ?? null}
+          onCancel={() => setSponsorRequest(null)}
+          onConfirm={(keys) => {
+            const retry = sponsorRequest?.retry;
+            setSponsorRequest(null);
+            retry?.(keys);
+          }}
+        />
         <ConfirmationModal
           message={
             workflowName

@@ -99,7 +99,14 @@ import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
 import SectionShell from '../navigation/SectionShell';
+import SponsorConfirmModal from './components/SponsorConfirmModal';
 import SponsoredResourcesNotice from './components/SponsoredResourcesNotice';
+import {
+  readSponsorRefusal,
+  type SponsorConfirmation,
+  sponsorNotAllowedMessage,
+  withAttachedToolRows,
+} from './sponsorConsent';
 import { Agent, ResourceSponsor, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
@@ -129,7 +136,7 @@ const extractApiError = async (
 };
 
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { agentId } = useParams();
@@ -191,6 +198,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     new Set(),
   );
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
+  // Tools on the agent when it loaded: the owner's private ones don't come
+  // back in the caller's own tool list, so the picker adds a row for each.
+  const [attachedTools, setAttachedTools] = useState<ToolSummary[]>([]);
+  // A save the server refused until the caller agrees that what they added
+  // runs with their access; ``retry`` repeats it with ``confirm_sponsor``.
+  const [sponsorRequest, setSponsorRequest] = useState<{
+    confirmation: SponsorConfirmation;
+    retry: (keys: string[]) => void;
+  } | null>(null);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(
     new Set(),
   );
@@ -303,6 +319,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // same owner-agnostic details the pickers show.
   const resolveSponsoredName = useCallback(
     (sponsor: ResourceSponsor): string => {
+      if (sponsor.name) return sponsor.name;
       if (sponsor.type === 'source') return resolveSourceLabel(sponsor.id);
       if (sponsor.type === 'prompt') {
         return (
@@ -337,6 +354,17 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       .map((id) => ({ id, label: resolveSourceLabel(id), icon: <Database /> }));
     return [...items, ...unlisted];
   }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t]);
+
+  // The caller's tools, plus a remove-only row for each tool on the agent
+  // they can't list (the owner's private tools on a shared agent).
+  const toolItems = useMemo(
+    () =>
+      withAttachedToolRows(userTools, attachedTools, {
+        group: t('agents.form.toolsPopup.groupAttached'),
+        description: t('agents.form.toolsPopup.attachedHint'),
+      }),
+    [attachedTools, t, userTools],
+  );
 
   const selectedSourceNames = useMemo(
     () =>
@@ -421,7 +449,35 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
-  const handleSaveDraft = async () => {
+  /**
+   * The message for a refused save, or null when the refusal only asks the
+   * caller to confirm sponsoring what they added (the dialog then opens and
+   * ``retry`` repeats the save with their confirmation).
+   */
+  const saveFailureMessage = async (
+    response: Response,
+    fallback: string,
+    retry: (keys: string[]) => void,
+  ): Promise<string | null> => {
+    const refusal = await readSponsorRefusal(response);
+    if (refusal?.kind === 'confirm') {
+      setSponsorRequest({ confirmation: refusal.confirmation, retry });
+      return null;
+    }
+    if (refusal?.kind === 'notAllowed')
+      return sponsorNotAllowedMessage(t, i18n.language, refusal.resources);
+    return extractApiError(response, fallback);
+  };
+
+  const appendSponsorConfirmation = (
+    formData: FormData,
+    confirmSponsor?: string[],
+  ) => {
+    if (confirmSponsor && confirmSponsor.length > 0)
+      formData.append('confirm_sponsor', JSON.stringify(confirmSponsor));
+  };
+
+  const handleSaveDraft = async (confirmSponsor?: string[]) => {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -479,6 +535,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (effectiveMode === 'new' && validatedFolderId) {
       formData.append('folder_id', validatedFolderId);
     }
+    appendSponsorConfirmation(formData, confirmSponsor);
 
     try {
       setDraftLoading(true);
@@ -488,12 +545,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
       if (!response.ok) {
-        setSubmitError(
-          await extractApiError(
-            response,
-            t('agents.form.errors.saveDraftFailed'),
-          ),
+        const message = await saveFailureMessage(
+          response,
+          t('agents.form.errors.saveDraftFailed'),
+          (keys) => handleSaveDraft(keys),
         );
+        if (message) setSubmitError(message);
         return;
       }
       const data = await response.json();
@@ -514,7 +571,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
-  const handlePublish = async () => {
+  const handlePublish = async (confirmSponsor?: string[]) => {
     const formData = new FormData();
     formData.append('name', agent.name);
     formData.append('description', agent.description);
@@ -572,6 +629,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (effectiveMode === 'new' && validatedFolderId) {
       formData.append('folder_id', validatedFolderId);
     }
+    appendSponsorConfirmation(formData, confirmSponsor);
 
     try {
       setPublishLoading(true);
@@ -581,12 +639,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           ? await userService.createAgent(formData, token)
           : await userService.updateAgent(agent.id || '', formData, token);
       if (!response.ok) {
-        setSubmitError(
-          await extractApiError(
-            response,
-            t('agents.form.errors.publishFailed'),
-          ),
+        const message = await saveFailureMessage(
+          response,
+          t('agents.form.errors.publishFailed'),
+          (keys) => handlePublish(keys),
         );
+        if (message) setSubmitError(message);
         return;
       }
       const data = await response.json();
@@ -824,7 +882,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         const agentSourceIds = selectedSourceIdsFromAgent(data);
         setSelectedSourceIds(new Set(agentSourceIds));
 
-        if (data.tool_details) setSelectedTools(data.tool_details);
+        if (data.tool_details) {
+          setSelectedTools(data.tool_details);
+          setAttachedTools(data.tool_details);
+        }
         if (data.status === 'draft') setEffectiveMode('draft');
         if (data.json_schema) {
           const jsonText = JSON.stringify(data.json_schema, null, 2);
@@ -1006,7 +1067,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           shape="pill"
           disabled={isDraftBlocked()}
           loading={draftLoading}
-          onClick={handleSaveDraft}
+          onClick={() => handleSaveDraft()}
         >
           {t('agents.form.buttons.saveDraft')}
         </Button>
@@ -1030,7 +1091,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           shape="pill"
           disabled={!isPublishable() || !hasChanges}
           loading={publishLoading}
-          onClick={handlePublish}
+          onClick={() => handlePublish()}
           className="flex-1 sm:flex-none"
         >
           {modeConfig[effectiveMode].buttonText}
@@ -1187,7 +1248,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 open={isToolsPopupOpen}
                 onOpenChange={setIsToolsPopupOpen}
                 title={t('agents.form.toolsPopup.title')}
-                items={userTools}
+                items={toolItems}
                 selectedIds={selectedTools.map((tool) => tool.id)}
                 onToggle={(id) => {
                   const exists = selectedTools.find((t) => t.id === id);
@@ -1195,12 +1256,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     setSelectedTools(selectedTools.filter((t) => t.id !== id));
                     return;
                   }
-                  const item = userTools.find((t) => t.id === id);
+                  const item = toolItems.find((t) => t.id === id);
                   const raw = rawUserTools.find((t) => t.id === id);
+                  const attached = attachedTools.find((t) => t.id === id);
                   if (!item) return;
                   setSelectedTools([
                     ...selectedTools,
-                    {
+                    attached ?? {
                       id: item.id,
                       name: raw?.name || item.label,
                       display_name: item.label,
@@ -1638,6 +1700,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             </Card>
           )}
       </div>
+      <SponsorConfirmModal
+        confirmation={sponsorRequest?.confirmation ?? null}
+        onCancel={() => setSponsorRequest(null)}
+        onConfirm={(keys) => {
+          const retry = sponsorRequest?.retry;
+          setSponsorRequest(null);
+          retry?.(keys);
+        }}
+      />
       <ConfirmationModal
         message={t('agents.deleteConfirmation')}
         modalState={deleteConfirmation}
@@ -1754,7 +1825,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     shape="pill"
                     disabled={!isPublishable()}
                     loading={publishLoading}
-                    onClick={handlePublish}
+                    onClick={() => handlePublish()}
                   >
                     {t('agents.form.buttons.publish')}
                   </Button>

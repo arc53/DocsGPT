@@ -2270,7 +2270,9 @@
         "groupBuiltin": "Built-in",
         "groupDefault": "Built-in",
         "groupCustom": "Custom",
-        "groupConnection": "{{name}} · {{account}}"
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "On this agent",
+        "attachedHint": "Added by someone else. You can remove it."
       },
       "modelsPopup": {
         "title": "Select Models",
@@ -2381,11 +2383,29 @@
         "published": "Published"
       },
       "sponsors": {
-        "attachNote": "Tools, sources and prompts you add from your own library run with your access for everyone who uses this agent.",
+        "attachNote": "Tools, sources and prompts you add that the owner can't use run with your access for everyone who uses this agent. You need to own them or be able to edit them, and you'll be asked to confirm.",
         "publicLinkNote": "This agent has a public link, so anyone with the link can get answers from them.",
         "addedBy": "Added by {{person}}: {{names}}",
         "unavailable": "Not running: {{names}}. {{person}} added them and no longer has access. Remove them or choose ones the owner can use.",
-        "unknownItem": "Unnamed item"
+        "unknownItem": "Unnamed item",
+        "notAllowed": "You can't add {{names}} to this agent. The owner can't use them, and you can only share what you own or can edit."
+      },
+      "sponsorConfirm": {
+        "title": "Run with your access?",
+        "description": "The agent's owner can't use these. If you add them, they run with your access for everyone who uses this agent.",
+        "audienceTitle": "Who can use them through this agent",
+        "audienceTeams": "Members of {{teams}}",
+        "audienceApiKey": "Anyone with the agent's API key, including its website widget",
+        "audiencePublicLink": "Anyone with the agent's public link",
+        "audienceWebhook": "Anything that calls the agent's webhook",
+        "audienceEditors": "Everyone who can open this agent",
+        "stopNote": "They stop running if you lose edit access to them or to this agent. Until someone who can edit them adds them again, they stay attached but do nothing.",
+        "confirm": "Add with my access",
+        "types": {
+          "tool": "Tool",
+          "source": "Source",
+          "prompt": "Prompt"
+        }
       }
     },
     "logs": {
