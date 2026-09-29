@@ -145,6 +145,34 @@ Sharing rules:
 - Shared tools run server-side with the **owner's** credentials; a grantee never sees the owner's secrets.
 - A wiki's editors can edit its pages, but only its owner decides whether API, widget and public-link users can edit it through an agent (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
 
+### Resources an editor adds to someone else's agent
+
+An agent (and its workflow) runs as its owner, so its tools, sources and prompts are checked against the owner's access. When a team editor adds one the owner can't use, it runs with the **editor's** access instead, for everyone who uses the agent: members of the teams it is shared with, anyone with its API key or website widget, its public link and its webhook. The editor becomes that resource's **sponsor**.
+
+- Only someone who **owns** the resource, or has **`editor`** access to it through any team, can sponsor it. `viewer` access lets you use a resource in your own agents, but not extend it to another agent's users: the save is refused with `403` and `code: "sponsor_not_allowed"`.
+- Sponsoring is never implied. A save that would make you a new sponsor is refused with `409` until you confirm it. In DocsGPT, a dialog names each resource and who will reach it through the agent. Through the API, send the save again with `confirm_sponsor` listing every resource from the response as `"<type>:<id>"`. A `confirm_sponsor` entry for anything the save doesn't ask you to sponsor is refused with `400`.
+- A sponsored resource stops running when its sponsor can no longer edit the agent, or no longer owns or edits the resource. It stays on the agent but does nothing, and it doesn't pass to whoever saves the agent next. Another editor who may sponsor it takes it over only by confirming it in a save, or someone removes it.
+- Editors can remove any tool, source or prompt from the agent, including the owner's private ones they can't open.
+- Workflow nodes follow the same rules, through `PUT /api/workflows/<id>`.
+
+A save that needs confirmation returns:
+
+```json
+{
+  "success": false,
+  "code": "sponsor_confirmation_required",
+  "message": "These resources would run with your access for everyone who uses this agent. Confirm to add them.",
+  "resources": [{ "key": "tool:<id>", "type": "tool", "id": "<id>", "name": "Jira" }],
+  "audience": { "teams": ["Support"], "api_key": true, "public_link": false, "webhook": false }
+}
+```
+
+Owners and editors see sponsored resources on the agent's edit page and in `resource_sponsors` from `GET /api/get_agent` (and `GET /api/workflows/<id>`). Each entry has the resource (`key`, `type`, `id`, `name`), the sponsor (`user_id`, `label`), `state` (`active` or `inactive`), `reason` when inactive (`sponsor_cannot_edit_agent` or `sponsor_cannot_edit_resource`), and `can_confirm`, which says whether you may take an inactive one over.
+
+<Callout type="warning" emoji="⚠️">
+After upgrading, resources sponsored by someone with only `viewer` access to them stop running. An editor who owns or can edit such a resource can confirm it to start it again.
+</Callout>
+
 ## Audit log
 
 Access-control actions are appended to the `auth_events` table alongside the [authentication events](/Deploying/OIDC-SSO#login-auditing). This includes admin actions — `admin_user_activated` / `admin_user_deactivated`, `admin_sessions_revoked`, `role_granted` / `role_revoked` (with `metadata.source` = `manual` or `oidc_group`), `quota_policy_set` / `quota_policy_deleted` — and team events (`team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete`).
