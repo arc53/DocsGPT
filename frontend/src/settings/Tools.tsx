@@ -211,11 +211,11 @@ export default function Tools() {
               variant: 'default',
             },
       );
-    // A connected server reconnects on its connector page, like any other
-    // connection; only an MCP tool without one keeps the server form. The
-    // tool's own connection id decides, for everyone: a teammate never sees
-    // the owner's connection, and the owner's loads after the tools. A
-    // shared OAuth server's sign-in is the owner's to redo.
+    // A connected server signs in again through its connection (Sign in
+    // again above, for the caller's own); only an MCP tool without one keeps
+    // the server form. The tool's own connection id decides, for everyone: a
+    // teammate never sees the owner's connection, and the owner's loads
+    // after the tools. A shared OAuth server's sign-in is the owner's to redo.
     if (
       tool.name === 'mcp_tool' &&
       !tool.connection_id &&
