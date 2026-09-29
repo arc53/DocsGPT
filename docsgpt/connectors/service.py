@@ -1460,9 +1460,9 @@ def remove_connection(conn, row: dict, *, sources: str = "keep", tools: str = "d
             text(
                 "UPDATE user_tools SET status = false, "
                 "config = COALESCE(config, '{}'::jsonb) || jsonb_build_object('removed_connection', "
-                "CAST(:key AS text)) WHERE connection_id = CAST(:id AS uuid)"
+                "CAST(:marker AS jsonb)) WHERE connection_id = CAST(:id AS uuid)"
             ),
-            {"id": connection_id, "key": catalog.connector_key_for_row(row) or ""},
+            {"id": connection_id, "marker": json.dumps(catalog.connector_key_for_row(row) or True)},
         )
     conn.execute(
         text(

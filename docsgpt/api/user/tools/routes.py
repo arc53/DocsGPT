@@ -35,6 +35,7 @@ from docsgpt.api.user.resource_access import (
 )
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.connectors.catalog import base_url, definition_for_tool
+from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.connectors.service import account_tool_names
 from docsgpt.connectors.permissions import owner_credential_writes
 from docsgpt.core.settings import settings
@@ -521,12 +522,16 @@ def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: 
     Handles the three secret stores: ``config_requirements`` secrets
     (``encrypted_credentials``), api_tool header/query values, and the MCP
     origin-change rule (a new scheme, host or port drops stored credentials).
+    A removed connection's note is carried over from the stored config; the
+    client's copy is ignored.
 
     Raises:
         CredentialsRequired: the MCP origin changed and no new secret arrived.
     """
     owner_id = tool_doc["user_id"]
     existing_config = tool_doc.get("config") or {}
+    # The note that its connection was removed is the server's to keep.
+    new_config = carry_removed_connection(new_config, existing_config)
     if tool_doc.get("name") == "api_tool":
         return _seal_api_tool_secrets(new_config, existing_config, owner_id)
     moved = tool_doc.get("name") == "mcp_tool" and _mcp_origin_changed(new_config, existing_config)
@@ -834,6 +839,9 @@ class CreateTool(Resource):
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        if isinstance(data.get("config"), dict):
+            # Only removing a connection notes that it was removed.
+            data["config"] = carry_removed_connection(data["config"], None)
         try:
             if data["name"] == "mcp_tool":
                 server_url = (data.get("config", {}).get("server_url") or "").strip()

@@ -19,6 +19,7 @@ from docsgpt.api.user.tools.routes import (
     transform_actions,
 )
 from docsgpt.cache import get_redis_instance
+from docsgpt.connectors.resolve import REMOVED_CONNECTION_KEY
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
 from docsgpt.storage.db.repositories.connector_sessions import (
@@ -37,8 +38,10 @@ def _sanitize_mcp_transport(config):
     """Normalise and validate the transport_type field.
 
     Strips ``command`` / ``args`` keys that are only valid for local STDIO
-    transports, and ``connection_id``, which only the tool executor sets
-    (it picks whose MCP tokens the tool uses). Returns the cleaned
+    transports, ``connection_id``, which only the tool executor sets
+    (it picks whose MCP tokens the tool uses), and the note that a
+    connection was removed, which only removing one writes (a save stores
+    a fresh config, so it drops that note too). Returns the cleaned
     transport type string.
     """
     transport_type = (config.get("transport_type") or "auto").lower()
@@ -47,6 +50,7 @@ def _sanitize_mcp_transport(config):
     config.pop("command", None)
     config.pop("args", None)
     config.pop("connection_id", None)
+    config.pop(REMOVED_CONNECTION_KEY, None)
     config["transport_type"] = transport_type
     return transport_type
 

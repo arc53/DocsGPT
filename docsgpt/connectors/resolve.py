@@ -28,9 +28,31 @@ CONNECTION_NEEDS_RECONNECT = "connection_needs_reconnect"
 CONNECTION_REMOVED = "connection_removed"
 CONNECTOR_DISABLED = "connector_disabled"
 
-# Tool config key ``remove_connection`` sets to the connector key when it
-# keeps a connection's tools, so they can say what they lost.
+# Tool config key ``remove_connection`` sets when it keeps a connection's
+# tools: the connector key, or True when the connection had none, so they can
+# say what they lost. Only the server writes it (see
+# :func:`carry_removed_connection`).
 REMOVED_CONNECTION_KEY = "removed_connection"
+
+
+def carry_removed_connection(new_config: dict, stored_config: Optional[dict]) -> dict:
+    """``new_config`` with the stored removed-connection note, never a client's.
+
+    A config save must neither fake the note nor clear it; every path that
+    writes a tool config from a request passes it through here.
+
+    Args:
+        new_config: The config about to be stored.
+        stored_config: The tool's stored config (None or ``{}`` when creating it).
+
+    Returns:
+        dict: A copy of ``new_config`` carrying the stored note, if any.
+    """
+    out = {k: v for k, v in (new_config or {}).items() if k != REMOVED_CONNECTION_KEY}
+    marker = (stored_config or {}).get(REMOVED_CONNECTION_KEY)
+    if marker:
+        out[REMOVED_CONNECTION_KEY] = marker
+    return out
 
 
 @dataclass(frozen=True)
@@ -175,15 +197,18 @@ def connection_stop_reason(tool: dict, resolved: Optional[ResolvedConnection]) -
 
     Returns:
         :data:`CONNECTION_REMOVED` when its connection was removed and the
-        tool kept (``remove_connection`` notes it on the tool), or points at
+        tool kept (``remove_connection`` notes it on the tool) with no
+        credentials of its own, or points at
         one it may not use; :data:`CONNECTOR_DISABLED` when an admin turned
         the service off; :data:`CONNECTION_NEEDS_RECONNECT` when the account
         must sign in again; else None.
     """
     if resolved is None:
         # Only a tool that had a connection lost it: a tool that never had
-        # one (a tokenless ntfy, a legacy tool) runs on its own config.
-        removed = (tool.get("config") or {}).get(REMOVED_CONNECTION_KEY)
+        # one (a tokenless ntfy, a legacy tool) runs on its own config, and
+        # so does a kept one its owner gave credentials of its own since.
+        config = tool.get("config") or {}
+        removed = config.get(REMOVED_CONNECTION_KEY) and not config.get("encrypted_credentials")
         return CONNECTION_REMOVED if removed and not tool.get("connection_id") else None
     if not resolved.enabled:
         return CONNECTOR_DISABLED

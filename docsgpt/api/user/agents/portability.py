@@ -38,6 +38,7 @@ from docsgpt.agents.default_tools import (
 from docsgpt.api import api
 from docsgpt.api.pat.rules import allowed_ids
 from docsgpt.api.user.resource_access import AccessDenied, require
+from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.core.model_utils import validate_model_id
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
@@ -1138,7 +1139,8 @@ def _create_tool_from_spec(conn, user: str, tool: dict, secrets: dict, warnings:
         warnings.append(f"Tool type '{tool_type}' not available on this instance; skipped")
         return None
     config_requirements = inst.get_config_requirements() or {}
-    config = dict(tool.get("config") or {})
+    # An imported tool starts with no note that a connection was removed.
+    config = carry_removed_connection(dict(tool.get("config") or {}), None)
     config.update(secrets or {})
     if tool_type == "api_tool":
         label = tool.get("display_name") or tool.get("name") or tool_type

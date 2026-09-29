@@ -408,6 +408,36 @@ class TestToolWrites:
 # ---------------------------------------------------------------------------
 # 5. POST /api/update_tool_status
 # ---------------------------------------------------------------------------
+class TestRemovedConnectionNote:
+    """Only removing a connection notes it on a kept tool; config saves can't fake or clear it."""
+
+    @pytest.mark.parametrize("route", ["UpdateToolConfig", "UpdateTool"])
+    def test_a_config_save_cannot_set_the_note(self, app, pg_conn, route):
+        from docsgpt.api.user.tools import routes
+
+        tool = _tool(pg_conn, name="brave", config={})
+        body = {"id": str(tool["id"]), "config": {"token": "x", "removed_connection": "brave"}}
+        assert _call(app, pg_conn, getattr(routes, route), OWNER, json=body).status_code == 200
+        assert "removed_connection" not in _row(pg_conn, tool["id"])["config"]
+
+    @pytest.mark.parametrize("route", ["UpdateToolConfig", "UpdateTool"])
+    def test_a_config_save_keeps_the_stored_note(self, app, pg_conn, route):
+        from docsgpt.api.user.tools import routes
+
+        tool = _tool(pg_conn, name="brave", config={"removed_connection": "brave"})
+        for config in ({"token": "x"}, {"token": "y", "removed_connection": None}):
+            body = {"id": str(tool["id"]), "config": config}
+            assert _call(app, pg_conn, getattr(routes, route), OWNER, json=body).status_code == 200
+            assert _row(pg_conn, tool["id"])["config"]["removed_connection"] == "brave"
+
+    def test_an_mcp_save_drops_the_note(self):
+        from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport
+
+        cfg = {"transport_type": "http", "removed_connection": "github"}
+        _sanitize_mcp_transport(cfg)
+        assert "removed_connection" not in cfg
+
+
 class TestUpdateToolStatusRoles:
     def test_owner_writes_status(self, app, pg_conn):
         from docsgpt.api.user.tools.routes import UpdateToolStatus
