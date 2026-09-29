@@ -1934,8 +1934,20 @@
       "apiWrites": {
         "title": "Aktionen, die API-, Widget- und Public-Link-Nutzer in deinem Namen ausführen können",
         "description": "Über den API-Schlüssel, das Widget oder den öffentlichen Link des Agenten kann niemand eine Aktion für dich bestätigen. Änderungen mit deinen verbundenen Konten und gespeicherten Zugangsdaten sind daher blockiert, außer du erlaubst sie hier.",
-        "item": "{{tool}}: {{action}}",
-        "saveFailed": "Speichern fehlgeschlagen. Versuche es erneut."
+        "saveFailed": "Speichern fehlgeschlagen. Versuche es erneut.",
+        "summaryNone": "Noch nichts erlaubt",
+        "summaryTools_one": "{{tools}} kann Änderungen vornehmen",
+        "summaryTools_other": "{{tools}} können Änderungen vornehmen",
+        "summaryCount": "{{allowed}} von {{formatted}} erlaubt",
+        "toolCount": "Änderungen über API, Widget und öffentliche Links · {{allowed}} von {{formatted}} erlaubt",
+        "toolLabel": "Änderungen über API, Widget und öffentliche Links für {{tool}} erlauben",
+        "choice": {
+          "off": "Aus",
+          "all": "Alle"
+        },
+        "customize_one": "Änderung einzeln festlegen",
+        "customize_other": "Alle {{formatted}} einzeln festlegen",
+        "fold": "Änderungen ausblenden"
       },
       "actionFailed": "Das hat nicht funktioniert. Bitte versuche es erneut.",
       "apiKeyAfterPublish": "Veröffentliche den Agenten, um seinen API-Schlüssel zu erstellen."

@@ -1934,8 +1934,20 @@
       "apiWrites": {
         "title": "Acciones que los usuarios de la API, del widget y del enlace público pueden realizar en tu nombre",
         "description": "Nadie puede aprobar una acción por ti a través de la clave de API, el widget o el enlace público del agente, así que los cambios con tus cuentas conectadas y credenciales guardadas se bloquean salvo que los permitas aquí.",
-        "item": "{{tool}}: {{action}}",
-        "saveFailed": "No se pudo guardar. Inténtalo de nuevo."
+        "saveFailed": "No se pudo guardar. Inténtalo de nuevo.",
+        "summaryNone": "Aún no hay nada permitido",
+        "summaryTools_one": "{{tools}} puede hacer cambios",
+        "summaryTools_other": "{{tools}} pueden hacer cambios",
+        "summaryCount": "{{allowed}} de {{formatted}} permitidos",
+        "toolCount": "Cambios por API, widget y enlaces públicos · {{allowed}} de {{formatted}} permitidos",
+        "toolLabel": "Permitir cambios por API, widget y enlaces públicos en {{tool}}",
+        "choice": {
+          "off": "Desactivado",
+          "all": "Todos"
+        },
+        "customize_one": "Ajustar el cambio",
+        "customize_other": "Ajustar cada uno de {{formatted}}",
+        "fold": "Ocultar cambios"
       },
       "actionFailed": "No funcionó. Inténtalo de nuevo.",
       "apiKeyAfterPublish": "Publica el agente para crear su clave de API."

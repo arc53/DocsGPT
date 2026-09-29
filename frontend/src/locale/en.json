@@ -1940,8 +1940,20 @@
       "apiWrites": {
         "title": "Actions API, widget and public-link users can take as you",
         "description": "Nobody can approve an action for you through the API key, the widget or the agent's public link, so changes made with your connected accounts and saved credentials are blocked unless you allow them here.",
-        "item": "{{tool}}: {{action}}",
-        "saveFailed": "Could not save. Try again."
+        "saveFailed": "Could not save. Try again.",
+        "summaryNone": "None allowed yet",
+        "summaryTools_one": "{{tools}} can make changes",
+        "summaryTools_other": "{{tools}} can make changes",
+        "summaryCount": "{{allowed}} of {{formatted}} allowed",
+        "toolCount": "Changes from API, widget and public links · {{allowed}} of {{formatted}} allowed",
+        "toolLabel": "Allow changes from API, widget and public links on {{tool}}",
+        "choice": {
+          "off": "Off",
+          "all": "All"
+        },
+        "customize_one": "Customize the change",
+        "customize_other": "Customize each of {{formatted}}",
+        "fold": "Hide changes"
       },
       "actionFailed": "That didn't work. Please try again.",
       "apiKeyAfterPublish": "Publish the agent to create its API key."

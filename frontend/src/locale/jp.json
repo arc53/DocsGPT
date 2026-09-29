@@ -1923,8 +1923,20 @@
       "apiWrites": {
         "title": "API、ウィジェット、公開リンクの利用者があなたとして実行できる操作",
         "description": "API キー、ウィジェット、エージェントの公開リンクでは誰もあなたの代わりに操作を承認できないため、接続済みアカウントや保存済みの認証情報を使う変更は、ここで許可しない限りブロックされます。",
-        "item": "{{tool}}: {{action}}",
-        "saveFailed": "保存できませんでした。もう一度お試しください。"
+        "saveFailed": "保存できませんでした。もう一度お試しください。",
+        "summaryNone": "まだ何も許可されていません",
+        "summaryTools_one": "{{tools}} は変更を実行できます",
+        "summaryTools_other": "{{tools}} は変更を実行できます",
+        "summaryCount": "{{formatted}} 件中 {{allowed}} 件を許可",
+        "toolCount": "API、ウィジェット、公開リンクからの変更 · {{formatted}} 件中 {{allowed}} 件を許可",
+        "toolLabel": "{{tool}} で API、ウィジェット、公開リンクからの変更を許可",
+        "choice": {
+          "off": "オフ",
+          "all": "すべて"
+        },
+        "customize_one": "変更を個別に設定",
+        "customize_other": "{{formatted}} 件を個別に設定",
+        "fold": "変更を隠す"
       },
       "actionFailed": "うまくいきませんでした。もう一度お試しください。",
       "apiKeyAfterPublish": "APIキーを作成するには、エージェントを公開してください。"

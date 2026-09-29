@@ -1923,8 +1923,20 @@
       "apiWrites": {
         "title": "API、小工具和公開連結使用者能以你的身分執行的操作",
         "description": "透過 API 金鑰、小工具或代理的公開連結，無人能替你核准操作，因此除非你在此允許，否則使用你的已連線帳號和已儲存憑證的變更都會被封鎖。",
-        "item": "{{tool}}：{{action}}",
-        "saveFailed": "無法儲存。請再試一次。"
+        "saveFailed": "無法儲存。請再試一次。",
+        "summaryNone": "尚未允許任何變更",
+        "summaryTools_one": "{{tools}} 可以進行變更",
+        "summaryTools_other": "{{tools}} 可以進行變更",
+        "summaryCount": "已允許 {{formatted}} 項中的 {{allowed}} 項",
+        "toolCount": "透過 API、小工具和公開連結的變更 · 已允許 {{formatted}} 項中的 {{allowed}} 項",
+        "toolLabel": "允許 {{tool}} 透過 API、小工具和公開連結進行變更",
+        "choice": {
+          "off": "關閉",
+          "all": "全部"
+        },
+        "customize_one": "分別設定 {{formatted}} 項",
+        "customize_other": "分別設定 {{formatted}} 項",
+        "fold": "隱藏變更"
       },
       "actionFailed": "操作未成功，請再試一次。",
       "apiKeyAfterPublish": "發布此代理後即可建立其 API 金鑰。"
