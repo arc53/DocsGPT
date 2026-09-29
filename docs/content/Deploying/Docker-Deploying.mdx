@@ -3,6 +3,8 @@ title: Docker Deployment of DocsGPT
 description: Deploy DocsGPT using Docker and Docker Compose for easy setup and management.
 ---
 
+import { Callout } from 'nextra/components'
+
 # Docker Deployment of DocsGPT
 
 Docker is the recommended method for deploying DocsGPT, providing a consistent and isolated environment for the application to run. This guide will walk you through deploying DocsGPT using Docker and Docker Compose.
@@ -145,12 +147,15 @@ run them:
 2.  **Create a `.env` next to it** with your settings, for example the public API:
 
     ```bash
-    printf 'LLM_PROVIDER=docsgpt\nVITE_API_STREAMING=true\nINTERNAL_KEY=%s\n' "$(openssl rand -hex 16)" > .env
+    printf 'LLM_PROVIDER=docsgpt\nVITE_API_STREAMING=true\nINTERNAL_KEY=%s\nENCRYPTION_SECRET_KEY=%s\n' \
+      "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" > .env
     ```
 
     `INTERNAL_KEY` is the secret the worker uses to hand finished indexes to
     the API; without it every upload fails with a 401. `setup.sh` generates
-    one for you, a hand-written `.env` has to include it. This stack runs the
+    one for you, a hand-written `.env` has to include it.
+    `ENCRYPTION_SECRET_KEY` seals the credentials of the services you connect;
+    set it on a fresh install only (see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live)). This stack runs the
     granite embedding model unless `.env` sets `EMBEDDINGS_NAME`; both granite
     and mpnet are baked into the image.
 
@@ -184,7 +189,15 @@ Publish the port on every interface and turn on authentication in `.env`:
 DOCSGPT_BIND=0.0.0.0
 AUTH_TYPE=simple_jwt
 JWT_SECRET_KEY=<a long random value, e.g. openssl rand -hex 32>
+# With AUTH_TYPE set, connecting services needs it. Fresh install only: an
+# existing one rotates onto it (App Configuration, Secrets to set before going live)
+ENCRYPTION_SECRET_KEY=<a long random value, e.g. openssl rand -hex 32>
 ```
+
+`simple_jwt` is one shared token for one shared user: everyone who has it
+sees the same conversations and sources. For separate accounts use
+[`AUTH_TYPE=oidc`](/Deploying/OIDC-SSO), and see the
+[security checklist](/Deploying/Security).
 
 Then run `docker compose -f docker-compose-standalone.yaml up -d` again. The UI
 takes its API address from the page it was loaded from, so
@@ -213,6 +226,8 @@ Let's Encrypt certificate and proxies to the backend.
     DOCSGPT_DOMAIN=docs.example.com
     AUTH_TYPE=simple_jwt
     JWT_SECRET_KEY=<a long random value, e.g. openssl rand -hex 32>
+    # Fresh install only; an existing one rotates onto it
+    ENCRYPTION_SECRET_KEY=<a long random value, e.g. openssl rand -hex 32>
     ```
 
 3.  Run `docker compose -f docker-compose-standalone.yaml up -d` and open
@@ -254,6 +269,17 @@ same pre-built images while keeping your data in `application/indexes`,
 `application/inputs` and `application/vectors`, and `deployment/docker-compose.yaml`
 builds the images from your working tree (for local changes, or a build with
 extra packages: `EXTRAS=docling` in `.env`).
+
+<Callout type="warning" emoji="⚠️">
+The checkout Compose files (and `setup.sh`/`setup.ps1`, which run them) are
+meant for local use and development. They publish the API (7091) and the UI
+(5173) on `DOCSGPT_BIND`, `127.0.0.1` by default, and Postgres (password
+`docsgpt`) and Redis (no password) on `127.0.0.1` only. Setting
+`DOCSGPT_BIND=0.0.0.0` makes the API and UI reachable from the network; without
+`AUTH_TYPE` every visitor then shares one account, with its data and connected
+services. For a server, prefer `docsgpt up` or the standalone file, and follow
+the [security checklist](/Deploying/Security).
+</Callout>
 
 1.  **Clone the DocsGPT Repository (if you haven't already):**
 
@@ -297,6 +323,9 @@ extra packages: `EXTRAS=docling` in `.env`).
 5.  **Access DocsGPT in your browser:**
 
     Once the containers are running, open your web browser and go to [http://localhost:5173/](http://localhost:5173/).
+    With `DOCSGPT_BIND=0.0.0.0`, other machines open `http://<server-address>:7091/`:
+    the backend image serves the UI there too, while the UI on 5173 calls the
+    API at `localhost`.
 
 6.  **Stopping DocsGPT:**
 

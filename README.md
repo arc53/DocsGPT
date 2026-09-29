@@ -143,6 +143,9 @@ docker compose -f deployment/docker-compose.yaml down
 
 (or use the specific `docker compose down` command shown after running the setup script).
 
+> [!Warning]
+> The setup scripts and the checkout Compose files are meant for local use: DocsGPT, Postgres and Redis are reachable from this computer only. If you tell the script to expose DocsGPT on your network, set up authentication when it asks. Without it every visitor shares one account, with its documents and connected services. For a server, use the installer above and read the [security checklist](https://docs.docsgpt.cloud/Deploying/Security).
+
 > [!Note]
 > For development environment setup instructions, please refer to the [Development Environment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
 
