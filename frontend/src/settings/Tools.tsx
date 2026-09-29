@@ -29,7 +29,7 @@ import {
   selectConnections,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
-import { connectorDescription } from '../connectors/i18n';
+import { connectorDescription, isKeyHint } from '../connectors/i18n';
 import type { Connection } from '../connectors/types';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import { toolServiceOf } from '../connectors/toolService';
@@ -334,7 +334,8 @@ export default function Tools() {
   const accountLine = (connection: Connection) =>
     connection.account_name
       ? connection.account_name
-      : connection.auth_kind === 'api_key'
+      : connection.auth_kind === 'api_key' &&
+          isKeyHint(connection.account_label)
         ? t('settings.connectors.detail.keyEnding', {
             hint: connection.account_label,
             interpolation: { escapeValue: false },

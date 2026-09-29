@@ -458,6 +458,42 @@ describe('Tools page connections', () => {
     );
   });
 
+  it('names an account by its login, not as a key ending', async () => {
+    getUserTools.mockImplementation(() =>
+      jsonResponse({
+        tools: [
+          ...TOOLS,
+          {
+            id: 'gh',
+            name: 'mcp_tool',
+            displayName: 'GitHub',
+            customName: '',
+            description: '',
+            status: true,
+            config: {},
+            actions: [],
+            connection_id: 'conn-gh',
+          },
+        ],
+      }),
+    );
+    reduxState.connectors.connections = [
+      ...reduxState.connectors.connections,
+      {
+        id: 'conn-gh',
+        connector_key: 'github',
+        name: 'GitHub',
+        icon: 'github',
+        status: 'connected',
+        auth_kind: 'api_key',
+        account_label: 'dartpain',
+      },
+    ];
+    await renderTools(root);
+    const footer = card('GitHub').querySelector('[data-slot="card-footer"]')!;
+    expect(footer.textContent).toBe('dartpain');
+  });
+
   it('says a connected tool needs signing in again, with no raw MCP reconnect', async () => {
     await renderTools(root);
     expect(card('Linear').textContent).toContain(
