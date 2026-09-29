@@ -252,6 +252,49 @@ class TestChecks:
         # real contract and the pattern CodeQL warns about.
         assert check.detail == f"openai at {commands._endpoint(url)}"
 
+    def test_a_provider_specific_key_counts_as_a_key(self):
+        check = commands._check_provider({"LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "ak"})
+        assert check.level == "ok"
+
+    def test_the_hosted_default_model_is_fine_when_chosen(self):
+        check = commands._check_model({"LLM_PROVIDER": "docsgpt"})
+        assert check.level == "ok"
+        assert "docsgpt-local" in check.detail
+
+    def test_the_default_model_is_the_chosen_providers(self):
+        check = commands._check_model({"LLM_PROVIDER": "openai", "API_KEY": "sk-test"})
+        assert check.level == "ok"
+        assert "gpt-5.5" in check.detail and "openai" in check.detail
+
+    def test_a_provider_that_falls_back_to_the_hosted_api_fails(self):
+        check = commands._check_model({"LLM_PROVIDER": "anthropic"})
+        assert check.level == "fail"
+        assert "hosted DocsGPT API" in check.detail
+        assert "ANTHROPIC_API_KEY" in check.detail
+
+    def test_an_ignored_llm_name_is_a_warning(self):
+        check = commands._check_model({"LLM_PROVIDER": "openai", "API_KEY": "sk", "LLM_NAME": "gpt-4o"})
+        assert check.level == "warn"
+        assert "gpt-4o" in check.detail
+
+    def test_no_model_at_all_fails(self):
+        check = commands._check_model({"LLM_PROVIDER": "openai", "OPENAI_BASE_URL": "http://localhost:11434/v1"})
+        assert check.level == "fail"
+        assert "LLM_NAME" in check.detail
+
+    def test_only_the_settings_file_counts(self, monkeypatch):
+        """A key in the shell running doctor is not a key the service has."""
+        import os
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "from-the-shell")
+        check = commands._check_model({"LLM_PROVIDER": "anthropic"})
+        assert check.level == "fail"
+        assert os.environ["ANTHROPIC_API_KEY"] == "from-the-shell"
+
+    def test_invalid_settings_are_reported_not_raised(self):
+        check = commands._check_model({"VECTOR_STORE": "not-a-store"})
+        assert check.level == "fail"
+
     def test_services_are_named_for_the_install(self, tmp_path):
         names = _names(tmp_path)
         assert commands._chosen_services(names, []) == list(names)

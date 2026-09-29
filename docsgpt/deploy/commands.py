@@ -14,7 +14,8 @@ import sys
 import tempfile
 import time
 import webbrowser
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -892,13 +893,64 @@ def _check_redis(urls: Mapping[str, str]) -> Check:
 
 def _check_provider(env: Mapping[str, str]) -> Check:
     """Whether a model provider is set up well enough to answer a question."""
+    from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
     provider = env.get("LLM_PROVIDER") or "docsgpt"
     if provider == "docsgpt":
         return Check("provider", "ok", "the DocsGPT public API (no key needed)")
-    if not (env.get("API_KEY") or env.get("OPENAI_API_KEY")):
+    plugin = PROVIDERS_BY_NAME.get(provider)
+    own_key = plugin.api_key_setting if plugin is not None else None
+    if not (env.get("API_KEY") or env.get("OPENAI_API_KEY") or (own_key and env.get(own_key))):
         return Check("provider", "fail", f"{provider} is configured but no API_KEY is set")
     endpoint = _endpoint(env["OPENAI_BASE_URL"]) if env.get("OPENAI_BASE_URL") else ""
     return Check("provider", "ok", f"{provider}{' at ' + endpoint if endpoint else ''}")
+
+
+@contextmanager
+def _service_environment(env: Mapping[str, str]) -> Iterator[None]:
+    """Make the process environment look like the service's for the duration: the settings file alone.
+
+    Settings fields are removed first, so a key exported in the shell running doctor does not count as a key
+    the service has. The file's values then go in, as the app's ``load_dotenv`` puts them, because the
+    ``openai_compatible`` catalogs read their ``api_key_env`` from the environment. Restored on exit.
+    """
+    from docsgpt.core.settings import Settings
+
+    saved = dict(os.environ)
+    try:
+        for name in Settings.model_fields:
+            os.environ.pop(name, None)
+        os.environ.update({key: value for key, value in env.items() if value is not None})
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+def _check_model(env: Mapping[str, str]) -> Check:
+    """Which model answers by default, and whether that is the provider the settings name.
+
+    Fails when ``LLM_PROVIDER`` names a provider but the default model is served by the hosted DocsGPT API
+    (a missing key, an unknown provider), or when no model is registered at all.
+    """
+    from docsgpt.core.model_registry import diagnose_model_setup, load_catalog_models, resolve_default_model_id
+    from docsgpt.core.settings import Settings
+
+    try:
+        with _service_environment(env):
+            settings = Settings(_env_file=None)
+            models = load_catalog_models(settings)
+    except Exception as exc:  # noqa: BLE001 - doctor reports a broken setup rather than tracing back on it
+        lines = str(exc).strip().splitlines()
+        return Check("model", "fail", f"the model settings do not load: {lines[0] if lines else type(exc).__name__}")
+    default = resolve_default_model_id(settings, models)
+    problems = diagnose_model_setup(settings, models, default)
+    failing = [p for p in problems if p.hosted_fallback or not models]
+    if failing:
+        return Check("model", "fail", failing[0].message)
+    if problems:
+        return Check("model", "warn", problems[0].message)
+    return Check("model", "ok", f"default {default} ({models[default].provider.value})")
 
 
 def _redis_to_check(args, env: Mapping[str, str]) -> dict:
@@ -936,6 +988,7 @@ def doctor(args, context: Optional[Context] = None) -> int:
         _check_postgres(args.postgres_uri or env.get("POSTGRES_URI")),
         _check_redis(_redis_to_check(args, env)),
         _check_provider(env),
+        _check_model(env),
     ]
 
     # The one command that exists to explain a broken setup must not fall over on one.
