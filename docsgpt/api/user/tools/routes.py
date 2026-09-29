@@ -19,7 +19,7 @@ from docsgpt.agents.default_tools import (
     WORKFLOW_ONLY_BUILTINS,
 )
 from docsgpt.agents.tool_executor import API_TOOL_SECRET_SECTIONS, API_TOOL_SECRETS_KEY
-from docsgpt.agents.tool_pins import merge_submitted_actions, PinChangeRefused
+from docsgpt.agents.tool_pins import iter_parameters, llm_fills, merge_submitted_actions, PinChangeRefused
 from docsgpt.agents.tools.spec_parser import parse_spec
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api import api
@@ -34,7 +34,7 @@ from docsgpt.api.user.resource_access import (
     settings_many,
 )
 from docsgpt.api.user.team_sharing import visible_with_access
-from docsgpt.connectors.catalog import definition_for_tool
+from docsgpt.connectors.catalog import base_url, definition_for_tool
 from docsgpt.connectors.service import account_tool_names
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
@@ -192,7 +192,14 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
 _CREDENTIALS_FOR_NEW_SERVER = "Enter credentials for the new server"
 _FORBIDDEN_MESSAGE = "Your access to this item doesn't allow that"
 _MCP_CREDENTIAL_AUTH_TYPES = {"api_key", "bearer", "basic"}
-_META_KEYS = ("name", "displayName", "customName", "description", "actions")
+# ``name`` (the tool type) and ``actions`` are handled on their own.
+_META_KEYS = ("displayName", "customName", "description")
+_TYPE_IS_FIXED = "A tool's type can't be changed"
+_FIXED_VALUES_OWNER_ONLY = "Only the tool's owner can change fixed values"
+_MOVE_THROUGH_MCP_SAVE = (
+    "This server signs in through a connection: change its address or sign-in by saving the "
+    "server again (/api/mcp_server/save)"
+)
 
 
 class CredentialsRequired(Exception):
@@ -362,6 +369,96 @@ def _api_tool_config_needs_credentials(new_config: dict, existing_config: dict) 
     return False
 
 
+def _api_tool_param_state(section: str, spec: dict, *, stored: bool) -> tuple:
+    """Who fills an api_tool parameter and which value it keeps.
+
+    A header / query value is only ever shown masked, so a stored one (sealed,
+    or legacy plaintext) reads as ``"stored"`` and any value a client sends
+    is a new one.
+
+    Args:
+        section: ``headers``, ``query_params`` or ``body``.
+        spec: The parameter's schema.
+        stored: Whether ``spec`` comes from the stored config.
+
+    Returns:
+        ``(filled_by_llm, value marker)``; the marker is None without a value.
+    """
+    value = spec.get("value")
+    if section in API_TOOL_SECRET_SECTIONS:
+        if _has_value(value):
+            marker: Any = "stored" if stored else ("new", value)
+        else:
+            marker = "stored" if spec.get("has_value") else None
+    else:
+        marker = value if _has_value(value) else None
+    return llm_fills(spec), marker
+
+
+def _api_tool_fixed_values_changed(new_config: dict, existing_config: dict) -> bool:
+    """Whether an api_tool save changes a fixed value of an existing action.
+
+    A fixed value may be a secret (an API key in a query) or where a call
+    goes, so changing who fills a parameter, or its value, or clearing a
+    stored one is the owner's. Flipping ``filled_by_llm`` on a stored secret
+    would hand it to the model and show it in the chat. A parameter that
+    carries no value can be added or removed freely; a new action brings a
+    URL and is judged by :func:`_api_tool_config_needs_credentials`.
+
+    Args:
+        new_config: The config the client sent.
+        existing_config: The stored config.
+
+    Returns:
+        True when any existing action's fixed values would differ.
+    """
+    old_actions = (existing_config or {}).get("actions") or {}
+    new_actions = (new_config or {}).get("actions") or {}
+    if not isinstance(old_actions, dict) or not isinstance(new_actions, dict):
+        return bool(old_actions) or bool(new_actions)
+    for name, action in new_actions.items():
+        old = old_actions.get(name)
+        if not isinstance(old, dict) or not isinstance(action, dict):
+            continue
+        before = {(s, p): _api_tool_param_state(s, d, stored=True) for s, p, d in iter_parameters(old)}
+        after = {(s, p): _api_tool_param_state(s, d, stored=False) for s, p, d in iter_parameters(action)}
+        for key in before.keys() | after.keys():
+            if key in before and key in after:
+                if before[key] != after[key]:
+                    return True
+            elif (before.get(key) or after.get(key))[1] is not None:
+                return True
+    return False
+
+
+def _connection_server_moved(tool_doc: dict, new_config: Optional[dict]) -> bool:
+    """Whether a config save re-points a connection-backed MCP tool.
+
+    The connection holds the key for one server and one way of signing in;
+    a tool moved on these routes would keep a connection that no longer
+    applies (it is refused at run time) and the new key would be stored
+    where nothing reads it. ``/api/mcp_server/save`` moves a server properly.
+
+    Args:
+        tool_doc: The stored ``user_tools`` row.
+        new_config: The incoming ``config``.
+
+    Returns:
+        True when the base URL or ``auth_type`` would change.
+    """
+    if tool_doc.get("name") != "mcp_tool" or not tool_doc.get("connection_id"):
+        return False
+    existing = tool_doc.get("config") or {}
+    new_config = new_config if isinstance(new_config, dict) else {}
+    if "server_url" in new_config and base_url(str(new_config.get("server_url") or "").strip()) != base_url(
+        existing.get("server_url")
+    ):
+        return True
+    return "auth_type" in new_config and (new_config.get("auth_type") or "none") != (
+        existing.get("auth_type") or "none"
+    )
+
+
 def _mcp_origin_changed(new_config: dict, existing_config: dict) -> bool:
     """Whether a save moves an MCP server to another scheme, host or port."""
     old_url = (existing_config or {}).get("server_url")
@@ -397,6 +494,24 @@ def check_oauth_mcp_owner_only(
     auth_types = {c.get("auth_type") for c in configs}
     if "oauth" in auth_types:
         raise AccessDenied(403, SHARED_OAUTH_OWNER_ONLY)
+
+
+def check_api_tool_fixed_values(
+    ra: ResourceAccess, new_config: Optional[dict], existing_config: Optional[dict]
+) -> None:
+    """Keep an api_tool's fixed header, query and body values with its owner.
+
+    Args:
+        ra: The caller's access to the tool.
+        new_config: The incoming ``config``.
+        existing_config: The stored ``config``.
+
+    Raises:
+        AccessDenied: 403 when a non-owner changes a fixed value (see
+            :func:`_api_tool_fixed_values_changed`).
+    """
+    if ra.access != "owner" and _api_tool_fixed_values_changed(new_config or {}, existing_config or {}):
+        raise AccessDenied(403, _FIXED_VALUES_OWNER_ONLY)
 
 
 def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: dict) -> dict:
@@ -882,6 +997,16 @@ class UpdateTool(Resource):
     )
     @api.doc(description="Update a tool by ID")
     def post(self):
+        """Update a tool's names, actions, config or chat switch.
+
+        The tool type (``name``) never changes. ``actions`` are checked
+        against the stored ones like ``/api/update_tool_actions``: nothing
+        is added and fixed values are the owner's. A connection-backed MCP
+        server is moved only through ``/api/mcp_server/save``.
+
+        Returns:
+            ``{"success": true}``, or 400 / 403 / 404 with a message.
+        """
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
@@ -956,13 +1081,32 @@ class UpdateTool(Resource):
                     return make_response(
                         jsonify({"success": False, "message": "Tool not found"}), 404,
                     )
-                if update_data:
+                if "name" in data and data["name"] != tool_doc.get("name"):
+                    # The type decides what the config and the connection's
+                    # credentials are used for; it is set once, on create.
+                    return make_response(jsonify({"success": False, "message": _TYPE_IS_FIXED}), 400)
+                if update_data or "actions" in data:
                     check_action(ra, "edit")
+                if "actions" in data:
+                    # The stored actions are the schema, and a fixed value is
+                    # the owner's (as on /api/update_tool_actions).
+                    try:
+                        update_data["actions"] = merge_submitted_actions(
+                            _stored_actions(tool_doc), data["actions"], may_change_pins=ra.access == "owner",
+                        )
+                    except PinChangeRefused as err:
+                        return make_response(jsonify({"success": False, "message": str(err)}), 403)
+                    except ValueError as err:
+                        return make_response(jsonify({"success": False, "message": str(err)}), 400)
                 if "config" in data:
-                    tool_name = tool_doc.get("name", data.get("name"))
+                    tool_name = tool_doc.get("name")
                     existing_config = tool_doc.get("config", {}) or {}
                     if tool_name == "mcp_tool":
                         check_oauth_mcp_owner_only(ra, existing_config, data["config"])
+                    if _connection_server_moved(tool_doc, data["config"]):
+                        return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                    if tool_name == "api_tool":
+                        check_api_tool_fixed_values(ra, data["config"], existing_config)
                     if tool_name == "api_tool" and not _api_tool_config_needs_credentials(
                         data["config"], existing_config
                     ):
@@ -1048,6 +1192,15 @@ class UpdateToolConfig(Resource):
     )
     @api.doc(description="Update the configuration of a tool")
     def post(self):
+        """Replace a tool's config, keeping stored secrets the client left out.
+
+        A connection-backed tool's new key goes to its connection (the
+        owner's to change) and its server cannot be moved here; an api_tool's
+        fixed values are the owner's.
+
+        Returns:
+            ``{"success": true}``, or 400 / 403 / 404 with a message.
+        """
         decoded_token = request.decoded_token
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
@@ -1088,12 +1241,18 @@ class UpdateToolConfig(Resource):
                                 jsonify({"success": False, "message": "Invalid server URL"}),
                                 400,
                             )
+                if _connection_server_moved(tool_doc, data["config"]):
+                    return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                if tool_name == "api_tool":
+                    check_api_tool_fixed_values(ra, data["config"], tool_doc.get("config"))
                 tool_instance = tool_manager.tools.get(tool_name)
                 config_requirements = (
                     tool_instance.get_config_requirements() if tool_instance else {}
                 )
                 existing_config = tool_doc.get("config", {}) or {}
-                has_existing_secrets = "encrypted_credentials" in existing_config
+                has_existing_secrets = (
+                    "encrypted_credentials" in existing_config or bool(tool_doc.get("connection_id"))
+                )
 
                 if config_requirements:
                     validation_errors = _validate_config(
@@ -1110,7 +1269,17 @@ class UpdateToolConfig(Resource):
                             400,
                         )
 
-                final_config = _prepare_tool_config(tool_doc, data["config"], config_requirements)
+                config = data["config"]
+                if tool_doc.get("connection_id"):
+                    # The tool runs with its connection's key: a new one goes
+                    # there (the owner's to change), not into this config.
+                    config = _update_connection_secrets(conn, user, tool_doc, config, config_requirements)
+                    if config is None:
+                        return make_response(
+                            jsonify({"success": False, "message": "Only the owner can change the credentials"}),
+                            403,
+                        )
+                final_config = _prepare_tool_config(tool_doc, config, config_requirements)
 
                 repo.update(str(tool_doc["id"]), ra.owner_id, {"config": final_config})
         except AccessDenied as err:

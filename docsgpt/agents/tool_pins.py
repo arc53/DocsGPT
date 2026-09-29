@@ -115,11 +115,21 @@ def sent_arguments(
 ) -> dict:
     """What a call sends, flattened for the chat (the approval card, a finished call).
 
-    It follows :func:`resolve_arguments`, but a value the owner fixed shows
-    as :data:`FIXED_MASK`: it may be a secret (an API key in a query), and
+    It follows :func:`resolve_arguments`, but any value that comes from the
+    stored action rather than from the model shows as :data:`FIXED_MASK`:
+    a fixed value, and a default the model left alone, may be a secret (an
+    api_tool query value is decrypted into the action before the call), and
     the chat is shown to whoever runs the agent, over the API or a widget
     too. A value the connection sets (Telegram's default chat) is the
     account's own setting and shows as it is. Headers are left out.
+
+    Args:
+        action: The stored action, with any secrets merged back.
+        llm_arguments: The arguments the model sent.
+        connection_pins: Parameter name to a value the connection fixes.
+
+    Returns:
+        Parameter name to the value shown for it.
     """
     connection_pins = connection_pins or {}
     shown: dict = {}
@@ -134,7 +144,7 @@ def sent_arguments(
         elif name in llm_arguments:
             shown[name] = llm_arguments[name]
         elif has_value(details):
-            shown[name] = details["value"]
+            shown[name] = FIXED_MASK
     return shown
 
 

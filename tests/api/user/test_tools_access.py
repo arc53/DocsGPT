@@ -778,3 +778,224 @@ class TestSharedOAuthMCPConfig:
         body = {"id": str(tool["id"]), "config": dict(self.OTHER)}
         assert _call(app, pg_conn, UpdateToolConfig, OWNER, json=body).status_code == 200
         assert _row(pg_conn, tool["id"])["config"]["server_url"] == self.OTHER["server_url"]
+
+
+# ---------------------------------------------------------------------------
+# 7. /api/update_tool keeps fixed values and the tool type
+# ---------------------------------------------------------------------------
+def _pinned_tool(conn, name="ntfy"):
+    """A tool whose ``server_url`` the owner fixed; ``message`` is the model's."""
+    return UserToolsRepository(conn).create(
+        OWNER, name, config={}, display_name=name, description="",
+        actions=[{
+            "name": "send", "active": True, "require_approval": False,
+            "parameters": {"type": "object", "properties": {
+                "server_url": {"type": "string", "filled_by_llm": False, "value": "https://ntfy.example.com"},
+                "message": {"type": "string", "filled_by_llm": True, "value": ""},
+            }},
+        }],
+        status=True,
+    )
+
+
+def _moved_pin(actions):
+    import copy
+
+    out = copy.deepcopy(actions)
+    out[0]["parameters"]["properties"]["server_url"]["value"] = "https://evil.example"
+    return out
+
+
+class TestUpdateToolFixedValues:
+    def test_editor_cannot_change_a_fixed_value_through_update_tool(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = _pinned_tool(pg_conn)
+        _share(pg_conn, tool["id"], "ed", "editor")
+        body = {"id": str(tool["id"]), "actions": _moved_pin(tool["actions"])}
+        resp = _call(app, pg_conn, UpdateTool, "ed", json=body)
+        assert resp.status_code == 403
+        pinned = _row(pg_conn, tool["id"])["actions"][0]["parameters"]["properties"]["server_url"]
+        assert pinned["value"] == "https://ntfy.example.com"
+
+    def test_editor_cannot_release_a_fixed_value_through_update_tool(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = _pinned_tool(pg_conn)
+        _share(pg_conn, tool["id"], "ed", "editor")
+        actions = tool["actions"]
+        actions[0]["parameters"]["properties"]["server_url"]["filled_by_llm"] = True
+        resp = _call(app, pg_conn, UpdateTool, "ed", json={"id": str(tool["id"]), "actions": actions})
+        assert resp.status_code == 403
+        assert _row(pg_conn, tool["id"])["actions"][0]["parameters"]["properties"]["server_url"][
+            "filled_by_llm"] is False
+
+    def test_editor_round_trip_with_other_edits_still_saves(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = _pinned_tool(pg_conn)
+        _share(pg_conn, tool["id"], "ed", "editor")
+        actions = tool["actions"]
+        actions[0]["require_approval"] = True
+        body = {"id": str(tool["id"]), "name": "ntfy", "customName": "Alerts", "actions": actions}
+        assert _call(app, pg_conn, UpdateTool, "ed", json=body).status_code == 200
+        row = _row(pg_conn, tool["id"])
+        assert row["custom_name"] == "Alerts" and row["actions"][0]["require_approval"] is True
+
+    def test_actions_cannot_be_added_through_update_tool(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = _pinned_tool(pg_conn)
+        actions = [*tool["actions"], {"name": "exfiltrate", "active": True}]
+        resp = _call(app, pg_conn, UpdateTool, OWNER, json={"id": str(tool["id"]), "actions": actions})
+        assert resp.status_code == 400
+        assert [a["name"] for a in _row(pg_conn, tool["id"])["actions"]] == ["send"]
+
+    def test_owner_changes_a_fixed_value_through_update_tool(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = _pinned_tool(pg_conn)
+        body = {"id": str(tool["id"]), "actions": _moved_pin(tool["actions"])}
+        assert _call(app, pg_conn, UpdateTool, OWNER, json=body).status_code == 200
+        pinned = _row(pg_conn, tool["id"])["actions"][0]["parameters"]["properties"]["server_url"]
+        assert pinned["value"] == "https://evil.example"
+
+    @pytest.mark.parametrize("user", [OWNER, "ed"])
+    def test_tool_type_cannot_change(self, app, pg_conn, user):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = _pinned_tool(pg_conn, name="telegram")
+        _share(pg_conn, tool["id"], "ed", "editor")
+        resp = _call(app, pg_conn, UpdateTool, user, json={"id": str(tool["id"]), "name": "ntfy"})
+        assert resp.status_code == 400
+        assert _row(pg_conn, tool["id"])["name"] == "telegram"
+
+
+# ---------------------------------------------------------------------------
+# 8. api_tool: a stored header / query value stays fixed for non-owners
+# ---------------------------------------------------------------------------
+class TestApiToolFixedValues:
+    def _tool(self, conn):
+        from docsgpt.api.user.tools.routes import _seal_api_tool_secrets
+
+        tool = _tool(conn, name="api_tool", config=_seal_api_tool_secrets(_api_config(), {}, OWNER))
+        _share(conn, tool["id"], "ed", "editor")
+        return tool
+
+    def _masked(self):
+        return TestApiToolSecrets()._masked(_api_config())
+
+    def _token(self, cfg):
+        return cfg["actions"]["get_users"]["query_params"]["properties"]["token"]
+
+    @pytest.mark.parametrize("route", ["UpdateTool", "UpdateToolConfig"])
+    def test_editor_cannot_hand_a_stored_secret_to_the_model(self, app, pg_conn, route):
+        from docsgpt.api.user.tools import routes
+
+        tool = self._tool(pg_conn)
+        cfg = self._masked()
+        self._token(cfg)["filled_by_llm"] = True
+        resp = _call(app, pg_conn, getattr(routes, route), "ed", json={"id": str(tool["id"]), "config": cfg})
+        assert resp.status_code == 403
+        token = _runtime_action(pg_conn, tool["id"])["query_params"]["properties"]["token"]
+        assert token["filled_by_llm"] is False and token["value"] == "q-secret"
+
+    @pytest.mark.parametrize("change", [
+        {"has_value": False},
+        {"value": "attacker-token"},
+    ])
+    def test_editor_cannot_clear_or_replace_a_stored_value(self, app, pg_conn, change):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = self._tool(pg_conn)
+        cfg = self._masked()
+        self._token(cfg).update(change)
+        resp = _call(app, pg_conn, UpdateTool, "ed", json={"id": str(tool["id"]), "config": cfg})
+        assert resp.status_code == 403
+        assert _runtime_action(pg_conn, tool["id"])["query_params"]["properties"]["token"]["value"] == "q-secret"
+
+    def test_editor_cannot_drop_a_fixed_parameter_then_re_add_it(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = self._tool(pg_conn)
+        cfg = self._masked()
+        del cfg["actions"]["get_users"]["query_params"]["properties"]["token"]
+        resp = _call(app, pg_conn, UpdateTool, "ed", json={"id": str(tool["id"]), "config": cfg})
+        assert resp.status_code == 403
+
+    def test_editor_still_adds_an_empty_parameter_and_edits_descriptions(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = self._tool(pg_conn)
+        cfg = self._masked()
+        cfg["actions"]["get_users"]["description"] = "Edited"
+        cfg["actions"]["get_users"]["query_params"]["properties"]["page"] = {
+            "type": "string", "description": "", "value": "", "filled_by_llm": False, "required": False,
+        }
+        resp = _call(app, pg_conn, UpdateTool, "ed", json={"id": str(tool["id"]), "config": cfg})
+        assert resp.status_code == 200, resp.json
+        action = _runtime_action(pg_conn, tool["id"])
+        assert action["description"] == "Edited"
+        assert action["query_params"]["properties"]["token"]["value"] == "q-secret"
+
+    def test_owner_may_hand_a_value_to_the_model(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = self._tool(pg_conn)
+        cfg = self._masked()
+        self._token(cfg)["filled_by_llm"] = True
+        assert _call(app, pg_conn, UpdateTool, OWNER, json={"id": str(tool["id"]), "config": cfg}).status_code == 200
+        assert _runtime_action(pg_conn, tool["id"])["query_params"]["properties"]["token"]["filled_by_llm"] is True
+
+
+# ---------------------------------------------------------------------------
+# 9. A connection-backed MCP tool moves only through /api/mcp_server/save
+# ---------------------------------------------------------------------------
+class TestConnectionBackedMCPConfig:
+    SAME = {"server_url": "https://mcp.example.com/mcp", "auth_type": "bearer", "transport_type": "http"}
+
+    @pytest.mark.parametrize("route", ["UpdateTool", "UpdateToolConfig"])
+    @pytest.mark.parametrize("change", [
+        {"server_url": "https://other.example.org/mcp", "bearer_token": "new"},
+        {"server_url": "http://mcp.example.com/mcp", "bearer_token": "new"},
+        {"auth_type": "api_key", "api_key": "new"},
+    ])
+    def test_moving_the_server_or_auth_is_refused(self, app, pg_conn, route, change):
+        from docsgpt.api.user.tools import routes
+
+        tool, connection = _mcp_connection_tool(pg_conn, {"bearer_token": "tok"})
+        body = {"id": str(tool["id"]), "config": {**self.SAME, **change}}
+        resp = _call(app, pg_conn, getattr(routes, route), OWNER, json=body)
+        assert resp.status_code == 400
+        assert "mcp_server/save" in resp.json["message"]
+        row = _row(pg_conn, tool["id"])
+        assert row["config"]["server_url"] == self.SAME["server_url"]
+        assert row["config"]["auth_type"] == "bearer"
+        assert str(row["connection_id"]) == str(connection["id"])
+
+    def test_update_tool_config_writes_a_new_key_to_the_connection(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
+
+        tool, _connection = _mcp_connection_tool(pg_conn, {"bearer_token": "tok"})
+        body = {"id": str(tool["id"]), "config": {**self.SAME, "bearer_token": "tok2"}}
+        assert _call(app, pg_conn, UpdateToolConfig, OWNER, json=body).status_code == 200
+        assert _stored_mcp_secret(pg_conn, tool["id"]) == ({"bearer_token": "tok2"}, OWNER)
+
+    def test_update_tool_config_keeps_the_owners_connection_from_editors(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
+
+        tool, _connection = _mcp_connection_tool(pg_conn, {"bearer_token": "tok"})
+        _share(pg_conn, tool["id"], "ed", "editor")
+        body = {"id": str(tool["id"]), "config": {**self.SAME, "bearer_token": "tok2"}}
+        assert _call(app, pg_conn, UpdateToolConfig, "ed", json=body).status_code == 403
+        assert _stored_mcp_secret(pg_conn, tool["id"]) == ({"bearer_token": "tok"}, OWNER)
+
+    def test_same_server_other_path_still_saves(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool, connection = _mcp_connection_tool(pg_conn, {"bearer_token": "tok"})
+        body = {"id": str(tool["id"]), "config": {**self.SAME, "server_url": "https://mcp.example.com/v2/mcp"}}
+        assert _call(app, pg_conn, UpdateTool, OWNER, json=body).status_code == 200
+        row = _row(pg_conn, tool["id"])
+        assert row["config"]["server_url"] == "https://mcp.example.com/v2/mcp"
+        assert str(row["connection_id"]) == str(connection["id"])

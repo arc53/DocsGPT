@@ -304,3 +304,53 @@ class TestArgumentsShownForACall:
         shown = sent_arguments(action, {"id": "1"})
         assert shown == {"id": "1", "api_key": FIXED_MASK, "token": FIXED_MASK}
         assert "secret" not in str(shown) and "sk-" not in str(shown)
+
+
+@pytest.mark.unit
+class TestStoredValuesNeverShown:
+    """A value the model did not send came from the owner's stored config,
+    which for an api_tool query parameter is a decrypted secret."""
+
+    def test_a_stored_default_the_model_did_not_send_is_masked(self):
+        from docsgpt.agents.tool_pins import FIXED_MASK, sent_arguments
+
+        action = {
+            "query_params": {"properties": {"id": _llm(), "token": _llm(value="q-secret")}},
+            "body": {"properties": {"note": _llm(value="b-secret")}},
+        }
+        shown = sent_arguments(action, {"id": "1"})
+        assert shown == {"id": "1", "token": FIXED_MASK, "note": FIXED_MASK}
+        # What the model itself sent is its own and shows as it is.
+        assert sent_arguments(action, {"id": "1", "token": "mine"})["token"] == "mine"
+
+    def test_a_restored_api_tool_secret_is_not_recorded_with_the_call(self, mock_tool_manager, monkeypatch):
+        from docsgpt.api.user.tools.routes import _seal_api_tool_secrets
+
+        config = _seal_api_tool_secrets({"actions": {"get_item": {
+            "name": "get_item", "url": "https://api.example.com/items", "method": "GET", "active": True,
+            "headers": {"properties": {}},
+            "query_params": {"properties": {"id": _llm(), "token": _llm(value="q-secret")}},
+            "body": {"properties": {}},
+        }}}, {}, "owner")
+        tools_dict = {"t1": {"id": "00000000-0000-0000-0000-000000000001", "user_id": "owner",
+                             "name": "api_tool", "config": config}}
+        monkeypatch.setattr(
+            "docsgpt.agents.tool_executor.ToolActionParser",
+            lambda _cls, **kw: Mock(parse_args=Mock(return_value=("t1", "get_item", {"id": "1"}))),
+        )
+        call = Mock()
+        call.name = "get_item"
+        call.id = "c1"
+        executor = ToolExecutor(user="u")
+        events = []
+        gen = executor.execute(tools_dict, call, "MockLLM")
+        while True:
+            try:
+                events.append(next(gen))
+            except StopIteration:
+                break
+        # The call still sends the value; the chat never shows it.
+        _, kwargs = mock_tool_manager.load_tool.call_args
+        assert kwargs["tool_config"]["query_params"]["token"] == "q-secret"
+        assert "q-secret" not in str(events)
+        assert "q-secret" not in str(executor.get_truncated_tool_calls())
