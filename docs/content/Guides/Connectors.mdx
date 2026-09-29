@@ -42,8 +42,10 @@ If a provider rejects a token that DocsGPT cannot refresh, the connection is mar
 
 Sharing a tool that uses a connection asks whose account team members use:
 
-- **Team members use my account.** Everyone acts as your account on that service. When the tool can write, you confirm this before sharing, and a member's write actions always need approval.
-- **Each member connects their own account.** Members see a **Connect** prompt the first time they use the tool.
+- **Your account.** Everyone acts as your account on that service. When the tool can write, you confirm this before sharing, and a member's write actions always need approval.
+- **Each person's own.** Each person uses their own account, and sees a **Connect** prompt the first time they use the tool.
+
+An editor you let share the tool sees your choice as **The owner's account** and can't change it. An agent's share dialog shows the same words for each connected tool on the agent (see [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use)).
 
 Tools from OAuth MCP servers default to each member's own account. An admin can force one mode for a connector.
 
