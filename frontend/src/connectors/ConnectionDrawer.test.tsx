@@ -13,6 +13,7 @@ const connectors = vi.hoisted(() => ({
   listConnections: vi.fn(async () => ({ success: true, connections: [] })),
   setup: vi.fn(),
   renameConnection: vi.fn(),
+  setWrites: vi.fn(),
 }));
 vi.mock('../api/services/connectorsService', () => ({ default: connectors }));
 
@@ -295,6 +296,7 @@ describe('ConnectionDrawer', () => {
 
     beforeEach(() => {
       connectors.setup.mockReset();
+      connectors.setWrites.mockReset();
       connectors.getConnection.mockResolvedValue({
         success: true,
         connection: TOKEN_DETAIL,
@@ -309,6 +311,59 @@ describe('ConnectionDrawer', () => {
       expect(document.body.textContent).not.toContain(
         'settings.connectors.detail.keyEnding',
       );
+    });
+
+    const GITHUB_TOOL = {
+      id: 'tool-gh',
+      name: 'mcp_tool',
+      display_name: 'GitHub',
+      status: true,
+      credential_mode: 'owner',
+      actions: [],
+    };
+    const writesSwitch = () =>
+      document.body.querySelector<HTMLButtonElement>('#writes-conn-1');
+
+    it('switches a connection between reading and making changes', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...TOKEN_DETAIL, tools: [GITHUB_TOOL], writes: false },
+      });
+      connectors.setWrites.mockResolvedValue({ success: true, writes: true });
+      await render({ ...GITHUB, writes_allowed: true });
+      expect(writesSwitch()!.getAttribute('aria-checked')).toBe('false');
+      const loads = connectors.getConnection.mock.calls.length;
+      await act(async () => writesSwitch()!.click());
+      expect(connectors.setWrites).toHaveBeenCalledWith('conn-1', true, null);
+      // The page reloads the connection, with the new endpoint's actions.
+      expect(connectors.getConnection.mock.calls.length).toBeGreaterThan(loads);
+    });
+
+    it('says when switching failed', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...TOKEN_DETAIL, tools: [GITHUB_TOOL], writes: false },
+      });
+      connectors.setWrites.mockResolvedValue({
+        success: false,
+        code: 'writes_forbidden',
+      });
+      await render({ ...GITHUB, writes_allowed: true });
+      await act(async () => writesSwitch()!.click());
+      const toast = selectActionToast(
+        store.getState() as Parameters<typeof selectActionToast>[0],
+      );
+      expect(toast?.variant).toBe('destructive');
+      expect(toast?.message).toBe('settings.connectors.github.writesForbidden');
+    });
+
+    it('hides the switch when an admin turned changes off', async () => {
+      connectors.getConnection.mockResolvedValue({
+        success: true,
+        connection: { ...TOKEN_DETAIL, tools: [GITHUB_TOOL], writes: false },
+      });
+      await render({ ...GITHUB, writes_allowed: false });
+      expect(writesSwitch()).toBeNull();
     });
 
     it('adds the tools a connection skipped during setup', async () => {

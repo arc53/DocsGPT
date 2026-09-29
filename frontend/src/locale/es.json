@@ -1339,7 +1339,11 @@
       },
       "manageConnection": "Gestionar conexión",
       "github": {
-        "tokenHint": "Crea un token detallado con acceso de lectura a Contents y Metadata en los repositorios que quieras usar.",
+        "tokenHint": "Crea un token detallado con acceso de lectura a Contents y Metadata en los repositorios que quieras usar. Para que los agentes hagan cambios, dale también acceso de lectura y escritura a Issues y Pull requests.",
+        "writes": "Permitir también que los agentes hagan cambios (issues, comentarios, pull requests)",
+        "writesDescription": "Por defecto, cada cambio te pide aprobación primero. Tu token, o la GitHub App, necesita acceso de lectura y escritura a Issues y Pull requests.",
+        "writesForbidden": "Un administrador desactivó los cambios a través de GitHub.",
+        "writesFailed": "No se pudo cambiar lo que los agentes pueden hacer en GitHub.",
         "createToken": "Crear un token en GitHub",
         "chooseRepositories": "Elegir repositorios en GitHub",
         "noAppRepositories": "DocsGPT aún no ve ningún repositorio. Elige en GitHub cuáles puede leer.",

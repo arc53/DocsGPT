@@ -66,7 +66,8 @@ const PICKER_CONNECTORS = new Set([
   'share_point',
   'confluence',
 ]);
-// Where a GitHub user makes a fine-grained token (Contents and Metadata: read).
+// Where a GitHub user makes a fine-grained token (Contents and Metadata: read;
+// Issues and Pull requests: read and write when agents may make changes).
 const GITHUB_TOKEN_URL =
   'https://github.com/settings/personal-access-tokens/new';
 
@@ -119,6 +120,8 @@ export default function ConnectWizard({
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
   // A connector that asks about its tools (GitHub) offers them switched on.
   const [toolsOn, setToolsOn] = useState(true);
+  // Changes (GitHub's issues, comments, pull requests) are an opt-in on top.
+  const [writesOn, setWritesOn] = useState(false);
   const [chosenMethod, setChosenMethod] = useState<ConnectorAuthKind | null>(
     null,
   );
@@ -319,6 +322,8 @@ export default function ConnectWizard({
       ? !!selectedRepo
       : credentialsComplete(connector.setup_fields, setupValues);
   const wantsTools = offerTools && toolsOn;
+  const offerWrites = wantsTools && !!connector.writes_allowed;
+  const wantsWrites = offerWrites && writesOn;
   const canAddSource = hasSyncSelection || wantsTools;
 
   const addSource = async () => {
@@ -330,6 +335,7 @@ export default function ConnectWizard({
         connectionId,
         {
           create_tools: wantsTools,
+          ...(wantsWrites && { allow_writes: true }),
           ...(hasSyncSelection && {
             sync: {
               items: syncItems(),
@@ -348,7 +354,9 @@ export default function ConnectWizard({
                 name,
                 interpolation: { escapeValue: false },
               })
-            : data?.error || t('settings.connectors.wizard.syncFailed'),
+            : data?.code === 'writes_forbidden'
+              ? t('settings.connectors.github.writesForbidden')
+              : data?.error || t('settings.connectors.wizard.syncFailed'),
         );
         return;
       }
@@ -545,7 +553,9 @@ export default function ConnectWizard({
             })}
             description={t(
               `settings.connectors.wizard.addToolsDescription.${
-                connector.capabilities.includes('write') ? 'readWrite' : 'read'
+                connector.capabilities.includes('write') || wantsWrites
+                  ? 'readWrite'
+                  : 'read'
               }`,
             )}
             htmlFor={`tools-${connector.key}`}
@@ -557,6 +567,20 @@ export default function ConnectWizard({
               onCheckedChange={(checked) => setToolsOn(checked === true)}
             />
           </SettingRow>
+          {offerWrites && (
+            <SettingRow
+              label={t('settings.connectors.github.writes')}
+              description={t('settings.connectors.github.writesDescription')}
+              htmlFor={`tools-${connector.key}-writes`}
+              alignStart
+            >
+              <Switch
+                id={`tools-${connector.key}-writes`}
+                checked={writesOn}
+                onCheckedChange={(checked) => setWritesOn(checked === true)}
+              />
+            </SettingRow>
+          )}
         </SettingRows>
       )}
       {isRepoPicker && connectionId ? (

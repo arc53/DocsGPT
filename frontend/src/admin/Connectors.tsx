@@ -71,6 +71,11 @@ type AdminConnector = {
   connection_count: number;
   docs_url: string | null;
   mcp_url: string | null;
+  /**
+   * Whether members may let agents make changes through it (GitHub's write
+   * tools); null where the connector offers no such choice.
+   */
+  allow_writes?: boolean | null;
 };
 
 type AdminConnectorsData = {
@@ -195,8 +200,10 @@ function SetupGuide({
               In the GitHub App, give repository permissions Contents and
               Metadata read-only access, and turn on Request user authorization
               (OAuth) during installation so choosing repositories returns to
-              DocsGPT. GITHUB_APP_SLUG is the name in the app&apos;s public link
-              (github.com/apps/&lt;slug&gt;).
+              DocsGPT. For agents to make changes, also give Issues and Pull
+              requests read and write access (Contents read and write only if
+              agents should edit files). GITHUB_APP_SLUG is the name in the
+              app&apos;s public link (github.com/apps/&lt;slug&gt;).
             </AlertDescription>
           </Alert>
         )}
@@ -259,7 +266,10 @@ export default function Connectors() {
   // older one arriving last would otherwise put back a stale policy.
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const save = (body: {
-    policies?: Record<string, { enabled?: boolean; credential_mode?: Policy }>;
+    policies?: Record<
+      string,
+      { enabled?: boolean; credential_mode?: Policy; allow_writes?: boolean }
+    >;
     allow_custom_mcp?: boolean;
   }) => {
     const failed = () =>
@@ -287,6 +297,10 @@ export default function Connectors() {
 
   // The sheet (phones) always shows the connector's latest saved state.
   const detail = data.connectors.find((c) => c.key === detailKey) ?? null;
+  const writable = data.connectors.filter(
+    (connector) =>
+      connector.allow_writes !== null && connector.allow_writes !== undefined,
+  );
 
   // The custom MCP row is the one switch for members' own MCP servers.
   const isCustomMcp = (connector: AdminConnector) =>
@@ -503,6 +517,42 @@ export default function Connectors() {
           </Table>
         </TableContainer>
       </section>
+
+      {writable.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <SectionHeader
+            title="Write access"
+            description="Members can let agents make changes through these connectors, one connection at a time. Each change asks first unless the member allows it."
+          />
+          <SettingRows>
+            {writable.map((connector) => (
+              <SettingRow
+                key={connector.key}
+                label={`Let agents make changes through ${connector.name}`}
+                description={
+                  connector.key === 'github'
+                    ? 'Create issues, comments and pull requests. Off keeps every GitHub tool read-only, including ones already set up for changes.'
+                    : `Off keeps every ${connector.name} tool read-only.`
+                }
+                htmlFor={`allow-writes-${connector.key}`}
+                alignStart
+              >
+                <Switch
+                  id={`allow-writes-${connector.key}`}
+                  checked={connector.allow_writes === true}
+                  onCheckedChange={(checked) =>
+                    save({
+                      policies: {
+                        [connector.key]: { allow_writes: checked === true },
+                      },
+                    })
+                  }
+                />
+              </SettingRow>
+            ))}
+          </SettingRows>
+        </section>
+      )}
 
       {detail && (
         <Sheet open onOpenChange={(open) => !open && setDetailKey(null)}>

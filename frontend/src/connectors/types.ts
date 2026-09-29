@@ -54,6 +54,8 @@ export type ConnectorDefinition = {
   tool_templates: string[];
   setup: { tools: 'auto' | 'ask' | 'off'; sync: 'auto' | 'ask' | 'off' };
   mcp_url: string | null;
+  /** Its tool can also make changes, when a connection opts in (GitHub). */
+  writes_opt_in?: boolean;
   publisher: 'built_in' | 'preset' | 'custom';
   docs_url: string | null;
   oauth_scopes: string[];
@@ -73,6 +75,8 @@ export type ConnectorDefinition = {
   status: ConnectionStatus | null;
   state: ConnectorCardState;
   credential_policy: 'choose' | CredentialMode;
+  /** A connection may opt into changes: offered, and no admin forbade it. */
+  writes_allowed?: boolean;
 };
 
 export type Connection = {
@@ -149,4 +153,9 @@ export type GitHubRepository = {
 export type ConnectionDetail = Connection & {
   sources: ConnectionSource[];
   tools: ConnectionTool[];
+  /**
+   * Whether its tool can make changes (GitHub's write endpoint); null when
+   * the connector offers no such choice or the tool is not added yet.
+   */
+  writes?: boolean | null;
 };

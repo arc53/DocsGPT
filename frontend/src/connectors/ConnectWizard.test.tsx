@@ -609,6 +609,49 @@ describe('ConnectWizard', () => {
       });
     });
 
+    const writesSwitch = () =>
+      document.body.querySelector<HTMLButtonElement>('#tools-github-writes');
+
+    it('offers changes as a second choice, read only by default', async () => {
+      service.setup.mockResolvedValue({
+        success: true,
+        tools: [],
+        sources: [],
+      });
+      await render({ ...github, writes_opt_in: true, writes_allowed: true });
+      await connectWithToken();
+      expect(document.body.textContent).toContain(
+        'settings.connectors.github.writes',
+      );
+      expect(writesSwitch()!.getAttribute('aria-checked')).toBe('false');
+      await act(async () => writesSwitch()!.click());
+      await click('settings.connectors.wizard.continue');
+      expect(service.setup.mock.calls[0][1]).toEqual({
+        create_tools: true,
+        allow_writes: true,
+      });
+    });
+
+    it('drops the choice with the tools', async () => {
+      await render({ ...github, writes_opt_in: true, writes_allowed: true });
+      await connectWithToken();
+      await act(async () =>
+        document.body
+          .querySelector<HTMLButtonElement>('#tools-github')!
+          .click(),
+      );
+      expect(writesSwitch()).toBeNull();
+    });
+
+    it('hides the choice when an admin turned changes off', async () => {
+      await render({ ...github, writes_opt_in: true, writes_allowed: false });
+      await connectWithToken();
+      expect(writesSwitch()).toBeNull();
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.github.writes',
+      );
+    });
+
     it('shows why the tools could not be added', async () => {
       service.setup.mockResolvedValue({
         success: false,

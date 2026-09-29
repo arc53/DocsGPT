@@ -13,6 +13,8 @@ const json = async (response: Response) => {
 
 export type ConnectionSetupBody = {
   create_tools?: boolean;
+  /** GitHub: let agents make changes, not only read. */
+  allow_writes?: boolean;
   tool_permissions?: Record<string, 'always' | 'ask' | 'off'>;
   sync?: {
     items: Record<string, unknown>;
@@ -98,6 +100,15 @@ const connectorsService = {
       await apiClient.post(
         endpoints.USER.CONNECTION_REFRESH_TOOLS(id),
         {},
+        token,
+      ),
+    ),
+  /** GitHub: let agents make changes through a connection, or only read. */
+  setWrites: async (id: string, allow: boolean, token: string | null) =>
+    json(
+      await apiClient.put(
+        endpoints.USER.CONNECTION_WRITES(id),
+        { allow },
         token,
       ),
     ),

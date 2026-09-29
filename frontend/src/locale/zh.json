@@ -1321,7 +1321,11 @@
       },
       "manageConnection": "管理连接",
       "github": {
-        "tokenHint": "为要使用的仓库创建一个细粒度令牌，并授予 Contents 和 Metadata 的读取权限。",
+        "tokenHint": "为要使用的仓库创建一个细粒度令牌，并授予 Contents 和 Metadata 的读取权限。如需让智能体进行更改，还需授予 Issues 和 Pull requests 的读写权限。",
+        "writes": "也允许智能体进行更改（议题、评论、拉取请求）",
+        "writesDescription": "默认情况下，每次更改都会先征求你的同意。你的令牌或 GitHub App 需要 Issues 和 Pull requests 的读写权限。",
+        "writesForbidden": "管理员已关闭通过 GitHub 进行更改。",
+        "writesFailed": "无法更改智能体在 GitHub 上可执行的操作。",
         "createToken": "在 GitHub 上创建令牌",
         "chooseRepositories": "在 GitHub 上选择仓库",
         "noAppRepositories": "DocsGPT 还看不到任何仓库。请在 GitHub 上选择允许它读取的仓库。",

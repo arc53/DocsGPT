@@ -1345,7 +1345,11 @@
       },
       "manageConnection": "Manage connection",
       "github": {
-        "tokenHint": "Create a fine-grained token with read access to Contents and Metadata on the repositories you want to use.",
+        "tokenHint": "Create a fine-grained token with read access to Contents and Metadata on the repositories you want to use. For agents to make changes, also give it read and write access to Issues and Pull requests.",
+        "writes": "Also let agents make changes (issues, comments, pull requests)",
+        "writesDescription": "Changes ask you first by default. Your token, or the GitHub App, needs read and write access to Issues and Pull requests.",
+        "writesForbidden": "An admin turned off changes through GitHub.",
+        "writesFailed": "Could not change what agents may do on GitHub.",
         "createToken": "Create a token on GitHub",
         "chooseRepositories": "Choose repositories on GitHub",
         "noAppRepositories": "DocsGPT cannot see any repositories yet. Choose which ones it may read on GitHub.",

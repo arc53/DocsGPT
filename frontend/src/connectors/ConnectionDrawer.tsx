@@ -26,6 +26,7 @@ import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
+import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import {
   Sheet,
@@ -317,6 +318,42 @@ function ToolSwitch({
   );
 }
 
+/**
+ * Lets agents make changes through a connection (GitHub's issues, comments
+ * and pull requests) or only read. Switching re-reads the tool's actions.
+ */
+function WritesSwitch({
+  detail,
+  onSwitch,
+}: {
+  detail: ConnectionDetail;
+  onSwitch: (detail: ConnectionDetail, allow: boolean) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [pending, setPending] = useState(false);
+  const id = `writes-${detail.id}`;
+  return (
+    <SettingRows>
+      <SettingRow
+        label={t('settings.connectors.github.writes')}
+        description={t('settings.connectors.github.writesDescription')}
+        htmlFor={id}
+        alignStart
+      >
+        <Switch
+          id={id}
+          checked={!!detail.writes}
+          disabled={pending || detail.status !== 'connected'}
+          onCheckedChange={(checked) => {
+            setPending(true);
+            onSwitch(detail, checked === true).finally(() => setPending(false));
+          }}
+        />
+      </SettingRow>
+    </SettingRows>
+  );
+}
+
 function AccountSection({
   connector,
   detail,
@@ -329,6 +366,7 @@ function AccountSection({
   onToggleTool,
   onSyncNow,
   onAddTools,
+  onSwitchWrites,
 }: {
   connector: ConnectorDefinition;
   detail: ConnectionDetail;
@@ -343,6 +381,8 @@ function AccountSection({
   onSyncNow: (source: ConnectionSource) => void;
   /** Creates the tools a connection skipped while it was set up (GitHub's). */
   onAddTools: (detail: ConnectionDetail) => Promise<void>;
+  /** Lets its tool make changes or only read (GitHub's). */
+  onSwitchWrites: (detail: ConnectionDetail, allow: boolean) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const accountTitle = useAccountTitle();
@@ -357,6 +397,11 @@ function AccountSection({
     detail.status === 'connected';
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
   const isMcp = detail.tools.some((tool) => tool.name === 'mcp_tool');
+  // Hidden once an admin forbids changes; its tool then only reads anyway.
+  const canSwitchWrites =
+    !!connector.writes_allowed &&
+    detail.writes !== null &&
+    detail.writes !== undefined;
   const menu: MenuOption[] = [
     {
       icon: Pencil,
@@ -579,6 +624,9 @@ function AccountSection({
                 title={tool.display_name}
                 actions={<ToolSwitch tool={tool} onToggle={onToggleTool} />}
               />
+              {canSwitchWrites && tool.name === 'mcp_tool' && (
+                <WritesSwitch detail={detail} onSwitch={onSwitchWrites} />
+              )}
               <ToolPermissions
                 connectionId={detail.id}
                 tool={tool}
@@ -769,6 +817,29 @@ export default function ConnectionDrawer({
     refresh();
   };
 
+  const switchWrites = async (detail: ConnectionDetail, allow: boolean) => {
+    const data = await connectorsService
+      .setWrites(detail.id, allow, token)
+      .catch(() => null);
+    if (!data?.success) {
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message:
+            data?.code === 'writes_forbidden'
+              ? t('settings.connectors.github.writesForbidden')
+              : data?.code === 'tools_unavailable'
+                ? t('settings.connectors.wizard.toolsUnavailable', {
+                    name: connector ? connectorName(t, connector) : detail.name,
+                    interpolation: { escapeValue: false },
+                  })
+                : t('settings.connectors.github.writesFailed'),
+        }),
+      );
+    }
+    refresh();
+  };
+
   const refreshTools = async (detail: ConnectionDetail) => {
     const data = await connectorsService.refreshTools(detail.id, token);
     dispatch(
@@ -908,6 +979,7 @@ export default function ConnectionDrawer({
                       onToggleTool={toggleTool}
                       onSyncNow={syncNow}
                       onAddTools={addTools}
+                      onSwitchWrites={switchWrites}
                     />
                   ))}
                 </div>
@@ -955,6 +1027,7 @@ export default function ConnectionDrawer({
                       onToggleTool={toggleTool}
                       onSyncNow={syncNow}
                       onAddTools={addTools}
+                      onSwitchWrites={switchWrites}
                     />
                   ))}
                 </section>

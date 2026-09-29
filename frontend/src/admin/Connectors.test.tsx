@@ -312,6 +312,44 @@ describe('Admin Connectors', () => {
     expect(mcp().getAttribute('aria-checked')).toBe('false');
   });
 
+  describe('write access', () => {
+    const GITHUB = connector({
+      key: 'github',
+      name: 'GitHub',
+      icon: 'github',
+      auth_kind: 'api_key',
+      capabilities: ['sync', 'read'],
+      configured: true,
+      required_settings: [],
+      allow_writes: true,
+    });
+    const writes = () =>
+      container.querySelector<HTMLButtonElement>('#allow-writes-github');
+
+    it('lets an admin forbid changes through GitHub', async () => {
+      getAdmin.mockResolvedValue(payload({ connectors: [GITHUB, MCP_ROW] }));
+      updateAdmin.mockResolvedValue(
+        payload({
+          connectors: [{ ...GITHUB, allow_writes: false }, MCP_ROW],
+        }),
+      );
+      await render();
+      expect(writes()!.getAttribute('aria-checked')).toBe('true');
+      await act(async () => writes()!.click());
+      expect(updateAdmin).toHaveBeenCalledWith(
+        { policies: { github: { allow_writes: false } } },
+        null,
+      );
+      expect(writes()!.getAttribute('aria-checked')).toBe('false');
+    });
+
+    it('has no write access section without such a connector', async () => {
+      getAdmin.mockResolvedValue(payload());
+      await render();
+      expect(container.textContent).not.toContain('Write access');
+    });
+  });
+
   it('offers a retry when loading fails', async () => {
     getAdmin.mockRejectedValue(new Error('offline'));
     await render();

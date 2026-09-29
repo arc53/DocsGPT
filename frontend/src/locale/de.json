@@ -1339,7 +1339,11 @@
       },
       "manageConnection": "Verbindung verwalten",
       "github": {
-        "tokenHint": "Erstelle ein feingranulares Token mit Lesezugriff auf „Contents“ und „Metadata“ für die Repositorys, die du nutzen möchtest.",
+        "tokenHint": "Erstelle ein feingranulares Token mit Lesezugriff auf „Contents“ und „Metadata“ für die Repositorys, die du nutzen möchtest. Damit Agenten Änderungen vornehmen können, gib ihm außerdem Lese- und Schreibzugriff auf „Issues“ und „Pull requests“.",
+        "writes": "Agenten auch Änderungen erlauben (Issues, Kommentare, Pull Requests)",
+        "writesDescription": "Änderungen fragen dich standardmäßig zuerst. Dein Token oder die GitHub App braucht Lese- und Schreibzugriff auf „Issues“ und „Pull requests“.",
+        "writesForbidden": "Ein Admin hat Änderungen über GitHub ausgeschaltet.",
+        "writesFailed": "Es konnte nicht geändert werden, was Agenten auf GitHub dürfen.",
         "createToken": "Token auf GitHub erstellen",
         "chooseRepositories": "Repositorys auf GitHub auswählen",
         "noAppRepositories": "DocsGPT sieht noch keine Repositorys. Wähle auf GitHub aus, welche es lesen darf.",

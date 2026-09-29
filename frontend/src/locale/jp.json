@@ -1321,7 +1321,11 @@
       },
       "manageConnection": "接続を管理",
       "github": {
-        "tokenHint": "使用するリポジトリに対して Contents と Metadata の読み取り権限を持つ fine-grained トークンを作成してください。",
+        "tokenHint": "使用するリポジトリに対して Contents と Metadata の読み取り権限を持つ fine-grained トークンを作成してください。エージェントに変更を許可する場合は、Issues と Pull requests の読み取りと書き込みの権限も付与してください。",
+        "writes": "エージェントによる変更も許可する（Issue、コメント、プルリクエスト）",
+        "writesDescription": "変更は既定で先にあなたの承認を求めます。トークンまたは GitHub App に Issues と Pull requests の読み取りと書き込みの権限が必要です。",
+        "writesForbidden": "管理者が GitHub での変更をオフにしています。",
+        "writesFailed": "GitHub でエージェントに許可する操作を変更できませんでした。",
         "createToken": "GitHub でトークンを作成",
         "chooseRepositories": "GitHub でリポジトリを選択",
         "noAppRepositories": "DocsGPT からはまだリポジトリが見えません。読み取りを許可するリポジトリを GitHub で選択してください。",
