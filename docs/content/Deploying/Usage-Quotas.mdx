@@ -14,6 +14,10 @@ An instance admin can limit how much each user spends on language models. A quot
 
 Set either, both or neither. Quotas are managed from **Admin → Quotas**, or through the [API](#api). With no quota set, nothing is limited.
 
+<Callout type="info" emoji="ℹ️">
+Quotas need an instance admin, which exists only under `AUTH_TYPE=oidc` (or in a single-user install with no authentication and `LOCAL_MODE_ADMIN=true`). Under `simple_jwt`, the default for `docsgpt up --expose network` and `--domain`, nobody can manage quotas, and every request counts as the one shared user `local`, so per-user and per-team limits cannot tell people apart. See [Access Control](/Deploying/Access-Control#admin-dashboard).
+</Callout>
+
 ## Layers
 
 Limits are set at three layers. For each budget, the first layer that says something wins:

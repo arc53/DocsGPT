@@ -130,8 +130,8 @@ reconnect HTTP errored. Common cases:
 
 ### D. "The dev install never delivers any notifications at all"
 
-Default `AUTH_TYPE` unset means `decoded_token = {"sub": "local"}`
-for every request. The SSE client connects without the
+`AUTH_TYPE` unset (the default) or `simple_jwt` means
+`decoded_token = {"sub": "local"}` for every request. The SSE client connects without the
 `Authorization` header in this case, and `user:local:stream` is
 the shared channel everything goes to. If the user has multiple dev
 machines pointing at the same Redis, they will see each other's
@@ -142,8 +142,10 @@ redis-cli -n 2 KEYS 'user:local:*'
 ```
 
 If multiple deployments share the Redis, document that as a known
-multi-user-on-local-channel limitation. Set `AUTH_TYPE=simple_jwt`
-to scope per-user.
+multi-user-on-local-channel limitation. `simple_jwt` does not help:
+its one shared token also carries `sub: "local"`. Set
+`AUTH_TYPE=oidc` for per-user streams, or `session_jwt` for
+per-browser streams (it separates browsers, not people).
 
 ### E. "The notifications channel was working, then suddenly stopped after the user reloaded the page"
 
@@ -235,10 +237,16 @@ configured). New events flow as soon as Redis comes back.
 Symptoms: every user shares `user:local:stream`. Any user sees
 everyone else's notifications.
 
-Resolution: set `AUTH_TYPE=simple_jwt` (or `session_jwt`) in `.env`.
-The events route logs a one-time WARNING per process when
-`sub == "local"` is observed. A repeat WARNING after a restart
-confirms the misconfiguration.
+Cause: `AUTH_TYPE` is unset or `simple_jwt`. Both resolve every
+request to `sub: "local"`; the `simple_jwt` token is one shared
+secret for one shared user.
+
+Resolution: set `AUTH_TYPE=oidc` in `.env` for per-user streams
+(`session_jwt` gives each browser its own stream, but anyone who can
+reach the instance gets one). The events route logs a one-time
+WARNING per process when `sub == "local"` is observed ("AUTH_TYPE
+unset or simple_jwt"). A repeat WARNING after a restart confirms the
+misconfiguration.
 
 ### MAXLEN trimmed past Last-Event-ID
 

@@ -72,6 +72,10 @@ If your IdP only exposes groups via the userinfo endpoint, DocsGPT backfills the
 
 ## Admin dashboard
 
+<Callout type="info" emoji="ℹ️">
+The dashboard needs an admin, and an admin exists only under `AUTH_TYPE=oidc`, or in a single-user install with no authentication and `LOCAL_MODE_ADMIN=true`. Under `simple_jwt` and `session_jwt` nobody can open it.
+</Callout>
+
 Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoint requires the admin role). All mutating actions are written to the `auth_events` audit log with the acting admin recorded as the event's `actor_id`.
 
 | Method | Path | Description |
@@ -82,7 +86,9 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `PATCH` | `/api/admin/users/<id>` | Activate / deactivate a user (deactivation revokes their sessions). |
 | `POST` | `/api/admin/users/<id>/role` | Grant the admin role (guards against removing the last admin). |
 | `DELETE` | `/api/admin/users/<id>/role` | Revoke the admin role. |
-| `POST` | `/api/admin/users/<id>/revoke-sessions` | Force-logout a user. |
+| `POST` | `/api/admin/users/<id>/revoke-sessions` | Force-logout a user and revoke all of their personal access tokens. |
+| `GET` | `/api/admin/users/<id>/tokens` | List a user's [personal access tokens](/Extensions/personal-access-tokens), revoked ones included. |
+| `DELETE` | `/api/admin/tokens/<id>` | Revoke any user's personal access token. |
 | `GET` | `/api/admin/admins` | List current admins. |
 | `GET` | `/api/admin/usage` | Usage series with tokens and spend, per-model split, latency percentiles, top users. Takes `days`, `bucket` and `group_by=model\|agent\|source`. |
 | `GET` | `/api/admin/users/<id>/usage` | One user's spend: daily series plus a split by model and by flow. |
@@ -93,9 +99,10 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `GET` | `/api/admin/devices/audit` | Remote-device audit feed. |
 | `GET` | `/api/admin/teams` | Instance-wide oversight of all teams. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/...` | [Usage quotas](/Deploying/Usage-Quotas) for the instance, teams and users. |
+| `GET` `PUT` | `/api/admin/connectors` | Turn [connectors](/Guides/Connectors#admin-setup) on or off and set their sharing mode, write access and the custom MCP server switch. |
 
 <Callout type="info" emoji="ℹ️">
-Deactivating a user via the dashboard works for any auth type, while OIDC deployments can also offboard through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning). Both revoke live sessions immediately.
+Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning)) blocks their sign-in, revokes their live sessions and disables their personal access tokens. It takes effect under `AUTH_TYPE=oidc`, the only mode with separate accounts to deactivate.
 </Callout>
 
 ## Teams
@@ -135,6 +142,7 @@ Four resource types can be shared: **agents**, **sources**, **prompts**, and **t
 | --- | --- | --- |
 | `GET` / `POST` / `DELETE` | `/api/teams/<id>/grants` | List, create, or revoke a share within a team. |
 | `GET` | `/api/resource_shares` | List shares visible to the caller. |
+| `GET` / `PUT` | `/api/resource_settings` | Read a resource's sharing switches (**Editors can share**, **Editors can delete**, ...), or change them as its owner. |
 
 Sharing rules:
 
