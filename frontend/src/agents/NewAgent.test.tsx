@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => {
     catalog: [] as unknown[],
     deleteAgent: vi.fn(() => jsonResponse({})),
     guardrailsProps: vi.fn(),
+    detailsProps: vi.fn(),
   };
 });
 const { jsonResponse } = mocks;
@@ -126,7 +127,12 @@ vi.mock('./components/GuardrailsSection', () => ({
   guardrailsIncomplete: () => false,
 }));
 vi.mock('../upload/Upload', () => ({ default: () => null }));
-vi.mock('../modals/AgentDetailsModal', () => ({ default: () => null }));
+vi.mock('../modals/AgentDetailsModal', () => ({
+  default: (props: unknown) => {
+    mocks.detailsProps(props);
+    return null;
+  },
+}));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
 vi.mock('../modals/ConfirmationModal', () => ({
   default: ({
@@ -791,6 +797,22 @@ describe('NewAgent gating by role', () => {
       ?.querySelector<HTMLButtonElement>('[role="switch"]');
     expect(tokenSwitch?.disabled).toBe(true);
     expect(token.disabled).toBe(true);
+  });
+
+  it('keeps the form clean after the API write allowlist saves', async () => {
+    await renderEdit('owner', OWNER);
+    const details = () =>
+      mocks.detailsProps.mock.calls.at(-1)![0] as {
+        onConfigChange: (config: Record<string, unknown>) => void;
+        getSavedConfig: () => Record<string, unknown> | undefined;
+      };
+    const saved = {
+      ...details().getSavedConfig(),
+      api_write_allowlist: ['tool-1:send'],
+    };
+    await act(async () => details().onConfigChange(saved));
+    expect(details().getSavedConfig()).toEqual(saved);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
   });
 
   it('hides Access details without manage_access_details', async () => {

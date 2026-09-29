@@ -1656,7 +1656,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         modalState={agentDetails}
         setModalState={setAgentDetails}
         onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
-        onConfigChange={(config) => setAgent((prev) => ({ ...prev, config }))}
+        onConfigChange={(config) => {
+          // The allowlist is saved already: record it on the saved snapshot
+          // too, and keep any unsaved form edits to the rest of the config.
+          if (initialAgentRef.current)
+            initialAgentRef.current = { ...initialAgentRef.current, config };
+          setAgent((prev) => ({
+            ...prev,
+            config: {
+              ...(prev.config ?? {}),
+              api_write_allowlist: config.api_write_allowlist,
+            },
+          }));
+        }}
+        getSavedConfig={() => initialAgentRef.current?.config ?? agent.config}
       />
       {shareModalOpen && agent.id && (
         <ShareToTeamModal

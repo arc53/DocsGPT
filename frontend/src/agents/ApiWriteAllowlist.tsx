@@ -36,13 +36,19 @@ type UserTool = {
  * The write actions on the owner's connected accounts that anyone calling
  * this agent with its API key may run. Nobody can approve an action in the
  * widget or the API, so the server refuses every other such write.
+ *
+ * A toggle saves at once, on top of the agent's last saved config
+ * (`getSavedConfig`), so edits still pending in the form are not saved with
+ * it. `onConfigChange` receives the config as saved.
  */
 export default function ApiWriteAllowlist({
   agent,
   onConfigChange,
+  getSavedConfig,
 }: {
   agent: Agent;
   onConfigChange?: (config: AgentConfig) => void;
+  getSavedConfig?: () => AgentConfig | undefined;
 }) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -101,7 +107,7 @@ export default function ApiWriteAllowlist({
       : allowed.filter((item) => item !== entry);
     setAllowed(next);
     const config: AgentConfig = {
-      ...(agent.config ?? {}),
+      ...((getSavedConfig ? getSavedConfig() : agent.config) ?? {}),
       api_write_allowlist: next,
     };
     const form = new FormData();

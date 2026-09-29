@@ -37,8 +37,10 @@ type AgentDetailsModalProps = {
   modalState: ActiveState;
   setModalState: (state: ActiveState) => void;
   onKeyRegenerated?: (key: string) => void;
-  /** The agent's config after its API-key write allowlist changed. */
+  /** The agent's saved config after its API-key write allowlist changed. */
   onConfigChange?: (config: AgentConfig) => void;
+  /** The agent's last saved config, which an allowlist change saves onto. */
+  getSavedConfig?: () => AgentConfig | undefined;
 };
 
 export default function AgentDetailsModal({
@@ -48,6 +50,7 @@ export default function AgentDetailsModal({
   setModalState,
   onKeyRegenerated,
   onConfigChange,
+  getSavedConfig,
 }: AgentDetailsModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -278,6 +281,7 @@ export default function AgentDetailsModal({
                 <ApiWriteAllowlist
                   agent={agent}
                   onConfigChange={onConfigChange}
+                  getSavedConfig={getSavedConfig}
                 />
               )}
             </div>

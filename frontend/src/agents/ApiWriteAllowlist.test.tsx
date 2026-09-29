@@ -81,12 +81,20 @@ describe('ApiWriteAllowlist', () => {
     container.remove();
   });
 
-  const render = async (a: Agent, onConfigChange = vi.fn()) => {
+  const render = async (
+    a: Agent,
+    onConfigChange = vi.fn(),
+    getSavedConfig?: () => Agent['config'],
+  ) => {
     store = makeStore();
     await act(async () => {
       root.render(
         <Provider store={store}>
-          <ApiWriteAllowlist agent={a} onConfigChange={onConfigChange} />
+          <ApiWriteAllowlist
+            agent={a}
+            onConfigChange={onConfigChange}
+            getSavedConfig={getSavedConfig}
+          />
         </Provider>,
       );
     });
@@ -123,6 +131,27 @@ describe('ApiWriteAllowlist', () => {
       guardrails: { controls: [] },
       api_write_allowlist: ['tg:telegram_send_message'],
     });
+  });
+
+  it('saves on top of the last saved config, not unsaved form edits', async () => {
+    updateAgent.mockResolvedValue({ ok: true });
+    const saved = { guardrails: { controls: [] } };
+    const draft = agent({
+      config: { guardrails: { controls: [{ id: 'unsaved' }] } },
+    } as unknown as Partial<Agent>);
+    const onConfigChange = await render(draft, vi.fn(), () => saved);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[role="checkbox"]')!
+        .click(),
+    );
+    const expected = {
+      guardrails: { controls: [] },
+      api_write_allowlist: ['tg:telegram_send_message'],
+    };
+    const form = updateAgent.mock.calls[0][1] as FormData;
+    expect(JSON.parse(form.get('config') as string)).toEqual(expected);
+    expect(onConfigChange).toHaveBeenCalledWith(expected);
   });
 
   it('puts the choice back and says so when saving fails', async () => {
