@@ -44,6 +44,7 @@ import {
 } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import { formatCount } from '../utils/dateTimeUtils';
+import { ACCOUNT_NAME_MAX } from './accounts';
 import ConnectorIcon from './ConnectorIcon';
 import CredentialForm, { credentialsComplete } from './CredentialForm';
 import { loadConnectors, selectConnections } from './connectorsSlice';
@@ -107,6 +108,7 @@ export default function ConnectWizard({
     initialConnectionId,
   );
   const [credentials, setCredentials] = useState<Record<string, string>>({});
+  const [accountName, setAccountName] = useState('');
   const [setupValues, setSetupValues] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
@@ -156,8 +158,22 @@ export default function ConnectWizard({
 
   const refresh = () => dispatch(loadConnectors({ token }));
 
+  // A name tells two accounts of one service apart ("Alerts bot"). It is
+  // set once the account exists, so it works the same for keys and sign-ins.
+  const canName =
+    mode === 'connect' &&
+    (connector.auth_kind === 'api_key' || connector.auth_kind === 'oauth');
+
   const afterSignIn = async (id: string) => {
     setConnectionId(id);
+    const name = accountName.trim();
+    if (canName && name) {
+      try {
+        await connectorsService.renameConnection(id, name, token);
+      } catch {
+        // The account works without a name; it can be named in the drawer.
+      }
+    }
     refresh();
     if (mode === 'reconnect') {
       setStep('done');
@@ -494,6 +510,20 @@ export default function ConnectWizard({
             onChange={setCredentials}
           />
         </>
+      )}
+      {canName && (
+        <FormField
+          label={t('settings.connectors.wizard.accountName')}
+          hint={t('settings.connectors.wizard.accountNameHint')}
+        >
+          <Input
+            id="connect-account-name"
+            autoComplete="off"
+            maxLength={ACCOUNT_NAME_MAX}
+            value={accountName}
+            onChange={(e) => setAccountName(e.target.value)}
+          />
+        </FormField>
       )}
     </div>
   );

@@ -69,6 +69,9 @@ const connectorsService = {
         token,
       ),
     ),
+  /** Name an account ("Alerts bot"); an empty name clears it. */
+  renameConnection: async (id: string, name: string, token: string | null) =>
+    json(await apiClient.patch(endpoints.USER.CONNECTION(id), { name }, token)),
   disconnect: async (id: string, token: string | null) =>
     json(
       await apiClient.post(endpoints.USER.CONNECTION_DISCONNECT(id), {}, token),

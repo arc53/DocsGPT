@@ -20,6 +20,7 @@ const service = vi.hoisted(() => ({
   listConnections: vi.fn(),
   setToolPermissions: vi.fn(),
   pickerToken: vi.fn(),
+  renameConnection: vi.fn(),
 }));
 vi.mock('../api/services/connectorsService', () => ({ default: service }));
 
@@ -268,6 +269,60 @@ describe('ConnectWizard', () => {
     );
     expect(document.body.textContent).toContain(
       'settings.connectors.wizard.toolsHeading:1',
+    );
+  });
+
+  it('names the account when the user gives it a name', async () => {
+    service.createConnection.mockResolvedValue({
+      success: true,
+      connection: { id: 'conn-1' },
+    });
+    service.renameConnection.mockResolvedValue({ success: true });
+    service.setup.mockResolvedValue({ success: true, tools: [], sources: [] });
+    await render(base);
+    await typeInto(
+      document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
+      '123:abc',
+    );
+    await typeInto(
+      document.body.querySelector<HTMLInputElement>('#connect-account-name')!,
+      ' Alerts bot ',
+    );
+    await click('settings.connectors.status.connect');
+    expect(service.renameConnection).toHaveBeenCalledWith(
+      'conn-1',
+      'Alerts bot',
+      null,
+    );
+  });
+
+  it('leaves an unnamed account alone', async () => {
+    service.createConnection.mockResolvedValue({
+      success: true,
+      connection: { id: 'conn-1' },
+    });
+    service.setup.mockResolvedValue({ success: true, tools: [], sources: [] });
+    await render(base);
+    await typeInto(
+      document.body.querySelector<HTMLInputElement>('input[type="password"]')!,
+      '123:abc',
+    );
+    await click('settings.connectors.status.connect');
+    expect(service.renameConnection).not.toHaveBeenCalled();
+  });
+
+  it('names a signed-in account after the sign-in', async () => {
+    service.renameConnection.mockResolvedValue({ success: true });
+    await render(drive);
+    await typeInto(
+      document.body.querySelector<HTMLInputElement>('#connect-account-name')!,
+      'Work',
+    );
+    await click('settings.connectors.wizard.signIn');
+    expect(service.renameConnection).toHaveBeenCalledWith(
+      'conn-drive',
+      'Work',
+      null,
     );
   });
 

@@ -1201,7 +1201,8 @@
         "broken": "Diese Verbindung funktioniert nicht mehr. Verbinde neu, um es erneut zu versuchen.",
         "addTools": "Werkzeuge hinzufügen",
         "noTools": "Noch keine Werkzeuge aus dieser Verbindung.",
-        "addToolsFailed": "Die Werkzeuge konnten nicht hinzugefügt werden. Versuche es erneut."
+        "addToolsFailed": "Die Werkzeuge konnten nicht hinzugefügt werden. Versuche es erneut.",
+        "rename": "Umbenennen"
       },
       "permission": {
         "always": "Erlauben",
@@ -1281,7 +1282,9 @@
         "addToolsDescription": {
           "read": "Agenten können Dinge nachschlagen. Sie können nichts ändern.",
           "readWrite": "Agenten können Dinge nachschlagen und ändern. Änderungen brauchen deine Freigabe."
-        }
+        },
+        "accountName": "Konto benennen",
+        "accountNameHint": "Optional. Unterscheidet deine Konten, für dich und die KI, z. B. Alarm-Bot."
       },
       "remove": {
         "title": "{{name}} entfernen?",
@@ -1362,6 +1365,13 @@
       },
       "fieldHints": {
         "telegram_chat_id": "Optional. Nachrichten gehen an diesen Chat, und die KI kann keinen anderen wählen. Füge den Bot zum Chat hinzu, sende ihm eine Nachricht und finde die ID des Chats unter https://api.telegram.org/bot<token>/getUpdates."
+      },
+      "rename": {
+        "title": "Konto umbenennen",
+        "description": "Der Name unterscheidet dieses Konto von deinen anderen Konten desselben Dienstes, für dich und die KI. Lass ihn leer, um das Konto selbst anzuzeigen.",
+        "label": "Kontoname",
+        "save": "Speichern",
+        "failed": "Das Konto konnte nicht umbenannt werden. Versuche es erneut."
       }
     }
   },

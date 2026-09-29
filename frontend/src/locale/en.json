@@ -1207,7 +1207,8 @@
         "broken": "This connection stopped working. Reconnect to try again.",
         "addTools": "Add tools",
         "noTools": "No tools from this connection yet.",
-        "addToolsFailed": "Could not add the tools. Try again."
+        "addToolsFailed": "Could not add the tools. Try again.",
+        "rename": "Rename"
       },
       "permission": {
         "always": "Allow",
@@ -1287,7 +1288,9 @@
         "addToolsDescription": {
           "read": "Agents can look things up. They cannot change anything.",
           "readWrite": "Agents can look things up and make changes. Changes need your approval."
-        }
+        },
+        "accountName": "Name this account",
+        "accountNameHint": "Optional. Tells your accounts apart, for you and the AI, e.g. Alerts bot."
       },
       "remove": {
         "title": "Remove {{name}}?",
@@ -1368,6 +1371,13 @@
       },
       "fieldHints": {
         "telegram_chat_id": "Optional. Messages go to this chat, and the AI cannot pick another. Add the bot to the chat, send it a message, then find the chat's id in https://api.telegram.org/bot<token>/getUpdates."
+      },
+      "rename": {
+        "title": "Rename account",
+        "description": "The name tells this account apart from your other accounts of the same service, for you and the AI. Leave it empty to show the account itself.",
+        "label": "Account name",
+        "save": "Save",
+        "failed": "Could not rename the account. Try again."
       }
     }
   },

@@ -12,6 +12,7 @@ const connectors = vi.hoisted(() => ({
   getCatalog: vi.fn(async () => ({ success: true, connectors: [] })),
   listConnections: vi.fn(async () => ({ success: true, connections: [] })),
   setup: vi.fn(),
+  renameConnection: vi.fn(),
 }));
 vi.mock('../api/services/connectorsService', () => ({ default: connectors }));
 
@@ -207,6 +208,58 @@ describe('ConnectionDrawer', () => {
     expect(
       document.body.querySelector('[title="invalid_grant: token expired"]'),
     ).not.toBeNull();
+  });
+
+  const openAccountMenu = async () => {
+    const trigger = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label="settings.connectors.detail.accountMenu"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+  };
+
+  it('shows the name an account was given, with the account under it', async () => {
+    connectors.getConnection.mockResolvedValue({
+      success: true,
+      connection: { ...DETAIL, account_name: 'Work' },
+    });
+    await render();
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Work');
+    expect(text).toContain('settings.connectors.detail.connectedAs');
+  });
+
+  it('renames an account from its menu', async () => {
+    connectors.renameConnection.mockResolvedValue({
+      success: true,
+      connection: { ...DETAIL, account_name: 'Work' },
+    });
+    await render();
+    await openAccountMenu();
+    const item = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'settings.connectors.detail.rename')!;
+    await act(async () => item.click());
+    const input =
+      document.body.querySelector<HTMLInputElement>('#rename-account')!;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setter.call(input, 'Work');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => button('settings.connectors.rename.save').click());
+    expect(connectors.renameConnection).toHaveBeenCalledWith(
+      'conn-1',
+      'Work',
+      null,
+    );
   });
 
   it('labels synced content as Knowledge from this connection', async () => {

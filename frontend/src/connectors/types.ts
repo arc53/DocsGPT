@@ -82,6 +82,8 @@ export type Connection = {
   display_name: string | null;
   icon: string;
   account_label: string;
+  /** What the owner calls the account; `account_label` stays its identity. */
+  account_name?: string | null;
   auth_kind: ConnectorAuthKind | null;
   status: ConnectionStatus;
   server_url: string | null;

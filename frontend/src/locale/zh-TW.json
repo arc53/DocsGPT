@@ -1192,7 +1192,8 @@
         "broken": "此連線已停止運作。重新連線以再試一次。",
         "addTools": "新增工具",
         "noTools": "此連線還沒有工具。",
-        "addToolsFailed": "無法新增工具。請再試一次。"
+        "addToolsFailed": "無法新增工具。請再試一次。",
+        "rename": "重新命名"
       },
       "permission": {
         "always": "允許",
@@ -1267,7 +1268,9 @@
         "addToolsDescription": {
           "read": "代理可以查詢資訊，但無法做任何變更。",
           "readWrite": "代理可以查詢資訊並進行變更。變更需要你的核准。"
-        }
+        },
+        "accountName": "為此帳戶命名",
+        "accountNameHint": "選填。讓你和 AI 區分你的帳戶，例如「警示機器人」。"
       },
       "remove": {
         "title": "要移除 {{name}} 嗎？",
@@ -1343,6 +1346,13 @@
       },
       "fieldHints": {
         "telegram_chat_id": "選填。訊息會傳送到此聊天，AI 無法選擇其他聊天。將機器人加入聊天並傳送一則訊息給它，然後在 https://api.telegram.org/bot<token>/getUpdates 中找到該聊天的 id。"
+      },
+      "rename": {
+        "title": "重新命名帳戶",
+        "description": "此名稱可讓你和 AI 將此帳戶與同一服務的其他帳戶區分開來。留空則顯示帳戶本身。",
+        "label": "帳戶名稱",
+        "save": "儲存",
+        "failed": "無法重新命名帳戶。請再試一次。"
       }
     }
   },

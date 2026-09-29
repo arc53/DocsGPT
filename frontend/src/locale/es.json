@@ -1201,7 +1201,8 @@
         "broken": "Esta conexión dejó de funcionar. Reconecta para intentarlo de nuevo.",
         "addTools": "Añadir herramientas",
         "noTools": "Todavía no hay herramientas de esta conexión.",
-        "addToolsFailed": "No se pudieron añadir las herramientas. Inténtalo de nuevo."
+        "addToolsFailed": "No se pudieron añadir las herramientas. Inténtalo de nuevo.",
+        "rename": "Cambiar nombre"
       },
       "permission": {
         "always": "Permitir",
@@ -1281,7 +1282,9 @@
         "addToolsDescription": {
           "read": "Los agentes pueden consultar información. No pueden cambiar nada.",
           "readWrite": "Los agentes pueden consultar información y hacer cambios. Los cambios necesitan tu aprobación."
-        }
+        },
+        "accountName": "Nombre de esta cuenta",
+        "accountNameHint": "Opcional. Distingue tus cuentas, para ti y para la IA; por ejemplo, Bot de alertas."
       },
       "remove": {
         "title": "¿Eliminar {{name}}?",
@@ -1362,6 +1365,13 @@
       },
       "fieldHints": {
         "telegram_chat_id": "Opcional. Los mensajes van a este chat y la IA no puede elegir otro. Añade el bot al chat, envíale un mensaje y busca el id del chat en https://api.telegram.org/bot<token>/getUpdates."
+      },
+      "rename": {
+        "title": "Cambiar el nombre de la cuenta",
+        "description": "El nombre distingue esta cuenta de tus otras cuentas del mismo servicio, para ti y para la IA. Déjalo vacío para mostrar la cuenta en sí.",
+        "label": "Nombre de la cuenta",
+        "save": "Guardar",
+        "failed": "No se pudo cambiar el nombre de la cuenta. Inténtalo de nuevo."
       }
     }
   },

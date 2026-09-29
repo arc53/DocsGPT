@@ -1,5 +1,6 @@
 import {
   CircleAlert,
+  Pencil,
   Plus,
   RefreshCw,
   RotateCw,
@@ -20,6 +21,7 @@ import { Card } from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { FormField } from '../components/ui/form-field';
+import { Input } from '../components/ui/input';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal, ModalActions } from '../components/ui/modal';
@@ -37,6 +39,7 @@ import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import { formatCount, formatDateTime } from '../utils/dateTimeUtils';
+import { ACCOUNT_NAME_MAX } from './accounts';
 import { CapabilityBadges } from './ConnectorCard';
 import ConnectorIcon from './ConnectorIcon';
 import ConnectorSetupNotice from './ConnectorSetupNotice';
@@ -211,6 +214,82 @@ function RemoveConnectionModal({
   );
 }
 
+/** Names an account ("Alerts bot"), so two accounts of a service read apart. */
+function RenameAccountModal({
+  detail,
+  onClose,
+  onRenamed,
+}: {
+  detail: ConnectionDetail;
+  onClose: () => void;
+  onRenamed: () => void;
+}) {
+  const { t } = useTranslation();
+  const token = useSelector(selectToken);
+  const [name, setName] = useState(detail.account_name ?? '');
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const save = () => {
+    setPending(true);
+    setFailed(false);
+    connectorsService
+      .renameConnection(detail.id, name.trim(), token)
+      .then((data) => {
+        if (!data?.success) throw new Error('rename failed');
+        onRenamed();
+      })
+      .catch(() => setFailed(true))
+      .finally(() => setPending(false));
+  };
+
+  return (
+    <Modal
+      open
+      size="sm"
+      onOpenChange={(open) => !open && onClose()}
+      title={t('settings.connectors.rename.title')}
+      description={t('settings.connectors.rename.description')}
+      footer={
+        <ModalActions
+          cancelLabel={t('cancel')}
+          onCancel={onClose}
+          submitLabel={t('settings.connectors.rename.save')}
+          onSubmit={save}
+          pending={pending}
+          disabled={name.trim() === (detail.account_name ?? '')}
+        />
+      }
+    >
+      <div className="flex flex-col gap-5">
+        {failed && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertDescription>
+              {t('settings.connectors.rename.failed')}
+            </AlertDescription>
+          </Alert>
+        )}
+        <Input
+          id="rename-account"
+          label={t('settings.connectors.rename.label')}
+          autoComplete="off"
+          maxLength={ACCOUNT_NAME_MAX}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (
+              e.key === 'Enter' &&
+              name.trim() !== (detail.account_name ?? '')
+            )
+              save();
+          }}
+        />
+      </div>
+    </Modal>
+  );
+}
+
 /** A connection tool's on/off switch: the one place it is turned on or off. */
 function ToolSwitch({
   tool,
@@ -244,6 +323,7 @@ function AccountSection({
   onReconnect,
   onDisconnect,
   onRemove,
+  onRename,
   onSyncMore,
   onRefreshTools,
   onToggleTool,
@@ -255,6 +335,7 @@ function AccountSection({
   onReconnect: (detail: ConnectionDetail) => void;
   onDisconnect: (detail: ConnectionDetail) => void;
   onRemove: (detail: ConnectionDetail) => void;
+  onRename: (detail: ConnectionDetail) => void;
   onSyncMore: (detail: ConnectionDetail) => void;
   onRefreshTools: (detail: ConnectionDetail) => Promise<void>;
   /** Turns a tool of this connection on or off for agents and chat. */
@@ -276,7 +357,13 @@ function AccountSection({
     detail.status === 'connected';
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
   const isMcp = detail.tools.some((tool) => tool.name === 'mcp_tool');
-  const menu: MenuOption[] = [];
+  const menu: MenuOption[] = [
+    {
+      icon: Pencil,
+      label: t('settings.connectors.detail.rename'),
+      onClick: () => onRename(detail),
+    },
+  ];
   if (detail.status !== 'disconnected') {
     menu.push({
       icon: Unplug,
@@ -303,9 +390,11 @@ function AccountSection({
         <Card variant="subtle" padding="none">
           <ListRows>
             <ListRow
-              title={accountTitle(detail)}
+              title={detail.account_name || accountTitle(detail)}
               description={
-                !broken && detail.last_error ? (
+                detail.account_name ? (
+                  accountTitle(detail)
+                ) : !broken && detail.last_error ? (
                   <span title={detail.last_error}>{detail.last_error}</span>
                 ) : undefined
               }
@@ -532,6 +621,7 @@ export default function ConnectionDrawer({
     null,
   );
   const [toRemove, setToRemove] = useState<ConnectionDetail | null>(null);
+  const [toRename, setToRename] = useState<ConnectionDetail | null>(null);
 
   const keys = [connector?.key, ...parts.map((part) => part.key)];
   const accountIds = connections
@@ -807,6 +897,7 @@ export default function ConnectionDrawer({
                       onReconnect={reconnect}
                       onDisconnect={setToDisconnect}
                       onRemove={setToRemove}
+                      onRename={setToRename}
                       onSyncMore={(d) =>
                         onConnect(connector, {
                           mode: 'sync',
@@ -856,6 +947,7 @@ export default function ConnectionDrawer({
                       onReconnect={reconnect}
                       onDisconnect={setToDisconnect}
                       onRemove={setToRemove}
+                      onRename={setToRename}
                       onSyncMore={(d) =>
                         onConnect(part, { mode: 'sync', connectionId: d.id })
                       }
@@ -886,6 +978,16 @@ export default function ConnectionDrawer({
         submitLabel={t('settings.connectors.detail.disconnect')}
         variant="destructive"
       />
+      {toRename && (
+        <RenameAccountModal
+          detail={toRename}
+          onClose={() => setToRename(null)}
+          onRenamed={() => {
+            setToRename(null);
+            refresh();
+          }}
+        />
+      )}
       {toRemove && (
         <RemoveConnectionModal
           detail={toRemove}
