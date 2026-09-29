@@ -134,10 +134,21 @@ class TestListPayload:
         v = next(r for r in viewer.json if r["id"] == sid)
         e = next(r for r in editor.json if r["id"] == sid)
         vp = next(r for r in vpage.json["paginated"] if r["id"] == sid)
-        assert "config" not in v
+        # Only the behaviour selector survives: the UI needs it to pick the view.
+        assert v["config"] == {"kind": "classic"}
         assert v["allowed_actions"] == ["use"]
-        assert "config" not in vp
-        assert "config" in e
+        assert vp["config"] == {"kind": "classic"}
+        assert "retrieval" in e["config"]
+
+    def test_viewer_keeps_graphrag_kind_when_config_hidden(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import CombinedJson
+
+        sid = _shared_source(pg_conn, config={"kind": "graphrag"})
+        _set(pg_conn, sid, viewers_can_see_config=False)
+        with _patch_db(pg_conn, ROUTES):
+            viewer = _call(app, VIEWER, "/api/sources", CombinedJson().get)
+        v = next(r for r in viewer.json if r["id"] == sid)
+        assert v["config"] == {"kind": "graphrag"}
 
     def test_paginated_rows_carry_access(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import PaginatedSources

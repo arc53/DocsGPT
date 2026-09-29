@@ -10,6 +10,12 @@
   "loading": "Cargando...",
   "retry": "Reintentar",
   "cancel": "Cancelar",
+  "common": {
+    "close": "Cerrar",
+    "viewOnlyNotice": "Puedes ver esto, pero tu rol no puede cambiarlo.",
+    "credentialsLockedNotice": "Solo el propietario puede cambiar las credenciales de esta herramienta.",
+    "savedSecretHint": "Guardado. Déjalo vacío para conservarlo."
+  },
   "help": "Asistencia",
   "emailUs": "Envíanos un correo",
   "documentation": "Documentación",
@@ -396,7 +402,6 @@
         "subtitle": "Configura cómo se fragmenta y recupera \"{{name}}\".",
         "subtitleGeneric": "Configura cómo se fragmenta y recupera esta fuente.",
         "save": "Guardar",
-        "readOnly": "Tienes acceso de solo lectura a esta fuente compartida y no puedes cambiar su configuración.",
         "chunkingChangeHint": "Cambiaste un ajuste de fragmentación. Al guardar será necesario reindexar esta fuente para que surta efecto.",
         "prescreenInvalidHint": "Revisa los valores de preselección: los candidatos a obtener deben ser al menos el número de fragmentos, y los fragmentos a conservar no deben superar los candidatos a obtener.",
         "reingestRequired": "Tus cambios se guardaron. Los ajustes de fragmentación que cambiaste solo surten efecto tras reindexar. ¿Reindexar ahora?",
@@ -1778,6 +1783,7 @@
   "agents": {
     "title": "Agentes",
     "edit": "Editar",
+    "view": "Ver",
     "card": {
       "pin": "Fijar agente",
       "unpin": "Dejar de fijar agente",
@@ -1815,10 +1821,6 @@
       "byMe": "Por mí",
       "team": "Equipo",
       "shared": "Compartidos conmigo"
-    },
-    "teamBadge": {
-      "editor": "Editor",
-      "viewer": "Lector"
     },
     "sections": {
       "template": {
@@ -1998,8 +2000,7 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        },
-        "readOnly": "Puedes ver esta política, pero tu rol no puede cambiarla."
+        }
       },
       "byline": {
         "new": "Configura el agente y publícalo para chatear con él."

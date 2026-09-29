@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react';
+import { CircleAlert, CircleCheck, Lock, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -509,7 +509,8 @@ export default function MCPServerModal({
               }
             >
               <Input
-                type="text"
+                type="password"
+                autoComplete="off"
                 value={formData.api_key}
                 onChange={(e) => handleInputChange('api_key', e.target.value)}
                 placeholder={t('settings.tools.mcp.placeholders.apiKey')}
@@ -538,7 +539,8 @@ export default function MCPServerModal({
             }
           >
             <Input
-              type="text"
+              type="password"
+              autoComplete="off"
               value={formData.bearer_token}
               onChange={(e) =>
                 handleInputChange('bearer_token', e.target.value)
@@ -656,8 +658,8 @@ export default function MCPServerModal({
     >
       <div className="flex flex-col gap-5">
         {isShared && (
-          <Alert variant="info">
-            <Info aria-hidden="true" />
+          <Alert role="note">
+            <Lock />
             <AlertDescription>
               {t('settings.tools.mcp.sharedCredentialsNotice')}
               {oauthOwnerOnly &&

@@ -105,6 +105,9 @@ describe('AgentDetailsModal', () => {
     await act(async () => generateButtons()[0].click());
     const alert = document.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain('Not allowed');
+    // Destructive Alerts lead with CircleAlert, like every other one.
+    expect(alert?.querySelector('svg.lucide-circle-alert')).not.toBeNull();
+    expect(alert?.querySelector('svg.lucide-circle-x')).toBeNull();
   });
 
   it('shows a failed webhook in an alert with a fallback message', async () => {

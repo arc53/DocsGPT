@@ -10,6 +10,12 @@
   "loading": "加载中...",
   "retry": "重试",
   "cancel": "取消",
+  "common": {
+    "close": "关闭",
+    "viewOnlyNotice": "你可以查看此内容，但你的角色无法更改它。",
+    "credentialsLockedNotice": "只有所有者可以更改此工具的凭据。",
+    "savedSecretHint": "已保存。留空即可保留。"
+  },
   "help": "帮助",
   "emailUs": "给我们发邮件",
   "documentation": "文档",
@@ -389,7 +395,6 @@
         "subtitle": "配置“{{name}}”的分块与检索方式。",
         "subtitleGeneric": "配置此来源的分块与检索方式。",
         "save": "保存",
-        "readOnly": "您对此共享来源仅有查看权限，无法更改其配置。",
         "chunkingChangeHint": "您更改了分块设置。保存后需要重新索引此来源才能生效。",
         "prescreenInvalidHint": "请检查预筛选参数：获取的候选数量至少应等于文本块数量，且保留的文本块数不得超过获取的候选数量。",
         "reingestRequired": "您的更改已保存。修改的分块设置需重新索引后才会生效。立即重新索引？",
@@ -1766,6 +1771,7 @@
   "agents": {
     "title": "代理",
     "edit": "编辑",
+    "view": "查看",
     "card": {
       "pin": "固定代理",
       "unpin": "取消固定代理",
@@ -1803,10 +1809,6 @@
       "byMe": "我的",
       "team": "团队",
       "shared": "与我共享"
-    },
-    "teamBadge": {
-      "editor": "编辑者",
-      "viewer": "查看者"
     },
     "sections": {
       "template": {
@@ -1985,8 +1987,7 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        },
-        "readOnly": "你可以查看此策略，但你的角色无法更改它。"
+        }
       },
       "byline": {
         "new": "设置好智能体后发布，即可与它对话。"

@@ -3,6 +3,7 @@ import { useSelector } from 'react-redux';
 import { Navigate, useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
+import { LoadingState } from '../components/ui/loading-state';
 import {
   selectAgents,
   selectSelectedAgent,
@@ -24,7 +25,8 @@ type AgentRouteGuardProps = {
  *
  * Decides from the agent already in the store when that record carries the
  * server's `allowed_actions`, else fetches the agent. Nothing of the page
- * renders until it knows, so a viewer never sees a flash of the edit form.
+ * renders until it knows (a loading ring stands in), so a viewer never sees
+ * a flash of the edit form.
  * A caller who may not open the page, or an agent that does not load, goes
  * back to the agent list.
  *
@@ -74,7 +76,7 @@ export default function AgentRouteGuard({
 
   let agent: Agent | null | undefined = stored;
   if (!agent) {
-    if (fetched?.id !== agentId) return null;
+    if (fetched?.id !== agentId) return <LoadingState fill="parent" />;
     agent = fetched.agent;
   }
   if (!agent || !canAgent(agent, action))

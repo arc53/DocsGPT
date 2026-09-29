@@ -1534,9 +1534,10 @@ function WorkflowBuilderInner() {
 
   // Save on a saved workflow is an edit; the first save publishes it. A new
   // workflow has no access fields, so it reads as the owner's.
+  // Without it the Save/Publish button isn't rendered at all.
   const canSubmit = can(currentAgent, canManageAgent ? 'edit' : 'publish');
   const isPrimaryActionDisabled =
-    !canSubmit || isPublishing || (canManageAgent && !hasSavableChanges);
+    isPublishing || (canManageAgent && !hasSavableChanges);
   const primaryActionLabel = canManageAgent
     ? t('agents.form.buttons.save')
     : t('agents.form.buttons.publish');

@@ -81,6 +81,12 @@ vi.mock('../api/services/teamsService', () => ({
   },
 }));
 
+// Mark formatted counts so a raw number in the UI shows up in a test.
+vi.mock('../utils/dateTimeUtils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/dateTimeUtils')>()),
+  formatCount: (value: number) => `#${value}`,
+}));
+
 import Teams from './Teams';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -217,7 +223,7 @@ describe('Teams page', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain('Key Accounts');
     expect(rows[0].textContent).toContain(
-      'settings.teams.sharedList.badgeWithEditors(level=viewer,count=1)',
+      'settings.teams.sharedList.badgeWithEditors(level=viewer,count=#1)',
     );
     expect(rows[0].textContent).toContain(
       'settings.teams.sharedList.meta(type=settings.teams.resourceType.source,owner=Lena Fischer)',
@@ -225,12 +231,58 @@ describe('Teams page', () => {
     // Filter pills with counts.
     const pills = Array.from(body().querySelectorAll('[role="radio"]'));
     expect(pills.map((p) => p.textContent)).toEqual([
-      'settings.teams.sharedList.filter.all 2',
-      'settings.teams.sharedList.filter.agent 0',
-      'settings.teams.sharedList.filter.source 1',
-      'settings.teams.sharedList.filter.tool 0',
-      'settings.teams.sharedList.filter.prompt 1',
+      'settings.teams.sharedList.filter.all #2',
+      'settings.teams.sharedList.filter.agent #0',
+      'settings.teams.sharedList.filter.source #1',
+      'settings.teams.sharedList.filter.tool #0',
+      'settings.teams.sharedList.filter.prompt #1',
     ]);
+    expect(body().textContent).toContain('settings.teams.sharedResources · #2');
+  });
+
+  it('shows the no-results line when the search matches nothing', async () => {
+    listGrants.mockResolvedValue({
+      team_role: 'team_admin',
+      grants: [grant()],
+    });
+    await render();
+    const search = body().querySelector<HTMLInputElement>(
+      'input[aria-label="settings.teams.sharedList.search"]',
+    )!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      setter.call(search, 'nothing like this');
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const empty = Array.from(
+      body().querySelectorAll('[data-slot="empty-state"]'),
+    ).find((e) =>
+      e.textContent?.includes('settings.teams.sharedList.noMatches'),
+    );
+    expect(empty?.getAttribute('data-size')).toBe('xs');
+    expect(empty?.querySelector('img')).toBeNull();
+  });
+
+  it('keeps the drawer header fixed above one scrolling body', async () => {
+    listGrants.mockResolvedValue({
+      team_role: 'team_admin',
+      grants: [grant()],
+    });
+    await render();
+    await openDrawer();
+    const sheet = body().querySelector('[data-slot="sheet-content"]')!;
+    const title = sheet.querySelector('[data-slot="sheet-title"]')!;
+    expect(title.className).toContain('wrap-break-word');
+    expect(title.className).not.toContain('truncate');
+    const scrollers = sheet.querySelectorAll('.overflow-y-auto');
+    expect(scrollers).toHaveLength(1);
+    // The title and the Open button stay put; the details scroll.
+    expect(scrollers[0].contains(title)).toBe(false);
+    expect(scrollers[0].textContent).toContain('settings.teams.drawer.owner');
+    expect(scrollers[0].className).toContain('px-6 py-6');
   });
 
   it('shows role selects, remove and Manage sharing to a caller who can share', async () => {

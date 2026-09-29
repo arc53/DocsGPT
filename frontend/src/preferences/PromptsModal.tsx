@@ -4,6 +4,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
 import { FormField } from '../components/ui/form-field';
+import ViewOnlyNotice from '../components/ViewOnlyNotice';
 import { Link } from 'react-router-dom';
 
 import React from 'react';
@@ -377,12 +378,15 @@ function EditPrompt({
   editPromptContent,
   setEditPromptContent,
   isReadOnly,
+  showViewOnlyNotice = false,
 }: {
   editPromptName: string;
   setEditPromptName: (name: string) => void;
   editPromptContent: string;
   setEditPromptContent: (content: string) => void;
   isReadOnly: boolean;
+  /** A shared prompt the caller's role can't change (not a built-in one). */
+  showViewOnlyNotice?: boolean;
 }) {
   const { t } = useTranslation();
   const systemVariableOptions = React.useMemo(
@@ -394,6 +398,7 @@ function EditPrompt({
   return (
     <div>
       <div className="flex flex-col gap-5">
+        {showViewOnlyNotice && <ViewOnlyNotice />}
         <FormField label={t('modals.prompts.promptName')}>
           <Input
             type="text"
@@ -517,13 +522,16 @@ export default function PromptsModal({
   ]);
 
   const { t } = useTranslation();
-  const isReadOnly =
-    type === 'EDIT' && (readOnly || currentPromptEdit.type === 'public');
+  const isBuiltIn = currentPromptEdit.type === 'public';
+  const isReadOnly = type === 'EDIT' && (readOnly || isBuiltIn);
+  // A built-in prompt explains itself in the description (duplicate it to
+  // edit); a shared one the role can't change gets the shared notice.
+  const showViewOnlyNotice = isReadOnly && !isBuiltIn;
   const closeModal = () => setModalState('INACTIVE');
 
   let view;
   let title: string;
-  let description: string;
+  let description: string | undefined;
 
   if (type === 'ADD') {
     title = duplicateSourceName
@@ -546,11 +554,11 @@ export default function PromptsModal({
     title = t(
       isReadOnly ? 'modals.prompts.viewPrompt' : 'modals.prompts.editPrompt',
     );
-    description = t(
-      isReadOnly
-        ? 'modals.prompts.viewDescription'
-        : 'modals.prompts.editDescription',
-    );
+    description = isBuiltIn
+      ? t('modals.prompts.viewDescription')
+      : isReadOnly
+        ? undefined
+        : t('modals.prompts.editDescription');
     view = (
       <EditPrompt
         editPromptName={editPromptName}
@@ -558,6 +566,7 @@ export default function PromptsModal({
         editPromptContent={editPromptContent}
         setEditPromptContent={setEditPromptContent}
         isReadOnly={isReadOnly}
+        showViewOnlyNotice={showViewOnlyNotice}
       />
     );
   }
@@ -610,19 +619,19 @@ export default function PromptsModal({
     footer = (
       <ModalActions
         footerStart={learnLink}
-        cancelLabel={t('modals.prompts.cancel')}
+        cancelLabel={t('common.close')}
         onCancel={closeModal}
         submitLabel={t('modals.prompts.duplicate')}
         onSubmit={onDuplicate}
       />
     );
   } else {
-    // A public prompt with nothing to do but close: the link and a lone
-    // Cancel.
+    // A prompt to view with nothing to do but close: the link and a lone
+    // Close.
     footer = (
       <ModalActions
         footerStart={learnLink}
-        cancelLabel={t('modals.prompts.cancel')}
+        cancelLabel={t('common.close')}
         onCancel={closeModal}
       />
     );

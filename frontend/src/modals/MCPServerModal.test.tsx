@@ -108,12 +108,23 @@ describe('MCPServerModal', () => {
     expect(text()).toContain(
       'settings.tools.mcp.sharedByEditor:{"owner":"Lena Fischer"}',
     );
-    const info = Array.from(
-      document.body.querySelectorAll<HTMLElement>('[role="alert"]'),
+    // Informative, not announced: a quiet default Alert with role="note".
+    const note = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[data-slot="alert"]'),
     ).find((a) =>
       a.textContent?.includes('settings.tools.mcp.sharedCredentialsNotice'),
     );
-    expect(info?.dataset.variant ?? info?.className).toMatch(/info/);
+    expect(note?.getAttribute('role')).toBe('note');
+    expect(note?.dataset.variant).toBe('default');
+  });
+
+  it('masks the API key and bearer token fields', async () => {
+    await render();
+    const key = document.body.querySelector<HTMLInputElement>(
+      'input[placeholder="settings.tools.mcp.placeholders.apiKey"]',
+    );
+    expect(key?.type).toBe('password');
+    expect(key?.value).toBe('');
   });
 
   it('falls back to "a teammate" without an owner label', async () => {

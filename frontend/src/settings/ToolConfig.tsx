@@ -5,6 +5,7 @@ import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import ConfigFields from '../components/ConfigFields';
+import ViewOnlyNotice from '../components/ViewOnlyNotice';
 import SearchInput from '../components/SearchInput';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import {
@@ -395,6 +396,10 @@ export default function ToolConfig({
           </Button>
         )}
       </div>
+      {readOnly && <ViewOnlyNotice />}
+      {!readOnly && !canEditCredentials && (
+        <ViewOnlyNotice message={t('common.credentialsLockedNotice')} />
+      )}
       {saveError && (
         <Alert variant="destructive" className="mb-2">
           <AlertDescription>{saveError}</AlertDescription>

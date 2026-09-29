@@ -10,6 +10,12 @@
   "loading": "Wird geladen...",
   "retry": "Erneut versuchen",
   "cancel": "Abbrechen",
+  "common": {
+    "close": "Schließen",
+    "viewOnlyNotice": "Du kannst dies ansehen, aber deine Rolle kann es nicht ändern.",
+    "credentialsLockedNotice": "Nur der Eigentümer kann die Zugangsdaten dieses Tools ändern.",
+    "savedSecretHint": "Gespeichert. Leer lassen, um es zu behalten."
+  },
   "help": "Hilfe",
   "emailUs": "E-Mail senden",
   "documentation": "Dokumentation",
@@ -396,7 +402,6 @@
         "subtitle": "Konfiguriere, wie \"{{name}}\" in Chunks aufgeteilt und abgerufen wird.",
         "subtitleGeneric": "Konfiguriere, wie diese Quelle in Chunks aufgeteilt und abgerufen wird.",
         "save": "Speichern",
-        "readOnly": "Du hast nur Lesezugriff auf diese geteilte Quelle und kannst ihre Konfiguration nicht ändern.",
         "chunkingChangeHint": "Du hast eine Chunking-Einstellung geändert. Nach dem Speichern muss diese Quelle erneut indexiert werden, damit die Änderung wirkt.",
         "prescreenInvalidHint": "Prüfe die Vorfilter-Werte: Die abzurufenden Kandidaten müssen mindestens der Chunk-Anzahl entsprechen, und die zu behaltenden Chunks dürfen die Kandidatenzahl nicht überschreiten.",
         "reingestRequired": "Deine Änderungen wurden gespeichert. Die geänderten Chunking-Einstellungen wirken erst nach einem erneuten Indexieren. Jetzt erneut indexieren?",
@@ -1778,6 +1783,7 @@
   "agents": {
     "title": "Agenten",
     "edit": "Bearbeiten",
+    "view": "Ansehen",
     "card": {
       "pin": "Agent anheften",
       "unpin": "Agent lösen",
@@ -1815,10 +1821,6 @@
       "byMe": "Von mir",
       "team": "Team",
       "shared": "Mit mir geteilt"
-    },
-    "teamBadge": {
-      "editor": "Bearbeiter",
-      "viewer": "Betrachter"
     },
     "sections": {
       "template": {
@@ -1998,8 +2000,7 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        },
-        "readOnly": "Du kannst diese Richtlinie sehen, aber deine Rolle kann sie nicht ändern."
+        }
       },
       "byline": {
         "new": "Richten Sie den Agenten ein und veröffentlichen Sie ihn, um mit ihm zu chatten."

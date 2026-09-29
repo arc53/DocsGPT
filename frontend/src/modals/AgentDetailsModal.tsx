@@ -1,5 +1,5 @@
 import { envVar } from '@/env';
-import { CircleX, ExternalLink } from 'lucide-react';
+import { CircleAlert, ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -140,7 +140,7 @@ export default function AgentDetailsModal({
         <div>
           {error && (
             <Alert variant="destructive" className="mt-6">
-              <CircleX />
+              <CircleAlert />
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}

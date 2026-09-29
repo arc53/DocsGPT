@@ -76,8 +76,11 @@ describe('AgentRouteGuard', () => {
       }),
     );
     await render('view', '/agents/manage/edit/a1');
-    // Nothing of the page while the agent loads.
+    // Nothing of the page while the agent loads, only the loading ring.
     expect(shows('page')).toBe(false);
+    const loading = container.querySelector('[data-slot="loading-state"]');
+    expect(loading?.getAttribute('data-fill')).toBe('parent');
+    expect(loading?.querySelector('[role="status"]')).not.toBeNull();
     await act(async () =>
       resolve({
         ok: true,
@@ -91,6 +94,8 @@ describe('AgentRouteGuard', () => {
     );
     expect(shows('page')).toBe(false);
     expect(shows('list')).toBe(true);
+    // The redirect itself is silent.
+    expect(container.querySelector('[data-slot="loading-state"]')).toBeNull();
   });
 
   it('lets an editor open the page', async () => {

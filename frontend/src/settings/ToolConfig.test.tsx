@@ -426,11 +426,17 @@ describe('ToolConfig', () => {
     it('opens read-only without edit or edit_credentials: no Save, every field disabled', async () => {
       await render({ ...configTool, ...viewer } as UserToolType);
       expect(buttonByText('settings.tools.save')).toBeUndefined();
+      const note = container.querySelector('[data-slot="alert"]');
+      expect(note?.getAttribute('role')).toBe('note');
+      expect(note?.textContent).toBe('common.viewOnlyNotice');
       expect(nameInput().disabled).toBe(true);
-      const secret = Array.from(
-        container.querySelectorAll<HTMLInputElement>('input'),
-      ).find((i) => i.placeholder === '••••••••');
+      const secret = container.querySelector<HTMLInputElement>(
+        'input[type="password"]',
+      );
       expect(secret && disabled(secret)).toBe(true);
+      expect(secret?.value).toBe('');
+      expect(secret?.placeholder).not.toContain('•');
+      expect(container.textContent).toContain('common.savedSecretHint');
       container
         .querySelectorAll<HTMLButtonElement>('[role="switch"]')
         .forEach((sw) => expect(disabled(sw)).toBe(true));
@@ -461,11 +467,31 @@ describe('ToolConfig', () => {
     it('lets an editor without edit_credentials rename but not touch credentials', async () => {
       await render({ ...configTool, ...editorNoCreds } as UserToolType);
       expect(nameInput().disabled).toBe(false);
+      // Not a view-only form: the editor can still save a rename.
+      expect(container.textContent).not.toContain('common.viewOnlyNotice');
       const authInputs = Array.from(
         container.querySelectorAll<HTMLInputElement>('input'),
       ).filter((i) => i !== nameInput() && !i.closest('table'));
-      const credential = authInputs.find((i) => i.placeholder === '••••••••');
+      const credential = authInputs.find((i) => i.type === 'password');
       expect(credential && disabled(credential)).toBe(true);
+    });
+
+    it('says why the credentials are locked for an editor without edit_credentials', async () => {
+      await render({ ...configTool, ...editorNoCreds } as UserToolType);
+      const note = container.querySelector('[data-slot="alert"]');
+      expect(note?.getAttribute('role')).toBe('note');
+      expect(note?.textContent).toBe('common.credentialsLockedNotice');
+    });
+
+    it('shows no credentials note to a role that may change them', async () => {
+      await render({
+        ...configTool,
+        access: 'editor',
+        allowed_actions: ['edit', 'edit_credentials', 'use'],
+      } as UserToolType);
+      expect(container.textContent).not.toContain(
+        'common.credentialsLockedNotice',
+      );
     });
 
     it("disables an API tool's URL and header values without edit_credentials", async () => {

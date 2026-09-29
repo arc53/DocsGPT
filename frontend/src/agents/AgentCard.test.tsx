@@ -175,6 +175,31 @@ describe('AgentCard menu', () => {
     ]);
   });
 
+  it('swaps Edit for View (Eye) when the role can open but not edit', async () => {
+    await render(agentWith('viewer', ['use', 'pin', 'view']), 'team');
+    const items = await openMenu();
+    const view = items.find((i) => i.textContent === 'agents.view');
+    expect(view).toBeDefined();
+    expect(view?.querySelector('svg')?.getAttribute('class')).toContain(
+      'lucide-eye',
+    );
+    expect(items.map((i) => i.textContent)).not.toContain('agents.edit');
+  });
+
+  it('shows the role on a shared tile as a neutral Users Badge', async () => {
+    await render(agentWith('editor', EDITOR_ACTIONS), 'team');
+    const badge = container.querySelector<HTMLElement>(
+      '[data-testid="role-badge"]',
+    );
+    expect(badge?.dataset.variant).toBe('neutral');
+    expect(badge?.textContent).toBe('teamAccess.editor');
+  });
+
+  it('shows no role badge on an own agent', async () => {
+    await render(agentWith('owner', OWNER_ACTIONS), 'user');
+    expect(container.querySelector('[data-testid="role-badge"]')).toBeNull();
+  });
+
   it('gives a viewer Pin only', async () => {
     await render(agentWith('viewer', VIEWER_ACTIONS), 'team');
     expect(await menuLabels()).toEqual(['agents.card.pin']);

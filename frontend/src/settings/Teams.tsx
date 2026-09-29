@@ -74,6 +74,7 @@ import {
 } from '../components/ui/sheet';
 import { Textarea } from '../components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import { cn } from '../lib/utils';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -101,7 +102,7 @@ import {
   Team,
 } from '../teams/teamsSlice';
 import { can } from '../utils/accessUtils';
-import { formatDateOnly } from '../utils/dateTimeUtils';
+import { formatCount, formatDateOnly } from '../utils/dateTimeUtils';
 import { decodeJwtPayload } from '../utils/jwtUtils';
 
 type Member = {
@@ -696,7 +697,7 @@ export default function Teams() {
         ? t('settings.teams.sharedList.badgeWithEditors', {
             interpolation: { escapeValue: false },
             level,
-            count: memberEditors,
+            count: formatCount(memberEditors),
           })
         : level;
     }
@@ -866,13 +867,13 @@ export default function Teams() {
                           (team.member_count ?? 0) === 1
                             ? 'settings.teams.memberCountOne'
                             : 'settings.teams.memberCountOther',
-                          { count: team.member_count ?? 0 },
+                          { count: formatCount(team.member_count ?? 0) },
                         )}
                       </span>
                       <span aria-hidden>·</span>
                       <span>
                         {t('settings.teams.sharedCount', {
-                          count: team.shared_count ?? 0,
+                          count: formatCount(team.shared_count ?? 0),
                         })}
                       </span>
                     </CardFooter>
@@ -945,7 +946,7 @@ export default function Teams() {
             <SectionHeader
               as="h4"
               size="sm"
-              title={`${t('settings.teams.members')} · ${members.length}`}
+              title={`${t('settings.teams.members')} · ${formatCount(members.length)}`}
               actions={
                 isAdmin && (
                   <Button
@@ -1026,7 +1027,7 @@ export default function Teams() {
             <SectionHeader
               as="h4"
               size="sm"
-              title={`${t('settings.teams.sharedResources')} · ${sharedResources.length}`}
+              title={`${t('settings.teams.sharedResources')} · ${formatCount(sharedResources.length)}`}
             />
             {sharedResources.length === 0 ? (
               <EmptyState size="sm" title={t('settings.teams.nothingShared')} />
@@ -1047,7 +1048,7 @@ export default function Teams() {
                         (value) => (
                           <ToggleGroupItem key={value} value={value}>
                             {t(`settings.teams.sharedList.filter.${value}`)}{' '}
-                            {resourceCounts[value]}
+                            {formatCount(resourceCounts[value])}
                           </ToggleGroupItem>
                         ),
                       )}
@@ -1063,7 +1064,8 @@ export default function Teams() {
                 </div>
                 {visibleResources.length === 0 ? (
                   <EmptyState
-                    size="sm"
+                    size="xs"
+                    illustration="none"
                     title={t('settings.teams.sharedList.noMatches')}
                   />
                 ) : (
@@ -1133,62 +1135,64 @@ export default function Teams() {
             className="p-0"
             closeLabel={t('settings.teams.drawer.close')}
           >
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-              {/* pr-12 keeps the header clear of the close X. */}
-              <div className="flex items-center gap-3 px-6 pt-6 pr-12 pb-4">
-                <span
-                  aria-hidden="true"
-                  className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
-                >
-                  {resourceTypeIcon(openResource.type)}
-                </span>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <SheetTitle className="truncate">
-                    {resourceName(openResource)}
-                  </SheetTitle>
-                  <SheetDescription>
-                    {t('settings.teams.drawer.subtitle', {
-                      interpolation: { escapeValue: false },
-                      type: resourceTypeLabel(openResource.type),
-                      owner: ownerLabel(openResource),
-                    })}
-                  </SheetDescription>
+            <div className="flex min-h-0 flex-1 flex-col">
+              {/* A fixed header: pr-12 keeps it clear of the close X. */}
+              <div className="flex flex-col gap-4 px-6 pt-6 pr-12 pb-4">
+                <div className="flex items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                  >
+                    {resourceTypeIcon(openResource.type)}
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <SheetTitle className="wrap-break-word">
+                      {resourceName(openResource)}
+                    </SheetTitle>
+                    <SheetDescription>
+                      {t('settings.teams.drawer.subtitle', {
+                        interpolation: { escapeValue: false },
+                        type: resourceTypeLabel(openResource.type),
+                        owner: ownerLabel(openResource),
+                      })}
+                    </SheetDescription>
+                  </div>
                 </div>
-              </div>
-              <div className="flex flex-wrap gap-2 px-6 pb-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  shape="pill"
-                  onClick={() => {
-                    const path = openAssetPath(openResource);
-                    closeDrawer();
-                    navigate(path);
-                  }}
-                >
-                  <ArrowUpRight aria-hidden />
-                  {t('settings.teams.drawer.open', {
-                    interpolation: { escapeValue: false },
-                    type: resourceTypeLabel(openResource.type),
-                  })}
-                </Button>
-                {callerCanShare && (
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     shape="pill"
                     onClick={() => {
-                      setDrawerOpen(false);
-                      setShareTarget(openResource);
+                      const path = openAssetPath(openResource);
+                      closeDrawer();
+                      navigate(path);
                     }}
                   >
-                    <Users aria-hidden />
-                    {t('settings.teams.drawer.manageSharing')}
+                    <ArrowUpRight aria-hidden />
+                    {t('settings.teams.drawer.open', {
+                      interpolation: { escapeValue: false },
+                      type: resourceTypeLabel(openResource.type),
+                    })}
                   </Button>
-                )}
+                  {callerCanShare && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      shape="pill"
+                      onClick={() => {
+                        setDrawerOpen(false);
+                        setShareTarget(openResource);
+                      }}
+                    >
+                      <Users aria-hidden />
+                      {t('settings.teams.drawer.manageSharing')}
+                    </Button>
+                  )}
+                </div>
               </div>
               <Separator />
-              <div className="flex flex-col gap-6 px-6 py-6">
+              <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
                 <DescriptionList size="sm">
                   <DescriptionItem label={t('settings.teams.drawer.owner')}>
                     {ownerLabel(openResource)}
@@ -1337,9 +1341,9 @@ export default function Teams() {
                           />
                         )}
                         <span
-                          className={
-                            line.allowed ? undefined : 'text-muted-foreground'
-                          }
+                          className={cn(
+                            !line.allowed && 'text-muted-foreground',
+                          )}
                         >
                           {line.text}
                         </span>

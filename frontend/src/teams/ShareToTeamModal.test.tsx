@@ -47,6 +47,12 @@ vi.mock('../api/services/teamsService', () => ({
   },
 }));
 
+// Mark formatted counts so a raw number in the UI shows up in a test.
+vi.mock('../utils/dateTimeUtils', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/dateTimeUtils')>()),
+  formatCount: (value: number) => `#${value}`,
+}));
+
 import ShareToTeamModal from './ShareToTeamModal';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -131,7 +137,11 @@ describe('ShareToTeamModal', () => {
       const toggle = buttonByText('settings.teams.accessSettings.title');
       expect(toggle).toBeDefined();
       expect(toggle?.getAttribute('aria-expanded')).toBe('false');
-      expect(toggle?.getAttribute('data-variant')).toBe('section-toggle');
+      // An inline disclosure (no Card around it to draw section-toggle's
+      // ring), so the button shows its own keyboard focus.
+      expect(toggle?.getAttribute('data-variant')).toBe('link');
+      expect(toggle?.className).toContain('focus-visible:ring-3');
+      expect(toggle?.className).not.toContain('focus-visible:ring-0');
       expect(body().querySelectorAll('[role="switch"]')).toHaveLength(0);
       act(() => toggle!.click());
       expect(body().querySelectorAll('[role="switch"]')).toHaveLength(4);
@@ -249,8 +259,11 @@ describe('ShareToTeamModal', () => {
       expect(rows).toHaveLength(4);
       // Most recent first: user-7, user-6, user-5.
       expect(rows[1].textContent).toContain('user-7');
-      expect(text()).toContain('settings.teams.share.andMore(count=5)');
+      expect(text()).toContain('settings.teams.share.andMore(count=#5)');
       const showAll = buttonByText('settings.teams.share.showAll');
+      expect(showAll?.textContent).toContain(
+        'settings.teams.share.showAll(count=#8)',
+      );
       expect(showAll?.getAttribute('data-variant')).toBe('link');
       expect(body().querySelector('.max-h-72')).toBeNull();
     });
@@ -260,11 +273,21 @@ describe('ShareToTeamModal', () => {
       await render();
       act(() => buttonByText('settings.teams.share.showAll')!.click());
       expect(text()).toContain(
-        'settings.teams.share.allSummary(name=QBR Report Builder,teams=2,people=6)',
+        'settings.teams.share.allSummary(name=QBR Report Builder,teams=#2,people=#6)',
       );
       expect(buttonByText('settings.teams.share.back')).toBeDefined();
       // You + all 8.
       expect(body().querySelectorAll('[data-slot="list-row"]')).toHaveLength(9);
+      expect(
+        Array.from(body().querySelectorAll('[role="radio"]')).map(
+          (p) => p.textContent,
+        ),
+      ).toEqual([
+        'settings.teams.share.filter.all #8',
+        'settings.teams.share.filter.teams #2',
+        'settings.teams.share.filter.people #6',
+        'settings.teams.share.filter.editors #2',
+      ]);
 
       const teamsPill = Array.from(
         body().querySelectorAll<HTMLButtonElement>('[role="radio"]'),
@@ -293,6 +316,20 @@ describe('ShareToTeamModal', () => {
       const rows = body().querySelectorAll('[data-slot="list-row"]');
       expect(rows).toHaveLength(1);
       expect(rows[0].textContent).toContain('user-6');
+
+      // No match: the "no results" EmptyState line, not a bare paragraph.
+      act(() => {
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        setter.call(search, 'nobody-here');
+        search!.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      const empty = body().querySelector('[data-slot="empty-state"]');
+      expect(empty?.getAttribute('data-size')).toBe('xs');
+      expect(empty?.querySelector('img')).toBeNull();
+      expect(empty?.textContent).toContain('settings.teams.share.noMatches');
 
       act(() => buttonByText('settings.teams.share.back')!.click());
       expect(buttonByText('settings.teams.share.showAll')).toBeDefined();

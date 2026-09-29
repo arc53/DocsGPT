@@ -58,8 +58,11 @@ describe('SourceConfigModal access', () => {
   };
 
   const readOnlyNotice = () =>
-    document.body.textContent?.includes(
-      'settings.sources.configModal.readOnly',
+    document.body.textContent?.includes('common.viewOnlyNotice');
+
+  const buttonLabels = () =>
+    Array.from(document.body.querySelectorAll('button')).map(
+      (b) => b.textContent,
     );
 
   it('a viewer with view_config only sees the read-only notice', async () => {
@@ -72,6 +75,12 @@ describe('SourceConfigModal access', () => {
       }),
     );
     expect(readOnlyNotice()).toBe(true);
+    const note = document.body.querySelector('[data-slot="alert"]');
+    expect(note?.getAttribute('role')).toBe('note');
+    // View-only: no Save, and Cancel becomes a lone Close.
+    expect(buttonLabels()).not.toContain('settings.sources.configModal.save');
+    expect(buttonLabels()).not.toContain('cancel');
+    expect(buttonLabels()).toContain('common.close');
   });
 
   it('an editor can edit (no read-only notice)', async () => {
@@ -84,6 +93,8 @@ describe('SourceConfigModal access', () => {
       }),
     );
     expect(readOnlyNotice()).toBe(false);
+    expect(buttonLabels()).toContain('settings.sources.configModal.save');
+    expect(buttonLabels()).toContain('cancel');
   });
 
   it('follows allowed_actions over the legacy team_access', async () => {

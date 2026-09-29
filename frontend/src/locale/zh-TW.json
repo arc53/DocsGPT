@@ -10,6 +10,12 @@
   "loading": "載入中...",
   "retry": "重試",
   "cancel": "取消",
+  "common": {
+    "close": "關閉",
+    "viewOnlyNotice": "你可以檢視此內容，但你的角色無法變更它。",
+    "credentialsLockedNotice": "只有擁有者可以變更此工具的憑證。",
+    "savedSecretHint": "已儲存。留空即可保留。"
+  },
   "help": "幫助",
   "emailUs": "給我們發電郵",
   "documentation": "文件",
@@ -389,7 +395,6 @@
         "subtitle": "設定「{{name}}」的分塊與檢索方式。",
         "subtitleGeneric": "設定此來源的分塊與檢索方式。",
         "save": "儲存",
-        "readOnly": "您對此共享來源僅有檢視權限，無法變更其設定。",
         "chunkingChangeHint": "您變更了分塊設定。儲存後需重新索引此來源才會生效。",
         "prescreenInvalidHint": "請檢查預篩選數值：擷取候選數不得少於區塊數，且保留區塊數不得超過擷取候選數。",
         "reingestRequired": "變更已儲存。您變更的分塊設定需重新索引後才會生效。要立即重新索引嗎？",
@@ -1766,6 +1771,7 @@
   "agents": {
     "title": "代理",
     "edit": "編輯",
+    "view": "檢視",
     "card": {
       "pin": "釘選代理",
       "unpin": "取消釘選代理",
@@ -1803,10 +1809,6 @@
       "byMe": "我的",
       "team": "團隊",
       "shared": "與我共享"
-    },
-    "teamBadge": {
-      "editor": "編輯者",
-      "viewer": "檢視者"
     },
     "sections": {
       "template": {
@@ -1985,8 +1987,7 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        },
-        "readOnly": "你可以檢視此政策，但你的角色無法變更它。"
+        }
       },
       "byline": {
         "new": "設定好代理後發佈，即可與它對話。"

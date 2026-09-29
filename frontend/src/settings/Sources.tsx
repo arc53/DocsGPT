@@ -19,6 +19,7 @@ import userService from '../api/services/userService';
 import modelService from '../api/services/modelService';
 
 import PageToolbar from '../components/PageToolbar';
+import RoleBadge from '../components/RoleBadge';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
@@ -46,7 +47,7 @@ import {
   selectUploadTasks,
   updateUploadTask,
 } from '../upload/uploadSlice';
-import { can, roleOf } from '../utils/accessUtils';
+import { can } from '../utils/accessUtils';
 import { formatDate } from '../utils/dateTimeUtils';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
@@ -412,7 +413,7 @@ export default function Sources({
     // Editors edit the config; a viewer may read it (view_config).
     if (document.id && !isWiki && (canEdit || can(document, 'view_config'))) {
       actions.push({
-        icon: SlidersHorizontal,
+        icon: canEdit ? SlidersHorizontal : Eye,
         label: canEdit
           ? t('settings.sources.editConfig')
           : t('settings.sources.viewConfig'),
@@ -693,14 +694,7 @@ export default function Sources({
                       </div>
 
                       <div className="flex flex-col items-start justify-start gap-1">
-                        {roleOf(document) !== 'owner' && (
-                          <Badge variant="neutral">
-                            <Users className="size-3" aria-hidden="true" />
-                            {roleOf(document) === 'editor'
-                              ? t('teamAccess.editor')
-                              : t('teamAccess.viewer')}
-                          </Badge>
-                        )}
+                        <RoleBadge item={document} />
                         {document.ingestStatus === 'failed' && (
                           <Badge variant="destructive">
                             {t('settings.sources.ingestFailed')}
@@ -728,10 +722,7 @@ export default function Sources({
                                 : null;
                             return (
                               <Badge variant="neutral">
-                                <Network
-                                  className="size-3"
-                                  aria-hidden="true"
-                                />
+                                <Network aria-hidden="true" />
                                 {isBuilding
                                   ? pct !== null
                                     ? t(

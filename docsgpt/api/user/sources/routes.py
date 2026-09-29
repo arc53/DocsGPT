@@ -77,9 +77,10 @@ def _get_provider_from_remote_data(remote_data):
 def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -> dict:
     """Add ``access`` + ``allowed_actions`` to a listed source row.
 
-    The source's behaviour ``config`` is dropped when the caller's role may
-    not ``view_config`` (a viewer when the owner turned
-    ``viewers_can_see_config`` off).
+    The source's behaviour ``config`` is cut down to its ``kind`` when the
+    caller's role may not ``view_config`` (a viewer when the owner turned
+    ``viewers_can_see_config`` off). ``kind`` stays because the UI needs it to
+    pick the wiki / graph view.
 
     Args:
         entry: The row as the list endpoint builds it.
@@ -91,7 +92,9 @@ def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -
     """
     payload = payload_for("source", access, switches)
     if "view_config" not in payload["allowed_actions"]:
-        entry.pop("config", None)
+        config = entry.get("config")
+        if config is not None:
+            entry["config"] = {"kind": (config or {}).get("kind", "classic")}
     entry.update(payload)
     return entry
 

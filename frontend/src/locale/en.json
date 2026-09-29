@@ -10,6 +10,12 @@
   "loading": "Loading...",
   "retry": "Retry",
   "cancel": "Cancel",
+  "common": {
+    "close": "Close",
+    "viewOnlyNotice": "You can view this, but your role can't change it.",
+    "credentialsLockedNotice": "Only the owner can change this tool's credentials.",
+    "savedSecretHint": "Saved. Leave empty to keep it."
+  },
   "errorBoundary": {
     "message": "Something went wrong displaying this content.",
     "tryAgain": "Try again"
@@ -401,7 +407,6 @@
         "subtitle": "Configure how \"{{name}}\" is chunked and retrieved.",
         "subtitleGeneric": "Configure how this source is chunked and retrieved.",
         "save": "Save",
-        "readOnly": "You have view-only access to this shared source and cannot change its config.",
         "chunkingChangeHint": "You changed a chunking setting. Saving will require re-ingesting this source for it to take effect.",
         "prescreenInvalidHint": "Check the prescreen values: candidates to fetch must be at least the number of chunks, and chunks to keep must not exceed candidates to fetch.",
         "reingestRequired": "Your changes were saved. The chunking settings you changed only take effect after a re-ingest. Re-ingest now?",
@@ -1794,6 +1799,7 @@
   "agents": {
     "title": "Agents",
     "edit": "Edit",
+    "view": "View",
     "card": {
       "pin": "Pin agent",
       "unpin": "Unpin agent",
@@ -1831,10 +1837,6 @@
       "byMe": "My agents",
       "team": "Team",
       "shared": "Discovered"
-    },
-    "teamBadge": {
-      "editor": "Editor",
-      "viewer": "Viewer"
     },
     "sections": {
       "template": {
@@ -2016,8 +2018,7 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        },
-        "readOnly": "You can see this policy, but your role can't change it."
+        }
       },
       "byline": {
         "new": "Set up the agent, then publish it to chat with it."

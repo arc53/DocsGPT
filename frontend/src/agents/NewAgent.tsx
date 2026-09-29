@@ -1492,9 +1492,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           // Guardrails are policy (`edit_policy`): editors and the owner
           // change them; anyone else sees them read-only.
           disabled={!canEditPolicy}
-          disabledNotice={
-            canEditPolicy ? undefined : t('agents.form.guardrails.readOnly')
-          }
           onChange={(guardrails) =>
             setAgent({
               ...agent,

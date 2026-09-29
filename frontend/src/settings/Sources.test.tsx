@@ -126,6 +126,12 @@ describe('Sources access', () => {
     ).map((el) => el.textContent);
   };
 
+  const menuIcon = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((el) => el.textContent === label)
+      ?.querySelector('svg')
+      ?.getAttribute('class') ?? '';
+
   const clickItem = async (label: string) => {
     const item = Array.from(
       document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
@@ -177,6 +183,7 @@ describe('Sources access', () => {
       'settings.sources.testRetrieval.action',
       'settings.sources.wiki.convert.action',
     ]);
+    expect(menuIcon('settings.sources.editConfig')).not.toContain('lucide-eye');
   });
 
   it('editors_can_share / editors_can_delete widen the editor menu', async () => {
@@ -206,6 +213,8 @@ describe('Sources access', () => {
       'settings.sources.viewConfig',
       'settings.sources.testRetrieval.action',
     ]);
+    // View swaps the config item's icon for Eye, like every View label.
+    expect(menuIcon('settings.sources.viewConfig')).toContain('lucide-eye');
   });
 
   it('viewer without view_config: no config item', async () => {

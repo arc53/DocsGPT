@@ -6,6 +6,7 @@ import {
   Activity,
   Copy,
   Download,
+  Eye,
   Folder,
   Pencil,
   Pin,
@@ -15,8 +16,8 @@ import {
 } from 'lucide-react';
 
 import userService from '../api/services/userService';
+import RoleBadge from '../components/RoleBadge';
 import { Avatar } from '../components/ui/avatar';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardDescription, CardTitle } from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
@@ -96,8 +97,13 @@ export default function AgentCard({
           },
         ]
       : []),
+    // Opening the editor is `view`; a role that can't `edit` gets it as View.
     ...(can(agent, 'view')
-      ? [{ icon: Pencil, label: t('agents.edit'), onClick: openEditor }]
+      ? [
+          can(agent, 'edit')
+            ? { icon: Pencil, label: t('agents.edit'), onClick: openEditor }
+            : { icon: Eye, label: t('agents.view'), onClick: openEditor },
+        ]
       : []),
     ...(can(agent, 'export')
       ? [
@@ -333,14 +339,7 @@ export default function AgentCard({
       )}
       {/* Team access badge — pinned to the top row, left of the ⋯ menu
           (right-11 clears the 28px trigger at right-3) so the two align. */}
-      {agent.ownership === 'team' && (
-        <Badge variant="neutral" className="absolute top-4 right-11 z-10">
-          <Users aria-hidden="true" />
-          {agent.team_access === 'editor'
-            ? t('agents.teamBadge.editor')
-            : t('agents.teamBadge.viewer')}
-        </Badge>
-      )}
+      <RoleBadge item={agent} className="absolute top-4 right-11 z-10" />
       <div className="w-full">
         <div className="flex w-full items-center gap-1 px-1">
           <Avatar

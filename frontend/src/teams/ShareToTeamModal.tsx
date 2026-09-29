@@ -21,6 +21,7 @@ import SearchInput from '../components/SearchInput';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { EmptyState } from '../components/ui/empty-state';
 import {
   Command,
   CommandEmpty,
@@ -52,6 +53,7 @@ import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { can } from '../utils/accessUtils';
+import { formatCount } from '../utils/dateTimeUtils';
 import { decodeJwtPayload } from '../utils/jwtUtils';
 import {
   anyChanged,
@@ -688,8 +690,8 @@ export default function ShareToTeamModal({
           {t('settings.teams.share.allSummary', {
             interpolation: { escapeValue: false },
             name: resourceName ?? '',
-            teams: teamGrantCount,
-            people: personGrantCount,
+            teams: formatCount(teamGrantCount),
+            people: formatCount(personGrantCount),
           })}
         </p>
       </div>
@@ -712,7 +714,8 @@ export default function ShareToTeamModal({
         >
           {filterOptions.map((option) => (
             <ToggleGroupItem key={option.value} value={option.value}>
-              {t(`settings.teams.share.filter.${option.value}`)} {option.count}
+              {t(`settings.teams.share.filter.${option.value}`)}{' '}
+              {formatCount(option.count)}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
@@ -722,36 +725,36 @@ export default function ShareToTeamModal({
         {filteredShares.map(renderShareRow)}
       </ListRows>
       {filteredShares.length === 0 && (
-        <p className="text-muted-foreground px-4 text-sm">
-          {t('settings.teams.share.noMatches')}
-        </p>
+        <EmptyState
+          size="xs"
+          illustration="none"
+          title={t('settings.teams.share.noMatches')}
+        />
       )}
     </div>
   );
 
   const accessSettings = canManageSettings && (
     <section className="flex flex-col gap-3">
-      <h3>
-        <Button
-          type="button"
-          variant="section-toggle"
-          size="sm"
-          aria-expanded={settingsOpen}
-          className="-ml-3 w-fit justify-start"
-          onClick={() => setSettingsOpen((open) => !open)}
-        >
-          <ChevronRight
-            aria-hidden="true"
-            className={cn(
-              'transition-transform duration-200',
-              settingsOpen && 'rotate-90',
-            )}
-          />
-          <span className="text-sm font-medium">
-            {t('settings.teams.accessSettings.title')}
-          </span>
-        </Button>
-      </h3>
+      {/* An inline disclosure: no Card around it draws section-toggle's
+          ring, so the link button shows its own focus. */}
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        aria-expanded={settingsOpen}
+        className="-ml-3 w-fit justify-start"
+        onClick={() => setSettingsOpen((open) => !open)}
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className={cn(
+            'transition-transform duration-200',
+            settingsOpen && 'rotate-90',
+          )}
+        />
+        {t('settings.teams.accessSettings.title')}
+      </Button>
       {settingsOpen && (
         <SettingRows>
           {settings.map((setting) => {
@@ -893,7 +896,7 @@ export default function ShareToTeamModal({
                 onValueChange={(value) => setAccessLevel(value as AccessLevel)}
               >
                 <SelectTrigger
-                  className="h-9 w-28 shrink-0"
+                  className="w-28 shrink-0"
                   aria-label={t('settings.teams.share.access')}
                 >
                   <SelectValue />
@@ -931,7 +934,7 @@ export default function ShareToTeamModal({
                     onClick={openAllStep}
                   >
                     {t('settings.teams.share.showAll', {
-                      count: shares.length,
+                      count: formatCount(shares.length),
                     })}
                     <ArrowRight className="size-3" aria-hidden />
                   </Button>
@@ -945,7 +948,7 @@ export default function ShareToTeamModal({
             {isLongList && (
               <p className="text-muted-foreground px-4 text-xs">
                 {t('settings.teams.share.andMore', {
-                  count: shares.length - previewShares.length,
+                  count: formatCount(shares.length - previewShares.length),
                 })}
               </p>
             )}

@@ -7,6 +7,7 @@ import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
 import PageToolbar from '../components/PageToolbar';
 import SearchInput from '../components/SearchInput';
+import RoleBadge from '../components/RoleBadge';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Badge } from '../components/ui/badge';
@@ -24,7 +25,7 @@ import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
-import { can, isOwner } from '../utils/accessUtils';
+import { can, isOwner, roleOf } from '../utils/accessUtils';
 import { canAddToolToOwn, toolInChat } from '../utils/toolUtils';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
@@ -116,7 +117,7 @@ export default function Tools() {
       timeout: config.timeout || 30,
       oauth_scopes: oauthScopes,
       has_encrypted_credentials: !!config.has_encrypted_credentials,
-      access: tool.access ?? (isOwner(tool) ? 'owner' : tool.team_access),
+      access: roleOf(tool),
       owner_label: tool.owner_label ?? null,
     });
     setReconnectModalState('ACTIVE');
@@ -395,14 +396,7 @@ export default function Tools() {
                                         )}
                                 </Badge>
                               )}
-                            {tool.ownership === 'team' && (
-                              <Badge variant="neutral">
-                                <Users className="size-3" aria-hidden="true" />
-                                {tool.team_access === 'editor'
-                                  ? t('teamAccess.editor')
-                                  : t('teamAccess.viewer')}
-                              </Badge>
-                            )}
+                            <RoleBadge item={tool} />
                           </div>
                           <div className="mt-[9px] px-1">
                             <CardTitle
@@ -421,26 +415,29 @@ export default function Tools() {
                             </CardDescription>
                           </div>
                         </div>
-                        <div className="absolute right-4 bottom-4 flex items-center gap-2">
-                          <Label
-                            htmlFor={`toolToggle-${index}`}
-                            className="text-muted-foreground text-xs font-normal"
-                          >
-                            {t('settings.tools.inMyChats')}
-                          </Label>
-                          <Switch
-                            checked={toolInChat(tool)}
-                            onCheckedChange={(checked) =>
-                              updateToolStatus(tool.id, checked)
-                            }
-                            disabled={!canAddToolToOwn(tool)}
-                            id={`toolToggle-${index}`}
-                            aria-label={t('settings.tools.useInMyChatsAria', {
-                              interpolation: { escapeValue: false },
-                              toolName: tool.customName || tool.displayName,
-                            })}
-                          />
-                        </div>
+                        {/* A shared tool without use_in_own can't be in the
+                            caller's chats at all, so there is no switch. */}
+                        {canAddToolToOwn(tool) && (
+                          <div className="absolute right-4 bottom-4 flex items-center gap-2">
+                            <Label
+                              htmlFor={`toolToggle-${index}`}
+                              className="text-muted-foreground text-xs font-normal"
+                            >
+                              {t('settings.tools.inMyChats')}
+                            </Label>
+                            <Switch
+                              checked={toolInChat(tool)}
+                              onCheckedChange={(checked) =>
+                                updateToolStatus(tool.id, checked)
+                              }
+                              id={`toolToggle-${index}`}
+                              aria-label={t('settings.tools.useInMyChatsAria', {
+                                interpolation: { escapeValue: false },
+                                toolName: tool.customName || tool.displayName,
+                              })}
+                            />
+                          </div>
+                        )}
                       </Card>
                     ))}
                   </div>

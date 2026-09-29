@@ -229,13 +229,25 @@ describe('Tools', () => {
     );
   });
 
-  it('disables the switch, keeping its label, for a shared tool without use_in_own', async () => {
+  // The tool can't be in the caller's chats at all (the composer picker
+  // hides it too), so there is no state to show: no switch, no bare grey one.
+  it('hides the switch and its label for a shared tool without use_in_own', async () => {
     await render([viewerTool]);
-    const sw = switchOf('vw');
-    expect(sw.disabled).toBe(true);
-    expect(card('vw').querySelector(`label[for="${sw.id}"]`)?.textContent).toBe(
-      'settings.tools.inMyChats',
-    );
+    expect(card('vw').querySelector('[role="switch"]')).toBeNull();
+    expect(card('vw').textContent).not.toContain('settings.tools.inMyChats');
+  });
+
+  it('shows the role on a shared tile as a neutral Users Badge', async () => {
+    await render([ownTool, editorTool, viewerTool]);
+    const badge = (id: string) =>
+      card(id).querySelector<HTMLElement>('[data-testid="role-badge"]');
+    expect(badge('own')).toBeNull();
+    expect(badge('ed')?.dataset.variant).toBe('neutral');
+    expect(badge('ed')?.textContent).toBe('teamAccess.editor');
+    expect(badge('vw')?.textContent).toBe('teamAccess.viewer');
+    expect(
+      badge('ed')?.querySelector('svg')?.getAttribute('class'),
+    ).not.toContain('size-3');
   });
 
   it('reverts the switch and shows an error toast when the update fails', async () => {
