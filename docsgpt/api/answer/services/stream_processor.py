@@ -281,12 +281,26 @@ class StreamProcessor:
         request_data: Dict[str, Any],
         decoded_token: Optional[Dict[str, Any]],
         trace_source: str = "stream",
+        *,
+        external_caller: bool = False,
     ):
+        """Bind a request to its processor.
+
+        Args:
+            request_data: The request body.
+            decoded_token: The caller's token; ``/v1`` passes the agent owner's.
+            trace_source: The entry point the trace is stored under.
+            external_caller: Set by the server for requests authenticated by
+                an agent's API key whose token is the owner's (``/v1``), so
+                the run keeps the key holder's write limits. Never read from
+                the request body.
+        """
         # Legacy attribute retained as None for any external callers that
         # introspect the processor; all DB access uses per-op connections.
         self.prompts_collection = None
         self.data = request_data
         self.decoded_token = decoded_token
+        self.external_caller = bool(external_caller)
         self.initial_user_id = (
             self.decoded_token.get("sub") if self.decoded_token is not None else None
         )
@@ -1043,8 +1057,8 @@ class StreamProcessor:
 
             # Set identity context
             owner = self._agent_data.get("user")
-            self.agent_config["external_api_caller"] = is_external_api_caller(
-                self.data, self.decoded_token, owner,
+            self.agent_config["external_api_caller"] = getattr(self, "external_caller", False) or (
+                is_external_api_caller(self.data, self.decoded_token, owner)
             )
             self.agent_config["api_write_allowlist"] = AgentConfig.parse(
                 self._agent_data.get("config")
@@ -1783,7 +1797,9 @@ class StreamProcessor:
             user=self.initial_user_id,
             decoded_token=self.decoded_token,
             agent_id=agent_id,
-            external_caller=bool(agent_config.get("external_api_caller")),
+            external_caller=bool(
+                agent_config.get("external_api_caller") or getattr(self, "external_caller", False)
+            ),
             public_link_caller=bool(agent_config.get("public_link_caller")),
             api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
