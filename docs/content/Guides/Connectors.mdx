@@ -63,6 +63,7 @@ Admins manage connectors in **Admin > Connectors**. It lists every connector wit
 - **Shared tools use** is **The sharer decides per share** (default), **Always the sharer's account** or **Always each person's own account**. Connectors that only sync content have no tools and show **No tools**.
 - The **MCP server** row decides whether members can add their own MCP servers. Presets are switched one by one.
 - **Setup guide** on an OAuth connector shows the redirect URI to register and which server settings are still missing. GitHub works without setup and shows **Tokens only** until its optional GitHub App settings are in place.
+- **Write access** has one switch per connector whose tools can opt into changes, currently **Let agents make changes through GitHub** (on by default). Turned off, members no longer see the option, the API refuses it, and every GitHub tool only reads, including ones already set up for changes: they call the read-only endpoint and their write actions are refused with a reason.
 
 A connector that still needs server settings starts turned off and is hidden from members; its switch stays disabled until the settings are present. It turns on once they are, unless you switched it off. On a phone, the page lists the connectors and opens each one's controls in a panel.
 
@@ -143,7 +144,7 @@ CONFLUENCE_CLIENT_SECRET=your-client-secret
 One GitHub connection syncs repositories into Knowledge and gives agents GitHub's own [MCP server](https://github.com/github/github-mcp-server) as a tool. When connecting, members choose both on one screen: **Let agents use GitHub** (on by default) and a repository to sync. A connection set up without tools can add them later from its page.
 
 - **Knowledge.** The repository picker lists what the connection can read. Each synced repository is one source, read with the connection's token and synced on the chosen schedule.
-- **Tools.** The tool is the read-only endpoint `https://api.githubcopilot.com/mcp/readonly`: agents can read code, issues, pull requests and more, and cannot change anything. Its actions are discovered when the tool is created; **Refresh tools** re-reads them.
+- **Tools.** By default the tool is the read-only endpoint `https://api.githubcopilot.com/mcp/readonly`: agents can read code, issues, pull requests and more, and cannot change anything unless the connection [lets them make changes](#letting-agents-make-changes). Its actions are discovered when the tool is created; **Refresh tools** re-reads them.
 
 Members connect in one of two ways.
 
@@ -159,7 +160,7 @@ Under **Repository access**, pick **Only select repositories** (or all repositor
 
 ### Grant read access
 
-Under **Repository permissions**, set **Contents** to **Read-only**. **Metadata** is read-only by default. Add read-only access to **Issues** and **Pull requests** if agents should read those through the tools.
+Under **Repository permissions**, set **Contents** to **Read-only**. **Metadata** is read-only by default. Add read-only access to **Issues** and **Pull requests** if agents should read those through the tools, or **Read and write** if agents should also [make changes](#letting-agents-make-changes).
 
 ### Paste it into DocsGPT
 
@@ -183,7 +184,7 @@ In GitHub, open **Settings > Developer settings > GitHub Apps > New GitHub App**
 - Turn on **Request user authorization (OAuth) during installation**. Choosing repositories from DocsGPT then returns to DocsGPT, which reloads the repository list.
 - Leave **Expire user authorization tokens** on (DocsGPT refreshes them).
 - **Webhook**: turn off **Active**; DocsGPT does not use webhooks.
-- **Repository permissions**: **Contents** read-only (**Metadata** read-only is added automatically). Add **Issues** and **Pull requests** read-only for the tools.
+- **Repository permissions**: **Contents** read-only (**Metadata** read-only is added automatically). Add **Issues** and **Pull requests** read-only for the tools, or read and write if members should be able to let agents [make changes](#letting-agents-make-changes). A member's token can only do what both the app and the member may do, so an app without write permissions keeps every agent read-only. When you add permissions later, each installation has to accept them on GitHub first.
 - **Where can this GitHub App be installed?**: **Any account** for members outside your organization, otherwise **Only on this account**.
 
 ### Create a client secret
@@ -201,6 +202,22 @@ GITHUB_APP_SLUG=docsgpt-acme      # from the app's public link, github.com/apps/
 Restart the API and the worker. **Sign in with GitHub** appears next to the token option.
 
 </Steps>
+
+#### Letting agents make changes
+
+Under **Let agents use GitHub**, **Also let agents make changes (issues, comments, pull requests)** is off by default. Turned on, the tool uses GitHub's full endpoint `https://api.githubcopilot.com/mcp/` instead, which adds write actions such as creating issues, commenting and opening pull requests. The same switch is on the connection's page, on its GitHub tool; switching re-reads the actions from the other endpoint and keeps the permissions and fixed values of actions both endpoints have. Either way the tool sends the token only to `api.githubcopilot.com`.
+
+An action is a **Write** unless GitHub marks it read-only, and writes default to **Needs approval**, so each change asks first until you choose **Always allow** for it. As everywhere, an agent called with its API key takes a write action only if the owner allows it in **Access details**, and an admin can turn changes off for everyone (see [Admin setup](#admin-setup)).
+
+GitHub still checks the token: changes need a token, or a GitHub App, with write access to what they touch:
+
+| To let agents | Repository permission |
+| --- | --- |
+| Create and edit issues, comment on issues | **Issues**: Read and write |
+| Open, update and review pull requests, comment on them | **Pull requests**: Read and write |
+| Create or edit files, push commits, create branches | **Contents**: Read and write |
+
+Leave **Contents** read-only unless agents should edit files. Without a permission, GitHub refuses that action and the agent reports the error.
 
 #### Public repositories and GITHUB_ACCESS_TOKEN
 
