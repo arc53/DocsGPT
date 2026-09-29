@@ -88,6 +88,7 @@ const endpoints = {
     WIKI_PAGES: (id: string) => `/api/sources/${id}/wiki/pages`,
     WIKI_PAGE: (id: string, path: string) =>
       `/api/sources/${id}/wiki/page?path=${encodeURIComponent(path)}`,
+    WIKI_SETTINGS: (id: string) => `/api/sources/${id}/wiki/settings`,
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',
@@ -96,11 +97,44 @@ const endpoints = {
     DELETE_TOOL: '/api/delete_tool',
     PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
-    CONNECTOR_AUTH: (provider: string) =>
-      `/api/connectors/auth?provider=${provider}`,
+    CONNECTOR_AUTH: (
+      provider: string,
+      connectionId?: string,
+      install?: boolean,
+    ) =>
+      `/api/connectors/auth?provider=${encodeURIComponent(provider)}${
+        connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ''
+      }${install ? '&install=1' : ''}`,
     CONNECTOR_FILES: '/api/connectors/files',
     CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
     CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
+    CONNECTORS_CATALOG: '/api/connectors/catalog',
+    CONNECTIONS: '/api/connections',
+    CONNECTION: (id: string) => `/api/connections/${encodeURIComponent(id)}`,
+    CONNECTION_DISCONNECT: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/disconnect`,
+    CONNECTION_SETUP: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/setup`,
+    CONNECTION_RECONNECT: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/reconnect`,
+    CONNECTION_PICKER_TOKEN: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/picker-token`,
+    CONNECTION_REFRESH_TOOLS: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/refresh-tools`,
+    CONNECTION_TOOL_PERMISSIONS: (id: string, toolId: string) =>
+      `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/permissions`,
+    CONNECTION_REPOSITORIES: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/repositories`,
+    CONNECTION_LINEAR: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/linear`,
+    CONNECTION_TOOL_PARAMETERS: (id: string, toolId: string) =>
+      `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/parameters`,
+    CONNECTION_WRITES: (id: string) =>
+      `/api/connections/${encodeURIComponent(id)}/writes`,
+    CONNECTIONS_CLAIM: '/api/connections/claim',
+    TOOL_CREDENTIAL_MODE: (toolId: string) =>
+      `/api/connections/tools/${encodeURIComponent(toolId)}/credential-mode`,
+    ADMIN_CONNECTORS: '/api/admin/connectors',
     GET_CHUNKS: (
       docId: string,
       page: number,

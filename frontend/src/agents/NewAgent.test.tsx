@@ -5,7 +5,10 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { language: 'en' },
+  }),
 }));
 
 const mockState = {
@@ -27,12 +30,25 @@ const mocks = vi.hoisted(() => {
     dispatch: vi.fn(),
     getAgent: vi.fn(() => jsonResponse({})),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
+    tools: null as unknown[] | null,
+    connections: [] as unknown[],
+    catalog: [] as unknown[],
     deleteAgent: vi.fn(() => jsonResponse({})),
+    updateAgent: vi.fn<
+      (id: string, data: FormData, token: string | null) => Promise<unknown>
+    >(() => jsonResponse({})),
     guardrailsProps: vi.fn(),
+    detailsProps: vi.fn(),
+    shareProps: vi.fn(),
+    reconnect: vi.fn(),
   };
 });
 const { jsonResponse } = mocks;
 
+vi.mock('../connectors/SignInAgainNotice', () => ({
+  default: () => null,
+  useSignInAgain: () => ({ reconnect: mocks.reconnect, modals: null }),
+}));
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) => selector(mockState),
   useDispatch: () => mocks.dispatch,
@@ -42,7 +58,7 @@ vi.mock('../api/services/userService', () => ({
   default: {
     getUserTools: () =>
       jsonResponse({
-        tools: [
+        tools: mocks.tools ?? [
           {
             id: 'tool-1',
             name: 'remote_device',
@@ -54,7 +70,7 @@ vi.mock('../api/services/userService', () => ({
     getAgentFolders: () => jsonResponse({ folders: [] }),
     getAgent: mocks.getAgent,
     createAgent: mocks.createAgent,
-    updateAgent: () => jsonResponse({}),
+    updateAgent: mocks.updateAgent,
     deleteAgent: mocks.deleteAgent,
     createPrompt: () => jsonResponse({}),
   },
@@ -66,6 +82,14 @@ vi.mock('../api/services/devicesService', () => ({
       Promise.resolve({
         devices: [{ id: 'device-1', last_seen_at: new Date().toISOString() }],
       }),
+  },
+}));
+
+vi.mock('../api/services/connectorsService', () => ({
+  default: {
+    listConnections: () => Promise.resolve({ connections: mocks.connections }),
+    getCatalog: () =>
+      Promise.resolve({ success: true, connectors: mocks.catalog }),
   },
 }));
 
@@ -82,14 +106,23 @@ vi.mock('../components/MultiSelectPopover', () => ({
   MultiSelectPopover: ({
     trigger,
     items,
+    onToggle,
   }: {
     trigger: React.ReactNode;
     items: MultiSelectPopoverItem[];
+    onToggle: (id: string) => void;
   }) => (
     <div data-testid="picker">
       {trigger}
       {items.map((item) => (
-        <div key={item.id}>{item.descriptionNode}</div>
+        <div key={item.id} data-group={item.group} data-item={item.id}>
+          {item.descriptionNode}
+          <button
+            type="button"
+            data-toggle={item.id}
+            onClick={() => onToggle(item.id)}
+          />
+        </div>
       ))}
     </div>
   ),
@@ -106,8 +139,18 @@ vi.mock('./components/GuardrailsSection', () => ({
   guardrailsIncomplete: () => false,
 }));
 vi.mock('../upload/Upload', () => ({ default: () => null }));
-vi.mock('../modals/AgentDetailsModal', () => ({ default: () => null }));
-vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+vi.mock('../modals/AgentDetailsModal', () => ({
+  default: (props: unknown) => {
+    mocks.detailsProps(props);
+    return null;
+  },
+}));
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: unknown) => {
+    mocks.shareProps(props);
+    return null;
+  },
+}));
 vi.mock('../modals/ConfirmationModal', () => ({
   default: ({
     modalState,
@@ -123,6 +166,24 @@ vi.mock('../modals/ConfirmationModal', () => ({
     ) : null,
 }));
 vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
+vi.mock('./components/SponsorConfirmModal', () => ({
+  default: ({
+    confirmation,
+    onConfirm,
+  }: {
+    confirmation: { resources: { key: string; name: string }[] } | null;
+    onConfirm: (keys: string[]) => void;
+  }) =>
+    confirmation ? (
+      <button
+        type="button"
+        data-testid="confirm-sponsor"
+        onClick={() => onConfirm(confirmation.resources.map((r) => r.key))}
+      >
+        {confirmation.resources.map((r) => r.name).join(',')}
+      </button>
+    ) : null,
+}));
 vi.mock('../navigation/SectionPills', () => ({
   default: () => <div data-testid="section-pills" />,
 }));
@@ -176,6 +237,11 @@ describe('NewAgent form', () => {
     mocks.dispatch.mockClear();
     mocks.getAgent.mockClear();
     mocks.createAgent.mockClear();
+    mocks.updateAgent.mockReset();
+    mocks.updateAgent.mockImplementation(() => jsonResponse({}));
+    mocks.tools = null;
+    mocks.connections = [];
+    mocks.catalog = [];
   });
 
   const render = async () => {
@@ -261,6 +327,312 @@ describe('NewAgent form', () => {
       .closest('[data-slot="form-field"]')!;
     expect(description.className).toContain('col-span-2');
     expect(description.className).toContain('sm:col-start-2');
+  });
+
+  it('lists tool groups as built-in, default, one per connection, then custom', async () => {
+    mocks.tools = [
+      { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      {
+        id: 'linear',
+        name: 'mcp_tool',
+        display_name: 'Linear',
+        connection_id: 'c-lin',
+      },
+      { id: 'memory', name: 'memory', display_name: 'Memory', builtin: true },
+      {
+        id: 'notion',
+        name: 'mcp_tool',
+        display_name: 'Notion',
+        connection_id: 'c-not',
+      },
+      {
+        id: 'reader',
+        name: 'read_webpage',
+        display_name: 'Reader',
+        default: true,
+      },
+    ];
+    mocks.connections = [
+      { id: 'c-lin', name: 'Linear', account_label: 'a@x', icon: 'linear' },
+      { id: 'c-not', name: 'Notion', account_label: 'b@x', icon: 'notion' },
+    ];
+    await render();
+    const groups = Array.from(
+      container.querySelectorAll('[data-testid="picker"] [data-group]'),
+    ).map((item) => item.getAttribute('data-group'));
+    const order = groups.filter((g, i) => groups.indexOf(g) === i);
+    expect(order).toEqual([
+      'agents.form.toolsPopup.groupBuiltin',
+      'agents.form.toolsPopup.groupDefault',
+      'agents.form.toolsPopup.groupConnection',
+      'agents.form.toolsPopup.groupCustom',
+    ]);
+  });
+
+  // A teammate's connection is never in the caller's list; its tool still
+  // belongs with the services, named from the catalog.
+  it("groups a teammate's connected tool under its service, before custom", async () => {
+    mocks.tools = [
+      { id: 'custom', name: 'api_tool', display_name: 'My API' },
+      {
+        id: 'shared-tg',
+        name: 'telegram',
+        displayName: 'Telegram',
+        connection_id: 'owner-conn',
+        access: 'viewer',
+        allowed_actions: ['use', 'use_in_own'],
+      },
+    ];
+    mocks.catalog = [
+      {
+        key: 'telegram',
+        name: 'Telegram',
+        icon: 'tool_telegram',
+        publisher: 'built_in',
+        tool_templates: ['telegram'],
+      },
+    ];
+    await render();
+    const groups = Array.from(
+      container.querySelectorAll('[data-testid="picker"] [data-group]'),
+    ).map((item) => item.getAttribute('data-group'));
+    expect(groups).toEqual(['Telegram', 'agents.form.toolsPopup.groupCustom']);
+  });
+
+  const renderEdit = async (agent: Record<string, unknown>) => {
+    mocks.getAgent.mockImplementationOnce(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Shared',
+        description: 'd',
+        status: 'published',
+        agent_type: 'classic',
+        prompt_id: 'default',
+        access: 'editor',
+        allowed_actions: ['edit', 'view'],
+        ...agent,
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  // An editor doesn't list the owner's private tools, but must still be able
+  // to take one off the agent.
+  it("adds a remove-only row for an attached tool the editor can't list", async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await renderEdit({
+      tools: ['owners'],
+      tool_details: [
+        { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
+      ],
+    });
+    const toolPicker = Array.from(
+      container.querySelectorAll('[data-testid="picker"]'),
+    ).find((picker) => picker.textContent?.includes('Owner Jira'))!;
+    const groups = Array.from(toolPicker.querySelectorAll('[data-group]')).map(
+      (item) => item.getAttribute('data-group'),
+    );
+    expect(groups).toEqual([
+      'agents.form.toolsPopup.groupCustom',
+      'agents.form.toolsPopup.groupAttached',
+    ]);
+  });
+
+  it('asks before sponsoring and retries the save with the confirmation', async () => {
+    mocks.updateAgent.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: false,
+            code: 'sponsor_confirmation_required',
+            message: 'confirm',
+            resources: [
+              { key: 'tool:t1', type: 'tool', id: 't1', name: 'Jira' },
+            ],
+            audience: {
+              teams: ['Support'],
+              api_key: true,
+              public_link: false,
+              webhook: false,
+            },
+          }),
+          { status: 409 },
+        ),
+      ),
+    );
+    await renderEdit({});
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, 'Renamed'));
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const confirm = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-sponsor"]',
+    )!;
+    expect(confirm.textContent).toBe('Jira');
+    // The refusal is a question, not an error.
+    expect(container.querySelector('[data-variant="destructive"]')).toBeNull();
+    expect(mocks.updateAgent).toHaveBeenCalledTimes(1);
+    const first = mocks.updateAgent.mock.calls[0][1];
+    expect(first.get('confirm_sponsor')).toBeNull();
+
+    await act(async () => confirm.click());
+    expect(mocks.updateAgent).toHaveBeenCalledTimes(2);
+    const retried = mocks.updateAgent.mock.calls[1][1];
+    expect(JSON.parse(retried.get('confirm_sponsor') as string)).toEqual([
+      'tool:t1',
+    ]);
+    expect(
+      container.querySelector('[data-testid="confirm-sponsor"]'),
+    ).toBeNull();
+  });
+
+  const rename = async (value: string) => {
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.agentName"]',
+    )!;
+    await act(async () => setNativeValue(name, value));
+  };
+
+  it('drops the remove-only row once the removal is saved', async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await renderEdit({
+      tools: ['owners'],
+      tool_details: [
+        { id: 'owners', name: 'jira', display_name: 'Owner Jira' },
+      ],
+    });
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="owners"]')!
+        .click(),
+    );
+    // Still listed until saved, so it can be put back.
+    expect(container.querySelector('[data-item="owners"]')).not.toBeNull();
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    expect(mocks.updateAgent).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-item="owners"]')).toBeNull();
+  });
+
+  const stoppedTool = {
+    key: 'tool:t1',
+    type: 'tool',
+    id: 't1',
+    name: 'Jira',
+    state: 'stopped',
+    reason: 'sponsor_cannot_edit_agent',
+    sponsor: { user_id: 'bob', label: 'bob@example.com' },
+    can_confirm: true,
+  };
+  const withStoppedTool = (item: Record<string, unknown> = {}) => ({
+    tools: ['t1'],
+    tool_details: [{ id: 't1', name: 'jira', display_name: 'Jira' }],
+    resource_states: [{ ...stoppedTool, ...item }],
+    sponsor_audience: {
+      teams: ['Sales'],
+      api_key: false,
+      public_link: false,
+      webhook: false,
+    },
+  });
+
+  it('asks before taking over a stopped item and sends it with the next save', async () => {
+    await renderEdit(withStoppedTool());
+    const save = buttonByText('agents.form.buttons.save');
+    expect(save.disabled).toBe(true);
+    await act(async () =>
+      buttonByText('agents.form.sponsors.takeOver').click(),
+    );
+    // Nothing is taken over until the reader agrees in the dialog.
+    expect(save.disabled).toBe(true);
+    const confirm = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-sponsor"]',
+    )!;
+    expect(confirm.textContent).toBe('Jira');
+    await act(async () => confirm.click());
+    expect(container.textContent).toContain(
+      'agents.form.sponsors.takeOverPending',
+    );
+    expect(save.disabled).toBe(false);
+    await act(async () => save.click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(JSON.parse(sent.get('confirm_sponsor') as string)).toEqual([
+      'tool:t1',
+    ]);
+    // The saved agent is fetched again for its fresh details.
+    expect(mocks.getAgent).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes a stopped item from the agent', async () => {
+    await renderEdit(withStoppedTool({ reason: 'deleted', sponsor: null }));
+    expect(container.textContent).toContain(
+      'agents.form.resourceStates.reason.deleted',
+    );
+    await act(async () =>
+      buttonByText('agents.form.resourceStates.remove').click(),
+    );
+    // Off the form, so off the notice too.
+    expect(container.textContent).not.toContain(
+      'agents.form.resourceStates.reason.deleted',
+    );
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(JSON.parse(sent.get('tools') as string)).toEqual([]);
+  });
+
+  it('reconnects the account of a stopped tool in place', async () => {
+    mocks.reconnect.mockClear();
+    await renderEdit(
+      withStoppedTool({
+        reason: 'connection_needs_reconnect',
+        sponsor: null,
+        can_confirm: false,
+        can_reconnect: true,
+        connection: { id: 'c1', connector_key: 'telegram', name: 'Telegram' },
+      }),
+    );
+    await act(async () =>
+      buttonByText('settings.connectors.status.reconnect').click(),
+    );
+    expect(mocks.reconnect).toHaveBeenCalledWith(
+      { id: 'c1', connector_key: 'telegram' },
+      undefined,
+    );
+  });
+
+  it('explains an outdated confirmation and reloads the sponsors', async () => {
+    mocks.updateAgent.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: false,
+            code: 'sponsor_confirmation_unexpected',
+            message: 'raw english',
+            unexpected: ['tool:t1'],
+          }),
+          { status: 400 },
+        ),
+      ),
+    );
+    await renderEdit({});
+    await rename('Renamed');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    expect(container.textContent).toContain(
+      'agents.form.sponsors.confirmationOutdated',
+    );
+    expect(container.textContent).not.toContain('raw english');
+    expect(mocks.getAgent).toHaveBeenCalledTimes(2);
   });
 
   it('labels every picker with a floating label', async () => {
@@ -698,6 +1070,67 @@ describe('NewAgent gating by role', () => {
       ?.querySelector<HTMLButtonElement>('[role="switch"]');
     expect(tokenSwitch?.disabled).toBe(true);
     expect(token.disabled).toBe(true);
+  });
+
+  it('keeps the form clean after the API write allowlist saves', async () => {
+    await renderEdit('owner', OWNER);
+    const details = () =>
+      mocks.detailsProps.mock.calls.at(-1)![0] as {
+        onConfigChange: (config: Record<string, unknown>) => void;
+        getSavedConfig: () => Record<string, unknown> | undefined;
+      };
+    const saved = {
+      ...details().getSavedConfig(),
+      api_write_allowlist: ['tool-1:send'],
+    };
+    await act(async () => details().onConfigChange(saved));
+    expect(details().getSavedConfig()).toEqual(saved);
+    expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
+  });
+
+  // "What this agent uses" in Share sends the owner to the API write
+  // allowlist, which opens unfolded; opened any other way it starts folded.
+  it('opens Access details on the allowlist from Share', async () => {
+    await renderEdit('owner', OWNER);
+    const details = () =>
+      mocks.detailsProps.mock.calls.at(-1)![0] as {
+        modalState: string;
+        openApiWrites?: boolean;
+        setModalState: (state: string) => void;
+      };
+    await menuLabels();
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((item) => item.textContent === 'agents.shareWithTeam')!
+        .click(),
+    );
+    const share = mocks.shareProps.mock.calls.at(-1)![0] as {
+      onOpenAccessDetails?: () => void;
+    };
+    mocks.shareProps.mockClear();
+    await act(async () => share.onOpenAccessDetails!());
+    expect(mocks.shareProps).not.toHaveBeenCalled();
+    expect(details().modalState).toBe('ACTIVE');
+    expect(details().openApiWrites).toBe(true);
+    await act(async () => details().setModalState('INACTIVE'));
+    expect(details().openApiWrites).toBe(false);
+  });
+
+  it('gives Share no way to Access details without manage_access_details', async () => {
+    await renderEdit(
+      'owner',
+      OWNER.filter((a) => a !== 'manage_access_details'),
+    );
+    await menuLabels();
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((item) => item.textContent === 'agents.shareWithTeam')!
+        .click(),
+    );
+    const share = mocks.shareProps.mock.calls.at(-1)![0] as {
+      onOpenAccessDetails?: () => void;
+    };
+    expect(share.onOpenAccessDetails).toBeUndefined();
   });
 
   it('hides Access details without manage_access_details', async () => {

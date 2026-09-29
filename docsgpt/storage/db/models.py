@@ -233,6 +233,11 @@ user_tools_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    Column(
+        "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="SET NULL"),
+    ),
+    # Whose account a shared resource runs with: the owner's, or each member's.
+    Column("credential_mode", Text, nullable=False, server_default="owner"),
 )
 
 # A grantee's personal "In my chats" switch for a tool shared with them
@@ -371,6 +376,13 @@ sources_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    Column(
+        "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="SET NULL"),
+    ),
+    # Whose account a shared resource runs with: the owner's, or each member's.
+    Column("credential_mode", Text, nullable=False, server_default="owner"),
+    # A wiki's owner lets API-key and widget runs edit it (off: read only).
+    Column("wiki_outside_edits", Boolean, nullable=False, server_default="false"),
 )
 
 agents_table = Table(
@@ -621,6 +633,34 @@ connector_sessions_table = Table(
     Column("expires_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # Added in ``0040_connections``: each row is a connection (one signed-in
+    # account, one MCP server or one set of API credentials).
+    Column("connector_key", Text),
+    Column("display_name", Text),
+    Column("account_label", Text),
+    Column("auth_kind", Text),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Every secret of the connection, as one owner-bound v2 envelope.
+    Column("encrypted_credentials", Text),
+    Column("has_refresh_token", Boolean, nullable=False, server_default="false"),
+    Column("scopes", JSONB, nullable=False, server_default="[]"),
+    Column("last_error", Text),
+    Column("last_used_at", DateTime(timezone=True)),
+    # Added in ``0041_connection_account_name``: what the user calls the
+    # account; ``account_label`` stays its identity.
+    Column("account_name", Text),
+)
+
+
+connector_policies_table = Table(
+    "connector_policies",
+    metadata,
+    Column("connector_key", Text, primary_key=True),
+    # NULL: on when the connector has its server settings (see connectors.service).
+    Column("enabled", Boolean),
+    Column("credential_mode", Text, nullable=False, server_default="choose"),
+    Column("updated_by", Text),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 

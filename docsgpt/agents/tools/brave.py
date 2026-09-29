@@ -136,6 +136,7 @@ class BraveSearchTool(Tool):
         return [
             {
                 "name": "brave_web_search",
+                "access": "read",
                 "description": (
                     "Search the web with Brave Search. Returns result titles, "
                     "URLs, and snippets. Use it for current events or "
@@ -163,6 +164,7 @@ class BraveSearchTool(Tool):
             },
             {
                 "name": "brave_image_search",
+                "access": "read",
                 "description": (
                     "Search for images with Brave Search. Returns image "
                     "titles, page URLs, and thumbnail URLs."

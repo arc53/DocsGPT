@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { ListRow, ListRows } from '@/components/ui/list-row';
 import { selectIsAdmin } from '@/preferences/preferenceSlice';
 
+import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
 import { getVisibleGroups, type Section } from './sections';
 
 /**
@@ -17,7 +18,11 @@ import { getVisibleGroups, type Section } from './sections';
 export default function SectionIndexPage({ section }: { section: Section }) {
   const { t } = useTranslation();
   const isAdmin = useSelector(selectIsAdmin);
-  const groups = getVisibleGroups(section, { isAdmin });
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const groups = getVisibleGroups(section, {
+    isAdmin,
+    features: { connectors: connectorsEnabled },
+  });
 
   return (
     <div className="flex flex-col gap-8">

@@ -68,6 +68,8 @@ A multi-phase agent designed for in-depth research tasks:
 
 Includes budget controls for max steps, timeout, and token limits to keep research bounded.
 
+Research steps can't stop to ask you anything, so a tool action that needs approval, a connection or the user's app isn't run there; the step is told why and carries on. The same goes for actions an API, widget or public-link user can't take on the owner's accounts.
+
 **Best for:** Complex questions that require multi-step investigation, gathering information from multiple sources, and producing structured reports with citations.
 
 ### 4. Workflow Agent
@@ -111,6 +113,7 @@ Once an agent is created, you can:
     * Modify any of its configuration settings (name, description, source, prompt, tools, type).
     * **Generate a Public Link:** From the edit screen, you can create a shareable public link that allows others to import and use your agent.
     * **Get a Webhook URL:** You can also obtain a Webhook URL for the agent. This allows external applications or services to trigger the agent and receive responses programmatically, enabling powerful integrations and automations.
+* **Share it with a team:** Viewers chat with it; editors can also change it. The share dialog lists what the agent uses and whose access each item runs with. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
 * **Use it via API:** Every agent exposes an API key that can be used with the native [Agent API](/Agents/api) or the [OpenAI-Compatible API](/Agents/openai-compatible) so you can drop DocsGPT Agents into any tool that already speaks the chat completions protocol.
 
 ## Seeding Premade Agents from YAML

@@ -1,6 +1,5 @@
-import { ChevronLeft, FileText } from 'lucide-react';
+import { ArrowRight, ChevronLeft, FileText, Lock, Plug } from 'lucide-react';
 import { envVar } from '@/env';
-import { cn } from '@/lib/utils';
 import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import type { FileRejection } from 'react-dropzone';
@@ -9,25 +8,26 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
 import userService from '../api/services/userService';
-import modelService from '../api/services/modelService';
-import type { Model } from '../models/types';
-import { getSessionToken } from '../utils/providerUtils';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { FormField as UiFormField } from '../components/ui/form-field';
-import { Label } from '../components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
-import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
 import { Modal } from '../components/ui/modal';
-import { Separator } from '../components/ui/separator';
 import { OptionCard } from '../components/ui/option-card';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { syncTargets } from '../connectors/catalogCards';
+import useConnectorLauncher from '../connectors/useConnectorLauncher';
+import { connectorName } from '../connectors/i18n';
+import { formatCount, intlLocale } from '../utils/dateTimeUtils';
+import {
+  loadConnectors,
+  selectConnections,
+  selectConnectorCatalog,
+  selectConnectorsEnabled,
+  selectConnectorsLoaded,
+} from '../connectors/connectorsSlice';
+import type { AppDispatch } from '../store';
 import { Card } from '../components/ui/card';
 import { Dropzone } from '../components/ui/dropzone';
 import { ListRow, ListRows } from '../components/ui/list-row';
@@ -46,13 +46,12 @@ import {
   IngestorFormSchemas,
   getIngestorSchema,
   IngestorOption,
+  UPLOAD_AND_WEB_INGESTORS,
 } from '../upload/types/ingestor';
 import { addUploadTask, updateUploadTask } from './uploadSlice';
 
 import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
-import { FilePicker } from '../components/FilePicker';
-import GoogleDrivePicker from '../components/GoogleDrivePicker';
 import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
 import RetrievalOptions, {
   DEFAULT_RETRIEVAL_OPTIONS,
@@ -60,6 +59,7 @@ import RetrievalOptions, {
   optionsToConfig,
   type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
+import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 
 /** Per-file limit for local uploads (25 MB), enforced by the dropzone. */
 const MAX_UPLOAD_BYTES = 25000000;
@@ -72,6 +72,7 @@ function Upload({
   close,
   onSuccessfulUpload = () => undefined,
   selectUploadedDoc = true,
+  onBrowseConnectors,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
@@ -86,93 +87,46 @@ function Upload({
    * uploading never repoints the conversation the user left open.
    */
   selectUploadedDoc?: boolean;
+  /**
+   * Opens the Connectors page on the services that sync. Only a caller that
+   * loses nothing by leaving (the Knowledge page) passes it; the dialog
+   * closes first.
+   */
+  onBrowseConnectors?: () => void;
 }) {
   const token = useSelector(selectToken);
   const selectedDocs = useSelector(selectSelectedDocs);
+  const connectorCatalog = useSelector(selectConnectorCatalog);
+  const connections = useSelector(selectConnections);
+  const connectorsLoaded = useSelector(selectConnectorsLoaded);
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  // Connecting a service (Connect your data, GitHub's private-repository
+  // hand-over) goes to the connect wizard, the one flow every entry point
+  // uses; this modal steps aside and closes with it.
+  const [handedOver, setHandedOver] = useState(false);
+  // Connect your data: the services that sync, in place of the tiles.
+  const [connecting, setConnecting] = useState(false);
+  const { launch, modals: connectModals } = useConnectorLauncher({
+    onConnected: () => close(),
+  });
 
   const [files, setfiles] = useState<File[]>(receivedFile);
   // Names of the files the last drop turned away (over the size limit or of
   // an unaccepted type), shown under the dropzone.
   const [rejectedFiles, setRejectedFiles] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<boolean>(true);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [retrievalOptions, setRetrievalOptions] =
     useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
-  const [graphRAGAvailable, setGraphRAGAvailable] = useState(false);
-  const [hybridAvailable, setHybridAvailable] = useState(false);
-  const [availableModels, setAvailableModels] = useState<Model[]>([]);
-
-  // File picker state
-  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    userService
-      .getConfig()
-      .then((response) => response.json())
-      .then((config) => {
-        if (!cancelled) {
-          setGraphRAGAvailable(!!config?.graphrag_available);
-          setHybridAvailable(!!config?.hybrid_available);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Models back the graphrag extraction-model picker; only fetched when the
-  // instance supports graphrag.
-  useEffect(() => {
-    if (!graphRAGAvailable) return;
-    let cancelled = false;
-    modelService
-      .getModels(token)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (!cancelled && data)
-          setAvailableModels(modelService.transformModels(data.models || []));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [graphRAGAvailable, token]);
+  const { graphRAGAvailable, hybridAvailable, availableModels } =
+    useRetrievalAvailability(token);
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
     const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
     if (!ingestorSchema) return null;
-    const schema: FormField[] = ingestorSchema.fields;
-
-    const generalFields = schema.filter((field: FormField) => !field.advanced);
-    const advancedFields = schema.filter((field: FormField) => field.advanced);
-
     return (
       <div className="flex flex-col gap-5">
-        <div className="flex flex-col gap-5">
-          {generalFields.map((field: FormField) => renderField(field))}
-        </div>
-
-        {advancedFields.length > 0 && (
-          <div
-            className={cn(
-              'grid transition-[grid-template-rows,opacity] duration-300 ease-out',
-              showAdvancedOptions
-                ? 'grid-rows-[1fr] opacity-100'
-                : 'grid-rows-[0fr] opacity-0',
-            )}
-          >
-            <div className="flex flex-col gap-4 overflow-hidden">
-              <Separator className="my-4" />
-              <div className="flex flex-col gap-5">
-                {advancedFields.map((field: FormField) => renderField(field))}
-              </div>
-            </div>
-          </div>
-        )}
+        {ingestorSchema.fields.map((field: FormField) => renderField(field))}
       </div>
     );
   };
@@ -199,81 +153,6 @@ function Upload({
             }
             required={isRequired}
           />
-        );
-      case 'number':
-        return (
-          <Input
-            key={field.name}
-            label={fieldLabel}
-            type="number"
-            name={field.name}
-            value={String(
-              ingestor.config[field.name as keyof typeof ingestor.config],
-            )}
-            onChange={(e) =>
-              handleIngestorChange(
-                field.name as keyof IngestorConfig['config'],
-                Number(e.target.value),
-              )
-            }
-            required={isRequired}
-          />
-        );
-      case 'enum': {
-        const currentValue = String(
-          ingestor.config[field.name as keyof typeof ingestor.config] ?? '',
-        );
-        return (
-          <UiFormField
-            key={field.name}
-            label={fieldLabel}
-            required={isRequired}
-          >
-            <Select
-              value={currentValue || undefined}
-              onValueChange={(value) => {
-                handleIngestorChange(
-                  field.name as keyof IngestorConfig['config'],
-                  value,
-                );
-              }}
-            >
-              <SelectTrigger className="w-full" size="field" shape="pill">
-                <SelectValue placeholder={fieldLabel} />
-              </SelectTrigger>
-              <SelectContent>
-                {(field.options || []).map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </UiFormField>
-        );
-      }
-      case 'boolean':
-        return (
-          <div
-            key={field.name}
-            className="mt-2 flex flex-row items-center gap-3 text-base"
-          >
-            <Label htmlFor={`field-${field.name}`} className="text-foreground">
-              {fieldLabel}
-            </Label>
-            <Switch
-              id={`field-${field.name}`}
-              checked={Boolean(
-                ingestor.config[field.name as keyof typeof ingestor.config],
-              )}
-              onCheckedChange={(checked: boolean) => {
-                handleIngestorChange(
-                  field.name as keyof IngestorConfig['config'],
-                  checked,
-                );
-              }}
-            />
-          </div>
         );
       case 'textarea':
         return (
@@ -344,71 +223,6 @@ function Upload({
             )}
           </div>
         );
-      case 'remote_file_picker':
-        return (
-          <FilePicker
-            key={field.name}
-            onSelectionChange={(
-              selectedFileIds: string[],
-              selectedFolderIds: string[] = [],
-            ) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            provider={ingestor.type as unknown as string}
-            token={token}
-            initialSelectedFiles={selectedFiles}
-            initialSelectedFolders={selectedFolders}
-          />
-        );
-      case 'google_drive_picker':
-        return (
-          <GoogleDrivePicker
-            key={field.name}
-            onSelectionChange={(
-              selectedFileIds: string[],
-              selectedFolderIds: string[] = [],
-            ) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            token={token}
-          />
-        );
-      case 'share_point_picker':
-        return (
-          <FilePicker
-            key={field.name}
-            onSelectionChange={(
-              selectedFileIds: string[],
-              selectedFolderIds: string[] = [],
-            ) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            provider="share_point"
-            token={token}
-            initialSelectedFiles={selectedFiles}
-            initialSelectedFolders={selectedFolders}
-          />
-        );
-      case 'confluence_picker':
-        return (
-          <FilePicker
-            key={field.name}
-            onSelectionChange={(
-              selectedFileIds: string[],
-              selectedFolderIds: string[] = [],
-            ) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            provider="confluence"
-            token={token}
-            initialSelectedFiles={selectedFiles}
-            initialSelectedFolders={selectedFolders}
-          />
-        );
       default:
         return null;
     }
@@ -422,26 +236,27 @@ function Upload({
   }));
   const [nameTouched, setNameTouched] = useState(false);
 
-  const { t } = useTranslation();
-  const dispatch = useDispatch();
+  const { t, i18n } = useTranslation();
+  const dispatch = useDispatch<AppDispatch>();
   const store = useStore<RootState>();
 
-  const ingestorOptions: IngestorOption[] = IngestorFormSchemas.filter(
-    (schema) => (schema.validate ? schema.validate() : true),
-  ).map((schema) => ({
-    label: schema.label,
-    value: schema.key,
-    icon: schema.icon,
-    heading: schema.heading,
-  }));
+  useEffect(() => {
+    if (!connectorsLoaded) dispatch(loadConnectors({ token }));
+  }, [connectorsLoaded, dispatch, token]);
+
+  const ingestorOptions: IngestorOption[] = IngestorFormSchemas.map(
+    (schema) => ({
+      label: schema.label,
+      value: schema.key,
+      icon: schema.icon,
+      heading: schema.heading,
+    }),
+  );
 
   const resetUploaderState = useCallback(() => {
     setIngestor({ type: null, name: '', config: {} });
     setfiles([]);
     setRejectedFiles([]);
-    setSelectedFiles([]);
-    setSelectedFolders([]);
-    setShowAdvancedOptions(false);
     setRetrievalOptions(DEFAULT_RETRIEVAL_OPTIONS);
     setNameTouched(false);
   }, []);
@@ -722,57 +537,11 @@ function Upload({
       JSON.stringify(optionsToConfig(retrievalOptions)),
     );
 
-    const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
-    if (!ingestorSchema) {
-      handleTaskFailure(clientTaskId);
-      return;
-    }
-
-    const schema: FormField[] = ingestorSchema.fields;
-    const hasLocalFilePicker = schema.some(
-      (field: FormField) => field.type === 'local_file_picker',
-    );
-    const hasRemoteFilePicker = schema.some(
-      (field: FormField) => field.type === 'remote_file_picker',
-    );
-    const hasGoogleDrivePicker = schema.some(
-      (field: FormField) => field.type === 'google_drive_picker',
-    );
-    const hasSharePointPicker = schema.some(
-      (field: FormField) => field.type === 'share_point_picker',
-    );
-    const hasConfluencePicker = schema.some(
-      (field: FormField) => field.type === 'confluence_picker',
-    );
-
-    let configData: Record<string, unknown> = { ...ingestor.config };
-
-    if (hasLocalFilePicker) {
-      files.forEach((file) => {
-        formData.append('file', file);
-      });
-    } else if (
-      hasRemoteFilePicker ||
-      hasGoogleDrivePicker ||
-      hasSharePointPicker ||
-      hasConfluencePicker
-    ) {
-      const sessionToken = getSessionToken(ingestor.type as string);
-      configData = {
-        provider: ingestor.type as string,
-        session_token: sessionToken,
-        file_ids: selectedFiles,
-        folder_ids: selectedFolders,
-      };
-    }
-
-    formData.append('data', JSON.stringify(configData));
+    formData.append('data', JSON.stringify(ingestor.config));
 
     const apiHost: string = envVar('VITE_API_HOST');
-    const endpoint =
-      ingestor.type === 'local_file'
-        ? `${apiHost}/api/upload`
-        : `${apiHost}/api/remote`;
+    // Local files go through uploadFile; everything else is fetched remotely.
+    const endpoint = `${apiHost}/api/remote`;
 
     const xhr = new XMLHttpRequest();
 
@@ -934,70 +703,14 @@ function Upload({
     if (!isPrescreenConfigValid(retrievalOptions)) return true;
 
     if (!ingestor.type) return true;
-    const ingestorSchemaForValidation = getIngestorSchema(
-      ingestor.type as IngestorType,
-    );
-    if (!ingestorSchemaForValidation) return true;
-    const schema: FormField[] = ingestorSchemaForValidation.fields;
-    const hasLocalFilePicker = schema.some(
-      (field: FormField) => field.type === 'local_file_picker',
-    );
-    const hasRemoteFilePicker = schema.some(
-      (field: FormField) => field.type === 'remote_file_picker',
-    );
-    const hasGoogleDrivePicker = schema.some(
-      (field: FormField) => field.type === 'google_drive_picker',
-    );
-    const hasSharePointPicker = schema.some(
-      (field: FormField) => field.type === 'share_point_picker',
-    );
-    const hasConfluencePicker = schema.some(
-      (field: FormField) => field.type === 'confluence_picker',
-    );
-
-    if (hasLocalFilePicker) {
-      if (files.length === 0) {
-        return true;
-      }
-    } else if (
-      hasRemoteFilePicker ||
-      hasGoogleDrivePicker ||
-      hasSharePointPicker ||
-      hasConfluencePicker
-    ) {
-      if (selectedFiles.length === 0 && selectedFolders.length === 0) {
-        return true;
-      }
-    }
-
-    const ingestorSchemaForFields = getIngestorSchema(
-      ingestor.type as IngestorType,
-    );
-    if (!ingestorSchemaForFields) return false;
-    const formFields: FormField[] = ingestorSchemaForFields.fields;
-    for (const field of formFields) {
-      if (field.required) {
-        // Validate only required fields
-        const value =
-          ingestor.config[field.name as keyof typeof ingestor.config];
-
-        if (typeof value === 'string' && !value.trim()) {
-          return true;
-        }
-
-        if (
-          typeof value === 'number' &&
-          (value === null || value === undefined || value <= 0)
-        ) {
-          return true;
-        }
-
-        if (typeof value === 'boolean' && value === undefined) {
-          return true;
-        }
-      }
-    }
-    return false;
+    const schema = getIngestorSchema(ingestor.type);
+    if (!schema) return true;
+    return schema.fields.some((field: FormField) => {
+      if (field.type === 'local_file_picker') return files.length === 0;
+      if (!field.required) return false;
+      const value = ingestor.config[field.name];
+      return typeof value === 'string' && !value.trim();
+    });
   };
   const handleIngestorChange = (
     key: keyof IngestorConfig['config'],
@@ -1039,28 +752,195 @@ function Upload({
     }
   };
 
-  const renderIngestorSelection = () => {
-    return (
+  // Services that sync into Knowledge are connected here, through the
+  // connect wizard: one tile opens their list, named after the first few
+  // (GitHub has a tile of its own).
+  const syncServices = connectorsEnabled ? syncTargets(connectorCatalog) : [];
+  const namedServices = syncServices
+    .filter(({ card }) => card.key !== 'github')
+    .map(({ card }) => connectorName(t, card));
+  const SERVICES_NAMED = 3;
+  const connectDescription = t('modals.uploadDoc.connectData.description', {
+    services: new Intl.ListFormat(intlLocale(i18n.language), {
+      type: 'conjunction',
+    }).format(
+      namedServices.length > SERVICES_NAMED
+        ? [
+            ...namedServices.slice(0, SERVICES_NAMED),
+            t('modals.uploadDoc.connectData.more'),
+          ]
+        : namedServices,
+    ),
+    interpolation: { escapeValue: false },
+  });
+
+  const connectedAccounts = (key: string) =>
+    connections.filter(
+      (c) => c.connector_key === key && c.status === 'connected',
+    );
+
+  /** Which account a service's tile syncs from, when it has any. */
+  const accountLine = (key: string) => {
+    const accounts = connectedAccounts(key);
+    if (accounts.length === 1)
+      return t('modals.uploadDoc.connectData.connectedAs', {
+        account: accounts[0].account_label,
+        interpolation: { escapeValue: false },
+      });
+    if (accounts.length > 1)
+      return t('settings.connectors.status.connectedCount', {
+        count: accounts.length,
+        formatted: formatCount(accounts.length),
+      });
+    return undefined;
+  };
+
+  const renderConnectStep = () => (
+    <div className="flex flex-col gap-5">
+      <Button
+        type="button"
+        variant="ghost-muted"
+        size="sm"
+        onClick={() => setConnecting(false)}
+        className="-ml-3 w-fit justify-start"
+      >
+        <ChevronLeft />
+        <span>{t('modals.uploadDoc.back')}</span>
+      </Button>
+      <div className="flex flex-col gap-2">
+        <h2 className="text-foreground text-xl leading-tight font-semibold">
+          {t('modals.uploadDoc.connectData.title')}
+        </h2>
+        <p className="text-muted-foreground text-sm">
+          {t('modals.uploadDoc.connectData.intro')}
+        </p>
+      </div>
       <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-        {ingestorOptions.map((option) => (
+        {syncServices.map(({ card, target }) => (
           <OptionCard
-            key={option.value}
-            icon={
-              <img
-                src={option.icon}
-                alt={option.label}
-                className="size-6 dark:invert"
-              />
-            }
-            title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
-            onClick={() =>
-              handleIngestorTypeChange(option.value as IngestorType)
-            }
+            key={card.key}
+            icon={<ConnectorIcon icon={card.icon} className="size-6" />}
+            title={connectorName(t, card)}
+            description={accountLine(target.key)}
+            onClick={() => {
+              const account = connectedAccounts(target.key)[0];
+              setHandedOver(true);
+              // Opened to add knowledge: syncing starts switched on, and an
+              // account already connected goes straight to what to sync.
+              launch(
+                target,
+                account
+                  ? {
+                      mode: 'sync',
+                      connectionId: account.id,
+                      purpose: 'knowledge',
+                    }
+                  : { purpose: 'knowledge' },
+              );
+            }}
           />
         ))}
       </div>
+      {onBrowseConnectors && (
+        <Button
+          type="button"
+          variant="link"
+          size="inline"
+          className="self-start"
+          onClick={() => {
+            handleClose();
+            onBrowseConnectors();
+          }}
+        >
+          {t('modals.uploadDoc.connectData.browseAll')}
+          <ArrowRight className="size-3" />
+        </Button>
+      )}
+    </div>
+  );
+
+  const renderIngestorSelection = () => {
+    const options = UPLOAD_AND_WEB_INGESTORS.map((type) =>
+      ingestorOptions.find((o) => o.value === type),
+    ).filter((option): option is IngestorOption => !!option);
+    return (
+      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+        {options.map((option) => (
+          <OptionCard
+            key={option.value}
+            icon={
+              <img src={option.icon} alt="" className="size-6 dark:invert" />
+            }
+            title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
+            onClick={() => handleIngestorTypeChange(option.value)}
+          />
+        ))}
+        {syncServices.length > 0 && (
+          <OptionCard
+            className="sm:col-span-2 md:col-span-3"
+            icon={<Plug />}
+            title={t('modals.uploadDoc.connectData.title')}
+            description={connectDescription}
+            onClick={() => setConnecting(true)}
+          />
+        )}
+      </div>
     );
   };
+
+  // The GitHub tile reads public repositories by URL with no account. A
+  // private one needs the user's own GitHub connection: hand over to the
+  // connect wizard, which picks from the account's repositories.
+  const githubConnector = connectorsEnabled
+    ? connectorCatalog.find((c) => c.key === 'github' && c.available)
+    : undefined;
+  const githubAccount = githubConnector
+    ? connections.find(
+        (c) => c.connector_key === 'github' && c.status === 'connected',
+      )
+    : undefined;
+  const renderGitHubHandOver = () =>
+    githubConnector ? (
+      <Alert variant="info" role="note">
+        <Lock />
+        <AlertDescription>
+          {githubAccount
+            ? t('modals.uploadDoc.github.connectedHint', {
+                account: githubAccount.account_label,
+                interpolation: { escapeValue: false },
+              })
+            : t('modals.uploadDoc.github.privateHint')}
+        </AlertDescription>
+        <div className="mt-2">
+          <Button
+            type="button"
+            size="sm"
+            shape="pill"
+            variant="outline"
+            onClick={() => {
+              setHandedOver(true);
+              launch(
+                githubConnector,
+                githubAccount
+                  ? {
+                      mode: 'sync',
+                      connectionId: githubAccount.id,
+                      purpose: 'knowledge',
+                    }
+                  : { purpose: 'knowledge' },
+              );
+            }}
+          >
+            {githubAccount
+              ? t('modals.uploadDoc.github.pickRepository')
+              : t('modals.uploadDoc.github.connect')}
+          </Button>
+        </div>
+      </Alert>
+    ) : null;
+
+  if (handedOver) return <>{connectModals}</>;
+
   return (
     <Modal
       open={true}
@@ -1086,7 +966,7 @@ function Upload({
       mobileVariant="sheet"
     >
       <div className="flex w-full flex-col gap-6">
-        {!ingestor.type && (
+        {!ingestor.type && !connecting && (
           <p className="text-foreground text-left text-xl leading-tight font-semibold">
             {t('modals.uploadDoc.selectSource')}
           </p>
@@ -1094,7 +974,8 @@ function Upload({
 
         {activeTab && (
           <>
-            {!ingestor.type && renderIngestorSelection()}
+            {!ingestor.type &&
+              (connecting ? renderConnectStep() : renderIngestorSelection())}
             {ingestor.type && (
               <div className="flex flex-col gap-5">
                 <Button
@@ -1128,6 +1009,7 @@ function Upload({
                   className="w-full"
                 />
                 {renderFormFields()}
+                {ingestor.type === 'github' && renderGitHubHandOver()}
                 {ingestor.type !== 'wiki' && (
                   <RetrievalOptions
                     value={retrievalOptions}
@@ -1139,23 +1021,6 @@ function Upload({
                 )}
               </div>
             )}
-
-            {ingestor.type &&
-              getIngestorSchema(ingestor.type as IngestorType)?.fields.some(
-                (field: FormField) => field.advanced,
-              ) && (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                  className="-ml-3 w-fit justify-start"
-                >
-                  {showAdvancedOptions
-                    ? t('modals.uploadDoc.hideAdvanced')
-                    : t('modals.uploadDoc.showAdvanced')}
-                </Button>
-              )}
           </>
         )}
       </div>

@@ -17,6 +17,7 @@ import {
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import Analytics from './Analytics';
+import Connectors from './Connectors';
 import CustomModels from './CustomModels';
 import General from './General';
 import Logs from './Logs';
@@ -87,8 +88,10 @@ export default function Settings() {
       <Routes>
         <Route index element={<General />} />
         <Route path="general" element={<General />} />
+        {/* Sources are called Knowledge now; old links keep working. */}
+        <Route path="sources" element={<SourcesRedirect />} />
         <Route
-          path="sources"
+          path="knowledge"
           element={
             <Sources
               paginatedDocuments={paginatedDocuments}
@@ -98,6 +101,7 @@ export default function Settings() {
         />
         <Route path="analytics" element={<Analytics />} />
         <Route path="logs" element={<Logs />} />
+        <Route path="connectors" element={<Connectors />} />
         <Route path="tools" element={<Tools />} />
         <Route
           path="devices"
@@ -108,5 +112,13 @@ export default function Settings() {
         <Route path="*" element={<Navigate to="/settings" replace />} />
       </Routes>
     </SectionShell>
+  );
+}
+
+/** `/settings/sources` from before the rename, query string kept. */
+function SourcesRedirect() {
+  const { search, hash } = useLocation();
+  return (
+    <Navigate to={{ pathname: '/settings/knowledge', search, hash }} replace />
   );
 }

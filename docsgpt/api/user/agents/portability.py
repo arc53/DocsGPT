@@ -38,6 +38,7 @@ from docsgpt.agents.default_tools import (
 from docsgpt.api import api
 from docsgpt.api.pat.rules import allowed_ids
 from docsgpt.api.user.resource_access import AccessDenied, require
+from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.core.model_utils import validate_model_id
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
@@ -1138,7 +1139,8 @@ def _create_tool_from_spec(conn, user: str, tool: dict, secrets: dict, warnings:
         warnings.append(f"Tool type '{tool_type}' not available on this instance; skipped")
         return None
     config_requirements = inst.get_config_requirements() or {}
-    config = dict(tool.get("config") or {})
+    # An imported tool starts with no note that a connection was removed.
+    config = carry_removed_connection(dict(tool.get("config") or {}), None)
     config.update(secrets or {})
     if tool_type == "api_tool":
         label = tool.get("display_name") or tool.get("name") or tool_type
@@ -1491,18 +1493,24 @@ def _apply_workflow(
         if existing_id:
             existing = wf_repo.get(str(existing_id), user)
     if existing is not None:
+        from docsgpt.api.user.resource_access import prune_sponsors
+        from docsgpt.api.user.workflows.routes import _node_refs
+
         pg_workflow_id = str(existing["id"])
         next_version = get_workflow_graph_version(existing) + 1
         _write_graph(conn, pg_workflow_id, next_version, nodes_data, edges_data)
-        wf_repo.update(
-            pg_workflow_id,
-            user,
-            {
-                "name": name,
-                "description": description,
-                "current_graph_version": next_version,
-            },
-        )
+        workflow_fields = {
+            "name": name,
+            "description": description,
+            "current_graph_version": next_version,
+        }
+        # Sponsors of node resources the file dropped go too, so a stale
+        # record can't vouch for the resource if someone adds it back.
+        sponsors = existing.get("resource_sponsors") or {}
+        pruned = prune_sponsors(sponsors, _node_refs(nodes_data))
+        if pruned != sponsors:
+            workflow_fields["resource_sponsors"] = pruned
+        wf_repo.update(pg_workflow_id, user, workflow_fields)
         WorkflowNodesRepository(conn).delete_other_versions(pg_workflow_id, next_version)
         WorkflowEdgesRepository(conn).delete_other_versions(pg_workflow_id, next_version)
         return pg_workflow_id
@@ -1510,6 +1518,25 @@ def _apply_workflow(
     created = wf_repo.create(user, name, description=description)
     _write_graph(conn, str(created["id"]), 1, nodes_data, edges_data)
     return str(created["id"])
+
+
+def _prune_agent_sponsors(agents_repo: AgentsRepository, agent_id: str, user: str) -> None:
+    """Drop sponsor records of resources the imported agent no longer references.
+
+    Args:
+        agents_repo: Repository on the import's connection.
+        agent_id: The updated agent.
+        user: Its owner.
+    """
+    from docsgpt.api.user.resource_access import agent_refs, prune_sponsors
+
+    row = agents_repo.get(agent_id, user)
+    if not row:
+        return
+    sponsors = row.get("resource_sponsors") or {}
+    pruned = prune_sponsors(sponsors, agent_refs(row))
+    if pruned != sponsors:
+        agents_repo.update(agent_id, user, {"resource_sponsors": pruned})
 
 
 def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) -> dict:
@@ -1648,6 +1675,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         # Only a brand-new agent (the create path below) starts as a draft.
         fields = {**authoritative, **optional, "name": spec.get("name")}
         if agents_repo.update(str(target["agent_id"]), user, fields):
+            _prune_agent_sponsors(agents_repo, str(target["agent_id"]), user)
             if orphaned_workflow_id and not agents_repo.count_by_workflow(
                 orphaned_workflow_id, user
             ):

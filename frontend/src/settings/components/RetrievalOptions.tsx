@@ -319,6 +319,9 @@ type RetrievalOptionsProps = {
   // the retrieval tester, where those knobs cannot affect the result and
   // showing them would imply they do.
   queryOnly?: boolean;
+  // The collapsible toggle's label, where "Advanced settings" alone would be
+  // unclear (the connect wizard). Defaults to the shared title.
+  title?: string;
 };
 
 /**
@@ -335,6 +338,7 @@ export default function RetrievalOptions({
   graphRAGAvailable = false,
   availableModels = [],
   queryOnly = false,
+  title,
 }: RetrievalOptionsProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -859,6 +863,7 @@ export default function RetrievalOptions({
         variant="link"
         size="sm"
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={expanded}
         className="-ml-3 w-fit justify-start"
       >
         <ChevronRight
@@ -868,7 +873,7 @@ export default function RetrievalOptions({
             expanded && 'rotate-90',
           )}
         />
-        <span>{tr('title')}</span>
+        <span>{title ?? tr('title')}</span>
       </Button>
       <div
         className={cn(

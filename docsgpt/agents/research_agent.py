@@ -6,7 +6,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from docsgpt import tracing
 from docsgpt.agents.base import BaseAgent
-from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.agents.tool_executor import ToolExecutor, journal_refused_call
 from docsgpt.agents.tools.graph_search import add_graph_search_tool
 from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
@@ -582,24 +582,31 @@ class ResearchAgent(BaseAgent):
         search_returned_empty = False
 
         for call in tool_calls:
-            gen = executor.execute(
-                tools_dict, call, self.llm.__class__.__name__
-            )
-            result = None
-            call_id = None
-            while True:
-                try:
-                    event = next(gen)
-                    # Log tool_call status events instead of discarding them
-                    if isinstance(event, dict) and event.get("type") == "tool_call":
-                        logger.debug(
-                            "Tool %s status: %s",
-                            event.get("data", {}).get("action_name", ""),
-                            event.get("data", {}).get("status", ""),
-                        )
-                except StopIteration as e:
-                    result, call_id = e.value
-                    break
+            # A step runs inside one turn and nobody can answer a pause here,
+            # so a call that would pause (approval, a connection, the client,
+            # an outside caller's write on the owner's account) is refused.
+            refusal = self._refuse_paused_call(tools_dict, call, executor)
+            if refusal is not None:
+                result, call_id = refusal
+            else:
+                gen = executor.execute(
+                    tools_dict, call, self.llm.__class__.__name__
+                )
+                result = None
+                call_id = None
+                while True:
+                    try:
+                        event = next(gen)
+                        # Log tool_call status events instead of discarding them
+                        if isinstance(event, dict) and event.get("type") == "tool_call":
+                            logger.debug(
+                                "Tool %s status: %s",
+                                event.get("data", {}).get("action_name", ""),
+                                event.get("data", {}).get("status", ""),
+                            )
+                    except StopIteration as e:
+                        result, call_id = e.value
+                        break
 
             # Detect empty search results for refinement
             is_search = "search" in (call.name or "").lower()
@@ -635,6 +642,60 @@ class ResearchAgent(BaseAgent):
             messages.append(tool_message)
 
         return messages, search_returned_empty
+
+    def _refuse_paused_call(
+        self, tools_dict: Dict, call, executor: ToolExecutor
+    ) -> Optional[tuple[str, str]]:
+        """Refuse a call ``check_pause`` would pause on, as a headless run does.
+
+        Args:
+            tools_dict: The step's tools.
+            call: The model's tool call.
+            executor: The run's executor.
+
+        Returns:
+            ``(tool result, call id)`` when the call is refused, else None.
+        """
+        pause_info = executor.check_pause(
+            tools_dict, call, self.llm.__class__.__name__
+        )
+        if not pause_info:
+            return None
+        pause_type = pause_info.get("pause_type")
+        if pause_type == "headless_denied":
+            reason = pause_info.get("deny_reason") or "This tool can't run here."
+            result = f"Tool denied: {reason}"
+            journal_error = f"headless: {reason}" if executor.headless else f"denied: {reason}"
+            if executor.headless:
+                executor.headless_denials.append(pause_info)
+        elif pause_info.get("connection_required"):
+            result = (
+                "Tool not run: its service needs to be connected first, and a "
+                "research step can't wait for that."
+            )
+            journal_error = "research: connection required"
+        elif pause_type == "requires_client_execution":
+            result = (
+                "Tool not run: it runs in the user's app, which a research step "
+                "can't reach."
+            )
+            journal_error = "research: client-side tool"
+        else:
+            result = (
+                "Tool not run: this action needs the user's approval, which a "
+                "research step can't ask for. Tell the user it needs their "
+                "approval in a regular chat."
+            )
+            journal_error = "research: approval required"
+        logger.info(
+            "research_step_tool_refused",
+            extra={
+                "action_name": pause_info.get("action_name"),
+                "pause_type": pause_type,
+            },
+        )
+        journal_refused_call(executor, pause_info, journal_error)
+        return result, pause_info["call_id"]
 
     def _collect_step_sources(self):
         """Register the search tools' docs (internal search and graph pages) with CitationManager."""

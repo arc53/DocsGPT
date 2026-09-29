@@ -22,17 +22,19 @@ Only needed if your MCP servers use OAuth authentication:
 MCP_OAUTH_REDIRECT_URI=https://yourdomain.com/api/mcp_server/callback
 ```
 
-If not set, falls back to `API_URL/api/mcp_server/callback`.
+If not set, it is derived from the host of `CONNECTOR_REDIRECT_BASE_URI`, then from `API_URL`.
 
 ### Step 2: Add an MCP Server
 
-Go to **Settings** > **Tools** > **Add Tool** > **MCP Server**. Enter the server URL, select an auth type, and click **Test Connection** to verify, then **Save**.
+Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Asana, Stripe): **Sign in to Notion** opens the service's sign-in, and its tools are ready when you come back. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Enter the server URL, select an auth type, and click **Test Connection** to verify, then **Save**.
 
 ### Step 3: Enable for Your Agent
 
 In your agent configuration, enable the MCP tools you want the agent to use.
 
 </Steps>
+
+Presets need no URL or form: they sign in with OAuth in one step. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Guides/Connectors).
 
 ## Authentication Types
 

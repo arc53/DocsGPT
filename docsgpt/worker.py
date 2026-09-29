@@ -32,6 +32,7 @@ from docsgpt.parser.file.image_parser import (
     VISION_CONVERTIBLE_MIME_TYPES,
     convert_image_to_png,
 )
+from docsgpt.parser.remote.github_loader import GitHubTokenRejected
 from docsgpt.parser.remote.remote_creator import (
     RemoteCreator,
     normalize_remote_data,
@@ -1237,6 +1238,7 @@ def remote_worker(
     config=None,
     idempotency_key=None,
     source_id=None,
+    connection_id=None,
 ):
     safe_user = safe_filename(user)
     full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
@@ -1283,7 +1285,26 @@ def remote_worker(
         self.update_state(state="PROGRESS", meta={"current": 1})
         logging.info("Initializing remote loader with type: %s", loader)
         remote_loader = RemoteCreator.create_loader(loader)
-        raw_docs = remote_loader.load_data(source_data)
+        loader_input = source_data
+        if connection_id:
+            loader_input = _with_connection_credentials(source_data, connection_id)
+            if loader_input is None:
+                from docsgpt.connectors.service import ConnectionUnavailable
+
+                raise ConnectionUnavailable("Reconnect to continue", connection_id=str(connection_id))
+        try:
+            raw_docs = remote_loader.load_data(loader_input)
+        except GitHubTokenRejected as exc:
+            # A revoked token pauses the connection's sources until the
+            # owner reconnects, instead of failing on every schedule.
+            from docsgpt.connectors import service as connection_service
+
+            if not connection_id:
+                raise
+            connection_service.mark_reconnect_needed(str(connection_id), str(exc))
+            raise connection_service.ConnectionUnavailable(
+                str(exc), connection_id=str(connection_id),
+            ) from exc
 
         cfg = SourceConfig.parse(config)
         chunker = ChunkerCreator.create_chunker(
@@ -1414,6 +1435,8 @@ def remote_worker(
                     f"Failed to update last_sync for source {source_id_for_events}: {upd_err}"
                 )
         upload_index(full_path, file_data)
+        if connection_id:
+            _link_source_to_connection(source_id_for_events, str(connection_id))
         publish_user_event(
             user,
             "source.ingest.completed",
@@ -1467,6 +1490,7 @@ def sync(
     retriever,
     doc_id=None,
     directory="temp",
+    connection_id=None,
 ):
     try:
         remote_worker(
@@ -1480,11 +1504,16 @@ def sync(
             sync_frequency,
             "sync",
             doc_id,
+            connection_id=connection_id,
         )
     except Exception as e:
         logging.error(f"Error during sync: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
     return {"status": "success"}
+
+
+# Remote loaders that can only read with a connection (no public fallback).
+_CONNECTION_ONLY_LOADERS = frozenset({"linear"})
 
 
 def sync_worker(self, frequency):
@@ -1494,7 +1523,7 @@ def sync_worker(self, frequency):
     with db_readonly() as conn:
         result = conn.execute(
             sql_text(
-                "SELECT id, name, user_id, type, remote_data, retriever "
+                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata "
                 "FROM sources WHERE sync_frequency = :freq"
             ),
             {"freq": frequency},
@@ -1511,9 +1540,38 @@ def sync_worker(self, frequency):
 
         sync_counts["total_sync_count"] += 1
 
-        # Connector sources have no RemoteCreator loader and need an OAuth
-        # token to sync, which a scheduled task lacks — skip them.
+        # Connector sources sync from their connection, whose token the
+        # worker can refresh. Legacy ones with no connection still need the
+        # browser, so they are skipped as before.
         if source_type and source_type.startswith("connector"):
+            if doc.get("connection_id"):
+                from docsgpt.api.user.tasks import sync_connector_source as sync_task
+
+                sync_task.delay(doc_id)
+                sync_counts["sync_dispatched"] += 1
+            else:
+                sync_counts["sync_skipped"] += 1
+            continue
+
+        metadata = doc.get("metadata")
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except ValueError:
+                metadata = {}
+        if (
+            doc.get("connection_id")
+            and isinstance(metadata, dict)
+            and metadata.get("sync_state") == "paused_reconnect"
+        ):
+            # An S3 or GitHub source whose connection needs reconnecting:
+            # it resumes when the owner reconnects, rather than failing (and
+            # notifying) on every schedule until then.
+            sync_counts["sync_skipped"] += 1
+            continue
+        if source_type in _CONNECTION_ONLY_LOADERS and not doc.get("connection_id"):
+            # Linear is read only with a connection's sign-in; its
+            # connection was removed and the content kept.
             sync_counts["sync_skipped"] += 1
             continue
 
@@ -1525,7 +1583,8 @@ def sync_worker(self, frequency):
             continue
 
         resp = sync(
-            self, source_data, name, user, source_type, frequency, retriever, doc_id
+            self, source_data, name, user, source_type, frequency, retriever, doc_id,
+            connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
         )
         sync_counts[
             "sync_success" if resp["status"] == "success" else "sync_failure"
@@ -1533,7 +1592,7 @@ def sync_worker(self, frequency):
     return {
         key: sync_counts[key]
         for key in [
-            "total_sync_count", "sync_success", "sync_failure", "sync_skipped",
+            "total_sync_count", "sync_success", "sync_failure", "sync_skipped", "sync_dispatched",
         ]
     }
 
@@ -2161,6 +2220,132 @@ def _webhook_tool_allowlist(agent_config):
     return []
 
 
+def _with_connection_credentials(source_data, connection_id: str):
+    """Loader input with the connection's stored keys merged in, or None.
+
+    S3, Reddit and GitHub sources made from a connection keep their keys on
+    the connection only, never in ``sources.remote_data``. A JSON string
+    stays a JSON string and a dict a dict; any other string (a GitHub
+    repository URL) becomes ``{"url": ...}`` next to the keys. An MCP
+    sign-in (Linear) gets its ``connection_id`` instead: its tokens stay
+    with the MCP client, which renews them. Returns None when the
+    connection is gone, needs reconnecting, or its connector is turned off.
+    """
+    from docsgpt.connectors import service
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    with db_readonly() as conn:
+        row = ConnectorSessionsRepository(conn).get(str(connection_id))
+        enabled = row is not None and service.connector_enabled(conn, row)
+    if row is None or not enabled:
+        return None
+    if (row.get("auth_kind") or "") == "mcp_oauth":
+        if service.normalize_status(row) != service.STATUS_CONNECTED:
+            return None
+        credentials = {"connection_id": str(row["id"])}
+    else:
+        try:
+            credentials = service.access_credentials(row)
+        except service.ConnectionUnavailable:
+            return None
+    if isinstance(source_data, str):
+        try:
+            parsed = json.loads(source_data)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return json.dumps({**parsed, **credentials})
+        return {"url": source_data, **credentials}
+    return {**dict(source_data or {}), **credentials}
+
+
+def _link_source_to_connection(source_id: str, connection_id: str) -> None:
+    """Point a source at the connection it syncs from, and lift any reconnect pause."""
+    from sqlalchemy import text as sql_text
+
+    try:
+        with db_session() as conn:
+            conn.execute(
+                sql_text(
+                    "UPDATE sources SET connection_id = CAST(:cid AS uuid), "
+                    "metadata = metadata - 'sync_state' WHERE id = CAST(:sid AS uuid)"
+                ),
+                {"cid": str(connection_id), "sid": str(source_id)},
+            )
+    except Exception:
+        logging.warning("Could not link source %s to connection %s", source_id, connection_id, exc_info=True)
+
+
+def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
+    """Re-download and re-index a connector source from its connection.
+
+    Runs as the connection owner with no browser: the connection service
+    refreshes the token under a row lock. When the grant was revoked the
+    service flags the connection and pauses its sources, and this returns
+    ``paused`` rather than failing again on every schedule.
+
+    Args:
+        self: The bound Celery task.
+        source_id: The source to sync.
+
+    Returns:
+        ``{"status": "success" | "paused" | "disabled" | "skipped"}`` plus
+        the ingest result.
+    """
+    from docsgpt.connectors.service import ConnectionUnavailable, connector_enabled, normalize_status
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    with db_readonly() as conn:
+        from sqlalchemy import text as sql_text
+
+        row = conn.execute(
+            sql_text(
+                "SELECT id, name, user_id, remote_data, retriever, sync_frequency, config, connection_id "
+                "FROM sources WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": str(source_id)},
+        ).fetchone()
+        source = dict(row._mapping) if row else None
+        connection = (
+            ConnectorSessionsRepository(conn).get(str(source["connection_id"]))
+            if source and source.get("connection_id")
+            else None
+        )
+        enabled = connection is not None and connector_enabled(conn, connection)
+    if not source or not connection:
+        return {"status": "skipped"}
+    if not enabled:
+        return {"status": "disabled"}
+    if normalize_status(connection) != "connected":
+        return {"status": "paused"}
+    remote_data = source.get("remote_data") or {}
+    if isinstance(remote_data, str):
+        try:
+            remote_data = json.loads(remote_data)
+        except json.JSONDecodeError:
+            remote_data = {}
+    provider = remote_data.get("provider") or connection.get("provider")
+    try:
+        result = ingest_connector(
+            self,
+            source.get("name"),
+            source.get("user_id"),
+            provider,
+            connection_id=str(connection["id"]),
+            file_ids=remote_data.get("file_ids") or [],
+            folder_ids=remote_data.get("folder_ids") or [],
+            recursive=remote_data.get("recursive", True),
+            retriever=source.get("retriever") or "classic",
+            operation_mode="sync",
+            doc_id=str(source["id"]),
+            sync_frequency=source.get("sync_frequency") or "never",
+            config=source.get("config") or None,
+        )
+    except ConnectionUnavailable:
+        return {"status": "paused"}
+    return {"status": "success", "result": result}
+
+
 def ingest_connector(
     self,
     job_name: str,
@@ -2177,6 +2362,7 @@ def ingest_connector(
     config=None,
     idempotency_key=None,
     source_id=None,
+    connection_id=None,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -2185,7 +2371,8 @@ def ingest_connector(
         job_name: Name of the ingestion job
         user: User identifier
         source_type: Type of remote source ("google_drive", "dropbox", etc.)
-        session_token: Authentication token for the service
+        session_token: Legacy browser session token naming the connection
+        connection_id: The connection whose account the files are read with
         file_ids: List of file IDs to download
         folder_ids: List of folder IDs to download
         recursive: Whether to recursively download folders
@@ -2247,8 +2434,8 @@ def ingest_connector(
                 meta={"current": 10, "status": "Initializing connector"},
             )
 
-            if not session_token:
-                raise ValueError(f"{source_type} connector requires session_token")
+            if not session_token and not connection_id:
+                raise ValueError(f"{source_type} connector requires a connection")
 
             if not ConnectorCreator.is_supported(source_type):
                 raise ValueError(
@@ -2256,8 +2443,9 @@ def ingest_connector(
                 )
 
             remote_loader = ConnectorCreator.create_connector(
-                source_type, session_token
+                source_type, session_token, connection_id=connection_id
             )
+            connection_id = remote_loader.connection_id
 
             # Create a clean config for storage
             api_source_config = {
@@ -2411,6 +2599,8 @@ def ingest_connector(
                     )
 
             upload_index(vector_store_path, file_data)
+            if connection_id:
+                _link_source_to_connection(source_id_for_events, connection_id)
 
             # Ensure we mark the task as complete
             self.update_state(

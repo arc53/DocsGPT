@@ -540,18 +540,18 @@ class TestWorkflowNodeSourceAuthorization:
         monkeypatch.setattr(session, "db_readonly", _conn)
 
     def test_owner_sources_survive(self, monkeypatch):
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
         self._stub_db(monkeypatch)
-        monkeypatch.setattr(ts, "can_access", lambda *a, **k: True)
+        monkeypatch.setattr(ra, "can_use_ref", lambda *a, **k: True)
         engine = self._engine("owner")
         assert engine._authorized_node_sources(["s1", "s2"]) == ["s1", "s2"]
 
     def test_foreign_sources_are_dropped(self, monkeypatch):
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
         self._stub_db(monkeypatch)
-        monkeypatch.setattr(ts, "can_access", lambda conn, k, sid, u: sid == "mine")
+        monkeypatch.setattr(ra, "can_use_ref", lambda conn, k, sid, u: sid == "mine")
         engine = self._engine("owner")
         assert engine._authorized_node_sources(["mine", "theirs"]) == ["mine"]
 
@@ -563,13 +563,13 @@ class TestWorkflowNodeSourceAuthorization:
         assert engine._authorized_node_sources(["s1"]) == []
 
     def test_authorization_error_fails_closed(self, monkeypatch):
-        import docsgpt.api.user.team_sharing as ts
+        import docsgpt.api.user.resource_access as ra
 
         def _boom(*a, **k):
             raise RuntimeError("db down")
 
         self._stub_db(monkeypatch)
-        monkeypatch.setattr(ts, "can_access", _boom)
+        monkeypatch.setattr(ra, "can_use_ref", _boom)
         engine = self._engine("owner")
         assert engine._authorized_node_sources(["s1"]) == []
 

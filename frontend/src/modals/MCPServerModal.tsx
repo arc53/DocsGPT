@@ -114,6 +114,7 @@ export default function MCPServerModal({
   const popupOpenedRef = useRef(false);
   const [oauthCompleted, setOAuthCompleted] = useState(false);
   const [saveActive, setSaveActive] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // A tool shared with the caller (an editor reconnecting the owner's
   // server): its saved secrets stay hidden and a new entry replaces them.
@@ -588,20 +589,6 @@ export default function MCPServerModal({
             </FormField>
           </div>
         );
-      case 'oauth':
-        return (
-          <FormField label={t('settings.tools.mcp.placeholders.oauthScopes')}>
-            <Input
-              type="text"
-              value={formData.oauth_scopes}
-              onChange={(e) =>
-                handleInputChange('oauth_scopes', e.target.value)
-              }
-              placeholder="read, write"
-              disabled={oauthOwnerOnly}
-            />
-          </FormField>
-        );
       default:
         return null;
     }
@@ -617,11 +604,16 @@ export default function MCPServerModal({
         }
       }}
       title={
-        server
+        server?.id
           ? t('settings.tools.mcp.reconnectServer', {
               defaultValue: 'Reconnect Server',
             })
-          : t('settings.tools.mcp.addServer')
+          : server?.preset
+            ? t('settings.connectors.wizard.connectTitle', {
+                name: server.displayName,
+                interpolation: { escapeValue: false },
+              })
+            : t('settings.tools.mcp.addServer')
       }
       description={
         isShared
@@ -662,6 +654,14 @@ export default function MCPServerModal({
       }
     >
       <div className="flex flex-col gap-5">
+        {!server?.preset && (
+          <Alert variant="warning" role="note">
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>
+              {t('settings.connectors.unverified')}
+            </AlertDescription>
+          </Alert>
+        )}
         {isShared && (
           <Alert role="note">
             <Lock />
@@ -733,29 +733,60 @@ export default function MCPServerModal({
 
         {renderAuthFields()}
 
-        <FormField
-          label={t('settings.tools.mcp.timeout')}
-          error={errors.timeout}
+        {/* Scopes and timeout rarely need changing: behind Advanced. */}
+        {showAdvanced || errors.timeout ? (
+          <>
+            {formData.auth_type === 'oauth' && (
+              <FormField
+                label={t('settings.tools.mcp.placeholders.oauthScopes')}
+              >
+                <Input
+                  type="text"
+                  value={formData.oauth_scopes}
+                  onChange={(e) =>
+                    handleInputChange('oauth_scopes', e.target.value)
+                  }
+                  placeholder="read, write"
+                  disabled={oauthOwnerOnly}
+                />
+              </FormField>
+            )}
+            <FormField
+              label={t('settings.tools.mcp.timeout')}
+              error={errors.timeout}
+            >
+              <Input
+                type="number"
+                value={formData.timeout}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === '') {
+                    handleInputChange('timeout', '');
+                  } else {
+                    const numValue = parseInt(value);
+                    if (!isNaN(numValue) && numValue >= 1) {
+                      handleInputChange('timeout', numValue);
+                    }
+                  }
+                }}
+                placeholder="30"
+                min={1}
+                max={300}
+              />
+            </FormField>
+          </>
+        ) : null}
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShowAdvanced((open) => !open)}
+          className="-ml-3 w-fit justify-start"
         >
-          <Input
-            type="number"
-            value={formData.timeout}
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === '') {
-                handleInputChange('timeout', '');
-              } else {
-                const numValue = parseInt(value);
-                if (!isNaN(numValue) && numValue >= 1) {
-                  handleInputChange('timeout', numValue);
-                }
-              }
-            }}
-            placeholder="30"
-            min={1}
-            max={300}
-          />
-        </FormField>
+          {showAdvanced
+            ? t('modals.uploadDoc.hideAdvanced')
+            : t('modals.uploadDoc.showAdvanced')}
+        </Button>
 
         {testResult && (
           <Alert variant={testResult.success ? 'success' : 'destructive'}>

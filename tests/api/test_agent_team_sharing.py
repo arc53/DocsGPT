@@ -74,6 +74,8 @@ def _patches(sub, repo, team_access, *, prompt_name="Resolved Prompt", source_de
             "docsgpt.api.user.agents.routes.resolve_source_details",
             return_value=source_details,
         ),
+        # Run state reads the grants live; covered in test_resource_states.
+        patch("docsgpt.api.user.agents.routes.resource_states", return_value=[]),
     ]
 
 
@@ -188,6 +190,8 @@ class TestGetAgentResolvesNames:
 
 
 def _update_patches(sub, repo, team_access, can_access_mock):
+    from docsgpt.api.user.resource_access import SponsorPlan
+
     return [
         patch("docsgpt.app.handle_auth", return_value={"sub": sub}),
         patch("docsgpt.app.resolve_roles", return_value=["user"]),
@@ -197,7 +201,7 @@ def _update_patches(sub, repo, team_access, can_access_mock):
         patch("docsgpt.api.user.agents.routes.can_access", can_access_mock),
         # Sponsor bookkeeping queries the (mocked) connection; covered with a
         # real database in tests/api/user/test_resource_sponsors.py.
-        patch("docsgpt.api.user.agents.routes.sponsors_after_save", return_value={}),
+        patch("docsgpt.api.user.agents.routes.plan_sponsors", return_value=SponsorPlan()),
     ]
 
 

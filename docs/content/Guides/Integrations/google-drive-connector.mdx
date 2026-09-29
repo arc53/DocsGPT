@@ -10,6 +10,10 @@ import { Steps } from 'nextra/components'
 
 Connect your Google Drive account to upload and process files directly as an external knowledge base. Supports Google Workspace files (Docs, Sheets, Slides), Office files, PDFs, text files, CSVs, images, and more. Authentication is handled via Google OAuth 2.0 with automatic token refresh.
 
+<Callout type="info">
+Members connect this service from **Settings > Connectors**, and one sign-in serves every source that uses it. Admins can check what is still missing in **Admin > Connectors**. See [Connectors](/Guides/Connectors).
+</Callout>
+
 ## Setup
 
 <Steps>
@@ -26,8 +30,8 @@ Connect your Google Drive account to upload and process files directly as an ext
 3. Select **Web application** as the application type
 4. Add your DocsGPT URL to **Authorized JavaScript origins** (e.g. `http://localhost:3000`)
 5. Add your callback URL to **Authorized redirect URIs**:
-   - Local: `http://localhost:7091/api/connectors/callback?provider=google_drive`
-   - Production: `https://yourdomain.com/api/connectors/callback?provider=google_drive`
+   - Local: `http://127.0.0.1:7091/api/connectors/callback` (the default `CONNECTOR_REDIRECT_BASE_URI`; Admin > Connectors shows the exact value to copy)
+   - Production: `https://yourdomain.com/api/connectors/callback` (the value of `CONNECTOR_REDIRECT_BASE_URI`, registered as-is)
 6. Click **Create** and copy the **Client ID** and **Client Secret**
 
 ### Step 3: Configure Environment Variables
@@ -39,7 +43,7 @@ GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 ```
 
-Add to your frontend `.env` file:
+Optionally, to use Google's own file picker instead of DocsGPT's, add to your frontend `.env` file:
 
 ```env
 VITE_GOOGLE_CLIENT_ID=your-google-client-id
@@ -49,23 +53,23 @@ VITE_GOOGLE_CLIENT_ID=your-google-client-id
 |----------|-------------|----------|
 | `GOOGLE_CLIENT_ID` | OAuth Client ID from GCP Credentials | Yes |
 | `GOOGLE_CLIENT_SECRET` | OAuth Client Secret from GCP Credentials | Yes |
-| `VITE_GOOGLE_CLIENT_ID` | Same Client ID, used by the frontend to show the Google Drive option | Yes |
+| `VITE_GOOGLE_CLIENT_ID` | Same Client ID, used by the frontend for Google's file picker | No |
 | `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
 
 <Callout type="warning" emoji="⚠️">
-Make sure to use the same Google Client ID in both backend and frontend configurations.
+If you set `VITE_GOOGLE_CLIENT_ID`, use the same Client ID as the backend. Publish the OAuth consent screen (or use an internal Workspace app): apps left in Testing get refresh tokens that expire after seven days, which stops background sync.
 </Callout>
 
 ### Step 4: Restart and Use
 
-Restart your application, then go to the upload section in DocsGPT and select **Google Drive** as the source. You'll be redirected to Google to sign in, then can browse and select files to process.
+Restart your application, then go to **Settings > Connectors** and pick **Google Drive**. You'll be redirected to Google to sign in, then can browse and select files to process.
 
 </Steps>
 
 ## Troubleshooting
 
-- **Option not appearing** — Verify `VITE_GOOGLE_CLIENT_ID` is set in the frontend `.env`, then restart.
-- **Authentication failed** — Check that the redirect URI matches exactly, including `?provider=google_drive`. Ensure the Google Drive API is enabled.
+- **Google Drive is not offered** — `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` is missing from the backend `.env`, so the connector stays off. Admin > Connectors lists which one.
+- **Authentication failed** — Check that the redirect URI matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters. Ensure the Google Drive API is enabled.
 - **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Permission denied** — Verify the OAuth consent screen is configured and the user has access to the target files.
 - **Files not processing** — Check backend logs and verify that backend environment variables are correctly set.

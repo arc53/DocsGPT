@@ -29,13 +29,19 @@ from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     agent_refs,
+    best_effort,
+    cached_resolves,
     delete_settings,
+    parse_confirmations,
     payload_for,
+    plan_sponsors,
     require,
     resolve,
+    resource_states,
     settings_many,
+    sponsor_audience,
     sponsor_details,
-    sponsors_after_save,
+    sponsor_refusal,
 )
 from docsgpt.api.user.team_sharing import (
     can_access,
@@ -483,6 +489,27 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
     return kwargs
 
 
+def keep_owner_only_config(config: dict, existing_agent: dict, is_team_editor: bool) -> dict:
+    """Keep the parts of an agent's config only its owner may change.
+
+    ``api_write_allowlist`` lets anyone with the agent's API key act on the
+    owner's connected accounts, so a team editor's update keeps the stored
+    value whatever it sends.
+
+    Args:
+        config: The normalized config from the request.
+        existing_agent: The agent row being updated.
+        is_team_editor: The caller edits through a team share, not as owner.
+
+    Returns:
+        The config to store.
+    """
+    if not is_team_editor:
+        return config
+    stored = AgentConfig.parse(existing_agent.get("config")).api_write_allowlist
+    return {**config, "api_write_allowlist": stored}
+
+
 def normalize_agent_config(raw):
     """Validate an inbound ``config`` payload, returning the normalized dict.
 
@@ -537,15 +564,29 @@ class GetAgent(Resource):
             user = decoded_token["sub"]
             agent = None
             sponsored: list = []
-            with db_readonly() as conn:
+            states: list = []
+            audience = None
+            with db_readonly() as conn, cached_resolves():
                 # Anyone who can see the agent reads it (a viewer needs it to
                 # chat); what they get back is trimmed by their actions.
                 ra = resolve(conn, "agent", agent_id, user)
                 if ra is not None:
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
-                # Edit-page detail: who vouches for resources the owner can't use.
-                if agent and ra.can("view"):
-                    sponsored = sponsor_details(conn, "agent", agent)
+                # Edit-page detail: who vouches for resources the owner can't
+                # use, and which attached resources stopped running and why,
+                # with their names. Only for people who may edit the agent:
+                # the names can be an editor's private resources. Run state
+                # never fails the read.
+                if agent and ra.can("edit"):
+                    sponsored = sponsor_details(conn, "agent", agent, viewer=user)
+                    states = best_effort(
+                        conn, "the agent's resource states",
+                        lambda: resource_states(conn, "agent", agent, agent_refs(agent), user), [],
+                    )
+                    audience = best_effort(
+                        conn, "the agent's audience",
+                        lambda: sponsor_audience(conn, "agent", agent, states, sponsored), None,
+                    )
             if not agent:
                 return {"status": "Not found"}, 404
             is_owner = ra.access == "owner"
@@ -557,6 +598,9 @@ class GetAgent(Resource):
                 access=ra.payload(),
             )
             data["resource_sponsors"] = sponsored
+            data["resource_states"] = states
+            if audience is not None:
+                data["sponsor_audience"] = audience
             return make_response(jsonify(data), 200)
         except Exception as e:
             current_app.logger.error(f"Agent fetch error: {e}", exc_info=True)
@@ -1035,14 +1079,11 @@ class UpdateAgent(Resource):
                     )
                 pg_agent_id = str(existing_agent["id"])
                 existing_image = existing_agent.get("image", "") or ""
-                image_url, image_error = handle_image_upload(
-                    request,
-                    existing_image,
-                    existing_agent.get("user_id") or user,
-                    storage,
-                )
-                if image_error:
-                    return image_error
+                # The image is stored only once the save is known to go
+                # ahead, so a refused save (a sponsor confirmation round
+                # trip, a validation error) leaves no orphaned file.
+                image_file = request.files.get("image")
+                has_new_image = bool(image_file and image_file.filename)
 
                 update_fields: dict = {}
                 allowed_fields = [
@@ -1153,7 +1194,9 @@ class UpdateAgent(Resource):
                                 exc,
                             )
                             return _reject(INVALID_CONFIG_MESSAGE, user, field)
-                        update_fields["config"] = normalized_config or {}
+                        update_fields["config"] = keep_owner_only_config(
+                            normalized_config or {}, existing_agent, is_team_editor,
+                        )
                     elif field == "limited_token_mode":
                         raw_value = data.get("limited_token_mode", False)
                         bool_value = (
@@ -1288,9 +1331,7 @@ class UpdateAgent(Resource):
                                     f"Field '{field}' cannot be empty", user, field
                                 )
                         update_fields[field] = value
-                if image_url and image_url != existing_image:
-                    update_fields["image"] = image_url
-                if not update_fields:
+                if not update_fields and not has_new_image:
                     return _reject("No valid update data provided", user)
 
                 newly_generated_key = None
@@ -1406,18 +1447,6 @@ class UpdateAgent(Resource):
                                 403,
                             )
 
-                # A resource the owner can't use runs as the editor who
-                # attached it (its sponsor); record who that is.
-                after_save = dict(existing_agent)
-                for ref_field in ("source_id", "extra_source_ids", "prompt_id", "tools"):
-                    if ref_field in update_fields:
-                        after_save[ref_field] = update_fields[ref_field]
-                sponsors = sponsors_after_save(
-                    conn, "agent", existing_agent, owner_id, user, agent_refs(after_save)
-                )
-                if sponsors != (existing_agent.get("resource_sponsors") or {}):
-                    update_fields["resource_sponsors"] = sponsors
-
                 # Guardrails and the pooled quota are policy: an unchanged
                 # value re-sent by a full-form save is fine, a change needs
                 # ``edit_policy``.
@@ -1425,6 +1454,46 @@ class UpdateAgent(Resource):
                     return _denied(
                         AccessDenied(403, "Your access doesn't allow changing guardrails or limits")
                     )
+
+                # A resource the owner can't use runs as the editor who
+                # attached it (its sponsor). Only someone who owns or edits
+                # it may sponsor it, and only after confirming: the save is
+                # refused (409) until ``confirm_sponsor`` lists every
+                # resource it would newly sponsor.
+                after_save = dict(existing_agent)
+                for ref_field in ("source_id", "extra_source_ids", "prompt_id", "tools"):
+                    if ref_field in update_fields:
+                        after_save[ref_field] = update_fields[ref_field]
+                plan = plan_sponsors(
+                    conn,
+                    "agent",
+                    existing_agent,
+                    owner_id,
+                    user,
+                    agent_refs(after_save),
+                    previous_refs=agent_refs(existing_agent),
+                    confirmed=parse_confirmations(data.get("confirm_sponsor")),
+                )
+                refusal = sponsor_refusal(
+                    conn, "agent", existing_agent, plan, api_key=bool(update_fields.get("key")) or None
+                )
+                if refusal is not None:
+                    body, status = refusal
+                    return make_response(jsonify(body), status)
+                if plan.sponsors != (existing_agent.get("resource_sponsors") or {}):
+                    update_fields["resource_sponsors"] = plan.sponsors
+
+                if has_new_image:
+                    image_url, image_error = handle_image_upload(
+                        request,
+                        existing_image,
+                        existing_agent.get("user_id") or user,
+                        storage,
+                    )
+                    if image_error:
+                        return image_error
+                    if image_url and image_url != existing_image:
+                        update_fields["image"] = image_url
 
                 # Apply update. Owner writes use the dual-key guard; team-editor
                 # writes go by-id (already authorized) with an optimistic-lock

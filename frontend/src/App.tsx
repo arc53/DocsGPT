@@ -43,6 +43,7 @@ import Notification from './components/Notification';
 import ToolApprovalToast from './notifications/ToolApprovalToast';
 import TeamNotificationToast from './notifications/TeamNotificationToast';
 import ActionToast from './notifications/ActionToast';
+import ConnectionHealthToast from './notifications/ConnectionHealthToast';
 
 function AuthWrapper({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -128,6 +129,7 @@ function MainLayout() {
           onMouseDown={(e) => e.stopPropagation()}
         >
           <TeamNotificationToast />
+          <ConnectionHealthToast />
           <ToolApprovalToast />
           <UploadToast />
           <ActionToast />

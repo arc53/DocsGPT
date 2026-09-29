@@ -20,6 +20,7 @@ from the repository itself rather than assumed.
 
 import json
 import logging
+import os
 import threading
 from dataclasses import replace
 from typing import Any, List, Optional
@@ -38,6 +39,16 @@ _register_lock = threading.Lock()
 # Last-resort layout for a repository that declares nothing about itself.
 _FALLBACK_ONNX_FILE = "onnx/model.onnx"
 _FALLBACK_POOLING = "mean"
+
+# The files FastEmbed fetches with every model besides its graph (see
+# ``ModelManagement.download_files_from_huggingface``).
+_FASTEMBED_SUPPORT_FILES = (
+    "config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "preprocessor_config.json",
+)
 
 # Sentence-transformers records how a model turns token vectors into one
 # vector, and whether it normalises the result, as files in the repository.
@@ -244,6 +255,51 @@ def _spec_for(model_name: str) -> EmbeddingModel:
     )
 
 
+def _complete_model_cache(repo: str, cache_dir: Optional[str]) -> None:
+    """Download a model's graph when its cached snapshot lacks it.
+
+    FastEmbed first loads a model from the cache and only downloads when that
+    fails, and a snapshot of the repository counts as cached whatever it
+    holds. The chunker caches only ``tokenizer.json`` there (see
+    ``docsgpt/parser/tokenization.py``), so FastEmbed then finds no graph and
+    fails to load. Fetching the files it needs first makes either order work.
+    Offline, nothing is fetched and FastEmbed reports what is missing; a
+    failed download is logged and left to FastEmbed's own sources too.
+
+    Args:
+        repo: The model's FastEmbed name.
+        cache_dir: ``EMBEDDINGS_CACHE_DIR``, or None for FastEmbed's default.
+    """
+    from fastembed import TextEmbedding
+    from fastembed.common.utils import define_cache_dir
+    from huggingface_hub import hf_hub_download, snapshot_download
+
+    lowered = repo.lower()
+    description = next(
+        (d for d in TextEmbedding._list_supported_models() if str(getattr(d, "model", "")).lower() == lowered),
+        None,
+    )
+    source = getattr(getattr(description, "sources", None), "hf", None)
+    model_file = getattr(description, "model_file", None)
+    if not source or not isinstance(model_file, str):
+        return  # Not fetched from Hugging Face: FastEmbed handles it.
+    needed = [model_file, *(getattr(description, "additional_files", None) or [])]
+    cache = str(define_cache_dir(cache_dir))
+    try:
+        for filename in needed:
+            hf_hub_download(source, filename, cache_dir=cache, local_files_only=True)
+        return
+    except Exception:  # noqa: BLE001 -- any miss means the snapshot is incomplete
+        pass
+    if os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in {"1", "TRUE", "YES", "ON"}:
+        return
+    logger.warning("The cached %s has no %s; downloading the model files.", source, ", ".join(needed))
+    try:
+        snapshot_download(repo_id=source, allow_patterns=[*_FASTEMBED_SUPPORT_FILES, *needed], cache_dir=cache)
+    except Exception as exc:  # noqa: BLE001 -- best effort: FastEmbed still tries its own sources
+        logger.warning("Could not complete the cached %s (%s); leaving the download to FastEmbed.", source, exc)
+
+
 def _pad_to_longest_in_batch(model: Any) -> None:
     """Undo a fixed padding width baked into a model's ``tokenizer.json``."""
     # FastEmbed enables padding only when the tokenizer declares none, so a
@@ -295,6 +351,7 @@ class EmbeddingsWrapper:
             cache_dir = settings.EMBEDDINGS_CACHE_DIR
             if cache_dir:
                 init_kwargs["cache_dir"] = cache_dir
+            _complete_model_cache(self.spec.repo, cache_dir or None)
             self.model = TextEmbedding(**init_kwargs)
         except Exception as exc:
             raise RuntimeError(

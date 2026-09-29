@@ -40,7 +40,7 @@ import ImportSpecModal from '../modals/ImportSpecModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { getMethodBadgeVariant } from '../utils/httpMethodColors';
-import { can } from '../utils/accessUtils';
+import { can, isOwner } from '../utils/accessUtils';
 import { isSharedOAuthMcp } from '../utils/toolUtils';
 import { areObjectsEqual } from '../utils/objectUtils';
 import { cn, focusRing } from '@/lib/utils';
@@ -58,11 +58,14 @@ const BODY_TYPE_HINT_KEYS: Record<string, string> = {
 /**
  * What the caller may change on the open tool (`utils/accessUtils` `can`):
  * `canEdit` covers the name and the actions, `canEditCredentials` the
- * secrets, URLs and header / query values.
+ * secrets, URLs and header / query values, and `canFixValues` whether a
+ * parameter is filled by the AI or fixed, and its fixed value (the owner's
+ * alone: the server refuses anyone else).
  */
 const ToolAccessContext = React.createContext({
   canEdit: true,
   canEditCredentials: true,
+  canFixValues: true,
 });
 
 /** Maps a body content type to its hint's locale key suffix (JSON by default). */
@@ -125,12 +128,18 @@ export default function ToolConfig({
   // A shared OAuth server's connection stays with its owner (the backend
   // refuses it), so its fields lock like credentials the caller can't change.
   const sharedOAuth = isSharedOAuthMcp(tool);
-  const canEditCredentials = can(tool, 'edit_credentials') && !sharedOAuth;
+  // A connected tool's secret lives on the owner's connection, which the
+  // server lets only its owner change, whatever the owner's switch says.
+  const ownerOnlyConnection =
+    'connection_id' in tool && !!tool.connection_id && !isOwner(tool);
+  const canEditCredentials =
+    can(tool, 'edit_credentials') && !sharedOAuth && !ownerOnlyConnection;
   // Neither: the tool opens as a read-only view with no Save.
   const readOnly = !canEdit && !canEditCredentials;
+  const canFixValues = isOwner(tool);
   const access = React.useMemo(
-    () => ({ canEdit, canEditCredentials }),
-    [canEdit, canEditCredentials],
+    () => ({ canEdit, canEditCredentials, canFixValues }),
+    [canEdit, canEditCredentials, canFixValues],
   );
 
   const toggleUserActionExpand = (index: number) => {
@@ -269,24 +278,25 @@ export default function ToolConfig({
     });
   };
 
-  /** Sends the edit; a non-2xx response throws so the caller shows it. */
-  const saveTool = async (configToSave: { [key: string]: any }) => {
-    const response = await userService.updateTool(
-      {
-        id: tool.id,
-        name: tool.name,
-        displayName: tool.displayName,
-        customName: customName,
-        description: tool.description,
-        // Locked config isn't sent, so a rename or action edit still saves.
-        ...((canEditCredentials || tool.name === 'api_tool') && {
-          config: configToSave,
-        }),
-        actions: 'actions' in tool ? tool.actions : [],
-        status: tool.status,
-      },
-      token,
-    );
+  // Saves the tool; a draft without an id (a new OpenAPI tool) is created
+  // on its first save, so leaving without saving leaves nothing behind. A
+  // non-2xx response throws so the caller shows it.
+  const persistTool = async (configToSave: Record<string, unknown>) => {
+    const payload = {
+      name: tool.name,
+      displayName: tool.displayName,
+      customName: customName,
+      description: tool.description,
+      // Locked config isn't sent, so a rename or action edit still saves.
+      ...((canEditCredentials || tool.name === 'api_tool') && {
+        config: configToSave,
+      }),
+      actions: 'actions' in tool ? tool.actions : [],
+      status: tool.status,
+    };
+    const response = tool.id
+      ? await userService.updateTool({ id: tool.id, ...payload }, token)
+      : await userService.createTool(payload, token);
     if (!response?.ok) throw new Error('Failed to save tool');
   };
 
@@ -298,7 +308,7 @@ export default function ToolConfig({
     setSaveError('');
 
     try {
-      await saveTool(configToSave);
+      await persistTool(configToSave);
       setInitialState({
         customName,
         configValues: { ...configValues },
@@ -312,12 +322,6 @@ export default function ToolConfig({
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleDelete = () => {
-    userService.deleteTool({ id: tool.id }, token).then(() => {
-      handleGoBack();
-    });
   };
 
   const handleAddNewAction = (actionName: string) => {
@@ -396,7 +400,8 @@ export default function ToolConfig({
             size="sm"
             shape="pill"
             onClick={handleSaveChanges}
-            disabled={!hasUnsavedChanges}
+            // A draft (no id yet) is saved to create it.
+            disabled={!hasUnsavedChanges && !!tool.id}
             loading={saving}
           >
             {t('settings.tools.save')}
@@ -680,6 +685,7 @@ export default function ToolConfig({
                                               <Checkbox
                                                 size="sm"
                                                 checked={param[1].filled_by_llm}
+                                                disabled={!canFixValues}
                                                 id={uniqueKey}
                                                 aria-label={t(
                                                   'settings.tools.filledByLLM',
@@ -737,7 +743,10 @@ export default function ToolConfig({
                                           <Input
                                             value={param[1].value}
                                             key={uniqueKey}
-                                            disabled={param[1].filled_by_llm}
+                                            disabled={
+                                              param[1].filled_by_llm ||
+                                              !canFixValues
+                                            }
                                             size="sm"
                                             onChange={(e) => {
                                               setTool({
@@ -820,7 +829,7 @@ export default function ToolConfig({
               setSaveError('');
 
               try {
-                await saveTool(configToSave);
+                await persistTool(configToSave);
                 setShowUnsavedModal(false);
                 handleGoBack();
               } catch {
@@ -1292,7 +1301,8 @@ function APIActionTable({
   ) => void;
 }) {
   const { t } = useTranslation();
-  const { canEditCredentials } = React.useContext(ToolAccessContext);
+  const { canEditCredentials, canFixValues } =
+    React.useContext(ToolAccessContext);
   const idPrefix = React.useId();
 
   const [action, setAction] = React.useState<APIActionType>(apiAction);
@@ -1556,6 +1566,7 @@ function APIActionTable({
                       id={`${idPrefix}-${section}-${index}-filled-by-llm`}
                       aria-label={t('settings.tools.filledByLLM')}
                       checked={param.filled_by_llm}
+                      disabled={!canFixValues}
                       onCheckedChange={(checked) =>
                         handlePropertyChange(
                           section,
@@ -1587,6 +1598,7 @@ function APIActionTable({
                   value={param.value}
                   disabled={
                     param.filled_by_llm ||
+                    !canFixValues ||
                     (section === 'query_params' && !canEditCredentials)
                   }
                   onChange={(e) =>

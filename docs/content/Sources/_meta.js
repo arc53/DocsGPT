@@ -1,4 +1,8 @@
 export default {
+  "Connectors": {
+    "title": "🔌 Synced Sources (Connectors)",
+    "href": "/Guides/Connectors"
+  },
   "Per-source-configuration": {
     "title": "🎛️ Per-Source Configuration",
     "href": "/Sources/Per-source-configuration"

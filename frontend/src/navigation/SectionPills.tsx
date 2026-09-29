@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { selectIsAdmin } from '@/preferences/preferenceSlice';
 
+import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
 import { getVisibleGroups } from './sections';
 import { useSectionContext } from './useSectionContext';
 
@@ -24,11 +25,13 @@ export default function SectionPills({ className }: { className?: string }) {
   const { t } = useTranslation();
   const { section, item } = useSectionContext();
   const isAdmin = useSelector(selectIsAdmin);
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
 
   if (!section) return null;
-  const items = getVisibleGroups(section, { isAdmin }).flatMap(
-    (group) => group.items,
-  );
+  const items = getVisibleGroups(section, {
+    isAdmin,
+    features: { connectors: connectorsEnabled },
+  }).flatMap((group) => group.items);
   if (items.length < 2) return null;
 
   return (

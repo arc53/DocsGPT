@@ -69,7 +69,7 @@ export default function SourcesTrigger({
                 : t('conversation.sources.selectedCount', {
                     count: selectedDocs.length,
                   })
-              : t('conversation.sources.title')}
+              : t('conversation.sources.knowledge')}
           </span>
         </Button>
       }

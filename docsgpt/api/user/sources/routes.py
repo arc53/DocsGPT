@@ -74,6 +74,12 @@ def _get_provider_from_remote_data(remote_data):
     return None
 
 
+def _connection_id(row: dict) -> str | None:
+    """The connection a source syncs from, as a string id, or None."""
+    value = row.get("connection_id")
+    return str(value) if value else None
+
+
 def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -> dict:
     """Add ``access`` + ``allowed_actions`` to a listed source row.
 
@@ -150,6 +156,7 @@ class CombinedJson(Resource):
                     "config": SourceConfig.parse(index.get("config")).model_dump(),
                     "ownership": ownership,
                     "team_access": team_access,
+                    "connectionId": _connection_id(index),
                 }
                 return _with_access(
                     entry,
@@ -247,6 +254,7 @@ class PaginatedSources(Resource):
                     "team_access": (
                         None if owned else team_shared.get(str(doc["id"]))
                     ),
+                    "connectionId": _connection_id(doc),
                 }
                 paginated_docs.append(
                     _with_access(
@@ -267,6 +275,70 @@ class PaginatedSources(Resource):
                 f"Error retrieving paginated sources: {err}", exc_info=True
             )
             return make_response(jsonify({"success": False}), 400)
+
+
+def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool:
+    """Delete a source's index, stored files and row. Returns whether it worked.
+
+    Args:
+        owner: The source's owner; the row is deleted as them.
+        doc: The source row, already authorised for the caller.
+        actor: Who asked for the delete (a team editor, say), when not the
+            owner. Recorded on the audit event.
+    """
+    actor = actor or owner
+    storage = StorageCreator.get_storage()
+    resolved_id = str(doc["id"])
+    source_id = resolved_id
+
+    try:
+        if settings.VECTOR_STORE == "faiss":
+            index_path = f"indexes/{resolved_id}"
+            # index.pkl is the legacy sidecar; index.json the current one.
+            # Older sources have only the former, so clear whichever exist.
+            for index_file in ("index.faiss", "index.json", "index.pkl"):
+                if storage.file_exists(f"{index_path}/{index_file}"):
+                    storage.delete_file(f"{index_path}/{index_file}")
+        else:
+            vectorstore = VectorCreator.create_vectorstore(
+                settings.VECTOR_STORE, source_id=source_id
+            )
+            vectorstore.delete_index()
+        if "file_path" in doc and doc["file_path"]:
+            file_path = doc["file_path"]
+            if storage.is_directory(file_path):
+                files = storage.list_files(file_path)
+                for f in files:
+                    storage.delete_file(f)
+            else:
+                storage.delete_file(file_path)
+    except FileNotFoundError:
+        pass
+    except Exception as err:
+        current_app.logger.error(
+            f"Error deleting files and indexes: {err}", exc_info=True
+        )
+        return False
+    try:
+        with db_session() as conn:
+            # The AFTER DELETE trigger drops the source's team grants; the
+            # owner switches have no FK, so clear them here.
+            SourcesRepository(conn).delete(resolved_id, owner)
+            delete_settings(conn, "source", resolved_id)
+            record_event(
+                conn,
+                "source.deleted",
+                actor=actor,
+                source_id=resolved_id,
+                name=doc.get("name"),
+                owner=owner if owner != actor else None,
+            )
+    except Exception as err:
+        current_app.logger.error(
+            f"Error deleting source row: {err}", exc_info=True
+        )
+        return False
+    return True
 
 
 @sources_ns.route("/delete_old")
@@ -295,56 +367,7 @@ class DeleteOldIndexes(Resource):
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        owner = ra.owner_id
-        storage = StorageCreator.get_storage()
-        resolved_id = str(doc["id"])
-
-        try:
-            if settings.VECTOR_STORE == "faiss":
-                index_path = f"indexes/{resolved_id}"
-                # index.pkl is the legacy sidecar; index.json the current one.
-                # Older sources have only the former, so clear whichever exist.
-                for index_file in ("index.faiss", "index.json", "index.pkl"):
-                    if storage.file_exists(f"{index_path}/{index_file}"):
-                        storage.delete_file(f"{index_path}/{index_file}")
-            else:
-                vectorstore = VectorCreator.create_vectorstore(
-                    settings.VECTOR_STORE, source_id=resolved_id
-                )
-                vectorstore.delete_index()
-            if "file_path" in doc and doc["file_path"]:
-                file_path = doc["file_path"]
-                if storage.is_directory(file_path):
-                    files = storage.list_files(file_path)
-                    for f in files:
-                        storage.delete_file(f)
-                else:
-                    storage.delete_file(file_path)
-        except FileNotFoundError:
-            pass
-        except Exception as err:
-            current_app.logger.error(
-                f"Error deleting files and indexes: {err}", exc_info=True
-            )
-            return make_response(jsonify({"success": False}), 400)
-        try:
-            with db_session() as conn:
-                # The AFTER DELETE trigger drops the source's team grants; the
-                # owner switches have no FK, so clear them here.
-                SourcesRepository(conn).delete(resolved_id, owner)
-                delete_settings(conn, "source", resolved_id)
-                record_event(
-                    conn,
-                    "source.deleted",
-                    actor=user,
-                    source_id=resolved_id,
-                    name=doc.get("name"),
-                    owner=owner if owner != user else None,
-                )
-        except Exception as err:
-            current_app.logger.error(
-                f"Error deleting source row: {err}", exc_info=True
-            )
+        if not delete_source(ra.owner_id, doc, actor=user):
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
@@ -467,6 +490,8 @@ class SyncSource(Resource):
                 sync_frequency=doc.get("sync_frequency", "never"),
                 retriever=doc.get("retriever", "classic"),
                 doc_id=str(doc["id"]),
+                # S3 and GitHub sources made from a connection read with its keys.
+                connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
             )
         except Exception as err:
             current_app.logger.error(
@@ -1029,6 +1054,90 @@ class WikiPage(Resource):
         return make_response(
             jsonify({"success": True, "page": _wiki_page_node(page)}), 200
         )
+
+
+def _wiki_settings_body(doc: dict, ra) -> dict:
+    """The wiki settings response: the stored switch plus the caller's access."""
+    return {
+        "success": True,
+        "allow_outside_edits": bool(doc.get("wiki_outside_edits")),
+        **ra.payload(),
+    }
+
+
+@sources_ns.route("/sources/<string:source_id>/wiki/settings")
+class WikiSettings(Resource):
+    @api.doc(
+        description="A wiki's settings. Anyone who can see the wiki may read "
+        "them; returns allow_outside_edits plus the caller's access."
+    )
+    def get(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                try:
+                    doc, ra = load_source(conn, source_id, user, "use")
+                except AccessDenied as err:
+                    return denied_response(err)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error reading wiki settings for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(_wiki_settings_body(doc, ra)), 200)
+
+    @api.doc(
+        description="Change a wiki's settings (owner only, manage_settings). "
+        "Body: {\"allow_outside_edits\": bool}: whether runs from an agent's "
+        "API key or widget may edit the wiki."
+    )
+    def put(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        allowed = data.get("allow_outside_edits")
+        if not isinstance(allowed, bool):
+            return make_response(
+                jsonify(
+                    {"success": False, "message": "allow_outside_edits must be true or false"}
+                ),
+                400,
+            )
+        try:
+            with db_session() as conn:
+                try:
+                    doc, ra = load_source(conn, source_id, user, "manage_settings")
+                except AccessDenied as err:
+                    return denied_response(err)
+                if SourceConfig.parse(doc.get("config")).kind != "wiki":
+                    return make_response(
+                        jsonify({"success": False, "message": "Source is not a wiki"}), 400
+                    )
+                if not SourcesRepository(conn).set_wiki_outside_edits(
+                    str(doc["id"]), ra.owner_id, allowed
+                ):
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}), 404
+                    )
+                record_event(
+                    conn,
+                    "source.wiki_settings_updated",
+                    actor=user,
+                    source_id=str(doc["id"]),
+                    allow_outside_edits=allowed,
+                )
+                doc["wiki_outside_edits"] = allowed
+        except Exception as err:
+            current_app.logger.error(
+                f"Error updating wiki settings for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(_wiki_settings_body(doc, ra)), 200)
 
 
 def _source_is_blank(doc):

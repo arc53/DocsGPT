@@ -1,26 +1,10 @@
-import { envVar } from '@/env';
 import CrawlerIcon from '../../assets/crawler.svg';
 import FileUploadIcon from '../../assets/file_upload.svg';
 import UrlIcon from '../../assets/url.svg';
 import GithubIcon from '../../assets/github.svg';
-import RedditIcon from '../../assets/reddit.svg';
-import DriveIcon from '../../assets/drive.svg';
-import S3Icon from '../../assets/s3.svg';
-import SharePoint from '../../assets/sharepoint.svg';
-import ConfluenceIcon from '../../assets/confluence.svg';
 import BookIcon from '../../assets/book-mono.svg';
 
-export type IngestorType =
-  | 'confluence'
-  | 'crawler'
-  | 'github'
-  | 'reddit'
-  | 'url'
-  | 'google_drive'
-  | 'local_file'
-  | 's3'
-  | 'share_point'
-  | 'wiki';
+export type IngestorType = 'crawler' | 'github' | 'url' | 'local_file' | 'wiki';
 
 export interface IngestorConfig {
   type: IngestorType | null;
@@ -35,17 +19,7 @@ export type IngestorFormData = {
   data: string;
 };
 
-export type FieldType =
-  | 'string'
-  | 'number'
-  | 'enum'
-  | 'boolean'
-  | 'textarea'
-  | 'local_file_picker'
-  | 'remote_file_picker'
-  | 'google_drive_picker'
-  | 'share_point_picker'
-  | 'confluence_picker';
+export type FieldType = 'string' | 'textarea' | 'local_file_picker';
 
 export interface FormField {
   name: string;
@@ -54,8 +28,6 @@ export interface FormField {
   labelKey?: string;
   type: FieldType;
   required?: boolean;
-  advanced?: boolean;
-  options?: { label: string; value: string }[];
 }
 
 export interface IngestorSchema {
@@ -63,9 +35,20 @@ export interface IngestorSchema {
   label: string;
   icon: string;
   heading: string;
-  validate?: () => boolean;
   fields: FormField[];
 }
+
+/**
+ * Add knowledge tiles: the source types that need no account. Services
+ * that sync into Knowledge are connected through the connect wizard.
+ */
+export const UPLOAD_AND_WEB_INGESTORS: IngestorType[] = [
+  'local_file',
+  'url',
+  'crawler',
+  'github',
+  'wiki',
+];
 
 export const IngestorFormSchemas: IngestorSchema[] = [
   {
@@ -128,153 +111,6 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     ],
   },
   {
-    key: 'reddit',
-    label: 'Reddit',
-    icon: RedditIcon,
-    heading: 'Add content from Reddit',
-    fields: [
-      {
-        name: 'client_id',
-        label: 'Client ID',
-        labelKey: 'modals.uploadDoc.reddit.id',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'client_secret',
-        label: 'Client Secret',
-        labelKey: 'modals.uploadDoc.reddit.secret',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'user_agent',
-        label: 'User Agent',
-        labelKey: 'modals.uploadDoc.reddit.agent',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'search_queries',
-        label: 'Search Queries',
-        labelKey: 'modals.uploadDoc.reddit.searchQueries',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'number_posts',
-        label: 'Number of Posts',
-        labelKey: 'modals.uploadDoc.reddit.numberOfPosts',
-        type: 'number',
-        required: true,
-      },
-    ],
-  },
-  {
-    key: 'google_drive',
-    label: 'Google Drive',
-    icon: DriveIcon,
-    heading: 'Upload from Google Drive',
-    validate: () => {
-      const googleClientId = envVar('VITE_GOOGLE_CLIENT_ID');
-      return !!googleClientId;
-    },
-    fields: [
-      {
-        name: 'files',
-        label: 'Select Files from Google Drive',
-        type: 'google_drive_picker',
-        required: true,
-      },
-    ],
-  },
-  {
-    key: 's3',
-    label: 'Amazon S3',
-    icon: S3Icon,
-    heading: 'Add content from Amazon S3',
-    fields: [
-      {
-        name: 'aws_access_key_id',
-        label: 'AWS Access Key ID',
-        labelKey: 'modals.uploadDoc.fields.awsAccessKeyId',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'aws_secret_access_key',
-        label: 'AWS Secret Access Key',
-        labelKey: 'modals.uploadDoc.fields.awsSecretAccessKey',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'bucket',
-        label: 'Bucket Name',
-        labelKey: 'modals.uploadDoc.fields.bucket',
-        type: 'string',
-        required: true,
-      },
-      {
-        name: 'prefix',
-        label: 'Path Prefix (optional)',
-        labelKey: 'modals.uploadDoc.fields.prefix',
-        type: 'string',
-        required: false,
-      },
-      {
-        name: 'region',
-        label: 'AWS Region',
-        labelKey: 'modals.uploadDoc.fields.region',
-        type: 'string',
-        required: false,
-      },
-      {
-        name: 'endpoint_url',
-        label: 'Custom Endpoint URL (optional)',
-        labelKey: 'modals.uploadDoc.fields.endpointUrl',
-        type: 'string',
-        required: false,
-      },
-    ],
-  },
-  {
-    key: 'share_point',
-    label: 'Share Point',
-    icon: SharePoint,
-    heading: 'Upload from Share Point',
-    validate: () => {
-      const sharePointClientId = envVar('VITE_SHARE_POINT_CLIENT_ID');
-      return !!sharePointClientId;
-    },
-    fields: [
-      {
-        name: 'files',
-        label: 'Select Files from Share Point',
-        type: 'share_point_picker',
-        required: true,
-      },
-    ],
-  },
-  {
-    key: 'confluence',
-    label: 'Confluence',
-    icon: ConfluenceIcon,
-    heading: 'Upload from Confluence',
-    validate: () => {
-      const confluenceClientId = envVar('VITE_CONFLUENCE_CLIENT_ID');
-      return !!confluenceClientId;
-    },
-    fields: [
-      {
-        name: 'files',
-        label: 'Select Pages from Confluence',
-        type: 'confluence_picker',
-        required: true,
-      },
-    ],
-  },
-  {
     key: 'wiki',
     label: 'New wiki',
     icon: BookIcon,
@@ -297,52 +133,8 @@ export const IngestorDefaultConfigs: Record<
 > = {
   crawler: { name: '', config: { url: '' } },
   url: { name: '', config: { url: '' } },
-  reddit: {
-    name: '',
-    config: {
-      client_id: '',
-      client_secret: '',
-      user_agent: '',
-      search_queries: '',
-      number_posts: 10,
-    },
-  },
   github: { name: '', config: { repo_url: '' } },
-  google_drive: {
-    name: '',
-    config: {
-      file_ids: '',
-      folder_ids: '',
-      recursive: true,
-    },
-  },
   local_file: { name: '', config: { files: [] } },
-  s3: {
-    name: '',
-    config: {
-      aws_access_key_id: '',
-      aws_secret_access_key: '',
-      bucket: '',
-      prefix: '',
-      region: 'us-east-1',
-      endpoint_url: '',
-    },
-  },
-  share_point: {
-    name: '',
-    config: {
-      file_ids: '',
-      folder_ids: '',
-      recursive: true,
-    },
-  },
-  confluence: {
-    name: '',
-    config: {
-      file_ids: '',
-      folder_ids: '',
-    },
-  },
   wiki: {
     name: '',
     config: {

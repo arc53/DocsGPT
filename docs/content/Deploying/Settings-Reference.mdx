@@ -34,7 +34,13 @@ Signing key for session tokens and other signed capabilities. Required on every 
 
 Type `str`, default `default-docsgpt-encryption-key`.
 
-Key used to encrypt stored credentials such as tool and connector secrets.
+Key used to encrypt stored credentials such as tool and connector secrets. Set your own value before connecting services on a multi-user install; the default is public.
+
+### `ENCRYPTION_SECRET_KEY_PREVIOUS`
+
+Type `str`, default unset.
+
+Previous ENCRYPTION_SECRET_KEY, tried when a stored credential was encrypted with it. Set it while rotating the key, run `docsgpt connectors reencrypt`, then remove it.
 
 ### `INTERNAL_KEY`
 
@@ -1134,7 +1140,25 @@ Confluence Cloud OAuth client secret.
 
 Type `str`, default unset.
 
-GitHub PAT with read access to repositories.
+Instance-wide GitHub token for the public-repository upload. It raises GitHub's rate limit and is never used to read a private repository; users connect their own GitHub account for those.
+
+### `GITHUB_CLIENT_ID`
+
+Type `str`, default unset.
+
+GitHub App client id. With the secret and slug, offers Sign in with GitHub next to tokens.
+
+### `GITHUB_CLIENT_SECRET`
+
+Type `str`, default unset.
+
+GitHub App client secret.
+
+### `GITHUB_APP_SLUG`
+
+Type `str`, default unset.
+
+GitHub App URL name (github.com/apps/&lt;slug>), for the link where users choose repositories.
 
 ### `MCP_OAUTH_REDIRECT_URI`
 

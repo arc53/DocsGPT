@@ -67,7 +67,8 @@ class TestIngestRemoteTask:
 
         mock_worker.assert_called_once_with(
             ANY, {"url": "http://x"}, "job1", "user1", "web",
-            config=None, idempotency_key=None, source_id=None,
+            sync_frequency="never",
+            config=None, idempotency_key=None, source_id=None, connection_id=None,
         )
         assert result == {"status": "ok"}
 
@@ -164,9 +165,19 @@ class TestSyncSourceTask:
         )
 
         mock_sync.assert_called_once_with(
-            ANY, {"data": 1}, "job1", "user1", "web", "daily", "classic", "doc1"
+            ANY, {"data": 1}, "job1", "user1", "web", "daily", "classic", "doc1",
+            connection_id=None,
         )
         assert result == {"status": "ok"}
+
+    @pytest.mark.unit
+    @patch("docsgpt.api.user.tasks.sync")
+    def test_passes_the_sources_connection(self, mock_sync):
+        from docsgpt.api.user.tasks import sync_source
+
+        sync_source({"data": 1}, "job1", "user1", "s3", "daily", "classic", "doc1", connection_id="c-1")
+
+        assert mock_sync.call_args.kwargs["connection_id"] == "c-1"
 
 
 class TestStoreAttachmentTask:
@@ -223,6 +234,7 @@ class TestIngestConnectorTask:
             "user1",
             "gdrive",
             session_token=None,
+            connection_id=None,
             file_ids=None,
             folder_ids=None,
             recursive=True,
@@ -248,6 +260,7 @@ class TestIngestConnectorTask:
             "user1",
             "sharepoint",
             session_token="tok",
+            connection_id=None,
             file_ids=["f1"],
             folder_ids=["d1"],
             recursive=False,
@@ -263,6 +276,7 @@ class TestIngestConnectorTask:
             "user1",
             "sharepoint",
             session_token="tok",
+            connection_id=None,
             file_ids=["f1"],
             folder_ids=["d1"],
             recursive=False,

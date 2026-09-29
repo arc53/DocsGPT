@@ -24,6 +24,7 @@ def _mock_connector_pipeline(monkeypatch):
     from docsgpt import worker
 
     fake_connector = MagicMock(name="connector")
+    fake_connector.connection_id = None
     fake_connector.download_to_directory.return_value = {
         "files_downloaded": 1,
         "empty_result": False,
@@ -34,7 +35,7 @@ def _mock_connector_pipeline(monkeypatch):
     monkeypatch.setattr(
         worker.ConnectorCreator,
         "create_connector",
-        staticmethod(lambda source_type, session_token: fake_connector),
+        staticmethod(lambda source_type, session_token=None, connection_id=None: fake_connector),
     )
 
     fake_reader = MagicMock(name="reader")

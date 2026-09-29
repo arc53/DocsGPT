@@ -44,7 +44,23 @@ class ConnectorSettings(SettingsGroup):
     CONFLUENCE_CLIENT_SECRET: Optional[str] = Field(default=None, description="Confluence Cloud OAuth client secret.")
 
     # GitHub source.
-    GITHUB_ACCESS_TOKEN: Optional[str] = Field(default=None, description="GitHub PAT with read access to repositories.")
+    GITHUB_ACCESS_TOKEN: Optional[str] = Field(
+        default=None,
+        description=(
+            "Instance-wide GitHub token for the public-repository upload. It raises GitHub's rate limit and is never "
+            "used to read a private repository; users connect their own GitHub account for those."
+        ),
+    )
+    # GitHub App behind "Sign in with GitHub" on the GitHub connector.
+    GITHUB_CLIENT_ID: Optional[str] = Field(
+        default=None,
+        description="GitHub App client id. With the secret and slug, offers Sign in with GitHub next to tokens.",
+    )
+    GITHUB_CLIENT_SECRET: Optional[str] = Field(default=None, description="GitHub App client secret.")
+    GITHUB_APP_SLUG: Optional[str] = Field(
+        default=None,
+        description="GitHub App URL name (github.com/apps/<slug>), for the link where users choose repositories.",
+    )
 
     MCP_OAUTH_REDIRECT_URI: Optional[str] = Field(
         default=None, description="Public callback URL for MCP OAuth; unset derives it from CONNECTOR_REDIRECT_BASE_URI."

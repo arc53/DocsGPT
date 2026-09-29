@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import SchedulerToolCallCard from '../agents/schedules/SchedulerToolCallCard';
 import CopyButton from '../components/CopyButton';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { connectorIconKey } from '../connectors/i18n';
 import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
 import { usePacedText } from '../hooks';
@@ -15,7 +17,7 @@ import { AnswerSegment, getAnswerSegments } from './answerSegments';
 import MarkdownAnswer from './MarkdownAnswer';
 import { type SandboxArtifact } from './sandboxLinks';
 import StreamingStatusLine from './StreamingStatusLine';
-import { ToolCallsType } from './types';
+import { shownArguments, ToolCallsType } from './types';
 import { isWikiWriteCall } from './wikiToolCall';
 import { cn } from '@/lib/utils';
 
@@ -270,10 +272,17 @@ function InlineToolCallChip({
             isLive ? 'animate-pulse' : '',
           )}
         >
-          <ToolIcon
-            name={toolCall.tool_name}
-            className="text-muted-foreground size-4"
-          />
+          {toolCall.connector_key ? (
+            <ConnectorIcon
+              icon={connectorIconKey(toolCall.connector_key)}
+              className="text-muted-foreground size-4"
+            />
+          ) : (
+            <ToolIcon
+              name={toolCall.tool_name}
+              className="text-muted-foreground size-4"
+            />
+          )}
           <span className="bg-muted-foreground/50 hidden size-1.5 rounded-full only:block" />
         </span>
         <span
@@ -301,10 +310,10 @@ function InlineToolCallChip({
         <div className="animate-in fade-in mt-2 mr-5 ml-6 flex flex-col gap-2 duration-160 ease-out motion-reduce:animate-none">
           <ToolCallPanel
             title={t('conversation.inlineSteps.arguments')}
-            copyText={JSON.stringify(toolCall.arguments ?? {}, null, 2)}
+            copyText={JSON.stringify(shownArguments(toolCall), null, 2)}
           >
             <p className="max-h-80 overflow-y-auto font-mono text-xs whitespace-pre-wrap">
-              {JSON.stringify(toolCall.arguments ?? {}, null, 2)}
+              {JSON.stringify(shownArguments(toolCall), null, 2)}
             </p>
           </ToolCallPanel>
           <ToolCallPanel

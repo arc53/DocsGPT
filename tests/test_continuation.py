@@ -1010,7 +1010,7 @@ class TestResumeMarkResuming:
                 "llm_name": "openai",
                 "api_key": "k",
                 "user_api_key": None,
-                "agent_id": None,
+                "agent_id": "agent-1",
                 "agent_type": "ClassicAgent",
                 "prompt": "",
                 "json_schema": None,
@@ -1038,7 +1038,7 @@ class TestResumeMarkResuming:
 
         # The body api_key resolves to its owning user.
         fake_repo = MagicMock()
-        fake_repo.find_by_key.return_value = {"user_id": "owner-1"}
+        fake_repo.find_by_key.return_value = {"id": "agent-1", "user_id": "owner-1"}
 
         @contextmanager
         def _fake_db_readonly():

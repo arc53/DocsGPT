@@ -261,7 +261,9 @@ def chat_completions():
         internal_data["persist"] = True
 
     try:
-        processor = StreamProcessor(internal_data, decoded_token, trace_source="v1")
+        # The token is the owner's, so tell the processor the caller is a key
+        # holder: their writes on the owner's accounts need the allowlist.
+        processor = StreamProcessor(internal_data, decoded_token, trace_source="v1", external_caller=True)
         flush_trace_after_request(processor)
         # Set when this request took the resume claim, so a refusal can release it.
         claimed_conversation_id = None

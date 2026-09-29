@@ -233,6 +233,33 @@ def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, A
         return resolve(conn, "agent", str(agent_id), user_id) is not None
 
 
+def _schedule_caller_rules(schedule: Dict[str, Any], agent_config: Dict[str, Any]) -> Dict[str, bool]:
+    """The caller rules a scheduled run keeps, though it acts as the owner.
+
+    A schedule set through the agent's API key is an external caller's; one
+    a user without a team grant set (they reach the agent by its public
+    link) is a public-link caller's. Neither can approve for the owner, so
+    the run writes on the owner's accounts and credentials only as far as
+    the agent's API write allowlist allows.
+
+    Args:
+        schedule: The schedule row.
+        agent_config: The agent row (or the agentless ephemeral config).
+
+    Returns:
+        ``external_caller`` and ``public_link_caller`` flags for the run.
+    """
+    public = False
+    user_id = schedule.get("user_id")
+    agent_id = agent_config.get("id")
+    if agent_id and user_id and agent_config.get("user_id") != user_id:
+        from docsgpt.api.user.resource_access import resolve
+
+        with get_engine().connect() as conn:
+            public = resolve(conn, "agent", str(agent_id), user_id) is None
+    return {"external_caller": schedule.get("created_via") == "api", "public_link_caller": public}
+
+
 def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Dict[str, Any]:
     """Execute one scheduled run by id; returns a result dict for tracing."""
     if not settings.POSTGRES_URI:
@@ -324,6 +351,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             # to the user who scheduled it (not always the agent's owner).
             request_id=str(run_id),
             trace_user_id=run.get("user_id") or schedule.get("user_id"),
+            **_schedule_caller_rules(schedule, agent_config),
         )
     except SoftTimeLimitExceeded:
         timed_out = True

@@ -29,6 +29,7 @@ from docsgpt.api.scim import scim_bp  # noqa: E402
 from docsgpt.api.user.authz import ROLE_USER, resolve_roles  # noqa: E402
 from docsgpt.api.user.routes import user  # noqa: E402
 from docsgpt.api.connector.routes import connector  # noqa: E402
+from docsgpt.api.connector import connections as _connections  # noqa: E402,F401
 from docsgpt.api.v1 import v1_bp  # noqa: E402
 from docsgpt.celery_init import celery  # noqa: E402
 from docsgpt.core.secret_key import resolve_jwt_secret_key  # noqa: E402
@@ -183,6 +184,27 @@ if settings.AUTH_TYPE == "simple_jwt":
     print(f"Generated Simple JWT Token: {SIMPLE_JWT_TOKEN}")
 
 
+def _warn_default_encryption_key() -> None:
+    """Say when stored credentials are sealed with the public default key."""
+    from docsgpt.security.encryption import is_default_encryption_key
+
+    if not is_default_encryption_key():
+        return
+    if settings.AUTH_TYPE:
+        logging.getLogger(__name__).warning(
+            "ENCRYPTION_SECRET_KEY is the public default: connecting services is refused until you set your "
+            "own value (then run `docsgpt connectors reencrypt`)."
+        )
+    else:
+        logging.getLogger(__name__).warning(
+            "ENCRYPTION_SECRET_KEY is the public default. Stored connector credentials are only as safe as "
+            "that key; set your own value before exposing this install."
+        )
+
+
+_warn_default_encryption_key()
+
+
 @app.route("/")
 def home():
     if request.remote_addr in ("0.0.0.0", "127.0.0.1", "localhost", "172.18.0.1"):
@@ -209,6 +231,9 @@ def get_config():
         "hybrid_available": settings.VECTOR_STORE == "pgvector",
         "tts_available": TTSCreator.is_enabled(settings.TTS_PROVIDER),
         "stt_available": STTCreator.is_enabled(settings.STT_PROVIDER),
+        # Lets a frontend built before the Connectors page run against this
+        # backend, and a new frontend hide the page against an older one.
+        "connectors_enabled": True,
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {

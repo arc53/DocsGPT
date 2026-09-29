@@ -1,23 +1,28 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
-const { dispatch, service, view } = vi.hoisted(() => ({
-  // The heavy children: each view reports the canEdit it was given.
-  view:
-    (testId: string) =>
-    ({ canEdit }: { canEdit?: boolean }) => (
-      <div data-testid={testId} data-can-edit={String(canEdit)} />
-    ),
-  dispatch: vi.fn(),
-  service: {
-    getConfig: vi.fn(),
-    manageSync: vi.fn(),
-    syncSource: vi.fn(),
-    syncConnector: vi.fn(),
-    reingestSource: vi.fn(),
-    getDirectoryStructure: vi.fn(),
-  },
-}));
+const { dispatch, service, view, connectors, uploadProps, reconnect } =
+  vi.hoisted(() => ({
+    reconnect: vi.fn(),
+    uploadProps: vi.fn(),
+    connectors: { connections: [] as Record<string, unknown>[] },
+    // The heavy children: each view reports the canEdit it was given.
+    view:
+      (testId: string) =>
+      ({ canEdit }: { canEdit?: boolean }) => (
+        <div data-testid={testId} data-can-edit={String(canEdit)} />
+      ),
+    dispatch: vi.fn(),
+    service: {
+      getConfig: vi.fn(),
+      manageSync: vi.fn(),
+      syncSource: vi.fn(),
+      syncConnector: vi.fn(),
+      reingestSource: vi.fn(),
+      getDirectoryStructure: vi.fn(),
+    },
+  }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -30,6 +35,7 @@ vi.mock('react-redux', () => ({
       preference: { token: null },
       upload: { tasks: [] },
       graphBuild: { builds: {} },
+      connectors: { connections: connectors.connections, loaded: true },
     }),
 }));
 
@@ -60,9 +66,22 @@ vi.mock('../components/graph/GraphSourceView', () => ({
 vi.mock('./SourceConfigModal', () => ({ default: () => null }));
 vi.mock('./TestRetrievalModal', () => ({ default: () => null }));
 vi.mock('./ConvertToWikiModal', () => ({ default: () => null }));
+vi.mock('./WikiSettingsModal', () => ({
+  default: ({ document }: { document: { name: string } }) => (
+    <div data-testid="wiki-settings">{document.name}</div>
+  ),
+}));
 vi.mock('./EnableGraphRAGModal', () => ({ default: () => null }));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
-vi.mock('../upload/Upload', () => ({ default: () => null }));
+vi.mock('../connectors/SignInAgainNotice', () => ({
+  useSignInAgain: () => ({ reconnect, modals: null }),
+}));
+vi.mock('../upload/Upload', () => ({
+  default: (props: unknown) => {
+    uploadProps(props);
+    return null;
+  },
+}));
 
 import type { Doc } from '../models/misc';
 import Sources from './Sources';
@@ -100,13 +119,21 @@ describe('Sources access', () => {
     document.body.innerHTML = '';
   });
 
+  function Where() {
+    const location = useLocation();
+    return <div data-testid="where">{location.pathname + location.search}</div>;
+  }
+
   const render = async (document: Doc) => {
     await act(async () => {
       root.render(
-        <Sources
-          paginatedDocuments={[document]}
-          handleDeleteDocument={vi.fn()}
-        />,
+        <MemoryRouter>
+          <Sources
+            paginatedDocuments={[document]}
+            handleDeleteDocument={vi.fn()}
+          />
+          <Where />
+        </MemoryRouter>,
       );
     });
   };
@@ -159,6 +186,97 @@ describe('Sources access', () => {
       'settings.sources.shareWithTeam',
       'convTile.delete',
     ]);
+  });
+
+  // The connection is managed on the Connectors page; a synced source's
+  // menu keeps only what acts on the source itself.
+  it('a synced source has no Manage connection item', async () => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        icon: 'drive',
+        status: 'connected',
+        account_label: 'alex@example.com',
+      },
+    ];
+    await render(
+      doc({
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+        connectionId: 'conn-1',
+      } as Partial<Doc>),
+    );
+    const items = await menuItems();
+    connectors.connections = [];
+    expect(items).not.toContain('settings.connectors.manageConnection');
+    expect(items).toContain('settings.sources.editConfig');
+    expect(items).toContain('convTile.delete');
+  });
+
+  // A source whose connection needs signing in again says so on its tile
+  // and signs in again from there, without opening the source.
+  it('reconnects a paused synced source from its tile', async () => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        icon: 'drive',
+        status: 'reconnect_needed',
+        account_label: 'alex@example.com',
+      },
+    ];
+    reconnect.mockClear();
+    await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
+    connectors.connections = [];
+    const button = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.connectors.status.reconnect',
+    )!;
+    expect(button).toBeDefined();
+    await act(async () => button.click());
+    expect(reconnect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'conn-1', connector_key: 'google_drive' }),
+    );
+    // Only the reconnect: the source view stays closed.
+    expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
+  });
+
+  it('offers no Reconnect on a synced source that is running', async () => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        status: 'connected',
+      },
+    ];
+    await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
+    connectors.connections = [];
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (b) => b.textContent === 'settings.connectors.status.reconnect',
+      ),
+    ).toBe(false);
+  });
+
+  // Leaving Knowledge loses nothing, so its Add knowledge may browse the
+  // whole Connectors page; the other openers keep the list in the dialog.
+  it('lets Add knowledge browse the syncing connectors from Knowledge', async () => {
+    await render(doc());
+    uploadProps.mockClear();
+    const add = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.addSource',
+    )!;
+    await act(async () => add.click());
+    const props = uploadProps.mock.calls.at(-1)![0] as {
+      onBrowseConnectors?: () => void;
+    };
+    await act(async () => props.onBrowseConnectors!());
+    expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
+      '/settings/connectors?capability=sync',
+    );
   });
 
   it('a source with no access fields is the caller’s own', async () => {
@@ -225,6 +343,41 @@ describe('Sources access', () => {
       'settings.sources.view',
       'settings.sources.testRetrieval.action',
     ]);
+  });
+
+  it('a wiki owner gets Wiki settings; editors and viewers do not', async () => {
+    const wiki = { type: 'wiki', config: { kind: 'wiki' } };
+    await render(
+      doc({ ...wiki, access: 'owner', allowed_actions: [...OWNER, 'use'] }),
+    );
+    expect(await menuItems()).toContain(
+      'settings.sources.wiki.settings.action',
+    );
+    await clickItem('settings.sources.wiki.settings.action');
+    expect(
+      document.querySelector('[data-testid="wiki-settings"]')?.textContent,
+    ).toBe('Contracts');
+
+    for (const allowed of [EDITOR, VIEWER]) {
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      document.body
+        .querySelectorAll('[role="menu"]')
+        .forEach((m) => m.remove());
+      await render(
+        doc({ ...wiki, access: 'editor', allowed_actions: allowed }),
+      );
+      expect(await menuItems()).not.toContain(
+        'settings.sources.wiki.settings.action',
+      );
+    }
+  });
+
+  it('a classic source has no Wiki settings', async () => {
+    await render(doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] }));
+    expect(await menuItems()).not.toContain(
+      'settings.sources.wiki.settings.action',
+    );
   });
 
   it('sync and reingest are editor actions', async () => {

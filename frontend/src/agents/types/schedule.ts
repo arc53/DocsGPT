@@ -37,7 +37,7 @@ export type Schedule = {
   model_id?: string | null;
   token_budget?: number | null;
   origin_conversation_id?: string | null;
-  created_via: 'chat' | 'ui';
+  created_via: 'chat' | 'ui' | 'api';
   consecutive_failure_count: number;
   created_at: string;
   updated_at: string;

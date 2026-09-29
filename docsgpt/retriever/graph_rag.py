@@ -584,7 +584,7 @@ class GraphRAGRetriever(BaseRetriever):
             doc_tokens = num_tokens_from_string(f"{labels['filename']}\n{text}")
             if cumulative_tokens + doc_tokens >= token_budget:
                 break
-            docs.append({"text": text, **labels})
+            docs.append({"text": text, **labels, **self._connector_labels.for_source(source_id)})
             cumulative_tokens += doc_tokens
         return docs
 

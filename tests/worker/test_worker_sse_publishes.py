@@ -470,6 +470,7 @@ def _stub_connector_pipeline(
     from docsgpt import worker
 
     fake_connector = MagicMock(name="connector")
+    fake_connector.connection_id = None
     fake_connector.download_to_directory.return_value = {
         "files_downloaded": files_downloaded,
         "empty_result": empty_result,
@@ -482,7 +483,7 @@ def _stub_connector_pipeline(
     monkeypatch.setattr(
         worker.ConnectorCreator,
         "create_connector",
-        staticmethod(lambda source_type, session_token: fake_connector),
+        staticmethod(lambda source_type, session_token=None, connection_id=None: fake_connector),
     )
 
     fake_reader = MagicMock(name="reader")

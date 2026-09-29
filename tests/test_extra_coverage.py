@@ -44,6 +44,10 @@ def _patch_upload_db(conn):
         "docsgpt.api.user.sources.upload.db_session", _yield
     ), patch(
         "docsgpt.api.user.sources.upload.db_readonly", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_session", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_readonly", _yield
     ):
         yield
 
@@ -58,6 +62,10 @@ def _patch_conn_db(conn):
         "docsgpt.api.connector.routes.db_session", _yield
     ), patch(
         "docsgpt.api.connector.routes.db_readonly", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_session", _yield
+    ), patch(
+        "docsgpt.connectors.service.db_readonly", _yield
     ):
         yield
 
@@ -210,7 +218,7 @@ class TestConnectorExtra:
             yield
 
         with patch(
-            "docsgpt.api.connector.routes.db_session", _broken
+            "docsgpt.connectors.service.db_readonly", _broken
         ), app.test_request_context(
             "/api/connectors/disconnect", method="POST",
             json={"provider": "x", "session_token": "y"},

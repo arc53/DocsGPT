@@ -10,12 +10,6 @@
   "loading": "加载中...",
   "retry": "重试",
   "cancel": "取消",
-  "common": {
-    "close": "关闭",
-    "viewOnlyNotice": "你可以查看此内容，但你的角色无法更改它。",
-    "credentialsLockedNotice": "只有所有者可以更改此工具的凭据。",
-    "savedSecretHint": "已保存。留空即可保留。"
-  },
   "help": "帮助",
   "emailUs": "给我们发邮件",
   "documentation": "文档",
@@ -106,16 +100,16 @@
     },
     "sources": {
       "title": "在这里您可以管理所有可用的源文件以及您上传的文件。",
-      "subtitle": "上传并管理您的回答所依赖的文档和知识来源",
-      "label": "来源",
+      "subtitle": "DocsGPT 可以搜索和引用的内容：上传的文件、网站、Wiki，以及从连接同步的内容。",
+      "label": "知识库",
       "name": "来源名称",
       "date": "向量日期",
       "type": "类型",
       "tokenUsage": "令牌使用",
-      "noData": "没有现有的来源",
+      "noData": "还没有知识",
       "searchPlaceholder": "搜索...",
       "addNew": "添加新文档",
-      "addSource": "添加来源",
+      "addSource": "添加知识",
       "addChunk": "添加块",
       "preLoaded": "预加载",
       "private": "私有",
@@ -176,7 +170,6 @@
           }
         },
         "badge": "动态 Wiki",
-        "byline_one": "{{pages}} 个页面 · {{tokens}} 个 token",
         "byline_other": "{{pages}} 个页面 · {{tokens}} 个 token",
         "explainer": "代理在工作时会阅读并改写这些页面。",
         "explainerEditable": "代理在工作时会阅读并改写这些页面；任何使用此来源的代理都可以编辑它。",
@@ -185,7 +178,18 @@
         "pagesTitle": "页面",
         "loadFailed": "无法加载 Wiki 页面。",
         "pageLoadFailed": "无法加载此页面。",
-        "editTitle": "编辑页面"
+        "editTitle": "编辑页面",
+        "settings": {
+          "action": "Wiki 设置",
+          "title": "Wiki 设置",
+          "outsideEdits": {
+            "label": "允许 API 和小组件用户编辑此 Wiki",
+            "description": "关闭时，通过智能体的 API 密钥或小组件使用它的人可以阅读此 Wiki，但不能更改。公开链接的访问者只能编辑他们自己有权编辑的 Wiki，并且每次更改前都会被询问。你和此 Wiki 的编辑者始终可以编辑它。"
+          },
+          "loadError": "无法加载 Wiki 设置。",
+          "saveError": "无法保存更改。请重试。"
+        },
+        "byline_one": "{{pages}} 个页面 · {{tokens}} 个 token"
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -235,7 +239,6 @@
           "byConnections": "（按连接数）",
           "typeFilter": "按类型筛选",
           "otherTypes": "其他：{{types}}",
-          "otherTypesMore_one": "另外 {{formatted}} 个",
           "otherTypesMore_other": "另外 {{formatted}} 个",
           "untyped": "无类型",
           "loadFailed": "无法加载图谱。",
@@ -247,7 +250,6 @@
           "showMore": "显示更多",
           "showLess": "收起",
           "relationships": "关系",
-          "relationshipsCapped_one": "显示 {{total}} 个关系中最强的 {{shown}} 个。",
           "relationshipsCapped_other": "显示 {{total}} 个关系中最强的 {{shown}} 个。",
           "noRelationships": "此实体没有关系。",
           "relatedTo": "相关",
@@ -256,18 +258,20 @@
           "sourceChunks": "来源分块",
           "showInGraph": "在图谱中显示",
           "allTypes": "所有类型",
-          "chunkCount_one": "{{formatted}} 个分块",
           "chunkCount_other": "{{formatted}} 个分块",
-          "entityCount_one": "{{formatted}} 个实体",
           "entityCount_other": "{{formatted}} 个实体",
-          "relationshipCount_one": "{{formatted}} 个关系",
           "relationshipCount_other": "{{formatted}} 个关系",
           "chunk": "分块",
           "chunkMeta": "{{file}} · {{tokens}} 个令牌",
           "chunkTokens": "{{tokens}} 个令牌",
           "openInFiles": "在文件中打开",
           "editChunk": "编辑分块",
-          "chunkSaved": "分块已保存"
+          "chunkSaved": "分块已保存",
+          "otherTypesMore_one": "另外 {{formatted}} 个",
+          "relationshipsCapped_one": "显示 {{total}} 个关系中最强的 {{shown}} 个。",
+          "chunkCount_one": "{{formatted}} 个分块",
+          "entityCount_one": "{{formatted}} 个实体",
+          "relationshipCount_one": "{{formatted}} 个关系"
         }
       },
       "testRetrieval": {
@@ -302,7 +306,7 @@
       "chunks": "文本块",
       "noChunks": "未找到文本块",
       "noChunksAlt": "未找到文本块",
-      "goToSources": "前往来源",
+      "goToSources": "前往知识库",
       "uploadNew": "上传新文档",
       "noResults": "未找到结果",
       "fileName": "名称",
@@ -426,11 +430,9 @@
       "chunkTitleHint": "回答引用此文本块时使用的名称。",
       "files": "文件",
       "filesLoadError": "无法加载文件",
-      "filesByline_one": "{{files}} 个文件 · {{tokens}} 个令牌",
       "filesByline_other": "{{files}} 个文件 · {{tokens}} 个令牌",
       "filterFiles": "筛选文件",
       "searchChunks": "搜索文本块",
-      "chunkCount_one": "{{formatted}} 个文本块",
       "chunkCount_other": "{{formatted}} 个文本块",
       "editor": {
         "write": "编辑",
@@ -445,6 +447,11 @@
       "editChunkDescription": "{{file}} · 第 {{n}} 个文本块 · {{tokens}} 个令牌",
       "previousChunk": "上一个文本块",
       "nextChunk": "下一个文本块",
+      "paused": "同步已暂停。重新连接 {{name}} 以继续。",
+      "emptyHint": "上传文件、添加网站，或连接一个服务来同步它的内容。",
+      "connectService": "连接服务",
+      "filesByline_one": "{{files}} 个文件 · {{tokens}} 个令牌",
+      "chunkCount_one": "{{formatted}} 个文本块",
       "viewConfig": "查看来源设置",
       "errors": {
         "forbidden": "你无权对此来源执行该操作。",
@@ -675,10 +682,6 @@
       "createTeamError": "无法创建团队。",
       "noTeams": "暂无团队。",
       "noDescription": "无描述",
-      "memberCount_one": "{{formatted}} 名成员",
-      "memberCount_other": "{{formatted}} 名成员",
-      "sharedCount_one": "{{formatted}} 项共享",
-      "sharedCount_other": "{{formatted}} 项共享",
       "loadError": "加载团队失败。",
       "roleAdmin": "管理员",
       "roleMember": "成员",
@@ -758,8 +761,46 @@
           "teams": "团队",
           "people": "人员",
           "editors": "编辑者"
+        },
+        "uses": {
+          "title": "此智能体使用的内容",
+          "intro": "使用此智能体的每个人都会用到这些内容，各自按所示的访问权限运行。",
+          "stopped": "已停止",
+          "writesOff": "不可通过 API",
+          "writesNote": "连接器上的“允许”适用于聊天。标记为“不可通过 API”的更改，在你于 Access Details 中允许之前，API、小组件和公开链接的用户无法进行。",
+          "writesNoteEditor": "连接器上的“允许”适用于聊天。标记为“不可通过 API”的更改，在所有者于 Access Details 中允许之前，API、小组件和公开链接的用户无法进行。",
+          "access": {
+            "you": "你的访问权限",
+            "person": "{{person}} 的访问权限",
+            "other": "其他人的访问权限",
+            "owner": "所有者的访问权限",
+            "member": "每个人自己的 {{service}} 账号（API 和小组件：你的）",
+            "memberNoService": "每个人自己的账号（API 和小组件：你的）",
+            "yourAccount": "你的 {{service}} 账号",
+            "yourAccountNoService": "你的账号",
+            "personAccount": "{{person}} 的 {{service}} 账号",
+            "personAccountNoService": "{{person}} 的账号",
+            "memberShared": "每个人自己的 {{service}} 账号（API 和小组件：所有者的）",
+            "memberSharedNoService": "每个人自己的账号（API 和小组件：所有者的）",
+            "otherAccount": "其他人的 {{service}} 账号",
+            "otherAccountNoService": "其他人的账号",
+            "yourCredentials": "你保存的凭据",
+            "personCredentials": "{{person}} 保存的凭据",
+            "otherCredentials": "其他人保存的凭据"
+          },
+          "writesSomeOff": "部分不可通过 API",
+          "adminOff": "管理员已关闭更改",
+          "writesNoteApi": "连接器上的“允许”适用于聊天。标记为“不可通过 API”的更改，在你于 Access Details 中允许之前，API 和小组件的用户无法进行。",
+          "writesNoteApiEditor": "连接器上的“允许”适用于聊天。标记为“不可通过 API”的更改，在所有者于 Access Details 中允许之前，API 和小组件的用户无法进行。",
+          "writesNoteMemberTail": "在每个人使用自己账号的工具上，公开链接的用户用自己的账号进行更改。",
+          "openAccessDetails": "打开 Access Details",
+          "accessDetailsNeedsKey": "智能体有 API 密钥后，Access Details 中会列出这些更改。"
         }
       },
+      "memberCount_one": "{{formatted}} 名成员",
+      "memberCount_other": "{{formatted}} 名成员",
+      "sharedCount_one": "{{formatted}} 项共享",
+      "sharedCount_other": "{{formatted}} 项共享",
       "accessChangeError": "无法更改访问权限。",
       "accessSettings": {
         "title": "访问设置",
@@ -807,7 +848,8 @@
           },
           "viewers_can_use_in_agents": {
             "label": "查看者可以在自己的代理中使用",
-            "description": "它使用你的凭据运行。"
+            "description": "它使用你的凭据运行。",
+            "descriptionMember": "每个人使用自己的账号。"
           }
         },
         "prompt": {
@@ -929,11 +971,11 @@
     },
     "tools": {
       "label": "工具",
-      "subtitle": "浏览、连接并配置驱动您的智能体的工具和集成",
+      "subtitle": "智能体可以执行的操作。内置工具在这里。已连接服务提供的工具归在该服务下。",
       "searchPlaceholder": "搜索工具...",
       "addTool": "添加工具",
       "noToolsFound": "未找到工具",
-      "selectToolSetup": "选择要设置的工具",
+      "selectToolSetup": "添加工具",
       "settingsIconAlt": "设置图标",
       "configureToolAria": "配置 {{toolName}}",
       "toggleToolAria": "切换 {{toolName}}",
@@ -945,8 +987,8 @@
       "builtIn": "内置",
       "authStatus": {
         "connected": "已连接",
-        "needsAuth": "需要认证",
-        "configured": "已配置"
+        "needsAuth": "重新连接",
+        "configured": "已连接"
       },
       "deleteWarning": "您确定要删除工具 \"{{toolName}}\" 吗？",
       "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
@@ -1062,6 +1104,11 @@
       },
       "headerValuePlaceholder": "例如：application/json",
       "toolIconTitle": "{{name}} 图标",
+      "groupBuiltIn": "内置",
+      "groupService": "来自服务",
+      "browseConnectors": "浏览所有连接器",
+      "viaConnection": "通过 {{name}}",
+      "off": "已关闭",
       "view": "查看",
       "inMyChats": "在我的聊天中",
       "useInMyChatsAria": "在我的聊天中使用 {{toolName}}",
@@ -1297,13 +1344,310 @@
           "subtitle": "“{{name}}”的新密钥已就绪，旧密钥已失效。"
         }
       }
+    },
+    "connectors": {
+      "label": "连接器",
+      "subtitle": "将 DocsGPT 连接到团队使用的服务。一个连接可以把内容同步到知识库，也可以为智能体提供工具。",
+      "search": "搜索连接器...",
+      "addCustom": "添加自定义工具",
+      "custom": {
+        "custom_mcp": "MCP 服务器",
+        "custom_openapi": "OpenAPI / REST"
+      },
+      "categoriesLabel": "按类别筛选连接器",
+      "categories": {
+        "all": "全部",
+        "connected": "已连接",
+        "files": "文件与存储",
+        "knowledge": "文档与 Wiki",
+        "dev": "开发者工具",
+        "messaging": "消息",
+        "database": "数据库",
+        "search": "搜索与网页",
+        "custom": "自定义",
+        "projects": "项目与事务",
+        "business": "支付与业务"
+      },
+      "capability": {
+        "sync": "同步",
+        "read": "读取",
+        "write": "写入"
+      },
+      "status": {
+        "connect": "连接",
+        "connected": "已连接",
+        "connectedCount": "已连接 {{formatted}} 个",
+        "reconnect": "重新连接",
+        "needsAdminSetup": "需要管理员设置",
+        "disabledByAdmin": "已被管理员停用",
+        "custom": "自定义"
+      },
+      "connectionStatus": {
+        "connected": "已连接",
+        "reconnect_needed": "需要重新连接",
+        "disconnected": "已断开",
+        "error": "错误",
+        "pending": "等待登录"
+      },
+      "publisher": {
+        "built_in": "内置",
+        "preset": "预设",
+        "custom": "自定义"
+      },
+      "descriptions": {
+        "google_drive": "将文档、表格和 PDF 同步到知识库。",
+        "share_point": "将 SharePoint 站点和 OneDrive 中的文件同步到知识库。",
+        "confluence": "将 Confluence 空间和页面同步到知识库。",
+        "s3": "将 S3 存储桶中的文档同步到知识库。",
+        "reddit": "将符合你搜索条件的 Reddit 帖子同步到知识库。",
+        "brave": "使用 Brave Search API 搜索网页和图片。",
+        "telegram": "向 Telegram 聊天发送消息和图片。",
+        "ntfy": "通过 ntfy 服务器发送推送通知。",
+        "postgres": "读取 Postgres 数据库的结构并执行 SQL。",
+        "custom_mcp": "连接任意远程 Model Context Protocol 服务器。",
+        "custom_openapi": "导入 OpenAPI 规范，并将其端点作为工具调用。",
+        "mcp_notion": "搜索、阅读和更新 Notion 页面与数据库。",
+        "mcp_linear": "将问题和文档同步到知识库，并让智能体查找、创建和更新问题。",
+        "mcp_atlassian": "搜索和更新 Jira 问题与 Confluence 页面。",
+        "mcp_sentry": "查看 Sentry 问题、事件和发布版本。",
+        "mcp_asana": "查找和更新 Asana 任务与项目。",
+        "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
+        "github": "将仓库同步到知识库，并让智能体读取代码、Issue 和拉取请求。"
+      },
+      "empty": "尚未连接任何服务。连接一个服务以同步其内容，或为智能体提供新工具。",
+      "noMatches": "没有与搜索匹配的连接器。",
+      "loadFailed": "无法加载连接器。",
+      "askAdmin": "请让管理员完成设置。",
+      "setupSettings": "设置以下服务器配置，然后重启 DocsGPT：",
+      "setupGuide": "设置指南",
+      "unverified": "此服务器未经 DocsGPT 审核。请只连接你信任的服务器。",
+      "detail": {
+        "accounts": "账号",
+        "connectedAs": "已作为 {{account}} 连接",
+        "connectAnother": "连接其他账号",
+        "sources": "来自此连接的知识",
+        "tools": "来自此连接的工具",
+        "noAccounts": "尚未连接账号。",
+        "failed": "无法加载此连接。",
+        "lastSync": "已于 {{date}} 同步 · {{frequency}}",
+        "paused": "同步已暂停",
+        "toolOn": "开启",
+        "toolOff": "关闭",
+        "accountMenu": "账号操作",
+        "disconnect": "断开连接",
+        "keyEnding": "以 {{hint}} 结尾的密钥",
+        "syncMore": "同步更多内容",
+        "refreshTools": "刷新工具",
+        "noSources": "尚未从此连接同步任何内容。",
+        "remove": "移除",
+        "refreshed": "工具已刷新：新增 {{added}} 个，移除 {{removed}} 个。",
+        "refreshFailed": "无法刷新工具。",
+        "syncNow": "立即同步",
+        "syncStarted": "正在同步 {{name}}…",
+        "syncFailed": "无法开始同步。请重试。",
+        "toolSwitchFailed": "无法更改工具。请重试。",
+        "account": "账号：{{account}}",
+        "expired": "登录已过期。重新连接以继续使用此连接。",
+        "broken": "此连接已停止工作。重新连接以再试一次。",
+        "addTools": "添加工具",
+        "noTools": "此连接还没有工具。",
+        "addToolsFailed": "无法添加工具。请重试。",
+        "rename": "重命名",
+        "accountPicker": "选择账号"
+      },
+      "permission": {
+        "always": "允许",
+        "ask": "先询问",
+        "off": "关闭",
+        "label": "{{action}} 的权限",
+        "saveFailed": "无法保存权限。请重试。",
+        "groupLabel": "{{group}} 的全部权限",
+        "fold": "隐藏操作",
+        "hint": "“允许”和“先询问”适用于聊天：选择“先询问”时，DocsGPT 会在执行操作前询问你。通过智能体的 API、小组件或公开链接进行的更改，需在该智能体的 Access Details 中逐个智能体允许。",
+        "actionCount_other": "{{formatted}} 个操作",
+        "customize_other": "分别设置 {{formatted}} 个"
+      },
+      "disconnect": {
+        "title": "断开 {{name}}？",
+        "body_zero": "在重新连接之前，此连接的工具将无法使用。",
+        "body_other": "已同步的 {{formatted}} 项会保留在知识库中，但不再更新。此连接的工具在重新连接前无法使用。",
+        "failed": "无法断开连接。请重试。"
+      },
+      "fields": {
+        "token": "API 密钥",
+        "aws_access_key_id": "访问密钥 ID",
+        "aws_secret_access_key": "秘密访问密钥",
+        "region": "区域",
+        "endpoint_url": "自定义端点 URL",
+        "client_id": "客户端 ID",
+        "client_secret": "客户端密钥",
+        "user_agent": "User agent",
+        "bucket": "存储桶",
+        "prefix": "路径前缀",
+        "search_queries": "搜索词",
+        "number_posts": "帖子数量",
+        "telegram_token": "机器人令牌",
+        "ntfy_token": "访问令牌",
+        "postgres_token": "连接字符串",
+        "brave_token": "API 密钥",
+        "github_access_token": "个人访问令牌",
+        "repo_url": "仓库",
+        "telegram_chat_id": "默认聊天 ID"
+      },
+      "wizard": {
+        "connectTitle": "连接 {{name}}",
+        "reconnectTitle": "重新连接 {{name}}",
+        "signIn": "登录 {{name}}",
+        "chooseWhatToSync": "选择要同步的内容",
+        "skip": "暂时跳过",
+        "syncFrequency": "同步",
+        "doneTitle": "{{name}} 已连接",
+        "doneSummary": "已以 {{account}} 身份连接。{{sources}} 正在同步到知识库，{{tools}} 已就绪。",
+        "doneSummaryNone": "已作为 {{account}} 连接。",
+        "sourcesCount_other": "{{formatted}} 项",
+        "toolsCount_other": "{{formatted}} 个工具",
+        "toolsHeading": "工具（{{formatted}}）",
+        "tryInChat": "在聊天中试试",
+        "done": "完成",
+        "connectFailed": "无法连接。请检查信息后重试。",
+        "syncFailed": "无法开始同步。请重试。",
+        "connectedWithKey": "已使用以 {{hint}} 结尾的密钥连接。",
+        "doneCounts": "{{sources}} 正在同步到知识库，{{tools}} 已就绪。",
+        "doneSources": "{{sources}} 正在同步到知识库。",
+        "doneTools": "{{tools}}已就绪。",
+        "waiting": "请在打开的窗口中完成 {{name}} 登录。",
+        "openSignIn": "打开 {{name}} 登录",
+        "chooseWhatToSetUp": "选择要设置的内容",
+        "continue": "继续",
+        "methodLabel": "连接方式",
+        "methodOauth": "使用 {{name}} 登录",
+        "methodToken": "使用访问令牌",
+        "credentialsRejected": "{{name}} 未接受这些凭据。请检查后重试。",
+        "toolsUnavailable": "无法访问 {{name}} 的工具。请重试，或将其关闭以继续。",
+        "addTools": "允许智能体使用 {{name}}",
+        "addToolsDescription": {
+          "read": "智能体可以查询信息，但不能做任何更改。",
+          "readWrite": "智能体可以查询信息并进行更改。更改需要你的批准。"
+        },
+        "accountName": "为此账户命名",
+        "accountNameHint": "可选。让你和 AI 区分你的账户，例如“告警机器人”。",
+        "syncToKnowledge": "同步到知识库",
+        "syncToKnowledgeDescription": "从 {{name}} 选择要在回答中搜索的内容。关闭时仅建立连接，之后可在连接器中同步。",
+        "syncLater": "尚未同步任何内容到知识库。要添加内容，请在连接器中打开 {{name}}，然后选择“同步更多内容”。",
+        "retrievalSettings": "高级检索设置"
+      },
+      "remove": {
+        "title": "移除 {{name}}？",
+        "description": "保存的登录信息将被删除。请选择如何处理此连接提供的内容。",
+        "sourcesLabel_other": "它同步到知识库的 {{formatted}} 项",
+        "keepSources": "保留内容（停止同步）",
+        "deleteSources": "删除",
+        "toolsLabel_other": "它的 {{formatted}} 个工具",
+        "deleteTools": "删除",
+        "keepTools": "保留并关闭",
+        "failed": "无法移除此连接。请重试。"
+      },
+      "health": {
+        "reconnect": "重新连接 {{name}} 以继续同步。",
+        "reconnectSources_other": "重新连接 {{name}}：{{formatted}} 项已停止同步到知识库",
+        "reconnectTools": "请重新连接 {{name}}，让智能体可以再次使用它",
+        "reconnectBoth_other": "重新连接 {{name}}：{{formatted}} 项已停止同步，智能体也无法使用它",
+        "navDot": "有连接需要处理",
+        "signInAgain": "重新登录",
+        "pickerNotice": "{{name}} 需要你重新登录。"
+      },
+      "error": {
+        "decrypt": "无法解密保存的凭据。请重新连接以继续。",
+        "defaultKey": "管理员必须先设置 ENCRYPTION_SECRET_KEY，才能连接服务。"
+      },
+      "sharing": {
+        "owner": "所有人使用你的账号",
+        "member": "每个人连接自己的账号",
+        "ownerShort": "你的账号",
+        "memberShort": "各自的账号",
+        "ownerShortShared": "所有者的账号"
+      },
+      "share": {
+        "heading": "使用谁的账号运行",
+        "ownerWarning": "团队成员将在 {{name}} 中以 {{account}} 的身份操作。",
+        "ownerWarningShared": "团队成员将以所有者的 {{name}} 账号操作。",
+        "confirmWrite": "我了解团队成员可以使用我的账号执行操作。",
+        "confirmWriteShared": "我了解团队成员可以使用所有者的 {{name}} 账号执行操作。",
+        "memberNote": "每个人使用自己的 {{name}} 账号，并在首次使用此工具时连接。通过智能体的 API 密钥或小组件使用时，使用智能体所有者的账号。",
+        "forced": "管理员已为此连接器的所有共享设定了此项。",
+        "ownerChooses": "只有所有者可以更改此项。",
+        "saveFailed": "无法保存更改。请重试。"
+      },
+      "createFailed": "无法添加连接器。请重试。",
+      "capabilityFilter": {
+        "sync": "正在显示将内容同步到知识库的连接器。",
+        "tools": "正在显示为智能体提供工具的连接器。",
+        "showAll": "显示全部"
+      },
+      "capabilityPlain": {
+        "sync": "同步到知识库",
+        "read": "查找信息",
+        "write": "执行操作"
+      },
+      "github": {
+        "tokenHint": "为要使用的仓库创建一个细粒度令牌，并授予 Contents 和 Metadata 的读取权限。如需让智能体进行更改，还需授予 Issues 和 Pull requests 的读写权限。",
+        "writes": "也允许智能体进行更改（议题、评论、拉取请求）",
+        "writesDescription": "默认情况下，每次更改都会先征求你的同意。你的令牌或 GitHub App 需要 Issues 和 Pull requests 的读写权限。",
+        "writesForbidden": "管理员已关闭通过 GitHub 进行更改。",
+        "writesFailed": "无法更改智能体在 GitHub 上可执行的操作。",
+        "createToken": "在 GitHub 上创建令牌",
+        "chooseRepositories": "在 GitHub 上选择仓库",
+        "noAppRepositories": "DocsGPT 还看不到任何仓库。请在 GitHub 上选择允许它读取的仓库。",
+        "noTokenRepositories": "此令牌无法读取任何仓库。请在 GitHub 上为其授予访问权限，然后重新连接。",
+        "searchRepositories": "搜索仓库",
+        "repositories": "仓库",
+        "updated": "更新于 {{date}}",
+        "loadFailed": "无法加载你的仓库。"
+      },
+      "linear": {
+        "teams": "团队",
+        "teamsHint": "同步这些团队的问题。",
+        "projects": "项目",
+        "projectsHint": "同步这些项目的问题。",
+        "search": "搜索团队和项目",
+        "noMatches": "没有与搜索匹配的团队或项目。",
+        "includeComments": "包含评论",
+        "includeCommentsDescription": "将每个问题的评论一并加入。",
+        "includeDocuments": "包含项目文档",
+        "includeDocumentsDescription": "同步所选项目的 Linear 文档。",
+        "loadFailed": "无法加载你的 Linear 团队和项目。",
+        "empty": "此 Linear 账户没有可同步的团队或项目。"
+      },
+      "parameters": {
+        "show": "参数",
+        "hide": "隐藏参数",
+        "fixedCount_other": "已固定 {{formatted}} 个",
+        "ai": "由 AI 决定",
+        "fixed": "始终使用",
+        "choiceLabel": "{{parameter}} 的填写方式",
+        "valueLabel": "{{parameter}} 的值",
+        "save": "保存",
+        "saveFailed": "无法保存该值。请重试。",
+        "hint": "设为“始终使用”的值会在每次调用时发送。AI 看不到它，也无法更改。",
+        "fromAccount": "已在此账户中设置：{{value}}"
+      },
+      "fieldHints": {
+        "telegram_chat_id": "可选。消息会发送到此聊天，AI 无法选择其他聊天。将机器人加入聊天并给它发一条消息，然后在 https://api.telegram.org/bot<token>/getUpdates 中找到该聊天的 id。"
+      },
+      "rename": {
+        "title": "重命名账户",
+        "description": "此名称可让你和 AI 将此账户与同一服务的其他账户区分开。留空则显示账户本身。",
+        "label": "账户名称",
+        "save": "保存",
+        "failed": "无法重命名账户。请重试。"
+      }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "上传新文档",
+      "label": "添加知识",
       "select": "选择如何将文档上传到 DocsGPT",
-      "selectSource": "选择添加源的方式",
+      "selectSource": "添加知识",
       "selectedFiles": "已选择的文件",
       "noFilesSelected": "未选择文件",
       "file": "从设备上传",
@@ -1318,19 +1662,11 @@
       "filesRejected": "未添加（超过 25 MB 或不支持的类型）：{{files}}",
       "uploadedFiles": "已上传文件",
       "cancel": "取消",
-      "train": "训练",
+      "train": "添加到知识库",
       "create": "创建",
       "link": "链接",
       "urlLink": "URL 链接",
       "repoUrl": "存储库 URL",
-      "reddit": {
-        "id": "客户端ID",
-        "secret": "客户端密钥",
-        "agent": "用户代理",
-        "searchQueries": "搜索查询",
-        "numberOfPosts": "帖子数量",
-        "addQuery": "添加查询"
-      },
       "drag": {
         "title": "将附件拖放到此处",
         "description": "释放以上传您的附件"
@@ -1352,8 +1688,6 @@
         "clear": "清除",
         "ingestionFailed": "导入失败。"
       },
-      "showAdvanced": "显示高级选项",
-      "hideAdvanced": "隐藏高级选项",
       "ingestors": {
         "local_file": {
           "label": "上传文件",
@@ -1370,26 +1704,6 @@
         "github": {
           "label": "GitHub",
           "heading": "从GitHub添加内容"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "从Reddit添加内容"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "从Google Drive上传"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "从Amazon S3添加内容"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "从SharePoint上传"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "从Confluence上传"
         },
         "wiki": {
           "label": "新建 Wiki",
@@ -1444,13 +1758,21 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "AWS 访问密钥 ID",
-        "awsSecretAccessKey": "AWS 秘密访问密钥",
-        "bucket": "存储桶名称",
-        "prefix": "路径前缀（可选）",
-        "region": "AWS 区域",
-        "endpointUrl": "自定义端点 URL（可选）",
         "initialContent": "初始内容（可选）"
+      },
+      "github": {
+        "privateHint": "私有仓库？连接你的 GitHub 账号即可同步。",
+        "connectedHint": "私有仓库通过你的 GitHub 连接（{{account}}）同步。",
+        "connect": "连接 GitHub",
+        "pickRepository": "选择仓库"
+      },
+      "connectData": {
+        "title": "连接你的数据",
+        "description": "同步 {{services}}",
+        "more": "更多服务",
+        "intro": "选择一个服务并登录，然后选择要同步到知识库的内容。",
+        "connectedAs": "已作为 {{account}} 连接",
+        "browseAll": "浏览所有连接器"
       }
     },
     "createAPIKey": {
@@ -1487,8 +1809,8 @@
     "configTool": {
       "title": "工具配置",
       "type": "类型",
-      "apiKeyLabel": "API 密钥 / OAuth",
-      "apiKeyPlaceholder": "输入 API 密钥 / OAuth",
+      "apiKeyLabel": "API 密钥",
+      "apiKeyPlaceholder": "输入 API 密钥",
       "addButton": "添加工具",
       "closeButton": "关闭",
       "customNamePlaceholder": "Enter custom name (optional)",
@@ -1566,6 +1888,22 @@
       "learnMore": "Learn more",
       "resetKey": "重置密钥",
       "resetKeyConfirm": "确定要重置 API 密钥吗？当前密钥将立即停止工作，此操作无法撤销。",
+      "apiWrites": {
+        "title": "他人以你的身份进行的更改",
+        "description": "通过 API 密钥、小组件或智能体的公开链接，无人能替你批准操作，因此除非你在此允许，否则使用你的已连接账号和已保存凭据的更改都会被阻止。",
+        "saveFailed": "无法保存。请重试。",
+        "summaryNone": "尚未允许任何更改",
+        "summaryTools_other": "{{tools}} 可以进行更改",
+        "summaryCount": "已允许 {{formatted}} 项中的 {{allowed}} 项",
+        "toolCount": "通过 API、小组件和公开链接的更改 · 已允许 {{formatted}} 项中的 {{allowed}} 项",
+        "toolLabel": "允许 {{tool}} 通过 API、小组件和公开链接进行更改",
+        "choice": {
+          "off": "关闭",
+          "all": "全部"
+        },
+        "customize_other": "分别设置 {{formatted}} 项",
+        "fold": "隐藏更改"
+      },
       "actionFailed": "操作未成功，请重试。",
       "apiKeyAfterPublish": "发布该代理后即可创建其 API 密钥。"
     },
@@ -1659,13 +1997,17 @@
     },
     "sources": {
       "title": "来源",
-      "text": "来源文本",
+      "text": "选择知识",
       "link": "来源链接",
       "view_more": "还有{{count}}个来源",
-      "noSourcesAvailable": "没有可用的来源",
-      "selectedCount": "已选择 {{count}} 个来源",
-      "groupOwn": "我的来源",
-      "groupTeam": "团队共享"
+      "noSourcesAvailable": "还没有知识",
+      "selectedCount": "已选 {{count}} 个",
+      "groupOwn": "你的",
+      "groupTeam": "团队共享",
+      "connectMore": "连接更多",
+      "fromConnector": "来自 {{name}}",
+      "fromConnectorTitle": "来自 {{name}}：{{title}}",
+      "knowledge": "知识库"
     },
     "attachments": {
       "attach": "附件",
@@ -1706,7 +2048,9 @@
       "accessingMemory": "正在访问记忆…",
       "runningCode": "正在运行代码…",
       "creatingArtifact": "正在创建工件…",
-      "usingTool": "正在使用 {{tool}}…"
+      "usingTool": "正在使用 {{tool}}…",
+      "searchingConnector": "正在搜索 {{name}}...",
+      "usingConnector": "正在使用 {{name}}..."
     },
     "toolChip": {
       "searchingWeb": "已搜索网络 · “{{query}}”",
@@ -1717,7 +2061,10 @@
       "accessingMemory": "已访问记忆",
       "runningCode": "已运行代码",
       "creatingArtifact": "已创建工件",
-      "usingTool": "已使用 {{tool}}"
+      "usingTool": "已使用 {{tool}}",
+      "searchedConnector": "已搜索 {{name}}",
+      "readConnector": "已从 {{name}} 读取",
+      "usedConnector": "已使用 {{name}}：{{action}}"
     },
     "inlineSteps": {
       "arguments": "参数",
@@ -1767,7 +2114,12 @@
       "approveAlways": "批准，不再询问",
       "deny": "拒绝",
       "details": "详情",
-      "denyReasonPlaceholder": "拒绝原因（可选）…"
+      "denyReasonPlaceholder": "拒绝原因（可选）…",
+      "connectTitle": "此工具需要你的 {{name}} 账号。",
+      "connect": "连接 {{name}}",
+      "continue": "继续",
+      "skip": "跳过",
+      "thisService": "此服务"
     },
     "research": {
       "title": "研究",
@@ -1782,7 +2134,6 @@
   "agents": {
     "title": "代理",
     "edit": "编辑",
-    "view": "查看",
     "card": {
       "pin": "固定代理",
       "unpin": "取消固定代理",
@@ -1876,7 +2227,7 @@
       "placeholders": {
         "agentName": "代理名称",
         "describeAgent": "描述您的代理",
-        "selectSources": "选择来源",
+        "selectSources": "选择知识",
         "chunksPerQuery": "每次查询的块数",
         "selectType": "选择类型",
         "selectTools": "选择工具",
@@ -1886,20 +2237,23 @@
         "enterRequestLimit": "输入请求限制"
       },
       "sourcePopup": {
-        "title": "选择来源",
-        "searchPlaceholder": "搜索来源...",
-        "noOptionsMessage": "没有可用的来源",
+        "title": "选择知识",
+        "searchPlaceholder": "搜索知识...",
+        "noOptionsMessage": "还没有知识",
         "groupOwn": "我的来源",
         "groupTeam": "团队共享",
-        "noSourceHint": "可选。未选择来源时，智能体仅根据模型和工具作答。"
+        "noSourceHint": "可选。没有知识时，智能体只用模型和它的工具回答。"
       },
       "toolsPopup": {
         "title": "选择工具",
         "searchPlaceholder": "搜索工具...",
         "noOptionsMessage": "没有可用的工具",
         "groupBuiltin": "内置",
-        "groupDefault": "默认",
-        "groupCustom": "自定义"
+        "groupDefault": "内置",
+        "groupCustom": "自定义",
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "已在此智能体上",
+        "attachedHint": "由其他人添加。你可以将其移除。"
       },
       "modelsPopup": {
         "title": "选择模型",
@@ -1919,7 +2273,7 @@
         "defaultModel": "默认模型",
         "name": "名称",
         "description": "描述",
-        "sources": "来源",
+        "sources": "知识库",
         "avatar": "头像"
       },
       "advanced": {
@@ -2007,11 +2361,69 @@
         "published": "已发布"
       },
       "sponsors": {
-        "attachNote": "你从自己的资料库添加的工具、来源和提示词，会以你的访问权限为所有使用此智能体的人运行。",
+        "attachNote": "你添加的、所有者无法使用的工具、来源和提示词，会以你的访问权限为所有使用此智能体的人运行。你必须拥有它们或能够编辑它们，并且需要确认。",
         "publicLinkNote": "此智能体有公开链接，任何拥有该链接的人都可以从中获得回答。",
         "addedBy": "由 {{person}} 添加：{{names}}",
-        "unavailable": "未运行：{{names}}。添加它们的 {{person}} 已失去访问权限。请移除它们，或选择所有者可以使用的项目。",
-        "unknownItem": "未命名项目"
+        "addedByOther": "由其他人添加：{{names}}",
+        "unknownItem": "未命名项目",
+        "notAllowed": "无法将 {{names}} 添加到此智能体。所有者无法使用它们，而你只能共享自己拥有或可以编辑的项目。",
+        "takeOver": "以我的访问权限运行 {{name}}",
+        "takeOverPending": "保存后，{{name}} 将以你的访问权限运行。",
+        "undoTakeOver": "撤销",
+        "confirmationOutdated": "在你确认以你的访问权限运行的内容之后，此智能体已更改。请查看提示并重新保存。"
+      },
+      "resourceStates": {
+        "title": "部分工具、来源或提示词未在运行",
+        "reason": {
+          "deleted": "{{name}} 已被删除。",
+          "ownerLostAccessYou": "你已无法使用 {{name}}。",
+          "ownerLostAccess": "智能体的所有者已无法使用 {{name}}。",
+          "sponsorCannotEditAgent": "{{name}} 此前以 {{person}} 的访问权限运行，而其已无法编辑此智能体。",
+          "sponsorCannotEditAgentOther": "{{name}} 此前以其他人的访问权限运行，而其已无法编辑此智能体。",
+          "sponsorCannotEditItem": "{{name}} 此前以 {{person}} 的访问权限运行，而其已无法编辑它。",
+          "sponsorCannotEditItemOther": "{{name}} 此前以其他人的访问权限运行，而其已无法编辑它。",
+          "connectionNeedsReconnect": "{{name}} 的 {{service}} 账户需要重新登录。",
+          "connectionRemoved": "{{name}} 使用的 {{service}} 账户已被移除。",
+          "connectorDisabled": "管理员已关闭 {{service}}，因此 {{name}} 无法运行。",
+          "unknown": "{{name}} 未在运行。"
+        },
+        "ask": {
+          "shareAgain": "请让 {{person}} 重新共享。",
+          "signInAgain": "请让 {{person}} 重新登录。",
+          "connectAgain": "请让 {{person}} 重新连接该账户。",
+          "admin": "请让管理员重新开启。",
+          "shareAgainOwner": "请让其所有者重新共享。",
+          "signInAgainOwner": "请让其所有者重新登录。",
+          "connectAgainOwner": "请让其所有者重新连接该账户。"
+        },
+        "promptFallback": "在此之前，智能体使用默认提示词。",
+        "serviceFallback": "该服务",
+        "remove": "移除",
+        "removeLabel": "移除 {{name}}",
+        "reconnectLabel": "重新连接 {{name}}",
+        "unnamed": {
+          "tool": "工具 {{id}}",
+          "source": "来源 {{id}}",
+          "prompt": "提示词 {{id}}"
+        },
+        "chip": "未在运行：{{count}}"
+      },
+      "sponsorConfirm": {
+        "title": "以你的访问权限运行？",
+        "description": "智能体的所有者无法使用这些项目。如果添加它们，它们会以你的访问权限为所有使用此智能体的人运行。",
+        "audienceTitle": "谁可以通过此智能体使用它们",
+        "audienceTeams": "{{teams}} 的成员",
+        "audienceApiKey": "任何拥有此智能体 API 密钥的人，包括其网站小组件",
+        "audiencePublicLink": "任何拥有此智能体公开链接的人",
+        "audienceWebhook": "任何调用此智能体 Webhook 的程序",
+        "audienceEditors": "所有可以打开此智能体的人",
+        "stopNote": "如果你失去对它们或此智能体的编辑权限，它们将停止运行。之后它们仍附加在智能体上但不起作用，直到有编辑权限的人接管它们或将其移除。",
+        "confirm": "以我的访问权限添加",
+        "types": {
+          "tool": "工具",
+          "source": "来源",
+          "prompt": "提示词"
+        }
       }
     },
     "logs": {
@@ -2303,7 +2715,7 @@
         "outputVariable": "输出变量",
         "outputVariablePlaceholder": "输出的变量名",
         "streamToUser": "将输出流式传输给用户",
-        "sources": "来源",
+        "sources": "知识库",
         "documents": "文档",
         "documentsHint": "从上传或上游节点传给此智能体的文档。",
         "filePassing": "文件传递",
@@ -2342,7 +2754,8 @@
         "detailsTitle": "工作流详情",
         "detailsDescription": "显示在代理卡片上的名称、描述和图片。",
         "unsavedChanges": "未保存的更改",
-        "editDetailsMenu": "编辑详情"
+        "editDetailsMenu": "编辑详情",
+        "attachedOption": "{{name}}（由其他人添加）"
       },
       "validation": {
         "nameRequired": "工作流名称为必填项",
@@ -2448,6 +2861,7 @@
       "workflowTitle": "工作流智能体",
       "workflowDescription": "设计包含不同模型、条件逻辑和状态管理的复杂多步骤工作流"
     },
+    "view": "查看",
     "deleteFailed": "无法删除该代理，请重试。"
   },
   "components": {
@@ -2473,9 +2887,9 @@
         "empty": "暂无待办事项"
       },
       "note": {
-        "lines_one": "{{count}} 行",
         "lines_other": "{{count}} 行",
-        "empty": "空笔记"
+        "empty": "空笔记",
+        "lines_one": "{{count}} 行"
       },
       "notFound": "未找到工件",
       "loadFailed": "无法加载工件",
@@ -2516,7 +2930,8 @@
     "shared": "共享",
     "connectTo": "连接到 {{provider}}",
     "sessionExpiredFor": "会话已过期。请重新连接到 {{provider}}。",
-    "selectFilesFrom": "从 {{provider}} 选择文件"
+    "selectFilesFrom": "从 {{provider}} 选择文件",
+    "account": "账号"
   },
   "actionButtons": {
     "openNewChat": "打开新聊天",
@@ -2574,5 +2989,15 @@
   },
   "prompts": {
     "textAriaLabel": "提示文本"
+  },
+  "connectHero": {
+    "title": "连接你的数据",
+    "body": "与 {{names}} 等进行对话。"
+  },
+  "common": {
+    "close": "关闭",
+    "viewOnlyNotice": "你可以查看此内容，但你的角色无法更改它。",
+    "credentialsLockedNotice": "只有所有者可以更改此工具的凭据。",
+    "savedSecretHint": "已保存。留空即可保留。"
   }
 }

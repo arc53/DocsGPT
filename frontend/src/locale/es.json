@@ -10,12 +10,6 @@
   "loading": "Cargando...",
   "retry": "Reintentar",
   "cancel": "Cancelar",
-  "common": {
-    "close": "Cerrar",
-    "viewOnlyNotice": "Puedes ver esto, pero tu rol no puede cambiarlo.",
-    "credentialsLockedNotice": "Solo el propietario puede cambiar las credenciales de esta herramienta.",
-    "savedSecretHint": "Guardado. Déjalo vacío para conservarlo."
-  },
   "help": "Asistencia",
   "emailUs": "Envíanos un correo",
   "documentation": "Documentación",
@@ -106,16 +100,16 @@
     },
     "sources": {
       "title": "Aquí puedes gestionar todos los archivos fuente que están disponibles para ti y los que has subido.",
-      "subtitle": "Sube y gestiona los documentos y fuentes de conocimiento que impulsan tus respuestas",
-      "label": "Fuentes",
+      "subtitle": "Contenido que DocsGPT puede buscar y citar: archivos subidos, sitios web, wikis y contenido sincronizado desde tus conexiones.",
+      "label": "Conocimiento",
       "name": "Nombre de la Fuente",
       "date": "Fecha de Vector",
       "type": "Tipo",
       "tokenUsage": "Uso de Tokens",
-      "noData": "No hay fuentes existentes",
+      "noData": "Aún no hay conocimiento",
       "searchPlaceholder": "Buscar...",
       "addNew": "Agregar Nuevo",
-      "addSource": "Agregar Fuente",
+      "addSource": "Añadir conocimiento",
       "addChunk": "Agregar Fragmento",
       "preLoaded": "Precargado",
       "private": "Privado",
@@ -185,7 +179,17 @@
         "pagesTitle": "Páginas",
         "loadFailed": "No se pudieron cargar las páginas del wiki.",
         "pageLoadFailed": "No se pudo cargar esta página.",
-        "editTitle": "Editar página"
+        "editTitle": "Editar página",
+        "settings": {
+          "action": "Configuración del wiki",
+          "title": "Configuración del wiki",
+          "outsideEdits": {
+            "label": "Permitir que los usuarios de la API y del widget editen este wiki",
+            "description": "Si está desactivado, quienes usan un agente mediante su clave de API o su widget pueden leer este wiki, pero no cambiarlo. Los visitantes de un enlace público solo pueden editar los wikis que ellos mismos pueden editar, y se les pregunta antes de cada cambio. Tú y los editores del wiki siempre pueden editarlo."
+          },
+          "loadError": "No se pudo cargar la configuración del wiki.",
+          "saveError": "No se pudo guardar el cambio. Inténtalo de nuevo."
+        }
       },
       "graphrag": {
         "badge": "GraphRAG",
@@ -303,7 +307,7 @@
       "chunks": "Fragmentos",
       "noChunks": "No se encontraron fragmentos",
       "noChunksAlt": "No se encontraron fragmentos",
-      "goToSources": "Ir a Fuentes",
+      "goToSources": "Ir a Conocimiento",
       "uploadNew": "Subir nuevo",
       "noResults": "No se encontraron resultados",
       "fileName": "Nombre",
@@ -446,6 +450,9 @@
       "editChunkDescription": "{{file}} · fragmento {{n}} · {{tokens}} tokens",
       "previousChunk": "Fragmento anterior",
       "nextChunk": "Fragmento siguiente",
+      "paused": "Sincronización en pausa. Reconecta {{name}} para reanudarla.",
+      "emptyHint": "Sube archivos, añade un sitio web o conecta un servicio para sincronizar su contenido.",
+      "connectService": "Conectar un servicio",
       "viewConfig": "Ver ajustes de la fuente",
       "errors": {
         "forbidden": "No tienes permiso para hacer eso en esta fuente.",
@@ -676,10 +683,6 @@
       "createTeamError": "No se pudo crear el equipo.",
       "noTeams": "Aún no hay equipos.",
       "noDescription": "Sin descripción",
-      "memberCount_one": "{{formatted}} miembro",
-      "memberCount_other": "{{formatted}} miembros",
-      "sharedCount_one": "{{formatted}} compartido",
-      "sharedCount_other": "{{formatted}} compartidos",
       "loadError": "No se pudieron cargar los equipos.",
       "roleAdmin": "admin",
       "roleMember": "miembro",
@@ -759,8 +762,46 @@
           "teams": "Equipos",
           "people": "Personas",
           "editors": "Editores"
+        },
+        "uses": {
+          "title": "Qué usa este agente",
+          "intro": "Todos los que usan este agente reciben estos elementos, cada uno con el acceso indicado.",
+          "stopped": "Detenido",
+          "writesOff": "No por API",
+          "writesNote": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API, el widget y el enlace público hasta que los permitas en Access Details.",
+          "writesNoteEditor": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API, el widget y el enlace público hasta que el propietario los permita en Access Details.",
+          "access": {
+            "you": "Tu acceso",
+            "person": "Acceso de {{person}}",
+            "other": "Acceso de otra persona",
+            "owner": "Acceso del propietario",
+            "member": "La propia cuenta de {{service}} de cada persona (API y widget: la tuya)",
+            "memberNoService": "La propia cuenta de cada persona (API y widget: la tuya)",
+            "yourAccount": "Tu cuenta de {{service}}",
+            "yourAccountNoService": "Tu cuenta",
+            "personAccount": "Cuenta de {{service}} de {{person}}",
+            "personAccountNoService": "Cuenta de {{person}}",
+            "memberShared": "La propia cuenta de {{service}} de cada persona (API y widget: la del propietario)",
+            "memberSharedNoService": "La propia cuenta de cada persona (API y widget: la del propietario)",
+            "otherAccount": "Cuenta de {{service}} de otra persona",
+            "otherAccountNoService": "Cuenta de otra persona",
+            "yourCredentials": "Tus credenciales guardadas",
+            "personCredentials": "Credenciales guardadas de {{person}}",
+            "otherCredentials": "Credenciales guardadas de otra persona"
+          },
+          "writesSomeOff": "No todo por API",
+          "adminOff": "Cambios desactivados por un administrador",
+          "writesNoteApi": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API y el widget hasta que los permitas en Access Details.",
+          "writesNoteApiEditor": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API y el widget hasta que el propietario los permita en Access Details.",
+          "writesNoteMemberTail": "En las herramientas donde cada persona usa su propia cuenta, los usuarios del enlace público hacen cambios con su propia cuenta.",
+          "openAccessDetails": "Abrir Access Details",
+          "accessDetailsNeedsKey": "Access Details muestra estos cambios cuando el agente tiene una clave de API."
         }
       },
+      "memberCount_one": "{{formatted}} miembro",
+      "memberCount_other": "{{formatted}} miembros",
+      "sharedCount_one": "{{formatted}} compartido",
+      "sharedCount_other": "{{formatted}} compartidos",
       "accessChangeError": "No se pudo cambiar el acceso.",
       "accessSettings": {
         "title": "Ajustes de acceso",
@@ -808,7 +849,8 @@
           },
           "viewers_can_use_in_agents": {
             "label": "Los lectores pueden usarla en sus propios agentes",
-            "description": "Se ejecuta con tus credenciales."
+            "description": "Se ejecuta con tus credenciales.",
+            "descriptionMember": "Cada persona usa su propia cuenta."
           }
         },
         "prompt": {
@@ -930,11 +972,11 @@
     },
     "tools": {
       "label": "Herramientas",
-      "subtitle": "Explora, conecta y configura las herramientas e integraciones que impulsan a tus agentes",
+      "subtitle": "Acciones que pueden realizar tus agentes. Aquí están las herramientas integradas. Las herramientas de un servicio conectado se agrupan bajo ese servicio.",
       "searchPlaceholder": "Buscar...",
       "addTool": "Agregar Herramienta",
       "noToolsFound": "No se encontraron herramientas",
-      "selectToolSetup": "Seleccione una herramienta para configurar",
+      "selectToolSetup": "Añadir una herramienta",
       "settingsIconAlt": "Icono de configuración",
       "configureToolAria": "Configurar {{toolName}}",
       "toggleToolAria": "Alternar {{toolName}}",
@@ -946,8 +988,8 @@
       "builtIn": "Integrada",
       "authStatus": {
         "connected": "Conectado",
-        "needsAuth": "Requiere autenticación",
-        "configured": "Configurado"
+        "needsAuth": "Reconectar",
+        "configured": "Conectado"
       },
       "deleteWarning": "¿Estás seguro de que deseas eliminar la herramienta \"{{toolName}}\"?",
       "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
@@ -1063,6 +1105,11 @@
       },
       "headerValuePlaceholder": "p. ej., application/json",
       "toolIconTitle": "Icono de {{name}}",
+      "groupBuiltIn": "Integradas",
+      "groupService": "De un servicio",
+      "browseConnectors": "Ver todos los conectores",
+      "viaConnection": "mediante {{name}}",
+      "off": "Desactivada",
       "view": "Ver",
       "inMyChats": "En mis chats",
       "useInMyChatsAria": "Usar {{toolName}} en mis chats",
@@ -1298,13 +1345,320 @@
           "subtitle": "El nuevo secreto de \"{{name}}\" está listo. El anterior ya no funciona."
         }
       }
+    },
+    "connectors": {
+      "label": "Conectores",
+      "subtitle": "Conecta DocsGPT a los servicios que usa tu equipo. Una conexión puede sincronizar contenido en Conocimiento y dar herramientas a los agentes.",
+      "search": "Buscar conectores...",
+      "addCustom": "Añadir herramienta propia",
+      "custom": {
+        "custom_mcp": "Servidor MCP",
+        "custom_openapi": "OpenAPI / REST"
+      },
+      "categoriesLabel": "Filtrar conectores por categoría",
+      "categories": {
+        "all": "Todos",
+        "connected": "Conectados",
+        "files": "Archivos y almacenamiento",
+        "knowledge": "Documentos y wikis",
+        "dev": "Herramientas de desarrollo",
+        "messaging": "Mensajería",
+        "database": "Bases de datos",
+        "search": "Búsqueda y web",
+        "custom": "Personalizados",
+        "projects": "Proyectos e incidencias",
+        "business": "Pagos y negocio"
+      },
+      "capability": {
+        "sync": "Sincronizar",
+        "read": "Leer",
+        "write": "Escribir"
+      },
+      "status": {
+        "connect": "Conectar",
+        "connected": "Conectado",
+        "connectedCount": "{{formatted}} conectadas",
+        "reconnect": "Reconectar",
+        "needsAdminSetup": "Requiere configuración del administrador",
+        "disabledByAdmin": "Desactivado por el administrador",
+        "custom": "Personalizado"
+      },
+      "connectionStatus": {
+        "connected": "Conectado",
+        "reconnect_needed": "Hay que reconectar",
+        "disconnected": "Desconectado",
+        "error": "Error",
+        "pending": "Esperando el inicio de sesión"
+      },
+      "publisher": {
+        "built_in": "Integrado",
+        "preset": "Predefinido",
+        "custom": "Personalizado"
+      },
+      "descriptions": {
+        "google_drive": "Sincroniza Docs, Hojas de cálculo y PDF en Conocimiento.",
+        "share_point": "Sincroniza archivos de sitios de SharePoint y OneDrive en Conocimiento.",
+        "confluence": "Sincroniza espacios y páginas de Confluence en Conocimiento.",
+        "s3": "Sincroniza documentos de un bucket de S3 en Conocimiento.",
+        "reddit": "Sincroniza publicaciones de Reddit que coinciden con tus búsquedas en Conocimiento.",
+        "brave": "Busca en la web e imágenes con la API de Brave Search.",
+        "telegram": "Envía mensajes e imágenes a un chat de Telegram.",
+        "ntfy": "Envía notificaciones push mediante un servidor ntfy.",
+        "postgres": "Lee el esquema y ejecuta SQL en una base de datos Postgres.",
+        "custom_mcp": "Conecta cualquier servidor remoto de Model Context Protocol.",
+        "custom_openapi": "Importa una especificación OpenAPI y usa sus endpoints como herramientas.",
+        "mcp_notion": "Busca, lee y actualiza páginas y bases de datos de Notion.",
+        "mcp_linear": "Sincroniza incidencias y documentos con Conocimiento y deja que los agentes busquen, creen y actualicen incidencias.",
+        "mcp_atlassian": "Busca y actualiza incidencias de Jira y páginas de Confluence.",
+        "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
+        "mcp_asana": "Encuentra y actualiza tareas y proyectos de Asana.",
+        "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
+        "github": "Sincroniza repositorios con Conocimiento y deja que los agentes lean código, issues y pull requests."
+      },
+      "empty": "Aún no hay nada conectado. Conecta un servicio para sincronizar su contenido o dar nuevas herramientas a los agentes.",
+      "noMatches": "Ningún conector coincide con tu búsqueda.",
+      "loadFailed": "No se pudieron cargar los conectores.",
+      "askAdmin": "Pide a un administrador que lo configure.",
+      "setupSettings": "Define estos ajustes del servidor y reinicia DocsGPT:",
+      "setupGuide": "Guía de configuración",
+      "unverified": "DocsGPT no ha revisado este servidor. Conecta solo servidores de confianza.",
+      "detail": {
+        "accounts": "Cuentas",
+        "connectedAs": "Conectado como {{account}}",
+        "connectAnother": "Conectar otra cuenta",
+        "sources": "Conocimiento de esta conexión",
+        "tools": "Herramientas de esta conexión",
+        "noAccounts": "Aún no hay ninguna cuenta conectada.",
+        "failed": "No se pudo cargar esta conexión.",
+        "lastSync": "Sincronizado {{date}} · {{frequency}}",
+        "paused": "Sincronización en pausa",
+        "toolOn": "Activada",
+        "toolOff": "Desactivada",
+        "accountMenu": "Acciones de la cuenta",
+        "disconnect": "Desconectar",
+        "keyEnding": "Clave que termina en {{hint}}",
+        "syncMore": "Sincronizar más contenido",
+        "refreshTools": "Actualizar herramientas",
+        "noSources": "Aún no se ha sincronizado nada desde esta conexión.",
+        "remove": "Eliminar",
+        "refreshed": "Herramientas actualizadas: {{added}} añadidas, {{removed}} eliminadas.",
+        "refreshFailed": "No se pudieron actualizar las herramientas.",
+        "syncNow": "Sincronizar ahora",
+        "syncStarted": "Sincronizando {{name}}…",
+        "syncFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo.",
+        "toolSwitchFailed": "No se pudo cambiar la herramienta. Inténtalo de nuevo.",
+        "account": "Cuenta: {{account}}",
+        "expired": "El inicio de sesión caducó. Reconecta para seguir usando esta conexión.",
+        "broken": "Esta conexión dejó de funcionar. Reconecta para intentarlo de nuevo.",
+        "addTools": "Añadir herramientas",
+        "noTools": "Todavía no hay herramientas de esta conexión.",
+        "addToolsFailed": "No se pudieron añadir las herramientas. Inténtalo de nuevo.",
+        "rename": "Cambiar nombre",
+        "accountPicker": "Elegir una cuenta"
+      },
+      "permission": {
+        "always": "Permitir",
+        "ask": "Preguntar antes",
+        "off": "Desactivado",
+        "label": "Permiso para {{action}}",
+        "saveFailed": "No se pudo guardar el permiso. Inténtalo de nuevo.",
+        "groupLabel": "Permiso para todo en {{group}}",
+        "fold": "Ocultar acciones",
+        "hint": "«Permitir» y «Preguntar antes» se aplican en el chat; con «Preguntar antes», DocsGPT te pregunta antes de ejecutar la acción. Los cambios por la API, el widget o el enlace público de un agente se permiten por agente, en su Access Details.",
+        "actionCount_one": "{{formatted}} acción",
+        "actionCount_other": "{{formatted}} acciones",
+        "customize_one": "Ajustar la acción",
+        "customize_other": "Ajustar cada una de {{formatted}}"
+      },
+      "disconnect": {
+        "title": "¿Desconectar {{name}}?",
+        "body_zero": "Las herramientas de esta conexión dejarán de funcionar hasta que vuelvas a conectarla.",
+        "body_one": "El elemento que sincronizó sigue en Conocimiento, pero deja de actualizarse. Las herramientas de esta conexión dejan de funcionar hasta que reconectes.",
+        "body_other": "Los {{formatted}} elementos que sincronizó siguen en Conocimiento, pero dejan de actualizarse. Las herramientas de esta conexión dejan de funcionar hasta que reconectes.",
+        "failed": "No se pudo desconectar. Inténtalo de nuevo."
+      },
+      "fields": {
+        "token": "Clave de API",
+        "aws_access_key_id": "ID de clave de acceso",
+        "aws_secret_access_key": "Clave de acceso secreta",
+        "region": "Región",
+        "endpoint_url": "URL de endpoint personalizada",
+        "client_id": "ID de cliente",
+        "client_secret": "Secreto de cliente",
+        "user_agent": "User agent",
+        "bucket": "Bucket",
+        "prefix": "Prefijo de ruta",
+        "search_queries": "Consultas de búsqueda",
+        "number_posts": "Número de publicaciones",
+        "telegram_token": "Token del bot",
+        "ntfy_token": "Token de acceso",
+        "postgres_token": "Cadena de conexión",
+        "brave_token": "Clave de API",
+        "github_access_token": "Token de acceso personal",
+        "repo_url": "Repositorio",
+        "telegram_chat_id": "ID del chat predeterminado"
+      },
+      "wizard": {
+        "connectTitle": "Conectar {{name}}",
+        "reconnectTitle": "Reconectar {{name}}",
+        "signIn": "Iniciar sesión en {{name}}",
+        "chooseWhatToSync": "Elige qué sincronizar",
+        "skip": "Omitir por ahora",
+        "syncFrequency": "Sincronizar",
+        "doneTitle": "{{name}} está conectado",
+        "doneSummary": "Conectado como {{account}}. {{sources}} sincronizándose en Conocimiento, {{tools}} listas.",
+        "doneSummaryNone": "Conectado como {{account}}.",
+        "sourcesCount_one": "{{formatted}} elemento",
+        "sourcesCount_other": "{{formatted}} elementos",
+        "toolsCount_one": "{{formatted}} herramienta",
+        "toolsCount_other": "{{formatted}} herramientas",
+        "toolsHeading": "Herramientas ({{formatted}})",
+        "tryInChat": "Probar en el chat",
+        "done": "Listo",
+        "connectFailed": "No se pudo conectar. Revisa los datos e inténtalo de nuevo.",
+        "syncFailed": "No se pudo iniciar la sincronización. Inténtalo de nuevo.",
+        "connectedWithKey": "Conectado con la clave que termina en {{hint}}.",
+        "doneCounts": "{{sources}} sincronizándose en Conocimiento, {{tools}} listas.",
+        "doneSources": "{{sources}} sincronizándose en Conocimiento.",
+        "doneTools": "{{tools}} listas.",
+        "waiting": "Termina de iniciar sesión en {{name}} en la ventana que se abrió.",
+        "openSignIn": "Abrir el inicio de sesión de {{name}}",
+        "chooseWhatToSetUp": "Elige qué configurar",
+        "continue": "Continuar",
+        "methodLabel": "Cómo conectar",
+        "methodOauth": "Iniciar sesión con {{name}}",
+        "methodToken": "Usar un token de acceso",
+        "credentialsRejected": "{{name}} no aceptó estas credenciales. Revísalas e inténtalo de nuevo.",
+        "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo o desactívalas para continuar.",
+        "addTools": "Permitir que los agentes usen {{name}}",
+        "addToolsDescription": {
+          "read": "Los agentes pueden consultar información. No pueden cambiar nada.",
+          "readWrite": "Los agentes pueden consultar información y hacer cambios. Los cambios necesitan tu aprobación."
+        },
+        "accountName": "Nombre de esta cuenta",
+        "accountNameHint": "Opcional. Distingue tus cuentas, para ti y para la IA; por ejemplo, Bot de alertas.",
+        "syncToKnowledge": "Sincronizar en Conocimiento",
+        "syncToKnowledgeDescription": "Elige contenido de {{name}} para que las respuestas lo busquen. Desactivado, solo se conecta; puedes sincronizar más tarde desde Conectores.",
+        "syncLater": "Aún no se sincroniza nada en Conocimiento. Para añadir contenido, abre {{name}} en Conectores y elige Sincronizar más contenido.",
+        "retrievalSettings": "Configuración avanzada de recuperación"
+      },
+      "remove": {
+        "title": "¿Eliminar {{name}}?",
+        "description": "Se borra el inicio de sesión guardado. Elige qué pasa con lo que alimenta esta conexión.",
+        "sourcesLabel_one": "El elemento que sincronizó en Conocimiento",
+        "sourcesLabel_other": "Los {{formatted}} elementos que sincronizó en Conocimiento",
+        "keepSources": "Conservar el contenido (dejar de sincronizar)",
+        "deleteSources": "Eliminar",
+        "toolsLabel_one": "Su herramienta",
+        "toolsLabel_other": "Sus {{formatted}} herramientas",
+        "deleteTools": "Eliminar",
+        "keepTools": "Conservar, desactivadas",
+        "failed": "No se pudo eliminar la conexión. Inténtalo de nuevo."
+      },
+      "health": {
+        "reconnect": "Reconecta {{name}} para seguir sincronizando.",
+        "reconnectSources_one": "Reconecta {{name}}: {{formatted}} elemento dejó de sincronizarse en Conocimiento",
+        "reconnectSources_other": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse en Conocimiento",
+        "reconnectTools": "Vuelve a conectar {{name}} para que los agentes puedan usarlo de nuevo",
+        "reconnectBoth_one": "Reconecta {{name}}: {{formatted}} elemento dejó de sincronizarse y los agentes no pueden usarlo",
+        "reconnectBoth_other": "Reconecta {{name}}: {{formatted}} elementos dejaron de sincronizarse y los agentes no pueden usarlo",
+        "navDot": "Una conexión necesita atención",
+        "signInAgain": "Vuelve a iniciar sesión",
+        "pickerNotice": "{{name}} necesita que vuelvas a iniciar sesión."
+      },
+      "error": {
+        "decrypt": "No se pudieron descifrar las credenciales guardadas. Reconecta para continuar.",
+        "defaultKey": "Un administrador debe definir ENCRYPTION_SECRET_KEY antes de poder conectar servicios."
+      },
+      "sharing": {
+        "owner": "Todos usan tu cuenta",
+        "member": "Cada persona conecta su propia cuenta",
+        "ownerShort": "Tu cuenta",
+        "memberShort": "La de cada persona",
+        "ownerShortShared": "La cuenta del propietario"
+      },
+      "share": {
+        "heading": "Con qué cuenta se ejecuta",
+        "ownerWarning": "Los miembros del equipo actuarán como {{account}} en {{name}}.",
+        "ownerWarningShared": "Los miembros del equipo actuarán con la cuenta de {{name}} del propietario.",
+        "confirmWrite": "Entiendo que los miembros del equipo pueden realizar acciones con mi cuenta.",
+        "confirmWriteShared": "Entiendo que los miembros del equipo pueden realizar acciones con la cuenta de {{name}} del propietario.",
+        "memberNote": "Cada persona usa su propia cuenta de {{name}} y la conecta la primera vez que usa esta herramienta. A través de la clave de API o el widget de un agente, se usa la cuenta del propietario del agente.",
+        "forced": "Un administrador eligió esto para todos los recursos compartidos de este conector.",
+        "ownerChooses": "Solo el propietario puede cambiar esto.",
+        "saveFailed": "No se pudo guardar el cambio. Inténtalo de nuevo."
+      },
+      "createFailed": "No se pudo añadir el conector. Inténtalo de nuevo.",
+      "capabilityFilter": {
+        "sync": "Se muestran los conectores que sincronizan contenido en Conocimiento.",
+        "tools": "Se muestran los conectores que dan herramientas a los agentes.",
+        "showAll": "Mostrar todos"
+      },
+      "capabilityPlain": {
+        "sync": "Sincroniza en Conocimiento",
+        "read": "Consulta datos",
+        "write": "Realiza acciones"
+      },
+      "github": {
+        "tokenHint": "Crea un token detallado con acceso de lectura a Contents y Metadata en los repositorios que quieras usar. Para que los agentes hagan cambios, dale también acceso de lectura y escritura a Issues y Pull requests.",
+        "writes": "Permitir también que los agentes hagan cambios (issues, comentarios, pull requests)",
+        "writesDescription": "Por defecto, cada cambio te pide aprobación primero. Tu token, o la GitHub App, necesita acceso de lectura y escritura a Issues y Pull requests.",
+        "writesForbidden": "Un administrador desactivó los cambios a través de GitHub.",
+        "writesFailed": "No se pudo cambiar lo que los agentes pueden hacer en GitHub.",
+        "createToken": "Crear un token en GitHub",
+        "chooseRepositories": "Elegir repositorios en GitHub",
+        "noAppRepositories": "DocsGPT aún no ve ningún repositorio. Elige en GitHub cuáles puede leer.",
+        "noTokenRepositories": "Este token no puede leer ningún repositorio. Dale acceso en GitHub y vuelve a conectar.",
+        "searchRepositories": "Buscar repositorios",
+        "repositories": "Repositorios",
+        "updated": "Actualizado {{date}}",
+        "loadFailed": "No se pudieron cargar tus repositorios."
+      },
+      "linear": {
+        "teams": "Equipos",
+        "teamsHint": "Sincroniza las incidencias de estos equipos.",
+        "projects": "Proyectos",
+        "projectsHint": "Sincroniza las incidencias de estos proyectos.",
+        "search": "Buscar equipos y proyectos",
+        "noMatches": "Ningún equipo ni proyecto coincide con tu búsqueda.",
+        "includeComments": "Incluir comentarios",
+        "includeCommentsDescription": "Añade a cada incidencia sus comentarios.",
+        "includeDocuments": "Incluir documentos de proyecto",
+        "includeDocumentsDescription": "Sincroniza los documentos de Linear de los proyectos que elijas.",
+        "loadFailed": "No se pudieron cargar tus equipos y proyectos de Linear.",
+        "empty": "Esta cuenta de Linear no tiene equipos ni proyectos que sincronizar."
+      },
+      "parameters": {
+        "show": "Parámetros",
+        "hide": "Ocultar parámetros",
+        "fixedCount_one": "{{formatted}} fijo",
+        "fixedCount_other": "{{formatted}} fijos",
+        "ai": "Que decida la IA",
+        "fixed": "Usar siempre",
+        "choiceLabel": "Cómo se rellena {{parameter}}",
+        "valueLabel": "Valor de {{parameter}}",
+        "save": "Guardar",
+        "saveFailed": "No se pudo guardar el valor. Inténtalo de nuevo.",
+        "hint": "Un valor con «Usar siempre» se envía en cada llamada. La IA nunca lo ve ni puede cambiarlo.",
+        "fromAccount": "Definido en esta cuenta: {{value}}"
+      },
+      "fieldHints": {
+        "telegram_chat_id": "Opcional. Los mensajes van a este chat y la IA no puede elegir otro. Añade el bot al chat, envíale un mensaje y busca el id del chat en https://api.telegram.org/bot<token>/getUpdates."
+      },
+      "rename": {
+        "title": "Cambiar el nombre de la cuenta",
+        "description": "El nombre distingue esta cuenta de tus otras cuentas del mismo servicio, para ti y para la IA. Déjalo vacío para mostrar la cuenta en sí.",
+        "label": "Nombre de la cuenta",
+        "save": "Guardar",
+        "failed": "No se pudo cambiar el nombre de la cuenta. Inténtalo de nuevo."
+      }
     }
   },
   "modals": {
     "uploadDoc": {
-      "label": "Subir nuevo documento",
+      "label": "Añadir conocimiento",
       "select": "Elige cómo cargar tu documento en DocsGPT",
-      "selectSource": "Selecciona la forma de agregar tu fuente",
+      "selectSource": "Añadir conocimiento",
       "selectedFiles": "Archivos Seleccionados",
       "noFilesSelected": "No hay archivos seleccionados",
       "file": "Subir desde el dispositivo",
@@ -1319,19 +1673,11 @@
       "filesRejected": "No se añadieron (más de 25 MB o tipo no admitido): {{files}}",
       "uploadedFiles": "Archivos Subidos",
       "cancel": "Cancelar",
-      "train": "Entrenar",
+      "train": "Añadir al conocimiento",
       "create": "Crear",
       "link": "Enlace",
       "urlLink": "Enlace URL",
       "repoUrl": "URL del Repositorio",
-      "reddit": {
-        "id": "ID del Cliente",
-        "secret": "Secreto del Cliente",
-        "agent": "Agente de usuario",
-        "searchQueries": "Consultas de búsqueda",
-        "numberOfPosts": "Número de publicaciones",
-        "addQuery": "Agregar Consulta"
-      },
       "drag": {
         "title": "Suelta los archivos adjuntos aquí",
         "description": "Suelta para subir tus archivos adjuntos"
@@ -1353,8 +1699,6 @@
         "clear": "Limpiar",
         "ingestionFailed": "La ingesta falló."
       },
-      "showAdvanced": "Mostrar opciones avanzadas",
-      "hideAdvanced": "Ocultar opciones avanzadas",
       "ingestors": {
         "local_file": {
           "label": "Subir archivo",
@@ -1371,26 +1715,6 @@
         "github": {
           "label": "GitHub",
           "heading": "Agregar contenido desde GitHub"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "Agregar contenido desde Reddit"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "Subir desde Google Drive"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "Agregar contenido desde Amazon S3"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "Subir desde SharePoint"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "Subir desde Confluence"
         },
         "wiki": {
           "label": "Nueva wiki",
@@ -1445,13 +1769,21 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "ID de clave de acceso de AWS",
-        "awsSecretAccessKey": "Clave de acceso secreta de AWS",
-        "bucket": "Nombre del bucket",
-        "prefix": "Prefijo de ruta (opcional)",
-        "region": "Región de AWS",
-        "endpointUrl": "URL de endpoint personalizada (opcional)",
         "initialContent": "Contenido inicial (opcional)"
+      },
+      "github": {
+        "privateHint": "¿Repositorio privado? Conecta tu cuenta de GitHub para sincronizarlo.",
+        "connectedHint": "Los repositorios privados se sincronizan desde tu conexión de GitHub ({{account}}).",
+        "connect": "Conectar GitHub",
+        "pickRepository": "Elegir un repositorio"
+      },
+      "connectData": {
+        "title": "Conecta tus datos",
+        "description": "Sincroniza {{services}}",
+        "more": "más",
+        "intro": "Elige un servicio, inicia sesión y luego elige qué sincronizar en Conocimiento.",
+        "connectedAs": "Conectado como {{account}}",
+        "browseAll": "Ver todos los conectores"
       }
     },
     "createAPIKey": {
@@ -1488,8 +1820,8 @@
     "configTool": {
       "title": "Configuración de la Herramienta",
       "type": "Tipo",
-      "apiKeyLabel": "Clave API / OAuth",
-      "apiKeyPlaceholder": "Ingrese la Clave API / OAuth",
+      "apiKeyLabel": "Clave de API",
+      "apiKeyPlaceholder": "Introduce la clave de API",
       "addButton": "Agregar Herramienta",
       "closeButton": "Cerrar",
       "customNamePlaceholder": "Enter custom name (optional)",
@@ -1567,6 +1899,24 @@
       "learnMore": "Learn more",
       "resetKey": "Restablecer clave",
       "resetKeyConfirm": "¿Seguro que quieres restablecer la clave de API? La clave actual dejará de funcionar de inmediato y esta acción no se puede deshacer.",
+      "apiWrites": {
+        "title": "Cambios de otros en tu nombre",
+        "description": "Nadie puede aprobar una acción por ti a través de la clave de API, el widget o el enlace público del agente, así que los cambios con tus cuentas conectadas y credenciales guardadas se bloquean salvo que los permitas aquí.",
+        "saveFailed": "No se pudo guardar. Inténtalo de nuevo.",
+        "summaryNone": "Aún no hay nada permitido",
+        "summaryTools_one": "{{tools}} puede hacer cambios",
+        "summaryTools_other": "{{tools}} pueden hacer cambios",
+        "summaryCount": "{{allowed}} de {{formatted}} permitidos",
+        "toolCount": "Cambios por API, widget y enlaces públicos · {{allowed}} de {{formatted}} permitidos",
+        "toolLabel": "Permitir cambios por API, widget y enlaces públicos en {{tool}}",
+        "choice": {
+          "off": "Desactivado",
+          "all": "Todos"
+        },
+        "customize_one": "Ajustar el cambio",
+        "customize_other": "Ajustar cada uno de {{formatted}}",
+        "fold": "Ocultar cambios"
+      },
       "actionFailed": "No funcionó. Inténtalo de nuevo.",
       "apiKeyAfterPublish": "Publica el agente para crear su clave de API."
     },
@@ -1661,14 +2011,18 @@
     },
     "sources": {
       "title": "Fuentes",
-      "text": "Elegir tus fuentes",
+      "text": "Elegir conocimiento",
       "link": "Enlace fuente",
       "view_more_one": "Ver {{count}} fuente más",
       "view_more_other": "Ver {{count}} fuentes más",
-      "noSourcesAvailable": "No hay fuentes disponibles",
-      "selectedCount": "{{count}} fuentes seleccionadas",
-      "groupOwn": "Tus fuentes",
-      "groupTeam": "Compartidas con el equipo"
+      "noSourcesAvailable": "Aún no hay conocimiento",
+      "selectedCount": "{{count}} seleccionados",
+      "groupOwn": "Tuyos",
+      "groupTeam": "Compartidas con el equipo",
+      "connectMore": "Conectar más",
+      "fromConnector": "De {{name}}",
+      "fromConnectorTitle": "De {{name}}: {{title}}",
+      "knowledge": "Conocimiento"
     },
     "attachments": {
       "attach": "Adjuntar",
@@ -1709,7 +2063,9 @@
       "accessingMemory": "Accediendo a la memoria…",
       "runningCode": "Ejecutando código…",
       "creatingArtifact": "Creando un artefacto…",
-      "usingTool": "Usando {{tool}}…"
+      "usingTool": "Usando {{tool}}…",
+      "searchingConnector": "Buscando en {{name}}...",
+      "usingConnector": "Usando {{name}}..."
     },
     "toolChip": {
       "searchingWeb": "Buscado en la web · “{{query}}”",
@@ -1720,7 +2076,10 @@
       "accessingMemory": "Memoria consultada",
       "runningCode": "Código ejecutado",
       "creatingArtifact": "Artefacto creado",
-      "usingTool": "Usado {{tool}}"
+      "usingTool": "Usado {{tool}}",
+      "searchedConnector": "Buscó en {{name}}",
+      "readConnector": "Leyó de {{name}}",
+      "usedConnector": "Usó {{name}}: {{action}}"
     },
     "inlineSteps": {
       "arguments": "Argumentos",
@@ -1770,7 +2129,12 @@
       "approveAlways": "Aprobar y no volver a preguntar",
       "deny": "Denegar",
       "details": "Detalles",
-      "denyReasonPlaceholder": "Motivo del rechazo (opcional)…"
+      "denyReasonPlaceholder": "Motivo del rechazo (opcional)…",
+      "connectTitle": "Esta herramienta necesita tu cuenta de {{name}}.",
+      "connect": "Conectar {{name}}",
+      "continue": "Continuar",
+      "skip": "Omitir",
+      "thisService": "este servicio"
     },
     "research": {
       "title": "Investigación",
@@ -1786,7 +2150,6 @@
   "agents": {
     "title": "Agentes",
     "edit": "Editar",
-    "view": "Ver",
     "card": {
       "pin": "Fijar agente",
       "unpin": "Dejar de fijar agente",
@@ -1880,7 +2243,7 @@
       "placeholders": {
         "agentName": "Nombre del agente",
         "describeAgent": "Describe tu agente",
-        "selectSources": "Seleccionar fuentes",
+        "selectSources": "Seleccionar conocimiento",
         "chunksPerQuery": "Fragmentos por consulta",
         "selectType": "Seleccionar tipo",
         "selectTools": "Seleccionar herramientas",
@@ -1890,20 +2253,23 @@
         "enterRequestLimit": "Ingresar límite de solicitudes"
       },
       "sourcePopup": {
-        "title": "Seleccionar Fuentes",
-        "searchPlaceholder": "Buscar fuentes...",
-        "noOptionsMessage": "No hay fuentes disponibles",
+        "title": "Seleccionar conocimiento",
+        "searchPlaceholder": "Buscar conocimiento...",
+        "noOptionsMessage": "Aún no hay conocimiento",
         "groupOwn": "Tus fuentes",
         "groupTeam": "Compartidas con el equipo",
-        "noSourceHint": "Opcional. Sin una fuente, el agente responde solo con el modelo y sus herramientas."
+        "noSourceHint": "Opcional. Sin conocimiento, el agente responde solo con el modelo y sus herramientas."
       },
       "toolsPopup": {
         "title": "Seleccionar Herramientas",
         "searchPlaceholder": "Buscar herramientas...",
         "noOptionsMessage": "No hay herramientas disponibles",
         "groupBuiltin": "Integradas",
-        "groupDefault": "Predeterminadas",
-        "groupCustom": "Personalizadas"
+        "groupDefault": "Integradas",
+        "groupCustom": "Personalizadas",
+        "groupConnection": "{{name}} · {{account}}",
+        "groupAttached": "En este agente",
+        "attachedHint": "Lo añadió otra persona. Puedes quitarlo."
       },
       "modelsPopup": {
         "title": "Seleccionar Modelos",
@@ -1923,7 +2289,7 @@
         "defaultModel": "Modelo Predeterminado",
         "name": "Nombre",
         "description": "Descripción",
-        "sources": "Fuentes",
+        "sources": "Conocimiento",
         "avatar": "Avatar"
       },
       "advanced": {
@@ -2012,11 +2378,69 @@
         "published": "Publicado"
       },
       "sponsors": {
-        "attachNote": "Las herramientas, fuentes y prompts que añadas desde tu propia biblioteca se ejecutan con tu acceso para todos los que usen este agente.",
+        "attachNote": "Las herramientas, fuentes y prompts que añadas y que el propietario no pueda usar se ejecutan con tu acceso para todos los que usen este agente. Debes ser su propietario o poder editarlos, y se te pedirá que lo confirmes.",
         "publicLinkNote": "Este agente tiene un enlace público, así que cualquiera con el enlace puede obtener respuestas de ellos.",
         "addedBy": "Añadido por {{person}}: {{names}}",
-        "unavailable": "Sin ejecutarse: {{names}}. {{person}} los añadió y ya no tiene acceso. Quítalos o elige otros que el propietario pueda usar.",
-        "unknownItem": "Elemento sin nombre"
+        "addedByOther": "Añadido por otra persona: {{names}}",
+        "unknownItem": "Elemento sin nombre",
+        "notAllowed": "No puedes añadir {{names}} a este agente. El propietario no puede usarlos y solo puedes compartir lo que es tuyo o puedes editar.",
+        "takeOver": "Ejecutar {{name}} con mi acceso",
+        "takeOverPending": "{{name}} se ejecutará con tu acceso cuando guardes.",
+        "undoTakeOver": "Deshacer",
+        "confirmationOutdated": "Este agente cambió desde que confirmaste lo que se ejecuta con tu acceso. Revisa los avisos y vuelve a guardar."
+      },
+      "resourceStates": {
+        "title": "Algunas herramientas, fuentes o prompts no se están ejecutando",
+        "reason": {
+          "deleted": "{{name}} se eliminó.",
+          "ownerLostAccessYou": "Ya no puedes usar {{name}}.",
+          "ownerLostAccess": "El propietario del agente ya no puede usar {{name}}.",
+          "sponsorCannotEditAgent": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editar este agente.",
+          "sponsorCannotEditAgentOther": "{{name}} se ejecutaba con el acceso de otra persona, que ya no puede editar este agente.",
+          "sponsorCannotEditItem": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editarlo.",
+          "sponsorCannotEditItemOther": "{{name}} se ejecutaba con el acceso de otra persona, que ya no puede editarlo.",
+          "connectionNeedsReconnect": "{{name}} necesita que su cuenta de {{service}} vuelva a iniciar sesión.",
+          "connectionRemoved": "Se eliminó la cuenta de {{service}} que usaba {{name}}.",
+          "connectorDisabled": "Un administrador desactivó {{service}}, así que {{name}} no puede ejecutarse.",
+          "unknown": "{{name}} no se está ejecutando."
+        },
+        "ask": {
+          "shareAgain": "Pide a {{person}} que lo vuelva a compartir.",
+          "signInAgain": "Pide a {{person}} que vuelva a iniciar sesión.",
+          "connectAgain": "Pide a {{person}} que vuelva a conectar la cuenta.",
+          "admin": "Pide a un administrador que lo vuelva a activar.",
+          "shareAgainOwner": "Pide a su propietario que lo vuelva a compartir.",
+          "signInAgainOwner": "Pide a su propietario que vuelva a iniciar sesión.",
+          "connectAgainOwner": "Pide a su propietario que vuelva a conectar la cuenta."
+        },
+        "promptFallback": "Mientras tanto, el agente usa el prompt predeterminado.",
+        "serviceFallback": "el servicio",
+        "remove": "Quitar",
+        "removeLabel": "Quitar {{name}}",
+        "reconnectLabel": "Reconectar {{name}}",
+        "unnamed": {
+          "tool": "Herramienta {{id}}",
+          "source": "Fuente {{id}}",
+          "prompt": "Prompt {{id}}"
+        },
+        "chip": "Sin ejecutar: {{count}}"
+      },
+      "sponsorConfirm": {
+        "title": "¿Ejecutar con tu acceso?",
+        "description": "El propietario del agente no puede usarlos. Si los añades, se ejecutan con tu acceso para todos los que usen este agente.",
+        "audienceTitle": "Quién puede usarlos a través de este agente",
+        "audienceTeams": "Miembros de {{teams}}",
+        "audienceApiKey": "Cualquiera con la clave API del agente, incluido su widget web",
+        "audiencePublicLink": "Cualquiera con el enlace público del agente",
+        "audienceWebhook": "Todo lo que llame al webhook del agente",
+        "audienceEditors": "Todos los que pueden abrir este agente",
+        "stopNote": "Dejan de ejecutarse si pierdes el acceso de edición a ellos o a este agente. Entonces siguen adjuntos pero no hacen nada hasta que alguien que pueda editarlos se haga cargo de ellos o se quiten.",
+        "confirm": "Añadir con mi acceso",
+        "types": {
+          "tool": "Herramienta",
+          "source": "Fuente",
+          "prompt": "Prompt"
+        }
       }
     },
     "logs": {
@@ -2308,7 +2732,7 @@
         "outputVariable": "Variable de salida",
         "outputVariablePlaceholder": "Nombre de la variable de salida",
         "streamToUser": "Transmitir la salida al usuario",
-        "sources": "Fuentes",
+        "sources": "Conocimiento",
         "documents": "Documentos",
         "documentsHint": "Documentos que se pasan a este agente desde cargas o nodos anteriores.",
         "filePassing": "Paso de archivos",
@@ -2347,7 +2771,8 @@
         "detailsTitle": "Detalles del flujo de trabajo",
         "detailsDescription": "Nombre, descripción e imagen que se muestran en la tarjeta del agente.",
         "unsavedChanges": "Cambios sin guardar",
-        "editDetailsMenu": "Editar detalles"
+        "editDetailsMenu": "Editar detalles",
+        "attachedOption": "{{name}} (añadido por otra persona)"
       },
       "validation": {
         "nameRequired": "El nombre del flujo de trabajo es obligatorio",
@@ -2453,6 +2878,7 @@
       "workflowTitle": "Agente de flujo de trabajo",
       "workflowDescription": "Diseña flujos de trabajo complejos de varios pasos con distintos modelos, lógica condicional y gestión de estado"
     },
+    "view": "Ver",
     "deleteFailed": "No se pudo eliminar el agente. Inténtalo de nuevo."
   },
   "components": {
@@ -2521,7 +2947,8 @@
     "shared": "Compartido",
     "connectTo": "Conectar a {{provider}}",
     "sessionExpiredFor": "Sesión expirada. Por favor, reconecte a {{provider}}.",
-    "selectFilesFrom": "Seleccionar archivos de {{provider}}"
+    "selectFilesFrom": "Seleccionar archivos de {{provider}}",
+    "account": "Cuenta"
   },
   "actionButtons": {
     "openNewChat": "Abrir nuevo chat",
@@ -2579,5 +3006,15 @@
   },
   "prompts": {
     "textAriaLabel": "Texto del prompt"
+  },
+  "connectHero": {
+    "title": "Conecta tus datos",
+    "body": "Chatea con {{names}} y más."
+  },
+  "common": {
+    "close": "Cerrar",
+    "viewOnlyNotice": "Puedes ver esto, pero tu rol no puede cambiarlo.",
+    "credentialsLockedNotice": "Solo el propietario puede cambiar las credenciales de esta herramienta.",
+    "savedSecretHint": "Guardado. Déjalo vacío para conservarlo."
   }
 }

@@ -9,27 +9,41 @@ import { isTrustedConnectorMessage } from '../utils/connectorAuthUtils';
 import { Alert, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 
-interface ConnectorAuthProps {
+interface ConnectorAuthOptions {
   provider: string;
-  onSuccess: (data: { session_token: string; user_email: string }) => void;
+  /** Reconnect this connection (the same account) rather than add one. */
+  connectionId?: string;
+  /**
+   * GitHub: open the GitHub App's installation page (where the repositories
+   * it can read are chosen) instead of the sign-in page.
+   */
+  install?: boolean;
+  onSuccess: (data: { connection_id: string; user_email: string }) => void;
   onError: (error: string) => void;
+}
+
+interface ConnectorAuthProps extends ConnectorAuthOptions {
   label?: string;
+  /** The service's glyph on the sign-in button (e.g. a `ConnectorIcon`). */
+  icon?: React.ReactNode;
   isConnected?: boolean;
   userEmail?: string;
   onDisconnect?: () => void;
   errorMessage?: string;
 }
 
-const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
+/**
+ * The OAuth pop-up sign-in: returns the function to call from a click. It
+ * opens the pop-up inside the gesture, points it at the provider and reports
+ * the connection it created (or an error) once the callback page answers.
+ */
+export function useConnectorAuth({
   provider,
+  connectionId,
+  install = false,
   onSuccess,
   onError,
-  label,
-  isConnected = false,
-  userEmail = '',
-  onDisconnect,
-  errorMessage,
-}) => {
+}: ConnectorAuthOptions): () => void {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
   const completedRef = useRef(false);
@@ -76,7 +90,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
       cleanup();
       authWindowRef.current = null;
       onSuccess({
-        session_token: event.data.session_token,
+        connection_id: event.data.connection_id,
         user_email:
           event.data.user_email ||
           t('modals.uploadDoc.connectors.auth.connectedUser'),
@@ -120,6 +134,8 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
         const authResponse = await userService.getConnectorAuthUrl(
           provider,
           token,
+          connectionId,
+          install,
         );
         if (!mountedRef.current) {
           authWindow.close();
@@ -205,6 +221,29 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
     };
   }, []);
 
+  return handleAuth;
+}
+
+const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
+  provider,
+  connectionId,
+  onSuccess,
+  onError,
+  label,
+  icon,
+  isConnected = false,
+  userEmail = '',
+  onDisconnect,
+  errorMessage,
+}) => {
+  const { t } = useTranslation();
+  const handleAuth = useConnectorAuth({
+    provider,
+    connectionId,
+    onSuccess,
+    onError,
+  });
+
   return (
     <>
       {errorMessage && (
@@ -238,12 +277,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
         </Alert>
       ) : (
         <Button type="button" onClick={handleAuth} className="w-full">
-          <svg className="size-5" viewBox="0 0 24 24">
-            <path
-              fill="currentColor"
-              d="M6.28 3l5.72 10H24l-5.72-10H6.28zm11.44 0L12 13l5.72 10H24L18.28 3h-.56zM0 13l5.72 10h5.72L5.72 13H0z"
-            />
-          </svg>
+          {icon}
           {label}
         </Button>
       )}

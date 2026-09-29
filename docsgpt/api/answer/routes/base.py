@@ -1057,6 +1057,17 @@ class BaseAnswerResource:
                                     "llm_name": getattr(agent, "llm_name", settings.LLM_PROVIDER),
                                     "api_key": getattr(agent, "api_key", None),
                                     "user_api_key": user_api_key,
+                                    # An API-key caller stays one after a
+                                    # resume (owner-account write rules).
+                                    "external_api_caller": getattr(
+                                        agent.tool_executor, "external_caller", False,
+                                    ),
+                                    "public_link_caller": getattr(
+                                        agent.tool_executor, "public_link_caller", False,
+                                    ),
+                                    "api_write_allowlist": sorted(
+                                        getattr(agent.tool_executor, "api_write_allowlist", set()),
+                                    ),
                                     "agent_id": agent_id,
                                     "agent_type": agent.__class__.__name__,
                                     "prompt": getattr(agent, "prompt", ""),

@@ -1,10 +1,11 @@
 import asyncio
 import base64
 import concurrent.futures
+import hashlib
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from fastmcp import Client
@@ -15,7 +16,12 @@ from fastmcp.client.transports import (
     StreamableHttpTransport,
 )
 from mcp.client.auth import OAuthClientProvider, TokenStorage
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.shared.auth import (
+    AuthorizationCodeResult,
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthToken,
+)
 from pydantic import AnyHttpUrl, ValidationError
 from redis import Redis
 
@@ -32,11 +38,53 @@ logger = logging.getLogger(__name__)
 _mcp_clients_cache = {}
 
 
+def forget_cached_clients(*identities: str) -> None:
+    """Drop cached OAuth clients signed in as any of ``identities``.
+
+    OAuth cache keys name the connection or user whose tokens the client
+    holds (see ``MCPTool._generate_cache_key``).
+
+    Args:
+        identities: Connection ids and user ids.
+    """
+    markers = tuple(f"#oauth:{identity}:" for identity in identities if identity)
+    for key in [k for k in list(_mcp_clients_cache) if any(marker in k for marker in markers)]:
+        _mcp_clients_cache.pop(key, None)
+
+# A token expiry long past: a stored token of unknown age is renewed before use.
+_EXPIRED = 1.0
+
+_ANNOTATION_HINTS = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
+
+
+def _secret_fingerprint(secret: str) -> str:
+    """A short digest of a whole secret, for telling cached clients apart.
+
+    A prefix of the secret itself is not enough: every fine-grained GitHub
+    token starts with ``github_pat_``, so two users' tokens would share (and
+    reuse) one cached client carrying the first user's token.
+    """
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
+
+
+def _annotation_hints(annotations: Any) -> Dict[str, bool]:
+    """The boolean MCP tool annotation hints, from a model or a dict."""
+    if annotations is None:
+        return {}
+    if hasattr(annotations, "model_dump"):
+        annotations = annotations.model_dump()
+    if not isinstance(annotations, dict):
+        return {}
+    return {k: annotations[k] for k in _ANNOTATION_HINTS if isinstance(annotations.get(k), bool)}
+
+
 class MCPTool(Tool):
     """
     MCP Tool
     Connect to remote Model Context Protocol (MCP) servers to access dynamic tools and resources.
     """
+
+    connection_id: Optional[str] = None
 
     def __init__(self, config: Dict[str, Any], user_id: Optional[str] = None):
         """
@@ -76,6 +124,10 @@ class MCPTool(Tool):
         self.oauth_scopes = config.get("oauth_scopes", [])
         self.oauth_task_id = config.get("oauth_task_id", None)
         self.oauth_client_name = config.get("oauth_client_name", "DocsGPT-MCP")
+        # The connection whose OAuth tokens this tool uses. Set by the tool
+        # executor for connection-backed tools, so a shared tool in ``owner``
+        # mode signs in with its owner's account rather than the invoker's.
+        self.connection_id = config.get("connection_id")
         self.redirect_uri = self._resolve_redirect_uri(config.get("redirect_uri"))
         # Pulled out of ``config`` (rather than left in ``self.config``)
         # because it is a callable supplied by the OAuth worker — not
@@ -105,12 +157,15 @@ class MCPTool(Tool):
             raise ValueError(f"Invalid MCP server URL: {exc}") from exc
 
     def _resolve_redirect_uri(self, configured_redirect_uri: Optional[str]) -> str:
-        if configured_redirect_uri:
-            return configured_redirect_uri.rstrip("/")
-
+        # The operator's setting wins over the page's own origin: a page opened
+        # on a plain-HTTP address would otherwise register a callback that
+        # servers such as Linear refuse.
         explicit = settings.MCP_OAUTH_REDIRECT_URI
         if explicit:
             return explicit.rstrip("/")
+
+        if configured_redirect_uri:
+            return configured_redirect_uri.rstrip("/")
 
         connector_base = settings.CONNECTOR_REDIRECT_BASE_URI
         if connector_base:
@@ -125,7 +180,9 @@ class MCPTool(Tool):
         auth_key = ""
         if self.auth_type == "oauth":
             scopes_str = ",".join(self.oauth_scopes) if self.oauth_scopes else "none"
-            oauth_identity = self.user_id or self.oauth_task_id or "anonymous"
+            # A connection-backed tool shares a client only with calls that
+            # use the same connection's tokens.
+            oauth_identity = self.connection_id or self.user_id or self.oauth_task_id or "anonymous"
             auth_key = (
                 f"oauth:{oauth_identity}:{self.oauth_client_name}:{scopes_str}:{self.redirect_uri}"
             )
@@ -133,10 +190,10 @@ class MCPTool(Tool):
             token = self.auth_credentials.get(
                 "bearer_token", ""
             ) or self.auth_credentials.get("access_token", "")
-            auth_key = f"bearer:{token[:10]}..." if token else "bearer:none"
+            auth_key = f"bearer:{_secret_fingerprint(token)}" if token else "bearer:none"
         elif self.auth_type == "api_key":
             api_key = self.auth_credentials.get("api_key", "")
-            auth_key = f"apikey:{api_key[:10]}..." if api_key else "apikey:none"
+            auth_key = f"apikey:{_secret_fingerprint(api_key)}" if api_key else "apikey:none"
         elif self.auth_type == "basic":
             username = self.auth_credentials.get("username", "")
             auth_key = f"basic:{username}"
@@ -165,6 +222,7 @@ class MCPTool(Tool):
                     redis_client=redis_client,
                     redirect_uri=self.redirect_uri,
                     user_id=self.user_id,
+                    connection_id=self.connection_id,
                 )
             else:
                 auth = DocsGPTOAuth(
@@ -175,6 +233,7 @@ class MCPTool(Tool):
                     task_id=self.oauth_task_id,
                     user_id=self.user_id,
                     redirect_publish=self.oauth_redirect_publish,
+                    connection_id=self.connection_id,
                 )
         elif self.auth_type == "bearer":
             token = self.auth_credentials.get(
@@ -245,6 +304,9 @@ class MCPTool(Tool):
                 }
                 if hasattr(tool, "inputSchema"):
                     tool_dict["inputSchema"] = tool.inputSchema
+                annotations = _annotation_hints(getattr(tool, "annotations", None))
+                if annotations:
+                    tool_dict["annotations"] = annotations
                 tools_dict.append(tool_dict)
             elif isinstance(tool, dict):
                 tools_dict.append(tool)
@@ -493,7 +555,7 @@ class MCPTool(Tool):
 
     def _test_oauth_connection(self) -> Dict:
         storage = DBTokenStorage(
-            server_url=self.server_url, user_id=self.user_id,
+            server_url=self.server_url, user_id=self.user_id, connection_id=self.connection_id,
         )
         loop = asyncio.new_event_loop()
         try:
@@ -580,6 +642,11 @@ class MCPTool(Tool):
                 "description": tool.get("description", ""),
                 "parameters": parameters_schema,
             }
+            # ``readOnlyHint`` / ``destructiveHint`` decide whether the action
+            # is a read (always allowed) or a write (needs approval).
+            annotations = _annotation_hints(tool.get("annotations"))
+            if annotations:
+                action["annotations"] = annotations
             actions.append(action)
         return actions
 
@@ -670,6 +737,10 @@ class MCPTool(Tool):
         }
 
 
+class MCPReauthorizationRequired(Exception):
+    """An MCP sign-in expired and could not be renewed: its owner must sign in again."""
+
+
 class DocsGPTOAuth(OAuthClientProvider):
     """
     Custom OAuth handler for DocsGPT that uses frontend redirect instead of browser.
@@ -688,6 +759,7 @@ class DocsGPTOAuth(OAuthClientProvider):
         additional_client_metadata: dict[str, Any] | None = None,
         skip_redirect_validation: bool = False,
         redirect_publish=None,
+        connection_id: Optional[str] = None,
     ):
         self.redirect_uri = redirect_uri
         self.redis_client = redis_client
@@ -717,18 +789,69 @@ class DocsGPTOAuth(OAuthClientProvider):
             server_url=self.server_base_url,
             user_id=self.user_id,
             expected_redirect_uri=None if skip_redirect_validation else redirect_uri,
+            connection_id=connection_id,
         )
 
+        # The SDK checks the server's protected-resource metadata against a
+        # resource derived from this URL, so it gets the full MCP endpoint:
+        # Linear and Sentry publish ``https://host/mcp``, and an origin-only
+        # URL fails that check before sign-in. Tokens stay keyed by origin.
         super().__init__(
-            server_url=self.server_base_url,
+            server_url=mcp_url.rstrip("/") or self.server_base_url,
             client_metadata=client_metadata,
             storage=storage,
             redirect_handler=self.redirect_handler,
             callback_handler=self.callback_handler,
         )
+        self.context.prepare_token_auth = self._one_client_authentication(self.context.prepare_token_auth)
 
         self.auth_url = None
         self.extracted_state = None
+
+    @staticmethod
+    def _one_client_authentication(prepare: Callable) -> Callable:
+        """Wrap the SDK's token-request auth so the client authenticates one way.
+
+        With ``client_secret_basic`` the SDK sets the Basic header but leaves
+        ``client_id`` in the body, which servers such as Linear reject as a
+        second method; RFC 6749 names the client in the body only when it does
+        not authenticate otherwise.
+
+        Args:
+            prepare: The SDK context's ``prepare_token_auth``.
+
+        Returns:
+            The same function, minus ``client_id`` in the body under Basic auth.
+        """
+
+        def prepare_token_auth(
+            data: dict[str, str], headers: dict[str, str] | None = None
+        ) -> tuple[dict[str, str], dict[str, str]]:
+            data, headers = prepare(data, headers)
+            if headers.get("Authorization", "").startswith("Basic "):
+                data = {k: v for k, v in data.items() if k != "client_id"}
+            return data, headers
+
+        return prepare_token_auth
+
+    async def _initialize(self) -> None:
+        """Load the stored sign-in along with when its access token expires.
+
+        The SDK learns a token's expiry only from a token response in this
+        process, so a token read back from the connection gets the expiry
+        saved with it, and an expired one is renewed with its refresh token
+        before it is sent. One saved before expiries were kept is of unknown
+        age and is renewed once.
+        """
+        await super()._initialize()
+        tokens = self.context.current_tokens
+        if tokens is None:
+            return
+        expires_at = getattr(self.context.storage, "expires_at", None)
+        if expires_at:
+            self.context.token_expiry_time = float(expires_at)
+        elif tokens.refresh_token and tokens.expires_in:
+            self.context.token_expiry_time = _EXPIRED
 
     def _process_auth_url(self, authorization_url: str) -> tuple[str, str]:
         """Process authorization URL to extract state"""
@@ -771,8 +894,13 @@ class DocsGPTOAuth(OAuthClientProvider):
                     exc_info=True,
                 )
 
-    async def callback_handler(self) -> tuple[str, str | None]:
-        """Wait for auth code from Redis using the state value."""
+    async def callback_handler(self) -> AuthorizationCodeResult:
+        """Wait for auth code from Redis using the state value.
+
+        Returns:
+            The code, the state it came back with, and the RFC 9207 issuer
+            when the authorization server sent one.
+        """
         if not self.redis_client or not self.extracted_state:
             raise Exception("Redis client or state not configured for OAuth")
         poll_interval = 1
@@ -785,15 +913,22 @@ class DocsGPTOAuth(OAuthClientProvider):
             if code_data:
                 code = code_data.decode()
                 returned_state = self.extracted_state
+                iss_key = f"{self.redis_prefix}iss:{self.extracted_state}"
+                iss_data = self.redis_client.get(iss_key)
 
                 self.redis_client.delete(code_key)
+                self.redis_client.delete(iss_key)
                 self.redis_client.delete(
                     f"{self.redis_prefix}auth_url:{self.extracted_state}"
                 )
                 self.redis_client.delete(
                     f"{self.redis_prefix}state:{self.extracted_state}"
                 )
-                return code, returned_state
+                return AuthorizationCodeResult(
+                    code=code,
+                    state=returned_state,
+                    iss=iss_data.decode() if iss_data else None,
+                )
             error_key = f"{self.redis_prefix}error:{self.extracted_state}"
             error_data = self.redis_client.get(error_key)
             if error_data:
@@ -825,26 +960,39 @@ class NonInteractiveOAuth(DocsGPTOAuth):
         super().__init__(**kwargs)
 
     async def redirect_handler(self, authorization_url: str) -> None:
-        raise Exception(
+        raise MCPReauthorizationRequired(
             "OAuth session expired — please re-authorize this MCP server in tool settings."
         )
 
-    async def callback_handler(self) -> tuple[str, str | None]:
-        raise Exception(
+    async def callback_handler(self) -> AuthorizationCodeResult:
+        raise MCPReauthorizationRequired(
             "OAuth session expired — please re-authorize this MCP server in tool settings."
         )
 
 
 class DBTokenStorage(TokenStorage):
+    """MCP OAuth tokens and client registration, kept encrypted on the connection.
+
+    Reads and writes go through ``docsgpt.connectors.service``, which stores
+    them in the connection's owner-bound ``encrypted_credentials``. A tool
+    that runs with a specific connection (``owner`` mode on a shared tool)
+    passes its ``connection_id``; otherwise the invoking user's connection
+    for the server's base URL is used.
+    """
+
     def __init__(
         self,
         server_url: str,
         user_id: str,
         expected_redirect_uri: Optional[str] = None,
+        connection_id: Optional[str] = None,
     ):
         self.server_url = server_url
         self.user_id = user_id
         self.expected_redirect_uri = expected_redirect_uri
+        self.connection_id = connection_id
+        # When the stored access token expires (epoch seconds), once read.
+        self.expires_at: Optional[float] = None
 
     @staticmethod
     def get_base_url(url: str) -> str:
@@ -855,31 +1003,18 @@ class DBTokenStorage(TokenStorage):
         return f"mcp:{self.get_base_url(self.server_url)}"
 
     def _fetch_session_data(self) -> dict:
-        """Read the JSONB ``session_data`` blob for this MCP server row."""
-        from docsgpt.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
-        )
-        from docsgpt.storage.db.session import db_readonly
+        """The decrypted ``tokens`` / ``client_info`` for this MCP server."""
+        from docsgpt.connectors import service
 
-        base_url = self.get_base_url(self.server_url)
-        with db_readonly() as conn:
-            row = ConnectorSessionsRepository(conn).get_by_user_and_server_url(
-                self.user_id, base_url,
-            )
-        if not row:
-            return {}
-        data = row.get("session_data") or {}
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except ValueError:
-                return {}
-        return data if isinstance(data, dict) else {}
+        return service.read_mcp_secrets(
+            self.user_id, self.get_base_url(self.server_url), self.connection_id,
+        )
 
     async def get_tokens(self) -> OAuthToken | None:
         data = await asyncio.to_thread(self._fetch_session_data)
         if not data or "tokens" not in data:
             return None
+        self.expires_at = data.get("tokens_expires_at")
         try:
             return OAuthToken.model_validate(data["tokens"])
         except ValidationError as e:
@@ -887,22 +1022,19 @@ class DBTokenStorage(TokenStorage):
             return None
 
     def _merge(self, patch: dict) -> None:
-        """Shallow-merge ``patch`` into this row's ``session_data``.
+        """Merge ``patch`` into the connection's secrets; ``None`` drops a key."""
+        from docsgpt.connectors import service
 
-        Threads ``server_url`` through to the repository so it lands in
-        the scalar column — ``get_by_user_and_server_url`` needs that to
-        resolve the row (``NULL = 'https://...'`` is UNKNOWN in SQL).
-        """
-        from docsgpt.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
+        status = None
+        if patch.get("tokens"):
+            status = service.STATUS_CONNECTED
+        service.update_mcp_secrets(
+            self.user_id,
+            self.get_base_url(self.server_url),
+            patch,
+            connection_id=self.connection_id,
+            status=status,
         )
-        from docsgpt.storage.db.session import db_session
-
-        base_url = self.get_base_url(self.server_url)
-        with db_session() as conn:
-            ConnectorSessionsRepository(conn).merge_session_data(
-                self.user_id, self._pg_provider(), base_url, patch,
-            )
 
     def _delete(self) -> None:
         from docsgpt.storage.db.repositories.connector_sessions import (
@@ -918,7 +1050,10 @@ class DBTokenStorage(TokenStorage):
     async def set_tokens(self, tokens: OAuthToken) -> None:
         base_url = self.get_base_url(self.server_url)
         token_dump = tokens.model_dump()
-        await asyncio.to_thread(self._merge, {"tokens": token_dump})
+        # Kept beside the token: a later process cannot tell from
+        # ``expires_in`` alone whether it has expired.
+        self.expires_at = time.time() + tokens.expires_in if tokens.expires_in else None
+        await asyncio.to_thread(self._merge, {"tokens": token_dump, "tokens_expires_at": self.expires_at})
         logger.info("Saved tokens for %s", base_url)
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
@@ -1003,7 +1138,7 @@ class MCPOAuthManager:
         self.redis_prefix = redis_prefix
 
     def handle_oauth_callback(
-        self, state: str, code: str, error: Optional[str] = None
+        self, state: str, code: str, error: Optional[str] = None, iss: Optional[str] = None
     ) -> bool:
         """
         Handle OAuth callback from provider.
@@ -1012,6 +1147,7 @@ class MCPOAuthManager:
             state: The state parameter from OAuth callback
             code: The authorization code from OAuth callback
             error: Error message if OAuth failed
+            iss: The RFC 9207 issuer from the callback, if the server sent one
 
         Returns:
             True if successful, False otherwise
@@ -1023,6 +1159,9 @@ class MCPOAuthManager:
                 error_key = f"{self.redis_prefix}error:{state}"
                 self.redis_client.setex(error_key, 300, error)
                 raise Exception(f"OAuth error received: {error}")
+            # The issuer goes first: the waiting sign-in reads it once the code lands.
+            if iss:
+                self.redis_client.setex(f"{self.redis_prefix}iss:{state}", 300, iss)
             code_key = f"{self.redis_prefix}code:{state}"
             self.redis_client.setex(code_key, 300, code)
 

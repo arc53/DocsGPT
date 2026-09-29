@@ -77,6 +77,30 @@ describe('ConversationBubble', () => {
       (b) => b.textContent?.trim() === text,
     ) as HTMLButtonElement;
 
+  it('shows the fixed values a call will send, not what the model asked', async () => {
+    await render(
+      <ConversationBubble
+        type="ANSWER"
+        toolCalls={[
+          {
+            ...pendingCall,
+            arguments: { text: 'hi', chat_id: '666' },
+            sent_arguments: { text: 'hi', chat_id: '111' },
+          },
+        ]}
+        onToolAction={() => {}}
+      />,
+    );
+    expect(container.textContent).toContain('"chat_id":"111"');
+    expect(container.textContent).not.toContain('666');
+    const details = container.querySelector(
+      `button[aria-label="${tr('conversation.toolApproval.details')}"]`,
+    ) as HTMLButtonElement;
+    await act(async () => details.click());
+    expect(container.querySelector('pre')?.textContent).toContain('"111"');
+    expect(container.textContent).not.toContain('666');
+  });
+
   it('renders the approval bar on Button variants and disables Approve while a deny reason is typed', async () => {
     await render(
       <ConversationBubble

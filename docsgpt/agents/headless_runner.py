@@ -15,15 +15,17 @@ from docsgpt.api.answer.services.prompt_renderer import (
     resolve_prompt_skeleton,
 )
 from docsgpt.api.answer.services.stream_processor import (
+    authorized_agent_sources,
     authorized_prompt_id,
     get_prompt,
 )
-from docsgpt.api.user.resource_access import ref_principal
 from docsgpt.core.settings import settings
+from docsgpt.guardrails.config import AgentConfig
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
+from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
-from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.storage.db.source_config import SourceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,8 @@ def run_agent_headless(
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
     conversation_id: Optional[str] = None,
+    external_caller: bool = False,
+    public_link_caller: bool = False,
     request_id: Optional[str] = None,
     trace_user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -86,6 +90,11 @@ def run_agent_headless(
     ``trace_user_id`` owns the trace when the run belongs to someone other
     than the agent's owner (a schedule a user set on a shared agent), so the
     trace is visible wherever that user sees the run; it defaults to the owner.
+    ``external_caller`` (a schedule set through the API) and
+    ``public_link_caller`` (a schedule a public-link user set) mark a run for
+    someone who can't approve for the owner: writes on the owner's accounts
+    and credentials then run only when the agent's API write allowlist has
+    them.
 
     Raises:
         QuotaExceededError: If the agent owner's usage quota is exhausted.
@@ -108,6 +117,8 @@ def run_agent_headless(
                 endpoint=endpoint,
                 chat_history=chat_history,
                 conversation_id=conversation_id,
+                external_caller=external_caller,
+                public_link_caller=public_link_caller,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -128,6 +139,8 @@ def _run_agent_headless(
     endpoint: str = "headless",
     chat_history: Optional[List[Dict[str, Any]]] = None,
     conversation_id: Optional[str] = None,
+    external_caller: bool = False,
+    public_link_caller: bool = False,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -148,20 +161,22 @@ def _run_agent_headless(
         raise QuotaExceededError(exceeded)
 
     retriever_kind = agent_config.get("retriever", "classic")
-    source_id = agent_config.get("source_id") or agent_config.get("source")
-    source_active: Any = {}
-    if source_id:
+    # Every source a chat with this agent searches: the primary and the
+    # extras, each owned or team-shared to the owner, else attached by an
+    # editor who still qualifies.
+    sources_row = dict(agent_config)
+    sources_row["source_id"] = agent_config.get("source_id") or agent_config.get("source")
+    primary, source_docs = None, []
+    if sources_row["source_id"] or sources_row.get("extra_source_ids"):
         with db_readonly() as conn:
-            # Owned or team-shared to the owner, else attached by an editor
-            # who still qualifies; read unscoped once authorized.
-            src_row = (
-                SourcesRepository(conn).get_by_id(str(source_id))
-                if ref_principal(conn, "agent", agent_config, "source", str(source_id))
-                else None
-            )
-        if src_row:
-            source_active = str(src_row["id"])
-            retriever_kind = src_row.get("retriever", retriever_kind)
+            primary, source_docs = authorized_agent_sources(conn, sources_row)
+    if primary:
+        retriever_kind = primary.get("retriever") or retriever_kind
+    per_source = [
+        {"id": str(doc["id"]), "retrieval": SourceConfig.parse(doc.get("config")).retrieval}
+        for doc in source_docs
+    ]
+    source_active: Any = [entry["id"] for entry in per_source] or {}
     source = {"active_docs": source_active}
     # ``chunks=0`` switches retrieval off; only a missing value takes the default.
     raw_chunks = agent_config.get("chunks")
@@ -196,8 +211,7 @@ def _run_agent_headless(
     system_api_key = get_api_key_for_provider(provider or settings.LLM_PROVIDER)
     doc_token_limit = calculate_doc_token_budget(model_id=model_id, user_id=owner)
 
-    retriever = RetrieverCreator.create_retriever(
-        retriever_kind,
+    retriever_kwargs: Dict[str, Any] = dict(
         source=source,
         chat_history=chat_history or [],
         prompt=prompt,
@@ -207,6 +221,13 @@ def _run_agent_headless(
         user_api_key=user_api_key,
         agent_id=agent_id,
         decoded_token=decoded_token,
+    )
+    # Routed per source like a chat's pre-fetch, so each source keeps its own
+    # retriever and retrieval settings.
+    retriever = build_dispatcher(
+        lambda: RetrieverCreator.create_retriever(retriever_kind, **retriever_kwargs),
+        sources=per_source,
+        **retriever_kwargs,
     )
     retrieved_docs: List[Dict[str, Any]] = []
     try:
@@ -223,6 +244,9 @@ def _run_agent_headless(
         agent_id=agent_id,
         headless=True,
         tool_allowlist=list(tool_allowlist or []),
+        external_caller=external_caller,
+        public_link_caller=public_link_caller,
+        api_write_allowlist=AgentConfig.parse(agent_config.get("config")).api_write_allowlist,
     )
     if conversation_id:
         tool_executor.conversation_id = str(conversation_id)

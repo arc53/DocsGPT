@@ -4,13 +4,12 @@ import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Set, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, TypeVar
 
 from flask import after_this_request
 
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
-from docsgpt.agents.default_tools import synthesized_default_tools
 from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import is_compression_summary_row
@@ -28,7 +27,9 @@ from docsgpt.core.model_utils import (
     get_provider_from_model_id,
     validate_model_id,
 )
+from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
+from docsgpt.guardrails.config import AgentConfig
 from sqlalchemy import text as sql_text
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
@@ -37,8 +38,6 @@ from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
-from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
-from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.api.user.team_sharing import can_access
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
@@ -50,6 +49,25 @@ from docsgpt.utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def is_external_api_caller(data: Dict[str, Any], decoded_token: Optional[Dict], owner: Optional[str]) -> bool:
+    """Whether a request calls an agent with its API key on someone else's behalf.
+
+    Widget and API requests carry the agent's key and run as its owner. The
+    owner previewing their own agent in the app sends the key too, but is
+    signed in as that owner. In local mode without auth everyone is the same
+    user, so there is no one else to tell apart.
+
+    Args:
+        data: The request body.
+        decoded_token: The caller's token before the key's owner replaces it.
+        owner: The agent owner's user id.
+    """
+    if not data.get("api_key"):
+        return False
+    caller = (decoded_token or {}).get("sub")
+    return not caller or caller != owner
 
 
 def _clamp_chunks(value: int) -> int:
@@ -111,6 +129,10 @@ def get_prompt(prompt_id: str, prompts_collection=None) -> str:
 
 _PROMPT_PRESETS_WITHOUT_ROW = ("reduce",)
 
+# Tools whose approval is decided per call from live state, not the stored
+# ``require_approval`` flags (see ``ToolExecutor.check_pause``).
+_LIVE_APPROVAL_TOOLS = frozenset({"remote_device", "code_executor"})
+
 
 def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Optional[dict] = None) -> Any:
     """``prompt_id`` if ``principal`` (or the agent's sponsor) may use it, else ``"default"``.
@@ -134,20 +156,27 @@ def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Option
     pid = str(prompt_id)
     if is_composed_preset(pid) or pid in _PROMPT_PRESETS_WITHOUT_ROW:
         return prompt_id
-    from docsgpt.api.user.resource_access import active_sponsor, resolve
+    from docsgpt.api.user.resource_access import (
+        REASON_OWNER_LOST_ACCESS,
+        log_stopped,
+        ref_access,
+    )
 
+    # The same check the agent page's run state uses: the principal, else a
+    # live sponsor on the agent.
+    holder = {**agent, "user_id": principal} if agent and agent.get("id") else {"user_id": principal}
     try:
         with db_readonly() as conn:
-            ra = resolve(conn, "prompt", pid, principal) if principal else None
-            usable = ra is not None and ra.can("use")
-            if not usable and agent and agent.get("id"):
-                usable = active_sponsor(conn, "agent", agent, "prompt", pid) is not None
+            access = ref_access(conn, "agent", holder, "prompt", pid) if principal else None
     except Exception:
         logger.exception("Prompt access check failed for %s", pid)
-        usable = False
-    if usable:
+        access = None
+    if access is not None and access.principal:
         return prompt_id
-    logger.info("prompt %s not usable by %s; using the default prompt", pid, principal)
+    log_stopped(
+        "agent" if agent else "chat", holder, "prompt", pid,
+        access.reason if access is not None else REASON_OWNER_LOST_ACCESS,
+    )
     return "default"
 
 
@@ -158,12 +187,46 @@ def _agent_source_doc(conn: Any, sources_repo: Any, agent: dict, source_id: Any)
     editor who attached it while they still qualify. Read unscoped once
     authorized: an owner-scoped read misses a team-shared source.
     """
-    from docsgpt.api.user.resource_access import ref_principal
+    from docsgpt.api.user.resource_access import log_stopped, ref_access
 
-    if not ref_principal(conn, "agent", agent, "source", str(source_id)):
-        logger.info("agent %s source %s not usable; skipped", agent.get("id"), source_id)
+    access = ref_access(conn, "agent", agent, "source", str(source_id))
+    if not access.principal:
+        log_stopped("agent", agent, "source", source_id, access.reason)
         return None
     return sources_repo.get_by_id(str(source_id))
+
+
+def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], List[dict]]:
+    """The source rows an agent run retrieves from: primary first, then extras.
+
+    Each is authorized like :func:`_agent_source_doc` (the owner, else the
+    editor who attached it), and a source listed twice appears once.
+
+    Args:
+        conn: An open database connection.
+        agent: The ``agents`` row.
+
+    Returns:
+        The primary source row (None when unset or not usable) and every
+        usable row in run order.
+    """
+    sources_repo = SourcesRepository(conn)
+    primary: Optional[dict] = None
+    rows: List[dict] = []
+    seen: set = set()
+    refs = [(True, agent.get("source_id"))]
+    refs.extend((False, sid) for sid in agent.get("extra_source_ids") or [])
+    for is_primary, sid_raw in refs:
+        if not sid_raw:
+            continue
+        source_doc = _agent_source_doc(conn, sources_repo, agent, sid_raw)
+        if not source_doc or str(source_doc["id"]) in seen:
+            continue
+        if is_primary:
+            primary = source_doc
+        seen.add(str(source_doc["id"]))
+        rows.append(source_doc)
+    return primary, rows
 
 
 def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
@@ -231,12 +294,26 @@ class StreamProcessor:
         request_data: Dict[str, Any],
         decoded_token: Optional[Dict[str, Any]],
         trace_source: str = "stream",
+        *,
+        external_caller: bool = False,
     ):
+        """Bind a request to its processor.
+
+        Args:
+            request_data: The request body.
+            decoded_token: The caller's token; ``/v1`` passes the agent owner's.
+            trace_source: The entry point the trace is stored under.
+            external_caller: Set by the server for requests authenticated by
+                an agent's API key whose token is the owner's (``/v1``), so
+                the run keeps the key holder's write limits. Never read from
+                the request body.
+        """
         # Legacy attribute retained as None for any external callers that
         # introspect the processor; all DB access uses per-op connections.
         self.prompts_collection = None
         self.data = request_data
         self.decoded_token = decoded_token
+        self.external_caller = bool(external_caller)
         self.initial_user_id = (
             self.decoded_token.get("sub") if self.decoded_token is not None else None
         )
@@ -250,6 +327,9 @@ class StreamProcessor:
         self.retriever_config = {}
         self.is_shared_usage = False
         self.shared_token = None
+        # Set by _get_agent_key: the caller reaches the agent only through its
+        # public link (not its owner, no team grant).
+        self.public_link_usage = False
         self.agent_id = self.data.get("agent_id")
         # Set by _get_agent_key once access checks pass; read for keyless runs.
         self._authorized_agent_row: Optional[Dict[str, Any]] = None
@@ -325,7 +405,13 @@ class StreamProcessor:
         share it with the rest of the turn. It is always generated here, never
         taken from the request body: request quotas count distinct request
         ids, so a client-chosen id would let every call count as one.
+
+        A request with neither a token nor an agent API key has nobody to run
+        for: nothing is set up (no pre-fetch runs the agent's tools), None is
+        returned and the route answers 401.
         """
+        if not self.decoded_token and not self.data.get("api_key"):
+            return None
         if not getattr(self, "request_id", None):
             self.request_id = str(uuid.uuid4())
         self.initialize()
@@ -682,9 +768,10 @@ class StreamProcessor:
                 # Team-shared agents are runnable by any member with a grant
                 # (viewer is enough to run). Resolved live against team_members
                 # on the SAME connection so a revoked grant/membership denies on
-                # the next call; resolution failure fails closed.
+                # the next call; resolution failure fails closed. Checked on a
+                # public agent too: a teammate there is not a link user.
                 is_team_shared = False
-                if not (is_owner or is_shared_with_user) and user_id:
+                if not is_owner and user_id:
                     try:
                         is_team_shared = TeamScopeRepository(conn).can_read(
                             user_id, "agent", str(agent["id"])
@@ -697,6 +784,7 @@ class StreamProcessor:
 
             if not (is_owner or is_shared_with_user or is_team_shared):
                 raise Exception("Unauthorized access to the agent")
+            self.public_link_usage = not (is_owner or is_team_shared)
             # Authorized. Keep the row so _configure_agent can read fields that
             # do not depend on an API key — a draft agent has key = NULL, and
             # the builder preview runs exactly that path.
@@ -729,7 +817,6 @@ class StreamProcessor:
             agent = AgentsRepository(conn).find_by_key(api_key)
             if not agent:
                 raise Exception("Invalid API Key, please generate a new key", 401)
-            sources_repo = SourcesRepository(conn)
             # The repo dict uses "user_id" — the streaming path expects
             # a "user" key (legacy Mongo shape) for identity propagation.
             data: Dict[str, Any] = dict(agent)
@@ -739,68 +826,29 @@ class StreamProcessor:
             # ``_configure_source`` ignores an empty ``data["sources"]``,
             # so the primary must appear in the union too — not only in
             # the legacy ``data["source"]`` slot.
-            sources_list: list = []
-            seen: set = set()
-            primary_id = agent.get("source_id")
-            # ``sources`` row may have NULL ``retriever``/``chunks`` —
-            # fall back to the agent's value (``dict.get`` returns None
-            # even when the key exists with value None).
-            if primary_id:
-                source_doc = _agent_source_doc(conn, sources_repo, agent, primary_id)
-                if source_doc:
-                    sid = str(source_doc["id"])
-                    data["source"] = sid
-                    src_retriever = source_doc.get("retriever")
-                    if src_retriever:
-                        data["retriever"] = src_retriever
-                    src_chunks = source_doc.get("chunks")
-                    if src_chunks is not None:
-                        data["chunks"] = src_chunks
-                    sources_list.append(
-                        {
-                            "id": sid,
-                            "retriever": src_retriever or "classic",
-                            "chunks": (
-                                src_chunks if src_chunks is not None
-                                else data.get("chunks", "6")
-                            ),
-                            # Per-source behaviour contract (lenient read).
-                            "retrieval": SourceConfig.parse(
-                                source_doc.get("config")
-                            ).retrieval,
-                        }
-                    )
-                    seen.add(sid)
-                else:
-                    data["source"] = None
-            else:
-                data["source"] = None
-
-            for sid_raw in agent.get("extra_source_ids") or []:
-                if not sid_raw:
-                    continue
-                source_doc = _agent_source_doc(conn, sources_repo, agent, sid_raw)
-                if not source_doc:
-                    continue
-                sid = str(source_doc["id"])
-                if sid in seen:
-                    continue
-                src_retriever = source_doc.get("retriever")
-                src_chunks = source_doc.get("chunks")
-                sources_list.append(
-                    {
-                        "id": sid,
-                        "retriever": src_retriever or "classic",
-                        "chunks": (
-                            src_chunks if src_chunks is not None
-                            else data.get("chunks", "6")
-                        ),
-                        "retrieval": SourceConfig.parse(
-                            source_doc.get("config")
-                        ).retrieval,
-                    }
-                )
-                seen.add(sid)
+            primary, source_docs = authorized_agent_sources(conn, agent)
+        # ``sources`` row may have NULL ``retriever``/``chunks`` — fall back to
+        # the agent's value (``dict.get`` returns None even when the key
+        # exists with value None). The primary's own values win for the agent.
+        data["source"] = str(primary["id"]) if primary else None
+        if primary:
+            if primary.get("retriever"):
+                data["retriever"] = primary["retriever"]
+            if primary.get("chunks") is not None:
+                data["chunks"] = primary["chunks"]
+        sources_list: list = [
+            {
+                "id": str(source_doc["id"]),
+                "retriever": source_doc.get("retriever") or "classic",
+                "chunks": (
+                    source_doc["chunks"] if source_doc.get("chunks") is not None
+                    else data.get("chunks", "6")
+                ),
+                # Per-source behaviour contract (lenient read).
+                "retrieval": SourceConfig.parse(source_doc.get("config")).retrieval,
+            }
+            for source_doc in source_docs
+        ]
         data["sources"] = sources_list
         data["default_model_id"] = data.get("default_model_id", "")
         return data
@@ -987,6 +1035,9 @@ class StreamProcessor:
             agent_id, self.initial_user_id
         )
         self.agent_id = str(agent_id) if agent_id else None
+        self.agent_config["public_link_caller"] = bool(
+            self.agent_id and getattr(self, "public_link_usage", False)
+        )
 
         # Determine the effective API key (explicit > agent-derived)
         effective_key = self.data.get("api_key") or self.agent_key
@@ -1024,6 +1075,13 @@ class StreamProcessor:
             )
 
             # Set identity context
+            owner = self._agent_data.get("user")
+            self.agent_config["external_api_caller"] = getattr(self, "external_caller", False) or (
+                is_external_api_caller(self.data, self.decoded_token, owner)
+            )
+            self.agent_config["api_write_allowlist"] = AgentConfig.parse(
+                self._agent_data.get("config")
+            ).api_write_allowlist
             if self.data.get("api_key"):
                 # External API key: use the key owner's identity
                 self.initial_user_id = self._agent_data.get("user")
@@ -1210,10 +1268,25 @@ class StreamProcessor:
         writable wiki source; the first match wins and the scan stops there so
         this runs at most one owner+source lookup per chat on the hot path.
         Returns None when no writable wiki source is present.
+
+        An API-key or widget run (``outside_caller``) acts as the agent's
+        owner, so it gets the edit actions only when the wiki's owner turned
+        on ``wiki_outside_edits``; otherwise ``writes_allowed`` is False and
+        the tool offers only ``wiki_view``. A public-link visitor runs as
+        themselves, so they reach only wikis they may edit anyway; the switch
+        doesn't apply to them, but each of their edits waits for their
+        approval (``approval_required``), so the agent's prompt or sources
+        can't steer the model into changing their wiki unasked.
         """
         caller = self.decoded_token.get("sub") if self.decoded_token else None
         if not caller:
             return None
+        # Processors built without __init__ (tests, resume helpers) lack these.
+        run_config = getattr(self, "agent_config", None) or {}
+        outside_caller = bool(
+            run_config.get("external_api_caller") or getattr(self, "external_caller", False)
+        )
+        approval_required = bool(run_config.get("public_link_caller"))
 
         wiki_config: Optional[Dict[str, Any]] = None
         try:
@@ -1237,6 +1310,9 @@ class StreamProcessor:
                         "source_owner_id": owner,
                         "decoded_token": self.decoded_token,
                         "user": caller,
+                        "outside_caller": outside_caller,
+                        "writes_allowed": not outside_caller or outside_edits_allowed(source_doc),
+                        "approval_required": approval_required,
                     }
                     break
         except Exception:
@@ -1343,7 +1419,16 @@ class StreamProcessor:
             return None, None
 
     def pre_fetch_tools(self) -> Optional[Dict[str, Any]]:
-        """Pre-fetch tool data for template rendering before agent creation"""
+        """Pre-fetch tool data for template rendering before agent creation.
+
+        Runs the actions the prompt template names on the toolset the agent
+        run gets, so a teammate or public-link user renders the owner's
+        prompt with the owner's tools, never their own.
+
+        Returns:
+            Action results keyed by tool name and tool id, or None when
+            nothing was fetched.
+        """
         if not settings.ENABLE_TOOL_PREFETCH:
             logger.info(
                 "Tool pre-fetching disabled globally via ENABLE_TOOL_PREFETCH setting"
@@ -1359,17 +1444,17 @@ class StreamProcessor:
 
         try:
             user_id = self.initial_user_id or "local"
-            agentless = self.agent_id is None
-            with db_readonly() as conn:
-                user_tools = UserToolsRepository(conn).list_active_for_user(user_id)
-                user_doc = (
-                    UsersRepository(conn).get(user_id) if agentless else None
-                )
-
-            default_docs = (
-                synthesized_default_tools(user_doc) if agentless else []
+            outside_caller = bool(
+                self.agent_config.get("external_api_caller") or self.agent_config.get("public_link_caller")
             )
-            tool_docs = list(user_tools) + default_docs
+            # The same toolset the run gets: an agent's own tools (resolved as
+            # its owner, or the editor who attached them), else the caller's
+            # tools plus defaults. Explicit rows first, so they claim names.
+            run_tools = [
+                tool for tool in self._run_tool_executor().get_tools().values()
+                if isinstance(tool, dict) and not tool.get("client_side")
+            ]
+            tool_docs = sorted(run_tools, key=lambda tool: bool(tool.get("default")))
             if not tool_docs:
                 return None
 
@@ -1397,6 +1482,15 @@ class StreamProcessor:
                         continue
                     required_actions = None
 
+                owner = tool_doc.get("user_id")
+                if owner and (owner != user_id or outside_caller):
+                    # Someone else's tool (a widget or API run carries the
+                    # owner's id but isn't the owner): pre-fetch asks nobody,
+                    # so only what the run would do without asking.
+                    required_actions = self._unasked_actions(tool_doc, required_actions)
+                    if not required_actions:
+                        continue
+
                 tool_data = self._fetch_tool_data(tool_doc, required_actions)
                 if tool_data:
                     # Explicit rows claim the name key; a default tool takes
@@ -1413,6 +1507,57 @@ class StreamProcessor:
             logger.warning(f"Failed to pre-fetch tools: {type(e).__name__}")
             return None
 
+    @staticmethod
+    def _unasked_actions(
+        tool_doc: Dict[str, Any], required_actions: Optional[Set[Optional[str]]]
+    ) -> Set[Optional[str]]:
+        """The required actions of someone else's tool that run without asking.
+
+        A tool on someone else's connected account runs on their account or
+        needs the caller's own connection, a tool that decides approval per
+        call (a remote device, the code executor) can't be judged from its
+        stored flags, an approval-gated action waits for a person, and a
+        write with the owner's credentials needs the owner's say-so;
+        pre-fetch has none of these, so all are left out.
+
+        Args:
+            tool_doc: The tool row, owned by someone other than the caller.
+            required_actions: Action names the template needs; None, or a set
+                holding None, means all of them.
+
+        Returns:
+            The action names to run, empty when there are none.
+        """
+        from docsgpt.connectors.permissions import owner_credential_writes, tool_actions
+
+        if tool_doc.get("connection_id") or tool_doc.get("name") in _LIVE_APPROVAL_TOOLS:
+            return set()
+        owner_writes = set(owner_credential_writes(tool_doc))
+        unasked = {
+            action.get("name") for action in tool_actions(tool_doc)
+            if action.get("name") and action.get("active", True) and not action.get("require_approval")
+            and action.get("name") not in owner_writes
+        }
+        if required_actions is None or None in required_actions:
+            return unasked
+        return {name for name in required_actions if name in unasked}
+
+    def _run_tool_executor(self):
+        """A ``ToolExecutor`` resolving the toolset this turn's agent run gets.
+
+        Returns:
+            ToolExecutor: Built with the run's key, user and agent.
+        """
+        from docsgpt.agents.tool_executor import ToolExecutor
+
+        user = self.decoded_token.get("sub") if self.decoded_token else None
+        return ToolExecutor(
+            user_api_key=self.agent_config.get("user_api_key"),
+            user=user,
+            decoded_token=self.decoded_token,
+            agent_id=self.agent_id,
+        )
+
     def _enabled_tool_names(self) -> Optional[set]:
         """Resolve the tool names enabled for this turn, for ``tools.enabled`` gating.
 
@@ -1422,15 +1567,7 @@ class StreamProcessor:
         (keeps the section) rather than hiding guidance when resolution breaks.
         """
         try:
-            from docsgpt.agents.tool_executor import ToolExecutor
-
-            user = self.decoded_token.get("sub") if self.decoded_token else None
-            tool_executor = ToolExecutor(
-                user_api_key=self.agent_config.get("user_api_key"),
-                user=user,
-                decoded_token=self.decoded_token,
-                agent_id=self.agent_id,
-            )
+            tool_executor = self._run_tool_executor()
             client_tools = self.data.get("client_tools")
             if client_tools:
                 tool_executor.client_tools = client_tools
@@ -1638,21 +1775,37 @@ class StreamProcessor:
         from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
         from docsgpt.llm.llm_creator import LLMCreator
 
+        # Who is resuming, classified from this request alone: the saved state
+        # says who paused the turn, but anyone holding the agent's key (a
+        # widget key is public) can send the tool actions that resume it.
+        request_key = self.data.get("api_key")
+        original_token = self.decoded_token
+        key_agent = None
+        if request_key:
+            with db_readonly() as conn:
+                key_agent = AgentsRepository(conn).find_by_key(request_key)
+        key_owner = (
+            (key_agent.get("user_id") or key_agent.get("user")) if key_agent else None
+        )
+        request_external = bool(getattr(self, "external_caller", False)) or (
+            bool(request_key) and is_external_api_caller(self.data, original_token, key_owner)
+        )
+        request_public_link = False
+        named_agent = self.data.get("agent_id")
+        if named_agent and not request_key:
+            try:
+                self._get_agent_key(str(named_agent), self.initial_user_id)
+            except Exception as exc:
+                raise ValueError("This conversation can't be resumed with that agent") from exc
+            request_public_link = bool(getattr(self, "public_link_usage", False))
+
         # api_key-in-body auth carries no JWT, so initial_user_id is None — but
         # the state was saved under the agent owner. Resolve the owner so the
         # lookup / mark_resuming / delete_state key on the same id. (No-op for
         # v1, which already passes an owner-scoped decoded_token.)
-        if self.initial_user_id is None and self.data.get("api_key"):
-            with db_readonly() as conn:
-                agent_doc = AgentsRepository(conn).find_by_key(self.data["api_key"])
-            owner = (
-                (agent_doc.get("user_id") or agent_doc.get("user"))
-                if agent_doc
-                else None
-            )
-            if owner:
-                self.initial_user_id = owner
-                self.decoded_token = {"sub": owner}
+        if self.initial_user_id is None and key_owner:
+            self.initial_user_id = key_owner
+            self.decoded_token = {"sub": key_owner}
 
         cont_service = ContinuationService()
         state = claimed_state or cont_service.claim_state(
@@ -1660,6 +1813,21 @@ class StreamProcessor:
         )
         if not state:
             raise ValueError("No pending tool state found for this conversation")
+
+        # A request that names an agent (by key or id) resumes only that
+        # agent's turn; the claim goes back so its rightful caller can resume.
+        saved_agent = str((state.get("agent_config") or {}).get("agent_id") or "").lower()
+        targets = []
+        if request_key:
+            targets.append(str((key_agent or {}).get("id") or (key_agent or {}).get("_id") or ""))
+        if named_agent:
+            targets.append(str(named_agent))
+        if any(target.lower() != saved_agent or not target for target in targets):
+            try:
+                cont_service.release_claim(conversation_id, self.initial_user_id)
+            except Exception:
+                logger.warning("Failed to release a refused resume claim", exc_info=True)
+            raise ValueError("This conversation belongs to a different agent")
 
         messages = state["messages"]
         pending_tool_calls = state["pending_tool_calls"]
@@ -1696,11 +1864,20 @@ class StreamProcessor:
         if callable(importer):
             importer(agent_config.get("responses_state"))
         llm_handler = LLMHandlerCreator.create_handler(llm_name or "default")
+        # Outside if either who paused the turn or who resumes it is.
+        resume_external = bool(agent_config.get("external_api_caller")) or request_external
+        resume_public_link = bool(agent_config.get("public_link_caller")) or request_public_link
+        apply_resume_caller_rules(
+            tools_dict, outside_caller=resume_external, public_link_caller=resume_public_link,
+        )
         tool_executor = ToolExecutor(
             user_api_key=user_api_key,
             user=self.initial_user_id,
             decoded_token=self.decoded_token,
             agent_id=agent_id,
+            external_caller=resume_external,
+            public_link_caller=resume_public_link,
+            api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id
         # Restore client tools so they stay available for subsequent LLM calls
@@ -1878,6 +2055,9 @@ class StreamProcessor:
             user=user,
             decoded_token=self.decoded_token,
             agent_id=self.agent_id,
+            external_caller=bool(self.agent_config.get("external_api_caller")),
+            public_link_caller=bool(self.agent_config.get("public_link_caller")),
+            api_write_allowlist=self.agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = self.conversation_id
         # Pass client-side tools so they get merged in get_tools()

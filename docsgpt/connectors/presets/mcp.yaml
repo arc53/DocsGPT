@@ -1,0 +1,77 @@
+# Curated remote MCP servers shown as Connectors catalog cards.
+#
+# Inclusion rules: the vendor operates the server, it has a stable public URL,
+# and it signs in with OAuth plus dynamic client registration (or needs no
+# auth), so connecting takes no admin setup. Each entry was checked for OAuth
+# authorization-server metadata with a registration endpoint and for a 401
+# challenge on the MCP endpoint. Keep the list short; anything else is a
+# custom connector.
+#
+# Keys look like ``mcp:<name>``. The frontend reads ``settings.connectors
+# .descriptions.mcp_<name>`` for a translated description.
+#
+# A preset with ``sync_ingestor`` also syncs into Knowledge through its own
+# MCP server, signed in with the same connection (Linear's issues).
+
+- key: mcp:notion
+  name: Notion
+  description: Search, read and update Notion pages and databases.
+  icon: notion
+  category: knowledge
+  mcp_url: https://mcp.notion.com/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developers.notion.com/docs/mcp
+
+- key: mcp:linear
+  name: Linear
+  description: Sync issues and documents into Knowledge, and let agents find, create and update issues.
+  icon: linear
+  category: projects
+  mcp_url: https://mcp.linear.app/mcp
+  auth_kind: mcp_oauth
+  capabilities: [sync, read, write]
+  sync_ingestor: linear
+  docs_url: https://linear.app/docs/mcp
+
+- key: mcp:atlassian
+  name: Jira & Confluence
+  description: Search and update Jira issues and Confluence pages.
+  icon: atlassian
+  category: projects
+  # Shown on the Confluence card, next to syncing pages into Knowledge.
+  part_of: confluence
+  mcp_url: https://mcp.atlassian.com/v1/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/
+
+- key: mcp:sentry
+  name: Sentry
+  description: Look up Sentry issues, events and releases.
+  icon: sentry
+  category: dev
+  mcp_url: https://mcp.sentry.dev/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://docs.sentry.io/product/sentry-mcp/
+
+- key: mcp:asana
+  name: Asana
+  description: Find and update Asana tasks and projects.
+  icon: asana
+  category: projects
+  mcp_url: https://mcp.asana.com/v2/mcp
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://developers.asana.com/docs/using-asanas-mcp-server
+
+- key: mcp:stripe
+  name: Stripe
+  description: Look up customers, payments and subscriptions in Stripe.
+  icon: stripe
+  category: business
+  mcp_url: https://mcp.stripe.com
+  auth_kind: mcp_oauth
+  capabilities: [read, write]
+  docs_url: https://docs.stripe.com/mcp

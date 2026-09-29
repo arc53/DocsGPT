@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 
 import modelService from './api/services/modelService';
@@ -14,6 +15,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from './components/ui/select';
+import {
+  selectConnections,
+  selectConnectorCatalog,
+  selectConnectorsEnabled,
+  selectConnectorsLoaded,
+} from './connectors/connectorsSlice';
+import { connectorName } from './connectors/i18n';
 import { useDarkTheme } from './hooks';
 import {
   selectAvailableModels,
@@ -145,10 +153,31 @@ export default function Hero({
 }) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
+  const navigate = useNavigate();
   const demos = t('demo', { returnObjects: true }) as Array<{
     header: string;
     query: string;
   }>;
+  // Nothing connected yet: the last card offers connecting a service, named
+  // after what this install can actually connect.
+  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const connectorsLoaded = useSelector(selectConnectorsLoaded);
+  const connections = useSelector(selectConnections);
+  const catalog = useSelector(selectConnectorCatalog);
+  const connectable = catalog.filter(
+    (connector) => connector.available && connector.publisher !== 'custom',
+  );
+  const offerConnect =
+    connectorsEnabled &&
+    connectorsLoaded &&
+    connections.length === 0 &&
+    connectable.length > 0;
+  const connectNames = connectable
+    .slice(0, 2)
+    .map((connector) => connectorName(t, connector))
+    .join(', ');
+  const cards = (demos ?? []).filter((demo) => demo.header && demo.query);
+  const shown = offerConnect ? cards.slice(0, 3) : cards;
 
   return (
     <div className="text-foreground flex h-full w-full flex-col items-center justify-between">
@@ -170,7 +199,7 @@ export default function Hero({
       {/* Demo Buttons Section */}
       <div className="mb-3 w-full max-w-full md:mb-3">
         <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-1 md:gap-4 lg:grid-cols-2">
-          {demos?.map(
+          {shown.map(
             (demo: { header: string; query: string }, key: number) =>
               demo.header &&
               demo.query && (
@@ -198,6 +227,31 @@ export default function Hero({
                   </span>
                 </Button>
               ),
+          )}
+          {offerConnect && (
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              shape="pill"
+              onClick={() => navigate('/settings/connectors')}
+              data-testid="hero-connect-card"
+              className={cn(
+                /* eslint-disable-next-line shadcn/no-restyle --
+                   Same two-line pill as the demo cards above. */
+                'hidden h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal md:flex',
+              )}
+            >
+              <p className="text-foreground mb-2 font-semibold">
+                {t('connectHero.title')}
+              </p>
+              <span className="text-muted-foreground line-clamp-2">
+                {t('connectHero.body', {
+                  names: connectNames,
+                  interpolation: { escapeValue: false },
+                })}
+              </span>
+            </Button>
           )}
         </div>
       </div>

@@ -23,6 +23,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
 import { getToolDisplayName } from '../../../utils/toolUtils';
+import { withAttachedOptions } from '../../sponsorConsent';
 import NodeDocumentsControl from '../components/NodeDocumentsControl';
 import PromptTextArea from '../components/PromptTextArea';
 import {
@@ -42,6 +43,13 @@ interface AgentPanelProps extends NodePanelBodyProps {
   availableModels: Model[];
   availableTools: UserTool[];
   sourceOptions: { value: string; label: string }[];
+  /**
+   * Names of the tools and sources the workflow's nodes reference, whoever
+   * owns them: a selected one missing from the caller's own options (the
+   * owner's private tool) still gets an option, so it can be removed.
+   */
+  attachedTools?: { id: string; label: string }[];
+  attachedSources?: { id: string; label: string }[];
   /** Upstream file variables the agent can read. */
   documentOptions: { value: string; label: string }[];
   /** The structured-output schema as typed. */
@@ -101,6 +109,8 @@ export default function AgentPanel({
   availableModels,
   availableTools,
   sourceOptions,
+  attachedTools = [],
+  attachedSources = [],
   documentOptions,
   jsonSchemaText,
   jsonSchemaError,
@@ -120,6 +130,23 @@ export default function AgentPanel({
   const builtinModels = availableModels.filter((m) => m.source !== 'user');
   const userModels = availableModels.filter((m) => m.source === 'user');
   const schemaInvalid = jsonSchemaText.trim() !== '' && jsonSchemaError;
+  const attachedLabel = (name: string) =>
+    t('agents.workflow.builder.attachedOption', { ...NO_ESCAPE, name });
+  const toolOptions = withAttachedOptions(
+    availableTools.map((tool) => ({
+      value: tool.id,
+      label: getToolDisplayName(tool),
+    })),
+    attachedTools,
+    config.tools || [],
+    attachedLabel,
+  );
+  const nodeSourceOptions = withAttachedOptions(
+    sourceOptions,
+    attachedSources,
+    config.sources || [],
+    attachedLabel,
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -248,7 +275,7 @@ export default function AgentPanel({
           labelSurface="background"
         >
           <MultiSelect
-            options={sourceOptions}
+            options={nodeSourceOptions}
             selected={config.sources || []}
             onChange={(newSources) => updateConfig({ sources: newSources })}
             placeholder={t('agents.form.placeholders.selectSources')}
@@ -261,10 +288,7 @@ export default function AgentPanel({
           labelSurface="background"
         >
           <MultiSelect
-            options={availableTools.map((tool) => ({
-              value: tool.id,
-              label: getToolDisplayName(tool),
-            }))}
+            options={toolOptions}
             selected={config.tools || []}
             onChange={(newTools) => updateConfig({ tools: newTools })}
             placeholder={t('agents.form.placeholders.selectTools')}

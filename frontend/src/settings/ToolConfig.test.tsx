@@ -19,9 +19,11 @@ vi.mock('../modals/AddActionModal', () => ({ default: () => null }));
 vi.mock('../modals/ImportSpecModal', () => ({ default: () => null }));
 
 const updateTool = vi.fn();
+const createTool = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
     updateTool: (...args: unknown[]) => updateTool(...args),
+    createTool: (...args: unknown[]) => createTool(...args),
     deleteTool: () => Promise.resolve(),
   },
 }));
@@ -181,6 +183,28 @@ describe('ToolConfig', () => {
     const alert = container.querySelector<HTMLElement>('[role="alert"]');
     expect(alert?.textContent).toBe('settings.tools.saveFailed');
     expect(alert?.className).toContain('text-destructive');
+  });
+
+  it('shows a save the server refused as failed', async () => {
+    updateTool.mockResolvedValue({ ok: false, status: 400 });
+    await render({ ...userTool, customName: '' });
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="settings.tools.customNamePlaceholder"]',
+    );
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(name, 'Renamed');
+      name?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      buttonByText('settings.tools.save')?.click();
+    });
+    expect(
+      container.querySelector<HTMLElement>('[role="alert"]')?.textContent,
+    ).toBe('settings.tools.saveFailed');
   });
 
   describe('a shared MCP server', () => {
@@ -451,6 +475,16 @@ describe('ToolConfig', () => {
     expect(cancel?.dataset.shape).toBe('pill');
   });
 
+  it('creates a draft OpenAPI tool on its first save, not before', async () => {
+    createTool.mockResolvedValue({ ok: true });
+    updateTool.mockClear();
+    await render({ ...apiTool, id: '' } as APIToolType);
+    expect(createTool).not.toHaveBeenCalled();
+    await act(async () => buttonByText('settings.tools.save')!.click());
+    expect(updateTool).not.toHaveBeenCalled();
+    expect(createTool.mock.calls[0][0]).toMatchObject({ name: 'api_tool' });
+  });
+
   describe('access', () => {
     const viewer = { access: 'viewer', allowed_actions: ['use'] };
     const editorNoCreds = {
@@ -533,6 +567,30 @@ describe('ToolConfig', () => {
       expect(credential && disabled(credential)).toBe(true);
     });
 
+    it('locks fixed values for anyone but the owner', async () => {
+      // Even an editor who may change credentials: the server refuses a fixed
+      // value from anyone but the owner.
+      await render({
+        ...userTool,
+        access: 'editor',
+        allowed_actions: ['edit', 'edit_credentials', 'use', 'use_in_own'],
+      } as UserToolType);
+      await act(async () => {
+        (
+          container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        ).click();
+      });
+      const filled = container.querySelector(
+        '[aria-label="settings.tools.filledByLLM"]',
+      );
+      expect(filled?.hasAttribute('disabled')).toBe(true);
+      const tableInputs = Array.from(
+        container.querySelectorAll<HTMLInputElement>('table input[data-slot]'),
+      );
+      // The description stays editable; the value is the fixed one.
+      expect(tableInputs.at(-1)?.disabled).toBe(true);
+    });
+
     it('says why the credentials are locked for an editor without edit_credentials', async () => {
       await render({ ...configTool, ...editorNoCreds } as UserToolType);
       const note = container.querySelector('[data-slot="alert"]');
@@ -545,6 +603,48 @@ describe('ToolConfig', () => {
         ...configTool,
         access: 'editor',
         allowed_actions: ['edit', 'edit_credentials', 'use'],
+      } as UserToolType);
+      expect(container.textContent).not.toContain(
+        'common.credentialsLockedNotice',
+      );
+    });
+
+    // The connection's secret is the owner's alone: the server refuses any
+    // credential change from anyone else, so the form must not offer one.
+    it("locks a connected tool's credentials for an editor allowed to change credentials", async () => {
+      updateTool.mockResolvedValue({ ok: true });
+      await render({
+        ...configTool,
+        connection_id: 'owner-conn',
+        access: 'editor',
+        allowed_actions: ['edit', 'edit_credentials', 'use'],
+      } as UserToolType);
+      const note = container.querySelector('[data-slot="alert"]');
+      expect(note?.textContent).toBe('common.credentialsLockedNotice');
+      const credential = container.querySelector<HTMLInputElement>(
+        'input[type="password"]',
+      );
+      expect(credential && disabled(credential)).toBe(true);
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )?.set;
+        setter?.call(nameInput(), 'Renamed');
+        nameInput().dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => {
+        buttonByText('settings.tools.save')?.click();
+      });
+      expect(updateTool).toHaveBeenCalledTimes(1);
+      expect(updateTool.mock.calls[0][0]).not.toHaveProperty('config');
+    });
+
+    it("keeps a connected tool's credentials open to its owner", async () => {
+      await render({
+        ...configTool,
+        connection_id: 'my-conn',
+        access: 'owner',
       } as UserToolType);
       expect(container.textContent).not.toContain(
         'common.credentialsLockedNotice',

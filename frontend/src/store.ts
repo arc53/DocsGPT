@@ -1,6 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 
 import agentPreviewReducer from './agents/agentPreviewSlice';
+import connectorsReducer from './connectors/connectorsSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
 import {
@@ -75,6 +76,7 @@ const store = configureStore({
     schedules: schedulesReducer,
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
+    connectors: connectorsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
