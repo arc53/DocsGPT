@@ -1091,8 +1091,8 @@ class WikiSettings(Resource):
 
     @api.doc(
         description="Change a wiki's settings (owner only, manage_settings). "
-        "Body: {\"allow_outside_edits\": bool}: whether runs from the agent's "
-        "API key, widget or public link may edit the wiki."
+        "Body: {\"allow_outside_edits\": bool}: whether runs from an agent's "
+        "API key or widget may edit the wiki."
     )
     def put(self, source_id):
         decoded_token = request.decoded_token
@@ -1118,9 +1118,12 @@ class WikiSettings(Resource):
                     return make_response(
                         jsonify({"success": False, "message": "Source is not a wiki"}), 400
                     )
-                SourcesRepository(conn).set_wiki_outside_edits(
+                if not SourcesRepository(conn).set_wiki_outside_edits(
                     str(doc["id"]), ra.owner_id, allowed
-                )
+                ):
+                    return make_response(
+                        jsonify({"success": False, "message": "Source not found"}), 404
+                    )
                 record_event(
                     conn,
                     "source.wiki_settings_updated",

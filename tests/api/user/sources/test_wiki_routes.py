@@ -705,3 +705,15 @@ class TestWikiSettings:
         )
         assert response.status_code == 400
         assert self._stored(pg_conn, sid) is False
+
+    def test_no_row_updated_is_404(self, app, pg_conn):
+        sid = self._wiki(pg_conn, "alice-ws-gone")
+        with patch(
+            "docsgpt.storage.db.repositories.sources.SourcesRepository.set_wiki_outside_edits",
+            return_value=False,
+        ):
+            response = _settings_call(
+                app, pg_conn, sid, "alice-ws-gone", "PUT", {"allow_outside_edits": True}
+            )
+        assert response.status_code == 404
+        assert response.json["success"] is False
