@@ -183,8 +183,8 @@
           "action": "Wiki 設定",
           "title": "Wiki 設定",
           "outsideEdits": {
-            "label": "允許 API、小工具和公開連結使用者編輯此 Wiki",
-            "description": "關閉時，透過代理的 API 金鑰、小工具或公開連結使用它的人可以閱讀此 Wiki，但無法變更。你和此 Wiki 的編輯者隨時都能編輯它。"
+            "label": "允許 API 和小工具使用者編輯此 Wiki",
+            "description": "關閉時，透過代理的 API 金鑰或小工具使用它的人可以閱讀此 Wiki，但無法變更。公開連結的訪客只能編輯他們自己有權編輯的 Wiki，且每次變更前都會被詢問。你和此 Wiki 的編輯者隨時都能編輯它。"
           },
           "loadError": "無法載入 Wiki 設定。",
           "saveError": "無法儲存變更。請再試一次。"

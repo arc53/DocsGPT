@@ -26,7 +26,7 @@ interface WikiSettingsModalProps {
 
 /**
  * A wiki's owner settings. Today one switch: whether people using an agent
- * through its API key, widget or public link may edit the wiki. It saves at
+ * through its API key or widget may edit the wiki. It saves at
  * once and flips back when the server refuses.
  */
 export default function WikiSettingsModal({

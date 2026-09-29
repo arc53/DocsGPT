@@ -183,8 +183,8 @@
           "action": "Wiki 设置",
           "title": "Wiki 设置",
           "outsideEdits": {
-            "label": "允许 API、小组件和公开链接用户编辑此 Wiki",
-            "description": "关闭时，通过智能体的 API 密钥、小组件或公开链接使用它的人可以阅读此 Wiki，但不能更改。你和此 Wiki 的编辑者始终可以编辑它。"
+            "label": "允许 API 和小组件用户编辑此 Wiki",
+            "description": "关闭时，通过智能体的 API 密钥或小组件使用它的人可以阅读此 Wiki，但不能更改。公开链接的访问者只能编辑他们自己有权编辑的 Wiki，并且每次更改前都会被询问。你和此 Wiki 的编辑者始终可以编辑它。"
           },
           "loadError": "无法加载 Wiki 设置。",
           "saveError": "无法保存更改。请重试。"

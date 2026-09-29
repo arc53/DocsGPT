@@ -92,11 +92,17 @@ Human edits are stamped with `human` provenance and trigger the same re-embed as
 
 ## Edits from the API, widget and public links
 
-An agent called with its API key (the website widget, the API) runs as its owner, and people who open an agent from its public link are strangers to the owner. By default, neither can change a wiki: they can still read it through the agent, but the agent isn't offered the create, edit, delete or rename actions in those chats, and the Wiki tool refuses them if it's asked anyway.
+An agent called with its API key (the website widget, the API) runs as its owner, so it could change any wiki the owner can edit. By default it can't: API and widget users can still read the wiki through the agent, but the agent isn't offered the create, edit, delete or rename actions in those chats, and the Wiki tool refuses them if it's asked anyway.
 
-The wiki's owner can allow such edits. On the **Sources** page, open the wiki's menu, choose **Wiki settings**, and turn on **Let API, widget and public-link users edit this wiki**. The change applies from the next message, including in chats that are already open. Only the owner sees it; team editors can't change it. You and the wiki's editors can always edit it in DocsGPT, and so can agents you or they use there.
+The wiki's owner can allow such edits. On the **Sources** page, open the wiki's menu, choose **Wiki settings**, and turn on **Let API and widget users edit this wiki**. The change applies from the next message, including in chats that are already open. Only the owner sees it; team editors can't change it. You and the wiki's editors can always edit it in DocsGPT, and so can agents you or they use there.
+
+The switch doesn't cover public links. People who open an agent from its public link run it as themselves, so they can only edit wikis they could edit anyway (their own, or ones shared with them as an editor). Because the agent's prompt and sources belong to someone else, each of their wiki edits waits for their approval in the chat before it runs.
 
 Scheduled and webhook runs don't get the Wiki tool, so they read a wiki through search but never edit it.
+
+<Callout type="warning" emoji="⚠️">
+With authentication off (`AUTH_TYPE=None`, the default), every request, including one from the widget or the API, runs as the same `local` user who owns the agents. The switch then can't tell outside callers from you and has no effect, so turn authentication on if others can reach the widget or the API.
+</Callout>
 
 From the API, only a signed-in session can change the setting; a personal access token can read it but not change it:
 

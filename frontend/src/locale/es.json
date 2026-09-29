@@ -184,8 +184,8 @@
           "action": "Configuración del wiki",
           "title": "Configuración del wiki",
           "outsideEdits": {
-            "label": "Permitir que los usuarios de la API, del widget y del enlace público editen este wiki",
-            "description": "Si está desactivado, quienes usan un agente mediante su clave de API, su widget o su enlace público pueden leer este wiki, pero no cambiarlo. Tú y los editores del wiki siempre pueden editarlo."
+            "label": "Permitir que los usuarios de la API y del widget editen este wiki",
+            "description": "Si está desactivado, quienes usan un agente mediante su clave de API o su widget pueden leer este wiki, pero no cambiarlo. Los visitantes de un enlace público solo pueden editar los wikis que ellos mismos pueden editar, y se les pregunta antes de cada cambio. Tú y los editores del wiki siempre pueden editarlo."
           },
           "loadError": "No se pudo cargar la configuración del wiki.",
           "saveError": "No se pudo guardar el cambio. Inténtalo de nuevo."
