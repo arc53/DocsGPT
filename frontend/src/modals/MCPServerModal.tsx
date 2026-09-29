@@ -30,10 +30,14 @@ interface MCPServerModalProps {
   onServerSaved: () => void;
 }
 
-/** The host of a URL, or '' while it doesn't parse. */
-function hostOf(url: string): string {
+/**
+ * The origin (scheme, host, port) of a URL, or '' while it doesn't parse.
+ * Saved secrets follow the origin, like the server's rule: the same host over
+ * http would send them in cleartext, and another port can be another service.
+ */
+function originOf(url: string): string {
   try {
-    return new URL(url.trim()).host.toLowerCase();
+    return new URL(url.trim()).origin.toLowerCase();
   } catch {
     return '';
   }
@@ -123,11 +127,11 @@ export default function MCPServerModal({
     !!server?.has_encrypted_credentials &&
     !!savedSecret &&
     formData.auth_type === server?.auth_type;
-  // The server clears the saved secret when the host changes, so the key
-  // can't be pointed at another server.
+  // The server clears the saved secret when the origin changes, so the key
+  // can't be pointed at another server, port or plain http.
   const serverChanged =
     hasSavedSecret &&
-    hostOf(formData.server_url) !== hostOf(server?.server_url || '');
+    originOf(formData.server_url) !== originOf(server?.server_url || '');
   const keepSavedSecret = hasSavedSecret && !serverChanged;
 
   const cleanupOAuthListener = useCallback(() => {

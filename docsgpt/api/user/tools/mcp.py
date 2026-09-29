@@ -12,7 +12,7 @@ from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.api.user.tools.routes import (
     _CREDENTIALS_FOR_NEW_SERVER,
     _MCP_CREDENTIAL_AUTH_TYPES,
-    _mcp_host_changed,
+    _mcp_origin_changed,
     check_oauth_mcp_owner_only,
     denied_response,
     transform_actions,
@@ -90,7 +90,8 @@ def _existing_mcp_context(tool_id, user, config):
     With no ``tool_id`` the caller acts on their own new server. With one,
     the caller needs ``edit_credentials`` on that tool and everything runs as
     its owner. Stored secrets are write-only, so an empty secret field reuses
-    the stored one while the host is unchanged; a new host never inherits them.
+    the stored one while the origin (scheme, host, port) is unchanged; a new
+    origin never inherits them.
     A server that is or would become OAuth is the owner's alone (its tokens
     are the owner's sign-in).
 
@@ -114,7 +115,7 @@ def _existing_mcp_context(tool_id, user, config):
         )
     existing_config = existing_doc.get("config") or {}
     check_oauth_mcp_owner_only(ra, existing_config, config)
-    moved = _mcp_host_changed(config, existing_config)
+    moved = _mcp_origin_changed(config, existing_config)
     auth_type = config.get("auth_type", "none")
     new_secret_keys = set(auth_credentials) - {"api_key_header"}
     if moved and auth_type in _MCP_CREDENTIAL_AUTH_TYPES and not new_secret_keys:

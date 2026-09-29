@@ -167,6 +167,21 @@ describe('MCPServerModal', () => {
     expect(text()).toContain('settings.tools.mcp.errors.apiKeyRequired');
   });
 
+  it.each([
+    ['a downgrade to http', 'http://mcp.dana-tools.dev/sse'],
+    ['another port', 'https://mcp.dana-tools.dev:8443/sse'],
+  ])('clears the saved key for %s', async (_label, url) => {
+    await render();
+    await typeInto(urlInput(), url);
+    expect(text()).toContain('settings.tools.mcp.serverChangedNotice');
+  });
+
+  it('keeps the saved key when only the default port is spelled out', async () => {
+    await render();
+    await typeInto(urlInput(), 'https://mcp.dana-tools.dev:443/v2/sse');
+    expect(text()).not.toContain('settings.tools.mcp.serverChangedNotice');
+  });
+
   it('keeps the saved key for a path-only change on the same host', async () => {
     await render();
     await typeInto(urlInput(), 'https://mcp.dana-tools.dev/v2/sse');

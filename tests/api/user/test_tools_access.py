@@ -262,6 +262,24 @@ class TestApiToolSecrets:
         assert self._save(app, pg_conn, OWNER, tool["id"], same_host).status_code == 200
         assert _runtime_action(pg_conn, tool["id"])["headers"]["properties"]["X-Key"]["value"] == "sk-secret"
 
+    @pytest.mark.parametrize("url", [
+        "http://api.example.com/users",        # https -> http: cleartext
+        "https://api.example.com:8443/users",  # another port, maybe another service
+    ])
+    def test_url_scheme_or_port_change_requires_new_secrets(self, app, pg_conn, url):
+        tool = _tool(pg_conn, name="api_tool", config={})
+        self._save(app, pg_conn, OWNER, tool["id"], _api_config())
+        resp = self._save(app, pg_conn, OWNER, tool["id"], self._masked(_api_config(url=url)))
+        assert resp.status_code == 400
+        assert "credentials" in resp.json["message"].lower()
+
+    def test_url_with_explicit_default_port_keeps_secrets(self, app, pg_conn):
+        tool = _tool(pg_conn, name="api_tool", config={})
+        self._save(app, pg_conn, OWNER, tool["id"], _api_config())
+        same = self._masked(_api_config(url="https://API.example.com:443/users"))
+        assert self._save(app, pg_conn, OWNER, tool["id"], same).status_code == 200
+        assert _runtime_action(pg_conn, tool["id"])["headers"]["properties"]["X-Key"]["value"] == "sk-secret"
+
     def test_url_host_change_with_new_secrets_succeeds(self, app, pg_conn):
         tool = _tool(pg_conn, name="api_tool", config={})
         self._save(app, pg_conn, OWNER, tool["id"], _api_config())
@@ -325,6 +343,18 @@ class TestToolWrites:
         assert "credentials" in resp.json["message"].lower()
         stored = _row(pg_conn, tool["id"])["config"]
         assert stored["server_url"] == "https://mcp.example.com/x"
+
+    def test_update_tool_config_scheme_change_clears_stored_secrets(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
+
+        cfg = {"server_url": "https://mcp.example.com/x", "auth_type": "bearer",
+               "encrypted_credentials": encrypt_credentials({"bearer_token": "tok"}, OWNER)}
+        tool = _tool(pg_conn, name="mcp_tool", config=cfg)
+        body = {"id": str(tool["id"]), "config": {"server_url": "http://mcp.example.com/x",
+                                                  "auth_type": "bearer"}}
+        resp = _call(app, pg_conn, UpdateToolConfig, OWNER, json=body)
+        assert resp.status_code == 400
+        assert _row(pg_conn, tool["id"])["config"]["server_url"] == "https://mcp.example.com/x"
 
     def test_api_tool_description_edit_needs_only_edit(self, app, pg_conn):
         from docsgpt.api.user.tools.routes import UpdateTool, _seal_api_tool_secrets
@@ -475,6 +505,17 @@ class TestMCPSaveAccess:
         assert not cls.called
         assert _row(pg_conn, tool["id"])["config"]["server_url"] == "https://mcp.example.com/mcp"
 
+    @pytest.mark.parametrize("url", ["http://mcp.example.com/mcp", "https://mcp.example.com:8443/mcp"])
+    def test_scheme_or_port_change_without_credentials_is_rejected(self, app, pg_conn, url):
+        tool = _mcp_tool(pg_conn, secrets={"bearer_token": "tok"})
+        _share(pg_conn, tool["id"], "ed", "editor")
+        body = {"id": str(tool["id"]), "displayName": "M",
+                "config": {"server_url": url, "auth_type": "bearer", "transport_type": "http"}}
+        resp, cls = self._save(app, pg_conn, "ed", body)
+        assert resp.status_code == 400
+        assert not cls.called
+        assert _row(pg_conn, tool["id"])["config"]["server_url"] == "https://mcp.example.com/mcp"
+
     def test_host_change_with_new_credentials_replaces_them(self, app, pg_conn):
         tool = _mcp_tool(pg_conn, secrets={"bearer_token": "tok"})
         body = {"id": str(tool["id"]), "displayName": "M",
@@ -582,6 +623,13 @@ class TestMCPTestEndpointAccess:
         resp, cls = self._test(app, pg_conn, OWNER, self._body(tool, url="https://new.example.org/mcp",
                                                                 bearer_token="t2"))
         assert cls.call_args.kwargs["config"]["auth_credentials"] == {"bearer_token": "t2"}
+
+    def test_scheme_downgrade_without_secret_is_400(self, app, pg_conn):
+        tool = _mcp_tool(pg_conn, secrets={"bearer_token": "tok"})
+        _share(pg_conn, tool["id"], "ed", "editor")
+        resp, cls = self._test(app, pg_conn, "ed", self._body(tool, url="http://mcp.example.com/mcp"))
+        assert resp.status_code == 400
+        assert not cls.called
 
     def test_viewer_and_stranger_denied(self, app, pg_conn):
         tool = _mcp_tool(pg_conn, secrets={"bearer_token": "tok"})

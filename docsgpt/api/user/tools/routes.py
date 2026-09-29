@@ -193,7 +193,7 @@ _META_KEYS = ("name", "displayName", "customName", "description", "actions")
 
 
 class CredentialsRequired(Exception):
-    """A save moved a tool to a new host without supplying new secrets."""
+    """A save moved a tool to a new origin without supplying new secrets."""
 
 
 def denied_response(err: AccessDenied):
@@ -207,12 +207,26 @@ def check_action(ra: ResourceAccess, action: str) -> None:
         raise AccessDenied(403, _FORBIDDEN_MESSAGE)
 
 
-def url_host(url: Any) -> str:
-    """Lower-cased host of ``url`` ('' when it has none)."""
+_DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
+
+
+def url_origin(url: Any) -> str:
+    """``scheme://host:port`` of ``url``, lower-cased, default port filled in.
+
+    Saved secrets follow the origin, not just the host: the same host over
+    ``http`` would send them in cleartext, and another port can be another
+    service. ``''`` when the URL has no host or doesn't parse.
+    """
     try:
-        return (urlparse(str(url or "").strip()).hostname or "").lower()
+        parts = urlparse(str(url or "").strip())
+        host = (parts.hostname or "").lower()
+        port = parts.port
     except ValueError:
         return ""
+    if not host:
+        return ""
+    scheme = (parts.scheme or "").lower()
+    return f"{scheme}://{host}:{port or _DEFAULT_PORTS.get(scheme, '')}"
 
 
 def _has_value(value: Any) -> bool:
@@ -270,7 +284,7 @@ def _seal_api_tool_secrets(new_config: dict, existing_config: dict, owner_id: st
 
     An incoming entry with a value replaces the stored one; an empty value with
     ``has_value`` keeps it (legacy plaintext values included); anything else
-    clears it. When an action's URL host changes the stored values are not
+    clears it. When an action's URL origin changes the stored values are not
     carried over.
 
     Args:
@@ -282,7 +296,7 @@ def _seal_api_tool_secrets(new_config: dict, existing_config: dict, owner_id: st
         The config to persist.
 
     Raises:
-        CredentialsRequired: a host changed, the client asked to keep a value,
+        CredentialsRequired: an origin changed, the client asked to keep a value,
             and there is nothing to keep.
     """
     existing_config = existing_config or {}
@@ -293,7 +307,7 @@ def _seal_api_tool_secrets(new_config: dict, existing_config: dict, owner_id: st
     sealed: dict = {}
     for name, action in (out.get("actions") or {}).items():
         old = old_actions.get(name) if isinstance(old_actions, dict) else None
-        moved = isinstance(old, dict) and url_host(old.get("url")) != url_host(
+        moved = isinstance(old, dict) and url_origin(old.get("url")) != url_origin(
             action.get("url") if isinstance(action, dict) else ""
         )
         prior = {} if moved else stored.get(name, {})
@@ -345,9 +359,10 @@ def _api_tool_config_needs_credentials(new_config: dict, existing_config: dict) 
     return False
 
 
-def _mcp_host_changed(new_config: dict, existing_config: dict) -> bool:
+def _mcp_origin_changed(new_config: dict, existing_config: dict) -> bool:
+    """Whether a save moves an MCP server to another scheme, host or port."""
     old_url = (existing_config or {}).get("server_url")
-    return bool(old_url) and url_host(old_url) != url_host((new_config or {}).get("server_url"))
+    return bool(old_url) and url_origin(old_url) != url_origin((new_config or {}).get("server_url"))
 
 
 SHARED_OAUTH_OWNER_ONLY = "Only the owner can change or reconnect this server"
@@ -386,16 +401,16 @@ def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: 
 
     Handles the three secret stores: ``config_requirements`` secrets
     (``encrypted_credentials``), api_tool header/query values, and the MCP
-    host-change rule (a new server host drops stored credentials).
+    origin-change rule (a new scheme, host or port drops stored credentials).
 
     Raises:
-        CredentialsRequired: the MCP host changed and no new secret arrived.
+        CredentialsRequired: the MCP origin changed and no new secret arrived.
     """
     owner_id = tool_doc["user_id"]
     existing_config = tool_doc.get("config") or {}
     if tool_doc.get("name") == "api_tool":
         return _seal_api_tool_secrets(new_config, existing_config, owner_id)
-    moved = tool_doc.get("name") == "mcp_tool" and _mcp_host_changed(new_config, existing_config)
+    moved = tool_doc.get("name") == "mcp_tool" and _mcp_origin_changed(new_config, existing_config)
     if moved:
         existing_config = {k: v for k, v in existing_config.items() if k != "encrypted_credentials"}
     final = _merge_secrets_on_update(new_config, existing_config, config_requirements, owner_id)
