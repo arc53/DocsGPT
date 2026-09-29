@@ -40,7 +40,7 @@ const DOCKED_ENTER =
 
 // The host is `relative`; the panel covers it and the page keeps its scroll
 // position underneath.
-const DOCKED_FULL = 'absolute inset-0 z-10 w-auto border-l-0';
+const DOCKED_FULL = 'absolute inset-0 z-20 w-auto border-l-0';
 
 const storageKey = (surface: string) => `docsgpt-side-panel:${surface}`;
 
@@ -194,7 +194,9 @@ function SidePanel({
         data-width={current}
         aria-labelledby={titleId}
         className={cn(
-          'bg-background border-border flex max-w-full shrink-0 flex-col border-l transition-[width] duration-300 ease-in-out',
+          // z-20: above the app's floating top actions (Share, account, z-10),
+          // which the open panel covers.
+          'bg-background border-border relative z-20 flex max-w-full shrink-0 flex-col border-l transition-[width] duration-300 ease-in-out',
           DOCKED_ENTER,
           current === 'full'
             ? DOCKED_FULL

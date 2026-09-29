@@ -7,7 +7,6 @@ import userService from '../api/services/userService';
 import { canOpenAgentEditor } from '../agents/agentAccess';
 import SharedAgentCard from '../agents/SharedAgentCard';
 import { Agent } from '../agents/types';
-import ActionButtons from '../components/ActionButtons';
 import ArtifactPanel from '../components/ArtifactPanel';
 import ErrorBoundary from '../components/ErrorBoundary';
 import MessageInput from '../components/MessageInput';
@@ -411,7 +410,6 @@ export default function Conversation() {
             isCompanionDocked && 'px-6',
           )}
         >
-          <ActionButtons placement="column" />
           <div className="relative min-h-0 flex-1">
             {/* A render crash in the message list must leave the composer
               usable; the boundary resets on conversation switch. */}

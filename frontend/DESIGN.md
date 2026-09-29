@@ -1365,12 +1365,13 @@ it?
 - **`variant="docked"`** (yes): what you read or tweak beside a live page
   (the chat's artifact or an answer's sources, a workflow node's settings, a
   graph entity). An `<aside>` in the page: no scrim, `border-l` on
-  `bg-background`, the full height of its host, sliding in and out like the
-  modal one. The host is a `relative flex overflow-hidden` row with the page
-  as a `min-w-0 flex-1` sibling. The chat's Share and account menu sit in its
-  column (`ActionButtons placement="column"`), not in the viewport corner, so
-  they stay beside the chat and never land on the panel. One docked slot per
-  page: opening another thing replaces what is there, never stacks.
+  `bg-background`, the full height of its host. It slides in like the modal
+  one and closes at once (an exit slide snaps back for a frame before it
+  unmounts). The host is a `relative flex overflow-hidden` row with the page
+  as a `min-w-0 flex-1` sibling. While open it covers the app's floating Share
+  and account menu in the top-right corner (`ActionButtons`, `z-10` under the
+  panel's `z-20`); they come back when it closes. One docked slot per page:
+  opening another thing replaces what is there, never stacks.
   The chat's slot (`conversation/chatCompanion`) holds an artifact or an
   answer's sources; where there is no slot (a shared chat, an agent preview)
   the sources open modal.

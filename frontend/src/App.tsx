@@ -4,13 +4,7 @@ import './locale/i18n';
 import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
-import {
-  matchPath,
-  Outlet,
-  Route,
-  Routes,
-  useLocation,
-} from 'react-router-dom';
+import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 
 import { cn } from '@/lib/utils';
 
@@ -97,13 +91,6 @@ function AuthWrapper({ children }: { children: React.ReactNode }) {
   return <EventStreamProvider>{children}</EventStreamProvider>;
 }
 
-// The routes that render Conversation (see the Route list below).
-const CHAT_ROUTES = [
-  '/',
-  '/c/:conversationId',
-  '/agents/:agentId/c/:conversationId',
-];
-
 function MainLayout() {
   const { isMobile } = useMediaQuery();
   const [navOpen, setNavOpen] = useState(!isMobile);
@@ -112,7 +99,6 @@ function MainLayout() {
   // the conversation now survives the trip, so "share" would target a chat
   // that isn't on screen.
   const inSection = Boolean(getSectionForPath(location.pathname));
-  const inChat = CHAT_ROUTES.some((path) => matchPath(path, location.pathname));
   // The workflow Preview drawer occupies the right edge; move the toast
   // stack to the bottom-left while it's open so it stays visible without
   // covering the drawer's attach/send controls.
@@ -122,8 +108,7 @@ function MainLayout() {
     <SidebarLevelProvider>
       <div className="bg-background relative h-dvh overflow-hidden">
         <Navigation navOpen={navOpen} setNavOpen={setNavOpen} />
-        {/* The chat draws its own, in its column (beside a docked panel). */}
-        {!inChat && <ActionButtons showShare={!inSection} />}
+        <ActionButtons showShare={!inSection} />
         <div
           className={cn(
             'h-[calc(100dvh-56px)] overflow-auto transition-[margin] duration-300 ease-in-out lg:h-dvh',

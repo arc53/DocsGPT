@@ -107,6 +107,10 @@ describe('SidePanel variant="docked"', () => {
     expect(el.className.split(' ')).toEqual(
       expect.arrayContaining(['bg-background', 'border-l', 'w-120']),
     );
+    // Above the app's floating top actions (Share, account), which it covers.
+    expect(el.className.split(' ')).toEqual(
+      expect.arrayContaining(['relative', 'z-20']),
+    );
     expect(document.querySelector('[data-slot="sheet-overlay"]')).toBeNull();
     const labelledBy = el.getAttribute('aria-labelledby')!;
     expect(document.getElementById(labelledBy)?.textContent).toBe(
@@ -162,7 +166,7 @@ describe('SidePanel variant="docked"', () => {
     await click(button('sidePanel.expand'));
     expect(aside()!.dataset.width).toBe('full');
     expect(aside()!.className.split(' ')).toEqual(
-      expect.arrayContaining(['absolute', 'inset-0']),
+      expect.arrayContaining(['absolute', 'inset-0', 'z-20']),
     );
 
     await click(button('sidePanel.collapse'));
