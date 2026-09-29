@@ -65,6 +65,9 @@ type AdminConnector = {
   credential_mode: Policy;
   configured: boolean;
   required_settings: { name: string; set: boolean }[];
+  /** Optional settings that add a second sign-in (GitHub's App). */
+  oauth_settings?: { name: string; set: boolean }[];
+  oauth_configured?: boolean;
   connection_count: number;
   docs_url: string | null;
   mcp_url: string | null;
@@ -88,6 +91,35 @@ const POLICY_LABELS: Record<Policy, string> = {
 const hasTools = (connector: AdminConnector) =>
   connector.capabilities.some((capability) => capability !== 'sync');
 
+const hasSetupGuide = (connector: AdminConnector) =>
+  connector.required_settings.length > 0 ||
+  (connector.oauth_settings?.length ?? 0) > 0;
+
+/** Works with pasted tokens, but its optional OAuth sign-in is not set up yet. */
+const tokensOnly = (connector: AdminConnector) =>
+  (connector.oauth_settings?.length ?? 0) > 0 && !connector.oauth_configured;
+
+function SettingsList({
+  settings,
+}: {
+  settings: { name: string; set: boolean }[];
+}) {
+  return (
+    <DescriptionList layout="justified" size="xs">
+      {settings.map((setting) => (
+        <DescriptionItem
+          key={setting.name}
+          label={<code className="font-mono">{setting.name}</code>}
+        >
+          <Badge variant={setting.set ? 'success' : 'warning'}>
+            {setting.set ? 'Set' : 'Missing'}
+          </Badge>
+        </DescriptionItem>
+      ))}
+    </DescriptionList>
+  );
+}
+
 function CodeRow({ value }: { value: string }) {
   return (
     <Card variant="filled" padding="sm" className="flex-row items-start gap-2">
@@ -108,12 +140,19 @@ function SetupGuide({
   redirectUri: string;
   onClose: () => void;
 }) {
+  const oauthSettings = connector.oauth_settings ?? [];
+  const optionalOAuth =
+    connector.required_settings.length === 0 && oauthSettings.length > 0;
   return (
     <Modal
       open
       onOpenChange={(open) => !open && onClose()}
       title={`Set up ${connector.name}`}
-      description="Register DocsGPT as an OAuth app with the provider, then set these server settings and restart the API and the worker."
+      description={
+        optionalOAuth
+          ? `Members can already connect ${connector.name} with their own access tokens. To also offer Sign in with ${connector.name}, register a GitHub App, then set these server settings and restart the API and the worker.`
+          : 'Register DocsGPT as an OAuth app with the provider, then set these server settings and restart the API and the worker.'
+      }
       footer={
         <Button size="lg" shape="pill" onClick={onClose}>
           Done
@@ -122,24 +161,45 @@ function SetupGuide({
     >
       <div className="flex flex-col gap-6">
         <section className="flex flex-col gap-2">
-          <SectionHeader as="h3" size="xs" title="Redirect URI to register" />
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={
+              optionalOAuth
+                ? 'Callback URL to register'
+                : 'Redirect URI to register'
+            }
+          />
           <CodeRow value={redirectUri} />
         </section>
-        <section className="flex flex-col gap-2">
-          <SectionHeader as="h3" size="xs" title="Server settings" />
-          <DescriptionList layout="justified" size="xs">
-            {connector.required_settings.map((setting) => (
-              <DescriptionItem
-                key={setting.name}
-                label={<code className="font-mono">{setting.name}</code>}
-              >
-                <Badge variant={setting.set ? 'success' : 'warning'}>
-                  {setting.set ? 'Set' : 'Missing'}
-                </Badge>
-              </DescriptionItem>
-            ))}
-          </DescriptionList>
-        </section>
+        {connector.required_settings.length > 0 && (
+          <section className="flex flex-col gap-2">
+            <SectionHeader as="h3" size="xs" title="Server settings" />
+            <SettingsList settings={connector.required_settings} />
+          </section>
+        )}
+        {oauthSettings.length > 0 && (
+          <section className="flex flex-col gap-2">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={`Sign in with ${connector.name} (optional)`}
+            />
+            <SettingsList settings={oauthSettings} />
+          </section>
+        )}
+        {connector.key === 'github' && (
+          <Alert variant="info" role="note">
+            <Info />
+            <AlertDescription>
+              In the GitHub App, give repository permissions Contents and
+              Metadata read-only access, and turn on Request user authorization
+              (OAuth) during installation so choosing repositories returns to
+              DocsGPT. GITHUB_APP_SLUG is the name in the app&apos;s public link
+              (github.com/apps/&lt;slug&gt;).
+            </AlertDescription>
+          </Alert>
+        )}
         {connector.key === 'google_drive' && (
           <Alert variant="info" role="note">
             <Info />
@@ -241,9 +301,14 @@ export default function Connectors() {
     );
 
   const statusBadge = (connector: AdminConnector) => (
-    <Badge variant={connector.configured ? 'success' : 'warning'}>
-      {connector.configured ? 'Ready' : 'Needs setup'}
-    </Badge>
+    <span className="inline-flex flex-wrap gap-1">
+      <Badge variant={connector.configured ? 'success' : 'warning'}>
+        {connector.configured ? 'Ready' : 'Needs setup'}
+      </Badge>
+      {connector.configured && tokensOnly(connector) && (
+        <Badge variant="neutral">Tokens only</Badge>
+      )}
+    </span>
   );
 
   const summary = (connector: AdminConnector) =>
@@ -341,7 +406,7 @@ export default function Connectors() {
         <div className="grid grid-cols-1 gap-x-4 gap-y-3 lg:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <span className="text-muted-foreground text-xs">
-              Google Drive, SharePoint and Confluence
+              Google Drive, SharePoint, Confluence and the GitHub App
             </span>
             <CodeRow value={data.oauth_redirect_uri} />
           </div>
@@ -421,7 +486,7 @@ export default function Connectors() {
                   <TableCell>{enabledSwitch(connector)}</TableCell>
                   <TableCell>{policyControl(connector)}</TableCell>
                   <TableCell align="right">
-                    {connector.required_settings.length > 0 && (
+                    {hasSetupGuide(connector) && (
                       <Button
                         type="button"
                         variant="outline"
@@ -465,7 +530,7 @@ export default function Connectors() {
                   {policyControl(detail, true)}
                 </FormField>
               )}
-              {detail.required_settings.length > 0 && (
+              {hasSetupGuide(detail) && (
                 <Button
                   type="button"
                   variant="outline"

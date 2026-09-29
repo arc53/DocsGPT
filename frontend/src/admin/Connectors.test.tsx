@@ -144,6 +144,41 @@ describe('Admin Connectors', () => {
     );
   });
 
+  it('shows GitHub as ready, with its optional GitHub App settings in the guide', async () => {
+    const GITHUB = connector({
+      key: 'github',
+      name: 'GitHub',
+      icon: 'github',
+      auth_kind: 'api_key',
+      capabilities: ['sync', 'read'],
+      configured: true,
+      required_settings: [],
+      oauth_settings: [
+        { name: 'GITHUB_CLIENT_ID', set: true },
+        { name: 'GITHUB_CLIENT_SECRET', set: false },
+        { name: 'GITHUB_APP_SLUG', set: false },
+      ],
+      oauth_configured: false,
+      connection_count: 0,
+    });
+    getAdmin.mockResolvedValue(payload({ connectors: [GITHUB] }));
+    await render();
+    const row = container.querySelector('tbody tr')!;
+    expect(row.textContent).toContain('Ready');
+    expect(row.textContent).toContain('Tokens only');
+    const guide = Array.from(row.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Setup guide',
+    )!;
+    await act(async () => guide.click());
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('Sign in with GitHub');
+    expect(text).toContain('GITHUB_APP_SLUG');
+    expect(text).toContain(
+      'Request user authorization (OAuth) during installation',
+    );
+    expect(text).toContain('https://docs.example/api/connectors/callback');
+  });
+
   it('warns when credentials use the default encryption key', async () => {
     getAdmin.mockResolvedValue(payload({ default_encryption_key: true }));
     await render();
