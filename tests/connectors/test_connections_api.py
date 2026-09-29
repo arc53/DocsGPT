@@ -144,6 +144,79 @@ class TestSetupSync:
         # Drive has no tools; nothing was created.
         assert resp.get_json()["tools"] == []
 
+    def test_retrieval_settings_apply_to_the_synced_source(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionSetup
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth", secrets={"token_info": {}})
+        config = {"chunking": {"strategy": "markdown", "max_tokens": 800}, "retrieval": {"chunks": 4}}
+        with _db(pg_conn), patch("docsgpt.api.user.tasks.ingest_connector_task.apply_async",
+                                 return_value=MagicMock(id="t")) as apply:
+            resp = _call(app, ConnectionSetup, "post", f"/api/connections/{cid}/setup", body={
+                "sync": {"items": {"folder_ids": ["f1"]}, "config": config},
+            }, args=[cid])
+        assert resp.status_code == 200
+        sent = apply.call_args.kwargs["kwargs"]["config"]
+        # Validated and filled in like an upload's config.
+        assert sent["chunking"]["strategy"] == "markdown"
+        assert sent["chunking"]["max_tokens"] == 800
+        assert sent["retrieval"]["chunks"] == 4
+        assert sent["kind"] == "classic"
+
+    def test_remote_sync_carries_retrieval_settings(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionSetup
+
+        cid = _connection(pg_conn, provider="s3", secrets={"credentials": {
+            "aws_access_key_id": "AKIA", "aws_secret_access_key": "shh-secret"}})
+        with _db(pg_conn), patch("docsgpt.api.user.tasks.ingest_remote.apply_async",
+                                 return_value=MagicMock(id="t")) as apply:
+            resp = _call(app, ConnectionSetup, "post", f"/api/connections/{cid}/setup", body={
+                "sync": {"items": {"bucket": "docs"}, "config": {"retrieval": {"chunks": 3}}},
+            }, args=[cid])
+        assert resp.status_code == 200
+        assert apply.call_args.kwargs["kwargs"]["config"]["retrieval"]["chunks"] == 3
+
+    def test_no_retrieval_settings_keeps_the_defaults(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionSetup
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth", secrets={"token_info": {}})
+        with _db(pg_conn), patch("docsgpt.api.user.tasks.ingest_connector_task.apply_async",
+                                 return_value=MagicMock(id="t")) as apply:
+            resp = _call(app, ConnectionSetup, "post", f"/api/connections/{cid}/setup", body={
+                "sync": {"items": {"folder_ids": ["f1"]}},
+            }, args=[cid])
+        assert resp.status_code == 200
+        assert apply.call_args.kwargs["kwargs"]["config"] is None
+
+    @pytest.mark.parametrize("config", [
+        {"retrieval": {"chunks": 0}},
+        {"unknown": True},
+        {"retrieval": {"chunks": 6, "prescreen": {"candidate_k": 4, "max_keep": 8}}},
+        "not an object",
+    ])
+    def test_invalid_retrieval_settings_are_refused_before_queueing(self, app, pg_conn, config):
+        from docsgpt.api.connector.connections import ConnectionSetup
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth", secrets={"token_info": {}})
+        headers = {"Idempotency-Key": f"setup-config-{hash(str(config))}"}
+        with _db(pg_conn), patch("docsgpt.api.user.sources.upload.db_session", _yield), patch(
+            "docsgpt.api.user.tasks.ingest_connector_task.apply_async", return_value=MagicMock(id="t"),
+        ) as apply:
+            bad = _call(app, ConnectionSetup, "post", f"/api/connections/{cid}/setup", body={
+                "sync": {"items": {"folder_ids": ["f1"]}, "config": config},
+            }, headers=headers, args=[cid])
+            apply.assert_not_called()
+            # The refusal left the key free for the corrected retry.
+            fixed = _call(app, ConnectionSetup, "post", f"/api/connections/{cid}/setup", body={
+                "sync": {"items": {"folder_ids": ["f1"]}},
+            }, headers=headers, args=[cid])
+        assert bad.status_code == 400
+        assert bad.get_json()["error"] == "Invalid source config"
+        assert fixed.status_code == 200
+
     def test_nothing_picked_is_a_bad_request(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionSetup
 

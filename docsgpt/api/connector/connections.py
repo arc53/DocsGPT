@@ -230,8 +230,8 @@ class ConnectionSetup(Resource):
     @api.doc(
         description=(
             "Apply the connect wizard's choices: {create_tools, allow_writes?, tool_permissions?, "
-            "sync?: {items, frequency, name?}}. allow_writes points GitHub's tool at its write endpoint. "
-            "Honours an Idempotency-Key header for the sync."
+            "sync?: {items, frequency, name?, config?}}. allow_writes points GitHub's tool at its write "
+            "endpoint. config is the synced source's retrieval settings, validated like an upload's. Honours an Idempotency-Key header for the sync."
         )
     )
     def post(self, connection_id: str):
@@ -298,11 +298,19 @@ class ConnectionSetup(Resource):
 def _start_sync(user_id: str, row: dict, sync: dict):
     """Queue the first ingest of a source synced from ``row``.
 
-    Returns the source summary, or ``(message, status)`` on a bad request.
+    Args:
+        user_id: The connection's owner.
+        row: The connection row.
+        sync: ``{items, frequency, name?, config?}``. ``config`` is the source's
+            retrieval settings (a ``SourceConfig``), applied as an upload's are.
+
+    Returns:
+        The source summary, or ``(message, status)`` on a bad request.
     """
     from docsgpt.api.user.sources.upload import (
         _claim_task_or_get_cached,
         _derive_source_id,
+        _parse_source_config,
         _read_idempotency_key,
         _scoped_idempotency_key,
     )
@@ -318,6 +326,9 @@ def _start_sync(user_id: str, row: dict, sync: dict):
     if frequency not in _FREQUENCIES:
         return ("Unknown sync frequency", 400)
     name = (sync.get("name") or "").strip()
+    source_config, config_error = _parse_source_config(sync.get("config"))
+    if config_error is not None:
+        return ("Invalid source config", 400)
     if definition.sync_ingestor == "github":
         from docsgpt.parser.remote.github_loader import GitHubLoader
 
@@ -352,6 +363,7 @@ def _start_sync(user_id: str, row: dict, sync: dict):
             "folder_ids": folder_ids,
             "recursive": bool(items.get("recursive", True)),
             "sync_frequency": frequency,
+            "config": source_config,
         }
     else:
         if definition.sync_ingestor == "linear":
@@ -371,6 +383,7 @@ def _start_sync(user_id: str, row: dict, sync: dict):
             "loader": definition.sync_ingestor,
             "connection_id": str(row["id"]),
             "sync_frequency": frequency,
+            "config": source_config,
         }
     idempotency_key, _ = _read_idempotency_key()
     scoped_key = _scoped_idempotency_key(idempotency_key, user_id)
