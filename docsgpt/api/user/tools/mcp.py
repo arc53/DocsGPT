@@ -399,6 +399,17 @@ class MCPServerSave(Resource):
             connection_id = _mcp_connection(
                 user, storage_config, auth_type, auth_credentials, display_name,
             ) or _previous_connection(existing_doc, storage_config, user)
+            if auth_type == "oauth" and not connection_id:
+                # A sign-in server's tokens live on its connection. Without one
+                # (it was removed, and a client cached before that answered the
+                # discovery) the tool would be saved unconnected.
+                return make_response(
+                    jsonify({
+                        "success": False,
+                        "error": "Not signed in to this server. Sign in again to connect it.",
+                    }),
+                    400,
+                )
             if connection_id and auth_type != "oauth":
                 # The secret lives on the connection only.
                 storage_config.pop("encrypted_credentials", None)

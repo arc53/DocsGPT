@@ -9,6 +9,7 @@ MCP server or a set of API credentials. Sources and tools point at it through
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any, Iterable, Optional
 
 from docsgpt.connectors import catalog
@@ -393,6 +394,7 @@ def disconnect(conn, row: dict) -> dict:
     except CredentialDecryptionError:
         secrets = {}
     revoke_at_provider(row, secrets)
+    _forget_mcp_clients(row)
     kept = {"client_info": secrets["client_info"]} if secrets.get("client_info") else {}
     write_secrets(
         conn, row, kept, status=STATUS_DISCONNECTED, session_token=None, last_error=None,
@@ -1135,16 +1137,24 @@ def update_mcp_secrets(
     """Merge ``patch`` into an MCP connection's secrets (``None`` drops a key).
 
     Creates the connection on first use, named after the matching preset or
-    the server's host.
+    the server's host. A write for a named connection never creates one: a
+    client or sync still running when its connection was removed would
+    otherwise bring it back, holding the tokens it just renewed.
 
     Returns:
         The connection row after the update.
+
+    Raises:
+        ConnectionUnavailable: ``connection_id`` names no connection of this
+            user for this server (removed, or another server's).
     """
     from docsgpt.security.encryption import CredentialDecryptionError
 
     with db_session() as conn:
         repo = ConnectorSessionsRepository(conn)
         row = _mcp_row(conn, user_id, base_url, connection_id, lock=True)
+        if row is None and connection_id:
+            raise ConnectionUnavailable("Connection not found", connection_id=connection_id, status="missing")
         if row is None:
             row = repo.merge_session_data(user_id, mcp_provider(base_url), base_url, {})
         try:
@@ -1389,6 +1399,22 @@ def ensure_connection_tools(
     return existing + created
 
 
+def _forget_mcp_clients(row: dict) -> None:
+    """Drop the MCP clients this process cached for a connection's tokens.
+
+    A cached client keeps the tokens it signed in with for a few minutes, so
+    after the connection is removed or disconnected it would still answer as
+    signed in (and save a tool with no connection behind it).
+    """
+    if not str(row.get("provider") or "").startswith("mcp:") and row.get("auth_kind") != "mcp_oauth":
+        return
+    # Not imported here: a process that never loaded the MCP tool has no
+    # clients cached, and importing it from this module would be circular.
+    mcp_tool = sys.modules.get("docsgpt.agents.tools.mcp_tool")
+    if mcp_tool is not None:
+        mcp_tool.forget_cached_clients(str(row["id"]), str(row.get("user_id") or ""))
+
+
 def remove_connection(conn, row: dict, *, sources: str = "keep", tools: str = "delete") -> list[dict]:
     """Delete a connection, choosing what happens to what it feeds.
 
@@ -1409,6 +1435,7 @@ def remove_connection(conn, row: dict, *, sources: str = "keep", tools: str = "d
 
     repo = ConnectorSessionsRepository(conn)
     connection_id = str(row["id"])
+    _forget_mcp_clients(row)
     linked_sources = repo.list_sources(connection_id)
     try:
         revoke_at_provider(row, read_secrets(row))

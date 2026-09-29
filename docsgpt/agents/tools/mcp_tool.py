@@ -37,6 +37,20 @@ logger = logging.getLogger(__name__)
 
 _mcp_clients_cache = {}
 
+
+def forget_cached_clients(*identities: str) -> None:
+    """Drop cached OAuth clients signed in as any of ``identities``.
+
+    OAuth cache keys name the connection or user whose tokens the client
+    holds (see ``MCPTool._generate_cache_key``).
+
+    Args:
+        identities: Connection ids and user ids.
+    """
+    markers = tuple(f"#oauth:{identity}:" for identity in identities if identity)
+    for key in [k for k in list(_mcp_clients_cache) if any(marker in k for marker in markers)]:
+        _mcp_clients_cache.pop(key, None)
+
 # A token expiry long past: a stored token of unknown age is renewed before use.
 _EXPIRED = 1.0
 

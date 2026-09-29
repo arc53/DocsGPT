@@ -521,13 +521,44 @@ class TestMcpConnectionScope:
     def test_writes_never_land_on_another_servers_connection(self, pg_conn):
         cid = self._mcp(pg_conn)
         with _patch_service_db(pg_conn):
-            row = service.update_mcp_secrets(
-                "alice", "https://attacker.example", {"tokens": {"access_token": "planted"}}, connection_id=cid,
-            )
-            assert str(row["id"]) != cid
+            with pytest.raises(service.ConnectionUnavailable):
+                service.update_mcp_secrets(
+                    "alice", "https://attacker.example", {"tokens": {"access_token": "planted"}}, connection_id=cid,
+                )
             assert service.read_mcp_secrets("alice", "https://mcp.notion.com", cid)["tokens"]["access_token"] == (
                 "alice-mcp-token"
             )
+            assert service.read_mcp_secrets("alice", "https://attacker.example") == {}
+
+    def test_a_removed_connection_is_not_brought_back_by_a_late_token_write(self, pg_conn):
+        """A client or sync still running when its connection is removed may
+        renew the tokens afterwards; that must not re-create the connection."""
+        cid = self._mcp(pg_conn)
+        with _patch_service_db(pg_conn):
+            service.remove_connection(pg_conn, service.ConnectorSessionsRepository(pg_conn).get(cid))
+            with pytest.raises(service.ConnectionUnavailable):
+                service.update_mcp_secrets(
+                    "alice", "https://mcp.notion.com", {"tokens": {"access_token": "renewed"}}, connection_id=cid,
+                )
+            assert service.read_mcp_secrets("alice", "https://mcp.notion.com") == {}
+
+    def test_removing_a_connection_forgets_its_cached_mcp_clients(self, pg_conn):
+        import docsgpt.api.user  # noqa: F401  (loads mcp_tool without the circular import)
+        from docsgpt.agents.tools import mcp_tool
+
+        cid = self._mcp(pg_conn)
+        mcp_tool._mcp_clients_cache.update({
+            f"https://mcp.notion.com/mcp#http#oauth:{cid}:DocsGPT:none:cb": {"client": object(), "created_at": 0},
+            "https://mcp.notion.com/mcp#http#oauth:alice:DocsGPT:none:cb": {"client": object(), "created_at": 0},
+            "https://mcp.notion.com/mcp#http#oauth:bob:DocsGPT:none:cb": {"client": object(), "created_at": 0},
+        })
+        try:
+            with _patch_service_db(pg_conn):
+                service.remove_connection(pg_conn, service.ConnectorSessionsRepository(pg_conn).get(cid))
+            keys = [k for k in mcp_tool._mcp_clients_cache if "mcp.notion.com" in k]
+            assert keys == ["https://mcp.notion.com/mcp#http#oauth:bob:DocsGPT:none:cb"]
+        finally:
+            mcp_tool._mcp_clients_cache.clear()
 
     def test_mcp_routes_drop_client_supplied_connection_id(self):
         """Only the tool executor may pick the connection whose tokens a tool uses."""

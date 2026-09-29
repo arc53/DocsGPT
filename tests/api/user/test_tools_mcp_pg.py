@@ -355,11 +355,19 @@ class TestMCPServerSave:
         """Signed in before: the server answers with the saved tokens, no new handshake."""
         from docsgpt.api.user.tools.mcp import MCPServerSave
 
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        connection = ConnectorSessionsRepository(pg_conn).create(
+            "u-signed-in", "mcp:https://mcp.linear.app", connector_key="mcp:linear", auth_kind="mcp_oauth",
+            display_name="Linear", account_label="Linear", server_url="https://mcp.linear.app",
+        )
         signed_in = MagicMock()
         signed_in.get_actions_metadata.return_value = [{"name": "search"}]
         with _patch_db(pg_conn), patch(
             "docsgpt.api.user.tools.mcp.MCPTool", return_value=signed_in,
-        ), patch("docsgpt.api.user.tools.mcp._mcp_connection", return_value=None), app.test_request_context(
+        ), patch(
+            "docsgpt.api.user.tools.mcp._mcp_connection", return_value=str(connection["id"]),
+        ), app.test_request_context(
             "/api/mcp_server/save", method="POST",
             json={
                 "displayName": "Linear",
@@ -444,6 +452,33 @@ class TestMCPServerSave:
         assert response.status_code == 200
         team = repo.get_any(str(existing["id"]), user)["actions"][0]["parameters"]["properties"]["team"]
         assert team["filled_by_llm"] is False and team["value"] == "ENG"
+
+
+class TestSignInServerWithoutAConnection:
+    def test_an_oauth_server_is_not_saved_without_its_connection(self, app, pg_conn):
+        """A client still cached from a removed connection can answer the
+        discovery; the tool must not then be saved as an unconnected server."""
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        user = "u-mcp-no-connection"
+        fake_tool = MagicMock()
+        fake_tool.get_actions_metadata.return_value = [{"name": "list_issues", "parameters": {"properties": {}}}]
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=fake_tool,
+        ), app.test_request_context(
+            "/api/mcp_server/save", method="POST",
+            json={
+                "displayName": "Linear",
+                "config": {"transport_type": "http", "server_url": "https://mcp.linear.app/mcp", "auth_type": "oauth"},
+                "status": True,
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = MCPServerSave().post()
+        assert response.status_code == 400
+        assert UserToolsRepository(pg_conn).list_for_user(user) == []
 
 
 class TestMCPOAuthCallback:
