@@ -99,13 +99,23 @@ describe('ShareToTeamModal credentials', () => {
     );
   });
 
-  it('warns that members act as the owner in owner mode', async () => {
+  it('says whose account members use on a tool that only reads', async () => {
     await render(credentials());
+    expect(document.body.querySelector('[role="note"]')).toBeNull();
     expect(document.body.querySelector('[data-slot="option-card"]')).toBeNull();
     expect(toggle('owner').getAttribute('aria-checked')).toBe('true');
     expect(document.body.textContent).toContain(
       'settings.connectors.share.ownerWarning|lena@meridian.example',
     );
+  });
+
+  it('asks only for the confirmation on a tool that can act, with no warning box', async () => {
+    await render(credentials({ hasWrites: true }));
+    expect(document.body.querySelector('[role="note"]')).toBeNull();
+    expect(document.body.textContent).not.toContain(
+      'settings.connectors.share.ownerWarning',
+    );
+    expect(document.body.querySelector('#share-confirm-writes')).not.toBeNull();
   });
 
   it('blocks sharing an owner-mode tool with writes until confirmed', async () => {

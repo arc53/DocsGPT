@@ -1,10 +1,4 @@
-import {
-  CircleAlert,
-  Trash2,
-  TriangleAlert,
-  UserRound,
-  UsersRound,
-} from 'lucide-react';
+import { CircleAlert, Trash2, UserRound, UsersRound } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -593,16 +587,17 @@ export default function ShareToTeamModal({
                 </p>
               )}
               {credentialMode === 'owner' ? (
-                <Alert variant="warning" role="note">
-                  <TriangleAlert aria-hidden="true" />
-                  <AlertDescription>
+                // A tool that can act asks for the confirmation below, which
+                // says the same; one that only reads gets a plain line.
+                needsWriteConfirm ? null : (
+                  <p className="text-muted-foreground text-sm">
                     {t('settings.connectors.share.ownerWarning', {
                       account: credentials.account,
                       name: credentials.connectorName,
                       interpolation: { escapeValue: false },
                     })}
-                  </AlertDescription>
-                </Alert>
+                  </p>
+                )
               ) : (
                 <p className="text-muted-foreground text-sm">
                   {t('settings.connectors.share.memberNote', {
