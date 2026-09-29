@@ -231,6 +231,13 @@ class TestClosedChoices:
         with pytest.raises(ValidationError):
             Settings.model_validate({name: raw})
 
+    def test_lancedb_is_not_a_vector_store(self):
+        """VECTOR_STORE=lancedb was never accepted; its orphaned module and settings are gone too."""
+        import importlib.util
+
+        assert not [name for name in Settings.model_fields if name.startswith("LANCEDB_")]
+        assert importlib.util.find_spec("docsgpt.vectorstore.lancedb") is None
+
     @pytest.mark.parametrize(
         ("name", "raw"),
         [

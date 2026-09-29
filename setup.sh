@@ -181,11 +181,10 @@ configure_vector_store() {
     echo -e "${YELLOW}2) Elasticsearch${NC}"
     echo -e "${YELLOW}3) Qdrant${NC}"
     echo -e "${YELLOW}4) Milvus${NC}"
-    echo -e "${YELLOW}5) LanceDB${NC}"
-    echo -e "${YELLOW}6) PGVector${NC}"
+    echo -e "${YELLOW}5) PGVector${NC}"
     echo -e "${YELLOW}b) Back${NC}"
     echo
-    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-6, or b): ${NC}")" vs_choice
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-5, or b): ${NC}")" vs_choice
 
     case "$vs_choice" in
         1)
@@ -227,14 +226,6 @@ configure_vector_store() {
             echo -e "${GREEN}Vector store set to Milvus.${NC}"
             ;;
         5)
-            echo "VECTOR_STORE=lancedb" >> "$ENV_FILE"
-            read -p "$(echo -e "${DEFAULT_FG}Enter LanceDB path (default: ./data/lancedb): ${NC}")" lancedb_path
-            echo "LANCEDB_PATH=${lancedb_path:-./data/lancedb}" >> "$ENV_FILE"
-            read -p "$(echo -e "${DEFAULT_FG}Enter LanceDB table name (default: docsgpts): ${NC}")" lancedb_table
-            echo "LANCEDB_TABLE_NAME=${lancedb_table:-docsgpts}" >> "$ENV_FILE"
-            echo -e "${GREEN}Vector store set to LanceDB.${NC}"
-            ;;
-        6)
             echo "VECTOR_STORE=pgvector" >> "$ENV_FILE"
             read -p "$(echo -e "${DEFAULT_FG}Enter PGVector connection string (e.g. postgresql://user:pass@host:5432/db): ${NC}")" pgvector_conn
             [ -n "$pgvector_conn" ] && echo "PGVECTOR_CONNECTION_STRING=$pgvector_conn" >> "$ENV_FILE"

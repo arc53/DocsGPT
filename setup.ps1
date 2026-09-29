@@ -297,11 +297,10 @@ function Configure-VectorStore {
     Write-ColorText "2) Elasticsearch" -ForegroundColor "Yellow"
     Write-ColorText "3) Qdrant" -ForegroundColor "Yellow"
     Write-ColorText "4) Milvus" -ForegroundColor "Yellow"
-    Write-ColorText "5) LanceDB" -ForegroundColor "Yellow"
-    Write-ColorText "6) PGVector" -ForegroundColor "Yellow"
+    Write-ColorText "5) PGVector" -ForegroundColor "Yellow"
     Write-ColorText "b) Back" -ForegroundColor "Yellow"
     Write-Host ""
-    $vs_choice = Read-Host "Choose option (1-6, or b)"
+    $vs_choice = Read-Host "Choose option (1-5, or b)"
 
     switch ($vs_choice) {
         "1" {
@@ -347,16 +346,6 @@ function Configure-VectorStore {
             Write-ColorText "Vector store set to Milvus." -ForegroundColor "Green"
         }
         "5" {
-            "VECTOR_STORE=lancedb" | Add-Content -Path $ENV_FILE -Encoding utf8
-            $lancedb_path = Read-Host "Enter LanceDB path (default: ./data/lancedb)"
-            if ([string]::IsNullOrEmpty($lancedb_path)) { $lancedb_path = "./data/lancedb" }
-            "LANCEDB_PATH=$lancedb_path" | Add-Content -Path $ENV_FILE -Encoding utf8
-            $lancedb_table = Read-Host "Enter LanceDB table name (default: docsgpts)"
-            if ([string]::IsNullOrEmpty($lancedb_table)) { $lancedb_table = "docsgpts" }
-            "LANCEDB_TABLE_NAME=$lancedb_table" | Add-Content -Path $ENV_FILE -Encoding utf8
-            Write-ColorText "Vector store set to LanceDB." -ForegroundColor "Green"
-        }
-        "6" {
             "VECTOR_STORE=pgvector" | Add-Content -Path $ENV_FILE -Encoding utf8
             $pgvector_conn = Read-Host "Enter PGVector connection string (e.g. postgresql://user:pass@host:5432/db)"
             if ($pgvector_conn) { "PGVECTOR_CONNECTION_STRING=$pgvector_conn" | Add-Content -Path $ENV_FILE -Encoding utf8 }

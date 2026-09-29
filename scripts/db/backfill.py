@@ -848,7 +848,7 @@ def _rename_faiss_indexes(
     """Rename FAISS index dirs from legacy Mongo ObjectId to PG UUID.
 
     FAISS-specific: other vector stores (Qdrant, Elasticsearch, Chroma,
-    pgvector, Milvus, LanceDB, MongoDB Atlas Vector Search) key their
+    pgvector, Milvus, MongoDB Atlas Vector Search) key their
     collections/indexes by the source identifier the application hands
     them at query time — once the app starts emitting PG UUIDs post-
     cutover, the next write re-keys the remote collection automatically

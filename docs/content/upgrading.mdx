@@ -141,10 +141,9 @@ alias, so nothing breaks on upgrade, but update these before the alias goes:
   home: `DOCSGPT_HOME`, else the checkout, else `~/.docsgpt/server`
   (`/opt/docsgpt` for root on Linux; see
   [pip installs: data home moved](#pip-installs-data-home-moved)). One consequence for a source checkout: the embedded Milvus
-  (`MILVUS_URI`) and LanceDB (`LANCEDB_PATH`) default paths now resolve under
-  the checkout instead of the start directory. If you use either store at its
-  default path and start DocsGPT from another directory, the old data is at
-  `<start directory>/milvus_local.db` or `<start directory>/data/lancedb`;
+  (`MILVUS_URI`) default path now resolves under the checkout instead of the
+  start directory. If you use it at its default path and start DocsGPT from
+  another directory, the old data is at `<start directory>/milvus_local.db`;
   point the setting at it, or move it into the checkout. Faiss indexes and
   uploads were already stored under the checkout and are unaffected.
 

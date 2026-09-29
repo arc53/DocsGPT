@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_PARALLEL_SOURCES = 4
 
 # Attributes the vector stores keep their embeddings object on, in the order
-# they are probed. Stores that build embeddings inline (elasticsearch, lancedb)
+# they are probed. Stores that build embeddings inline (elasticsearch)
 # expose none of them and are handled by the ``_get_embeddings`` fallback.
 EMBEDDING_ATTRS = ("_embedding", "_embeddings", "embeddings")
 
