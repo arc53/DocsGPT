@@ -1,9 +1,8 @@
-"""0043 wiki outside edits — the wiki owner's say on API, widget and public-link edits.
+"""0043 wiki outside edits — the wiki owner's say on API and widget edits.
 
-An agent run from its API key or widget acts as the agent's owner, and a
-public-link user is a stranger to them, so neither should rewrite a wiki the
-agent can edit unless the wiki's owner allows it. ``wiki_outside_edits``
-records that choice on the source; it is off by default, so such runs can
+An agent run from its API key or widget acts as the agent's owner, so it
+could rewrite any wiki the owner can edit. ``wiki_outside_edits`` records
+whether the wiki's owner allows that; it is off by default, so such runs can
 still read the wiki but not change it.
 
 Idempotent both ways.

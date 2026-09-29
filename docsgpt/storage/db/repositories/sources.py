@@ -400,7 +400,7 @@ class SourcesRepository:
         self._conn.execute(stmt)
 
     def set_wiki_outside_edits(self, source_id: str, user_id: str, allowed: bool) -> bool:
-        """Record whether API, widget and public-link runs may edit this wiki.
+        """Record whether API-key and widget runs may edit this wiki.
 
         Kept out of :meth:`update`'s columns so no route that forwards a
         request body can change it; only the owner-checked wiki settings

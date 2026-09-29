@@ -381,7 +381,7 @@ sources_table = Table(
     ),
     # Whose account a shared resource runs with: the owner's, or each member's.
     Column("credential_mode", Text, nullable=False, server_default="owner"),
-    # A wiki's owner lets API, widget and public-link runs edit it (off: read only).
+    # A wiki's owner lets API-key and widget runs edit it (off: read only).
     Column("wiki_outside_edits", Boolean, nullable=False, server_default="false"),
 )
 

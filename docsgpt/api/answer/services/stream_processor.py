@@ -27,7 +27,7 @@ from docsgpt.core.model_utils import (
     get_provider_from_model_id,
     validate_model_id,
 )
-from docsgpt.agents.tools.wiki import outside_edits_allowed
+from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig
 from sqlalchemy import text as sql_text
@@ -1261,10 +1261,14 @@ class StreamProcessor:
         this runs at most one owner+source lookup per chat on the hot path.
         Returns None when no writable wiki source is present.
 
-        An API-key, widget or public-link run (``outside_caller``) gets the
-        edit actions only when the wiki's owner turned on
-        ``wiki_outside_edits``; otherwise ``writes_allowed`` is False and the
-        tool offers only ``wiki_view``.
+        An API-key or widget run (``outside_caller``) acts as the agent's
+        owner, so it gets the edit actions only when the wiki's owner turned
+        on ``wiki_outside_edits``; otherwise ``writes_allowed`` is False and
+        the tool offers only ``wiki_view``. A public-link visitor runs as
+        themselves, so they reach only wikis they may edit anyway; the switch
+        doesn't apply to them, but each of their edits waits for their
+        approval (``approval_required``), so the agent's prompt or sources
+        can't steer the model into changing their wiki unasked.
         """
         caller = self.decoded_token.get("sub") if self.decoded_token else None
         if not caller:
@@ -1272,10 +1276,9 @@ class StreamProcessor:
         # Processors built without __init__ (tests, resume helpers) lack these.
         run_config = getattr(self, "agent_config", None) or {}
         outside_caller = bool(
-            run_config.get("external_api_caller")
-            or run_config.get("public_link_caller")
-            or getattr(self, "external_caller", False)
+            run_config.get("external_api_caller") or getattr(self, "external_caller", False)
         )
+        approval_required = bool(run_config.get("public_link_caller"))
 
         wiki_config: Optional[Dict[str, Any]] = None
         try:
@@ -1301,6 +1304,7 @@ class StreamProcessor:
                         "user": caller,
                         "outside_caller": outside_caller,
                         "writes_allowed": not outside_caller or outside_edits_allowed(source_doc),
+                        "approval_required": approval_required,
                     }
                     break
         except Exception:
@@ -1763,21 +1767,37 @@ class StreamProcessor:
         from docsgpt.llm.handlers.handler_creator import LLMHandlerCreator
         from docsgpt.llm.llm_creator import LLMCreator
 
+        # Who is resuming, classified from this request alone: the saved state
+        # says who paused the turn, but anyone holding the agent's key (a
+        # widget key is public) can send the tool actions that resume it.
+        request_key = self.data.get("api_key")
+        original_token = self.decoded_token
+        key_agent = None
+        if request_key:
+            with db_readonly() as conn:
+                key_agent = AgentsRepository(conn).find_by_key(request_key)
+        key_owner = (
+            (key_agent.get("user_id") or key_agent.get("user")) if key_agent else None
+        )
+        request_external = bool(getattr(self, "external_caller", False)) or (
+            bool(request_key) and is_external_api_caller(self.data, original_token, key_owner)
+        )
+        request_public_link = False
+        named_agent = self.data.get("agent_id")
+        if named_agent and not request_key:
+            try:
+                self._get_agent_key(str(named_agent), self.initial_user_id)
+            except Exception as exc:
+                raise ValueError("This conversation can't be resumed with that agent") from exc
+            request_public_link = bool(getattr(self, "public_link_usage", False))
+
         # api_key-in-body auth carries no JWT, so initial_user_id is None — but
         # the state was saved under the agent owner. Resolve the owner so the
         # lookup / mark_resuming / delete_state key on the same id. (No-op for
         # v1, which already passes an owner-scoped decoded_token.)
-        if self.initial_user_id is None and self.data.get("api_key"):
-            with db_readonly() as conn:
-                agent_doc = AgentsRepository(conn).find_by_key(self.data["api_key"])
-            owner = (
-                (agent_doc.get("user_id") or agent_doc.get("user"))
-                if agent_doc
-                else None
-            )
-            if owner:
-                self.initial_user_id = owner
-                self.decoded_token = {"sub": owner}
+        if self.initial_user_id is None and key_owner:
+            self.initial_user_id = key_owner
+            self.decoded_token = {"sub": key_owner}
 
         cont_service = ContinuationService()
         state = claimed_state or cont_service.claim_state(
@@ -1785,6 +1805,21 @@ class StreamProcessor:
         )
         if not state:
             raise ValueError("No pending tool state found for this conversation")
+
+        # A request that names an agent (by key or id) resumes only that
+        # agent's turn; the claim goes back so its rightful caller can resume.
+        saved_agent = str((state.get("agent_config") or {}).get("agent_id") or "").lower()
+        targets = []
+        if request_key:
+            targets.append(str((key_agent or {}).get("id") or (key_agent or {}).get("_id") or ""))
+        if named_agent:
+            targets.append(str(named_agent))
+        if any(target.lower() != saved_agent or not target for target in targets):
+            try:
+                cont_service.release_claim(conversation_id, self.initial_user_id)
+            except Exception:
+                logger.warning("Failed to release a refused resume claim", exc_info=True)
+            raise ValueError("This conversation belongs to a different agent")
 
         messages = state["messages"]
         pending_tool_calls = state["pending_tool_calls"]
@@ -1821,15 +1856,19 @@ class StreamProcessor:
         if callable(importer):
             importer(agent_config.get("responses_state"))
         llm_handler = LLMHandlerCreator.create_handler(llm_name or "default")
+        # Outside if either who paused the turn or who resumes it is.
+        resume_external = bool(agent_config.get("external_api_caller")) or request_external
+        resume_public_link = bool(agent_config.get("public_link_caller")) or request_public_link
+        apply_resume_caller_rules(
+            tools_dict, outside_caller=resume_external, public_link_caller=resume_public_link,
+        )
         tool_executor = ToolExecutor(
             user_api_key=user_api_key,
             user=self.initial_user_id,
             decoded_token=self.decoded_token,
             agent_id=agent_id,
-            external_caller=bool(
-                agent_config.get("external_api_caller") or getattr(self, "external_caller", False)
-            ),
-            public_link_caller=bool(agent_config.get("public_link_caller")),
+            external_caller=resume_external,
+            public_link_caller=resume_public_link,
             api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id

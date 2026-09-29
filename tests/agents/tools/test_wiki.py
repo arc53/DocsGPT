@@ -685,7 +685,7 @@ class TestOutsideCallerWrites:
         tool = _outside_tool(monkeypatch, False)
         for action, kwargs in _WRITES:
             result = tool.execute_action(action, **kwargs)
-            assert "API, widget or public-link" in result, action
+            assert "API or widget" in result, action
         reembed_mock.assert_not_called()
         assert _FakeWikiRepo().get_by_path("src-1", "/a.md")["content"] == "one"
         # Reading stays open to them.
@@ -706,7 +706,7 @@ class TestOutsideCallerWrites:
                 return None
 
         monkeypatch.setattr("docsgpt.agents.tools.wiki.SourcesRepository", _Gone)
-        assert "API, widget or public-link" in tool.execute_action("create", path="/b.md", content="x")
+        assert "API or widget" in tool.execute_action("create", path="/b.md", content="x")
 
     def test_owner_and_team_runs_skip_the_setting(self, wiki_tool, monkeypatch):
         class _Boom:
@@ -736,6 +736,12 @@ class TestReadOnlyEntry:
         names = {a["name"] for a in entry["actions"]}
         assert {"wiki_view", "wiki_create", "wiki_str_replace", "wiki_delete"} <= names
         assert entry["config"]["outside_caller"] is True
+
+    def test_approval_required_gates_writes_only(self):
+        entry = self._entry(approval_required=True)
+        for action in entry["actions"]:
+            assert bool(action.get("require_approval")) is (action["name"] != "wiki_view"), action["name"]
+        assert entry["config"]["outside_caller"] is False
 
     def test_in_app_config_keeps_every_action(self):
         entry = self._entry()
@@ -767,17 +773,25 @@ class TestBuildConfigOutsideCallers:
             proc.agent_config = agent_config
         return proc._build_wiki_config()
 
-    @pytest.mark.parametrize("flag", ["external_api_caller", "public_link_caller"])
-    def test_outside_caller_gets_read_only_while_off(self, monkeypatch, flag):
-        cfg = self._cfg(monkeypatch, {flag: True})
+    def test_api_key_caller_gets_read_only_while_off(self, monkeypatch):
+        cfg = self._cfg(monkeypatch, {"external_api_caller": True})
         assert cfg["outside_caller"] is True
         assert cfg["writes_allowed"] is False
+        assert cfg["approval_required"] is False
 
-    @pytest.mark.parametrize("flag", ["external_api_caller", "public_link_caller"])
-    def test_outside_caller_may_write_when_on(self, monkeypatch, flag):
-        cfg = self._cfg(monkeypatch, {flag: True}, allowed=True)
+    def test_api_key_caller_may_write_when_on(self, monkeypatch):
+        cfg = self._cfg(monkeypatch, {"external_api_caller": True}, allowed=True)
         assert cfg["outside_caller"] is True
         assert cfg["writes_allowed"] is True
+
+    @pytest.mark.parametrize("allowed", [False, True])
+    def test_public_link_visitor_is_asked_whatever_the_switch(self, monkeypatch, allowed):
+        # A visitor runs as themselves, so only wikis they can edit get here;
+        # the switch doesn't apply, but every edit waits for their approval.
+        cfg = self._cfg(monkeypatch, {"public_link_caller": True}, allowed=allowed)
+        assert cfg["outside_caller"] is False
+        assert cfg["writes_allowed"] is True
+        assert cfg["approval_required"] is True
 
     def test_v1_key_holder_gets_read_only(self, monkeypatch):
         from docsgpt.api.answer.services.stream_processor import StreamProcessor
@@ -791,3 +805,4 @@ class TestBuildConfigOutsideCallers:
         cfg = self._cfg(monkeypatch, agent_config)
         assert cfg["outside_caller"] is False
         assert cfg["writes_allowed"] is True
+        assert cfg["approval_required"] is False

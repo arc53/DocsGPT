@@ -887,10 +887,10 @@ class _PauseThenAnswerAgent:
         yield {"answer": self.ANSWER_TEXT}
 
 
-def _seed_agent(conn, user_id: str, key: str) -> None:
+def _seed_agent(conn, user_id: str, key: str) -> str:
     from docsgpt.storage.db.repositories.agents import AgentsRepository
 
-    AgentsRepository(conn).create(user_id, "Weather Agent", "published", key=key)
+    return str(AgentsRepository(conn).create(user_id, "Weather Agent", "published", key=key)["id"])
 
 
 @contextmanager
@@ -898,12 +898,14 @@ def _wire_v1_route_db(engine, monkeypatch):
     """Full route-level DB wiring for the ``/v1/chat/completions`` blueprint.
 
     Extends ``_wire_db`` (conversation/continuation/base services) with the v1
-    routes module's own ``db_readonly`` (used by ``_lookup_agent``) and a fake
+    routes module's own ``db_readonly`` (used by ``_lookup_agent``), the
+    stream processor's (the resume looks up the key's agent), and a fake
     title-gen ``LLMCreator`` on the base module, so a real two-POST round-trip
     runs entirely against the ephemeral Postgres with no live LLM/provider.
     """
     from docsgpt.api.v1 import routes as v1_routes_mod
     from docsgpt.api.answer.routes import base as base_mod
+    from docsgpt.api.answer.services import stream_processor as sp_mod
 
     @contextmanager
     def _readonly():
@@ -915,6 +917,7 @@ def _wire_v1_route_db(engine, monkeypatch):
 
     with _wire_db(engine, monkeypatch):
         monkeypatch.setattr(v1_routes_mod, "db_readonly", _readonly)
+        monkeypatch.setattr(sp_mod, "db_readonly", _readonly)
         monkeypatch.setattr(
             base_mod.LLMCreator,
             "create_llm",
@@ -993,14 +996,17 @@ class TestV1ToolRoundTripEndToEnd:
         api_key = f"key-{uuid.uuid4().hex[:8]}"
         with pg_engine.begin() as conn:
             _seed_user(conn, user_id)
-            _seed_agent(conn, user_id, api_key)
+            agent_id = _seed_agent(conn, user_id, api_key)
 
         app = self._build_app()
 
         # ``build_agent`` is the only mock — a fresh pausing/answering agent
         # per call. The route's ``build_continuation_from_messages`` calls this
         # internally on POST #2, so the rebuild itself still runs for real.
+        # It binds the agent as ``_configure_agent`` would, so the paused turn
+        # is saved under the agent the key resumes.
         def _fake_build_agent(self, question):  # noqa: ARG001
+            self.agent_id = agent_id
             return _PauseThenAnswerAgent(
                 TestV1ToolRoundTripEndToEnd.PENDING
             )
