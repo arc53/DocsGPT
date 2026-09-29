@@ -23,6 +23,7 @@ import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
+import { SectionHeader } from '../components/ui/section-header';
 import {
   Select,
   SelectContent,
@@ -49,6 +50,7 @@ import RetrievalOptions, {
   type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
+import { showActionToast } from '../notifications/actionToastSlice';
 import type { AppDispatch } from '../store';
 import { formatCount } from '../utils/dateTimeUtils';
 import { ACCOUNT_NAME_MAX } from './accounts';
@@ -233,6 +235,10 @@ export default function ConnectWizard({
   // done step shows what it can do.
   const isMcpPreset =
     connector.auth_kind === 'mcp_oauth' && !!connector.mcp_url;
+  // An MCP preset that also syncs (Linear) has its tools from the sign-in:
+  // one screen shows them first, then asks about Knowledge, and finishing
+  // it closes the wizard with no separate summary.
+  const toolsFirst = isMcpPreset && mode === 'connect' && tools.length > 0;
   const mcp = useMcpOAuth();
   const mcpConfig = (): McpOAuthConfig => ({
     server_url: connector.mcp_url ?? '',
@@ -387,7 +393,8 @@ export default function ConnectWizard({
     if (!connectionId) return;
     if (!wantsTools && !syncReady) {
       // Connected, nothing more to set up.
-      setStep('done');
+      if (toolsFirst) finish();
+      else setStep('done');
       return;
     }
     setPending(true);
@@ -426,6 +433,22 @@ export default function ConnectWizard({
       if (wantsTools) setTools(data.tools ?? []);
       setSources(data.sources ?? []);
       refresh();
+      if (toolsFirst) {
+        const count = (data.sources ?? []).length;
+        dispatch(
+          showActionToast({
+            variant: 'success',
+            message: t('settings.connectors.wizard.doneSources', {
+              sources: t('settings.connectors.wizard.sourcesCount', {
+                count,
+                formatted: formatCount(count),
+              }),
+            }),
+          }),
+        );
+        finish();
+        return;
+      }
       setStep('done');
     } catch {
       setError(t('settings.connectors.wizard.syncFailed'));
@@ -614,6 +637,25 @@ export default function ConnectWizard({
           <CircleAlert />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+      )}
+      {toolsFirst && connectionId && (
+        <section className="flex flex-col gap-3">
+          <SectionHeader
+            as="h3"
+            size="xs"
+            title={t('settings.connectors.wizard.toolsHeading', {
+              count: toolCount,
+              formatted: formatCount(toolCount),
+            })}
+          />
+          {tools.map((tool) => (
+            <ToolPermissions
+              key={tool.id}
+              connectionId={connectionId}
+              tool={tool}
+            />
+          ))}
+        </section>
       )}
       {(offerTools || askSync) && (
         <SettingRows>
@@ -810,9 +852,14 @@ export default function ConnectWizard({
             interpolation: { escapeValue: false },
           })
       : step === 'setup'
-        ? offerTools || !syncing
-          ? t('settings.connectors.wizard.chooseWhatToSetUp')
-          : t('settings.connectors.wizard.chooseWhatToSync')
+        ? toolsFirst
+          ? t('settings.connectors.wizard.doneTitle', {
+              name,
+              interpolation: { escapeValue: false },
+            })
+          : offerTools || !syncing
+            ? t('settings.connectors.wizard.chooseWhatToSetUp')
+            : t('settings.connectors.wizard.chooseWhatToSync')
         : t('settings.connectors.wizard.doneTitle', {
             name,
             interpolation: { escapeValue: false },
@@ -853,12 +900,16 @@ export default function ConnectWizard({
     ) : step === 'setup' && !offerTools && !syncing ? (
       // Only the Knowledge question, answered no: Skip would do the same.
       <Button type="button" size="lg" shape="pill" onClick={addSource}>
-        {t('settings.connectors.wizard.continue')}
+        {toolsFirst
+          ? t('settings.connectors.wizard.done')
+          : t('settings.connectors.wizard.continue')}
       </Button>
     ) : step === 'setup' ? (
       <ModalActions
         cancelLabel={t('settings.connectors.wizard.skip')}
-        onCancel={() => (mode === 'sync' ? onClose() : setStep('done'))}
+        onCancel={() =>
+          mode === 'sync' ? onClose() : toolsFirst ? finish() : setStep('done')
+        }
         submitLabel={
           offerTools
             ? t('settings.connectors.wizard.continue')

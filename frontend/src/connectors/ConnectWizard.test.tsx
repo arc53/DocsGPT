@@ -100,6 +100,9 @@ vi.mock('./LinearPicker', async (importOriginal) => {
   };
 });
 
+import actionToastReducer, {
+  selectActionToast,
+} from '../notifications/actionToastSlice';
 import notificationsReducer, {
   sseEventReceived,
 } from '../notifications/notificationsSlice';
@@ -231,6 +234,7 @@ describe('ConnectWizard', () => {
       reducer: {
         connectors: connectorsReducer,
         notifications: notificationsReducer,
+        actionToast: actionToastReducer,
         preference: (state = { token: null, selectedDocs: [] }) => state,
         conversation: (state = {}) => state,
       },
@@ -881,7 +885,7 @@ describe('ConnectWizard', () => {
       publisher: 'preset',
     };
 
-    const signIn = async (props = {}) => {
+    const signIn = async (props = {}, onClose = vi.fn()) => {
       const popup = { closed: false, close: vi.fn(), location: { href: '' } };
       const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
       mcpApi.testMCPConnection.mockResolvedValue({
@@ -905,7 +909,7 @@ describe('ConnectWizard', () => {
         success: true,
         connection: { tools: [{ ...TELEGRAM_TOOL, display_name: 'Linear' }] },
       });
-      const store = await render(linear, vi.fn(), props);
+      const store = await render(linear, onClose, props);
       await click('settings.connectors.wizard.signIn');
       await act(async () => {
         store.dispatch(
@@ -918,19 +922,28 @@ describe('ConnectWizard', () => {
         );
       });
       open.mockRestore();
+      return store;
     };
 
-    it('signs in once, then picks teams to sync with the same connection', async () => {
+    // The tools come first on the one screen after signing in.
+    const toolsFirst = () => {
+      const text = document.body.textContent ?? '';
+      const tools = text.indexOf('settings.connectors.wizard.toolsHeading:1');
+      const knowledge = text.indexOf(
+        'settings.connectors.wizard.syncToKnowledge',
+      );
+      return tools >= 0 && (knowledge < 0 || tools < knowledge);
+    };
+
+    it('signs in once, then shows its tools and picks teams to sync on one screen', async () => {
       service.setup.mockResolvedValue({
         success: true,
         tools: [],
         sources: [{ id: 'src-1', name: 'Linear · Engineering' }],
       });
-      await signIn({ purpose: 'knowledge' });
-      // The tools came with the sign-in; syncing is the next question.
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.chooseWhatToSync',
-      );
+      const onClose = vi.fn();
+      const store = await signIn({ purpose: 'knowledge' }, onClose);
+      expect(toolsFirst()).toBe(true);
       await click('pick-team');
       await click('modals.uploadDoc.train');
       const [id, body] = service.setup.mock.calls[0];
@@ -949,14 +962,18 @@ describe('ConnectWizard', () => {
           config: optionsToConfig(DEFAULT_RETRIEVAL_OPTIONS),
         },
       });
-      // The summary still lists the tools from the sign-in.
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.toolsHeading:1',
-      );
+      // Nothing more to show: the modal closes and says what syncs.
+      expect(onClose).toHaveBeenCalled();
+      expect(
+        selectActionToast(
+          store.getState() as Parameters<typeof selectActionToast>[0],
+        )?.variant,
+      ).toBe('success');
     });
 
     it('can skip syncing and keep only the tools', async () => {
-      await signIn({ purpose: 'knowledge' });
+      const onClose = vi.fn();
+      await signIn({ purpose: 'knowledge' }, onClose);
       const train = Array.from(
         document.body.querySelectorAll<HTMLButtonElement>('button'),
       ).find((b) => b.textContent?.trim() === 'modals.uploadDoc.train');
@@ -964,26 +981,18 @@ describe('ConnectWizard', () => {
       expect(train?.disabled).toBe(true);
       await click('settings.connectors.wizard.skip');
       expect(service.setup).not.toHaveBeenCalled();
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.doneTitle',
-      );
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.toolsHeading:1',
-      );
+      expect(onClose).toHaveBeenCalled();
     });
 
-    it('asks before syncing on a plain connect, and keeps the tools', async () => {
-      await signIn();
+    it('asks about Knowledge under its tools on a plain connect', async () => {
+      const onClose = vi.fn();
+      await signIn({}, onClose);
+      expect(toolsFirst()).toBe(true);
       expect(knowledgeSwitch()!.getAttribute('aria-checked')).toBe('false');
       expect(document.body.textContent).not.toContain('pick-team');
-      await click('settings.connectors.wizard.continue');
+      await click('settings.connectors.wizard.done');
       expect(service.setup).not.toHaveBeenCalled();
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.toolsHeading:1',
-      );
-      expect(document.body.textContent).toContain(
-        'settings.connectors.wizard.syncLater',
-      );
+      expect(onClose).toHaveBeenCalled();
     });
 
     it('goes straight to the summary after signing in again', async () => {
