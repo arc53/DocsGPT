@@ -221,6 +221,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  // Access details opened from Share to allow changes: its allowlist unfolds.
+  const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [addPromptModal, setAddPromptModal] = useState<ActiveState>('INACTIVE');
   const [hasChanges, setHasChanges] = useState(false);
@@ -1137,6 +1139,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Page-level actions live in the ⋯ beside the title. Until the agent is
   // published the preview can only say "Publish to preview", so Preview is a
   // menu item then and a toolbar button after.
+  const canOpenAccessDetails =
+    modeConfig[effectiveMode].showAccessDetails &&
+    can(agent, 'manage_access_details');
   const menuOptions = [
     ...(isPublished
       ? []
@@ -1147,8 +1152,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             onClick: () => setPreviewOpen(true),
           },
         ]),
-    ...(modeConfig[effectiveMode].showAccessDetails &&
-    can(agent, 'manage_access_details')
+    ...(canOpenAccessDetails
       ? [
           {
             label: t('agents.form.buttons.accessDetails'),
@@ -1848,7 +1852,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         agent={agent}
         mode={effectiveMode}
         modalState={agentDetails}
-        setModalState={setAgentDetails}
+        setModalState={(state) => {
+          setAgentDetails(state);
+          if (state === 'INACTIVE') setDetailsOnApiWrites(false);
+        }}
+        openApiWrites={detailsOnApiWrites}
         onKeyRegenerated={(key) => setAgent((prev) => ({ ...prev, key }))}
         onConfigChange={(config) => {
           // The allowlist is saved already: record it on the saved snapshot
@@ -1871,6 +1879,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           resourceId={agent.id}
           resourceName={agent.name}
           onClose={() => setShareModalOpen(false)}
+          onOpenAccessDetails={
+            canOpenAccessDetails
+              ? () => {
+                  setShareModalOpen(false);
+                  setDetailsOnApiWrites(true);
+                  setAgentDetails('ACTIVE');
+                }
+              : undefined
+          }
         />
       )}
       {uploadModalState === 'ACTIVE' && (

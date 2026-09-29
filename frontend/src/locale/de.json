@@ -767,9 +767,9 @@
           "title": "Was dieser Agent nutzt",
           "intro": "Alle, die diesen Agenten nutzen, erhalten diese Elemente, jeweils mit dem angezeigten Zugriff.",
           "stopped": "Gestoppt",
-          "writesOff": "API-Änderungen aus",
-          "writesNote": "API-, Widget- und Link-Nutzer können die hier markierten Änderungen erst vornehmen, wenn du sie unter Zugangsdaten erlaubst.",
-          "writesNoteEditor": "API-, Widget- und Link-Nutzer können die hier markierten Änderungen erst vornehmen, wenn der Eigentümer sie unter Zugangsdaten erlaubt.",
+          "writesOff": "Nicht über API",
+          "writesNote": "„Erlauben“ bei einem Connector gilt für Chats. Mit „Nicht über API“ markierte Änderungen bleiben für API-, Widget- und Link-Nutzer aus, bis du sie unter Zugangsdaten erlaubst.",
+          "writesNoteEditor": "„Erlauben“ bei einem Connector gilt für Chats. Mit „Nicht über API“ markierte Änderungen bleiben für API-, Widget- und Link-Nutzer aus, bis der Eigentümer sie unter Zugangsdaten erlaubt.",
           "access": {
             "you": "Dein Zugriff",
             "person": "Zugriff von {{person}}",
@@ -789,11 +789,12 @@
             "personCredentials": "Gespeicherte Zugangsdaten von {{person}}",
             "otherCredentials": "Gespeicherte Zugangsdaten einer anderen Person"
           },
-          "writesSomeOff": "Einige API-Änderungen aus",
+          "writesSomeOff": "Teils nicht über API",
           "adminOff": "Änderungen von einem Admin deaktiviert",
-          "writesNoteApi": "API- und Widget-Nutzer können die hier markierten Änderungen erst vornehmen, wenn du sie unter Zugangsdaten erlaubst.",
-          "writesNoteApiEditor": "API- und Widget-Nutzer können die hier markierten Änderungen erst vornehmen, wenn der Eigentümer sie unter Zugangsdaten erlaubt.",
-          "writesNoteMemberTail": "Bei Werkzeugen, bei denen jede Person ihr eigenes Konto nutzt, ändern Link-Nutzer mit ihrem eigenen Konto."
+          "writesNoteApi": "„Erlauben“ bei einem Connector gilt für Chats. Mit „Nicht über API“ markierte Änderungen bleiben für API- und Widget-Nutzer aus, bis du sie unter Zugangsdaten erlaubst.",
+          "writesNoteApiEditor": "„Erlauben“ bei einem Connector gilt für Chats. Mit „Nicht über API“ markierte Änderungen bleiben für API- und Widget-Nutzer aus, bis der Eigentümer sie unter Zugangsdaten erlaubt.",
+          "writesNoteMemberTail": "Bei Werkzeugen, bei denen jede Person ihr eigenes Konto nutzt, ändern Link-Nutzer mit ihrem eigenen Konto.",
+          "openAccessDetails": "Zugangsdaten öffnen"
         }
       },
       "memberCount_one": "{{formatted}} Mitglied",
@@ -1462,7 +1463,7 @@
         "saveFailed": "Die Berechtigung konnte nicht gespeichert werden. Versuche es erneut.",
         "groupLabel": "Berechtigung für alles unter {{group}}",
         "fold": "Aktionen ausblenden",
-        "hint": "Vorher fragen: Im Chat fragt DocsGPT dich, bevor die Aktion ausgeführt wird. Über die API oder das Widget eines Agenten kann niemand antworten, daher werden diese Aktionen abgelehnt, außer die API-Schreibfreigabe des Agenten enthält sie.",
+        "hint": "„Erlauben“ und „Vorher fragen“ gelten im Chat; bei „Vorher fragen“ fragt DocsGPT dich, bevor die Aktion ausgeführt wird. Änderungen über die API, das Widget oder den öffentlichen Link eines Agenten erlaubst du pro Agent unter seinen Zugangsdaten.",
         "actionCount_one": "{{formatted}} Aktion",
         "actionCount_other": "{{formatted}} Aktionen",
         "customize_one": "Aktion einzeln festlegen",

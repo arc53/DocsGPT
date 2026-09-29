@@ -25,6 +25,12 @@ type AgentUsesSectionProps = {
   agentId: string;
   /** The reader's user id, to say "your" for what runs as them. */
   readerId?: string;
+  /**
+   * Opens the agent's Access details, where its owner allows changes
+   * through the API, widget and public links. Without it the note only
+   * says where to go.
+   */
+  onOpenAccessDetails?: () => void;
 };
 
 const TYPE_ICONS: Record<ResourceState['type'], typeof Wrench> = {
@@ -56,11 +62,14 @@ function blockedWrites(item: ResourceState, allowlist: string[]): string[] {
  * writes on stored credentials that aren't in the API write allowlist is
  * marked (all or some of them), since API and widget users, and public-link
  * users on the owner's accounts, can't make those changes; so is a tool an
- * admin allows no changes through.
+ * admin allows no changes through. That allowlist is not the connector's
+ * Allow (the in-chat permission), so the note says so and, for the owner,
+ * opens Access details where the list is set.
  */
 export default function AgentUsesSection({
   agentId,
   readerId,
+  onOpenAccessDetails,
 }: AgentUsesSectionProps) {
   const { t } = useTranslation();
   const loaded = useAgentResourceStates(agentId);
@@ -222,6 +231,20 @@ export default function AgentUsesSection({
             <Alert variant="warning">
               <TriangleAlert />
               <AlertDescription>{writesNote}</AlertDescription>
+              {/* Only the owner sets the allowlist. */}
+              {ownerReads && onOpenAccessDetails && (
+                <div className="mt-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    shape="pill"
+                    variant="outline"
+                    onClick={onOpenAccessDetails}
+                  >
+                    {t(`${K}.openAccessDetails`)}
+                  </Button>
+                </div>
+              )}
             </Alert>
           )}
         </>

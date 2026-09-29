@@ -773,9 +773,9 @@
           "title": "What this agent uses",
           "intro": "Everyone who uses this agent gets these, each with the access shown.",
           "stopped": "Stopped",
-          "writesOff": "API changes off",
-          "writesNote": "API, widget and public-link users can't make the changes marked here until you allow them in Access Details.",
-          "writesNoteEditor": "API, widget and public-link users can't make the changes marked here until the owner allows them in Access Details.",
+          "writesOff": "Not via API",
+          "writesNote": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API, widget and public-link users until you allow them in Access Details.",
+          "writesNoteEditor": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API, widget and public-link users until the owner allows them in Access Details.",
           "access": {
             "you": "Your access",
             "person": "{{person}}'s access",
@@ -795,11 +795,12 @@
             "personCredentials": "{{person}}'s saved credentials",
             "otherCredentials": "Someone else's saved credentials"
           },
-          "writesSomeOff": "Some API changes off",
+          "writesSomeOff": "Some not via API",
           "adminOff": "Changes off by an admin",
-          "writesNoteApi": "API and widget users can't make the changes marked here until you allow them in Access Details.",
-          "writesNoteApiEditor": "API and widget users can't make the changes marked here until the owner allows them in Access Details.",
-          "writesNoteMemberTail": "On tools where each person uses their own account, public-link users make changes with their own account."
+          "writesNoteApi": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API and widget users until you allow them in Access Details.",
+          "writesNoteApiEditor": "“Allow” on a connector applies to chats. Changes marked “Not via API” stay off for API and widget users until the owner allows them in Access Details.",
+          "writesNoteMemberTail": "On tools where each person uses their own account, public-link users make changes with their own account.",
+          "openAccessDetails": "Open Access Details"
         }
       },
       "memberCount_one": "{{formatted}} member",
@@ -1468,7 +1469,7 @@
         "saveFailed": "Could not save the permission. Try again.",
         "groupLabel": "Permission for all of {{group}}",
         "fold": "Hide actions",
-        "hint": "Ask first: in chat, DocsGPT asks you before running the action. Over an agent's API or widget nobody can answer, so those actions are refused unless the agent's API write allowlist includes them.",
+        "hint": "“Allow” and “Ask first” apply in chat; with “Ask first”, DocsGPT asks you before running the action. Changes through an agent's API, widget or public link are allowed per agent, in its Access Details.",
         "actionCount_one": "{{formatted}} action",
         "actionCount_other": "{{formatted}} actions",
         "customize_one": "Customize the action",

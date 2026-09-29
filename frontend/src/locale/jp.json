@@ -766,9 +766,9 @@
           "title": "このエージェントが使うもの",
           "intro": "このエージェントを使うすべての人が、表示されたアクセスでこれらを使います。",
           "stopped": "停止中",
-          "writesOff": "API からの変更はオフ",
-          "writesNote": "API、ウィジェット、公開リンクの利用者は、ここで示された変更を行えません。Access Details で許可すると行えます。",
-          "writesNoteEditor": "API、ウィジェット、公開リンクの利用者は、ここで示された変更を行えません。オーナーが Access Details で許可すると行えます。",
+          "writesOff": "API 経由は不可",
+          "writesNote": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、Access Details で許可するまで、API、ウィジェット、公開リンクの利用者には行えません。",
+          "writesNoteEditor": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、オーナーが Access Details で許可するまで、API、ウィジェット、公開リンクの利用者には行えません。",
           "access": {
             "you": "あなたのアクセス",
             "person": "{{person}} のアクセス",
@@ -788,11 +788,12 @@
             "personCredentials": "{{person}} の保存済み認証情報",
             "otherCredentials": "他の人の保存済み認証情報"
           },
-          "writesSomeOff": "一部の API からの変更はオフ",
+          "writesSomeOff": "一部 API 経由は不可",
           "adminOff": "管理者が変更をオフにしています",
-          "writesNoteApi": "API とウィジェットの利用者は、ここで示された変更を行えません。Access Details で許可すると行えます。",
-          "writesNoteApiEditor": "API とウィジェットの利用者は、ここで示された変更を行えません。オーナーが Access Details で許可すると行えます。",
-          "writesNoteMemberTail": "各自のアカウントを使うツールでは、公開リンクの利用者は自分のアカウントで変更します。"
+          "writesNoteApi": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、Access Details で許可するまで、API とウィジェットの利用者には行えません。",
+          "writesNoteApiEditor": "コネクタの「許可」はチャットに適用されます。「API 経由は不可」と示された変更は、オーナーが Access Details で許可するまで、API とウィジェットの利用者には行えません。",
+          "writesNoteMemberTail": "各自のアカウントを使うツールでは、公開リンクの利用者は自分のアカウントで変更します。",
+          "openAccessDetails": "Access Details を開く"
         }
       },
       "memberCount_one": "{{formatted}}人のメンバー",
@@ -1461,7 +1462,7 @@
         "saveFailed": "権限を保存できませんでした。もう一度お試しください。",
         "groupLabel": "{{group}} すべての権限",
         "fold": "アクションを隠す",
-        "hint": "事前に確認: チャットでは、DocsGPT がアクションの実行前に確認します。エージェントの API やウィジェットでは誰も応答できないため、エージェントの API 書き込み許可リストに含まれていない限り、これらのアクションは拒否されます。",
+        "hint": "「許可」と「事前に確認」はチャットに適用されます。「事前に確認」では、DocsGPT がアクションの実行前に確認します。エージェントの API、ウィジェット、公開リンクからの変更は、エージェントごとに Access Details で許可します。",
         "actionCount_other": "{{formatted}} 件のアクション",
         "customize_other": "{{formatted}} 件を個別に設定"
       },

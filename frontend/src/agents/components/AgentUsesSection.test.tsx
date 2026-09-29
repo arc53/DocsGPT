@@ -94,10 +94,20 @@ describe('AgentUsesSection', () => {
     container.remove();
   });
 
-  const render = async (agent: Agent | null, readerId = 'me') => {
+  const render = async (
+    agent: Agent | null,
+    readerId = 'me',
+    onOpenAccessDetails?: () => void,
+  ) => {
     getAgent.mockResolvedValue(agent ? ok(agent) : { ok: false });
     act(() => {
-      root.render(<AgentUsesSection agentId="a1" readerId={readerId} />);
+      root.render(
+        <AgentUsesSection
+          agentId="a1"
+          readerId={readerId}
+          onOpenAccessDetails={onOpenAccessDetails}
+        />,
+      );
     });
     await flush();
   };
@@ -447,6 +457,71 @@ describe('AgentUsesSection', () => {
     );
     await open();
     expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+  });
+
+  // "Allow" on a connector is the in-chat permission; the badge is about
+  // the agent's own API write allowlist, so only that list clears it.
+  it('drops the badge and the note once the write is on the allowlist', async () => {
+    const linear = item({
+      id: 'lin',
+      name: 'Linear',
+      connection: { id: 'c1', connector_key: 'mcp:linear', name: 'Linear' },
+      credential_mode: 'owner',
+      owner_credential_writes: ['create_issue'],
+    });
+    await render(agentWith([linear]));
+    await open();
+    expect(rowOf('Linear')?.textContent).toContain(`${K}.writesOff`);
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(
+      agentWith([linear], {
+        config: { api_write_allowlist: ['LIN:create_issue'] },
+      }),
+    );
+    await open();
+    expect(rowOf('Linear')?.textContent).not.toContain(`${K}.writes`);
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+  });
+
+  it('opens Access details from the note for the owner', async () => {
+    const openDetails = vi.fn();
+    await render(
+      agentWith([
+        item({ id: 't1', name: 'Blocked', owner_credential_writes: ['x'] }),
+      ]),
+      'me',
+      openDetails,
+    );
+    await open();
+    const button = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="alert"] button',
+      ),
+    ).find((b) => b.textContent === `${K}.openAccessDetails`);
+    expect(button).toBeDefined();
+    act(() => button!.click());
+    expect(openDetails).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no Access details button to an editor or without a way there', async () => {
+    const blocked = [
+      item({ id: 't1', name: 'Blocked', owner_credential_writes: ['x'] }),
+    ];
+    await render(
+      agentWith(blocked, { access: 'editor', allowed_actions: ['edit'] }),
+      'me',
+      vi.fn(),
+    );
+    await open();
+    expect(container.querySelector('[data-slot="alert"] button')).toBeNull();
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(agentWith(blocked));
+    await open();
+    expect(container.querySelector('[data-slot="alert"] button')).toBeNull();
   });
 
   it('includes the resources of a workflow agent’s nodes', async () => {

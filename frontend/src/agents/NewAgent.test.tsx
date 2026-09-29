@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => {
     >(() => jsonResponse({})),
     guardrailsProps: vi.fn(),
     detailsProps: vi.fn(),
+    shareProps: vi.fn(),
     reconnect: vi.fn(),
   };
 });
@@ -144,7 +145,12 @@ vi.mock('../modals/AgentDetailsModal', () => ({
     return null;
   },
 }));
-vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: unknown) => {
+    mocks.shareProps(props);
+    return null;
+  },
+}));
 vi.mock('../modals/ConfirmationModal', () => ({
   default: ({
     modalState,
@@ -1080,6 +1086,51 @@ describe('NewAgent gating by role', () => {
     await act(async () => details().onConfigChange(saved));
     expect(details().getSavedConfig()).toEqual(saved);
     expect(buttonByText('agents.form.buttons.cancel')).toBeUndefined();
+  });
+
+  // "What this agent uses" in Share sends the owner to the API write
+  // allowlist, which opens unfolded; opened any other way it starts folded.
+  it('opens Access details on the allowlist from Share', async () => {
+    await renderEdit('owner', OWNER);
+    const details = () =>
+      mocks.detailsProps.mock.calls.at(-1)![0] as {
+        modalState: string;
+        openApiWrites?: boolean;
+        setModalState: (state: string) => void;
+      };
+    await menuLabels();
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((item) => item.textContent === 'agents.shareWithTeam')!
+        .click(),
+    );
+    const share = mocks.shareProps.mock.calls.at(-1)![0] as {
+      onOpenAccessDetails?: () => void;
+    };
+    mocks.shareProps.mockClear();
+    await act(async () => share.onOpenAccessDetails!());
+    expect(mocks.shareProps).not.toHaveBeenCalled();
+    expect(details().modalState).toBe('ACTIVE');
+    expect(details().openApiWrites).toBe(true);
+    await act(async () => details().setModalState('INACTIVE'));
+    expect(details().openApiWrites).toBe(false);
+  });
+
+  it('gives Share no way to Access details without manage_access_details', async () => {
+    await renderEdit(
+      'owner',
+      OWNER.filter((a) => a !== 'manage_access_details'),
+    );
+    await menuLabels();
+    await act(async () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+        .find((item) => item.textContent === 'agents.shareWithTeam')!
+        .click(),
+    );
+    const share = mocks.shareProps.mock.calls.at(-1)![0] as {
+      onOpenAccessDetails?: () => void;
+    };
+    expect(share.onOpenAccessDetails).toBeUndefined();
   });
 
   it('hides Access details without manage_access_details', async () => {

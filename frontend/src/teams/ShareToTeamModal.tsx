@@ -95,6 +95,11 @@ type Props = {
   resourceName?: string;
   credentials?: ShareCredentials;
   onClose: () => void;
+  /**
+   * An agent's: opens its Access details (the API write allowlist) from
+   * "What this agent uses". The caller closes this dialog for it.
+   */
+  onOpenAccessDetails?: () => void;
 };
 
 // Member subs (OIDC subs) can be long; there's no display-name endpoint, so we
@@ -142,6 +147,7 @@ export default function ShareToTeamModal({
   resourceName,
   credentials,
   onClose,
+  onOpenAccessDetails,
 }: Props) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -1140,7 +1146,11 @@ export default function ShareToTeamModal({
           with, for the people it is shared with (owners and editors only:
           viewers never open this dialog). */}
       {resourceType === 'agent' && (
-        <AgentUsesSection agentId={resourceId} readerId={currentUserId} />
+        <AgentUsesSection
+          agentId={resourceId}
+          readerId={currentUserId}
+          onOpenAccessDetails={onOpenAccessDetails}
+        />
       )}
 
       {accessSettings}

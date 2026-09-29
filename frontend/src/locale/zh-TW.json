@@ -766,9 +766,9 @@
           "title": "此代理使用的內容",
           "intro": "使用此代理的每個人都會用到這些內容，各自依所示的存取權限執行。",
           "stopped": "已停止",
-          "writesOff": "API 變更已關閉",
-          "writesNote": "在你於 Access Details 中允許之前，API、小工具和公開連結的使用者無法進行此處標示的變更。",
-          "writesNoteEditor": "在擁有者於 Access Details 中允許之前，API、小工具和公開連結的使用者無法進行此處標示的變更。",
+          "writesOff": "無法透過 API",
+          "writesNote": "連接器上的「允許」適用於聊天。標示為「無法透過 API」的變更，在你於 Access Details 中允許之前，API、小工具和公開連結的使用者無法進行。",
+          "writesNoteEditor": "連接器上的「允許」適用於聊天。標示為「無法透過 API」的變更，在擁有者於 Access Details 中允許之前，API、小工具和公開連結的使用者無法進行。",
           "access": {
             "you": "你的存取權限",
             "person": "{{person}} 的存取權限",
@@ -788,11 +788,12 @@
             "personCredentials": "{{person}} 儲存的憑證",
             "otherCredentials": "其他人儲存的憑證"
           },
-          "writesSomeOff": "部分 API 變更已關閉",
+          "writesSomeOff": "部分無法透過 API",
           "adminOff": "管理員已關閉變更",
-          "writesNoteApi": "在你於 Access Details 中允許之前，API 和小工具的使用者無法進行此處標示的變更。",
-          "writesNoteApiEditor": "在擁有者於 Access Details 中允許之前，API 和小工具的使用者無法進行此處標示的變更。",
-          "writesNoteMemberTail": "在每個人使用自己帳號的工具上，公開連結的使用者以自己的帳號進行變更。"
+          "writesNoteApi": "連接器上的「允許」適用於聊天。標示為「無法透過 API」的變更，在你於 Access Details 中允許之前，API 和小工具的使用者無法進行。",
+          "writesNoteApiEditor": "連接器上的「允許」適用於聊天。標示為「無法透過 API」的變更，在擁有者於 Access Details 中允許之前，API 和小工具的使用者無法進行。",
+          "writesNoteMemberTail": "在每個人使用自己帳號的工具上，公開連結的使用者以自己的帳號進行變更。",
+          "openAccessDetails": "開啟 Access Details"
         }
       },
       "memberCount_one": "{{formatted}} 位成員",
@@ -1461,7 +1462,7 @@
         "saveFailed": "無法儲存權限。請再試一次。",
         "groupLabel": "{{group}} 的全部權限",
         "fold": "隱藏動作",
-        "hint": "先詢問：在聊天中，DocsGPT 會在執行動作前詢問你。透過代理的 API 或小工具時沒有人能回答，因此除非代理的 API 寫入允許清單包含這些動作，否則它們會被拒絕。",
+        "hint": "「允許」和「先詢問」適用於聊天：選擇「先詢問」時，DocsGPT 會在執行動作前詢問你。透過代理的 API、小工具或公開連結進行的變更，需在該代理的 Access Details 中逐一代理允許。",
         "actionCount_other": "{{formatted}} 個動作",
         "customize_other": "分別設定 {{formatted}} 個"
       },

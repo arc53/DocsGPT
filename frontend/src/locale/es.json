@@ -767,9 +767,9 @@
           "title": "Qué usa este agente",
           "intro": "Todos los que usan este agente reciben estos elementos, cada uno con el acceso indicado.",
           "stopped": "Detenido",
-          "writesOff": "Cambios por API desactivados",
-          "writesNote": "Los usuarios de la API, el widget y el enlace público no pueden hacer los cambios marcados aquí hasta que los permitas en Access Details.",
-          "writesNoteEditor": "Los usuarios de la API, el widget y el enlace público no pueden hacer los cambios marcados aquí hasta que el propietario los permita en Access Details.",
+          "writesOff": "No por API",
+          "writesNote": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API, el widget y el enlace público hasta que los permitas en Access Details.",
+          "writesNoteEditor": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API, el widget y el enlace público hasta que el propietario los permita en Access Details.",
           "access": {
             "you": "Tu acceso",
             "person": "Acceso de {{person}}",
@@ -789,11 +789,12 @@
             "personCredentials": "Credenciales guardadas de {{person}}",
             "otherCredentials": "Credenciales guardadas de otra persona"
           },
-          "writesSomeOff": "Algunos cambios por API desactivados",
+          "writesSomeOff": "Algunos no por API",
           "adminOff": "Cambios desactivados por un administrador",
-          "writesNoteApi": "Los usuarios de la API y el widget no pueden hacer los cambios marcados aquí hasta que los permitas en Access Details.",
-          "writesNoteApiEditor": "Los usuarios de la API y el widget no pueden hacer los cambios marcados aquí hasta que el propietario los permita en Access Details.",
-          "writesNoteMemberTail": "En las herramientas donde cada persona usa su propia cuenta, los usuarios del enlace público hacen cambios con su propia cuenta."
+          "writesNoteApi": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API y el widget hasta que los permitas en Access Details.",
+          "writesNoteApiEditor": "«Permitir» en un conector se aplica a los chats. Los cambios marcados «No por API» siguen desactivados para los usuarios de la API y el widget hasta que el propietario los permita en Access Details.",
+          "writesNoteMemberTail": "En las herramientas donde cada persona usa su propia cuenta, los usuarios del enlace público hacen cambios con su propia cuenta.",
+          "openAccessDetails": "Abrir Access Details"
         }
       },
       "memberCount_one": "{{formatted}} miembro",
@@ -1462,7 +1463,7 @@
         "saveFailed": "No se pudo guardar el permiso. Inténtalo de nuevo.",
         "groupLabel": "Permiso para todo en {{group}}",
         "fold": "Ocultar acciones",
-        "hint": "Preguntar antes: en el chat, DocsGPT te pregunta antes de ejecutar la acción. En la API o el widget de un agente nadie puede responder, así que esas acciones se rechazan salvo que la lista de escrituras por API del agente las incluya.",
+        "hint": "«Permitir» y «Preguntar antes» se aplican en el chat; con «Preguntar antes», DocsGPT te pregunta antes de ejecutar la acción. Los cambios por la API, el widget o el enlace público de un agente se permiten por agente, en su Access Details.",
         "actionCount_one": "{{formatted}} acción",
         "actionCount_other": "{{formatted}} acciones",
         "customize_one": "Ajustar la acción",

@@ -270,6 +270,8 @@ function WorkflowBuilderInner() {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  // Access details opened from Share to allow changes: its allowlist unfolds.
+  const [detailsOnApiWrites, setDetailsOnApiWrites] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isDeletingAgent, setIsDeletingAgent] = useState(false);
   const [currentAgent, setCurrentAgent] = useState<Agent>(
@@ -2197,6 +2199,15 @@ function WorkflowBuilderInner() {
             resourceId={effectiveAgentId}
             resourceName={workflowName}
             onClose={() => setShareModalOpen(false)}
+            onOpenAccessDetails={
+              canManageAgent && can(currentAgent, 'manage_access_details')
+                ? () => {
+                    setShareModalOpen(false);
+                    setDetailsOnApiWrites(true);
+                    setAgentDetails('ACTIVE');
+                  }
+                : undefined
+            }
           />
         )}
         {canManageAgent && (
@@ -2204,7 +2215,11 @@ function WorkflowBuilderInner() {
             agent={agentForDetails}
             mode="edit"
             modalState={agentDetails}
-            setModalState={setAgentDetails}
+            setModalState={(state) => {
+              setAgentDetails(state);
+              if (state === 'INACTIVE') setDetailsOnApiWrites(false);
+            }}
+            openApiWrites={detailsOnApiWrites}
             onKeyRegenerated={(key) =>
               setCurrentAgent((prev) => ({ ...prev, key }))
             }
