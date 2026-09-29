@@ -1768,7 +1768,10 @@
       "connectData": {
         "title": "データを接続",
         "description": "{{services}} を同期",
-        "more": "その他"
+        "more": "その他",
+        "intro": "サービスを選んでサインインし、ナレッジに同期する内容を選びます。",
+        "connectedAs": "{{account}} として接続中",
+        "browseAll": "すべてのコネクタを見る"
       }
     },
     "createAPIKey": {

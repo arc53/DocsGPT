@@ -3,8 +3,12 @@ import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { services?: string }) =>
-      opts?.services ? `${key}(${opts.services})` : key,
+    t: (key: string, opts?: { services?: string; account?: string }) =>
+      opts?.services
+        ? `${key}(${opts.services})`
+        : opts?.account
+          ? `${key}(${opts.account})`
+          : key,
     i18n: { language: 'en' },
   }),
 }));
@@ -45,8 +49,6 @@ vi.mock('../api/services/userService', () => ({
 }));
 
 const launch = vi.hoisted(() => vi.fn());
-const navigate = vi.hoisted(() => vi.fn());
-vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 vi.mock('../connectors/useConnectorLauncher', () => ({
   default: () => ({ launch, modals: null }),
 }));
@@ -71,7 +73,7 @@ describe('Upload source-type tiles', () => {
   });
 
   const close = vi.fn();
-  const render = async () => {
+  const render = async (onBrowseConnectors?: () => void) => {
     await act(async () => {
       root.render(
         <Upload
@@ -80,6 +82,7 @@ describe('Upload source-type tiles', () => {
           isOnboarding={false}
           renderTab={null}
           close={close}
+          onBrowseConnectors={onBrowseConnectors}
         />,
       );
     });
@@ -122,6 +125,7 @@ describe('Upload source-type tiles', () => {
   const DRIVE = {
     key: 'google_drive',
     name: 'Google Drive',
+    state: 'available',
     icon: 'drive',
     sync_ingestor: 'google_drive',
     capabilities: ['sync'],
@@ -162,33 +166,131 @@ describe('Upload source-type tiles', () => {
     connectorsState.catalog = [];
   });
 
+  // Like the Connectors page: connected services first, and a part (a
+  // service's sync half) listed under its parent. GitHub has its own tile.
+  const CATALOG = [
+    DRIVE,
+    { ...DRIVE, key: 'share_point', name: 'SharePoint' },
+    { ...DRIVE, key: 'github', name: 'GitHub', state: 'connected' },
+    { ...DRIVE, key: 's3', name: 'Amazon S3', state: 'connected' },
+    {
+      key: 'mcp:atlassian',
+      name: 'Atlassian',
+      capabilities: ['read', 'write'],
+      available: true,
+      state: 'available',
+    },
+    {
+      ...DRIVE,
+      key: 'confluence',
+      name: 'Confluence',
+      part_of: 'mcp:atlassian',
+    },
+    { ...DRIVE, key: 'off', name: 'Needs setup', available: false },
+    { key: 'telegram', name: 'Telegram', capabilities: ['write'] },
+  ];
+
   it('names three syncing services, then the rest as more', async () => {
-    connectorsState.catalog = [
-      DRIVE,
-      { ...DRIVE, key: 'share_point', name: 'SharePoint' },
-      { ...DRIVE, key: 'confluence', name: 'Confluence' },
-      { ...DRIVE, key: 's3', name: 'Amazon S3' },
-      { ...DRIVE, key: 'off', name: 'Needs setup', available: false },
-      { key: 'telegram', name: 'Telegram', capabilities: ['write'] },
-    ];
+    connectorsState.catalog = CATALOG;
     await render();
     expect(connectTile()!.textContent).toContain(
-      'modals.uploadDoc.connectData.description(Google Drive, SharePoint, Confluence, and modals.uploadDoc.connectData.more)',
+      'modals.uploadDoc.connectData.description(Amazon S3, Google Drive, SharePoint, and modals.uploadDoc.connectData.more)',
     );
     connectorsState.catalog = [];
   });
 
-  it('opens the Connectors page on the syncing services', async () => {
-    connectorsState.catalog = [DRIVE];
-    navigate.mockClear();
+  const serviceTiles = () =>
+    tiles().map(
+      (tile) => tile.querySelector('[data-slot="card-title"]')?.textContent,
+    );
+
+  it('lists the services that sync in place of the tiles, with a way back', async () => {
+    connectorsState.catalog = CATALOG;
     close.mockClear();
     await render();
     await act(async () => connectTile()!.click());
-    expect(close).toHaveBeenCalled();
-    expect(navigate).toHaveBeenCalledWith(
-      '/settings/connectors?capability=sync',
+    expect(close).not.toHaveBeenCalled();
+    expect(serviceTiles()).toEqual([
+      'GitHub',
+      'Amazon S3',
+      'Google Drive',
+      'SharePoint',
+      'Atlassian',
+    ]);
+    const back = Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'modals.uploadDoc.back',
+    )!;
+    await act(async () => back.click());
+    expect(connectTile()).toBeDefined();
+    connectorsState.catalog = [];
+  });
+
+  it('connects a service in place, for Knowledge', async () => {
+    connectorsState.catalog = CATALOG;
+    connectorsState.connections = [
+      {
+        id: 'k1',
+        connector_key: 's3',
+        status: 'connected',
+        account_label: 'bucket-reader',
+      },
+    ];
+    launch.mockClear();
+    await render();
+    await act(async () => connectTile()!.click());
+    const tile = (name: string) =>
+      tiles().find(
+        (t) =>
+          t.querySelector('[data-slot="card-title"]')?.textContent === name,
+      )!;
+    expect(tile('Amazon S3').textContent).toContain(
+      'modals.uploadDoc.connectData.connectedAs(bucket-reader)',
     );
-    expect(launch).not.toHaveBeenCalled();
+    // An account already connected goes straight to choosing what to sync.
+    await act(async () => tile('Amazon S3').click());
+    expect(launch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: 's3' }),
+      { mode: 'sync', connectionId: 'k1', purpose: 'knowledge' },
+    );
+    connectorsState.connections = [];
+    connectorsState.catalog = [];
+  });
+
+  it('connects the sync part of a service listed under its parent', async () => {
+    connectorsState.catalog = CATALOG;
+    launch.mockClear();
+    await render();
+    await act(async () => connectTile()!.click());
+    const atlassian = tiles().find(
+      (t) =>
+        t.querySelector('[data-slot="card-title"]')?.textContent ===
+        'Atlassian',
+    )!;
+    await act(async () => atlassian.click());
+    expect(launch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: 'confluence' }),
+      { purpose: 'knowledge' },
+    );
+    connectorsState.catalog = [];
+  });
+
+  it('browses all connectors only when the opener offers it', async () => {
+    connectorsState.catalog = CATALOG;
+    const browseLink = () =>
+      Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'modals.uploadDoc.connectData.browseAll',
+      );
+    await render();
+    await act(async () => connectTile()!.click());
+    expect(browseLink()).toBeUndefined();
+
+    const browse = vi.fn();
+    close.mockClear();
+    await render(browse);
+    expect(browseLink()).toBeDefined();
+    await act(async () => browseLink()!.click());
+    expect(close).toHaveBeenCalled();
+    expect(browse).toHaveBeenCalled();
     connectorsState.catalog = [];
   });
 

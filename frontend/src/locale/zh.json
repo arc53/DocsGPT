@@ -1768,7 +1768,10 @@
       "connectData": {
         "title": "连接你的数据",
         "description": "同步 {{services}}",
-        "more": "更多服务"
+        "more": "更多服务",
+        "intro": "选择一个服务并登录，然后选择要同步到知识库的内容。",
+        "connectedAs": "已作为 {{account}} 连接",
+        "browseAll": "浏览所有连接器"
       }
     },
     "createAPIKey": {

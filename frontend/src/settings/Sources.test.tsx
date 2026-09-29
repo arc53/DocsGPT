@@ -1,8 +1,9 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
-const { dispatch, service, view, connectors } = vi.hoisted(() => ({
+const { dispatch, service, view, connectors, uploadProps } = vi.hoisted(() => ({
+  uploadProps: vi.fn(),
   connectors: { connections: [] as Record<string, unknown>[] },
   // The heavy children: each view reports the canEdit it was given.
   view:
@@ -70,7 +71,12 @@ vi.mock('./WikiSettingsModal', () => ({
 }));
 vi.mock('./EnableGraphRAGModal', () => ({ default: () => null }));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
-vi.mock('../upload/Upload', () => ({ default: () => null }));
+vi.mock('../upload/Upload', () => ({
+  default: (props: unknown) => {
+    uploadProps(props);
+    return null;
+  },
+}));
 
 import type { Doc } from '../models/misc';
 import Sources from './Sources';
@@ -108,6 +114,11 @@ describe('Sources access', () => {
     document.body.innerHTML = '';
   });
 
+  function Where() {
+    const location = useLocation();
+    return <div data-testid="where">{location.pathname + location.search}</div>;
+  }
+
   const render = async (document: Doc) => {
     await act(async () => {
       root.render(
@@ -116,6 +127,7 @@ describe('Sources access', () => {
             paginatedDocuments={[document]}
             handleDeleteDocument={vi.fn()}
           />
+          <Where />
         </MemoryRouter>,
       );
     });
@@ -196,6 +208,24 @@ describe('Sources access', () => {
     expect(items).not.toContain('settings.connectors.manageConnection');
     expect(items).toContain('settings.sources.editConfig');
     expect(items).toContain('convTile.delete');
+  });
+
+  // Leaving Knowledge loses nothing, so its Add knowledge may browse the
+  // whole Connectors page; the other openers keep the list in the dialog.
+  it('lets Add knowledge browse the syncing connectors from Knowledge', async () => {
+    await render(doc());
+    uploadProps.mockClear();
+    const add = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.addSource',
+    )!;
+    await act(async () => add.click());
+    const props = uploadProps.mock.calls.at(-1)![0] as {
+      onBrowseConnectors?: () => void;
+    };
+    await act(async () => props.onBrowseConnectors!());
+    expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
+      '/settings/connectors?capability=sync',
+    );
   });
 
   it('a source with no access fields is the caller’s own', async () => {

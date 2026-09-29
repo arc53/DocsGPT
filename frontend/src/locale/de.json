@@ -1779,7 +1779,10 @@
       "connectData": {
         "title": "Deine Daten verbinden",
         "description": "{{services}} synchronisieren",
-        "more": "mehr"
+        "more": "mehr",
+        "intro": "Wähle einen Dienst, melde dich an und wähle dann, was in Wissen synchronisiert wird.",
+        "connectedAs": "Verbunden als {{account}}",
+        "browseAll": "Alle Connectors ansehen"
       }
     },
     "createAPIKey": {

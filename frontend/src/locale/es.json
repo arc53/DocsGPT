@@ -1779,7 +1779,10 @@
       "connectData": {
         "title": "Conecta tus datos",
         "description": "Sincroniza {{services}}",
-        "more": "más"
+        "more": "más",
+        "intro": "Elige un servicio, inicia sesión y luego elige qué sincronizar en Conocimiento.",
+        "connectedAs": "Conectado como {{account}}",
+        "browseAll": "Ver todos los conectores"
       }
     },
     "createAPIKey": {

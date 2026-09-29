@@ -1,11 +1,10 @@
-import { ChevronLeft, FileText, Lock, Plug } from 'lucide-react';
+import { ArrowRight, ChevronLeft, FileText, Lock, Plug } from 'lucide-react';
 import { envVar } from '@/env';
 import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import type { FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
 
 import type { RootState } from '../store';
 import userService from '../api/services/userService';
@@ -16,9 +15,11 @@ import { FormField as UiFormField } from '../components/ui/form-field';
 import { Textarea } from '../components/ui/textarea';
 import { Modal } from '../components/ui/modal';
 import { OptionCard } from '../components/ui/option-card';
+import ConnectorIcon from '../connectors/ConnectorIcon';
+import { syncTargets } from '../connectors/catalogCards';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { connectorName } from '../connectors/i18n';
-import { intlLocale } from '../utils/dateTimeUtils';
+import { formatCount, intlLocale } from '../utils/dateTimeUtils';
 import {
   loadConnectors,
   selectConnections,
@@ -71,6 +72,7 @@ function Upload({
   close,
   onSuccessfulUpload = () => undefined,
   selectUploadedDoc = true,
+  onBrowseConnectors,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
@@ -85,6 +87,12 @@ function Upload({
    * uploading never repoints the conversation the user left open.
    */
   selectUploadedDoc?: boolean;
+  /**
+   * Opens the Connectors page on the services that sync. Only a caller that
+   * loses nothing by leaving (the Knowledge page) passes it; the dialog
+   * closes first.
+   */
+  onBrowseConnectors?: () => void;
 }) {
   const token = useSelector(selectToken);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -92,11 +100,12 @@ function Upload({
   const connections = useSelector(selectConnections);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
-  const navigate = useNavigate();
-  // GitHub's private-repository hand-over goes to the connect wizard, the
-  // one flow every entry point uses; this modal steps aside and closes
-  // with it.
+  // Connecting a service (Connect your data, GitHub's private-repository
+  // hand-over) goes to the connect wizard, the one flow every entry point
+  // uses; this modal steps aside and closes with it.
   const [handedOver, setHandedOver] = useState(false);
+  // Connect your data: the services that sync, in place of the tiles.
+  const [connecting, setConnecting] = useState(false);
   const { launch, modals: connectModals } = useConnectorLauncher({
     onConnected: () => close(),
   });
@@ -743,28 +752,112 @@ function Upload({
     }
   };
 
-  // Services that sync into Knowledge are connected on the Connectors page,
-  // so the picker offers one way there instead of a tile per service, named
-  // after the first few this instance can sync.
-  const syncServices = connectorsEnabled
-    ? connectorCatalog
-        .filter((c) => c.available && c.capabilities?.includes('sync'))
-        .map((c) => connectorName(t, c))
-    : [];
+  // Services that sync into Knowledge are connected here, through the
+  // connect wizard: one tile opens their list, named after the first few
+  // (GitHub has a tile of its own).
+  const syncServices = connectorsEnabled ? syncTargets(connectorCatalog) : [];
+  const namedServices = syncServices
+    .filter(({ card }) => card.key !== 'github')
+    .map(({ card }) => connectorName(t, card));
   const SERVICES_NAMED = 3;
   const connectDescription = t('modals.uploadDoc.connectData.description', {
     services: new Intl.ListFormat(intlLocale(i18n.language), {
       type: 'conjunction',
     }).format(
-      syncServices.length > SERVICES_NAMED
+      namedServices.length > SERVICES_NAMED
         ? [
-            ...syncServices.slice(0, SERVICES_NAMED),
+            ...namedServices.slice(0, SERVICES_NAMED),
             t('modals.uploadDoc.connectData.more'),
           ]
-        : syncServices,
+        : namedServices,
     ),
     interpolation: { escapeValue: false },
   });
+
+  const connectedAccounts = (key: string) =>
+    connections.filter(
+      (c) => c.connector_key === key && c.status === 'connected',
+    );
+
+  /** Which account a service's tile syncs from, when it has any. */
+  const accountLine = (key: string) => {
+    const accounts = connectedAccounts(key);
+    if (accounts.length === 1)
+      return t('modals.uploadDoc.connectData.connectedAs', {
+        account: accounts[0].account_label,
+        interpolation: { escapeValue: false },
+      });
+    if (accounts.length > 1)
+      return t('settings.connectors.status.connectedCount', {
+        count: accounts.length,
+        formatted: formatCount(accounts.length),
+      });
+    return undefined;
+  };
+
+  const renderConnectStep = () => (
+    <div className="flex flex-col gap-5">
+      <Button
+        type="button"
+        variant="ghost-muted"
+        size="sm"
+        onClick={() => setConnecting(false)}
+        className="-ml-3 w-fit justify-start"
+      >
+        <ChevronLeft />
+        <span>{t('modals.uploadDoc.back')}</span>
+      </Button>
+      <div className="flex flex-col gap-2">
+        <h2 className="text-foreground text-xl leading-tight font-semibold">
+          {t('modals.uploadDoc.connectData.title')}
+        </h2>
+        <p className="text-muted-foreground text-sm">
+          {t('modals.uploadDoc.connectData.intro')}
+        </p>
+      </div>
+      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+        {syncServices.map(({ card, target }) => (
+          <OptionCard
+            key={card.key}
+            icon={<ConnectorIcon icon={card.icon} className="size-6" />}
+            title={connectorName(t, card)}
+            description={accountLine(target.key)}
+            onClick={() => {
+              const account = connectedAccounts(target.key)[0];
+              setHandedOver(true);
+              // Opened to add knowledge: syncing starts switched on, and an
+              // account already connected goes straight to what to sync.
+              launch(
+                target,
+                account
+                  ? {
+                      mode: 'sync',
+                      connectionId: account.id,
+                      purpose: 'knowledge',
+                    }
+                  : { purpose: 'knowledge' },
+              );
+            }}
+          />
+        ))}
+      </div>
+      {onBrowseConnectors && (
+        <Button
+          type="button"
+          variant="link"
+          size="inline"
+          className="self-start"
+          onClick={() => {
+            handleClose();
+            onBrowseConnectors();
+          }}
+        >
+          {t('modals.uploadDoc.connectData.browseAll')}
+          <ArrowRight className="size-3" />
+        </Button>
+      )}
+    </div>
+  );
 
   const renderIngestorSelection = () => {
     const options = UPLOAD_AND_WEB_INGESTORS.map((type) =>
@@ -788,10 +881,7 @@ function Upload({
             icon={<Plug />}
             title={t('modals.uploadDoc.connectData.title')}
             description={connectDescription}
-            onClick={() => {
-              handleClose();
-              navigate('/settings/connectors?capability=sync');
-            }}
+            onClick={() => setConnecting(true)}
           />
         )}
       </div>
@@ -876,7 +966,7 @@ function Upload({
       mobileVariant="sheet"
     >
       <div className="flex w-full flex-col gap-6">
-        {!ingestor.type && (
+        {!ingestor.type && !connecting && (
           <p className="text-foreground text-left text-xl leading-tight font-semibold">
             {t('modals.uploadDoc.selectSource')}
           </p>
@@ -884,7 +974,8 @@ function Upload({
 
         {activeTab && (
           <>
-            {!ingestor.type && renderIngestorSelection()}
+            {!ingestor.type &&
+              (connecting ? renderConnectStep() : renderIngestorSelection())}
             {ingestor.type && (
               <div className="flex flex-col gap-5">
                 <Button

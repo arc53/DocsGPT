@@ -1785,7 +1785,10 @@
       "connectData": {
         "title": "Connect your data",
         "description": "Sync {{services}}",
-        "more": "more"
+        "more": "more",
+        "intro": "Pick a service, sign in, then choose what to sync into Knowledge.",
+        "connectedAs": "Connected as {{account}}",
+        "browseAll": "Browse all connectors"
       }
     },
     "createAPIKey": {

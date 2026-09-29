@@ -27,6 +27,11 @@ import ConnectionDrawer from '../connectors/ConnectionDrawer';
 import ConnectorCard from '../connectors/ConnectorCard';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
+  byState,
+  catalogCards,
+  partsOf as partsOfCatalog,
+} from '../connectors/catalogCards';
+import {
   loadConnectors,
   selectConnectorCatalog,
   selectConnectorsFailed,
@@ -54,17 +59,6 @@ const FILTERS = [
   'custom',
 ] as const;
 type Filter = (typeof FILTERS)[number];
-
-// Connected and needing attention first, then what can be connected, then
-// what an admin still has to set up.
-const STATE_ORDER: Record<ConnectorDefinition['state'], number> = {
-  reconnect: 0,
-  connected: 1,
-  available: 2,
-  custom: 3,
-  needs_setup: 4,
-  disabled: 5,
-};
 
 const isConnected = (connector: ConnectorDefinition) =>
   connector.connection_count > 0;
@@ -98,7 +92,8 @@ export default function Connectors() {
   }, [dispatch, token]);
 
   const custom = catalog.filter((c) => c.publisher === 'custom');
-  // A link to a part (a tool's "Manage connection") opens its parent's page.
+  // A `?connector=` link to a part (a Reconnect that can't happen in place)
+  // opens its parent's page.
   const openTarget = catalog.find((c) => c.key === openKey);
   const openConnector =
     (openTarget?.part_of &&
@@ -106,29 +101,7 @@ export default function Connectors() {
     openTarget ||
     null;
 
-  // One service offered two ways (Confluence sync and the Jira & Confluence
-  // MCP actions) is one card. A part is shown on its own only when its
-  // parent is not listed (not set up, or turned off).
-  const partsOf = (key: string) => catalog.filter((c) => c.part_of === key);
-  const isShownUnderParent = (connector: ConnectorDefinition) =>
-    !!connector.part_of && catalog.some((c) => c.key === connector.part_of);
-  const merged = (connector: ConnectorDefinition): ConnectorDefinition => {
-    const parts = partsOf(connector.key);
-    if (parts.length === 0) return connector;
-    const all = [connector, ...parts];
-    const state = all.some((c) => c.state === 'reconnect')
-      ? 'reconnect'
-      : all.some((c) => c.state === 'connected')
-        ? 'connected'
-        : connector.state;
-    return {
-      ...connector,
-      capabilities: Array.from(new Set(all.flatMap((c) => c.capabilities))),
-      connection_count: all.reduce((n, c) => n + c.connection_count, 0),
-      connected_count: all.reduce((n, c) => n + c.connected_count, 0),
-      state,
-    };
-  };
+  const partsOf = (key: string) => partsOfCatalog(catalog, key);
 
   // "Connect more" in the composer opens the connectors that can do what the
   // picker is for: sync content, or give tools.
@@ -145,9 +118,7 @@ export default function Connectors() {
   // Only categories that have something in them once the composer's
   // capability filter applies (hidden connectors can empty one too), so no
   // pill leads to an empty page.
-  const cards = catalog
-    .filter((connector) => !isShownUnderParent(connector))
-    .map(merged);
+  const cards = catalogCards(catalog);
   const withCapability = cards.filter((connector) =>
     capability === 'sync'
       ? connector.capabilities.includes('sync')
@@ -181,7 +152,7 @@ export default function Connectors() {
               connectorDescription(t, c).toLowerCase().includes(query),
           ),
       )
-      .sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+      .sort(byState);
   }, [withCapability, filter, search, t]);
 
   const open = (connector: ConnectorDefinition) => {

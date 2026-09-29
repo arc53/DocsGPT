@@ -865,6 +865,9 @@ export default function Sources({
           onSuccessfulUpload={() =>
             refreshDocs(undefined, currentPage, rowsPerPage)
           }
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
         />
       )}
 
