@@ -1454,9 +1454,15 @@ def remove_connection(conn, row: dict, *, sources: str = "keep", tools: str = "d
             {"id": connection_id, "user_id": row["user_id"]},
         )
     else:
+        # The link itself goes with the row (ON DELETE SET NULL); note which
+        # service the tools lost, so an agent can say why they stopped.
         conn.execute(
-            text("UPDATE user_tools SET status = false WHERE connection_id = CAST(:id AS uuid)"),
-            {"id": connection_id},
+            text(
+                "UPDATE user_tools SET status = false, "
+                "config = COALESCE(config, '{}'::jsonb) || jsonb_build_object('removed_connection', "
+                "CAST(:key AS text)) WHERE connection_id = CAST(:id AS uuid)"
+            ),
+            {"id": connection_id, "key": catalog.connector_key_for_row(row) or ""},
         )
     conn.execute(
         text(

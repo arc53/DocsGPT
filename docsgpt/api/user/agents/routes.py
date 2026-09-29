@@ -29,6 +29,8 @@ from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     agent_refs,
+    best_effort,
+    cached_resolves,
     delete_settings,
     parse_confirmations,
     payload_for,
@@ -564,7 +566,7 @@ class GetAgent(Resource):
             sponsored: list = []
             states: list = []
             audience = None
-            with db_readonly() as conn:
+            with db_readonly() as conn, cached_resolves():
                 # Anyone who can see the agent reads it (a viewer needs it to
                 # chat); what they get back is trimmed by their actions.
                 ra = resolve(conn, "agent", agent_id, user)
@@ -573,11 +575,18 @@ class GetAgent(Resource):
                 # Edit-page detail: who vouches for resources the owner can't
                 # use, and which attached resources stopped running and why,
                 # with their names. Only for people who may edit the agent:
-                # the names can be an editor's private resources.
+                # the names can be an editor's private resources. Run state
+                # never fails the read.
                 if agent and ra.can("edit"):
                     sponsored = sponsor_details(conn, "agent", agent, viewer=user)
-                    states = resource_states(conn, "agent", agent, agent_refs(agent), user)
-                    audience = sponsor_audience(conn, "agent", agent, states, sponsored)
+                    states = best_effort(
+                        conn, "the agent's resource states",
+                        lambda: resource_states(conn, "agent", agent, agent_refs(agent), user), [],
+                    )
+                    audience = best_effort(
+                        conn, "the agent's audience",
+                        lambda: sponsor_audience(conn, "agent", agent, states, sponsored), None,
+                    )
             if not agent:
                 return {"status": "Not found"}, 404
             is_owner = ra.access == "owner"

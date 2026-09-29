@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
@@ -296,10 +298,41 @@ def payload_for(resource_type: str, access: Optional[str], settings: Optional[di
     }
 
 
+# Per-read memo of :func:`resolve`, on only inside :func:`cached_resolves`.
+_RESOLVE_CACHE: ContextVar[Optional[dict]] = ContextVar("resource_access_resolve_cache", default=None)
+
+
+@contextmanager
+def cached_resolves():
+    """Remember :func:`resolve` answers for the rest of one read.
+
+    A page read asks about the same resources several times (sponsor details,
+    run state, names); inside this block each ``(type, id, user)`` is looked
+    up once. Only for reads: a write must see a grant change at once.
+    """
+    token = _RESOLVE_CACHE.set({})
+    try:
+        yield
+    finally:
+        _RESOLVE_CACHE.reset(token)
+
+
 def resolve(
     conn: Connection, resource_type: str, resource_id: str, user_id: str
 ) -> Optional[ResourceAccess]:
     """The caller's access to a resource, or None when they can't see it."""
+    cache = _RESOLVE_CACHE.get()
+    if cache is None:
+        return _resolve_uncached(conn, resource_type, resource_id, user_id)
+    key = (resource_type, str(resource_id or "").lower(), user_id)
+    if key not in cache:
+        cache[key] = _resolve_uncached(conn, resource_type, resource_id, user_id)
+    return cache[key]
+
+
+def _resolve_uncached(
+    conn: Connection, resource_type: str, resource_id: str, user_id: str
+) -> Optional[ResourceAccess]:
     repo_cls = _REPO_FOR_TYPE.get(resource_type)
     if repo_cls is None or not resource_id or not user_id:
         return None
@@ -1077,53 +1110,77 @@ def _user_labels(conn: Connection, user_ids: Iterable[Optional[str]]) -> dict[st
     )
 
 
-def _connection_state(conn: Connection, tool: dict, owner: Optional[str], policies_box: list) -> tuple:
-    """``(reason, connection, mode, writes_allowed)`` for a tool the holder runs as ``owner``.
+# ``resource_states`` ``note`` for a running tool on each caller's own account.
+NOTE_PER_USER_ACCOUNT = "per_user_account"
 
-    ``connection`` (``{id, connector_key, name}``) and ``mode`` (``owner`` or
-    ``member``, after any mode an admin forces) are set for a tool that has a
-    connection, and ``connection`` also for one that lost it. ``reason`` is
-    why the connection keeps the tool from running, else None.
-    ``writes_allowed`` is False when an admin turned off changes through the
-    tool's connector.
+# ``resource_states`` ``contact_role``: whom to ask, when someone can fix it.
+CONTACT_RESOURCE_OWNER = "resource_owner"
+
+
+def _connection_state(conn: Connection, tool: dict, owner: Optional[str], policies_box: list) -> tuple:
+    """``(reason, connection, note, mode, writes_allowed)`` for a tool the holder runs as ``owner``.
+
+    Resolved the way the run resolves it. Only an owner-mode tool's account
+    is judged (see ``connection_stop_reason``); a member-mode one runs on
+    each caller's own account and gets :data:`NOTE_PER_USER_ACCOUNT`.
+    ``connection`` is ``(id, connector_key, name)`` for a tool with a
+    connection or one that lost it, else None. ``mode`` (``owner`` or
+    ``member``, after any mode an admin forces) is set for a tool that has
+    a connection. ``writes_allowed`` is False when an admin turned off
+    changes through the tool's connector.
     """
     from docsgpt.connectors import catalog, service
-    from docsgpt.connectors.resolve import connection_stop_reason, effective_credential_mode, resolve_connection
+    from docsgpt.connectors.resolve import (
+        MODE_MEMBER,
+        REMOVED_CONNECTION_KEY,
+        connection_stop_reason,
+        resolve_connection,
+    )
 
-    if not tool.get("connection_id") and not catalog.definition_for_tool(tool.get("name") or ""):
-        return None, None, None, True
+    if not tool.get("connection_id"):
+        reason = connection_stop_reason(tool, None)
+        if reason is None:
+            return None, None, None, None, True
+        key = (tool.get("config") or {}).get(REMOVED_CONNECTION_KEY) or None
+        definition = catalog.get_definition(key) if key else catalog.definition_for_tool(tool.get("name") or "")
+        connection = (None, definition.key if definition else key, definition.name if definition else None)
+        return reason, connection, None, None, True
     if not policies_box:
         policies_box.append(service.load_policies(conn))
     resolved = resolve_connection(tool, owner, conn=conn, policies=policies_box[0])
     reason = connection_stop_reason(tool, resolved)
-    if resolved is not None:
-        connection = {
-            "id": resolved.connection_id,
-            "connector_key": resolved.connector_key,
-            "name": resolved.connector_name,
-        }
-        mode = effective_credential_mode(tool, policies_box[0], resolved.connector_key)
-        return reason, connection, mode, resolved.writes_allowed
-    if reason is None:
-        return None, None, None, True
-    definition = catalog.definition_for_tool(tool.get("name") or "")
-    return reason, {"id": None, "connector_key": definition.key, "name": definition.name}, None, True
+    note = NOTE_PER_USER_ACCOUNT if reason is None and resolved.mode == MODE_MEMBER else None
+    connection = (resolved.connection_id, resolved.connector_key, resolved.connector_name)
+    return reason, connection, note, resolved.mode, resolved.writes_allowed
+
+
+def _connection_payload(connection: Optional[tuple], reader_owns: bool, can_reconnect: bool) -> Optional[dict]:
+    """The ``connection`` a reader may see: the id only to reconnect it, its own name only to its owner."""
+    if connection is None:
+        return None
+    from docsgpt.connectors import catalog
+
+    connection_id, connector_key, name = connection
+    if not reader_owns:
+        # The owner's name for the account (a custom MCP server's label, say)
+        # is theirs; others see the service's own name.
+        definition = catalog.get_definition(connector_key) if connector_key else None
+        name = definition.name if definition else None
+    return {"id": connection_id if can_reconnect else None, "connector_key": connector_key, "name": name}
 
 
 def _tool_run_details(conn: Connection, tool: dict, owner: Optional[str], policies_box: list) -> tuple:
-    """``(reason, connection, details)`` for a tool the holder runs as ``owner``.
+    """``(reason, connection, note, details)`` for a tool the holder runs as ``owner``.
 
     ``details`` holds what the share dialog says about a running tool:
     ``credential_mode``, ``account`` (the user id whose saved credentials or
     ``owner``-mode connection it acts with: the tool's owner), the
     ``owner_credential_writes`` outside callers need allowlisted, and
-    ``writes_allowed``. A running tool's connection id is left out.
+    ``writes_allowed``.
     """
-    reason, connection, mode, writes_allowed = _connection_state(conn, tool, owner, policies_box)
-    if reason is None and connection is not None:
-        connection = {**connection, "id": None}
+    reason, connection, note, mode, writes_allowed = _connection_state(conn, tool, owner, policies_box)
     holds = mode != "member" and holds_owner_credentials(tool)
-    return reason, connection, {
+    return reason, connection, note, {
         "credential_mode": mode,
         "account": tool.get("user_id") if holds else None,
         "owner_credential_writes": owner_credential_writes(tool) if writes_allowed else [],
@@ -1168,10 +1225,13 @@ def resource_states(
     """Whether each resource a holder references runs, for its edit page.
 
     Uses the run's own checks (:func:`ref_access`, :func:`resolve_holder_tool`
-    and the tool's connection as the run resolves it for the owner), so a
-    resource shown as stopped is one the run leaves out. Presets and builtin
-    tools always run and are not listed. Only for readers who may edit the
-    holder: the caller checks that.
+    and an owner-mode tool's connection as the run resolves it for the
+    owner), so a source or prompt shown as stopped is one the run leaves out,
+    and a tool shown as stopped is left out or can't run until someone acts:
+    a tool whose owner-mode account needs attention is still offered to the
+    model, and pauses (or, with nobody to ask, is refused) when called.
+    Presets and builtin tools always run and are not listed. Only for readers
+    who may edit the holder: the caller checks that.
 
     A name is given only for a resource that runs, that the reader can see
     themselves, that someone sponsored on the holder, or that is attached to
@@ -1186,16 +1246,22 @@ def resource_states(
         viewer: The user reading the page.
 
     Returns:
-        list: Per resource ``{key, type, id, name, state, reason, sponsor,
-        contact, connection, can_confirm, can_reconnect}``. ``state`` is
+        list: Per resource ``{key, type, id, name, state, reason, note,
+        sponsor, contact, contact_role, connection, runs_as, credential_mode,
+        account, owner_credential_writes, writes_allowed, can_confirm,
+        can_reconnect}``. ``state`` is
         ``active`` or ``stopped``; ``reason`` (None while active) is one of
         ``deleted``, ``owner_lost_access``, the sponsor reasons,
         ``connection_needs_reconnect``, ``connection_removed`` or
-        ``connector_disabled``. ``sponsor`` and ``contact`` are
-        ``{user_id, label}`` or None: the recorded sponsor, and someone other
-        than the reader who can fix it. ``connection`` (``{id,
-        connector_key, name}``) names the service of a tool with a
-        connection (its id only when a connection reason stopped it).
+        ``connector_disabled``. ``note`` is ``per_user_account`` for a tool
+        that runs on each caller's own account. ``sponsor`` is the recorded
+        sponsor as ``{user_id, label}``. ``contact_role`` is
+        ``resource_owner`` when the resource's owner (not the reader) can fix
+        it; ``contact`` names them only when the reader can see the resource
+        or they own the holder, else None. ``connection`` (``{id,
+        connector_key, name}``) names the service of a connected tool, and of
+        one whose connection reason stopped it; ``id`` only when the reader
+        may reconnect it, and the account's own name only for its owner.
         ``runs_as`` (``{user_id, label}``) is the live sponsor a running item
         runs as, None when it runs as the owner or doesn't run.
         For a running tool, ``credential_mode`` is ``owner`` or ``member``
@@ -1228,16 +1294,20 @@ def resource_states(
     tools_repo = UserToolsRepository(conn)
     policies_box: list = []
     entries = []
+
+    def reader_sees(resource_type: str, rid: str) -> bool:
+        return bool(viewer) and resolve(conn, resource_type, rid, viewer) is not None
+
     for resource_type, rid in pairs:
         key = sponsor_key(resource_type, rid)
         info = rows.get(key) or {}
-        connection = None
+        connection = note = None
         details = dict(_NO_RUN_DETAILS)
         if resource_type == "tool":
             tool_row, access = resolve_holder_tool(conn, holder_type, holder, rid, tools_repo=tools_repo)
             reason = access.reason
             if tool_row is not None and reason is None:
-                reason, connection, details = _tool_run_details(conn, tool_row, owner, policies_box)
+                reason, connection, note, details = _tool_run_details(conn, tool_row, owner, policies_box)
         else:
             access = ref_access(conn, holder_type, holder, resource_type, rid)
             reason = access.reason
@@ -1252,19 +1322,24 @@ def resource_states(
             and viewer_edits
             and can_sponsor_ref(conn, resource_type, rid, viewer)
         )
-        contact = None
-        if reason == REASON_OWNER_LOST_ACCESS:
-            # The owner asks whoever shared it; an editor asks the owner.
-            contact = resource_owner if viewer == owner else owner
-        elif reason in (REASON_CONNECTION_NEEDS_RECONNECT, REASON_CONNECTION_REMOVED):
-            contact = resource_owner
-        if contact == viewer:
-            contact = None
-        name_visible = bool(
-            reason is None
-            or sponsor
-            or holder_type == "agent"
-            or (viewer and resolve(conn, resource_type, rid, viewer) is not None)
+        contact = contact_role = None
+        if (
+            reason in (REASON_OWNER_LOST_ACCESS, REASON_CONNECTION_NEEDS_RECONNECT, REASON_CONNECTION_REMOVED)
+            and resource_owner
+            and resource_owner != viewer
+        ):
+            # Whoever owns the resource can share it again or fix its
+            # account; name them only to someone who knows them already.
+            contact_role = CONTACT_RESOURCE_OWNER
+            if resource_owner == owner or reader_sees(resource_type, rid):
+                contact = resource_owner
+        name_visible = bool(reason is None or sponsor or holder_type == "agent" or reader_sees(resource_type, rid))
+        can_reconnect = bool(
+            reason == REASON_CONNECTION_NEEDS_RECONNECT
+            and connection
+            and connection[0]
+            and viewer
+            and viewer == resource_owner
         )
         entries.append({
             "key": key,
@@ -1273,19 +1348,15 @@ def resource_states(
             "name": info.get("name") if name_visible else None,
             "state": "active" if reason is None else "stopped",
             "reason": reason,
+            "note": note,
             "sponsor": sponsor,
             "contact": contact,
-            "connection": connection,
+            "contact_role": contact_role,
+            "connection": _connection_payload(connection, bool(viewer) and viewer == resource_owner, can_reconnect),
             "runs_as": runs_as,
             **details,
             "can_confirm": can_confirm,
-            "can_reconnect": bool(
-                reason == REASON_CONNECTION_NEEDS_RECONNECT
-                and connection
-                and connection.get("id")
-                and viewer
-                and viewer == resource_owner
-            ),
+            "can_reconnect": can_reconnect,
         })
     labels = _user_labels(
         conn, [u for e in entries for u in (e["sponsor"], e["contact"], e["runs_as"], e["account"])]
@@ -1308,38 +1379,39 @@ def resource_states(
     return entries
 
 
-def visible_ref_ids(
-    conn: Connection, holder_type: str, holder: dict, refs: Iterable[tuple[str, str]], viewer: Optional[str]
-) -> set[str]:
-    """Keys of references whose names ``viewer`` may read on the holder's edit page.
+def best_effort(conn: Connection, label: str, compute, default):
+    """``compute()``, or ``default`` when it fails, without failing the read.
 
-    Those the holder runs (its owner or a live sponsor may use them), those
-    someone sponsored on it, and those the reader can see themselves.
+    Runs inside a savepoint, so a failed query doesn't poison the rest of
+    the read's transaction.
 
     Args:
         conn: Open database connection.
-        holder_type: ``agent`` or ``workflow``.
-        holder: The holder row.
-        refs: ``(type, id)`` pairs.
-        viewer: The reader.
+        label: What is computed, for the log line.
+        compute: A no-argument callable.
+        default: What to return when it raises.
+    """
+    try:
+        with conn.begin_nested():
+            return compute()
+    except Exception:
+        logger.exception("Could not work out %s; left out of the read", label)
+        return default
+
+
+def named_ref_keys(states: list[dict]) -> set[str]:
+    """Keys of the references whose names :func:`resource_states` gave the reader.
+
+    The same rule decides which node resources a workflow read names in its
+    ``ref_details``, so the two never disagree.
+
+    Args:
+        states: :func:`resource_states` for the reader.
 
     Returns:
         set: ``"<type>:<id>"`` keys, ids lowercased.
     """
-    recorded = {k.lower() for k in (holder.get("resource_sponsors") or {})}
-    out: set[str] = set()
-    for resource_type, resource_id in refs:
-        rid = str(resource_id).lower()
-        key = sponsor_key(resource_type, rid)
-        if key in out or resource_type not in REF_USE_ACTION:
-            continue
-        if (
-            key in recorded
-            or ref_access(conn, holder_type, holder, resource_type, rid).principal
-            or (viewer and resolve(conn, resource_type, rid, viewer) is not None)
-        ):
-            out.add(key)
-    return out
+    return {state["key"] for state in states if state.get("name") is not None}
 
 
 def sponsor_audience(

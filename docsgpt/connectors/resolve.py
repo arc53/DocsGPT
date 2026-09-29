@@ -28,6 +28,10 @@ CONNECTION_NEEDS_RECONNECT = "connection_needs_reconnect"
 CONNECTION_REMOVED = "connection_removed"
 CONNECTOR_DISABLED = "connector_disabled"
 
+# Tool config key ``remove_connection`` sets to the connector key when it
+# keeps a connection's tools, so they can say what they lost.
+REMOVED_CONNECTION_KEY = "removed_connection"
+
 
 @dataclass(frozen=True)
 class ResolvedConnection:
@@ -42,6 +46,8 @@ class ResolvedConnection:
         writes_allowed: Whether an admin lets agents make changes through a
             connector that offers them as an opt-in (GitHub); True elsewhere.
         enabled: Whether the connector is switched on (an admin can turn it off).
+        mode: Whose account the resource runs with, after any mode an admin
+            forces: :data:`MODE_OWNER` or :data:`MODE_MEMBER`.
     """
 
     row: Optional[dict]
@@ -51,6 +57,7 @@ class ResolvedConnection:
     delegated: bool = False
     writes_allowed: bool = True
     enabled: bool = True
+    mode: str = MODE_OWNER
 
     @property
     def connection_id(self) -> Optional[str]:
@@ -149,34 +156,41 @@ def _resolve(conn, resource: dict, invoker_user_id: Optional[str], policies: Opt
         delegated=bool(row and invoker_user_id and row.get("user_id") != invoker_user_id),
         writes_allowed=_writes_allowed(policies, key),
         enabled=enabled,
+        mode=mode,
     )
 
 
 def connection_stop_reason(tool: dict, resolved: Optional[ResolvedConnection]) -> Optional[str]:
-    """Why a tool's connection keeps it from running, or None when it can run.
+    """Why an owner-mode tool's connection keeps it from running, or None.
+
+    Only the connection the owner's account runs on is judged. A member-mode
+    tool runs on each caller's own account, so the owner's account says
+    nothing about whether it runs; only an admin turning the service off
+    stops it for everyone.
 
     Args:
         tool: The ``user_tools`` row.
-        resolved: What :func:`resolve_connection` returned for it.
+        resolved: What :func:`resolve_connection` returned for it, resolved
+            for the tool's holder's owner.
 
     Returns:
-        :data:`CONNECTION_REMOVED` when the connection is gone (its row was
-        deleted, or a built-in service's tool lost its connection and has no
-        credentials of its own), :data:`CONNECTOR_DISABLED` when an admin
-        turned the service off, :data:`CONNECTION_NEEDS_RECONNECT` when the
-        account must sign in again; else None.
+        :data:`CONNECTION_REMOVED` when its connection was removed and the
+        tool kept (``remove_connection`` notes it on the tool), or points at
+        one it may not use; :data:`CONNECTOR_DISABLED` when an admin turned
+        the service off; :data:`CONNECTION_NEEDS_RECONNECT` when the account
+        must sign in again; else None.
     """
     if resolved is None:
-        if tool.get("connection_id") or not catalog.definition_for_tool(tool.get("name") or ""):
-            return None
-        # Removing a connection but keeping its tools nulls their link; a
-        # built-in service's tool has no secrets of its own to fall back to.
-        config = tool.get("config") or {}
-        return None if config.get("encrypted_credentials") else CONNECTION_REMOVED
-    if resolved.row is None:
-        return CONNECTION_REMOVED
+        # Only a tool that had a connection lost it: a tool that never had
+        # one (a tokenless ntfy, a legacy tool) runs on its own config.
+        removed = (tool.get("config") or {}).get(REMOVED_CONNECTION_KEY)
+        return CONNECTION_REMOVED if removed and not tool.get("connection_id") else None
     if not resolved.enabled:
         return CONNECTOR_DISABLED
+    if resolved.mode == MODE_MEMBER:
+        return None
+    if resolved.row is None:
+        return CONNECTION_REMOVED
     if not resolved.available:
         return CONNECTION_NEEDS_RECONNECT
     return None

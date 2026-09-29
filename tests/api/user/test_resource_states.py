@@ -127,8 +127,10 @@ class TestReasons:
         TeamResourceGrantsRepository(pg_conn).revoke(team_id, "source", source)
         state = _states(pg_conn, agent_id)[f"source:{source}"]
         assert (state["state"], state["reason"]) == ("stopped", REASON_OWNER_LOST_ACCESS)
-        # The owner is told whom to ask: the source's owner.
-        assert state["contact"] == {"user_id": OTHER, "label": OTHER}
+        # The owner is told to ask the source's owner, but not who that is:
+        # they can no longer see the source.
+        assert state["contact"] is None
+        assert state["contact_role"] == "resource_owner"
         assert state["name"] == "team-src"
 
     def test_deleted_tool(self, pg_conn):
@@ -175,6 +177,7 @@ class TestReasons:
         assert (state["state"], state["reason"]) == ("stopped", REASON_CONNECTION_NEEDS_RECONNECT)
         assert state["can_reconnect"] is True
         assert state["connection"]["connector_key"] == "telegram"
+        assert state["connection"]["id"]
         assert state["contact"] is None
 
     def test_disconnected_account_needs_reconnect(self, pg_conn):
@@ -194,7 +197,10 @@ class TestReasons:
         with _patch_db(pg_conn):
             state = _states(pg_conn, agent_id, viewer=EDITOR)[f"tool:{tool}"]
         assert state["can_reconnect"] is False
+        # The agent's owner is someone the editor knows.
         assert state["contact"] == {"user_id": OWNER, "label": OWNER}
+        # Only the account's owner gets its connection id and own name.
+        assert state["connection"] == {"id": None, "connector_key": "telegram", "name": "Telegram"}
 
     def test_connection_removed_but_tool_kept(self, pg_conn):
         from docsgpt.connectors import service
@@ -734,3 +740,193 @@ class TestWorkflowStates:
         data = _body(self._get(app, pg_conn, wid, OTHER))["data"]
         assert _by_key(data["resource_states"])[f"tool:{tool}"]["can_confirm"] is True
         assert data["sponsor_audience"]["teams"] == ["T"]
+
+
+# ---------------------------------------------------------------------------
+# Connections as the run resolves them
+# ---------------------------------------------------------------------------
+
+
+class TestConnectionModes:
+    def test_member_mode_tool_runs_on_each_persons_account(self, pg_conn):
+        """The owner's own account doesn't decide a member-mode tool; each caller's does."""
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "telegram", connection_id=_connection(pg_conn, status="reconnect_needed"),
+            credential_mode="member",
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert (state["state"], state["reason"]) == ("active", None)
+        assert state["note"] == "per_user_account"
+
+    def test_admin_forced_member_mode_runs_on_each_persons_account(self, pg_conn):
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "telegram", connection_id=_connection(pg_conn, status="disconnected"),
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        ConnectorPoliciesRepository(pg_conn).upsert("telegram", credential_mode="member")
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert (state["state"], state["note"]) == ("active", "per_user_account")
+
+    def test_member_mode_tool_still_stops_when_the_service_is_off(self, pg_conn):
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "telegram", connection_id=_connection(pg_conn), credential_mode="member",
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        ConnectorPoliciesRepository(pg_conn).upsert("telegram", enabled=False)
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert state["reason"] == REASON_CONNECTOR_DISABLED
+
+    def test_owner_mode_tool_has_no_note(self, pg_conn):
+        tool = str(UserToolsRepository(pg_conn).create(
+            OWNER, "telegram", connection_id=_connection(pg_conn),
+        )["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert (state["state"], state["note"]) == ("active", None)
+
+    @pytest.mark.parametrize("name", ["ntfy", "brave"])
+    def test_service_tool_that_never_had_a_connection_runs(self, pg_conn, name):
+        """A tokenless ntfy (or a legacy tool) has no connection and needs none."""
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, name, config={"server_url": "https://ntfy.sh"})["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id)[f"tool:{tool}"]
+        assert (state["state"], state["reason"]) == ("active", None)
+
+    def test_removed_connection_is_remembered_on_the_kept_tool(self, pg_conn):
+        from docsgpt.connectors import service
+
+        cid = _connection(pg_conn)
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, "telegram", connection_id=cid)["id"])
+        row = pg_conn.execute(text("SELECT * FROM connector_sessions WHERE id = CAST(:id AS uuid)"),
+                              {"id": cid}).mappings().one()
+        service.remove_connection(pg_conn, dict(row), tools="keep")
+        kept = UserToolsRepository(pg_conn).get_any(tool, OWNER)
+        assert kept["connection_id"] is None
+        assert kept["config"]["removed_connection"] == "telegram"
+
+
+# ---------------------------------------------------------------------------
+# Whom to ask, without naming strangers
+# ---------------------------------------------------------------------------
+
+
+class TestContact:
+    def _owners_grant_only(self, conn, team_id, resource_type, resource_id):
+        """Share OTHER's resource with OWNER alone, so the agent's editors can't see it."""
+        for member in (OWNER, OTHER):
+            if not TeamMembersRepository(conn).is_member(member, team_id):
+                TeamMembersRepository(conn).add_member(team_id, member)
+        TeamResourceGrantsRepository(conn).grant(
+            team_id, resource_type, resource_id, OTHER, OTHER, target_user_id=OWNER
+        )
+
+    def test_editor_who_can_see_the_item_is_told_its_owner(self, pg_conn):
+        agent_id, team_id = _agent(pg_conn)
+        source = _team_source(pg_conn, team_id)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"extra_source_ids": [source]})
+        TeamResourceGrantsRepository(pg_conn).revoke(team_id, "source", source)
+        TeamResourceGrantsRepository(pg_conn).grant(
+            team_id, "source", source, OTHER, OTHER, target_user_id=EDITOR
+        )
+        state = _states(pg_conn, agent_id, viewer=EDITOR)[f"source:{source}"]
+        assert state["contact"] == {"user_id": OTHER, "label": OTHER}
+        assert state["contact_role"] == "resource_owner"
+
+    def test_editor_who_cannot_see_the_item_gets_no_identity(self, pg_conn):
+        agent_id, team_id = _agent(pg_conn)
+        tool = str(UserToolsRepository(pg_conn).create(
+            OTHER, "telegram", connection_id=_connection(pg_conn, user=OTHER, status="reconnect_needed"),
+        )["id"])
+        self._owners_grant_only(pg_conn, team_id, "tool", tool)
+        AgentsRepository(pg_conn).update_by_id(agent_id, {"tools": [tool]})
+        with _patch_db(pg_conn):
+            state = _states(pg_conn, agent_id, viewer=EDITOR)[f"tool:{tool}"]
+        assert state["reason"] == REASON_CONNECTION_NEEDS_RECONNECT
+        assert state["contact"] is None
+        assert state["contact_role"] == "resource_owner"
+        assert state["connection"]["id"] is None
+
+    def test_old_graph_naming_a_strangers_tool_reveals_nobody(self, app, pg_conn):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        wid = str(wf["id"])
+        _agent(pg_conn, agent_type="workflow", workflow_id=wid)
+        stranger_tool = str(UserToolsRepository(pg_conn).create("sp-stranger", "api_tool")["id"])
+        own = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
+        assert _status(_call(app, pg_conn, WorkflowDetail, "put", f"/api/workflows/{wid}", OWNER,
+                             json=_wf_body(own), args=(wid,))) == 200
+        pg_conn.execute(
+            text("UPDATE workflow_nodes SET config = jsonb_set(config, '{config,tools}', CAST(:t AS jsonb)) "
+                 "WHERE workflow_id = CAST(:w AS uuid) AND node_type = 'agent'"),
+            {"t": f'["{stranger_tool}"]', "w": wid},
+        )
+        data = _body(_call(app, pg_conn, WorkflowDetail, "get", f"/api/workflows/{wid}", OWNER, args=(wid,)))
+        state = _by_key(data["data"]["resource_states"])[f"tool:{stranger_tool}"]
+        assert state["reason"] == REASON_OWNER_LOST_ACCESS
+        assert state["contact"] is None
+        assert state["name"] is None
+
+
+# ---------------------------------------------------------------------------
+# Reads never fail on run state
+# ---------------------------------------------------------------------------
+
+
+class TestBestEffort:
+    def test_agent_read_survives_a_state_error(self, app, pg_conn, monkeypatch):
+        from docsgpt.api.user.agents import routes
+
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
+        agent_id, _ = _agent(pg_conn, tools=[tool])
+
+        def _boom(*_a, **_k):
+            raise RuntimeError("state failed")
+
+        monkeypatch.setattr(routes, "resource_states", _boom)
+        data = _get_agent(app, pg_conn, agent_id, OWNER)
+        assert data["resource_states"] == []
+        assert data["name"] == "Shared"
+
+    def test_workflow_read_survives_a_state_error(self, app, pg_conn, monkeypatch):
+        from docsgpt.api.user.workflows import routes
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        wid = str(wf["id"])
+        _agent(pg_conn, agent_type="workflow", workflow_id=wid)
+
+        def _boom(*_a, **_k):
+            raise RuntimeError("state failed")
+
+        monkeypatch.setattr(routes, "resource_states", _boom)
+        resp = _call(app, pg_conn, WorkflowDetail, "get", f"/api/workflows/{wid}", OWNER, args=(wid,))
+        assert _status(resp) == 200
+        assert _body(resp)["data"]["resource_states"] == []
+
+    def test_resolves_are_cached_within_a_read(self, pg_conn, monkeypatch):
+        from docsgpt.api.user import resource_access
+
+        tool = str(UserToolsRepository(pg_conn).create(OWNER, "api_tool")["id"])
+        calls = []
+        real = resource_access._resolve_uncached
+
+        def _spy(*args):
+            calls.append(args[1:])
+            return real(*args)
+
+        monkeypatch.setattr(resource_access, "_resolve_uncached", _spy)
+        with resource_access.cached_resolves():
+            first = resource_access.resolve(pg_conn, "tool", tool, OWNER)
+            second = resource_access.resolve(pg_conn, "tool", tool.upper(), OWNER)
+        assert first == second
+        assert len(calls) == 1
+        # Outside a read nothing is cached: a revoked grant denies at once.
+        resource_access.resolve(pg_conn, "tool", tool, OWNER)
+        assert len(calls) == 2

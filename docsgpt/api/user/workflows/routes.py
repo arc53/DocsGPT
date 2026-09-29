@@ -13,7 +13,10 @@ from docsgpt.agents.workflows.cel_evaluator import (
 from docsgpt.api.user import resource_access
 from docsgpt.api.user.resource_access import (
     AccessDenied,
+    best_effort,
+    cached_resolves,
     can_use_ref,
+    named_ref_keys,
     parse_confirmations,
     plan_sponsors,
     resolve,
@@ -21,7 +24,6 @@ from docsgpt.api.user.resource_access import (
     sponsor_audience,
     sponsor_details,
     sponsor_refusal,
-    visible_ref_ids,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
@@ -137,7 +139,7 @@ def _node_ref_details(nodes: List[Dict], visible: Optional[Set[str]] = None) -> 
     Looked up by id whoever owns them, so an editor's node pickers can show
     (and remove) the owner's private tools and sources. Builtin tool ids
     always resolve; any other id only when its ``"<type>:<id>"`` key is in
-    ``visible`` (see ``resource_access.visible_ref_ids``), so a node naming
+    ``visible`` (see ``resource_access.named_ref_keys``), so a node naming
     someone else's resource never reveals its name.
 
     Args:
@@ -688,12 +690,21 @@ class WorkflowDetail(Resource):
                 states: list = []
                 audience = None
                 visible: Optional[Set[str]] = None
-                if resource_access.holder_editable_by(conn, "workflow", workflow, user_id):
-                    refs = _node_refs(serialized_nodes)
-                    sponsored = sponsor_details(conn, "workflow", workflow, viewer=user_id)
-                    states = resource_states(conn, "workflow", workflow, refs, user_id)
-                    audience = sponsor_audience(conn, "workflow", workflow, states, sponsored)
-                    visible = visible_ref_ids(conn, "workflow", workflow, refs, user_id)
+                with cached_resolves():
+                    if resource_access.holder_editable_by(conn, "workflow", workflow, user_id):
+                        refs = _node_refs(serialized_nodes)
+                        sponsored = sponsor_details(conn, "workflow", workflow, viewer=user_id)
+                        # Run state never fails the read; node names follow
+                        # the same rule as the state's names.
+                        states = best_effort(
+                            conn, "the workflow's resource states",
+                            lambda: resource_states(conn, "workflow", workflow, refs, user_id), [],
+                        )
+                        audience = best_effort(
+                            conn, "the workflow's audience",
+                            lambda: sponsor_audience(conn, "workflow", workflow, states, sponsored), None,
+                        )
+                        visible = named_ref_keys(states)
             ref_details = (
                 _node_ref_details(serialized_nodes, visible)
                 if visible is not None
