@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from docsgpt.agents.tool_pins import carry_pins
 from docsgpt.connectors import catalog, service
 from docsgpt.connectors.permissions import apply_default_permissions
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
@@ -43,9 +44,10 @@ def discover_builtin_actions(user_id: str, connection: dict) -> list[dict]:
 def refresh_mcp_tools(user_id: str, connection: dict) -> dict:
     """Re-read the actions of every MCP tool on a connection.
 
-    Actions that still exist keep the permissions the user chose; new ones
-    get the defaults from their annotations (reads always allowed, writes
-    need approval); removed ones disappear.
+    Actions that still exist keep the permissions the user chose and the
+    fixed values of parameters they still have; new ones get the defaults
+    from their annotations (reads always allowed, writes need approval);
+    removed ones disappear.
 
     Returns:
         ``{"added": [...], "removed": [...], "tools": [...]}``.
@@ -64,7 +66,7 @@ def refresh_mcp_tools(user_id: str, connection: dict) -> dict:
             old = previous.get(action.get("name"))
             if old is not None:
                 action = {
-                    **action,
+                    **carry_pins(old, action),
                     "active": old.get("active", True),
                     "require_approval": bool(old.get("require_approval")),
                 }

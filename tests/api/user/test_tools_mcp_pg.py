@@ -404,6 +404,47 @@ class TestMCPServerSave:
             response = MCPServerSave().post()
         assert response.status_code in (200, 201)
 
+    def test_saving_an_existing_server_keeps_fixed_values(self, app, pg_conn):
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        user = "u-mcp-resave"
+        repo = UserToolsRepository(pg_conn)
+        existing = repo.create(
+            user, "mcp_tool",
+            config={"server_url": "https://example.com/mcp", "auth_type": "none"},
+            display_name="My MCP",
+            actions=[{
+                "name": "search",
+                "active": True,
+                "parameters": {"properties": {
+                    "q": {"type": "string", "filled_by_llm": True, "value": ""},
+                    "team": {"type": "string", "filled_by_llm": False, "value": "ENG"},
+                }},
+            }],
+        )
+        fake_tool = MagicMock()
+        fake_tool.get_actions_metadata.return_value = [{
+            "name": "search",
+            "parameters": {"properties": {"q": {"type": "string"}, "team": {"type": "string"}}},
+        }]
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=fake_tool,
+        ), app.test_request_context(
+            "/api/mcp_server/save", method="POST",
+            json={
+                "id": str(existing["id"]),
+                "displayName": "My MCP",
+                "config": {"transport_type": "http", "server_url": "https://example.com/mcp", "auth_type": "none"},
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = MCPServerSave().post()
+        assert response.status_code == 200
+        team = repo.get_any(str(existing["id"]), user)["actions"][0]["parameters"]["properties"]["team"]
+        assert team["filled_by_llm"] is False and team["value"] == "ENG"
+
 
 class TestMCPOAuthCallback:
     def test_error_param_redirects_error(self, app):

@@ -5,6 +5,7 @@ from urllib.parse import urlencode, urlparse
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import Namespace, Resource, fields
 
+from docsgpt.agents.tool_pins import carry_pins_between
 from docsgpt.agents.tools.mcp_tool import MCPOAuthManager, MCPTool
 from docsgpt.api import api
 from docsgpt.api.user.tools.routes import transform_actions
@@ -414,7 +415,8 @@ class MCPServerSave(Resource):
                             "custom_name": display_name,
                             "description": description,
                             "config": storage_config,
-                            "actions": transformed_actions,
+                            # Fixed values the user set survive a re-save.
+                            "actions": carry_pins_between(existing_doc.get("actions"), transformed_actions),
                             "status": status_bool,
                             "connection_id": connection_id,
                         },
@@ -442,7 +444,7 @@ class MCPServerSave(Resource):
                                 "custom_name": display_name,
                                 "description": description,
                                 "config": storage_config,
-                                "actions": transformed_actions,
+                                "actions": carry_pins_between(existing_by_name.get("actions"), transformed_actions),
                                 "status": status_bool,
                                 "connection_id": connection_id,
                             },

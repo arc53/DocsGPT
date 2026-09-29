@@ -81,6 +81,27 @@ class TestRefresh:
         assert actions["create_issue"]["parameters"]["properties"]["q"]["filled_by_llm"] is True
         assert [t["id"] for t in result["tools"]] == [tool_id]
 
+    def test_fixed_values_survive_for_parameters_that_still_exist(self, pg_conn):
+        connection = _connection(pg_conn)
+        pinned = _action("search_issues")
+        pinned["parameters"]["properties"] = {
+            "q": {"type": "string", "filled_by_llm": True, "value": ""},
+            "team": {"type": "string", "filled_by_llm": False, "value": "ENG"},
+            "gone": {"type": "string", "filled_by_llm": False, "value": "x"},
+        }
+        tool_id = _tool(pg_conn, connection["id"], [pinned])
+        fresh = _action("search_issues")
+        fresh["parameters"]["properties"] = {"q": {"type": "string"}, "team": {"type": "string"}}
+        with _db(pg_conn), patch.object(mcp, "_discover", return_value=[fresh]):
+            mcp.refresh_mcp_tools("alice", connection)
+        action = pg_conn.execute(
+            text("SELECT actions FROM user_tools WHERE id = CAST(:i AS uuid)"), {"i": tool_id}
+        ).scalar()[0]
+        properties = action["parameters"]["properties"]
+        assert properties["team"] == {"type": "string", "filled_by_llm": False, "value": "ENG"}
+        assert properties["q"]["filled_by_llm"] is True
+        assert "gone" not in properties
+
     def test_other_tools_on_the_connection_are_left_alone(self, pg_conn):
         connection = _connection(pg_conn)
         pg_conn.execute(
