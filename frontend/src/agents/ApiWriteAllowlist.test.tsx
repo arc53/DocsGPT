@@ -135,7 +135,9 @@ describe('ApiWriteAllowlist', () => {
 
   it('saves on top of the last saved config, not unsaved form edits', async () => {
     updateAgent.mockResolvedValue({ ok: true });
-    const saved = { guardrails: { controls: [] } };
+    const saved = { guardrails: { controls: [] } } as unknown as NonNullable<
+      Agent['config']
+    >;
     const draft = agent({
       config: { guardrails: { controls: [{ id: 'unsaved' }] } },
     } as unknown as Partial<Agent>);
