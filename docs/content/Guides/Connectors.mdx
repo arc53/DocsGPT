@@ -20,7 +20,7 @@ Open **Settings > Connectors**. Filters narrow the list by category, and **Conne
 2. Choose what the connection sets up. File services offer a synced source (pick files or folders, then how often to sync: never, daily, weekly or monthly). Tool services create their tools right away.
 3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
 
-**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub does both from one connection: see [GitHub](#github).
+**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
 
 A connector's page is the one place to manage it: its accounts (**Reconnect**, **Rename**, **Disconnect**), the Knowledge it syncs (**Sync now**), and its tools (on or off, and what each action may do). On the Knowledge and Tools pages, anything from a connection has **Manage connection** in its menu, which opens that page. Disconnecting keeps synced content but stops its sync.
 
@@ -234,6 +234,20 @@ S3 needs no server settings. Each member connects with an access key that can li
 ### MCP presets
 
 Notion, Linear, Atlassian, Sentry, Asana and Stripe are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
+
+### Linear
+
+One Linear sign-in gives agents Linear's tools and syncs Linear into Knowledge. After signing in, members choose what to sync, or skip to keep only the tools; a connection's page adds more with **Sync more**.
+
+- **Teams and projects.** Each picked team or project brings its issues. An issue in both is synced once.
+- **Include comments** (on by default) adds each issue's comments to it.
+- **Include project documents** syncs the Linear documents of the picked projects.
+
+Each issue becomes one document: its identifier and title, state, assignee, priority, labels, description and comments. It's filed under its team's key (`ENG/ENG-123.md`) and answers cite it with its Linear link. Archived issues are left out.
+
+Linear's MCP server issues its own sign-in tokens, which work only with that server, so DocsGPT reads Linear through the same MCP tools the agents use. Nobody registers a Linear OAuth app. Tokens are renewed automatically. If renewing fails, the connection is marked **Reconnect needed** and its sources pause until you sign in again.
+
+Each sync reads the source again in full, up to 500 issues and 100 documents, most recently updated first. For a large workspace, pick teams or projects rather than everything, and sync daily or weekly.
 
 <Callout type="info">
 Background sync runs on the Celery worker and beat. Keep both running, as in the bundled Compose and Kubernetes files.
