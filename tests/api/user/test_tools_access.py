@@ -503,17 +503,44 @@ class TestMCPSaveAccess:
         resp, _ = self._save(app, pg_conn, "ed", body)
         assert resp.status_code == 403
 
-    def test_editor_oauth_edit_without_reconnect_keeps_actions(self, app, pg_conn):
+    def test_editor_oauth_save_without_reconnect_is_owner_only(self, app, pg_conn):
+        # A shared OAuth server's connection is the owner's: an editor can't
+        # save it, even with the same URL (the path, scopes or client could
+        # still change while reusing the owner's tokens).
         tool = _mcp_tool(pg_conn, auth_type="oauth")
         _share(pg_conn, tool["id"], "ed", "editor")
         body = {"id": str(tool["id"]), "displayName": "Renamed",
                 "config": {"server_url": "https://mcp.example.com/mcp", "auth_type": "oauth",
                            "transport_type": "http"}}
         resp, _ = self._save(app, pg_conn, "ed", body)
-        assert resp.status_code == 200, resp.json
-        row = _row(pg_conn, tool["id"])
-        assert row["display_name"] == "Renamed"
-        assert [a["name"] for a in row["actions"]] == ["old"]
+        assert resp.status_code == 403
+        assert _row(pg_conn, tool["id"])["display_name"] == "M"
+
+    def test_editor_cannot_switch_oauth_server_to_other_auth(self, app, pg_conn):
+        tool = _mcp_tool(pg_conn, auth_type="oauth")
+        _share(pg_conn, tool["id"], "ed", "editor")
+        body = {"id": str(tool["id"]), "displayName": "M",
+                "config": {"server_url": "https://mcp.example.com/mcp", "auth_type": "bearer",
+                           "transport_type": "http", "bearer_token": "mine"}}
+        assert self._save(app, pg_conn, "ed", body)[0].status_code == 403
+        assert _row(pg_conn, tool["id"])["config"]["auth_type"] == "oauth"
+
+    def test_editor_cannot_switch_server_to_oauth(self, app, pg_conn):
+        tool = _mcp_tool(pg_conn, secrets={"bearer_token": "tok"})
+        _share(pg_conn, tool["id"], "ed", "editor")
+        body = {"id": str(tool["id"]), "displayName": "M",
+                "config": {"server_url": "https://mcp.example.com/mcp", "auth_type": "oauth",
+                           "transport_type": "http"}}
+        assert self._save(app, pg_conn, "ed", body)[0].status_code == 403
+
+    def test_owner_oauth_save_needs_a_completed_sign_in(self, app, pg_conn):
+        tool = _mcp_tool(pg_conn, auth_type="oauth")
+        body = {"id": str(tool["id"]), "displayName": "Renamed",
+                "config": {"server_url": "https://mcp.example.com/mcp", "auth_type": "oauth",
+                           "transport_type": "http"}}
+        resp, _ = self._save(app, pg_conn, OWNER, body)
+        assert resp.status_code == 400
+        assert _row(pg_conn, tool["id"])["display_name"] == "M"
 
     def test_auth_status_includes_team_mcp_tools(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import MCPAuthStatus
@@ -562,6 +589,12 @@ class TestMCPTestEndpointAccess:
         assert self._test(app, pg_conn, "vi", self._body(tool))[0].status_code == 403
         assert self._test(app, pg_conn, "eve", self._body(tool))[0].status_code == 404
 
+    def test_editor_test_of_stored_oauth_server_is_owner_only(self, app, pg_conn):
+        tool = _mcp_tool(pg_conn, auth_type="oauth")
+        _share(pg_conn, tool["id"], "ed", "editor")
+        resp, cls = self._test(app, pg_conn, "ed", self._body(tool, bearer_token="mine"))
+        assert resp.status_code == 403 and not cls.called
+
     def test_editor_oauth_test_is_owner_only(self, app, pg_conn):
         tool = _mcp_tool(pg_conn, auth_type="oauth")
         _share(pg_conn, tool["id"], "ed", "editor")
@@ -569,3 +602,62 @@ class TestMCPTestEndpointAccess:
                                                   "auth_type": "oauth", "transport_type": "http"}}
         resp, cls = self._test(app, pg_conn, "ed", body)
         assert resp.status_code == 403 and not cls.called
+
+
+# ---------------------------------------------------------------------------
+# 6. Shared OAuth MCP servers: the connection is the owner's
+# ---------------------------------------------------------------------------
+class TestSharedOAuthMCPConfig:
+    """``/api/update_tool`` and ``/api/update_tool_config`` can't move a shared
+    OAuth server or switch a shared server to OAuth: OAuth tokens are looked up
+    by owner + server URL, so either would run on the owner's sign-in
+    elsewhere. Connection changes on OAuth servers are the owner's."""
+
+    OTHER = {"server_url": "https://other-mcp.example.org/mcp", "auth_type": "oauth"}
+
+    def _oauth_tool(self, conn):
+        tool = _mcp_tool(conn, auth_type="oauth")
+        _share(conn, tool["id"], "ed", "editor")
+        return tool
+
+    def test_update_tool_config_cannot_move_oauth_server(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
+
+        tool = self._oauth_tool(pg_conn)
+        body = {"id": str(tool["id"]), "config": dict(self.OTHER)}
+        assert _call(app, pg_conn, UpdateToolConfig, "ed", json=body).status_code == 403
+        assert _row(pg_conn, tool["id"])["config"]["server_url"] == "https://mcp.example.com/mcp"
+
+    def test_update_tool_cannot_move_oauth_server(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = self._oauth_tool(pg_conn)
+        body = {"id": str(tool["id"]), "config": dict(self.OTHER)}
+        assert _call(app, pg_conn, UpdateTool, "ed", json=body).status_code == 403
+        assert _row(pg_conn, tool["id"])["config"]["server_url"] == "https://mcp.example.com/mcp"
+
+    def test_update_tool_config_cannot_switch_server_to_oauth(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
+
+        tool = _mcp_tool(pg_conn, secrets={"bearer_token": "tok"})
+        _share(pg_conn, tool["id"], "ed", "editor")
+        body = {"id": str(tool["id"]),
+                "config": {"server_url": "https://mcp.example.com/mcp", "auth_type": "oauth"}}
+        assert _call(app, pg_conn, UpdateToolConfig, "ed", json=body).status_code == 403
+        assert _row(pg_conn, tool["id"])["config"]["auth_type"] == "bearer"
+
+    def test_editor_still_renames_oauth_server_without_config(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateTool
+
+        tool = self._oauth_tool(pg_conn)
+        body = {"id": str(tool["id"]), "customName": "Renamed"}
+        assert _call(app, pg_conn, UpdateTool, "ed", json=body).status_code == 200
+        assert _row(pg_conn, tool["id"])["custom_name"] == "Renamed"
+
+    def test_owner_may_change_oauth_server_config(self, app, pg_conn):
+        from docsgpt.api.user.tools.routes import UpdateToolConfig
+
+        tool = _mcp_tool(pg_conn, auth_type="oauth")
+        body = {"id": str(tool["id"]), "config": dict(self.OTHER)}
+        assert _call(app, pg_conn, UpdateToolConfig, OWNER, json=body).status_code == 200
+        assert _row(pg_conn, tool["id"])["config"]["server_url"] == self.OTHER["server_url"]

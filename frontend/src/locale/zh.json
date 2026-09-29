@@ -1053,7 +1053,7 @@
           "password": "密码"
         },
         "savedKeyHint": "已保存密钥。留空即可保留（仅在服务器未更改时）。",
-        "sharedOAuthOwnerOnly": "只有所有者可以重新连接其登录，因此你可以重命名它，但不能更改其服务器或账户。"
+        "sharedOAuthOwnerOnly": "只有所有者可以更改此服务器的连接或重新连接其登录。你仍然可以重命名它并编辑其操作。"
       },
       "configErrors": {
         "required": "{{field}}为必填项",

@@ -26,7 +26,11 @@ import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { can, isOwner, roleOf } from '../utils/accessUtils';
-import { canAddToolToOwn, toolInChat } from '../utils/toolUtils';
+import {
+  canAddToolToOwn,
+  isSharedOAuthMcp,
+  toolInChat,
+} from '../utils/toolUtils';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
@@ -140,7 +144,12 @@ export default function Tools() {
             variant: 'default',
           },
     ];
-    if (tool.name === 'mcp_tool' && can(tool, 'edit_credentials')) {
+    // A shared OAuth server's sign-in is the owner's to redo.
+    if (
+      tool.name === 'mcp_tool' &&
+      can(tool, 'edit_credentials') &&
+      !isSharedOAuthMcp(tool)
+    ) {
       options.push({
         icon: RefreshCw,
         label: t('settings.tools.reconnect'),

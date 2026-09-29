@@ -51,6 +51,18 @@ export const toolInChat = (tool: {
 export const canAddToolToOwn = (tool: AccessFields): boolean =>
   isOwner(tool) || can(tool, 'use_in_own');
 
+/**
+ * A team-shared MCP server that signs in with OAuth. Its connection (URL,
+ * auth, sign-in) is the owner's alone, since the tokens are the owner's
+ * account; the backend refuses any change from anyone else.
+ */
+export const isSharedOAuthMcp = (
+  tool: AccessFields & { name?: string; config?: unknown },
+): boolean =>
+  tool.name === 'mcp_tool' &&
+  !isOwner(tool) &&
+  (tool.config as { auth_type?: string } | undefined)?.auth_type === 'oauth';
+
 // Composer Tools picker: the chat-popup rule, minus shared tools the caller
 // can't turn on for their own chats.
 export const isChatPickerToolVisible = (

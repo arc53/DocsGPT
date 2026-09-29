@@ -1054,7 +1054,7 @@
           "password": "contraseña"
         },
         "savedKeyHint": "Hay una clave guardada. Déjalo vacío para conservarla (solo mientras el servidor no cambie).",
-        "sharedOAuthOwnerOnly": "Solo el propietario puede volver a conectar su inicio de sesión, así que puedes cambiarle el nombre, pero no su servidor ni su cuenta."
+        "sharedOAuthOwnerOnly": "Solo el propietario puede cambiar la conexión de este servidor o volver a conectar su inicio de sesión. Aún puedes cambiarle el nombre y editar sus acciones."
       },
       "configErrors": {
         "required": "{{field}} es obligatorio",

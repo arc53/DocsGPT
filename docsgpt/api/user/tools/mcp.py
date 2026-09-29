@@ -13,6 +13,7 @@ from docsgpt.api.user.tools.routes import (
     _CREDENTIALS_FOR_NEW_SERVER,
     _MCP_CREDENTIAL_AUTH_TYPES,
     _mcp_host_changed,
+    check_oauth_mcp_owner_only,
     denied_response,
     transform_actions,
 )
@@ -83,9 +84,6 @@ def _validate_mcp_server_url(config: dict) -> None:
         raise ValueError(f"Invalid server URL: {exc}") from exc
 
 
-_ONLY_OWNER_RECONNECTS = "Only the owner can reconnect this account"
-
-
 def _existing_mcp_context(tool_id, user, config):
     """Resolve the stored MCP tool a test/save refers to, and its credentials.
 
@@ -93,14 +91,16 @@ def _existing_mcp_context(tool_id, user, config):
     the caller needs ``edit_credentials`` on that tool and everything runs as
     its owner. Stored secrets are write-only, so an empty secret field reuses
     the stored one while the host is unchanged; a new host never inherits them.
+    A server that is or would become OAuth is the owner's alone (its tokens
+    are the owner's sign-in).
 
     Returns:
         ``(existing_doc, owner_id, is_owner, moved, credentials)``, or a Flask
         response (404 / 400) to return as is.
 
     Raises:
-        AccessDenied: the caller can't see the tool (404) or can't change
-            its credentials (403).
+        AccessDenied: the caller can't see the tool (404), can't change its
+            credentials (403), or isn't the owner of an OAuth server (403).
     """
     auth_credentials = _extract_auth_credentials(config)
     if not tool_id:
@@ -113,6 +113,7 @@ def _existing_mcp_context(tool_id, user, config):
             jsonify({"success": False, "message": "Tool not found or access denied"}), 404,
         )
     existing_config = existing_doc.get("config") or {}
+    check_oauth_mcp_owner_only(ra, existing_config, config)
     moved = _mcp_host_changed(config, existing_config)
     auth_type = config.get("auth_type", "none")
     new_secret_keys = set(auth_credentials) - {"api_key_header"}
@@ -170,13 +171,7 @@ class TestMCPServerConfig(Resource):
             ctx = _existing_mcp_context(data.get("id"), user, config)
             if not isinstance(ctx, tuple):
                 return ctx
-            _existing_doc, owner_id, is_owner, _moved, auth_credentials = ctx
-            if not is_owner and config.get("auth_type") == "oauth":
-                # An OAuth flow would store tokens under the editor's account
-                # (and its popup event goes to that account), not the owner's.
-                return make_response(
-                    jsonify({"success": False, "message": _ONLY_OWNER_RECONNECTS}), 403
-                )
+            _existing_doc, owner_id, _is_owner, _moved, auth_credentials = ctx
             test_config = config.copy()
             test_config["auth_credentials"] = auth_credentials
 
@@ -279,50 +274,16 @@ class MCPServerSave(Resource):
             ctx = _existing_mcp_context(data.get("id"), user, config)
             if not isinstance(ctx, tuple):
                 return ctx
-            existing_doc, owner_id, is_owner, moved, merged_credentials = ctx
-            existing_config = (existing_doc or {}).get("config") or {}
+            existing_doc, owner_id, is_owner, _moved, merged_credentials = ctx
             auth_type = config.get("auth_type", "none")
             mcp_config = config.copy()
             mcp_config["auth_credentials"] = merged_credentials
-            keep_actions = False
 
             if auth_type == "oauth":
-                if config.get("oauth_task_id"):
-                    if not is_owner:
-                        # The OAuth flow stores tokens under the account that
-                        # ran it; reconnecting as the owner is owner-only.
-                        return make_response(
-                            jsonify({
-                                "success": False,
-                                "message": _ONLY_OWNER_RECONNECTS,
-                            }),
-                            403,
-                        )
-                    redis_client = get_redis_instance()
-                    manager = MCPOAuthManager(redis_client)
-                    result = manager.get_oauth_status(
-                        config["oauth_task_id"], user
-                    )
-                    if not result.get("status") == "completed":
-                        return make_response(
-                            jsonify(
-                                {
-                                    "success": False,
-                                    "error": "OAuth failed or not completed. Please try authorizing again.",
-                                }
-                            ),
-                            400,
-                        )
-                    actions_metadata = result.get("tools", [])
-                elif (
-                    existing_doc is not None
-                    and not moved
-                    and existing_config.get("auth_type") == "oauth"
-                ):
-                    # Editing an already-connected server: keep its tools.
-                    actions_metadata = existing_doc.get("actions") or []
-                    keep_actions = True
-                else:
+                # Only the owner reaches here for an existing server (see
+                # ``_existing_mcp_context``), and every OAuth save needs the
+                # sign-in they just completed.
+                if not config.get("oauth_task_id"):
                     return make_response(
                         jsonify(
                             {
@@ -332,6 +293,22 @@ class MCPServerSave(Resource):
                         ),
                         400,
                     )
+                redis_client = get_redis_instance()
+                manager = MCPOAuthManager(redis_client)
+                result = manager.get_oauth_status(
+                    config["oauth_task_id"], user
+                )
+                if not result.get("status") == "completed":
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "OAuth failed or not completed. Please try authorizing again.",
+                            }
+                        ),
+                        400,
+                    )
+                actions_metadata = result.get("tools", [])
             elif auth_type == "none" or merged_credentials:
                 mcp_tool = MCPTool(config=mcp_config, user_id=owner_id)
                 mcp_tool.discover_tools()
@@ -356,8 +333,7 @@ class MCPServerSave(Resource):
                 "redirect_uri",
             ]:
                 storage_config.pop(field, None)
-            # Kept actions already carry the owner's on/off and approval flags.
-            transformed_actions = actions_metadata if keep_actions else transform_actions(actions_metadata)
+            transformed_actions = transform_actions(actions_metadata)
 
             display_name = data["displayName"]
             description = f"MCP Server: {storage_config.get('server_url', 'Unknown')}"

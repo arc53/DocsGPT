@@ -114,8 +114,9 @@ export default function MCPServerModal({
   // A tool shared with the caller (an editor reconnecting the owner's
   // server): its saved secrets stay hidden and a new entry replaces them.
   const isShared = !!server?.access && server.access !== 'owner';
-  // Only the owner can re-run an OAuth sign-in (the tokens are theirs), so a
-  // teammate may rename an OAuth tool but not change its server or account.
+  // Only the owner can change or re-run an OAuth server's sign-in (the tokens
+  // are theirs), so the modal is read-only for a teammate. The Tools menu
+  // doesn't offer it to them; this guards any other way in.
   const oauthOwnerOnly = isShared && server?.auth_type === 'oauth';
   const savedSecret = SECRET_FIELDS[formData.auth_type];
   const hasSavedSecret =
@@ -652,7 +653,7 @@ export default function MCPServerModal({
           submitLabel={t('settings.tools.mcp.save')}
           onSubmit={handleSave}
           pending={loading}
-          disabled={!saveActive && !oauthOwnerOnly}
+          disabled={!saveActive || oauthOwnerOnly}
         />
       }
     >

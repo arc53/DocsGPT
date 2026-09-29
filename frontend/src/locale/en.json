@@ -1060,7 +1060,7 @@
           "password": "password"
         },
         "savedKeyHint": "A key is saved. Leave empty to keep it (only while the server is unchanged).",
-        "sharedOAuthOwnerOnly": "Only the owner can reconnect its sign-in, so you can rename it but not change its server or account."
+        "sharedOAuthOwnerOnly": "Only the owner can change this server's connection or reconnect its sign-in. You can still rename it and edit its actions."
       },
       "configErrors": {
         "required": "{{field}} is required",

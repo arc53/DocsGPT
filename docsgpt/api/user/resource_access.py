@@ -27,7 +27,7 @@ from typing import Iterable, Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
@@ -73,7 +73,7 @@ ACTIONS: dict[str, dict[str, str]] = {
         "use": "viewer",  # see it and run it inside the owner's shared agents
         "use_in_own": "viewer",  # add it to my own agents and chats
         "edit": "editor",  # name, action descriptions, parameters, approval
-        "edit_credentials": "editor",  # secrets, URL, auth, reconnect OAuth (write-only)
+        "edit_credentials": "editor",  # secrets, URL, auth (write-only); OAuth servers stay owner-only
         "share": "owner",
         "delete": "owner",
         "manage_settings": "owner",
@@ -186,14 +186,18 @@ def public_settings(resource_type: str, settings: Optional[dict]) -> list[dict]:
 
 def settings_for(conn: Connection, resource_type: str, resource_id: str) -> dict[str, bool]:
     """The resource's switches, defaults filled in."""
-    return settings_many(conn, resource_type, [resource_id])[resource_id]
+    rid = canonical_uuid(str(resource_id))
+    return settings_many(conn, resource_type, [rid])[rid]
 
 
 def settings_many(
     conn: Connection, resource_type: str, resource_ids: Iterable[str]
 ) -> dict[str, dict[str, bool]]:
-    """``resource_id -> switches`` for many resources in one query."""
-    ids = [str(r) for r in resource_ids]
+    """``resource_id -> switches`` for many resources in one query.
+
+    Keys are canonical (lowercase) UUIDs, the form Postgres returns.
+    """
+    ids = [canonical_uuid(str(r)) for r in resource_ids]
     out = {rid: default_settings(resource_type) for rid in ids}
     uuids = [rid for rid in ids if looks_like_uuid(rid)]
     if not uuids:
@@ -298,7 +302,10 @@ def resolve(
     repo_cls = _REPO_FOR_TYPE.get(resource_type)
     if repo_cls is None or not resource_id or not user_id:
         return None
-    owned = repo_cls(conn).get_any(str(resource_id), user_id)
+    # Postgres matches any casing but returns lowercase; canonicalise so the
+    # switch lookup (keyed by the returned id) can't miss.
+    resource_id = canonical_uuid(str(resource_id))
+    owned = repo_cls(conn).get_any(resource_id, user_id)
     if owned is not None:
         rid = str(owned.get("id") or resource_id)
         return build(resource_type, rid, "owner", user_id, settings_for(conn, resource_type, rid))

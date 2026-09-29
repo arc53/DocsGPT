@@ -183,6 +183,63 @@ describe('ToolConfig', () => {
     expect(alert?.className).toContain('text-destructive');
   });
 
+  describe('a shared MCP server', () => {
+    const mcpTool = (authType: string) =>
+      ({
+        id: 'mcp-1',
+        name: 'mcp_tool',
+        displayName: 'MCP',
+        description: '',
+        status: true,
+        access: 'editor',
+        allowed_actions: ['edit', 'edit_credentials', 'use', 'use_in_own'],
+        config: {
+          server_url: 'https://mcp.example.com/mcp',
+          auth_type: authType,
+        },
+        configRequirements: {
+          server_url: { type: 'string', label: 'Server URL', secret: false },
+          auth_type: { type: 'string', label: 'Auth', secret: false },
+        },
+        actions: [],
+      }) as unknown as UserToolType;
+
+    const rename = async () => {
+      const name = container.querySelector<HTMLInputElement>(
+        'input[placeholder="settings.tools.customNamePlaceholder"]',
+      );
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )?.set;
+        setter?.call(name, 'Renamed');
+        name?.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await act(async () => {
+        buttonByText('settings.tools.save')?.click();
+      });
+    };
+
+    it('locks the connection of an OAuth server and saves without it', async () => {
+      updateTool.mockResolvedValue({ ok: true });
+      await render(mcpTool('oauth'));
+      expect(container.querySelector('fieldset')?.disabled).toBe(true);
+      await rename();
+      expect(updateTool).toHaveBeenCalledTimes(1);
+      expect(updateTool.mock.calls[0][0]).not.toHaveProperty('config');
+      expect(updateTool.mock.calls[0][0].customName).toBe('Renamed');
+    });
+
+    it('still lets an editor change a non-OAuth server', async () => {
+      updateTool.mockResolvedValue({ ok: true });
+      await render(mcpTool('bearer'));
+      expect(container.querySelector('fieldset')?.disabled).toBe(false);
+      await rename();
+      expect(updateTool.mock.calls[0][0]).toHaveProperty('config');
+    });
+  });
+
   it('renders the API tool header actions as outline-primary pills', async () => {
     await render(apiTool);
     for (const label of [

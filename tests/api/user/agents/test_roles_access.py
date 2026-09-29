@@ -246,14 +246,22 @@ class TestUpdateAgent:
                          {"name": "n", "folder_id": str(folder["id"])})
         assert _status(resp) == 200
 
-    def test_workflow_validated_against_owner(self, app, pg_conn):
+    def test_workflow_validated_against_owner_and_owner_only_to_change(self, app, pg_conn):
         from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
         wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
         agent_id = _agent(pg_conn, agent_type="workflow")
+        # An editor can't point the agent at another of the owner's workflows.
         resp = self._put(app, pg_conn, agent_id, EDITOR, {"workflow": str(wf["id"])})
+        assert _status(resp) == 403
+        assert _row(pg_conn, agent_id)["workflow_id"] is None
+
+        resp = self._put(app, pg_conn, agent_id, OWNER, {"workflow": str(wf["id"])})
         assert _status(resp) == 200
         assert str(_row(pg_conn, agent_id)["workflow_id"]) == str(wf["id"])
+        # Re-sending the current one is a plain save.
+        resp = self._put(app, pg_conn, agent_id, EDITOR, {"workflow": str(wf["id"])})
+        assert _status(resp) == 200
 
         mine = WorkflowsRepository(pg_conn).create(EDITOR, "editor-wf")
         resp = self._put(app, pg_conn, agent_id, EDITOR, {"workflow": str(mine["id"])})
@@ -269,10 +277,14 @@ class TestUpdateAgent:
         _team_share(pg_conn, "tool", shared_tool, owner=STRANGER)
         agent_id = _agent(pg_conn)
 
-        ok = self._put(app, pg_conn, agent_id, EDITOR, {"tools": [owner_tool, shared_tool]})
-        assert _status(ok) == 200
+        # The owner owning a tool isn't enough: it must reach the editor.
+        denied = self._put(app, pg_conn, agent_id, EDITOR, {"tools": [owner_tool]})
+        assert _status(denied) == 403
         denied = self._put(app, pg_conn, agent_id, EDITOR, {"tools": [foreign_tool]})
         assert _status(denied) == 403
+        assert _status(self._put(app, pg_conn, agent_id, OWNER, {"tools": [owner_tool]})) == 200
+        ok = self._put(app, pg_conn, agent_id, EDITOR, {"tools": [owner_tool, shared_tool]})
+        assert _status(ok) == 200
 
         set_settings(pg_conn, "tool", shared_tool, {"viewers_can_use_in_agents": False}, STRANGER)
         # Already attached: keeping it is fine.

@@ -12,6 +12,7 @@ from docsgpt.agents.workflows.cel_evaluator import (
 )
 from docsgpt.api.user.resource_access import (
     AccessDenied,
+    can_use_ref,
     resolve,
     sponsor_details,
     sponsors_after_save,
@@ -122,6 +123,40 @@ def _node_refs(nodes: List[Dict]) -> List[Tuple[str, str]]:
                 values = [values]
             refs.extend((resource_type, str(v)) for v in values if v)
     return refs
+
+
+def _new_node_ref_denied(
+    conn, previous_nodes: List[Dict], new_nodes: List[Dict], caller: str
+) -> Optional[AccessDenied]:
+    """403 for the first node tool/source ``caller`` newly adds but can't use.
+
+    A workflow runs as its owner, so an editor saving the owner's graph must
+    not reference the owner's private tools or sources: the caller's own
+    access counts (``use_in_own`` for a tool, ``use`` for a source), not the
+    owner's. Refs already in the stored graph stay, like an agent's.
+
+    Args:
+        conn: Open database connection.
+        previous_nodes: The stored graph's nodes, in builder shape.
+        new_nodes: The nodes being saved.
+        caller: The editor saving.
+
+    Returns:
+        An :class:`AccessDenied` to return, or None when every new ref is fine.
+    """
+    from docsgpt.agents.default_tools import is_synthesized_tool_id
+
+    existing = set(_node_refs(previous_nodes))
+    for resource_type, resource_id in _node_refs(new_nodes):
+        if (resource_type, resource_id) in existing:
+            continue
+        if resource_type == "tool" and is_synthesized_tool_id(resource_id):
+            continue
+        if resource_type == "source" and resource_id == "default":
+            continue
+        if not can_use_ref(conn, resource_type, resource_id, caller):
+            return AccessDenied(403, f"{resource_type.capitalize()} not accessible")
+    return None
 
 
 def _denied(err: AccessDenied):
@@ -639,6 +674,16 @@ class WorkflowDetail(Resource):
                 nodes_data = normalize_agent_node_json_schemas(nodes_data)
                 pg_workflow_id = str(workflow["id"])
                 current_graph_version = get_workflow_graph_version(workflow)
+                if acting != user_id:
+                    previous_nodes = [
+                        serialize_node(n)
+                        for n in WorkflowNodesRepository(conn).find_by_version(
+                            pg_workflow_id, current_graph_version,
+                        )
+                    ]
+                    denied = _new_node_ref_denied(conn, previous_nodes, nodes_data, user_id)
+                    if denied is not None:
+                        return _denied(denied)
                 next_graph_version = current_graph_version + 1
 
                 _write_graph(

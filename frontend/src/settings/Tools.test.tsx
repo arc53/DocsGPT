@@ -183,6 +183,16 @@ describe('Tools', () => {
     ]);
   });
 
+  it("hides Reconnect from an editor of an OAuth server (the sign-in is the owner's)", async () => {
+    const oauthConfig = { ...baseTool.config, auth_type: 'oauth' };
+    await render([
+      { ...editorTool, config: oauthConfig },
+      { ...ownTool, config: oauthConfig },
+    ]);
+    expect(menuLabels('ed')).toEqual(['settings.tools.edit']);
+    expect(menuLabels('own')).toContain('settings.tools.reconnect');
+  });
+
   it('shows only View to a viewer, which opens the config read-only', async () => {
     await render([viewerTool]);
     expect(menuLabels('vw')).toEqual(['settings.tools.view']);

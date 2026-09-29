@@ -6,6 +6,7 @@ import {
   isChatPickerToolVisible,
   isChatToolVisible,
   isClassicAgentToolVisible,
+  isSharedOAuthMcp,
   toolInChat,
 } from './toolUtils';
 
@@ -85,6 +86,26 @@ describe('canAddToolToOwn', () => {
     expect(canAddToolToOwn({ ownership: 'team', team_access: 'editor' })).toBe(
       true,
     );
+  });
+});
+
+describe('isSharedOAuthMcp', () => {
+  const oauth = { name: 'mcp_tool', config: { auth_type: 'oauth' } };
+
+  it('is true only for an OAuth MCP server shared with the caller', () => {
+    expect(isSharedOAuthMcp({ ...oauth, access: 'editor' })).toBe(true);
+    expect(isSharedOAuthMcp({ ...oauth, access: 'owner' })).toBe(false);
+    expect(isSharedOAuthMcp(oauth)).toBe(false);
+    expect(
+      isSharedOAuthMcp({
+        name: 'mcp_tool',
+        access: 'editor',
+        config: { auth_type: 'bearer' },
+      }),
+    ).toBe(false);
+    expect(
+      isSharedOAuthMcp({ ...oauth, name: 'api_tool', access: 'editor' }),
+    ).toBe(false);
   });
 });
 

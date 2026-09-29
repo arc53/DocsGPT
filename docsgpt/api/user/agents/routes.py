@@ -25,7 +25,7 @@ from docsgpt.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from docsgpt.core.settings import settings
-from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     agent_refs,
@@ -221,17 +221,17 @@ def _denied(err: AccessDenied):
     return make_response(jsonify({"success": False, "message": err.message}), err.status)
 
 
-def _tool_attachable(conn, tool_id: str, owner_id: str, caller: str) -> bool:
-    """Whether ``caller`` may attach ``tool_id`` to an agent owned by ``owner_id``.
+def _tool_attachable(conn, tool_id: str, caller: str) -> bool:
+    """Whether ``caller`` may newly attach ``tool_id`` to an agent.
 
-    Builtin synthetic ids belong to no one. Otherwise the tool must be the
-    agent owner's (it runs with the owner's credentials) or reach the caller
-    with ``use_in_own``.
+    Builtin synthetic ids belong to no one. Otherwise the caller must own the
+    tool or reach it with ``use_in_own``. The agent owner owning it is not
+    enough: an editor could otherwise wire the owner's private tool (run with
+    the owner's credentials) into an agent the editor controls.
 
     Args:
         conn: Open database connection.
         tool_id: The tool id being attached.
-        owner_id: The agent's owner.
         caller: The user making the change.
 
     Returns:
@@ -240,28 +240,25 @@ def _tool_attachable(conn, tool_id: str, owner_id: str, caller: str) -> bool:
     tid = str(tool_id)
     if is_synthesized_tool_id(tid):
         return True
-    if UserToolsRepository(conn).get_any(tid, owner_id) is not None:
-        return True
     ra = resolve(conn, "tool", tid, caller)
     return ra is not None and ra.can("use_in_own")
 
 
-def _ref_attachable(conn, resource_type: str, resource_id: str, owner_id: str, caller: str) -> bool:
-    """Whether a source/prompt may be referenced by an agent owned by ``owner_id``.
+def _ref_attachable(conn, resource_type: str, resource_id: str, caller: str) -> bool:
+    """Whether ``caller`` may newly reference a source/prompt from an agent.
+
+    Like tools, the caller's own access counts, not the agent owner's.
 
     Args:
         conn: Open database connection.
         resource_type: ``source`` or ``prompt``.
         resource_id: The referenced id.
-        owner_id: The agent's owner.
         caller: The user making the change.
 
     Returns:
-        True when the agent owner owns it or the caller can ``use`` it.
+        True when the caller owns it or a team grant reaches them.
     """
     if not resource_id:
-        return True
-    if owner_id != caller and can_access(conn, resource_type, str(resource_id), owner_id):
         return True
     return can_access(conn, resource_type, str(resource_id), caller)
 
@@ -825,11 +822,11 @@ class CreateAgent(Resource):
                         if src == "default":
                             continue
                         if looks_like_uuid(src):
-                            extra_source_ids.append(src)
+                            extra_source_ids.append(canonical_uuid(src))
                 else:
                     source_value = data.get("source", "")
                     if source_value and source_value != "default" and looks_like_uuid(source_value):
-                        source_id_resolved = source_value
+                        source_id_resolved = canonical_uuid(source_value)
 
                 # Team-sharing write gate: you may reference sources/prompts you
                 # own or that a team has shared with you directly. (Transitive
@@ -854,13 +851,17 @@ class CreateAgent(Resource):
                 # Tools run with the agent owner's credentials: attach only your
                 # own, or ones a team lets you use in your agents.
                 for tid in data.get("tools") or []:
-                    if not _tool_attachable(conn, tid, user, user):
+                    if not _tool_attachable(conn, tid, user):
                         return make_response(
                             jsonify({"success": False, "message": "Tool not accessible"}),
                             403,
                         )
 
                 build_data = dict(data)
+                if isinstance(data.get("tools"), list):
+                    build_data["tools"] = [canonical_uuid(t) for t in data["tools"]]
+                if looks_like_uuid(data.get("prompt_id")):
+                    build_data["prompt_id"] = canonical_uuid(data["prompt_id"])
                 build_data["folder_id"] = pg_folder_id
                 build_data["workflow_id"] = pg_workflow_id
                 build_data["source_id"] = source_id_resolved
@@ -1087,7 +1088,7 @@ class UpdateAgent(Resource):
                         if not source_id or source_id == "default":
                             update_fields["source_id"] = None
                         elif looks_like_uuid(source_id):
-                            update_fields["source_id"] = source_id
+                            update_fields["source_id"] = canonical_uuid(source_id)
                         else:
                             return _reject(
                                 f"Invalid source ID format: {source_id}", user, field
@@ -1102,7 +1103,7 @@ class UpdateAgent(Resource):
                             if src == "default":
                                 continue
                             if looks_like_uuid(src):
-                                valid.append(src)
+                                valid.append(canonical_uuid(src))
                             else:
                                 return _reject(
                                     f"Invalid source ID in list: {src}", user, field
@@ -1130,7 +1131,7 @@ class UpdateAgent(Resource):
                         tools_list = data.get("tools", [])
                         if not isinstance(tools_list, list):
                             return _reject("Tools must be a list", user, field)
-                        update_fields["tools"] = tools_list
+                        update_fields["tools"] = [canonical_uuid(t) for t in tools_list]
                     elif field == "json_schema":
                         json_schema = data.get("json_schema")
                         if json_schema is not None:
@@ -1250,13 +1251,25 @@ class UpdateAgent(Resource):
                             )
                             if wf_err:
                                 return wf_err
+                            # Only the owner may point the agent at a different
+                            # workflow: editing rights on this agent extend to
+                            # the graph it uses, so swapping in the workflow of
+                            # another of the owner's agents would hand that
+                            # graph to the editor.
+                            current_workflow = existing_agent.get("workflow_id")
+                            if is_team_editor and pg_workflow_id != (
+                                str(current_workflow) if current_workflow else None
+                            ):
+                                return _denied(
+                                    AccessDenied(403, "Only the owner can change this agent's workflow")
+                                )
                             update_fields["workflow_id"] = pg_workflow_id
                     elif field == "prompt_id":
                         value = data["prompt_id"]
                         if not value or value == "default":
                             update_fields["prompt_id"] = None
                         elif looks_like_uuid(value):
-                            update_fields["prompt_id"] = value
+                            update_fields["prompt_id"] = canonical_uuid(value)
                         else:
                             return _reject(f"Invalid prompt_id: {value}", user, field)
                     elif field == "allow_system_prompt_override":
@@ -1358,7 +1371,7 @@ class UpdateAgent(Resource):
                 for sid in referenced_sources:
                     if str(sid) in existing_source_refs:
                         continue
-                    if not _ref_attachable(conn, "source", sid, owner_id, user):
+                    if not _ref_attachable(conn, "source", sid, user):
                         return make_response(
                             jsonify({"success": False, "message": "Source not accessible"}), 403
                         )
@@ -1366,16 +1379,17 @@ class UpdateAgent(Resource):
                 if (
                     new_prompt_id
                     and str(new_prompt_id) != str(existing_agent.get("prompt_id") or "")
-                    and not _ref_attachable(conn, "prompt", new_prompt_id, owner_id, user)
+                    and not _ref_attachable(conn, "prompt", new_prompt_id, user)
                 ):
                     return make_response(
                         jsonify({"success": False, "message": "Prompt not accessible"}), 403
                     )
                 # Tools run with the OWNER's credentials (the agent-key path
                 # resolves and decrypts them as the owner), so a newly attached
-                # tool must be the owner's or reach the caller with
-                # ``use_in_own``. Tools already on the agent stay. Builtin
-                # synthetic ids belong to no one and are always allowed.
+                # tool must be the caller's own or reach them with
+                # ``use_in_own`` -- the owner owning it is not enough. Tools
+                # already on the agent stay. Builtin synthetic ids belong to no
+                # one and are always allowed.
                 if "tools" in update_fields:
                     existing_tools = {
                         str(t) for t in (existing_agent.get("tools") or [])
@@ -1383,7 +1397,7 @@ class UpdateAgent(Resource):
                     for tid in update_fields["tools"] or []:
                         if str(tid) in existing_tools:
                             continue
-                        if not _tool_attachable(conn, tid, owner_id, user):
+                        if not _tool_attachable(conn, tid, user):
                             return make_response(
                                 jsonify(
                                     {"success": False, "message": "Tool not accessible"}

@@ -1054,7 +1054,7 @@
           "password": "Passwort"
         },
         "savedKeyHint": "Ein Schlüssel ist gespeichert. Leer lassen, um ihn zu behalten (nur solange der Server unverändert ist).",
-        "sharedOAuthOwnerOnly": "Nur der Eigentümer kann die Anmeldung neu verbinden. Du kannst das Tool umbenennen, aber weder Server noch Konto ändern."
+        "sharedOAuthOwnerOnly": "Nur der Eigentümer kann die Verbindung dieses Servers ändern oder die Anmeldung neu verbinden. Du kannst ihn weiterhin umbenennen und seine Aktionen bearbeiten."
       },
       "configErrors": {
         "required": "{{field}} ist erforderlich",

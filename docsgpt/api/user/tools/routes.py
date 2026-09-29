@@ -350,6 +350,37 @@ def _mcp_host_changed(new_config: dict, existing_config: dict) -> bool:
     return bool(old_url) and url_host(old_url) != url_host((new_config or {}).get("server_url"))
 
 
+SHARED_OAUTH_OWNER_ONLY = "Only the owner can change or reconnect this server"
+
+
+def check_oauth_mcp_owner_only(
+    ra: ResourceAccess, existing_config: Optional[dict], new_config: Optional[dict]
+) -> None:
+    """Keep a shared OAuth MCP server's connection with its owner.
+
+    MCP OAuth tokens are looked up by owner + server URL and a shared server
+    runs as its owner, so a grantee who moved an OAuth server, switched a
+    server to OAuth, or re-ran its sign-in would be using the owner's account
+    somewhere the owner never chose. Until connectors own OAuth accounts, any
+    connection change on a server that is (or would become) OAuth is
+    owner-only.
+
+    Args:
+        ra: The caller's access to the tool.
+        existing_config: The stored ``config``.
+        new_config: The incoming ``config``.
+
+    Raises:
+        AccessDenied: 403 when a non-owner touches an OAuth server's config.
+    """
+    if ra.access == "owner":
+        return
+    configs = [c if isinstance(c, dict) else {} for c in (existing_config, new_config)]
+    auth_types = {c.get("auth_type") for c in configs}
+    if "oauth" in auth_types:
+        raise AccessDenied(403, SHARED_OAUTH_OWNER_ONLY)
+
+
 def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: dict) -> dict:
     """Validate-free merge of an incoming config with the stored one, as the owner.
 
@@ -776,6 +807,8 @@ class UpdateTool(Resource):
                 if "config" in data:
                     tool_name = tool_doc.get("name", data.get("name"))
                     existing_config = tool_doc.get("config", {}) or {}
+                    if tool_name == "mcp_tool":
+                        check_oauth_mcp_owner_only(ra, existing_config, data["config"])
                     if tool_name == "api_tool" and not _api_tool_config_needs_credentials(
                         data["config"], existing_config
                     ):
@@ -873,6 +906,7 @@ class UpdateToolConfig(Resource):
 
                 tool_name = tool_doc.get("name")
                 if tool_name == "mcp_tool":
+                    check_oauth_mcp_owner_only(ra, tool_doc.get("config"), data["config"])
                     server_url = (data["config"].get("server_url") or "").strip()
                     if server_url:
                         try:

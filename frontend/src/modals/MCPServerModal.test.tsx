@@ -184,8 +184,7 @@ describe('MCPServerModal', () => {
     expect(text()).toContain('Invalid server URL');
   });
 
-  it('lets an editor rename an OAuth tool without reconnecting it', async () => {
-    saveMCPServer.mockReturnValue(json({ success: true }));
+  it('keeps a shared OAuth server read-only for an editor', async () => {
     await render({
       access: 'editor',
       owner_label: 'Lena',
@@ -196,10 +195,9 @@ describe('MCPServerModal', () => {
     expect(urlInput().disabled).toBe(true);
     expect(button('settings.tools.mcp.testConnection')).toBeUndefined();
     const save = button('settings.tools.mcp.save');
-    expect(save.disabled).toBe(false);
+    expect(save.disabled).toBe(true);
     await act(async () => save.click());
-    expect(saveMCPServer).toHaveBeenCalledTimes(1);
-    expect(testMCPConnection).not.toHaveBeenCalled();
+    expect(saveMCPServer).not.toHaveBeenCalled();
   });
 
   it('keeps OAuth reconnect for the owner', async () => {

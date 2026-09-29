@@ -41,6 +41,7 @@ import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { getMethodBadgeVariant } from '../utils/httpMethodColors';
 import { can } from '../utils/accessUtils';
+import { isSharedOAuthMcp } from '../utils/toolUtils';
 import { areObjectsEqual } from '../utils/objectUtils';
 import { cn, focusRing } from '@/lib/utils';
 import { APIActionType, APIToolType, UserToolType } from './types';
@@ -121,7 +122,10 @@ export default function ToolConfig({
   >(new Set());
   const { t } = useTranslation();
   const canEdit = can(tool, 'edit');
-  const canEditCredentials = can(tool, 'edit_credentials');
+  // A shared OAuth server's connection stays with its owner (the backend
+  // refuses it), so its fields lock like credentials the caller can't change.
+  const sharedOAuth = isSharedOAuthMcp(tool);
+  const canEditCredentials = can(tool, 'edit_credentials') && !sharedOAuth;
   // Neither: the tool opens as a read-only view with no Save.
   const readOnly = !canEdit && !canEditCredentials;
   const access = React.useMemo(
@@ -274,7 +278,10 @@ export default function ToolConfig({
         displayName: tool.displayName,
         customName: customName,
         description: tool.description,
-        config: configToSave,
+        // Locked config isn't sent, so a rename or action edit still saves.
+        ...((canEditCredentials || tool.name === 'api_tool') && {
+          config: configToSave,
+        }),
         actions: 'actions' in tool ? tool.actions : [],
         status: tool.status,
       },
@@ -398,7 +405,13 @@ export default function ToolConfig({
       </div>
       {readOnly && <ViewOnlyNotice />}
       {!readOnly && !canEditCredentials && (
-        <ViewOnlyNotice message={t('common.credentialsLockedNotice')} />
+        <ViewOnlyNotice
+          message={
+            sharedOAuth
+              ? t('settings.tools.mcp.sharedOAuthOwnerOnly')
+              : t('common.credentialsLockedNotice')
+          }
+        />
       )}
       {saveError && (
         <Alert variant="destructive" className="mb-2">

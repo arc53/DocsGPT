@@ -1053,7 +1053,7 @@
           "password": "密碼"
         },
         "savedKeyHint": "已儲存金鑰。留空即可保留（僅在伺服器未變更時）。",
-        "sharedOAuthOwnerOnly": "只有擁有者可以重新連結其登入，因此你可以重新命名，但不能變更其伺服器或帳戶。"
+        "sharedOAuthOwnerOnly": "只有擁有者可以變更此伺服器的連線或重新連結其登入。你仍然可以重新命名並編輯其動作。"
       },
       "configErrors": {
         "required": "{{field}}為必填項",
