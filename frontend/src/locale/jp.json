@@ -1666,14 +1666,6 @@
       "link": "リンク",
       "urlLink": "URLリンク",
       "repoUrl": "リポジトリURL",
-      "reddit": {
-        "id": "クライアントID",
-        "secret": "クライアントシークレット",
-        "agent": "ユーザーエージェント",
-        "searchQueries": "検索クエリ",
-        "numberOfPosts": "投稿数",
-        "addQuery": "クエリを追加"
-      },
       "drag": {
         "title": "添付ファイルをここにドロップ",
         "description": "リリースして添付ファイルをアップロード"
@@ -1695,8 +1687,6 @@
         "clear": "クリア",
         "ingestionFailed": "取り込みに失敗しました。"
       },
-      "showAdvanced": "詳細オプションを表示",
-      "hideAdvanced": "詳細オプションを非表示",
       "ingestors": {
         "local_file": {
           "label": "ファイルをアップロード",
@@ -1713,26 +1703,6 @@
         "github": {
           "label": "GitHub",
           "heading": "GitHubからコンテンツを追加"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "Redditからコンテンツを追加"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "Google Driveからアップロード"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "Amazon S3からコンテンツを追加"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "SharePointからアップロード"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "Confluenceからアップロード"
         },
         "wiki": {
           "label": "新しいWiki",
@@ -1787,15 +1757,8 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "AWS アクセスキー ID",
-        "awsSecretAccessKey": "AWS シークレットアクセスキー",
-        "bucket": "バケット名",
-        "prefix": "パスプレフィックス（任意）",
-        "region": "AWS リージョン",
-        "endpointUrl": "カスタムエンドポイント URL（任意）",
         "initialContent": "初期コンテンツ（任意）"
       },
-      "newCredentials": "新しい認証情報を入力",
       "github": {
         "privateHint": "プライベートリポジトリですか？同期するには GitHub アカウントを接続してください。",
         "connectedHint": "プライベートリポジトリは GitHub 接続（{{account}}）から同期されます。",

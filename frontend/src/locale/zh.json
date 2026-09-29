@@ -1666,14 +1666,6 @@
       "link": "链接",
       "urlLink": "URL 链接",
       "repoUrl": "存储库 URL",
-      "reddit": {
-        "id": "客户端ID",
-        "secret": "客户端密钥",
-        "agent": "用户代理",
-        "searchQueries": "搜索查询",
-        "numberOfPosts": "帖子数量",
-        "addQuery": "添加查询"
-      },
       "drag": {
         "title": "将附件拖放到此处",
         "description": "释放以上传您的附件"
@@ -1695,8 +1687,6 @@
         "clear": "清除",
         "ingestionFailed": "导入失败。"
       },
-      "showAdvanced": "显示高级选项",
-      "hideAdvanced": "隐藏高级选项",
       "ingestors": {
         "local_file": {
           "label": "上传文件",
@@ -1713,26 +1703,6 @@
         "github": {
           "label": "GitHub",
           "heading": "从GitHub添加内容"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "从Reddit添加内容"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "从Google Drive上传"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "从Amazon S3添加内容"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "从SharePoint上传"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "从Confluence上传"
         },
         "wiki": {
           "label": "新建 Wiki",
@@ -1787,15 +1757,8 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "AWS 访问密钥 ID",
-        "awsSecretAccessKey": "AWS 秘密访问密钥",
-        "bucket": "存储桶名称",
-        "prefix": "路径前缀（可选）",
-        "region": "AWS 区域",
-        "endpointUrl": "自定义端点 URL（可选）",
         "initialContent": "初始内容（可选）"
       },
-      "newCredentials": "输入新的凭据",
       "github": {
         "privateHint": "私有仓库？连接你的 GitHub 账号即可同步。",
         "connectedHint": "私有仓库通过你的 GitHub 连接（{{account}}）同步。",

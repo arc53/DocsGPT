@@ -51,25 +51,6 @@ vi.mock('../connectors/useConnectorLauncher', () => ({
   default: () => ({ launch, modals: null }),
 }));
 
-// The file picker reports its default account and a pick as it mounts.
-vi.mock('../components/FilePicker', async () => {
-  const { useEffect } = await import('react');
-  return {
-    FilePicker: function Picker(props: {
-      onConnectionChange: (id: string | null) => void;
-      onSelectionChange: (files: string[], folders?: string[]) => void;
-      onFirstPickName: (name: string) => void;
-    }) {
-      useEffect(() => {
-        props.onConnectionChange('drive-1');
-        props.onSelectionChange(['file-1'], []);
-        props.onFirstPickName('Handbook');
-      }, []);
-      return null;
-    },
-  };
-});
-
 import Upload from './Upload';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -308,92 +289,57 @@ describe('Upload source-type tiles', () => {
     });
   });
 
-  it('picks the saved account once connections finish loading', async () => {
-    connectorsState.catalog = [
-      {
-        key: 's3',
-        icon: 's3',
-        sync_ingestor: 's3',
-        auth_kind: 'api_key',
-        available: true,
-        missing_settings: [],
-        credential_fields: [
-          { key: 'aws_access_key_id', label: 'Access key ID', secret: false },
-        ],
-      },
-    ];
-    const props = {
-      receivedFile: [],
-      setModalState: vi.fn(),
-      isOnboarding: false,
-      renderTab: null,
-      close: vi.fn(),
-      initialIngestor: 's3' as const,
-    };
-    await act(async () => root.render(<Upload {...props} />));
-    const triggers = () =>
-      Array.from(
-        document.body.querySelectorAll('[data-slot="select-trigger"]'),
-      ).map((el) => el.textContent);
-    expect(triggers()).not.toContain('modals.uploadDoc.newCredentials');
-    connectorsState.connections = [
-      {
-        id: 'k1',
-        connector_key: 's3',
-        status: 'connected',
-        account_label: '…WXYZ',
-      },
-    ];
-    await act(async () => root.render(<Upload {...props} />));
-    expect(triggers()).toContain('settings.connectors.detail.keyEnding');
-    connectorsState.catalog = [];
-    connectorsState.connections = [];
-  });
-
-  it("sends the picker's account, not one cleared by the type change", async () => {
-    connectorsState.catalog = [
-      {
-        key: 'google_drive',
-        icon: 'drive',
-        sync_ingestor: 'google_drive',
-        auth_kind: 'oauth',
-        available: true,
-        missing_settings: [],
-      },
-    ];
-    const sent: FormData[] = [];
+  it('sends a crawler source to the remote ingest with its URL', async () => {
+    const sent: { url: string; body: FormData }[] = [];
     class FakeXhr {
       upload = { addEventListener() {} };
+      url = '';
       addEventListener() {}
-      open() {}
+      open(_method: string, url: string) {
+        this.url = url;
+      }
       setRequestHeader() {}
       send(body: FormData) {
-        sent.push(body);
+        sent.push({ url: this.url, body });
       }
     }
     vi.stubGlobal('XMLHttpRequest', FakeXhr);
-    await act(async () =>
-      root.render(
-        <Upload
-          receivedFile={[]}
-          setModalState={vi.fn()}
-          isOnboarding={false}
-          renderTab={null}
-          close={vi.fn()}
-          initialIngestor="google_drive"
-        />,
-      ),
+    await render();
+    const crawler = tiles().find((tile) =>
+      tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+    )!;
+    await act(async () => crawler.click());
+    const type = async (input: HTMLInputElement, value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      await act(async () => {
+        setter.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+    const inputs = Array.from(
+      document.body.querySelectorAll<HTMLInputElement>('input[type="text"]'),
+    );
+    // The source's name first, then the crawler's URL field.
+    await type(inputs[0], 'Docs site');
+    await type(
+      document.body.querySelector<HTMLInputElement>('input[name="url"]')!,
+      'https://docs.example',
     );
     const train = Array.from(document.body.querySelectorAll('button')).find(
       (b) => b.textContent === 'modals.uploadDoc.train',
     )!;
+    expect(train.disabled).toBe(false);
     await act(async () => train.click());
     expect(sent).toHaveLength(1);
-    expect(JSON.parse(String(sent[0].get('data'))).connection_id).toBe(
-      'drive-1',
-    );
+    expect(sent[0].url).toContain('/api/remote');
+    expect(sent[0].body.get('source')).toBe('crawler');
+    expect(JSON.parse(String(sent[0].body.get('data')))).toEqual({
+      url: 'https://docs.example',
+    });
     vi.unstubAllGlobals();
-    connectorsState.catalog = [];
   });
 
   it('leaves the disabled Train button on the default variant', async () => {

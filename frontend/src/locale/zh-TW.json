@@ -1666,14 +1666,6 @@
       "link": "連結",
       "urlLink": "URL 連結",
       "repoUrl": "儲存庫 URL",
-      "reddit": {
-        "id": "客戶端ID",
-        "secret": "客戶端密鑰",
-        "agent": "使用者代理",
-        "searchQueries": "搜尋查詢",
-        "numberOfPosts": "貼文數量",
-        "addQuery": "新增查詢"
-      },
       "drag": {
         "title": "將附件拖放到此處",
         "description": "釋放以上傳您的附件"
@@ -1695,8 +1687,6 @@
         "clear": "清除",
         "ingestionFailed": "匯入失敗。"
       },
-      "showAdvanced": "顯示進階選項",
-      "hideAdvanced": "隱藏進階選項",
       "ingestors": {
         "local_file": {
           "label": "上傳檔案",
@@ -1713,26 +1703,6 @@
         "github": {
           "label": "GitHub",
           "heading": "從GitHub新增內容"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "從Reddit新增內容"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "從Google Drive上傳"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "從Amazon S3新增內容"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "從SharePoint上傳"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "從Confluence上傳"
         },
         "wiki": {
           "label": "新 Wiki",
@@ -1787,15 +1757,8 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "AWS 存取金鑰 ID",
-        "awsSecretAccessKey": "AWS 秘密存取金鑰",
-        "bucket": "儲存貯體名稱",
-        "prefix": "路徑前綴（選填）",
-        "region": "AWS 區域",
-        "endpointUrl": "自訂端點 URL（選填）",
         "initialContent": "初始內容（選填）"
       },
-      "newCredentials": "輸入新的憑證",
       "github": {
         "privateHint": "私人儲存庫？連結你的 GitHub 帳號即可同步。",
         "connectedHint": "私人儲存庫透過你的 GitHub 連線（{{account}}）同步。",

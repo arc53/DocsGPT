@@ -1677,14 +1677,6 @@
       "link": "Enlace",
       "urlLink": "Enlace URL",
       "repoUrl": "URL del Repositorio",
-      "reddit": {
-        "id": "ID del Cliente",
-        "secret": "Secreto del Cliente",
-        "agent": "Agente de usuario",
-        "searchQueries": "Consultas de búsqueda",
-        "numberOfPosts": "Número de publicaciones",
-        "addQuery": "Agregar Consulta"
-      },
       "drag": {
         "title": "Suelta los archivos adjuntos aquí",
         "description": "Suelta para subir tus archivos adjuntos"
@@ -1706,8 +1698,6 @@
         "clear": "Limpiar",
         "ingestionFailed": "La ingesta falló."
       },
-      "showAdvanced": "Mostrar opciones avanzadas",
-      "hideAdvanced": "Ocultar opciones avanzadas",
       "ingestors": {
         "local_file": {
           "label": "Subir archivo",
@@ -1724,26 +1714,6 @@
         "github": {
           "label": "GitHub",
           "heading": "Agregar contenido desde GitHub"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "Agregar contenido desde Reddit"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "Subir desde Google Drive"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "Agregar contenido desde Amazon S3"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "Subir desde SharePoint"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "Subir desde Confluence"
         },
         "wiki": {
           "label": "Nueva wiki",
@@ -1798,15 +1768,8 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "ID de clave de acceso de AWS",
-        "awsSecretAccessKey": "Clave de acceso secreta de AWS",
-        "bucket": "Nombre del bucket",
-        "prefix": "Prefijo de ruta (opcional)",
-        "region": "Región de AWS",
-        "endpointUrl": "URL de endpoint personalizada (opcional)",
         "initialContent": "Contenido inicial (opcional)"
       },
-      "newCredentials": "Introducir credenciales nuevas",
       "github": {
         "privateHint": "¿Repositorio privado? Conecta tu cuenta de GitHub para sincronizarlo.",
         "connectedHint": "Los repositorios privados se sincronizan desde tu conexión de GitHub ({{account}}).",

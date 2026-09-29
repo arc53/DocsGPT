@@ -1761,14 +1761,6 @@
       "link": "Ссылка",
       "urlLink": "URL ссылка",
       "repoUrl": "URL репозитория",
-      "reddit": {
-        "id": "ID клиента",
-        "secret": "Секрет клиента",
-        "agent": "Пользовательский агент",
-        "searchQueries": "Поисковые запросы",
-        "numberOfPosts": "Количество сообщений",
-        "addQuery": "Добавить запрос"
-      },
       "drag": {
         "title": "Перетащите вложения сюда",
         "description": "Отпустите, чтобы загрузить ваши вложения"
@@ -1790,8 +1782,6 @@
         "clear": "Очистить",
         "ingestionFailed": "Не удалось загрузить данные."
       },
-      "showAdvanced": "Показать расширенные настройки",
-      "hideAdvanced": "Скрыть расширенные настройки",
       "ingestors": {
         "local_file": {
           "label": "Загрузить файл",
@@ -1808,26 +1798,6 @@
         "github": {
           "label": "GitHub",
           "heading": "Добавить контент из GitHub"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "Добавить контент из Reddit"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "Загрузить из Google Drive"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "Добавить контент из Amazon S3"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "Загрузить из SharePoint"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "Загрузить из Confluence"
         },
         "wiki": {
           "label": "Новая вики",
@@ -1882,15 +1852,8 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "Идентификатор ключа доступа AWS",
-        "awsSecretAccessKey": "Секретный ключ доступа AWS",
-        "bucket": "Имя бакета",
-        "prefix": "Префикс пути (необязательно)",
-        "region": "Регион AWS",
-        "endpointUrl": "Пользовательский URL эндпоинта (необязательно)",
         "initialContent": "Исходное содержимое (необязательно)"
       },
-      "newCredentials": "Ввести новые учётные данные",
       "github": {
         "privateHint": "Приватный репозиторий? Подключите аккаунт GitHub, чтобы синхронизировать его.",
         "connectedHint": "Приватные репозитории синхронизируются через ваше подключение GitHub ({{account}}).",

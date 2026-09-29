@@ -1683,14 +1683,6 @@
       "link": "Link",
       "urlLink": "URL Link",
       "repoUrl": "Repository URL",
-      "reddit": {
-        "id": "Client ID",
-        "secret": "Client Secret",
-        "agent": "User agent",
-        "searchQueries": "Search queries",
-        "numberOfPosts": "Number of posts",
-        "addQuery": "Add Query"
-      },
       "drag": {
         "title": "Drop attachments here",
         "description": "Release to upload your attachments"
@@ -1712,8 +1704,6 @@
         "clear": "Clear",
         "ingestionFailed": "Ingestion failed."
       },
-      "showAdvanced": "Show advanced options",
-      "hideAdvanced": "Hide advanced options",
       "ingestors": {
         "local_file": {
           "label": "Upload File",
@@ -1730,26 +1720,6 @@
         "github": {
           "label": "GitHub",
           "heading": "Add content from GitHub"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "Add content from Reddit"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "Upload from Google Drive"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "Add content from Amazon S3"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "Upload from SharePoint"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "Upload from Confluence"
         },
         "wiki": {
           "label": "New wiki",
@@ -1804,15 +1774,8 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "AWS Access Key ID",
-        "awsSecretAccessKey": "AWS Secret Access Key",
-        "bucket": "Bucket Name",
-        "prefix": "Path Prefix (optional)",
-        "region": "AWS Region",
-        "endpointUrl": "Custom Endpoint URL (optional)",
         "initialContent": "Initial content (optional)"
       },
-      "newCredentials": "Enter new credentials",
       "github": {
         "privateHint": "Private repository? Connect your GitHub account to sync it.",
         "connectedHint": "Private repositories sync from your GitHub connection ({{account}}).",

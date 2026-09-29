@@ -1677,14 +1677,6 @@
       "link": "Link",
       "urlLink": "URL-Link",
       "repoUrl": "Repository-URL",
-      "reddit": {
-        "id": "Client-ID",
-        "secret": "Client-Secret",
-        "agent": "User-Agent",
-        "searchQueries": "Suchanfragen",
-        "numberOfPosts": "Anzahl der Beiträge",
-        "addQuery": "Anfrage hinzufügen"
-      },
       "drag": {
         "title": "Anhänge hier ablegen",
         "description": "Loslassen, um deine Anhänge hochzuladen"
@@ -1706,8 +1698,6 @@
         "clear": "Löschen",
         "ingestionFailed": "Aufnahme fehlgeschlagen."
       },
-      "showAdvanced": "Erweiterte Optionen anzeigen",
-      "hideAdvanced": "Erweiterte Optionen ausblenden",
       "ingestors": {
         "local_file": {
           "label": "Datei hochladen",
@@ -1724,26 +1714,6 @@
         "github": {
           "label": "GitHub",
           "heading": "Inhalt von GitHub hinzufügen"
-        },
-        "reddit": {
-          "label": "Reddit",
-          "heading": "Inhalt von Reddit hinzufügen"
-        },
-        "google_drive": {
-          "label": "Google Drive",
-          "heading": "Von Google Drive hochladen"
-        },
-        "s3": {
-          "label": "Amazon S3",
-          "heading": "Inhalt von Amazon S3 hinzufügen"
-        },
-        "share_point": {
-          "label": "SharePoint",
-          "heading": "Von SharePoint hochladen"
-        },
-        "confluence": {
-          "label": "Confluence",
-          "heading": "Von Confluence hochladen"
         },
         "wiki": {
           "label": "Neues Wiki",
@@ -1798,15 +1768,8 @@
       },
       "fields": {
         "url": "URL",
-        "awsAccessKeyId": "AWS-Zugriffsschlüssel-ID",
-        "awsSecretAccessKey": "Geheimer AWS-Zugriffsschlüssel",
-        "bucket": "Bucket-Name",
-        "prefix": "Pfadpräfix (optional)",
-        "region": "AWS-Region",
-        "endpointUrl": "Benutzerdefinierte Endpunkt-URL (optional)",
         "initialContent": "Anfangsinhalt (optional)"
       },
-      "newCredentials": "Neue Zugangsdaten eingeben",
       "github": {
         "privateHint": "Privates Repository? Verbinde dein GitHub-Konto, um es zu synchronisieren.",
         "connectedHint": "Private Repositorys werden über deine GitHub-Verbindung ({{account}}) synchronisiert.",

@@ -1,7 +1,6 @@
 import { ChevronLeft, FileText, Lock, Plug } from 'lucide-react';
 import { envVar } from '@/env';
-import { cn } from '@/lib/utils';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
 import type { FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
@@ -14,20 +13,9 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { FormField as UiFormField } from '../components/ui/form-field';
-import { Label } from '../components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
-import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
 import { Modal } from '../components/ui/modal';
-import { Separator } from '../components/ui/separator';
 import { OptionCard } from '../components/ui/option-card';
-import ConnectorSetupNotice from '../connectors/ConnectorSetupNotice';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { connectorName } from '../connectors/i18n';
 import { intlLocale } from '../utils/dateTimeUtils';
@@ -53,7 +41,6 @@ import {
   setSourceDocs,
 } from '../preferences/preferenceSlice';
 import {
-  CONNECTION_INGESTORS,
   IngestorDefaultConfigs,
   IngestorFormSchemas,
   getIngestorSchema,
@@ -64,8 +51,6 @@ import { addUploadTask, updateUploadTask } from './uploadSlice';
 
 import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
-import { FilePicker } from '../components/FilePicker';
-import GoogleDrivePicker from '../components/GoogleDrivePicker';
 import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
 import RetrievalOptions, {
   DEFAULT_RETRIEVAL_OPTIONS,
@@ -86,7 +71,6 @@ function Upload({
   close,
   onSuccessfulUpload = () => undefined,
   selectUploadedDoc = true,
-  initialIngestor,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
@@ -101,8 +85,6 @@ function Upload({
    * uploading never repoints the conversation the user left open.
    */
   selectUploadedDoc?: boolean;
-  /** Open straight on this source type's form (Connect from a connector card). */
-  initialIngestor?: IngestorType;
 }) {
   const token = useSelector(selectToken);
   const selectedDocs = useSelector(selectSelectedDocs);
@@ -124,82 +106,18 @@ function Upload({
   // an unaccepted type), shown under the dropzone.
   const [rejectedFiles, setRejectedFiles] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<boolean>(true);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [retrievalOptions, setRetrievalOptions] =
     useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
   const { graphRAGAvailable, hybridAvailable, availableModels } =
     useRetrievalAvailability(token);
 
-  // File picker state
-  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
-  // The connection (account) the source syncs from. Pickers report it; S3
-  // and Reddit pick it here ('' means "enter new credentials").
-  const [connectionId, setConnectionId] = useState<string | null>(null);
-
   const renderFormFields = () => {
     if (!ingestor.type) return null;
     const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
     if (!ingestorSchema) return null;
-    const schema: FormField[] = ingestorSchema.fields;
-
-    const generalFields = schema.filter(
-      (field: FormField) =>
-        !field.advanced && !(usingSavedKeys && credentialKeys.has(field.name)),
-    );
-    const advancedFields = schema.filter((field: FormField) => field.advanced);
-
     return (
       <div className="flex flex-col gap-5">
-        {keyAccounts.length > 0 && (
-          <UiFormField label={t('filePicker.account')}>
-            <Select
-              value={connectionId ?? 'new'}
-              onValueChange={(value) => {
-                accountPicked.current = true;
-                setConnectionId(value);
-              }}
-            >
-              <SelectTrigger className="w-full" size="field" shape="pill">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {keyAccounts.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>
-                    {t('settings.connectors.detail.keyEnding', {
-                      hint: account.account_label,
-                      interpolation: { escapeValue: false },
-                    })}
-                  </SelectItem>
-                ))}
-                <SelectItem value="new">
-                  {t('modals.uploadDoc.newCredentials')}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </UiFormField>
-        )}
-        <div className="flex flex-col gap-5">
-          {generalFields.map((field: FormField) => renderField(field))}
-        </div>
-
-        {advancedFields.length > 0 && (
-          <div
-            className={cn(
-              'grid transition-[grid-template-rows,opacity] duration-300 ease-out',
-              showAdvancedOptions
-                ? 'grid-rows-[1fr] opacity-100'
-                : 'grid-rows-[0fr] opacity-0',
-            )}
-          >
-            <div className="flex flex-col gap-4 overflow-hidden">
-              <Separator className="my-4" />
-              <div className="flex flex-col gap-5">
-                {advancedFields.map((field: FormField) => renderField(field))}
-              </div>
-            </div>
-          </div>
-        )}
+        {ingestorSchema.fields.map((field: FormField) => renderField(field))}
       </div>
     );
   };
@@ -226,81 +144,6 @@ function Upload({
             }
             required={isRequired}
           />
-        );
-      case 'number':
-        return (
-          <Input
-            key={field.name}
-            label={fieldLabel}
-            type="number"
-            name={field.name}
-            value={String(
-              ingestor.config[field.name as keyof typeof ingestor.config],
-            )}
-            onChange={(e) =>
-              handleIngestorChange(
-                field.name as keyof IngestorConfig['config'],
-                Number(e.target.value),
-              )
-            }
-            required={isRequired}
-          />
-        );
-      case 'enum': {
-        const currentValue = String(
-          ingestor.config[field.name as keyof typeof ingestor.config] ?? '',
-        );
-        return (
-          <UiFormField
-            key={field.name}
-            label={fieldLabel}
-            required={isRequired}
-          >
-            <Select
-              value={currentValue || undefined}
-              onValueChange={(value) => {
-                handleIngestorChange(
-                  field.name as keyof IngestorConfig['config'],
-                  value,
-                );
-              }}
-            >
-              <SelectTrigger className="w-full" size="field" shape="pill">
-                <SelectValue placeholder={fieldLabel} />
-              </SelectTrigger>
-              <SelectContent>
-                {(field.options || []).map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </UiFormField>
-        );
-      }
-      case 'boolean':
-        return (
-          <div
-            key={field.name}
-            className="mt-2 flex flex-row items-center gap-3 text-base"
-          >
-            <Label htmlFor={`field-${field.name}`} className="text-foreground">
-              {fieldLabel}
-            </Label>
-            <Switch
-              id={`field-${field.name}`}
-              checked={Boolean(
-                ingestor.config[field.name as keyof typeof ingestor.config],
-              )}
-              onCheckedChange={(checked: boolean) => {
-                handleIngestorChange(
-                  field.name as keyof IngestorConfig['config'],
-                  checked,
-                );
-              }}
-            />
-          </div>
         );
       case 'textarea':
         return (
@@ -371,98 +214,6 @@ function Upload({
             )}
           </div>
         );
-      case 'remote_file_picker':
-        return (
-          <FilePicker
-            key={field.name}
-            onSelectionChange={(
-              selectedFileIds: string[],
-              selectedFolderIds: string[] = [],
-            ) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            onFirstPickName={prefillName}
-            onConnectionChange={setConnectionId}
-            provider={ingestor.type as unknown as string}
-            token={token}
-            initialSelectedFiles={selectedFiles}
-            initialSelectedFolders={selectedFolders}
-          />
-        );
-      case 'google_drive_picker':
-        // Google's own picker needs the client id in the browser; without it
-        // the server-side file browser lists the same Drive.
-        return envVar('VITE_GOOGLE_CLIENT_ID') ? (
-          <GoogleDrivePicker
-            key={field.name}
-            onSelectionChange={(
-              selectedFileIds: string[],
-              selectedFolderIds: string[] = [],
-            ) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            onFirstPickName={prefillName}
-            onConnectionChange={setConnectionId}
-            token={token}
-          />
-        ) : (
-          <FilePicker
-            key={field.name}
-            onSelectionChange={(
-              selectedFileIds: string[],
-              selectedFolderIds: string[] = [],
-            ) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            onFirstPickName={prefillName}
-            onConnectionChange={setConnectionId}
-            provider="google_drive"
-            token={token}
-            initialSelectedFiles={selectedFiles}
-            initialSelectedFolders={selectedFolders}
-          />
-        );
-      case 'share_point_picker':
-        return (
-          <FilePicker
-            key={field.name}
-            onSelectionChange={(
-              selectedFileIds: string[],
-              selectedFolderIds: string[] = [],
-            ) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            onFirstPickName={prefillName}
-            onConnectionChange={setConnectionId}
-            provider="share_point"
-            token={token}
-            initialSelectedFiles={selectedFiles}
-            initialSelectedFolders={selectedFolders}
-          />
-        );
-      case 'confluence_picker':
-        return (
-          <FilePicker
-            key={field.name}
-            onSelectionChange={(
-              selectedFileIds: string[],
-              selectedFolderIds: string[] = [],
-            ) => {
-              setSelectedFiles(selectedFileIds);
-              setSelectedFolders(selectedFolderIds);
-            }}
-            onFirstPickName={prefillName}
-            onConnectionChange={setConnectionId}
-            provider="confluence"
-            token={token}
-            initialSelectedFiles={selectedFiles}
-            initialSelectedFolders={selectedFolders}
-          />
-        );
       default:
         return null;
     }
@@ -484,50 +235,6 @@ function Upload({
     if (!connectorsLoaded) dispatch(loadConnectors({ token }));
   }, [connectorsLoaded, dispatch, token]);
 
-  useEffect(() => {
-    if (initialIngestor) handleIngestorTypeChange(initialIngestor);
-    // Only the type the modal opened with; later picks are the user's.
-  }, []);
-
-  /** The name field follows the first picked item until the user edits it. */
-  const prefillName = (name: string) => {
-    if (nameTouched || !name) return;
-    setIngestor((prev) => (prev.name ? prev : { ...prev, name }));
-  };
-
-  const connectorFor = (type: IngestorType | null) =>
-    type && CONNECTION_INGESTORS.includes(type)
-      ? connectorCatalog.find((c) => c.sync_ingestor === type)
-      : undefined;
-  const selectedConnector = connectorFor(ingestor.type);
-  const needsSetup = !!selectedConnector && !selectedConnector.available;
-  // S3 and Reddit keep their keys on a connection: once an account is
-  // chosen the key fields go away ("enter secrets once").
-  const keyAccounts =
-    selectedConnector?.auth_kind === 'api_key'
-      ? connections.filter(
-          (c) =>
-            c.connector_key === selectedConnector.key &&
-            c.status === 'connected',
-        )
-      : [];
-  const credentialKeys = new Set(
-    (selectedConnector?.credential_fields ?? []).map((f) => f.key),
-  );
-  const usingSavedKeys =
-    keyAccounts.length > 0 && !!connectionId && connectionId !== 'new';
-
-  // Default to the first saved account, also when the connections arrive
-  // after the modal opened on S3 or Reddit, but never over a choice the
-  // user made in the account picker.
-  const accountPicked = useRef(false);
-  const firstKeyAccount = keyAccounts[0]?.id;
-  useEffect(() => {
-    if (selectedConnector?.auth_kind !== 'api_key' || accountPicked.current)
-      return;
-    setConnectionId(firstKeyAccount ?? 'new');
-  }, [ingestor.type, selectedConnector?.auth_kind, firstKeyAccount]);
-
   const ingestorOptions: IngestorOption[] = IngestorFormSchemas.map(
     (schema) => ({
       label: schema.label,
@@ -541,9 +248,6 @@ function Upload({
     setIngestor({ type: null, name: '', config: {} });
     setfiles([]);
     setRejectedFiles([]);
-    setSelectedFiles([]);
-    setSelectedFolders([]);
-    setShowAdvancedOptions(false);
     setRetrievalOptions(DEFAULT_RETRIEVAL_OPTIONS);
     setNameTouched(false);
   }, []);
@@ -824,62 +528,11 @@ function Upload({
       JSON.stringify(optionsToConfig(retrievalOptions)),
     );
 
-    const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
-    if (!ingestorSchema) {
-      handleTaskFailure(clientTaskId);
-      return;
-    }
-
-    const schema: FormField[] = ingestorSchema.fields;
-    const hasLocalFilePicker = schema.some(
-      (field: FormField) => field.type === 'local_file_picker',
-    );
-    const hasRemoteFilePicker = schema.some(
-      (field: FormField) => field.type === 'remote_file_picker',
-    );
-    const hasGoogleDrivePicker = schema.some(
-      (field: FormField) => field.type === 'google_drive_picker',
-    );
-    const hasSharePointPicker = schema.some(
-      (field: FormField) => field.type === 'share_point_picker',
-    );
-    const hasConfluencePicker = schema.some(
-      (field: FormField) => field.type === 'confluence_picker',
-    );
-
-    let configData: Record<string, unknown> = { ...ingestor.config };
-
-    if (hasLocalFilePicker) {
-      files.forEach((file) => {
-        formData.append('file', file);
-      });
-    } else if (
-      hasRemoteFilePicker ||
-      hasGoogleDrivePicker ||
-      hasSharePointPicker ||
-      hasConfluencePicker
-    ) {
-      configData = {
-        provider: ingestor.type as string,
-        connection_id: connectionId,
-        file_ids: selectedFiles,
-        folder_ids: selectedFolders,
-      };
-    }
-
-    if (usingSavedKeys) {
-      configData = Object.fromEntries(
-        Object.entries(configData).filter(([key]) => !credentialKeys.has(key)),
-      );
-      configData.connection_id = connectionId;
-    }
-    formData.append('data', JSON.stringify(configData));
+    formData.append('data', JSON.stringify(ingestor.config));
 
     const apiHost: string = envVar('VITE_API_HOST');
-    const endpoint =
-      ingestor.type === 'local_file'
-        ? `${apiHost}/api/upload`
-        : `${apiHost}/api/remote`;
+    // Local files go through uploadFile; everything else is fetched remotely.
+    const endpoint = `${apiHost}/api/remote`;
 
     const xhr = new XMLHttpRequest();
 
@@ -1041,72 +694,14 @@ function Upload({
     if (!isPrescreenConfigValid(retrievalOptions)) return true;
 
     if (!ingestor.type) return true;
-    if (needsSetup) return true;
-    const ingestorSchemaForValidation = getIngestorSchema(
-      ingestor.type as IngestorType,
-    );
-    if (!ingestorSchemaForValidation) return true;
-    const schema: FormField[] = ingestorSchemaForValidation.fields;
-    const hasLocalFilePicker = schema.some(
-      (field: FormField) => field.type === 'local_file_picker',
-    );
-    const hasRemoteFilePicker = schema.some(
-      (field: FormField) => field.type === 'remote_file_picker',
-    );
-    const hasGoogleDrivePicker = schema.some(
-      (field: FormField) => field.type === 'google_drive_picker',
-    );
-    const hasSharePointPicker = schema.some(
-      (field: FormField) => field.type === 'share_point_picker',
-    );
-    const hasConfluencePicker = schema.some(
-      (field: FormField) => field.type === 'confluence_picker',
-    );
-
-    if (hasLocalFilePicker) {
-      if (files.length === 0) {
-        return true;
-      }
-    } else if (
-      hasRemoteFilePicker ||
-      hasGoogleDrivePicker ||
-      hasSharePointPicker ||
-      hasConfluencePicker
-    ) {
-      if (selectedFiles.length === 0 && selectedFolders.length === 0) {
-        return true;
-      }
-    }
-
-    const ingestorSchemaForFields = getIngestorSchema(
-      ingestor.type as IngestorType,
-    );
-    if (!ingestorSchemaForFields) return false;
-    const formFields: FormField[] = ingestorSchemaForFields.fields;
-    for (const field of formFields) {
-      if (usingSavedKeys && credentialKeys.has(field.name)) continue;
-      if (field.required) {
-        // Validate only required fields
-        const value =
-          ingestor.config[field.name as keyof typeof ingestor.config];
-
-        if (typeof value === 'string' && !value.trim()) {
-          return true;
-        }
-
-        if (
-          typeof value === 'number' &&
-          (value === null || value === undefined || value <= 0)
-        ) {
-          return true;
-        }
-
-        if (typeof value === 'boolean' && value === undefined) {
-          return true;
-        }
-      }
-    }
-    return false;
+    const schema = getIngestorSchema(ingestor.type);
+    if (!schema) return true;
+    return schema.fields.some((field: FormField) => {
+      if (field.type === 'local_file_picker') return files.length === 0;
+      if (!field.required) return false;
+      const value = ingestor.config[field.name];
+      return typeof value === 'string' && !value.trim();
+    });
   };
   const handleIngestorChange = (
     key: keyof IngestorConfig['config'],
@@ -1121,11 +716,6 @@ function Upload({
     }));
   };
   const handleIngestorTypeChange = (type: IngestorType | null) => {
-    // The account resets with the type, here rather than in an effect: the
-    // new type's picker reports its default account as it mounts, and an
-    // effect would run after that and clear it.
-    accountPicked.current = false;
-    setConnectionId(null);
     if (type === null) {
       setIngestor({
         type: null,
@@ -1259,10 +849,6 @@ function Upload({
       </Alert>
     ) : null;
 
-  const renderSetupNotice = () =>
-    selectedConnector && needsSetup ? (
-      <ConnectorSetupNotice connector={selectedConnector} />
-    ) : null;
   if (handedOver) return <>{connectModals}</>;
 
   return (
@@ -1331,9 +917,9 @@ function Upload({
                   required={true}
                   className="w-full"
                 />
-                {needsSetup ? renderSetupNotice() : renderFormFields()}
+                {renderFormFields()}
                 {ingestor.type === 'github' && renderGitHubHandOver()}
-                {ingestor.type !== 'wiki' && !needsSetup && (
+                {ingestor.type !== 'wiki' && (
                   <RetrievalOptions
                     value={retrievalOptions}
                     onChange={setRetrievalOptions}
@@ -1344,23 +930,6 @@ function Upload({
                 )}
               </div>
             )}
-
-            {ingestor.type &&
-              getIngestorSchema(ingestor.type as IngestorType)?.fields.some(
-                (field: FormField) => field.advanced,
-              ) && (
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                  className="-ml-3 w-fit justify-start"
-                >
-                  {showAdvancedOptions
-                    ? t('modals.uploadDoc.hideAdvanced')
-                    : t('modals.uploadDoc.showAdvanced')}
-                </Button>
-              )}
           </>
         )}
       </div>
