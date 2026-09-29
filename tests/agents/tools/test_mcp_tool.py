@@ -266,6 +266,23 @@ class TestGenerateCacheKey:
         })
         assert "apikey:none" in tool._cache_key
 
+    @pytest.mark.parametrize("auth_type, field", [("bearer", "bearer_token"), ("api_key", "api_key")])
+    def test_tokens_with_a_shared_prefix_get_their_own_client(self, auth_type, field):
+        """Every fine-grained GitHub token starts with ``github_pat_``; two users' tokens
+        must never share a cached client (it carries the first user's token)."""
+        first = _make_tool({
+            "server_url": "https://mcp.example.com",
+            "auth_type": auth_type,
+            "auth_credentials": {field: "github_pat_11AAAAAAA_alice"},
+        })
+        second = _make_tool({
+            "server_url": "https://mcp.example.com",
+            "auth_type": auth_type,
+            "auth_credentials": {field: "github_pat_11AAAAAAA_bob"},
+        })
+        assert first._cache_key != second._cache_key
+        assert "github_pat" not in first._cache_key
+
 
 # =====================================================================
 # Transport Creation

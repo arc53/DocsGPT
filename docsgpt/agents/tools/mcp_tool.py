@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import concurrent.futures
+import hashlib
 import json
 import logging
 import time
@@ -37,6 +38,16 @@ logger = logging.getLogger(__name__)
 _mcp_clients_cache = {}
 
 _ANNOTATION_HINTS = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
+
+
+def _secret_fingerprint(secret: str) -> str:
+    """A short digest of a whole secret, for telling cached clients apart.
+
+    A prefix of the secret itself is not enough: every fine-grained GitHub
+    token starts with ``github_pat_``, so two users' tokens would share (and
+    reuse) one cached client carrying the first user's token.
+    """
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
 
 
 def _annotation_hints(annotations: Any) -> Dict[str, bool]:
@@ -162,10 +173,10 @@ class MCPTool(Tool):
             token = self.auth_credentials.get(
                 "bearer_token", ""
             ) or self.auth_credentials.get("access_token", "")
-            auth_key = f"bearer:{token[:10]}..." if token else "bearer:none"
+            auth_key = f"bearer:{_secret_fingerprint(token)}" if token else "bearer:none"
         elif self.auth_type == "api_key":
             api_key = self.auth_credentials.get("api_key", "")
-            auth_key = f"apikey:{api_key[:10]}..." if api_key else "apikey:none"
+            auth_key = f"apikey:{_secret_fingerprint(api_key)}" if api_key else "apikey:none"
         elif self.auth_type == "basic":
             username = self.auth_credentials.get("username", "")
             auth_key = f"basic:{username}"
