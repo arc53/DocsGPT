@@ -211,11 +211,7 @@ export default function Prompts({
     setEditPromptName(prompt.name);
     setEditPromptContent('');
     handleFetchPromptContent(prompt.id);
-    setCurrentPromptEdit({
-      id: prompt.id,
-      name: prompt.name,
-      type: prompt.type,
-    });
+    setCurrentPromptEdit(prompt);
     setModalState('ACTIVE');
     setOpen(false);
   };

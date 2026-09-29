@@ -347,6 +347,26 @@ describe('Prompts', () => {
       expect(lastModalProps().readOnly).toBe(true);
     });
 
+    it("keeps the server's actions for a selected prompt missing from the list", async () => {
+      getSinglePrompt.mockReturnValue(json({ content: 'Hello' }));
+      const unlisted = {
+        id: 'ul',
+        name: 'Unlisted prompt',
+        type: 'team',
+        access: 'editor' as const,
+        allowed_actions: ['edit', 'use'],
+      };
+      renderPrompts({ prompts: all, selectedPrompt: unlisted });
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(
+            'button[aria-label="settings.general.promptActions.edit"]',
+          )!
+          .click();
+      });
+      expect(lastModalProps().onDuplicate).toBeUndefined();
+    });
+
     it('keeps the row and shows an error when the delete fails', async () => {
       deletePrompt.mockReturnValue(json({ success: false }, false, 403));
       const setPrompts = vi.fn();
