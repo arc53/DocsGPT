@@ -263,7 +263,8 @@ def _complete_model_cache(repo: str, cache_dir: Optional[str]) -> None:
     holds. The chunker caches only ``tokenizer.json`` there (see
     ``docsgpt/parser/tokenization.py``), so FastEmbed then finds no graph and
     fails to load. Fetching the files it needs first makes either order work.
-    Offline, nothing is fetched and FastEmbed reports what is missing.
+    Offline, nothing is fetched and FastEmbed reports what is missing; a
+    failed download is logged and left to FastEmbed's own sources too.
 
     Args:
         repo: The model's FastEmbed name.
@@ -293,7 +294,10 @@ def _complete_model_cache(repo: str, cache_dir: Optional[str]) -> None:
     if os.environ.get("HF_HUB_OFFLINE", "").strip().upper() in {"1", "TRUE", "YES", "ON"}:
         return
     logger.warning("The cached %s has no %s; downloading the model files.", source, ", ".join(needed))
-    snapshot_download(repo_id=source, allow_patterns=[*_FASTEMBED_SUPPORT_FILES, *needed], cache_dir=cache)
+    try:
+        snapshot_download(repo_id=source, allow_patterns=[*_FASTEMBED_SUPPORT_FILES, *needed], cache_dir=cache)
+    except Exception as exc:  # noqa: BLE001 -- best effort: FastEmbed still tries its own sources
+        logger.warning("Could not complete the cached %s (%s); leaving the download to FastEmbed.", source, exc)
 
 
 def _pad_to_longest_in_batch(model: Any) -> None:

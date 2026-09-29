@@ -460,6 +460,17 @@ class TestIncompleteModelCache:
         assert "onnx/model.onnx" in downloads[0]["allow_patterns"]
         assert "tokenizer_config.json" in downloads[0]["allow_patterns"]
 
+    def test_a_failed_repair_leaves_loading_to_fastembed(self, monkeypatch, tmp_path):
+        """The repair is best effort: a network error or rate limit here must
+        not stop FastEmbed from trying its own download."""
+        from docsgpt.vectorstore import embeddings_local
+
+        monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+        with patch("fastembed.TextEmbedding._list_supported_models", return_value=[self._description()]), \
+                patch("huggingface_hub.hf_hub_download", side_effect=FileNotFoundError("missing")), \
+                patch("huggingface_hub.snapshot_download", side_effect=OSError("rate limited")):
+            embeddings_local._complete_model_cache("sentence-transformers/all-mpnet-base-v2", str(tmp_path))
+
     def test_a_complete_snapshot_downloads_nothing(self, monkeypatch, tmp_path):
         assert self._complete(monkeypatch, tmp_path, cached={"tokenizer.json", "onnx/model.onnx"}) == []
 
