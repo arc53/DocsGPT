@@ -10,5 +10,9 @@ export default {
   "embeddings": {
     "title": "📝 Embeddings",
     "href": "/Models/embeddings"
+  },
+  "fallback": {
+    "title": "🔁 Fallback Models",
+    "href": "/Models/fallback"
   }
 }

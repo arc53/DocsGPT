@@ -50,7 +50,13 @@ class LLMSettings(SettingsGroup):
 
     FALLBACK_LLM_PROVIDER: Optional[str] = Field(default=None, description="Provider for the fallback LLM.")
     FALLBACK_LLM_NAME: Optional[str] = Field(default=None, description="Model name for the fallback LLM.")
-    FALLBACK_LLM_API_KEY: Optional[str] = Field(default=None, description="API key for the fallback LLM.")
+    FALLBACK_LLM_API_KEY: Optional[str] = Field(
+        default=None,
+        description=(
+            "API key for the fallback LLM; unset sends API_KEY. Set it whenever FALLBACK_LLM_PROVIDER differs "
+            "from LLM_PROVIDER, or the primary provider's key goes to the fallback provider."
+        ),
+    )
     TITLE_MODEL_ID: Optional[str] = Field(
         default=None, description="Optional cheaper model for conversation titles; unset reuses the answer model."
     )
