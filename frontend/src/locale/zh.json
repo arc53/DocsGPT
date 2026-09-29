@@ -1298,7 +1298,9 @@
       },
       "sharing": {
         "owner": "团队成员使用我的账号",
-        "member": "每位成员连接自己的账号"
+        "member": "每位成员连接自己的账号",
+        "ownerShort": "我的账号",
+        "memberShort": "各自的账号"
       },
       "share": {
         "heading": "团队成员使用谁的账号",

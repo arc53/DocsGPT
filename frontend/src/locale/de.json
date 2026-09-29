@@ -1316,7 +1316,9 @@
       },
       "sharing": {
         "owner": "Teammitglieder nutzen mein Konto",
-        "member": "Jedes Mitglied verbindet sein eigenes Konto"
+        "member": "Jedes Mitglied verbindet sein eigenes Konto",
+        "ownerShort": "Mein Konto",
+        "memberShort": "Jeweils eigenes"
       },
       "share": {
         "heading": "Welches Konto Teammitglieder nutzen",

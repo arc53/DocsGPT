@@ -1322,7 +1322,9 @@
       },
       "sharing": {
         "owner": "Team members use my account",
-        "member": "Each member connects their own account"
+        "member": "Each member connects their own account",
+        "ownerShort": "My account",
+        "memberShort": "Each member's own"
       },
       "share": {
         "heading": "Whose account team members use",

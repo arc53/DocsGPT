@@ -1298,7 +1298,9 @@
       },
       "sharing": {
         "owner": "團隊成員使用我的帳號",
-        "member": "每位成員連線自己的帳號"
+        "member": "每位成員連線自己的帳號",
+        "ownerShort": "我的帳號",
+        "memberShort": "各自的帳號"
       },
       "share": {
         "heading": "團隊成員使用誰的帳號",

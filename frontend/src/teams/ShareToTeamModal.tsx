@@ -19,7 +19,6 @@ import connectorsService from '../api/services/connectorsService';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Checkbox } from '../components/ui/checkbox';
 import { Label } from '../components/ui/label';
-import { OptionCard } from '../components/ui/option-card';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import {
@@ -50,6 +49,7 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { decodeJwtPayload } from '../utils/jwtUtils';
 import { loadTeams, selectTeams } from './teamsSlice';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 
 /** A connection-backed tool: whose account shares of it run with. */
 export type ShareCredentials = {
@@ -560,24 +560,32 @@ export default function ShareToTeamModal({
                 size="xs"
                 title={t('settings.connectors.share.heading')}
               />
-              <div
-                role="radiogroup"
-                aria-label={t('settings.connectors.share.heading')}
-                className="grid gap-3 sm:grid-cols-2"
-              >
-                {(['owner', 'member'] as const).map((mode) => (
-                  <OptionCard
-                    key={mode}
-                    icon={mode === 'owner' ? <UserRound /> : <UsersRound />}
-                    title={t(`settings.connectors.sharing.${mode}`)}
-                    selected={credentialMode === mode}
-                    disabled={
-                      !!credentials.forcedMode &&
-                      credentials.forcedMode !== mode
-                    }
-                    onClick={() => changeCredentialMode(mode)}
-                  />
-                ))}
+              {/* A compact one-of-two; the line under it says what the
+                  choice means. */}
+              <div className="bg-muted self-start rounded-full p-1">
+                <ToggleGroup
+                  type="single"
+                  size="xs"
+                  value={credentialMode}
+                  aria-label={t('settings.connectors.share.heading')}
+                  onValueChange={(value) =>
+                    value && changeCredentialMode(value as 'owner' | 'member')
+                  }
+                >
+                  {(['owner', 'member'] as const).map((mode) => (
+                    <ToggleGroupItem
+                      key={mode}
+                      value={mode}
+                      disabled={
+                        !!credentials.forcedMode &&
+                        credentials.forcedMode !== mode
+                      }
+                    >
+                      {mode === 'owner' ? <UserRound /> : <UsersRound />}
+                      {t(`settings.connectors.sharing.${mode}Short`)}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
               </div>
               {credentials.forcedMode && (
                 <p className="text-muted-foreground text-xs">

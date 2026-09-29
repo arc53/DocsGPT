@@ -79,13 +79,15 @@ describe('ShareToTeamModal credentials', () => {
     });
   };
 
+  // A compact segmented choice, not a pair of picker tiles.
   const toggle = (value: 'owner' | 'member') =>
     Array.from(
       document.body.querySelectorAll<HTMLButtonElement>(
-        '[data-slot="option-card"]',
+        '[data-slot="toggle-group-item"]',
       ),
-    ).find((item) =>
-      item.textContent?.includes(`settings.connectors.sharing.${value}`),
+    ).find(
+      (item) =>
+        item.textContent === `settings.connectors.sharing.${value}Short`,
     )!;
   const picker = () =>
     document.body.querySelector<HTMLButtonElement>('[role="combobox"]')!;
@@ -99,6 +101,7 @@ describe('ShareToTeamModal credentials', () => {
 
   it('warns that members act as the owner in owner mode', async () => {
     await render(credentials());
+    expect(document.body.querySelector('[data-slot="option-card"]')).toBeNull();
     expect(toggle('owner').getAttribute('aria-checked')).toBe('true');
     expect(document.body.textContent).toContain(
       'settings.connectors.share.ownerWarning|lena@meridian.example',

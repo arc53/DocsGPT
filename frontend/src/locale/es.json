@@ -1316,7 +1316,9 @@
       },
       "sharing": {
         "owner": "Los miembros usan mi cuenta",
-        "member": "Cada miembro conecta su propia cuenta"
+        "member": "Cada miembro conecta su propia cuenta",
+        "ownerShort": "Mi cuenta",
+        "memberShort": "La de cada miembro"
       },
       "share": {
         "heading": "Qué cuenta usan los miembros del equipo",
