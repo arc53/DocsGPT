@@ -16,7 +16,7 @@ With a self-hosted LLM, chat, document ingestion and retrieval work offline. The
 | Feature | What it contacts | Air-gapped setting |
 | --- | --- | --- |
 | Default LLM (`LLM_PROVIDER=docsgpt`) | DocsGPT's hosted model API | Point DocsGPT at your own model server |
-| Version check | `gptcloud.arc53.com`, when the worker starts and periodically after | `VERSION_CHECK=0` |
+| Version check | `gptcloud.arc53.com`, when the worker starts and every 7 hours; sends the version, a random instance id, the Python version and the platform ([details](/Deploying/Observability)) | `VERSION_CHECK=0` |
 | Text-to-speech (Speak button) | Google (`google_tts`) or ElevenLabs | `TTS_PROVIDER=none` |
 | Speech-to-text (microphone, audio files) | OpenAI (`openai`) | `STT_PROVIDER=none` |
 | `read_webpage` chat tool | Any URL the model chooses | Leave it out of `DEFAULT_CHAT_TOOLS` |
@@ -101,7 +101,7 @@ DEFAULT_CHAT_TOOLS=["memory","scheduler"]
 HF_HUB_OFFLINE=1
 ```
 
-- `VERSION_CHECK=0` stops the worker's anonymous version check.
+- `VERSION_CHECK=0` stops the worker's outbound version check.
 - `TTS_PROVIDER=none` hides the Speak button on answers.
 - `STT_PROVIDER=none` hides the microphone button, and audio files fail to ingest with a message naming the setting. If your model server offers an OpenAI-compatible `/v1/audio/transcriptions` endpoint, keep `STT_PROVIDER=openai` instead: speech-to-text uses `OPENAI_BASE_URL` too.
 - `DEFAULT_CHAT_TOOLS` defaults to `memory`, `read_webpage` and `scheduler`; this list drops `read_webpage`.

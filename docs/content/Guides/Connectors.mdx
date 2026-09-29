@@ -95,6 +95,12 @@ docsgpt connectors reencrypt
 
 The command prints how many connections it rewrote. Connections it cannot decrypt with either key are marked **Reconnect needed** for their owners. Once it has run, you can remove `ENCRYPTION_SECRET_KEY_PREVIOUS`.
 
+The previous key and `reencrypt` cover connections only. Secrets saved on a tool itself, and API keys of custom models, are read with the current key alone, so their owners have to enter them again after a rotation. A Docker install runs the command inside the backend container: `docker compose exec backend python -m docsgpt connectors reencrypt`.
+
+### Outbound network access
+
+Custom MCP servers and the API Tool reach only hosts on the public internet: `localhost`, private, link-local and other reserved addresses are refused, and there is no allowlist. See [Outbound network access](/Deploying/Security#outbound-network-access).
+
 ### Redirect URIs
 
 OAuth connectors return to one callback, set by `CONNECTOR_REDIRECT_BASE_URI` (default `http://127.0.0.1:7091/api/connectors/callback`). Register it with each provider exactly as set, without query parameters. MCP servers use `MCP_OAUTH_REDIRECT_URI`, which is derived from the same base when unset. Admin > Connectors shows both values with copy buttons.

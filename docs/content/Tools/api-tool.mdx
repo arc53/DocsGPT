@@ -8,8 +8,12 @@ import Image from 'next/image';
 
 # Using the Generic API Tool
 
-The API Tool provides a no-code/low-code solution to make DocsGPT interact with third-party or internal RESTful APIs. It acts as a bridge, allowing the Large Language Model (LLM) to leverage external services based on your chat interactions.
+The API Tool provides a no-code/low-code solution to make DocsGPT interact with publicly reachable RESTful APIs. It acts as a bridge, allowing the Large Language Model (LLM) to leverage external services based on your chat interactions.
  This guide will walk you through its capabilities, configuration, and best practices.
+
+<Callout type="info">
+The API Tool only calls hosts on the public internet. It refuses `localhost`, loopback, private (RFC 1918), link-local, carrier-grade NAT and other reserved addresses, which also rules out services on your LAN and sibling Docker Compose services, and it does not follow redirects. A refused URL returns `URL validation error: ...`. There is no allowlist; for an internal API, write a [custom Python tool](/Tools/creating-a-tool). See [Outbound network access](/Deploying/Security#outbound-network-access).
+</Callout>
 
 ## Introduction to the Generic API Tool
 

@@ -450,10 +450,11 @@ Provide detailed answers appropriate for {{ passthrough.access_level }} access l
 
 ## Security Considerations
 
-1. **Input Sanitization**: Passthrough data is automatically sanitized to prevent injection attacks
-2. **Type Filtering**: Only primitive types (string, int, float, bool, None) are allowed in passthrough
-3. **Autoescaping**: Jinja2 autoescaping is enabled by default
-4. **Size Limits**: Consider the token budget when including large documents
+1. **Sandbox**: Templates render in a Jinja2 sandbox, which blocks unsafe attribute and method access from the template itself.
+2. **No autoescaping**: Autoescaping is off on purpose. The output is a prompt, not HTML, and escaping would corrupt document text (`<` would become `&lt;`).
+3. **Type filtering only**: Passthrough keeps strings, numbers, booleans and `null`, and drops anything else. Values are not sanitized: a passthrough string goes into the prompt exactly as the caller sent it.
+4. **Treat passthrough as untrusted input**: Anyone who can call the agent (an API key holder, a widget visitor) controls those strings, so they can inject instructions into the prompt. Keep them out of instructions the model must obey, delimit and label them as data, and don't let them decide which tools or sources may be used.
+5. **Size Limits**: Consider the token budget when including large documents.
 
 ---
 

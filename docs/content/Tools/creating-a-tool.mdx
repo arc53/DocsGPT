@@ -16,7 +16,7 @@ This guide provides developers with a comprehensive, step-by-step approach to cr
 
 While DocsGPT offers a range of built-in tools and a versatile API Tool, there are many scenarios where a custom Python tool is the best solution:
 
-* **Integrating with Proprietary Systems:** Connect to internal APIs, databases, or services that are not publicly accessible or require complex authentication.
+* **Integrating with Proprietary Systems:** Connect to internal APIs, databases, or services that are not publicly accessible or require complex authentication. The API Tool and MCP servers refuse private and loopback addresses ([Outbound network access](/Deploying/Security#outbound-network-access)); code in a custom tool is not bound by that check.
 * **Adding Domain-Specific Functionalities:** Implement logic specific to your industry or use case that isn't covered by general-purpose tools.
 * **Automating Unique Workflows:** Create tools that orchestrate multiple steps or interact with systems in a way unique to your operational needs.
 * **Connecting to Any System with an Accessible Interface:** If you can interact with a system programmatically using Python (e.g., through libraries, SDKs, or direct HTTP requests), you can likely build a DocsGPT tool for it.

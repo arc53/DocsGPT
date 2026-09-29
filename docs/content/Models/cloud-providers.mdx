@@ -94,7 +94,7 @@ Remember to consult the documentation of your chosen OpenAI-compatible cloud pro
 
 - catalog entries such as DeepSeek, Alibaba and Z.ai, which name their key variable (`api_key_env`) and endpoint in their YAML;
 - your own model YAMLs in [`MODELS_CONFIG_DIR`](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir);
-- per-user custom models that users add in **Settings → Custom Models** (bring your own model). Outbound requests for these use an SSRF-pinned HTTP client.
+- per-user custom models that users add in **Settings → Custom Models** (bring your own model). Outbound requests for these use an SSRF-pinned HTTP client, so their base URL must be a public address: a server on `localhost` or your LAN (such as a local Ollama) is refused. Configure those as the operator, with `OPENAI_BASE_URL` or a model YAML, which is not checked. See [Outbound network access](/Deploying/Security#outbound-network-access).
 
 ## OpenAI Responses API and reasoning
 

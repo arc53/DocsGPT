@@ -9,9 +9,20 @@ import { Callout } from 'nextra/components'
 
 DocsGPT bundles the OpenTelemetry SDK and auto-instrumentation packages
 in `docsgpt/requirements.txt` — they install with the rest of the
-backend deps. Telemetry is **off by default**; opt in by prefixing the
-launch command with `opentelemetry-instrument` and setting OTLP env
-vars.
+backend deps. OpenTelemetry export is **off by default**; opt in by
+prefixing the launch command with `opentelemetry-instrument` and setting
+OTLP env vars.
+
+Two other things are on by default. [Execution traces](#execution-traces)
+are stored locally in Postgres and leave the instance only through an
+exporter you configure. The **version check** is outbound: when the
+worker starts and every 7 hours it sends its version, a random
+`instance_id` kept in the database, the Python version, the platform
+(`sys.platform`) and a client name to `https://gptcloud.arc53.com/api/check`,
+reusing a recent answer cached in Redis instead where it has one. Security
+advisories in the answer appear in the worker log, and high or critical
+ones also print a banner to the worker's console. Turn it off with
+`VERSION_CHECK=0`.
 
 Auto-instrumentation covers Flask, Starlette, Celery, SQLAlchemy,
 psycopg, Redis, requests, and Python logging. Agent runs, LLM calls,
