@@ -27,6 +27,34 @@ def _cm(value):
     yield value
 
 
+def _access_patches(sub, repo, team_access):
+    """Stand in for ``resource_access``: owner when the repo owns the row,
+    the team level when given, else not visible."""
+    from docsgpt.api.user.resource_access import AccessDenied, build
+
+    def _resolve(_conn, resource_type, resource_id, user_id):
+        if repo.get_any.return_value:
+            return build(resource_type, resource_id, "owner", user_id, {})
+        if team_access:
+            return build(resource_type, resource_id, team_access, "owner-x", {})
+        return None
+
+    def _require(conn, resource_type, resource_id, user_id, action):
+        ra = _resolve(conn, resource_type, resource_id, user_id)
+        if ra is None:
+            raise AccessDenied(404, "Agent not found")
+        if not ra.can(action):
+            raise AccessDenied(403, "Your access to this item doesn't allow that")
+        return ra
+
+    if repo.get_any.return_value and isinstance(repo.get_by_id.return_value, Mock):
+        repo.get_by_id.return_value = repo.get_any.return_value
+    return [
+        patch("docsgpt.api.user.agents.routes.resolve", _resolve),
+        patch("docsgpt.api.user.agents.routes.require", _require),
+    ]
+
+
 def _patches(sub, repo, team_access, *, prompt_name="Resolved Prompt", source_details=None):
     if source_details is None:
         source_details = []
@@ -35,7 +63,7 @@ def _patches(sub, repo, team_access, *, prompt_name="Resolved Prompt", source_de
         patch("docsgpt.app.resolve_roles", return_value=["user"]),
         patch("docsgpt.api.user.agents.routes.db_readonly", lambda: _cm(Mock())),
         patch("docsgpt.api.user.agents.routes.AgentsRepository", return_value=repo),
-        patch("docsgpt.api.user.agents.routes.team_access_for", return_value=team_access),
+        *_access_patches(sub, repo, team_access),
         # Resolve names by id (owner-agnostic) — patched so the test never
         # touches the DB; the route is what we're asserting wires them in.
         patch(
@@ -70,7 +98,7 @@ class TestGetAgentTeamFallback:
         data = json.loads(resp.data)
         assert data["ownership"] == "user"
         assert data["team_access"] is None
-        repo.get_by_id.assert_not_called()
+        assert data["access"] == "owner"
 
     def test_team_member_sees_shared_agent(self, client):
         aid = str(uuid.uuid4())
@@ -92,7 +120,8 @@ class TestGetAgentTeamFallback:
         # Owner's public share token / API key are blanked for grantees.
         assert data["shared_token"] == ""
         assert data.get("key", "") == ""
-        # get_by_id only reached AFTER the team grant check.
+        assert data["access"] == "viewer"
+        # get_by_id only reached AFTER the access check.
         repo.get_by_id.assert_called_once_with(aid)
 
     def test_no_access_returns_404(self, client):
@@ -164,7 +193,7 @@ def _update_patches(sub, repo, team_access, can_access_mock):
         patch("docsgpt.app.resolve_roles", return_value=["user"]),
         patch("docsgpt.api.user.agents.routes.db_session", lambda: _cm(Mock())),
         patch("docsgpt.api.user.agents.routes.AgentsRepository", return_value=repo),
-        patch("docsgpt.api.user.agents.routes.team_access_for", return_value=team_access),
+        *_access_patches(sub, repo, team_access),
         patch("docsgpt.api.user.agents.routes.can_access", can_access_mock),
     ]
 

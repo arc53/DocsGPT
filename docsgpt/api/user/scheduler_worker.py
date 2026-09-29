@@ -206,6 +206,33 @@ def _append_one_time_turn(
     return message
 
 
+def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, Any]) -> bool:
+    """Whether the schedule's user may still run this agent.
+
+    The run always executes as the agent's owner. A schedule stored under
+    someone else (set from chat on a shared agent) needs that user to still
+    see the agent — a live team grant, or a public link that is still on —
+    so revoking a grant stops their schedules on the next tick.
+
+    Args:
+        schedule: The schedule row.
+        agent_config: The agent row (or the agentless ephemeral config).
+
+    Returns:
+        True when the run may proceed.
+    """
+    user_id = schedule.get("user_id")
+    agent_id = agent_config.get("id")
+    if not agent_id or not user_id or agent_config.get("user_id") == user_id:
+        return True
+    if agent_config.get("shared"):
+        return True
+    from docsgpt.api.user.resource_access import resolve
+
+    with get_engine().connect() as conn:
+        return resolve(conn, "agent", str(agent_id), user_id) is not None
+
+
 def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Dict[str, Any]:
     """Execute one scheduled run by id; returns a result dict for tracing."""
     if not settings.POSTGRES_URI:
@@ -255,6 +282,22 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         _publish_run_event("schedule.run.failed", updated or run, schedule,
                            error="agent missing")
         return {"status": "failed", "reason": "agent missing"}
+
+    if not _scheduler_still_allowed(schedule, agent_config):
+        with engine.begin() as conn:
+            updated = ScheduleRunsRepository(conn).update(
+                run_id,
+                {
+                    "status": "failed",
+                    "finished_at": datetime.now(timezone.utc),
+                    "error_type": "internal",
+                    "error": "agent access revoked",
+                },
+            )
+            SchedulesRepository(conn).bump_failure_count(str(schedule["id"]))
+        _publish_run_event("schedule.run.failed", updated or run, schedule,
+                           error="agent access revoked")
+        return {"status": "failed", "reason": "agent access revoked"}
 
     with engine.begin() as conn:
         if not ScheduleRunsRepository(conn).mark_running(run_id, celery_task_id):

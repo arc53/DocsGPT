@@ -40,6 +40,7 @@ vi.mock('../FileTree', async () => {
   return {
     default: (props: {
       embedded?: boolean;
+      canEdit?: boolean;
       initialPath?: string;
       actionsTarget?: HTMLElement | null;
       onCrumbsChange?: (crumbs: { label: string }[]) => void;
@@ -51,6 +52,7 @@ vi.mock('../FileTree', async () => {
       return (
         <div
           data-testid="file-tree"
+          data-can-edit={String(props.canEdit)}
           data-initial-path={props.initialPath ?? ''}
         >
           {props.embedded ? 'embedded' : 'page'}
@@ -72,6 +74,7 @@ vi.mock('../Chunks', async () => {
   return {
     default: (props: {
       embedded?: boolean;
+      canEdit?: boolean;
       documentId: string;
       onOpenChunkChange?: (position: number | 'unplaced' | null) => void;
       controllerRef?: { current: { closeChunk: () => boolean } | null };
@@ -90,7 +93,11 @@ vi.mock('../Chunks', async () => {
         };
       }
       return (
-        <div data-testid="chunks" data-doc={props.documentId}>
+        <div
+          data-testid="chunks"
+          data-doc={props.documentId}
+          data-can-edit={String(props.canEdit)}
+        >
           {props.embedded ? 'embedded' : 'page'}
           <button type="button" onClick={() => setOpen(2)}>
             OPEN CHUNK
@@ -104,7 +111,9 @@ vi.mock('../Chunks', async () => {
   };
 });
 vi.mock('../ConnectorTree', () => ({
-  default: () => <div data-testid="connector-tree" />,
+  default: (props: { canEdit?: boolean }) => (
+    <div data-testid="connector-tree" data-can-edit={String(props.canEdit)} />
+  ),
 }));
 
 vi.mock('../../api/services/userService', () => ({
@@ -207,6 +216,7 @@ describe('GraphSourceView', () => {
     sourceType?: string,
     onBack = vi.fn(),
     isNested?: boolean,
+    canEdit?: boolean,
   ) => {
     await act(async () => {
       root.render(
@@ -215,6 +225,7 @@ describe('GraphSourceView', () => {
           sourceName="Key Accounts"
           sourceType={sourceType}
           isNested={isNested}
+          canEdit={canEdit}
           onBackToDocuments={onBack}
           headerAction={<button type="button">Test retrieval</button>}
         />,
@@ -552,6 +563,75 @@ describe('GraphSourceView', () => {
         .querySelector('[data-testid="file-tree"]')
         ?.getAttribute('data-initial-path'),
     ).toBe('');
+  });
+
+  it('passes canEdit to every Files view', async () => {
+    const canEditOf = (testId: string) =>
+      container
+        .querySelector(`[data-testid="${testId}"]`)
+        ?.getAttribute('data-can-edit');
+    await render(undefined, vi.fn(), true, false);
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    expect(canEditOf('file-tree')).toBe('false');
+    await render('connector:file', vi.fn(), true, false);
+    expect(canEditOf('connector-tree')).toBe('false');
+    await render(undefined, vi.fn(), false, false);
+    expect(canEditOf('chunks')).toBe('false');
+    await render(undefined, vi.fn(), false, true);
+    expect(canEditOf('chunks')).toBe('true');
+  });
+
+  const openEntityChunk = async () => {
+    service.getSourceGraphNode.mockResolvedValue(
+      ok({
+        node: {
+          id: 'n',
+          name: 'Nordhaven',
+          type: 'Company',
+          degree: 9,
+          relationships: [],
+          chunks: [
+            {
+              chunk_id: 'c1',
+              text: 'Nordhaven runs the lane.',
+              metadata: { source: 'briefs/Nordhaven.md' },
+            },
+          ],
+        },
+      }),
+    );
+    await openTab('settings.sources.graphrag.view.tabs.entities');
+    const row = Array.from(container.querySelectorAll('tbody tr')).find((r) =>
+      r.textContent?.includes('Nordhaven'),
+    ) as HTMLTableRowElement;
+    await act(async () => row.click());
+    await flush();
+    const tile = Array.from(
+      container.querySelectorAll('button[data-slot="card"]'),
+    ).find((b) =>
+      b.textContent?.includes('Nordhaven runs the lane.'),
+    ) as HTMLButtonElement;
+    await act(async () => tile.click());
+  };
+
+  const drawerButtons = () =>
+    Array.from(document.body.querySelectorAll('[role="dialog"] button')).map(
+      (b) => b.textContent,
+    );
+
+  it("a read-only graph's chunk drawer has Open in Files but no Edit", async () => {
+    await render(undefined, vi.fn(), true, false);
+    await openEntityChunk();
+    expect(drawerButtons()).toContain(
+      'settings.sources.graphrag.view.openInFiles',
+    );
+    expect(drawerButtons()).not.toContain('modals.chunk.edit');
+  });
+
+  it("an editor's graph chunk drawer keeps Edit", async () => {
+    await render(undefined, vi.fn(), true, true);
+    await openEntityChunk();
+    expect(drawerButtons()).toContain('modals.chunk.edit');
   });
 
   it('a new entity filter fetches page 1 once, not the old page first', async () => {

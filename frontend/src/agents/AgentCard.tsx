@@ -6,7 +6,6 @@ import {
   Activity,
   Copy,
   Download,
-  ExternalLink,
   Folder,
   Pencil,
   Pin,
@@ -25,6 +24,7 @@ import { Modal } from '../components/ui/modal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MoveToFolderModal from '../modals/MoveToFolderModal';
 import { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { useSidebarLevel } from '../navigation/SidebarLevelProvider';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import {
@@ -39,6 +39,8 @@ import {
   agentLogsPath,
   sharedAgentPath,
 } from './paths';
+import { can } from '../utils/accessUtils';
+import { canAgent } from './agentAccess';
 import { Agent } from './types';
 
 type AgentCardProps = {
@@ -84,6 +86,59 @@ export default function AgentCard({
     onClick: () => togglePin(),
   };
 
+  const ownedMenu: MenuOption[] = [
+    ...(canAgent(agent, 'view_logs')
+      ? [
+          {
+            icon: Activity,
+            label: t('agents.form.buttons.logs'),
+            onClick: () => goToLevel(agentLogsPath(agent.id)),
+          },
+        ]
+      : []),
+    ...(can(agent, 'view')
+      ? [{ icon: Pencil, label: t('agents.edit'), onClick: openEditor }]
+      : []),
+    ...(can(agent, 'export')
+      ? [
+          {
+            icon: Download,
+            label: t('agents.exportAgent'),
+            onClick: () => handleExport(),
+          },
+        ]
+      : []),
+    ...(can(agent, 'share')
+      ? [
+          {
+            icon: Users,
+            label: t('agents.shareWithTeam'),
+            onClick: () => setShareModalOpen(true),
+          },
+        ]
+      : []),
+    ...(canAgent(agent, 'pin') ? [pinOption] : []),
+    ...(can(agent, 'move_folder')
+      ? [
+          {
+            icon: Folder,
+            label: t('agents.folders.moveToFolder'),
+            onClick: () => setMoveModalState('ACTIVE'),
+          },
+        ]
+      : []),
+    ...(can(agent, 'delete')
+      ? [
+          {
+            icon: Trash2,
+            label: t('agents.form.buttons.delete'),
+            onClick: () => setDeleteConfirmation('ACTIVE'),
+            variant: 'destructive' as const,
+          },
+        ]
+      : []),
+  ];
+
   const menuOptionsConfig: Record<string, MenuOption[]> = {
     template: [
       {
@@ -92,64 +147,14 @@ export default function AgentCard({
         onClick: () => handleDuplicate(),
       },
     ],
-    user: [
-      {
-        icon: Activity,
-        label: t('agents.form.buttons.logs'),
-        onClick: () => goToLevel(agentLogsPath(agent.id)),
-      },
-      {
-        icon: Pencil,
-        label: t('agents.edit'),
-        onClick: openEditor,
-      },
-      {
-        icon: Download,
-        label: t('agents.exportAgent'),
-        onClick: () => handleExport(),
-      },
-      // Sharing is an owner-only action: only show it for agents the user
-      // owns ('user'), not agents shared into their workspace by a team.
-      ...(agent.ownership === 'user'
-        ? [
-            {
-              icon: Users,
-              label: t('agents.shareWithTeam'),
-              onClick: () => setShareModalOpen(true),
-            },
-          ]
-        : []),
-      ...(agent.status === 'published' ? [pinOption] : []),
-      {
-        icon: Folder,
-        label: t('agents.folders.moveToFolder'),
-        onClick: () => setMoveModalState('ACTIVE'),
-      },
-      {
-        icon: Trash2,
-        label: t('agents.form.buttons.delete'),
-        onClick: () => setDeleteConfirmation('ACTIVE'),
-        variant: 'destructive',
-      },
-    ],
-    // Agents shared with the user via a team. They don't own it, so only
-    // non-destructive, non-owner actions are offered: open the config
-    // (editors can save, viewers see it read-only) and pin for quick access.
-    // Logs / Export / Share / Move-to-folder / Delete stay owner-only.
-    team: [
-      {
-        icon: Pencil,
-        label: t('agents.edit'),
-        onClick: openEditor,
-      },
-      ...(agent.status === 'published' ? [pinOption] : []),
-    ],
+    // My agents and the Team section share one menu, built from what the
+    // caller's role allows on this agent (`allowed_actions` from the API).
+    // Editors get Logs, Edit, Export and Pin; viewers only Pin. Share, Move
+    // and Delete stay with the owner unless the owner's switches widen them.
+    user: ownedMenu,
+    team: ownedMenu,
+    // Discovered (link-opened) agents: the card itself opens the agent.
     shared: [
-      {
-        icon: ExternalLink,
-        label: t('agents.card.open'),
-        onClick: () => navigate(sharedAgentPath(agent.shared_token)),
-      },
       pinOption,
       {
         icon: Trash2,
@@ -244,13 +249,31 @@ export default function AgentCard({
   const handleDelete = async () => {
     try {
       const response = await userService.deleteAgent(agent.id ?? '', token);
-      if (!response.ok) throw new Error('Failed to delete agent');
+      if (!response.ok) {
+        const message = await response
+          .json()
+          .then((data: { message?: string }) => data?.message)
+          .catch(() => null);
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: message || t('agents.deleteFailed'),
+          }),
+        );
+        return;
+      }
       const updatedAgents = agents.filter(
         (prevAgent) => prevAgent.id !== agent.id,
       );
       updateAgents?.(updatedAgents);
     } catch (error) {
       console.error('Error:', error);
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('agents.deleteFailed'),
+        }),
+      );
     }
   };
 
@@ -300,12 +323,14 @@ export default function AgentCard({
         }
       }}
     >
-      <ActionMenu
-        options={menuOptions}
-        triggerLabel={t('agents.card.actions')}
-        align="end"
-        className="absolute top-3 right-3 z-10"
-      />
+      {menuOptions.length > 0 && (
+        <ActionMenu
+          options={menuOptions}
+          triggerLabel={t('agents.card.actions')}
+          align="end"
+          className="absolute top-3 right-3 z-10"
+        />
+      )}
       {/* Team access badge — pinned to the top row, left of the ⋯ menu
           (right-11 clears the 28px trigger at right-3) so the two align. */}
       {agent.ownership === 'team' && (

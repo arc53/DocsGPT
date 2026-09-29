@@ -25,6 +25,12 @@ type ListRowProps = Omit<React.ComponentProps<'li'>, 'title'> & {
   /** The whole row is a target: hover fill and an inset focus ring. */
   interactive?: boolean;
   /**
+   * The row whose detail is open beside the list (the team page's shared
+   * resources drawer): the `bg-secondary` brand tint, kept on hover, and
+   * `aria-current`, like a selected TableRow.
+   */
+  selected?: boolean;
+  /**
    * `sm` is the dense row of a narrow side panel (the graph node panel's
    * relationships): 6px / 8px padding, rounded, top-aligned so a small
    * leading mark sits on the title line. Use it in a plain list, not in
@@ -45,6 +51,7 @@ function ListRow({
   description,
   trailing,
   interactive = false,
+  selected = false,
   size = 'default',
   asChild = false,
   className,
@@ -59,7 +66,9 @@ function ListRow({
     // Inset, because a row list usually sits in an overflow-hidden rounded
     // box that would clip an outer ring.
     interactive &&
-      'hover:bg-accent focus-visible:ring-ring/50 w-full text-left transition-colors outline-none focus-visible:ring-3 focus-visible:ring-inset',
+      'focus-visible:ring-ring/50 w-full text-left transition-colors outline-none focus-visible:ring-3 focus-visible:ring-inset',
+    interactive && !selected && 'hover:bg-accent',
+    selected && 'bg-secondary hover:bg-secondary',
     !asChild && className,
   );
   const content = (
@@ -80,7 +89,10 @@ function ListRow({
   if (asChild) {
     return (
       <li data-slot="list-row" className={className} {...props}>
-        <Slot.Root className={rowClass}>
+        <Slot.Root
+          className={rowClass}
+          aria-current={selected ? 'true' : undefined}
+        >
           {React.isValidElement(children)
             ? React.cloneElement(
                 children as React.ReactElement<{ children?: React.ReactNode }>,
@@ -94,7 +106,12 @@ function ListRow({
   }
 
   return (
-    <li data-slot="list-row" className={rowClass} {...props}>
+    <li
+      data-slot="list-row"
+      className={rowClass}
+      aria-current={selected ? 'true' : undefined}
+      {...props}
+    >
       {content}
     </li>
   );

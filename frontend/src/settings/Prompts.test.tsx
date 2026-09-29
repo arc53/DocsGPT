@@ -1,18 +1,41 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
+const dispatch = vi.fn();
 vi.mock('react-redux', () => ({
   useSelector: () => 'test-token',
+  useDispatch: () => dispatch,
 }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('../api/services/userService', () => ({ default: {} }));
+const deletePrompt = vi.fn();
+const updatePrompt = vi.fn();
+const getSinglePrompt = vi.fn();
+vi.mock('../api/services/userService', () => ({
+  default: {
+    deletePrompt: (...args: unknown[]) => deletePrompt(...args),
+    updatePrompt: (...args: unknown[]) => updatePrompt(...args),
+    getSinglePrompt: (...args: unknown[]) => getSinglePrompt(...args),
+  },
+}));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
-vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
-vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
+const promptsModalProps = vi.fn();
+vi.mock('../preferences/PromptsModal', () => ({
+  default: (props: unknown) => {
+    promptsModalProps(props);
+    return null;
+  },
+}));
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: ({ handleSubmit }: { handleSubmit: () => void }) => (
+    <button type="button" data-testid="confirm" onClick={handleSubmit}>
+      confirm
+    </button>
+  ),
+}));
 
 import Prompts from './Prompts';
 
@@ -205,5 +228,204 @@ describe('Prompts', () => {
       expect(action.hasAttribute('title')).toBe(false);
       expect(action.dataset.slot).toBe('tooltip-trigger');
     }
+  });
+
+  describe('access', () => {
+    const json = (body: unknown, ok = true, status = 200) =>
+      Promise.resolve({ ok, status, json: () => Promise.resolve(body) });
+    const own = {
+      id: 'own',
+      name: 'Own prompt',
+      type: 'private',
+      access: 'owner' as const,
+      allowed_actions: [
+        'delete',
+        'duplicate',
+        'edit',
+        'manage_settings',
+        'share',
+        'use',
+      ],
+    };
+    const editor = {
+      id: 'ed',
+      name: 'Editor prompt',
+      type: 'team',
+      access: 'editor' as const,
+      allowed_actions: ['duplicate', 'edit', 'use'],
+    };
+    const viewer = {
+      id: 'vw',
+      name: 'Viewer prompt',
+      type: 'team',
+      access: 'viewer' as const,
+      allowed_actions: ['duplicate', 'use'],
+    };
+    const viewerNoCopy = {
+      id: 'vn',
+      name: 'Locked prompt',
+      type: 'team',
+      access: 'viewer' as const,
+      allowed_actions: ['use'],
+    };
+    const all = [prompts[0], own, editor, viewer, viewerNoCopy];
+
+    beforeEach(() => {
+      dispatch.mockReset();
+      deletePrompt.mockReset();
+      updatePrompt.mockReset();
+      getSinglePrompt.mockReset();
+      promptsModalProps.mockReset();
+    });
+
+    const openPicker = () =>
+      act(() => {
+        const trigger = container.querySelector<HTMLButtonElement>(
+          'button[role="combobox"]',
+        )!;
+        trigger.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+        );
+        trigger.click();
+      });
+    const row = (name: string) =>
+      Array.from(
+        document.body.querySelectorAll<HTMLElement>(
+          '[data-slot="command-item"]',
+        ),
+      ).find((item) => item.textContent?.includes(name))!;
+    const actionsOf = (name: string) =>
+      Array.from(row(name).querySelectorAll('button')).map((b) =>
+        b.getAttribute('aria-label'),
+      );
+    const lastModalProps = () =>
+      promptsModalProps.mock.calls.at(-1)![0] as {
+        readOnly?: boolean;
+        handleEditPrompt: (id: string, type: string) => void;
+        onDuplicate?: () => void;
+      };
+
+    it('gives the owner Edit, Duplicate, Share and Delete', () => {
+      renderPrompts({ prompts: all, selectedPrompt: own });
+      openPicker();
+      expect(actionsOf('Own prompt')).toEqual([
+        'settings.general.promptActions.edit',
+        'settings.general.promptActions.duplicate',
+        'agents.shareWithTeam',
+        'settings.general.promptActions.delete',
+      ]);
+    });
+
+    it('gives an editor Edit and Duplicate', () => {
+      renderPrompts({ prompts: all, selectedPrompt: own });
+      openPicker();
+      expect(actionsOf('Editor prompt')).toEqual([
+        'settings.general.promptActions.edit',
+        'settings.general.promptActions.duplicate',
+      ]);
+    });
+
+    it('gives a viewer View, and Duplicate only when allowed', () => {
+      renderPrompts({ prompts: all, selectedPrompt: own });
+      openPicker();
+      expect(actionsOf('Viewer prompt')).toEqual([
+        'settings.general.promptActions.view',
+        'settings.general.promptActions.duplicate',
+      ]);
+      expect(actionsOf('Locked prompt')).toEqual([
+        'settings.general.promptActions.view',
+      ]);
+    });
+
+    it("opens a viewer's prompt read-only", async () => {
+      getSinglePrompt.mockReturnValue(json({ content: 'Hello' }));
+      renderPrompts({ prompts: all, selectedPrompt: own });
+      openPicker();
+      await act(async () => {
+        (row('Viewer prompt').querySelector('button') as HTMLElement).click();
+      });
+      expect(lastModalProps().readOnly).toBe(true);
+    });
+
+    it('keeps the row and shows an error when the delete fails', async () => {
+      deletePrompt.mockReturnValue(json({ success: false }, false, 403));
+      const setPrompts = vi.fn();
+      renderPrompts({ prompts: all, selectedPrompt: own, setPrompts });
+      openPicker();
+      await act(async () => {
+        (
+          row('Own prompt').querySelector(
+            'button[aria-label="settings.general.promptActions.delete"]',
+          ) as HTMLElement
+        ).click();
+      });
+      await act(async () => {
+        (
+          document.body.querySelector('[data-testid="confirm"]') as HTMLElement
+        ).click();
+      });
+      expect(setPrompts).not.toHaveBeenCalled();
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: {
+            variant: 'destructive',
+            message: 'settings.general.promptActions.deleteFailed',
+          },
+        }),
+      );
+    });
+
+    it('removes the row once the delete succeeds', async () => {
+      deletePrompt.mockReturnValue(json({ success: true }));
+      const setPrompts = vi.fn();
+      renderPrompts({ prompts: all, selectedPrompt: own, setPrompts });
+      openPicker();
+      await act(async () => {
+        (
+          row('Own prompt').querySelector(
+            'button[aria-label="settings.general.promptActions.delete"]',
+          ) as HTMLElement
+        ).click();
+      });
+      await act(async () => {
+        (
+          document.body.querySelector('[data-testid="confirm"]') as HTMLElement
+        ).click();
+      });
+      expect(setPrompts).toHaveBeenCalledWith(
+        all.filter((p) => p.id !== 'own'),
+      );
+    });
+
+    it('sends the loaded updated_at and reports a 409 as an edit conflict', async () => {
+      getSinglePrompt.mockReturnValue(
+        json({ content: 'Hello', updated_at: '2026-09-01T10:00:00Z' }),
+      );
+      updatePrompt.mockReturnValue(
+        json({ success: false, code: 'stale_write' }, false, 409),
+      );
+      renderPrompts({ prompts: all, selectedPrompt: own });
+      openPicker();
+      await act(async () => {
+        (row('Editor prompt').querySelector('button') as HTMLElement).click();
+      });
+      expect(lastModalProps().readOnly).toBe(false);
+      await act(async () => lastModalProps().handleEditPrompt('ed', 'team'));
+      expect(updatePrompt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'ed',
+          expected_updated_at: '2026-09-01T10:00:00Z',
+        }),
+        'test-token',
+      );
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: {
+            variant: 'destructive',
+            message: 'settings.general.promptActions.editConflict',
+          },
+        }),
+      );
+    });
   });
 });

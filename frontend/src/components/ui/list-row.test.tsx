@@ -45,4 +45,15 @@ describe('ListRow', () => {
     expect(html).not.toContain('px-4 py-3');
     expect(html).toContain('focus-visible:ring-inset');
   });
+
+  it('keeps the brand tint on a selected row, hover included', () => {
+    const html = renderToStaticMarkup(
+      <ListRow interactive selected asChild title="Carrier Rates MCP">
+        <button type="button" />
+      </ListRow>,
+    );
+    expect(html).toContain('bg-secondary hover:bg-secondary');
+    expect(html).not.toContain('hover:bg-accent');
+    expect(html).toContain('aria-current="true"');
+  });
 });

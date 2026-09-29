@@ -1,3 +1,5 @@
+import type { AccessFields } from '../../utils/accessUtils';
+
 export type ToolSummary = {
   id: string;
   name: string;
@@ -30,6 +32,9 @@ export type Agent = {
   // sharing with a team) are gated on 'user'.
   ownership?: 'user' | 'team';
   team_access?: 'viewer' | 'editor' | null;
+  /** The caller's role and the actions it allows (see `utils/accessUtils`). */
+  access?: AccessFields['access'];
+  allowed_actions?: AccessFields['allowed_actions'];
   // Owner-agnostic display names resolved server-side (GET /api/get_agent) so a
   // team member viewing a shared agent sees the owner's prompt/source names
   // instead of a blank prompt / "External KB" (the client can only resolve

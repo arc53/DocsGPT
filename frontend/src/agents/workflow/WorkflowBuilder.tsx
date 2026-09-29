@@ -1,6 +1,14 @@
 import 'reactflow/dist/style.css';
 
-import { CircleAlert, Link, Pencil, Play, Trash2, X } from 'lucide-react';
+import {
+  CircleAlert,
+  Link,
+  Pencil,
+  Play,
+  Trash2,
+  Users,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -31,6 +39,8 @@ import userService from '../../api/services/userService';
 import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
 import { ActiveState } from '../../models/misc';
+import ShareToTeamModal from '../../teams/ShareToTeamModal';
+import { can } from '../../utils/accessUtils';
 import {
   selectSourceDocs,
   selectToken,
@@ -85,6 +95,7 @@ import {
   validateJsonSchemaConfig,
 } from './workflowHelpers';
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
+import { canAddToolToOwn } from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
 
@@ -219,6 +230,7 @@ function WorkflowBuilderInner() {
   const [deleteConfirmation, setDeleteConfirmation] =
     useState<ActiveState>('INACTIVE');
   const [agentDetails, setAgentDetails] = useState<ActiveState>('INACTIVE');
+  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isDeletingAgent, setIsDeletingAgent] = useState(false);
   const [currentAgent, setCurrentAgent] = useState<Agent>(
     createEmptyWorkflowAgent(),
@@ -789,7 +801,10 @@ function WorkflowBuilderInner() {
         const toolsResponse = await userService.getUserTools(token);
         if (toolsResponse.ok) {
           const toolsData = await toolsResponse.json();
-          setAvailableTools(toolsData.tools);
+          // Shared tools the caller can't add to their own agents stay out.
+          setAvailableTools(
+            (toolsData.tools as UserTool[]).filter(canAddToolToOwn),
+          );
         }
       } catch (error) {
         console.error('Failed to load models or tools:', error);
@@ -1517,8 +1532,11 @@ function WorkflowBuilderInner() {
     });
   }, [detailsSaveRequested, persistWorkflow]);
 
+  // Save on a saved workflow is an edit; the first save publishes it. A new
+  // workflow has no access fields, so it reads as the owner's.
+  const canSubmit = can(currentAgent, canManageAgent ? 'edit' : 'publish');
   const isPrimaryActionDisabled =
-    isPublishing || (canManageAgent && !hasSavableChanges);
+    !canSubmit || isPublishing || (canManageAgent && !hasSavableChanges);
   const primaryActionLabel = canManageAgent
     ? t('agents.form.buttons.save')
     : t('agents.form.buttons.publish');
@@ -1642,6 +1660,7 @@ function WorkflowBuilderInner() {
             agentEditPath={agentEditPath(effectiveAgentId, true)}
             agentImage={currentAgentImage}
             currentPage="overview"
+            access={canManageAgent ? currentAgent : undefined}
             onNameClick={openDetails}
             status={
               canManageAgent && currentAgent.status !== 'draft' ? (
@@ -1678,16 +1697,18 @@ function WorkflowBuilderInner() {
               <Play />
               {t('agents.form.sections.preview')}
             </Button>
-            <Button
-              type="button"
-              onClick={handlePrimaryAction}
-              disabled={isPrimaryActionDisabled}
-              loading={showPrimaryActionSpinner}
-              size="field"
-              shape="pill"
-            >
-              {primaryActionLabel}
-            </Button>
+            {canSubmit && (
+              <Button
+                type="button"
+                onClick={handlePrimaryAction}
+                disabled={isPrimaryActionDisabled}
+                loading={showPrimaryActionSpinner}
+                size="field"
+                shape="pill"
+              >
+                {primaryActionLabel}
+              </Button>
+            )}
             <ActionMenu
               size="toolbar"
               triggerLabel={t('agents.form.buttons.moreActions')}
@@ -1697,13 +1718,26 @@ function WorkflowBuilderInner() {
                   icon: Pencil,
                   onClick: openDetails,
                 },
-                ...(canManageAgent
+                ...(canManageAgent && can(currentAgent, 'manage_access_details')
                   ? [
                       {
                         label: t('agents.form.buttons.accessDetails'),
                         icon: Link,
                         onClick: () => setAgentDetails('ACTIVE'),
                       },
+                    ]
+                  : []),
+                ...(canManageAgent && can(currentAgent, 'share')
+                  ? [
+                      {
+                        label: t('agents.shareWithTeam'),
+                        icon: Users,
+                        onClick: () => setShareModalOpen(true),
+                      },
+                    ]
+                  : []),
+                ...(canManageAgent && can(currentAgent, 'delete')
+                  ? [
                       {
                         label: t('agents.form.buttons.delete'),
                         icon: Trash2,
@@ -1927,6 +1961,14 @@ function WorkflowBuilderInner() {
           cancelLabel={t('agents.form.buttons.cancel')}
           variant="destructive"
         />
+        {shareModalOpen && effectiveAgentId && (
+          <ShareToTeamModal
+            resourceType="agent"
+            resourceId={effectiveAgentId}
+            resourceName={workflowName}
+            onClose={() => setShareModalOpen(false)}
+          />
+        )}
         {canManageAgent && (
           <AgentDetailsModal
             agent={agentForDetails}

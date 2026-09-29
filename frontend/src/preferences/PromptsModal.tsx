@@ -376,13 +376,13 @@ function EditPrompt({
   setEditPromptName,
   editPromptContent,
   setEditPromptContent,
-  currentPromptEdit,
+  isReadOnly,
 }: {
   editPromptName: string;
   setEditPromptName: (name: string) => void;
   editPromptContent: string;
   setEditPromptContent: (content: string) => void;
-  currentPromptEdit: { name: string; id: string; type: string };
+  isReadOnly: boolean;
 }) {
   const { t } = useTranslation();
   const systemVariableOptions = React.useMemo(
@@ -390,7 +390,6 @@ function EditPrompt({
     [t],
   );
   const toolVariables = useToolVariables();
-  const isReadOnly = currentPromptEdit.type === 'public';
 
   return (
     <div>
@@ -468,6 +467,7 @@ export default function PromptsModal({
   handleEditPrompt,
   onDuplicate,
   duplicateSourceName,
+  readOnly = false,
 }: {
   existingPrompts: { name: string; id: string; type: string }[];
   modalState: ActiveState;
@@ -491,6 +491,8 @@ export default function PromptsModal({
   handleEditPrompt?: (id: string, type: string) => void;
   onDuplicate?: () => void;
   duplicateSourceName?: string | null;
+  /** Open an EDIT prompt as a view: the caller may not edit it. */
+  readOnly?: boolean;
 }) {
   const disableSave = React.useMemo(() => {
     if (type === 'EDIT') {
@@ -515,7 +517,8 @@ export default function PromptsModal({
   ]);
 
   const { t } = useTranslation();
-  const isReadOnly = type === 'EDIT' && currentPromptEdit.type === 'public';
+  const isReadOnly =
+    type === 'EDIT' && (readOnly || currentPromptEdit.type === 'public');
   const closeModal = () => setModalState('INACTIVE');
 
   let view;
@@ -554,7 +557,7 @@ export default function PromptsModal({
         setEditPromptName={setEditPromptName}
         editPromptContent={editPromptContent}
         setEditPromptContent={setEditPromptContent}
-        currentPromptEdit={currentPromptEdit}
+        isReadOnly={isReadOnly}
       />
     );
   }

@@ -17,6 +17,8 @@ from flask_restx import fields, Namespace, Resource
 
 
 from docsgpt.api import api
+from docsgpt.api.user.resource_access import AccessDenied
+from docsgpt.api.user.sources.access import load_source
 from docsgpt.api.user.tasks import (
     ingest_connector_task,
 )
@@ -26,7 +28,6 @@ from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
     owns_connector_session,
 )
-from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 
@@ -499,6 +500,40 @@ class ConnectorDisconnect(Resource):
             return make_response(jsonify({"success": False, "error": "Failed to disconnect session"}), 500)
 
 
+def _owner_connector_session(conn, owner_id: str, provider: str) -> Optional[dict]:
+    """The owner's usable connector session for ``provider``, or None.
+
+    Used when a team editor syncs a shared connector source: the sync runs
+    with the owner's account. A session with no token, no stored credentials,
+    or an expired access token that can't be refreshed counts as missing.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The source owner's ``sub``.
+        provider: The source's connector provider.
+
+    Returns:
+        Optional[dict]: The session row, or None when the owner must reconnect.
+    """
+    candidates = [
+        s for s in ConnectorSessionsRepository(conn).list_for_user(owner_id)
+        if owns_connector_session(s, owner_id, provider)
+        and s.get("session_token") and s.get("token_info")
+    ]
+    if not candidates:
+        return None
+    session = candidates[0]
+    token_info = session["token_info"]
+    if not token_info.get("refresh_token"):
+        try:
+            if ConnectorCreator.create_auth(provider).is_token_expired(token_info):
+                return None
+        except Exception:
+            # Providers without an expiry check leave the verdict to the sync.
+            pass
+    return session
+
+
 @connectors_ns.route("/api/connectors/sync")
 class ConnectorSync(Resource):
     @api.expect(
@@ -506,7 +541,11 @@ class ConnectorSync(Resource):
             "ConnectorSyncModel",
             {
                 "source_id": fields.String(required=True, description="Source ID to sync"),
-                "session_token": fields.String(required=True, description="Authentication token")
+                "session_token": fields.String(
+                    required=False,
+                    description="The owner's connector session token (ignored for team editors, "
+                    "whose sync uses the owner's session)",
+                )
             },
         )
     )
@@ -517,32 +556,40 @@ class ConnectorSync(Resource):
             return make_response(jsonify({"success": False}), 401)
 
         try:
-            data = request.get_json()
+            data = request.get_json() or {}
             source_id = data.get('source_id')
             session_token = data.get('session_token')
 
-            if not all([source_id, session_token]):
+            if not source_id:
                 return make_response(
                     jsonify({
                         "success": False,
                         "error": "source_id and session_token are required"
-                    }), 
+                    }),
                     400
                 )
             user_id = decoded_token.get('sub')
-            with db_readonly() as conn:
-                source = SourcesRepository(conn).get_any(source_id, user_id)
-            if not source:
+            # Owner or team editor. The sync always runs AS the owner, with the
+            # owner's connector account: a grantee can't point the source at
+            # their own account (that is ``reconnect``, owner-only).
+            try:
+                with db_readonly() as conn:
+                    source, ra = load_source(conn, source_id, user_id, "edit")
+            except AccessDenied as err:
+                return make_response(
+                    jsonify({"success": False, "error": err.message, "message": err.message}),
+                    err.status,
+                )
+            owner_id = ra.owner_id
+            is_owner = ra.access == "owner"
+            if is_owner and not session_token:
                 return make_response(
                     jsonify({
                         "success": False,
-                        "error": "Source not found"
+                        "error": "source_id and session_token are required"
                     }),
-                    404
+                    400
                 )
-
-            # ``get_any`` already scopes by ``user_id``; an extra guard
-            # here would be dead code.
 
             remote_data = source.get('remote_data') or {}
             if isinstance(remote_data, str):
@@ -558,17 +605,31 @@ class ConnectorSync(Resource):
                     jsonify({
                         "success": False,
                         "error": "Source provider not found in remote_data"
-                    }), 
+                    }),
                     400
                 )
 
-            with db_readonly() as conn:
-                session = ConnectorSessionsRepository(conn).get_by_session_token(session_token)
-            if not owns_connector_session(session, user_id, source_type):
-                return make_response(
-                    jsonify({"success": False, "error": "Invalid or unauthorized session"}),
-                    401,
-                )
+            if is_owner:
+                with db_readonly() as conn:
+                    session = ConnectorSessionsRepository(conn).get_by_session_token(session_token)
+                if not owns_connector_session(session, user_id, source_type):
+                    return make_response(
+                        jsonify({"success": False, "error": "Invalid or unauthorized session"}),
+                        401,
+                    )
+            else:
+                with db_readonly() as conn:
+                    session = _owner_connector_session(conn, owner_id, source_type)
+                if session is None:
+                    message = (
+                        "The owner needs to reconnect this source's account "
+                        "before it can be synced."
+                    )
+                    return make_response(
+                        jsonify({"success": False, "error": message, "message": message}),
+                        409,
+                    )
+                session_token = session["session_token"]
 
             # Extract configuration from remote_data
             file_ids = remote_data.get('file_ids', [])
@@ -578,7 +639,7 @@ class ConnectorSync(Resource):
             # Start the sync task
             task = ingest_connector_task.delay(
                 job_name=source.get('name'),
-                user=decoded_token.get('sub'),
+                user=owner_id,
                 source_type=source_type,
                 session_token=session_token,
                 file_ids=file_ids,

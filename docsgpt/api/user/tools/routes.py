@@ -1,7 +1,12 @@
 """Tool management routes."""
 
+import copy
+from typing import Any, Optional
+from urllib.parse import urlparse
+
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from sqlalchemy import Connection, text
 
 from docsgpt.agents.default_tools import (
     builtin_agent_tools_for_management,
@@ -13,12 +18,21 @@ from docsgpt.agents.default_tools import (
     is_synthesized_tool_id,
     WORKFLOW_ONLY_BUILTINS,
 )
+from docsgpt.agents.tool_executor import API_TOOL_SECRET_SECTIONS, API_TOOL_SECRETS_KEY
 from docsgpt.agents.tools.spec_parser import parse_spec
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api import api
 from docsgpt.api.pat.rules import filter_listing
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
-from docsgpt.api.user.team_sharing import effective_write_owner, visible_with_access
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    delete_settings,
+    payload_for,
+    require,
+    ResourceAccess,
+    settings_many,
+)
+from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
@@ -26,6 +40,9 @@ from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.notes import NotesRepository
 from docsgpt.storage.db.repositories.todos import TodosRepository
+from docsgpt.storage.db.repositories.user_tool_preferences import (
+    UserToolPreferencesRepository,
+)
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -166,6 +183,238 @@ def _merge_secrets_on_update(new_config, existing_config, config_requirements, u
     return storage_config
 
 
+# ---------------------------------------------------------------------------
+# Access + secrets helpers
+# ---------------------------------------------------------------------------
+_CREDENTIALS_FOR_NEW_SERVER = "Enter credentials for the new server"
+_FORBIDDEN_MESSAGE = "Your access to this item doesn't allow that"
+_MCP_CREDENTIAL_AUTH_TYPES = {"api_key", "bearer", "basic"}
+_META_KEYS = ("name", "displayName", "customName", "description", "actions")
+
+
+class CredentialsRequired(Exception):
+    """A save moved a tool to a new host without supplying new secrets."""
+
+
+def denied_response(err: AccessDenied):
+    """JSON response for an :class:`AccessDenied` (403 or 404)."""
+    return make_response(jsonify({"success": False, "message": err.message}), err.status)
+
+
+def check_action(ra: ResourceAccess, action: str) -> None:
+    """Raise a 403 :class:`AccessDenied` unless ``ra`` allows ``action``."""
+    if not ra.can(action):
+        raise AccessDenied(403, _FORBIDDEN_MESSAGE)
+
+
+def url_host(url: Any) -> str:
+    """Lower-cased host of ``url`` ('' when it has none)."""
+    try:
+        return (urlparse(str(url or "").strip()).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _has_value(value: Any) -> bool:
+    return value is not None and value != ""
+
+
+def _secret_props(action: Any):
+    """Yield ``(section, param, spec)`` for an api_tool action's secret-bearing params."""
+    if not isinstance(action, dict):
+        return
+    for section in API_TOOL_SECRET_SECTIONS:
+        block = action.get(section)
+        props = block.get("properties") if isinstance(block, dict) else None
+        if not isinstance(props, dict):
+            continue
+        for param, spec in props.items():
+            if isinstance(spec, dict):
+                yield section, param, spec
+
+
+def _stored_api_tool_secrets(config: dict, owner_id: str) -> dict:
+    """Decrypted ``{action: {section: {param: value}}}`` plus legacy plaintext values."""
+    config = config or {}
+    blob = config.get(API_TOOL_SECRETS_KEY)
+    secrets: dict = decrypt_credentials(blob, owner_id) if blob else {}
+    for name, action in (config.get("actions") or {}).items():
+        for section, param, spec in _secret_props(action):
+            value = spec.get("value")
+            if _has_value(value):
+                secrets.setdefault(name, {}).setdefault(section, {}).setdefault(param, value)
+    return secrets
+
+
+def mask_api_tool_config(config: dict) -> dict:
+    """Copy of an api_tool config with header/query values blanked and ``has_value`` set.
+
+    Args:
+        config: The stored ``user_tools.config``.
+
+    Returns:
+        A deep copy safe to return to any caller: the encrypted blob is dropped
+        and every header / query-param entry has ``value: ""`` plus ``has_value``.
+    """
+    out = copy.deepcopy(config or {})
+    out.pop(API_TOOL_SECRETS_KEY, None)
+    for action in (out.get("actions") or {}).values():
+        for _section, _param, spec in _secret_props(action):
+            spec["has_value"] = _has_value(spec.get("value")) or bool(spec.get("has_value"))
+            spec["value"] = ""
+    return out
+
+
+def _seal_api_tool_secrets(new_config: dict, existing_config: dict, owner_id: str) -> dict:
+    """Move api_tool header/query values into an encrypted blob keyed by the owner.
+
+    An incoming entry with a value replaces the stored one; an empty value with
+    ``has_value`` keeps it (legacy plaintext values included); anything else
+    clears it. When an action's URL host changes the stored values are not
+    carried over.
+
+    Args:
+        new_config: The config the client sent.
+        existing_config: The stored config (``{}`` on create).
+        owner_id: The tool row's ``user_id`` — the encryption key owner.
+
+    Returns:
+        The config to persist.
+
+    Raises:
+        CredentialsRequired: a host changed, the client asked to keep a value,
+            and there is nothing to keep.
+    """
+    existing_config = existing_config or {}
+    stored = _stored_api_tool_secrets(existing_config, owner_id)
+    old_actions = existing_config.get("actions") or {}
+    out = copy.deepcopy(new_config or {})
+    out.pop(API_TOOL_SECRETS_KEY, None)
+    sealed: dict = {}
+    for name, action in (out.get("actions") or {}).items():
+        old = old_actions.get(name) if isinstance(old_actions, dict) else None
+        moved = isinstance(old, dict) and url_host(old.get("url")) != url_host(
+            action.get("url") if isinstance(action, dict) else ""
+        )
+        prior = {} if moved else stored.get(name, {})
+        for section, param, spec in _secret_props(action):
+            value = spec.get("value")
+            if _has_value(value):
+                kept = value
+            elif spec.get("has_value"):
+                kept = (prior.get(section) or {}).get(param)
+                if not _has_value(kept):
+                    if moved:
+                        raise CredentialsRequired(_CREDENTIALS_FOR_NEW_SERVER)
+                    kept = None
+            else:
+                kept = None
+            spec["value"] = ""
+            spec["has_value"] = kept is not None
+            if kept is not None:
+                sealed.setdefault(name, {}).setdefault(section, {})[param] = kept
+    if sealed:
+        out[API_TOOL_SECRETS_KEY] = encrypt_credentials(sealed, owner_id)
+    return out
+
+
+def _api_tool_config_needs_credentials(new_config: dict, existing_config: dict) -> bool:
+    """Whether an api_tool config change touches endpoints or secrets.
+
+    Descriptions, parameter schemas and on/off flags are ``edit``; a new or
+    changed URL, a new action (it brings a URL), a secret value or any other
+    config key is ``edit_credentials``.
+    """
+    new_config = new_config or {}
+    existing_config = existing_config or {}
+    ignore = ("actions", API_TOOL_SECRETS_KEY, "has_encrypted_credentials")
+    if {k: v for k, v in new_config.items() if k not in ignore} != {
+        k: v for k, v in existing_config.items() if k not in ignore
+    }:
+        return True
+    old_actions = existing_config.get("actions") or {}
+    for name, action in (new_config.get("actions") or {}).items():
+        old = old_actions.get(name)
+        if not isinstance(old, dict) or not isinstance(action, dict):
+            return True
+        if str(action.get("url") or "") != str(old.get("url") or ""):
+            return True
+        for _section, _param, spec in _secret_props(action):
+            if _has_value(spec.get("value")):
+                return True
+    return False
+
+
+def _mcp_host_changed(new_config: dict, existing_config: dict) -> bool:
+    old_url = (existing_config or {}).get("server_url")
+    return bool(old_url) and url_host(old_url) != url_host((new_config or {}).get("server_url"))
+
+
+def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: dict) -> dict:
+    """Validate-free merge of an incoming config with the stored one, as the owner.
+
+    Handles the three secret stores: ``config_requirements`` secrets
+    (``encrypted_credentials``), api_tool header/query values, and the MCP
+    host-change rule (a new server host drops stored credentials).
+
+    Raises:
+        CredentialsRequired: the MCP host changed and no new secret arrived.
+    """
+    owner_id = tool_doc["user_id"]
+    existing_config = tool_doc.get("config") or {}
+    if tool_doc.get("name") == "api_tool":
+        return _seal_api_tool_secrets(new_config, existing_config, owner_id)
+    moved = tool_doc.get("name") == "mcp_tool" and _mcp_host_changed(new_config, existing_config)
+    if moved:
+        existing_config = {k: v for k, v in existing_config.items() if k != "encrypted_credentials"}
+    final = _merge_secrets_on_update(new_config, existing_config, config_requirements, owner_id)
+    if moved and final.get("auth_type") in _MCP_CREDENTIAL_AUTH_TYPES and not final.get(
+        "encrypted_credentials"
+    ):
+        raise CredentialsRequired(_CREDENTIALS_FOR_NEW_SERVER)
+    return final
+
+
+def _shared_via(conn: Connection, user_id: str, tool_ids: list) -> dict:
+    """``tool_id -> team name`` through which a grant reaches ``user_id``."""
+    ids = [str(t) for t in tool_ids if looks_like_uuid(str(t))]
+    if not ids:
+        return {}
+    rows = conn.execute(
+        text(
+            """
+            SELECT DISTINCT ON (g.resource_id) g.resource_id, t.name
+            FROM team_resource_grants g
+            JOIN team_members m ON m.team_id = g.team_id
+            JOIN teams t ON t.id = g.team_id
+            WHERE m.user_id = :user_id AND g.resource_type = 'tool'
+              AND g.resource_id = ANY(CAST(:ids AS uuid[]))
+              AND (g.target_user_id IS NULL OR g.target_user_id = :user_id)
+            ORDER BY g.resource_id, (g.access_level = 'editor') DESC, t.name
+            """
+        ),
+        {"user_id": user_id, "ids": ids},
+    ).fetchall()
+    return {str(r[0]): r[1] for r in rows}
+
+
+def _owner_labels(conn: Connection, owner_ids) -> dict:
+    """``user_id -> email`` for the owners that have one on record."""
+    ids = sorted({str(o) for o in owner_ids if o})
+    if not ids:
+        return {}
+    rows = conn.execute(
+        text("SELECT user_id, email FROM users WHERE user_id = ANY(:ids) AND email IS NOT NULL"),
+        {"ids": ids},
+    ).fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+def _load_owned_row(conn: Connection, ra: ResourceAccess) -> Optional[dict]:
+    """The tool row behind ``ra``, read as its owner."""
+    return UserToolsRepository(conn).get_any(ra.resource_id, ra.owner_id)
+
+
 def transform_actions(actions_metadata):
     """Set default flags on action metadata for storage.
 
@@ -239,6 +488,10 @@ class GetTools(Resource):
                 team_shared = visible_with_access(conn, user, "tool")
                 shared_ids = [tid for tid in team_shared if tid not in owned_ids]
                 shared_rows = tools_repo.list_by_ids(shared_ids)
+                switches = settings_many(conn, "tool", [*owned_ids, *shared_ids])
+                prefs = UserToolPreferencesRepository(conn).in_chat_many(user, shared_ids)
+                shared_via = _shared_via(conn, user, shared_ids)
+                owner_labels = _owner_labels(conn, [r.get("user_id") for r in shared_rows])
             user_tools = []
 
             def _shape_tool(row, *, ownership="user", force_strip_secret=False):
@@ -257,14 +510,25 @@ class GetTools(Resource):
                 ):
                     tool_copy["config"]["has_encrypted_credentials"] = True
                     tool_copy["config"].pop("encrypted_credentials", None)
+                if tool_copy.get("name") == "api_tool":
+                    # Header / query-param values are secrets for everyone.
+                    tool_copy["config"] = mask_api_tool_config(tool_copy.get("config") or {})
                 tool_copy["ownership"] = ownership
                 return tool_copy
 
             for row in rows:
-                user_tools.append(_shape_tool(row))
+                shaped = _shape_tool(row)
+                shaped.update(payload_for("tool", "owner", switches.get(str(row["id"]))))
+                shaped["in_chat"] = bool(row.get("status"))
+                user_tools.append(shaped)
             for row in shared_rows:
+                tid = str(row["id"])
                 shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
-                shaped["team_access"] = team_shared.get(str(row["id"]))
+                shaped["team_access"] = team_shared.get(tid)
+                shaped.update(payload_for("tool", team_shared.get(tid), switches.get(tid)))
+                shaped["in_chat"] = prefs.get(tid, False)
+                shaped["shared_via"] = shared_via.get(tid)
+                shaped["owner_label"] = owner_labels.get(row.get("user_id"))
                 user_tools.append(shaped)
 
             # ``scheduler`` is dual-registered (default chat tool + agent-
@@ -275,6 +539,7 @@ class GetTools(Resource):
             for default_row in default_tools_for_management(user_doc):
                 default_copy = _row_to_api(default_row)
                 default_copy["default"] = True
+                default_copy["in_chat"] = bool(default_copy.get("status"))
                 if default_copy.get("name") in BUILTIN_AGENT_TOOLS:
                     default_copy["builtin"] = True
                 seen_ids.add(str(default_copy["id"]))
@@ -386,9 +651,12 @@ class CreateTool(Resource):
                         ),
                         400,
                     )
-            storage_config = _encrypt_secret_fields(
-                data["config"], config_requirements, user
-            )
+            if data["name"] == "api_tool":
+                storage_config = _seal_api_tool_secrets(data["config"], {}, user)
+            else:
+                storage_config = _encrypt_secret_fields(
+                    data["config"], config_requirements, user
+                )
             with db_session() as conn:
                 created = UserToolsRepository(conn).create(
                     user,
@@ -478,43 +746,47 @@ class UpdateTool(Resource):
                 ),
                 400,
             )
+        if "config" in data and isinstance(data["config"], dict) and "actions" in data["config"]:
+            for action_name in list((data["config"]["actions"] or {}).keys()):
+                if not validate_function_name(action_name):
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": f"Invalid function name '{action_name}'. Function names must match pattern '^[a-zA-Z0-9_-]+$'.",
+                                "param": "tools[].function.name",
+                            }
+                        ),
+                        400,
+                    )
         try:
             update_data: dict = {}
-            for key in ("name", "displayName", "customName", "description", "actions"):
+            for key in _META_KEYS:
                 if key in data:
                     update_data[key] = data[key]
-            if "config" in data:
-                if "actions" in data["config"]:
-                    for action_name in list(data["config"]["actions"].keys()):
-                        if not validate_function_name(action_name):
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": f"Invalid function name '{action_name}'. Function names must match pattern '^[a-zA-Z0-9_-]+$'.",
-                                        "param": "tools[].function.name",
-                                    }
-                                ),
-                                400,
-                            )
-                with db_session() as conn:
-                    repo = UserToolsRepository(conn)
-                    tool_doc = repo.get_any(data["id"], user)
-                    if not tool_doc:
-                        return make_response(
-                            jsonify({"success": False, "message": "Tool not found"}),
-                            404,
-                        )
+            with db_session() as conn:
+                ra = require(conn, "tool", data["id"], user, "use")
+                tool_doc = _load_owned_row(conn, ra)
+                if not tool_doc:
+                    return make_response(
+                        jsonify({"success": False, "message": "Tool not found"}), 404,
+                    )
+                if update_data:
+                    check_action(ra, "edit")
+                if "config" in data:
                     tool_name = tool_doc.get("name", data.get("name"))
+                    existing_config = tool_doc.get("config", {}) or {}
+                    if tool_name == "api_tool" and not _api_tool_config_needs_credentials(
+                        data["config"], existing_config
+                    ):
+                        check_action(ra, "edit")
+                    else:
+                        check_action(ra, "edit_credentials")
                     tool_instance = tool_manager.tools.get(tool_name)
                     config_requirements = (
-                        tool_instance.get_config_requirements()
-                        if tool_instance
-                        else {}
+                        tool_instance.get_config_requirements() if tool_instance else {}
                     )
-                    existing_config = tool_doc.get("config", {}) or {}
                     has_existing_secrets = "encrypted_credentials" in existing_config
-
                     if config_requirements:
                         validation_errors = _validate_config(
                             data["config"], config_requirements,
@@ -529,29 +801,27 @@ class UpdateTool(Resource):
                                 }),
                                 400,
                             )
-
-                    update_data["config"] = _merge_secrets_on_update(
-                        data["config"], existing_config, config_requirements, user
+                    update_data["config"] = _prepare_tool_config(
+                        tool_doc, data["config"], config_requirements
                     )
-                    if "status" in data:
-                        update_data["status"] = bool(data["status"])
-                    repo.update(
-                        str(tool_doc["id"]), user, _api_to_update_fields(update_data),
-                    )
-            else:
                 if "status" in data:
-                    update_data["status"] = bool(data["status"])
-                with db_session() as conn:
-                    repo = UserToolsRepository(conn)
-                    tool_doc = repo.get_any(data["id"], user)
-                    if not tool_doc:
-                        return make_response(
-                            jsonify({"success": False, "message": "Tool not found"}),
-                            404,
+                    if ra.access == "owner":
+                        update_data["status"] = bool(data["status"])
+                    else:
+                        # A grantee's chat switch is personal; the owner's
+                        # ``status`` is the owner's own chat setting.
+                        check_action(ra, "use_in_own")
+                        UserToolPreferencesRepository(conn).set_in_chat(
+                            user, str(tool_doc["id"]), bool(data["status"])
                         )
-                    repo.update(
-                        str(tool_doc["id"]), user, _api_to_update_fields(update_data),
+                if update_data:
+                    UserToolsRepository(conn).update(
+                        str(tool_doc["id"]), ra.owner_id, _api_to_update_fields(update_data),
                     )
+        except AccessDenied as err:
+            return denied_response(err)
+        except CredentialsRequired as err:
+            return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:
             current_app.logger.error(f"Error updating tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -596,7 +866,8 @@ class UpdateToolConfig(Resource):
         try:
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
-                tool_doc = repo.get_any(data["id"], user)
+                ra = require(conn, "tool", data["id"], user, "edit_credentials")
+                tool_doc = _load_owned_row(conn, ra)
                 if not tool_doc:
                     return make_response(jsonify({"success": False}), 404)
 
@@ -633,11 +904,13 @@ class UpdateToolConfig(Resource):
                             400,
                         )
 
-                final_config = _merge_secrets_on_update(
-                    data["config"], existing_config, config_requirements, user
-                )
+                final_config = _prepare_tool_config(tool_doc, data["config"], config_requirements)
 
-                repo.update(str(tool_doc["id"]), user, {"config": final_config})
+                repo.update(str(tool_doc["id"]), ra.owner_id, {"config": final_config})
+        except AccessDenied as err:
+            return denied_response(err)
+        except CredentialsRequired as err:
+            return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:
             current_app.logger.error(
                 f"Error updating tool config: {err}", exc_info=True
@@ -684,20 +957,12 @@ class UpdateToolActions(Resource):
             )
         try:
             with db_session() as conn:
-                repo = UserToolsRepository(conn)
-                tool_doc = repo.get_any(data["id"], user)
-                if tool_doc:
-                    repo.update(str(tool_doc["id"]), user, {"actions": data["actions"]})
-                else:
-                    # Team editor write path (secrets stay owner-only — actions
-                    # carry no credentials, so editing them is safe).
-                    owner = effective_write_owner(conn, "tool", data["id"], user)
-                    if not owner:
-                        return make_response(
-                            jsonify({"success": False, "message": "Tool not found"}),
-                            404,
-                        )
-                    repo.update(data["id"], owner, {"actions": data["actions"]})
+                # ``edit`` covers action on/off, descriptions and approval
+                # (``require_approval``); actions carry no credentials.
+                ra = require(conn, "tool", data["id"], user, "edit")
+                UserToolsRepository(conn).update(ra.resource_id, ra.owner_id, {"actions": data["actions"]})
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(
                 f"Error updating tool actions: {err}", exc_info=True
@@ -753,16 +1018,19 @@ class UpdateToolStatus(Resource):
                     400,
                 )
             with db_session() as conn:
-                repo = UserToolsRepository(conn)
-                tool_doc = repo.get_any(data["id"], user)
-                if not tool_doc:
-                    return make_response(
-                        jsonify({"success": False, "message": "Tool not found"}),
-                        404,
+                ra = require(conn, "tool", data["id"], user, "use")
+                if ra.access == "owner":
+                    UserToolsRepository(conn).update(
+                        ra.resource_id, ra.owner_id, {"status": bool(data["status"])},
                     )
-                repo.update(
-                    str(tool_doc["id"]), user, {"status": bool(data["status"])},
-                )
+                else:
+                    # A grantee's "In my chats" switch is personal.
+                    check_action(ra, "use_in_own")
+                    UserToolPreferencesRepository(conn).set_in_chat(
+                        user, ra.resource_id, bool(data["status"])
+                    )
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(
                 f"Error updating tool status: {err}", exc_info=True
@@ -802,13 +1070,13 @@ class DeleteTool(Resource):
             )
         try:
             with db_session() as conn:
-                repo = UserToolsRepository(conn)
-                tool_doc = repo.get_any(data["id"], user)
-                if not tool_doc:
-                    return make_response(
-                        jsonify({"success": False, "message": "Tool not found"}), 404
-                    )
-                repo.delete(str(tool_doc["id"]), user)
+                ra = require(conn, "tool", data["id"], user, "delete")
+                # Grants are removed by the ``user_tools`` delete trigger and
+                # chat preferences by FK cascade; the switches have no FK.
+                UserToolsRepository(conn).delete(ra.resource_id, ra.owner_id)
+                delete_settings(conn, "tool", ra.resource_id)
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as err:
             current_app.logger.error(f"Error deleting tool: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)

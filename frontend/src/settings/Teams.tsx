@@ -1,5 +1,7 @@
 import {
+  ArrowUpRight,
   Bot,
+  Check,
   ChevronRight,
   CircleAlert,
   FileText,
@@ -9,17 +11,27 @@ import {
   Trash2,
   Users,
   Wrench,
+  X,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import teamsService, {
+  AccessLevel,
+  ResourceSettingsResponse,
   ResourceType,
+  TeamGrant,
   TeamRole,
 } from '../api/services/teamsService';
 import userService from '../api/services/userService';
+import {
+  agentChatPath,
+  agentEditPath,
+  agentEditPathFor,
+} from '../agents/paths';
+import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import SectionShell from '../navigation/SectionShell';
@@ -34,6 +46,10 @@ import {
   CardFooter,
   CardTitle,
 } from '../components/ui/card';
+import {
+  DescriptionItem,
+  DescriptionList,
+} from '../components/ui/description-list';
 import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
 import { FormField } from '../components/ui/form-field';
@@ -49,7 +65,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { Separator } from '../components/ui/separator';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from '../components/ui/sheet';
 import { Textarea } from '../components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -62,6 +86,12 @@ import {
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import {
+  capabilityLines,
+  errorMessage,
+  resolveSettings,
+} from '../teams/accessSettings';
+import ShareToTeamModal from '../teams/ShareToTeamModal';
+import {
   createTeam,
   deleteTeam,
   loadTeams,
@@ -70,6 +100,9 @@ import {
   selectTeamsLoading,
   Team,
 } from '../teams/teamsSlice';
+import { can } from '../utils/accessUtils';
+import { formatDateOnly } from '../utils/dateTimeUtils';
+import { decodeJwtPayload } from '../utils/jwtUtils';
 
 type Member = {
   user_id: string;
@@ -78,17 +111,63 @@ type Member = {
   source: string;
 };
 
-type Grant = {
-  resource_type: string;
-  resource_id: string;
-  access_level: string;
+type Grant = TeamGrant;
+
+// All of one team's grants on one resource: the whole-team grant (if any)
+// and the per-member grants, shown as a single row.
+type SharedResource = {
+  key: string;
+  type: ResourceType;
+  id: string;
+  grants: Grant[];
+  teamGrant: Grant | null;
+  memberGrants: Grant[];
 };
+
+type ResourceFilter = 'all' | ResourceType;
+
+const resourceKey = (g: Pick<Grant, 'resource_type' | 'resource_id'>) =>
+  `${g.resource_type}:${g.resource_id}`;
+
+const grantKey = (g: Grant) => `${resourceKey(g)}:${g.target_user_id ?? ''}`;
+
+/** Group grants by resource, keeping the server's order of first sighting. */
+export function groupGrants(grants: Grant[]): SharedResource[] {
+  const byKey = new Map<string, SharedResource>();
+  grants.forEach((g) => {
+    const key = resourceKey(g);
+    let entry = byKey.get(key);
+    if (!entry) {
+      entry = {
+        key,
+        type: g.resource_type,
+        id: g.resource_id,
+        grants: [],
+        teamGrant: null,
+        memberGrants: [],
+      };
+      byKey.set(key, entry);
+    }
+    entry.grants.push(g);
+    if (g.target_user_id) entry.memberGrants.push(g);
+    else entry.teamGrant = g;
+  });
+  return Array.from(byKey.values());
+}
 
 const RESOURCE_TYPES: ReadonlyArray<ResourceType> = [
   'agent',
   'source',
   'prompt',
   'tool',
+];
+
+// Filter pill order on the shared resources list.
+const FILTER_TYPES: ReadonlyArray<ResourceType> = [
+  'agent',
+  'source',
+  'tool',
+  'prompt',
 ];
 
 // Member subs (OIDC subs) can be long; truncate the middle for readability
@@ -145,6 +224,26 @@ export default function Teams() {
     useState<ActiveState>('INACTIVE');
   const [memberToRemove, setMemberToRemove] = useState<string | null>(null);
 
+  // The caller's role in the selected team, as the grants endpoint reports it.
+  const [teamRole, setTeamRole] = useState<TeamRole | null>(null);
+  // Shared resources list: type filter, search, and the row whose drawer is
+  // open (kept while "Manage sharing" has the drawer closed).
+  const [resourceFilter, setResourceFilter] = useState<ResourceFilter>('all');
+  const [resourceQuery, setResourceQuery] = useState('');
+  const [openResourceKey, setOpenResourceKey] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerSettings, setDrawerSettings] =
+    useState<ResourceSettingsResponse | null>(null);
+  const [busyGrants, setBusyGrants] = useState<Set<string>>(new Set());
+  const [shareTarget, setShareTarget] = useState<SharedResource | null>(null);
+
+  // The caller's own sub, to tell whether they own the selected team when
+  // the server doesn't send `is_owner`.
+  const currentUserId = useMemo(() => {
+    const payload = token ? decodeJwtPayload(token) : null;
+    return typeof payload?.sub === 'string' ? payload.sub : undefined;
+  }, [token]);
+
   useEffect(() => {
     dispatch(loadTeams({ token }));
   }, []);
@@ -173,6 +272,7 @@ export default function Teams() {
   // render so names appear as soon as those lists hydrate. Falls back to a
   // truncated id when the resource isn't found (e.g. not yet loaded).
   const resolveResourceName = (g: Grant): string => {
+    if (g.resource_name) return g.resource_name;
     switch (g.resource_type) {
       case 'agent':
         return (
@@ -227,11 +327,17 @@ export default function Teams() {
     // members/grants while this team's fetch is in flight.
     setMembers([]);
     setGrants([]);
+    setTeamRole(null);
+    setOpenResourceKey(null);
+    setDrawerOpen(false);
+    setResourceFilter('all');
+    setResourceQuery('');
     try {
       const m = await teamsService.listMembers(team.id, token);
       setMembers(m?.members ?? []);
       const g = await teamsService.listGrants(team.id, undefined, token);
       setGrants(g?.grants ?? []);
+      setTeamRole(g?.team_role ?? null);
       // Agents/sources/prompts are normally hydrated at app init, but a fresh
       // load landing directly on /teams may not have agents yet. Backfill them
       // (only when missing and an agent is actually shared) so the row resolves
@@ -332,15 +438,15 @@ export default function Teams() {
         token,
       );
       if (!res || res.success === false) {
-        setEditError(t('settings.teams.updateFailed'));
+        setEditError(res?.message ?? t('settings.teams.updateFailed'));
         return;
       }
       // Reflect locally and refresh the list so the card/switcher update too.
       setSelected({ ...selected, name, description });
       dispatch(loadTeams({ token }));
       setEditOpen(false);
-    } catch {
-      setEditError(t('settings.teams.updateFailed'));
+    } catch (error) {
+      setEditError(errorMessage(error, t('settings.teams.updateFailed')));
     }
   };
 
@@ -412,8 +518,12 @@ export default function Teams() {
       setNewMemberRole('team_member');
       setAddMemberOpen(false);
       openTeam(selected);
-    } catch {
-      setAddMemberError(t('settings.teams.addMemberError'));
+    } catch (error) {
+      // The backend returns 404 with a message when the email maps to no
+      // known user ("they must sign in first"); show its message.
+      setAddMemberError(
+        errorMessage(error, t('settings.teams.addMemberError')),
+      );
     }
   };
 
@@ -429,8 +539,8 @@ export default function Teams() {
       if (res?.success === false)
         reportError(res.message ?? t('settings.teams.updateFailed'));
       openTeam(selected);
-    } catch {
-      reportError(t('settings.teams.roleChangeError'));
+    } catch (error) {
+      reportError(errorMessage(error, t('settings.teams.roleChangeError')));
     }
   };
 
@@ -446,8 +556,8 @@ export default function Teams() {
     try {
       await teamsService.removeMember(selected.id, memberId, token);
       openTeam(selected);
-    } catch {
-      reportError(t('settings.teams.removeMemberError'));
+    } catch (error) {
+      reportError(errorMessage(error, t('settings.teams.removeMemberError')));
     }
   };
 
@@ -463,29 +573,200 @@ export default function Teams() {
     try {
       await dispatch(deleteTeam({ id: team.id, token })).unwrap();
       if (selected?.id === team.id) setSelected(null);
-    } catch {
-      reportError(t('settings.teams.deleteTeamError'));
+    } catch (error) {
+      reportError(errorMessage(error, t('settings.teams.deleteTeamError')));
     }
   };
 
+  // Re-read the team's grants after a change (the drawer follows them).
+  const refreshGrants = async () => {
+    if (!selected) return;
+    try {
+      const g = await teamsService.listGrants(selected.id, undefined, token);
+      setGrants(g?.grants ?? []);
+      setTeamRole(g?.team_role ?? null);
+    } catch (error) {
+      reportError(errorMessage(error, t('settings.teams.openTeamError')));
+    }
+  };
+
+  const setGrantBusy = (key: string, busy: boolean) =>
+    setBusyGrants((prev) => {
+      const next = new Set(prev);
+      if (busy) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+
+  // Remove one grant: the whole-team grant, or one member's (which needs
+  // its target_user_id, or the server would drop the team grant instead).
   const handleUnshare = async (grant: Grant) => {
     if (!selected) return;
+    const key = grantKey(grant);
+    setGrantBusy(key, true);
     try {
       await teamsService.unshare(
         selected.id,
         {
-          resource_type: grant.resource_type as ResourceType,
+          resource_type: grant.resource_type,
           resource_id: grant.resource_id,
+          target_user_id: grant.target_user_id ?? undefined,
         },
         token,
       );
-      openTeam(selected);
-    } catch {
-      reportError(t('settings.teams.unshareError'));
+    } catch (error) {
+      reportError(errorMessage(error, t('settings.teams.unshareError')));
+    } finally {
+      setGrantBusy(key, false);
+      await refreshGrants();
     }
   };
 
-  const isAdmin = selected?.member_role === 'team_admin';
+  const handleGrantAccess = async (grant: Grant, level: AccessLevel) => {
+    if (!selected || grant.access_level === level) return;
+    const key = grantKey(grant);
+    setGrantBusy(key, true);
+    try {
+      await teamsService.share(
+        selected.id,
+        {
+          resource_type: grant.resource_type,
+          resource_id: grant.resource_id,
+          access_level: level,
+          target_user_id: grant.target_user_id ?? undefined,
+        },
+        token,
+      );
+    } catch (error) {
+      reportError(errorMessage(error, t('settings.teams.accessChangeError')));
+    } finally {
+      setGrantBusy(key, false);
+      await refreshGrants();
+    }
+  };
+
+  // The grants endpoint's live team_role wins over the list's member_role.
+  const isAdmin = (teamRole ?? selected?.member_role) === 'team_admin';
+  // Only the team's owner may delete it. Prefer the server's `is_owner`;
+  // older payloads only carry `owner_id`.
+  const isTeamOwner = selected
+    ? typeof selected.is_owner === 'boolean'
+      ? selected.is_owner
+      : Boolean(currentUserId) && selected.owner_id === currentUserId
+    : false;
+
+  const sharedResources = useMemo(() => groupGrants(grants), [grants]);
+  const resourceCounts = useMemo(() => {
+    const counts: Record<ResourceFilter, number> = {
+      all: sharedResources.length,
+      agent: 0,
+      source: 0,
+      tool: 0,
+      prompt: 0,
+    };
+    sharedResources.forEach((r) => {
+      if (r.type in counts) counts[r.type] += 1;
+    });
+    return counts;
+  }, [sharedResources]);
+
+  const resourceName = (r: SharedResource): string =>
+    resolveResourceName(r.grants[0]);
+  const ownerLabel = (r: SharedResource): string => {
+    const g = r.grants[0];
+    return g.owner_label || (g.owner_id ? truncateSub(g.owner_id) : '—');
+  };
+
+  const visibleResources = sharedResources.filter((r) => {
+    if (resourceFilter !== 'all' && r.type !== resourceFilter) return false;
+    const needle = resourceQuery.trim().toLowerCase();
+    if (!needle) return true;
+    return `${resourceName(r)} ${ownerLabel(r)}`.toLowerCase().includes(needle);
+  });
+
+  // The strongest access this team has, plus "+N Editor" when per-member
+  // editor grants sit on top of a viewer team grant.
+  const resourceBadge = (r: SharedResource): string => {
+    const memberEditors = r.memberGrants.filter(
+      (g) => g.access_level === 'editor',
+    ).length;
+    if (r.teamGrant) {
+      const level = accessLevelLabel(r.teamGrant.access_level);
+      return r.teamGrant.access_level === 'viewer' && memberEditors > 0
+        ? t('settings.teams.sharedList.badgeWithEditors', {
+            interpolation: { escapeValue: false },
+            level,
+            count: memberEditors,
+          })
+        : level;
+    }
+    return accessLevelLabel(memberEditors > 0 ? 'editor' : 'viewer');
+  };
+
+  const openResource =
+    sharedResources.find((r) => r.key === openResourceKey) ?? null;
+  const openCaller = openResource?.grants.find((g) => g.caller)?.caller ?? null;
+  const callerCanShare = can(openCaller, 'share');
+
+  const openDrawerFor = (r: SharedResource) => {
+    setOpenResourceKey(r.key);
+    setDrawerOpen(true);
+    setDrawerSettings(null);
+    teamsService
+      .getResourceSettings(r.type, r.id, token)
+      .then((res) => setDrawerSettings(res))
+      .catch(() => {
+        // The capabilities list falls back to the default rules.
+      });
+  };
+
+  const closeDrawer = () => {
+    setDrawerOpen(false);
+    setOpenResourceKey(null);
+  };
+
+  // Where "Open {{type}}" goes: an agent's edit page when the caller may
+  // view its config, else its chat; the list page for the other types.
+  const openAssetPath = (r: SharedResource): string => {
+    switch (r.type) {
+      case 'agent': {
+        if (!can(openCaller, 'view')) return agentChatPath(r.id);
+        const agent = agents?.find((a) => a.id === r.id);
+        return agent ? agentEditPathFor(agent) : agentEditPath(r.id);
+      }
+      case 'source':
+        return '/settings/sources';
+      case 'tool':
+        return '/settings/tools';
+      case 'prompt':
+        return '/settings/general';
+      default:
+        return '/settings';
+    }
+  };
+
+  const callerAccessLabel = (access?: string | null): string =>
+    access
+      ? t(`settings.teams.drawer.yourAccessLevel.${access}`, {
+          interpolation: { escapeValue: false },
+          defaultValue: access,
+        })
+      : t('settings.teams.drawer.yourAccessLevel.none');
+
+  const grantedAt = (r: SharedResource): string => {
+    const first = [...r.grants]
+      .filter((g) => g.created_at)
+      .sort((a, b) => (a.created_at! < b.created_at! ? -1 : 1))[0];
+    if (!first?.created_at) return '—';
+    const date = formatDateOnly(first.created_at);
+    return first.granted_by_label
+      ? t('settings.teams.drawer.sharedOnBy', {
+          interpolation: { escapeValue: false },
+          date,
+          name: first.granted_by_label,
+        })
+      : date;
+  };
 
   const roleBadge = (role: TeamRole) => (
     <Badge variant={role === 'team_admin' ? 'default' : 'neutral'}>
@@ -631,20 +912,28 @@ export default function Teams() {
                 )}
               </div>
             </div>
-            {isAdmin && (
+            {(isAdmin || isTeamOwner) && (
               <ActionMenu
                 options={[
-                  {
-                    label: t('settings.teams.editTeam'),
-                    icon: Pencil,
-                    onClick: openEditModal,
-                  },
-                  {
-                    label: t('settings.teams.deleteTeam'),
-                    icon: Trash2,
-                    variant: 'destructive',
-                    onClick: () => requestDeleteTeam(selected),
-                  },
+                  ...(isAdmin
+                    ? [
+                        {
+                          label: t('settings.teams.editTeam'),
+                          icon: Pencil,
+                          onClick: openEditModal,
+                        },
+                      ]
+                    : []),
+                  ...(isTeamOwner
+                    ? [
+                        {
+                          label: t('settings.teams.deleteTeam'),
+                          icon: Trash2,
+                          variant: 'destructive' as const,
+                          onClick: () => requestDeleteTeam(selected),
+                        },
+                      ]
+                    : []),
                 ]}
                 triggerLabel={t('settings.teams.teamActions')}
                 className="shrink-0"
@@ -737,52 +1026,348 @@ export default function Teams() {
             <SectionHeader
               as="h4"
               size="sm"
-              title={`${t('settings.teams.sharedResources')} · ${grants.length}`}
+              title={`${t('settings.teams.sharedResources')} · ${sharedResources.length}`}
             />
-            {grants.length === 0 ? (
+            {sharedResources.length === 0 ? (
               <EmptyState size="sm" title={t('settings.teams.nothingShared')} />
             ) : (
-              <ListRows>
-                {grants.map((g) => (
-                  <ListRow
-                    key={`${g.resource_type}-${g.resource_id}`}
-                    leading={
-                      <span
-                        aria-hidden="true"
-                        className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
-                        title={resourceTypeLabel(g.resource_type)}
-                      >
-                        {resourceTypeIcon(g.resource_type)}
-                      </span>
-                    }
-                    title={
-                      <span title={g.resource_id}>
-                        {resolveResourceName(g)}
-                      </span>
-                    }
-                    trailing={
-                      <>
-                        <Badge variant="neutral">
-                          {accessLevelLabel(g.access_level)}
-                        </Badge>
-                        {isAdmin && (
-                          <IconButton
-                            variant="ghost-destructive"
-                            size="icon-sm"
-                            className="shrink-0"
-                            label={t('settings.teams.unshare')}
-                            icon={Trash2}
-                            onClick={() => handleUnshare(g)}
-                          />
-                        )}
-                      </>
-                    }
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <div className="bg-muted max-w-full rounded-full p-1">
+                    <ToggleGroup
+                      type="single"
+                      size="xs"
+                      value={resourceFilter}
+                      onValueChange={(value) =>
+                        value && setResourceFilter(value as ResourceFilter)
+                      }
+                      aria-label={t('settings.teams.sharedList.filterLabel')}
+                    >
+                      {(['all', ...FILTER_TYPES] as ResourceFilter[]).map(
+                        (value) => (
+                          <ToggleGroupItem key={value} value={value}>
+                            {t(`settings.teams.sharedList.filter.${value}`)}{' '}
+                            {resourceCounts[value]}
+                          </ToggleGroupItem>
+                        ),
+                      )}
+                    </ToggleGroup>
+                  </div>
+                  <SearchInput
+                    size="sm"
+                    className="w-full sm:w-56"
+                    placeholder={t('settings.teams.sharedList.search')}
+                    value={resourceQuery}
+                    onChange={(e) => setResourceQuery(e.target.value)}
                   />
-                ))}
-              </ListRows>
+                </div>
+                {visibleResources.length === 0 ? (
+                  <EmptyState
+                    size="sm"
+                    title={t('settings.teams.sharedList.noMatches')}
+                  />
+                ) : (
+                  <ListRows>
+                    {visibleResources.map((r) => {
+                      const isOpen = drawerOpen && openResourceKey === r.key;
+                      return (
+                        <ListRow
+                          key={r.key}
+                          interactive
+                          selected={isOpen}
+                          asChild
+                          leading={
+                            <span
+                              aria-hidden="true"
+                              className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                            >
+                              {resourceTypeIcon(r.type)}
+                            </span>
+                          }
+                          title={
+                            <span title={resourceName(r)}>
+                              {resourceName(r)}
+                            </span>
+                          }
+                          description={t('settings.teams.sharedList.meta', {
+                            interpolation: { escapeValue: false },
+                            type: resourceTypeLabel(r.type),
+                            owner: ownerLabel(r),
+                          })}
+                          trailing={
+                            <>
+                              <Badge variant="neutral" className="shrink-0">
+                                {resourceBadge(r)}
+                              </Badge>
+                              <ChevronRight
+                                className="text-muted-foreground size-4 shrink-0"
+                                aria-hidden
+                              />
+                            </>
+                          }
+                        >
+                          <button
+                            type="button"
+                            data-testid="shared-resource-row"
+                            onClick={() => openDrawerFor(r)}
+                          />
+                        </ListRow>
+                      );
+                    })}
+                  </ListRows>
+                )}
+              </>
             )}
           </div>
         </div>
+      )}
+
+      <Sheet
+        open={drawerOpen && openResource !== null}
+        onOpenChange={(open) => !open && closeDrawer()}
+      >
+        {openResource && selected && (
+          <SheetContent
+            side="right"
+            size="detail"
+            className="p-0"
+            closeLabel={t('settings.teams.drawer.close')}
+          >
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+              {/* pr-12 keeps the header clear of the close X. */}
+              <div className="flex items-center gap-3 px-6 pt-6 pr-12 pb-4">
+                <span
+                  aria-hidden="true"
+                  className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                >
+                  {resourceTypeIcon(openResource.type)}
+                </span>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <SheetTitle className="truncate">
+                    {resourceName(openResource)}
+                  </SheetTitle>
+                  <SheetDescription>
+                    {t('settings.teams.drawer.subtitle', {
+                      interpolation: { escapeValue: false },
+                      type: resourceTypeLabel(openResource.type),
+                      owner: ownerLabel(openResource),
+                    })}
+                  </SheetDescription>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 px-6 pb-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  onClick={() => {
+                    const path = openAssetPath(openResource);
+                    closeDrawer();
+                    navigate(path);
+                  }}
+                >
+                  <ArrowUpRight aria-hidden />
+                  {t('settings.teams.drawer.open', {
+                    interpolation: { escapeValue: false },
+                    type: resourceTypeLabel(openResource.type),
+                  })}
+                </Button>
+                {callerCanShare && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    shape="pill"
+                    onClick={() => {
+                      setDrawerOpen(false);
+                      setShareTarget(openResource);
+                    }}
+                  >
+                    <Users aria-hidden />
+                    {t('settings.teams.drawer.manageSharing')}
+                  </Button>
+                )}
+              </div>
+              <Separator />
+              <div className="flex flex-col gap-6 px-6 py-6">
+                <DescriptionList size="sm">
+                  <DescriptionItem label={t('settings.teams.drawer.owner')}>
+                    {ownerLabel(openResource)}
+                  </DescriptionItem>
+                  <DescriptionItem label={t('settings.teams.drawer.shared')}>
+                    {grantedAt(openResource)}
+                  </DescriptionItem>
+                  <DescriptionItem
+                    label={t('settings.teams.drawer.yourAccess')}
+                  >
+                    {callerAccessLabel(openCaller?.access)}
+                  </DescriptionItem>
+                </DescriptionList>
+
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    as="h3"
+                    size="xs"
+                    title={t('settings.teams.drawer.accessIn', {
+                      interpolation: { escapeValue: false },
+                      team: selected.name,
+                    })}
+                  />
+                  <Card variant="subtle" padding="none">
+                    <ListRows>
+                      {[
+                        ...(openResource.teamGrant
+                          ? [openResource.teamGrant]
+                          : []),
+                        ...openResource.memberGrants,
+                      ].map((g) => {
+                        const isTeam = !g.target_user_id;
+                        const label = isTeam
+                          ? t('settings.teams.drawer.everyone', {
+                              interpolation: { escapeValue: false },
+                              team: selected.name,
+                            })
+                          : g.target_user_label ||
+                            truncateSub(g.target_user_id!);
+                        const busy = busyGrants.has(grantKey(g));
+                        return (
+                          <ListRow
+                            key={grantKey(g)}
+                            leading={
+                              <span aria-hidden="true" className="contents">
+                                <Avatar
+                                  alt=""
+                                  size="sm"
+                                  variant="primary"
+                                  shape={isTeam ? 'square' : 'circle'}
+                                >
+                                  {initialOf(isTeam ? selected.name : label)}
+                                </Avatar>
+                              </span>
+                            }
+                            title={<span title={label}>{label}</span>}
+                            description={
+                              isTeam
+                                ? t('settings.teams.drawer.teamGrant')
+                                : t('settings.teams.drawer.memberGrant')
+                            }
+                            trailing={
+                              <>
+                                {callerCanShare ? (
+                                  <Select
+                                    value={g.access_level}
+                                    disabled={busy}
+                                    onValueChange={(value) =>
+                                      handleGrantAccess(g, value as AccessLevel)
+                                    }
+                                  >
+                                    <SelectTrigger
+                                      size="sm"
+                                      className="w-28 shrink-0"
+                                      aria-label={t(
+                                        'settings.teams.share.access',
+                                      )}
+                                    >
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {(['viewer', 'editor'] as const).map(
+                                        (level) => (
+                                          <SelectItem key={level} value={level}>
+                                            {accessLevelLabel(level)}
+                                          </SelectItem>
+                                        ),
+                                      )}
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <Badge variant="neutral" className="shrink-0">
+                                    {accessLevelLabel(g.access_level)}
+                                  </Badge>
+                                )}
+                                {(callerCanShare || isAdmin) && (
+                                  <IconButton
+                                    variant="ghost-destructive"
+                                    size="icon-sm"
+                                    className="shrink-0"
+                                    disabled={busy}
+                                    label={t(
+                                      'settings.teams.drawer.removeGrant',
+                                    )}
+                                    icon={Trash2}
+                                    onClick={() => handleUnshare(g)}
+                                  />
+                                )}
+                              </>
+                            }
+                          />
+                        );
+                      })}
+                    </ListRows>
+                  </Card>
+                  <p className="text-muted-foreground text-xs">
+                    {t('settings.teams.drawer.otherTeamsHint')}
+                  </p>
+                </section>
+
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    as="h3"
+                    size="xs"
+                    title={t('settings.teams.drawer.whatPeopleCanDo')}
+                  />
+                  <ul className="flex flex-col gap-2 text-sm">
+                    {capabilityLines(
+                      t,
+                      openResource.type,
+                      resolveSettings(
+                        openResource.type,
+                        drawerSettings?.settings,
+                      ),
+                    ).map((line) => (
+                      <li key={line.key} className="flex items-center gap-2">
+                        {line.allowed ? (
+                          <Check
+                            className="text-success size-4 shrink-0"
+                            aria-hidden
+                          />
+                        ) : (
+                          <X
+                            className="text-muted-foreground size-4 shrink-0"
+                            aria-hidden
+                          />
+                        )}
+                        <span
+                          className={
+                            line.allowed ? undefined : 'text-muted-foreground'
+                          }
+                        >
+                          {line.text}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-muted-foreground text-xs">
+                    {t('settings.teams.drawer.capabilitiesHint')}
+                  </p>
+                </section>
+              </div>
+            </div>
+          </SheetContent>
+        )}
+      </Sheet>
+
+      {shareTarget && (
+        <ShareToTeamModal
+          resourceType={shareTarget.type}
+          resourceId={shareTarget.id}
+          resourceName={resourceName(shareTarget)}
+          onClose={() => {
+            setShareTarget(null);
+            // Back to the drawer, with the grants the dialog may have changed.
+            setDrawerOpen(true);
+            refreshGrants();
+          }}
+        />
       )}
 
       <Modal
@@ -923,6 +1508,7 @@ export default function Teams() {
 
       <ConfirmationModal
         message={t('settings.teams.deleteTeamConfirmation', {
+          interpolation: { escapeValue: false },
           name: teamToDelete?.name ?? '',
         })}
         modalState={deleteTeamModalState}

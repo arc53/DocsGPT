@@ -50,6 +50,11 @@ interface GraphSourceViewProps {
   onBackToDocuments: () => void;
   /** Extra header control (Test retrieval), right-aligned in the title row. */
   headerAction?: ReactNode;
+  /**
+   * Whether the caller may change the source (`can(source, 'edit')`). False
+   * hides the Files tab's writes and the graph chunk drawer's Edit.
+   */
+  canEdit?: boolean;
 }
 
 /**
@@ -66,6 +71,7 @@ export default function GraphSourceView({
   isNested = true,
   onBackToDocuments,
   headerAction,
+  canEdit = true,
 }: GraphSourceViewProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -172,6 +178,7 @@ export default function GraphSourceView({
   const files = !isNested ? (
     <Chunks
       embedded
+      canEdit={canEdit}
       documentId={docId}
       documentName={sourceName}
       handleGoBack={onBackToDocuments}
@@ -181,6 +188,7 @@ export default function GraphSourceView({
   ) : sourceType === 'connector:file' ? (
     <ConnectorTree
       embedded
+      canEdit={canEdit}
       docId={docId}
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
@@ -191,6 +199,7 @@ export default function GraphSourceView({
   ) : (
     <FileTree
       embedded
+      canEdit={canEdit}
       docId={docId}
       sourceName={sourceName}
       onBackToDocuments={onBackToDocuments}
@@ -277,6 +286,7 @@ export default function GraphSourceView({
             onSelect={setSelected}
             active={tab === 'graph'}
             onOpenInFiles={openInFiles}
+            canEdit={canEdit}
           />
         </TabsContent>
         <TabsContent value="entities" className="mt-4">
@@ -286,6 +296,7 @@ export default function GraphSourceView({
             onShowInGraph={showInGraph}
             overview={data}
             onOpenInFiles={openInFiles}
+            canEdit={canEdit}
           />
         </TabsContent>
         <TabsContent value="files" className="mt-4">

@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
+import { canOpenAgentEditor } from '../agents/agentAccess';
 import SharedAgentCard from '../agents/SharedAgentCard';
 import { Agent } from '../agents/types';
 import ArtifactSidebar from '../components/ArtifactSidebar';
@@ -12,6 +13,7 @@ import MessageInput from '../components/MessageInput';
 import { agentChatPath, agentEditPathFor } from '../agents/paths';
 import { useMediaQuery } from '../hooks';
 import {
+  selectAgents,
   selectConversationId,
   selectSelectedAgent,
   selectToken,
@@ -61,6 +63,7 @@ export default function Conversation() {
   const status = useSelector(selectStatus);
   const conversationId = useSelector(selectConversationId);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const agents = useSelector(selectAgents);
   const completedAttachments = useSelector(selectCompletedAttachments);
   const attachments = useSelector(selectAttachments);
   // A direct send (hero card) that must wait for pending attachments is
@@ -401,7 +404,8 @@ export default function Conversation() {
                     <SharedAgentCard
                       agent={selectedAgent}
                       onEdit={
-                        selectedAgent.id
+                        // Only a role that may open the edit page gets Edit.
+                        canOpenAgentEditor(selectedAgent, agents)
                           ? () => navigate(agentEditPathFor(selectedAgent))
                           : undefined
                       }

@@ -39,6 +39,7 @@ import ImportSpecModal from '../modals/ImportSpecModal';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { getMethodBadgeVariant } from '../utils/httpMethodColors';
+import { can } from '../utils/accessUtils';
 import { areObjectsEqual } from '../utils/objectUtils';
 import { cn, focusRing } from '@/lib/utils';
 import { APIActionType, APIToolType, UserToolType } from './types';
@@ -51,6 +52,16 @@ const BODY_TYPE_HINT_KEYS: Record<string, string> = {
   'application/xml': 'xml',
   'application/octet-stream': 'octetStream',
 };
+
+/**
+ * What the caller may change on the open tool (`utils/accessUtils` `can`):
+ * `canEdit` covers the name and the actions, `canEditCredentials` the
+ * secrets, URLs and header / query values.
+ */
+const ToolAccessContext = React.createContext({
+  canEdit: true,
+  canEditCredentials: true,
+});
 
 /** Maps a body content type to its hint's locale key suffix (JSON by default). */
 function bodyTypeHintKey(contentType?: string): string {
@@ -108,6 +119,14 @@ export default function ToolConfig({
     Set<number>
   >(new Set());
   const { t } = useTranslation();
+  const canEdit = can(tool, 'edit');
+  const canEditCredentials = can(tool, 'edit_credentials');
+  // Neither: the tool opens as a read-only view with no Save.
+  const readOnly = !canEdit && !canEditCredentials;
+  const access = React.useMemo(
+    () => ({ canEdit, canEditCredentials }),
+    [canEdit, canEditCredentials],
+  );
 
   const toggleUserActionExpand = (index: number) => {
     setExpandedUserActions((prev) => {
@@ -245,6 +264,24 @@ export default function ToolConfig({
     });
   };
 
+  /** Sends the edit; a non-2xx response throws so the caller shows it. */
+  const saveTool = async (configToSave: { [key: string]: any }) => {
+    const response = await userService.updateTool(
+      {
+        id: tool.id,
+        name: tool.name,
+        displayName: tool.displayName,
+        customName: customName,
+        description: tool.description,
+        config: configToSave,
+        actions: 'actions' in tool ? tool.actions : [],
+        status: tool.status,
+      },
+      token,
+    );
+    if (!response?.ok) throw new Error('Failed to save tool');
+  };
+
   const handleSaveChanges = async () => {
     if (!validateConfig()) return;
     const configToSave = buildConfigToSave();
@@ -253,19 +290,7 @@ export default function ToolConfig({
     setSaveError('');
 
     try {
-      await userService.updateTool(
-        {
-          id: tool.id,
-          name: tool.name,
-          displayName: tool.displayName,
-          customName: customName,
-          description: tool.description,
-          config: configToSave,
-          actions: 'actions' in tool ? tool.actions : [],
-          status: tool.status,
-        },
-        token,
-      );
+      await saveTool(configToSave);
       setInitialState({
         customName,
         configValues: { ...configValues },
@@ -357,16 +382,18 @@ export default function ToolConfig({
           currentLabel={tool.customName || tool.displayName || tool.name}
           onParentClick={handleBackClick}
         />
-        <Button
-          type="button"
-          size="sm"
-          shape="pill"
-          onClick={handleSaveChanges}
-          disabled={!hasUnsavedChanges}
-          loading={saving}
-        >
-          {t('settings.tools.save')}
-        </Button>
+        {!readOnly && (
+          <Button
+            type="button"
+            size="sm"
+            shape="pill"
+            onClick={handleSaveChanges}
+            disabled={!hasUnsavedChanges}
+            loading={saving}
+          >
+            {t('settings.tools.save')}
+          </Button>
+        )}
       </div>
       {saveError && (
         <Alert variant="destructive" className="mb-2">
@@ -383,6 +410,7 @@ export default function ToolConfig({
           value={customName}
           onChange={(e) => setCustomName(e.target.value)}
           placeholder={t('settings.tools.customNamePlaceholder')}
+          disabled={!canEdit}
         />
       </FormField>
       <div className="mt-1">
@@ -394,7 +422,10 @@ export default function ToolConfig({
                 size="xs"
                 title={t('settings.tools.authentication')}
               />
-              <div className="max-w-96">
+              <fieldset
+                disabled={!canEditCredentials}
+                className="max-w-96 min-w-0"
+              >
                 <ConfigFields
                   labelSurface="background"
                   configRequirements={configRequirements}
@@ -406,7 +437,7 @@ export default function ToolConfig({
                     !!(tool as any).config?.has_encrypted_credentials
                   }
                 />
-              </div>
+              </fieldset>
             </div>
           )}
       </div>
@@ -415,7 +446,7 @@ export default function ToolConfig({
         <SectionHeader
           title={t('settings.tools.actions')}
           actions={
-            tool.name === 'api_tool' ? (
+            tool.name === 'api_tool' && canEdit ? (
               <>
                 <Button
                   type="button"
@@ -441,7 +472,9 @@ export default function ToolConfig({
           <>
             {tool.config.actions &&
             Object.keys(tool.config.actions).length > 0 ? (
-              <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
+              <ToolAccessContext.Provider value={access}>
+                <APIToolConfig tool={tool as APIToolType} setTool={setTool} />
+              </ToolAccessContext.Provider>
             ) : (
               <EmptyState
                 size="sm"
@@ -470,9 +503,10 @@ export default function ToolConfig({
                 {filteredUserActions.map(({ action, originalIndex }) => {
                   const isExpanded = expandedUserActions.has(originalIndex);
                   return (
-                    <div
+                    <fieldset
                       key={originalIndex}
-                      className="border-border w-full rounded-xl border"
+                      disabled={!canEdit}
+                      className="border-border w-full min-w-0 rounded-xl border"
                     >
                       <div
                         className={cn(
@@ -730,7 +764,7 @@ export default function ToolConfig({
                           </div>
                         </>
                       )}
-                    </div>
+                    </fieldset>
                   );
                 })}
               </>
@@ -768,19 +802,7 @@ export default function ToolConfig({
               setSaveError('');
 
               try {
-                await userService.updateTool(
-                  {
-                    id: tool.id,
-                    name: tool.name,
-                    displayName: tool.displayName,
-                    customName: customName,
-                    description: tool.description,
-                    config: configToSave,
-                    actions: 'actions' in tool ? tool.actions : [],
-                    status: tool.status,
-                  },
-                  token,
-                );
+                await saveTool(configToSave);
                 setShowUnsavedModal(false);
                 handleGoBack();
               } catch {
@@ -811,6 +833,7 @@ function APIToolConfig({
 }) {
   const [apiTool, setApiTool] = React.useState<APIToolType>(tool);
   const { t } = useTranslation();
+  const { canEdit, canEditCredentials } = React.useContext(ToolAccessContext);
   const [actionToDelete, setActionToDelete] = React.useState<string | null>(
     null,
   );
@@ -925,9 +948,10 @@ function APIToolConfig({
         {filteredActions.map(([actionName, action], actionIndex) => {
           const isExpanded = expandedActions.has(actionName);
           return (
-            <div
+            <fieldset
               key={actionIndex}
-              className="border-border w-full rounded-xl border"
+              disabled={!canEdit}
+              className="border-border w-full min-w-0 rounded-xl border"
             >
               <div
                 className={cn(
@@ -1024,6 +1048,7 @@ function APIToolConfig({
                     <Input
                       type="text"
                       value={action.url}
+                      disabled={!canEditCredentials}
                       onChange={(e) => {
                         setApiTool((prevApiTool) => {
                           const updatedActions = {
@@ -1213,7 +1238,7 @@ function APIToolConfig({
                   </div>
                 </>
               )}
-            </div>
+            </fieldset>
           );
         })}
       </div>
@@ -1249,6 +1274,7 @@ function APIActionTable({
   ) => void;
 }) {
   const { t } = useTranslation();
+  const { canEditCredentials } = React.useContext(ToolAccessContext);
   const idPrefix = React.useId();
 
   const [action, setAction] = React.useState<APIActionType>(apiAction);
@@ -1541,10 +1567,18 @@ function APIActionTable({
               <TableCell>
                 <Input
                   value={param.value}
-                  disabled={param.filled_by_llm}
+                  disabled={
+                    param.filled_by_llm ||
+                    (section === 'query_params' && !canEditCredentials)
+                  }
                   onChange={(e) =>
                     handlePropertyChange(section, key, 'value', e.target.value)
                   }
+                  {...(section === 'query_params' &&
+                    param.has_value && {
+                      type: 'password',
+                      placeholder: t('settings.tools.savedSecretPlaceholder'),
+                    })}
                   size="sm"
                 />
               </TableCell>
@@ -1697,7 +1731,14 @@ function APIActionTable({
                       e.target.value,
                     )
                   }
-                  placeholder={t('settings.tools.headerValuePlaceholder')}
+                  // A saved value never comes back: empty keeps it.
+                  type={param.has_value ? 'password' : 'text'}
+                  placeholder={
+                    param.has_value
+                      ? t('settings.tools.savedSecretPlaceholder')
+                      : t('settings.tools.headerValuePlaceholder')
+                  }
+                  disabled={!canEditCredentials}
                   size="sm"
                 />
               </TableCell>

@@ -114,6 +114,11 @@ export interface TreeBrowserProps {
    * changes.
    */
   initialPath?: string;
+  /**
+   * Whether the caller may change the source (`can(source, 'edit')`).
+   * False hides the chunk list's Add, Edit and Delete; browsing stays.
+   */
+  canEdit?: boolean;
 }
 
 /**
@@ -194,6 +199,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
   actionsTarget,
   initialPath,
   onCrumbsChange,
+  canEdit = true,
 }) => {
   const { t } = useTranslation();
   const [loading, setLoading] = useLoaderState(true, 500);
@@ -688,6 +694,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
       fileName={file.name}
       controllerRef={chunksControllerRef}
       onOpenChunkChange={setOpenChunkPosition}
+      canEdit={canEdit}
     />
   );
 

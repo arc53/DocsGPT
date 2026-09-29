@@ -89,6 +89,11 @@ interface ChunksProps {
   /** Where the open chunk is; see {@link OpenChunkPosition}. */
   onOpenChunkChange?: (position: OpenChunkPosition) => void;
   controllerRef?: React.MutableRefObject<ChunksController | null>;
+  /**
+   * Whether the caller may change the source (`can(source, 'edit')`). False
+   * hides Add chunk, Edit and Delete; reading, copying and paging stay.
+   */
+  canEdit?: boolean;
 }
 
 type SheetMode = 'edit' | 'add';
@@ -103,6 +108,7 @@ const Chunks: React.FC<ChunksProps> = ({
   embedded = false,
   onOpenChunkChange,
   controllerRef,
+  canEdit = true,
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -556,15 +562,17 @@ const Chunks: React.FC<ChunksProps> = ({
           })}
         </p>
       ) : null}
-      <Button
-        type="button"
-        size="field"
-        shape="pill"
-        className="sm:ml-auto"
-        onClick={() => openSheet('add')}
-      >
-        {t('settings.sources.addChunk')}
-      </Button>
+      {canEdit ? (
+        <Button
+          type="button"
+          size="field"
+          shape="pill"
+          className="sm:ml-auto"
+          onClick={() => openSheet('add')}
+        >
+          {t('settings.sources.addChunk')}
+        </Button>
+      ) : null}
     </div>
   );
 
@@ -675,16 +683,18 @@ const Chunks: React.FC<ChunksProps> = ({
             disabled={!canGoNext}
             onClick={() => goToChunk(openPosition + 1)}
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            shape="pill"
-            onClick={() => openSheet('edit')}
-          >
-            <Pencil />
-            {t('modals.chunk.edit')}
-          </Button>
+          {canEdit ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              shape="pill"
+              onClick={() => openSheet('edit')}
+            >
+              <Pencil />
+              {t('modals.chunk.edit')}
+            </Button>
+          ) : null}
           <ActionMenu
             size="toolbar"
             triggerLabel={t('settings.sources.menuAlt')}
@@ -702,12 +712,16 @@ const Chunks: React.FC<ChunksProps> = ({
                   );
                 },
               },
-              {
-                icon: Trash2,
-                label: t('modals.chunk.delete'),
-                variant: 'destructive',
-                onClick: () => confirmDeleteChunk(chunk),
-              },
+              ...(canEdit
+                ? [
+                    {
+                      icon: Trash2,
+                      label: t('modals.chunk.delete'),
+                      variant: 'destructive' as const,
+                      onClick: () => confirmDeleteChunk(chunk),
+                    },
+                  ]
+                : []),
             ]}
           />
         </>

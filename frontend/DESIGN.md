@@ -890,7 +890,10 @@ line, a trailing control) is `ListRow` inside `ListRows` (`divide-y
 divide-border`, no box of its own; wrap it in `Card padding="none"` or a
 bordered list for one). Rows are `px-4 py-3`, the title `text-sm
 font-medium`. `interactive` (with `asChild` around a `<Link>` or `<button>`)
-hovers to `bg-accent` and draws an inset focus ring. An icon square in
+hovers to `bg-accent` and draws an inset focus ring. `selected` marks the
+row whose detail is open in a drawer beside the list (a team's shared
+resources): the `bg-secondary` tint of a selected TableRow, kept on hover,
+with `aria-current`. An icon square in
 `leading` is a plain `bg-muted text-muted-foreground size-8 rounded-md` span.
 In a narrow side panel (the graph node panel's relationships) rows are
 `size="sm"`: `px-2 py-1.5`, `gap-2.5`, `rounded-md` and top-aligned so a small

@@ -9,6 +9,7 @@ import { Modal, ModalActions } from '../components/ui/modal';
 import { ActiveState, Doc } from '../models/misc';
 import type { Model } from '../models/types';
 import { selectToken } from '../preferences/preferenceSlice';
+import { can } from '../utils/accessUtils';
 
 import RetrievalOptions, {
   chunkingChanged,
@@ -47,10 +48,9 @@ export default function SourceConfigModal({
   const { t } = useTranslation();
   const token = useSelector(selectToken);
 
-  // 'team' viewers cannot write; the backend rejects with 403, but we also
-  // disable the form up-front for a clearer read-only experience.
-  const isReadOnly =
-    document?.ownership === 'team' && document?.team_access !== 'editor';
+  // Without `edit` (a viewer opening View config) the form is read-only; the
+  // backend rejects a write with 403 anyway.
+  const isReadOnly = !!document && !can(document, 'edit');
 
   const [initial, setInitial] = useState<RetrievalOptionsValue>(() =>
     configToOptions(document?.config),

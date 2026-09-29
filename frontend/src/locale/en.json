@@ -96,7 +96,10 @@
         "edit": "Edit prompt",
         "view": "View prompt",
         "duplicate": "Duplicate prompt",
-        "delete": "Delete prompt"
+        "delete": "Delete prompt",
+        "deleteFailed": "Couldn't delete this prompt.",
+        "saveFailed": "Couldn't save this prompt.",
+        "editConflict": "Someone else changed this prompt. Reopen it to see their version."
       }
     },
     "sources": {
@@ -442,7 +445,15 @@
       "editChunk": "Edit chunk",
       "editChunkDescription": "{{file}} · chunk {{n}} · {{tokens}} tokens",
       "previousChunk": "Previous chunk",
-      "nextChunk": "Next chunk"
+      "nextChunk": "Next chunk",
+      "viewConfig": "View source settings",
+      "errors": {
+        "forbidden": "You don't have permission to do that on this source.",
+        "delete": "Couldn't delete the source.",
+        "sync": "Couldn't sync the source.",
+        "syncFrequency": "Couldn't change the sync frequency.",
+        "reingest": "Couldn't start the reingest."
+      }
     },
     "analytics": {
       "label": "Analytics",
@@ -735,7 +746,184 @@
         "teamLabel": "Team",
         "viaTeam": "via {{team}}",
         "removeAccess": "Remove access",
-        "access": "Access"
+        "access": "Access",
+        "showAll": "Show all {{count}}",
+        "andMore": "and {{count}} more",
+        "back": "Back",
+        "allSummary": "{{name}} · Teams: {{teams}} · People: {{people}}",
+        "searchAccess": "Search people and teams…",
+        "filterLabel": "Filter people with access",
+        "filter": {
+          "all": "All",
+          "teams": "Teams",
+          "people": "People",
+          "editors": "Editors"
+        }
+      },
+      "accessChangeError": "Could not change access.",
+      "accessSettings": {
+        "title": "Access settings",
+        "saveError": "Could not save the access setting.",
+        "agent": {
+          "editors_can_share": {
+            "label": "Editors can share",
+            "description": "Add people and teams and change their access."
+          },
+          "editors_can_delete": {
+            "label": "Editors can delete",
+            "description": "Delete the agent for everyone."
+          },
+          "editors_can_manage_access_details": {
+            "label": "Editors can manage access details",
+            "description": "API key, webhook and public link."
+          },
+          "viewers_can_see_logs": {
+            "label": "Viewers can see logs",
+            "description": "Conversations and analytics for this agent."
+          }
+        },
+        "source": {
+          "editors_can_share": {
+            "label": "Editors can share",
+            "description": "Add people and teams and change their access."
+          },
+          "editors_can_delete": {
+            "label": "Editors can delete",
+            "description": "Delete the source for everyone."
+          },
+          "viewers_can_see_config": {
+            "label": "Viewers can see settings",
+            "description": "Chunking, retriever and sync settings, read only."
+          }
+        },
+        "tool": {
+          "editors_can_change_credentials": {
+            "label": "Editors can change credentials and connection",
+            "description": "They replace saved secrets; nobody can read them back."
+          },
+          "editors_can_share": {
+            "label": "Editors can share",
+            "description": "Add people and teams and change their access."
+          },
+          "viewers_can_use_in_agents": {
+            "label": "Viewers can use it in their own agents",
+            "description": "It runs with your credentials."
+          }
+        },
+        "prompt": {
+          "editors_can_share": {
+            "label": "Editors can share",
+            "description": "Add people and teams and change their access."
+          },
+          "viewers_can_duplicate": {
+            "label": "Viewers can duplicate",
+            "description": "Make their own copy to edit."
+          }
+        }
+      },
+      "editorHint": {
+        "agent": "Editors can change it, including logs, schedules and access details.",
+        "agentNoAccessDetails": "Editors can change it, including logs and schedules, but not access details.",
+        "source": "Editors can edit chunks and files, sync and change settings.",
+        "tool": "Editors can change actions and replace credentials, but can’t read secrets.",
+        "toolNoCredentials": "Editors can change actions, but not credentials.",
+        "prompt": "Editors can change the text.",
+        "noShareNoDelete": "They can’t share or delete it.",
+        "shareOnly": "They can also share it, but can’t delete it.",
+        "deleteOnly": "They can also delete it, but can’t share it.",
+        "shareAndDelete": "They can also share and delete it.",
+        "noShare": "They can’t share or delete it.",
+        "share": "They can also share it, but can’t delete it."
+      },
+      "capabilities": {
+        "agent": {
+          "viewers": "Viewers: chat with it and pin it",
+          "editors": "Editors: edit it, publish it, see logs and manage schedules"
+        },
+        "source": {
+          "viewers": "Viewers: browse, search and use it in their agents",
+          "editors": "Editors: edit chunks and files, sync, change settings"
+        },
+        "tool": {
+          "viewers": "Viewers: use it inside the owner’s agents",
+          "editors": "Editors: change actions and approvals"
+        },
+        "prompt": {
+          "viewers": "Viewers: read it and use it in their agents",
+          "editors": "Editors: change the text"
+        },
+        "switch": {
+          "editors_can_share": {
+            "on": "Editors can share it",
+            "off": "Editors can’t share it"
+          },
+          "editors_can_delete": {
+            "on": "Editors can delete it",
+            "off": "Editors can’t delete it"
+          },
+          "editors_can_manage_access_details": {
+            "on": "Editors can manage the API key, webhook and public link",
+            "off": "Editors can’t manage the API key, webhook or public link"
+          },
+          "viewers_can_see_logs": {
+            "on": "Viewers can see logs",
+            "off": "Viewers can’t see logs"
+          },
+          "viewers_can_see_config": {
+            "on": "Viewers can see its settings",
+            "off": "Viewers can’t see its settings"
+          },
+          "editors_can_change_credentials": {
+            "on": "Editors can replace credentials",
+            "off": "Editors can’t change credentials"
+          },
+          "viewers_can_use_in_agents": {
+            "on": "Viewers can use it in their own agents",
+            "off": "Viewers can’t use it in their own agents"
+          },
+          "viewers_can_duplicate": {
+            "on": "Viewers can duplicate it",
+            "off": "Viewers can’t duplicate it"
+          }
+        }
+      },
+      "sharedList": {
+        "badgeWithEditors": "{{level}} · +{{count}} Editor",
+        "meta": "{{type}} · {{owner}}",
+        "filterLabel": "Filter shared resources",
+        "filter": {
+          "all": "All",
+          "agent": "Agents",
+          "source": "Sources",
+          "tool": "Tools",
+          "prompt": "Prompts"
+        },
+        "search": "Search shared…",
+        "noMatches": "Nothing matches."
+      },
+      "drawer": {
+        "close": "Close",
+        "subtitle": "{{type}} · owned by {{owner}}",
+        "open": "Open {{type}}",
+        "manageSharing": "Manage sharing",
+        "owner": "Owner",
+        "shared": "Shared",
+        "sharedOnBy": "{{date}} by {{name}}",
+        "yourAccess": "Your access",
+        "yourAccessLevel": {
+          "owner": "Owner",
+          "editor": "Editor",
+          "viewer": "Viewer",
+          "none": "No access"
+        },
+        "accessIn": "Access in {{team}}",
+        "everyone": "Everyone in {{team}}",
+        "teamGrant": "Whole team",
+        "memberGrant": "Only this person",
+        "removeGrant": "Remove access",
+        "otherTeamsHint": "Shared with other teams too? Those grants are managed in “Manage sharing”.",
+        "whatPeopleCanDo": "What people here can do",
+        "capabilitiesHint": "From the owner’s access settings. Read-only here."
       }
     },
     "tools": {
@@ -809,7 +997,6 @@
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
         "reconnectServer": "Reconnect Server",
-        "reenterCredentials": "Re-enter your credentials to test and update the connection.",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -854,7 +1041,18 @@
           "oauthFailed": "OAuth process failed or was cancelled",
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
-        }
+        },
+        "sharedByEditor": "Shared by {{owner}} · you're an editor",
+        "aTeammate": "a teammate",
+        "sharedCredentialsNotice": "Saved credentials stay hidden. Anything you enter replaces them for everyone who uses this tool.",
+        "serverChangedNotice": "The server changed, so the saved {{credential}} will be cleared. Enter it for the new server to save.",
+        "credentialNames": {
+          "apiKey": "API key",
+          "bearer": "token",
+          "password": "password"
+        },
+        "savedKeyHint": "A key is saved. Leave empty to keep it (only while the server is unchanged).",
+        "sharedOAuthOwnerOnly": "Only the owner can reconnect its sign-in, so you can rename it but not change its server or account."
       },
       "configErrors": {
         "required": "{{field}} is required",
@@ -862,7 +1060,14 @@
         "maxTimeout": "Maximum timeout is 300 seconds"
       },
       "headerValuePlaceholder": "e.g., application/json",
-      "toolIconTitle": "{{name}} icon"
+      "toolIconTitle": "{{name}} icon",
+      "view": "View",
+      "inMyChats": "In my chats",
+      "useInMyChatsAria": "Use {{toolName}} in my chats",
+      "statusUpdateFailed": "Couldn't change whether this tool is in your chats.",
+      "deleteFailed": "Couldn't delete this tool.",
+      "sharedBy": "Shared by {{team}}",
+      "savedSecretPlaceholder": "Saved · enter a new value to replace"
     },
     "devices": {
       "label": "Devices",
@@ -1359,7 +1564,9 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "Reset key",
-      "resetKeyConfirm": "Are you sure you want to reset the API key? The current key will stop working immediately and this action cannot be undone."
+      "resetKeyConfirm": "Are you sure you want to reset the API key? The current key will stop working immediately and this action cannot be undone.",
+      "actionFailed": "That didn't work. Please try again.",
+      "apiKeyAfterPublish": "Publish the agent to create its API key."
     },
     "importSpec": {
       "title": "Import API Specification",
@@ -1792,7 +1999,6 @@
         "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
         "remove": "Remove",
         "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
         "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
         "floorControl": "{{stage}}: {{action}} — required by the instance policy",
         "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
@@ -1810,7 +2016,8 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        }
+        },
+        "readOnly": "You can see this policy, but your role can't change it."
       },
       "byline": {
         "new": "Set up the agent, then publish it to chat with it."
@@ -2266,7 +2473,8 @@
       "classicDescription": "Create a standard AI agent with a single model, tools, and knowledge sources",
       "workflowTitle": "Workflow Agent",
       "workflowDescription": "Design complex multi-step workflows with different models, conditional logic, and state management"
-    }
+    },
+    "deleteFailed": "Could not delete the agent. Please try again."
   },
   "components": {
     "fileUpload": {

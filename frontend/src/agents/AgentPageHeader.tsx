@@ -15,6 +15,8 @@ import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
+import { type AccessFields } from '../utils/accessUtils';
+import { canAgent } from './agentAccess';
 import {
   AGENTS_MANAGE_ROOT,
   agentEditPath as agentEditPathProp,
@@ -47,6 +49,11 @@ type AgentPageHeaderProps = {
   onNameClick?: () => void;
   /** A status Badge placed after the crumbs. */
   status?: ReactNode;
+  /**
+   * The agent's access fields: each tab shows only when the role allows its
+   * page. Omitted (a new workflow, not yet loaded), every tab shows.
+   */
+  access?: (AccessFields & { status?: string }) | null;
 };
 
 /**
@@ -69,6 +76,7 @@ export default function AgentPageHeader({
   agentImage,
   onNameClick,
   status,
+  access,
 }: AgentPageHeaderProps) {
   const { t } = useTranslation();
 
@@ -81,19 +89,25 @@ export default function AgentPageHeader({
         id: 'overview' as const,
         label: t('agents.pageHeader.tabs.overview'),
         href: editPath,
+        action: 'view',
       },
       {
         id: 'logs' as const,
         label: t('agents.pageHeader.tabs.logs'),
         href: agentId ? agentLogsPath(agentId) : '#',
+        action: 'view_logs',
       },
       {
         id: 'schedules' as const,
         label: t('agents.pageHeader.tabs.schedules'),
         href: agentId ? agentSchedulesPath(agentId) : '#',
+        action: 'manage_schedules',
       },
     ],
     [agentId, editPath, t],
+  );
+  const visibleTabs = tabs.filter(
+    (tab) => !access || canAgent(access, tab.action),
   );
 
   const currentTabLabel =
@@ -182,7 +196,7 @@ export default function AgentPageHeader({
             !inline && 'border-border border-b',
           )}
         >
-          {tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const isActive = tab.id === currentPage;
             // -mb-px lays the tab's 2px underline over the nav's 1px baseline.
             if (isActive) {

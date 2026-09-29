@@ -337,6 +337,17 @@ describe('TreeBrowser', () => {
     ).not.toBeNull();
   });
 
+  it('canEdit false reaches the chunk list: no Add chunk', async () => {
+    await render({ 'report.pdf': { type: 'pdf' } }, { canEdit: false });
+    expect(chunkListOpen()).toBe(true);
+    expect(container.textContent).not.toContain('settings.sources.addChunk');
+  });
+
+  it('an editable tree keeps Add chunk on the chunk list', async () => {
+    await render({ 'report.pdf': { type: 'pdf' } });
+    expect(container.textContent).toContain('settings.sources.addChunk');
+  });
+
   it('a failed load says so and retries', async () => {
     const getDirectoryStructure = vi.mocked(userService.getDirectoryStructure);
     getDirectoryStructure.mockImplementationOnce(async () => {

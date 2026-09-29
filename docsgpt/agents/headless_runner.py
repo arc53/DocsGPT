@@ -14,7 +14,10 @@ from docsgpt.api.answer.services.prompt_renderer import (
     prompt_embeds_documents,
     resolve_prompt_skeleton,
 )
-from docsgpt.api.answer.services.stream_processor import get_prompt
+from docsgpt.api.answer.services.stream_processor import (
+    authorized_prompt_id,
+    get_prompt,
+)
 from docsgpt.core.settings import settings
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.retriever_creator import RetrieverCreator
@@ -156,7 +159,9 @@ def _run_agent_headless(
     # ``chunks=0`` switches retrieval off; only a missing value takes the default.
     raw_chunks = agent_config.get("chunks")
     chunks = 6 if raw_chunks in (None, "") else int(raw_chunks)
-    prompt_id = agent_config.get("prompt_id", "default")
+    # Runs as the owner: a prompt they can no longer use (revoked grant,
+    # deleted) falls back to the default instead of rendering anyway.
+    prompt_id = authorized_prompt_id(agent_config.get("prompt_id", "default"), owner)
     user_api_key = agent_config.get("key")
     agent_id = _resolve_agent_id(agent_config)
     agent_type = agent_config.get("agent_type", "classic")

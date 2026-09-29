@@ -56,13 +56,16 @@ _CONVERSATIONS = "docsgpt.api.user.conversations.routes"
 @pytest.mark.unit
 class TestSourceAudit:
     def test_delete_records_source_deleted(self, client):
-        repo = Mock()
-        repo.get_any.return_value = {"id": "src-1", "name": "Handbook"}
+        from docsgpt.api.user.resource_access import build
+
+        doc = {"id": "src-1", "name": "Handbook"}
+        ra = build("source", "src-1", "owner", "u1", {})
         storage = Mock()
         storage.file_exists.return_value = False
         with _authed(
             _SOURCES,
-            SourcesRepository=Mock(return_value=repo),
+            load_source=Mock(return_value=(doc, ra)),
+            SourcesRepository=Mock(return_value=Mock()),
             StorageCreator=Mock(get_storage=Mock(return_value=storage)),
         ) as recorded:
             resp = client.get("/api/delete_old?source_id=src-1")
@@ -72,9 +75,12 @@ class TestSourceAudit:
         assert recorded[0][3]["name"] == "Handbook"
 
     def test_nothing_recorded_when_the_source_is_missing(self, client):
-        repo = Mock()
-        repo.get_any.return_value = None
-        with _authed(_SOURCES, SourcesRepository=Mock(return_value=repo)) as recorded:
+        from docsgpt.api.user.resource_access import AccessDenied
+
+        with _authed(
+            _SOURCES,
+            load_source=Mock(side_effect=AccessDenied(404, "Source not found")),
+        ) as recorded:
             resp = client.get("/api/delete_old?source_id=nope")
         assert resp.status_code == 404
         assert recorded == []
@@ -158,8 +164,10 @@ class TestRemoteSourceAudit:
 @pytest.mark.unit
 class TestAgentAudit:
     def test_delete_records_agent_deleted(self, client):
+        from docsgpt.api.user.resource_access import build
+
         repo = Mock()
-        repo.get_any.return_value = {
+        repo.get_by_id.return_value = {
             "id": "agent-1",
             "name": "Support bot",
             "agent_type": "classic",
@@ -169,6 +177,8 @@ class TestAgentAudit:
             AgentsRepository=Mock(return_value=repo),
             WorkflowsRepository=Mock(),
             UsersRepository=Mock(),
+            require=Mock(return_value=build("agent", "agent-1", "owner", "u1", {})),
+            delete_settings=Mock(),
         ) as recorded:
             resp = client.delete("/api/delete_agent?id=agent-1")
         assert resp.status_code == 200
@@ -177,9 +187,14 @@ class TestAgentAudit:
         assert recorded[0][3]["name"] == "Support bot"
 
     def test_missing_agent_records_nothing(self, client):
+        from docsgpt.api.user.resource_access import AccessDenied
+
         repo = Mock()
-        repo.get_any.return_value = None
-        with _authed(_AGENTS, AgentsRepository=Mock(return_value=repo)) as recorded:
+        with _authed(
+            _AGENTS,
+            AgentsRepository=Mock(return_value=repo),
+            require=Mock(side_effect=AccessDenied(404, "Agent not found")),
+        ) as recorded:
             assert client.delete("/api/delete_agent?id=x").status_code == 404
         assert recorded == []
 

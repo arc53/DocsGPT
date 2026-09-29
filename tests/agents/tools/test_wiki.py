@@ -152,6 +152,17 @@ def patched_wiki(monkeypatch, reembed_mock, rebuild_mock):
     task = MagicMock()
     task.delay = reembed_mock
     monkeypatch.setattr("docsgpt.api.user.tasks.reembed_wiki_page", task)
+    # Every write re-checks the caller's live grant; default to editor.
+    monkeypatch.setattr(
+        "docsgpt.api.user.resource_access.resolve",
+        lambda conn, rt, rid, uid: _access("editor"),
+    )
+
+
+def _access(level):
+    from docsgpt.api.user.resource_access import build
+
+    return build("source", "src-1", level, "owner-sub", {})
 
 
 @pytest.fixture
@@ -192,6 +203,54 @@ class TestBasics:
 
     def test_updated_by_is_caller(self, wiki_tool):
         assert wiki_tool.updated_by == "caller-sub"
+
+
+# =====================================================================
+# Live grant re-check on writes
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestLiveWriteCheck:
+    @pytest.mark.parametrize("revoked", [None, "viewer"])
+    def test_revoked_or_viewer_cannot_write(self, wiki_tool, monkeypatch, reembed_mock, revoked):
+        wiki_tool.execute_action("create", path="/a.md", content="one")
+        monkeypatch.setattr(
+            "docsgpt.api.user.resource_access.resolve",
+            lambda conn, rt, rid, uid: _access(revoked) if revoked else None,
+        )
+        reembed_mock.reset_mock()
+        for action, kwargs in (
+            ("create", {"path": "/b.md", "content": "x"}),
+            ("str_replace", {"path": "/a.md", "old_str": "one", "new_str": "two"}),
+            ("insert", {"path": "/a.md", "insert_line": 1, "insert_text": "x"}),
+            ("delete", {"path": "/a.md"}),
+            ("rename", {"old_path": "/a.md", "new_path": "/c.md"}),
+        ):
+            result = wiki_tool.execute_action(action, **kwargs)
+            assert "no longer have edit access" in result, action
+        reembed_mock.assert_not_called()
+        # Reads still work.
+        assert "one" in wiki_tool.execute_action("view", path="/a.md")
+
+    def test_checks_the_invoking_user(self, wiki_tool, monkeypatch):
+        seen = []
+
+        def _resolve(conn, rt, rid, uid):
+            seen.append((rt, rid, uid))
+            return _access("editor")
+
+        monkeypatch.setattr("docsgpt.api.user.resource_access.resolve", _resolve)
+        wiki_tool.execute_action("create", path="/a.md", content="x")
+        assert seen == [("source", "src-1", "caller-sub")]
+
+    def test_no_caller_denied(self, patched_wiki):
+        from docsgpt.agents.tools.wiki import WikiTool
+
+        tool = WikiTool({"source_id": "src-1", "source_owner_id": "owner-sub"})
+        assert "no longer have edit access" in tool.execute_action(
+            "create", path="/a.md", content="x"
+        )
 
 
 # =====================================================================
@@ -498,8 +557,8 @@ class TestBuildAgentGating:
             _noop_conn,
         )
         monkeypatch.setattr(
-            "docsgpt.api.user.team_sharing.effective_write_owner",
-            lambda conn, rt, rid, uid: "owner-x",
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner",
+            lambda conn, sid, uid: "owner-x",
         )
         cfg = proc._build_wiki_config()
         assert cfg is not None
@@ -524,10 +583,10 @@ class TestBuildAgentGating:
             "docsgpt.api.answer.services.stream_processor.db_readonly",
             _noop_conn,
         )
-        # Viewer: effective_write_owner returns None.
+        # Viewer: no ``edit`` on the source, so no write owner.
         monkeypatch.setattr(
-            "docsgpt.api.user.team_sharing.effective_write_owner",
-            lambda conn, rt, rid, uid: None,
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner",
+            lambda conn, sid, uid: None,
         )
         assert proc._build_wiki_config() is None
 
@@ -550,8 +609,8 @@ class TestBuildAgentGating:
             _noop_conn,
         )
         monkeypatch.setattr(
-            "docsgpt.api.user.team_sharing.effective_write_owner",
-            lambda conn, rt, rid, uid: "owner-x",
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner",
+            lambda conn, sid, uid: "owner-x",
         )
         assert proc._build_wiki_config() is None
 
@@ -574,8 +633,8 @@ class TestBuildAgentGating:
             _noop_conn,
         )
         monkeypatch.setattr(
-            "docsgpt.api.user.team_sharing.effective_write_owner",
-            lambda conn, rt, rid, uid: "owner-x",
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner",
+            lambda conn, sid, uid: "owner-x",
         )
         cfg = proc._build_wiki_config()
         assert cfg is not None

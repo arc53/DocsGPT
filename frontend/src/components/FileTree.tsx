@@ -38,6 +38,11 @@ interface FileTreeProps {
   initialPath?: string;
   /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
   onCrumbsChange?: (crumbs: Crumb[]) => void;
+  /**
+   * Whether the caller may change the source (`can(source, 'edit')`).
+   * False hides Add file, file and folder Delete (row and header menus) and the chunk writes; browsing stays.
+   */
+  canEdit?: boolean;
 }
 
 const FileTree: React.FC<FileTreeProps> = ({
@@ -49,6 +54,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   actionsTarget,
   initialPath,
   onCrumbsChange,
+  canEdit = true,
 }) => {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -226,6 +232,8 @@ const FileTree: React.FC<FileTreeProps> = ({
     isFile,
     defaultViewOption,
   }: RowMenuContext): MenuOption[] => {
+    // Read-only: View only, so a one-file source draws no header menu.
+    if (!canEdit) return [defaultViewOption];
     return [
       defaultViewOption,
       {
@@ -248,7 +256,7 @@ const FileTree: React.FC<FileTreeProps> = ({
   const topRightAction = (
     <>
       {embedded ? null : headerAction}
-      {!isProcessing ? (
+      {canEdit && !isProcessing ? (
         <Button type="button" size="field" shape="pill" onClick={handleAddFile}>
           {t('settings.sources.addFile')}
         </Button>
@@ -281,6 +289,7 @@ const FileTree: React.FC<FileTreeProps> = ({
       onBackToDocuments={onBackToDocuments}
       embedded={embedded}
       onCrumbsChange={onCrumbsChange}
+      canEdit={canEdit}
       actionsTarget={actionsTarget}
       initialPath={initialPath}
       columnOrder="size-first"

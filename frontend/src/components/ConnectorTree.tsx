@@ -32,6 +32,11 @@ interface ConnectorTreeProps {
   initialPath?: string;
   /** Embedded only: the tree's crumbs, for the host's header (see TreeBrowser). */
   onCrumbsChange?: (crumbs: Crumb[]) => void;
+  /**
+   * Whether the caller may change the source (`can(source, 'edit')`).
+   * False hides Sync and the chunk writes; browsing stays.
+   */
+  canEdit?: boolean;
 }
 
 // Provider names are brand names, so they are not translated.
@@ -64,6 +69,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   actionsTarget,
   initialPath,
   onCrumbsChange,
+  canEdit = true,
 }) => {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -145,28 +151,30 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
   const topRightAction = (
     <>
       {embedded ? null : headerAction}
-      <Button
-        type="button"
-        size="field"
-        shape="pill"
-        onClick={() => setSyncConfirmationModal('ACTIVE')}
-        disabled={isSyncing}
-      >
-        {syncDone ? (
-          <Check />
-        ) : isSyncing ? (
-          // The busy state shows its percentage, so it keeps the label and
-          // draws the app's ring spinner at icon size (DESIGN.md, Button).
-          <Spinner size="xs" label={t('settings.sources.syncing')} />
-        ) : (
-          <RefreshCw />
-        )}
-        {isSyncing
-          ? `${syncProgress}%`
-          : syncDone
-            ? t('settings.sources.syncDone')
-            : t('settings.sources.sync')}
-      </Button>
+      {canEdit ? (
+        <Button
+          type="button"
+          size="field"
+          shape="pill"
+          onClick={() => setSyncConfirmationModal('ACTIVE')}
+          disabled={isSyncing}
+        >
+          {syncDone ? (
+            <Check />
+          ) : isSyncing ? (
+            // The busy state shows its percentage, so it keeps the label and
+            // draws the app's ring spinner at icon size (DESIGN.md, Button).
+            <Spinner size="xs" label={t('settings.sources.syncing')} />
+          ) : (
+            <RefreshCw />
+          )}
+          {isSyncing
+            ? `${syncProgress}%`
+            : syncDone
+              ? t('settings.sources.syncDone')
+              : t('settings.sources.sync')}
+        </Button>
+      ) : null}
     </>
   );
 
@@ -188,6 +196,7 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
       onBackToDocuments={onBackToDocuments}
       embedded={embedded}
       onCrumbsChange={onCrumbsChange}
+      canEdit={canEdit}
       actionsTarget={actionsTarget}
       initialPath={initialPath}
       badge={

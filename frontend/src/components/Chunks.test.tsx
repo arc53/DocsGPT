@@ -843,4 +843,39 @@ describe('Chunks', () => {
     await act(async () => buttonByText('retry')!.click());
     expect(tile()).not.toBeNull();
   });
+  const openReaderMenu = async () => {
+    const trigger = buttonByLabel('settings.sources.menuAlt')!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((el) => el.textContent);
+  };
+
+  it('read-only (canEdit false): no Add chunk, Edit or Delete; reading stays', async () => {
+    await render({ embedded: true, canEdit: false });
+    expect(buttonByText('settings.sources.addChunk')).toBeUndefined();
+    await act(async () => tile()!.click());
+    expect(container.querySelector('h2')?.textContent).toBe(
+      'Late pickup clause',
+    );
+    expect(buttonByText('modals.chunk.edit')).toBeUndefined();
+    expect(buttonByLabel('settings.sources.nextChunk')).not.toBeNull();
+    expect(await openReaderMenu()).toEqual(['settings.sources.copyText']);
+  });
+
+  it('an editor (canEdit true) keeps Add chunk, Edit and Delete', async () => {
+    await render({ embedded: true, canEdit: true });
+    expect(buttonByText('settings.sources.addChunk')).toBeDefined();
+    await act(async () => tile()!.click());
+    expect(buttonByText('modals.chunk.edit')).toBeDefined();
+    expect(await openReaderMenu()).toEqual([
+      'settings.sources.copyText',
+      'modals.chunk.delete',
+    ]);
+  });
 });

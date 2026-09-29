@@ -92,7 +92,10 @@
         "edit": "Редактировать промпт",
         "view": "Просмотреть промпт",
         "duplicate": "Дублировать промпт",
-        "delete": "Удалить промпт"
+        "delete": "Удалить промпт",
+        "deleteFailed": "Не удалось удалить этот промпт.",
+        "saveFailed": "Не удалось сохранить этот промпт.",
+        "editConflict": "Кто-то другой изменил этот промпт. Откройте его заново, чтобы увидеть новую версию."
       }
     },
     "sources": {
@@ -465,7 +468,15 @@
       "editChunk": "Редактировать фрагмент",
       "editChunkDescription": "{{file}} · фрагмент {{n}} · токенов: {{tokens}}",
       "previousChunk": "Предыдущий фрагмент",
-      "nextChunk": "Следующий фрагмент"
+      "nextChunk": "Следующий фрагмент",
+      "viewConfig": "Посмотреть настройки источника",
+      "errors": {
+        "forbidden": "У вас нет прав на это действие с этим источником.",
+        "delete": "Не удалось удалить источник.",
+        "sync": "Не удалось синхронизировать источник.",
+        "syncFrequency": "Не удалось изменить частоту синхронизации.",
+        "reingest": "Не удалось запустить повторную загрузку."
+      }
     },
     "analytics": {
       "label": "Аналитика",
@@ -771,7 +782,184 @@
         "teamLabel": "Команда",
         "viaTeam": "через {{team}}",
         "removeAccess": "Убрать доступ",
-        "access": "Доступ"
+        "access": "Доступ",
+        "showAll": "Показать все ({{count}})",
+        "andMore": "и ещё {{count}}",
+        "back": "Назад",
+        "allSummary": "{{name}} · Команды: {{teams}} · Люди: {{people}}",
+        "searchAccess": "Поиск людей и команд…",
+        "filterLabel": "Фильтр пользователей с доступом",
+        "filter": {
+          "all": "Все",
+          "teams": "Команды",
+          "people": "Люди",
+          "editors": "Редакторы"
+        }
+      },
+      "accessChangeError": "Не удалось изменить доступ.",
+      "accessSettings": {
+        "title": "Настройки доступа",
+        "saveError": "Не удалось сохранить настройку доступа.",
+        "agent": {
+          "editors_can_share": {
+            "label": "Редакторы могут делиться",
+            "description": "Добавлять людей и команды и менять их доступ."
+          },
+          "editors_can_delete": {
+            "label": "Редакторы могут удалять",
+            "description": "Удалить агента для всех."
+          },
+          "editors_can_manage_access_details": {
+            "label": "Редакторы управляют данными доступа",
+            "description": "API-ключ, вебхук и публичная ссылка."
+          },
+          "viewers_can_see_logs": {
+            "label": "Читатели видят журналы",
+            "description": "Диалоги и аналитика этого агента."
+          }
+        },
+        "source": {
+          "editors_can_share": {
+            "label": "Редакторы могут делиться",
+            "description": "Добавлять людей и команды и менять их доступ."
+          },
+          "editors_can_delete": {
+            "label": "Редакторы могут удалять",
+            "description": "Удалить источник для всех."
+          },
+          "viewers_can_see_config": {
+            "label": "Читатели видят настройки",
+            "description": "Настройки разбиения, ретривера и синхронизации, только чтение."
+          }
+        },
+        "tool": {
+          "editors_can_change_credentials": {
+            "label": "Редакторы могут менять учётные данные и подключение",
+            "description": "Они заменяют сохранённые секреты; прочитать их не может никто."
+          },
+          "editors_can_share": {
+            "label": "Редакторы могут делиться",
+            "description": "Добавлять людей и команды и менять их доступ."
+          },
+          "viewers_can_use_in_agents": {
+            "label": "Читатели могут использовать его в своих агентах",
+            "description": "Он работает с вашими учётными данными."
+          }
+        },
+        "prompt": {
+          "editors_can_share": {
+            "label": "Редакторы могут делиться",
+            "description": "Добавлять людей и команды и менять их доступ."
+          },
+          "viewers_can_duplicate": {
+            "label": "Читатели могут создавать копию",
+            "description": "Сделать свою копию для редактирования."
+          }
+        }
+      },
+      "editorHint": {
+        "agent": "Редакторы могут менять его, включая журналы, расписания и данные доступа.",
+        "agentNoAccessDetails": "Редакторы могут менять его, включая журналы и расписания, но не данные доступа.",
+        "source": "Редакторы могут править фрагменты и файлы, синхронизировать и менять настройки.",
+        "tool": "Редакторы могут менять действия и заменять учётные данные, но не читать секреты.",
+        "toolNoCredentials": "Редакторы могут менять действия, но не учётные данные.",
+        "prompt": "Редакторы могут менять текст.",
+        "noShareNoDelete": "Делиться и удалять они не могут.",
+        "shareOnly": "Они также могут делиться, но не удалять.",
+        "deleteOnly": "Они также могут удалять, но не делиться.",
+        "shareAndDelete": "Они также могут делиться и удалять.",
+        "noShare": "Делиться и удалять они не могут.",
+        "share": "Они также могут делиться, но не удалять."
+      },
+      "capabilities": {
+        "agent": {
+          "viewers": "Читатели: общаться с ним и закреплять его",
+          "editors": "Редакторы: править, публиковать, смотреть журналы и управлять расписаниями"
+        },
+        "source": {
+          "viewers": "Читатели: просматривать, искать и использовать в своих агентах",
+          "editors": "Редакторы: править фрагменты и файлы, синхронизировать, менять настройки"
+        },
+        "tool": {
+          "viewers": "Читатели: использовать в агентах владельца",
+          "editors": "Редакторы: менять действия и подтверждения"
+        },
+        "prompt": {
+          "viewers": "Читатели: читать и использовать в своих агентах",
+          "editors": "Редакторы: менять текст"
+        },
+        "switch": {
+          "editors_can_share": {
+            "on": "Редакторы могут делиться",
+            "off": "Редакторы не могут делиться"
+          },
+          "editors_can_delete": {
+            "on": "Редакторы могут удалять",
+            "off": "Редакторы не могут удалять"
+          },
+          "editors_can_manage_access_details": {
+            "on": "Редакторы управляют API-ключом, вебхуком и публичной ссылкой",
+            "off": "Редакторы не управляют API-ключом, вебхуком и публичной ссылкой"
+          },
+          "viewers_can_see_logs": {
+            "on": "Читатели видят журналы",
+            "off": "Читатели не видят журналы"
+          },
+          "viewers_can_see_config": {
+            "on": "Читатели видят настройки",
+            "off": "Читатели не видят настройки"
+          },
+          "editors_can_change_credentials": {
+            "on": "Редакторы могут заменять учётные данные",
+            "off": "Редакторы не могут менять учётные данные"
+          },
+          "viewers_can_use_in_agents": {
+            "on": "Читатели могут использовать его в своих агентах",
+            "off": "Читатели не могут использовать его в своих агентах"
+          },
+          "viewers_can_duplicate": {
+            "on": "Читатели могут создавать копию",
+            "off": "Читатели не могут создавать копию"
+          }
+        }
+      },
+      "sharedList": {
+        "badgeWithEditors": "{{level}} · +{{count}} ред.",
+        "meta": "{{type}} · {{owner}}",
+        "filterLabel": "Фильтр общих ресурсов",
+        "filter": {
+          "all": "Все",
+          "agent": "Агенты",
+          "source": "Источники",
+          "tool": "Инструменты",
+          "prompt": "Промпты"
+        },
+        "search": "Поиск в общих…",
+        "noMatches": "Ничего не найдено."
+      },
+      "drawer": {
+        "close": "Закрыть",
+        "subtitle": "{{type}} · владелец: {{owner}}",
+        "open": "Открыть: {{type}}",
+        "manageSharing": "Управлять доступом",
+        "owner": "Владелец",
+        "shared": "Открыт",
+        "sharedOnBy": "{{date}}, {{name}}",
+        "yourAccess": "Ваш доступ",
+        "yourAccessLevel": {
+          "owner": "Владелец",
+          "editor": "Редактор",
+          "viewer": "Читатель",
+          "none": "Нет доступа"
+        },
+        "accessIn": "Доступ в {{team}}",
+        "everyone": "Все в {{team}}",
+        "teamGrant": "Вся команда",
+        "memberGrant": "Только этот человек",
+        "removeGrant": "Убрать доступ",
+        "otherTeamsHint": "Доступ есть и у других команд? Им управляют в «Управлять доступом».",
+        "whatPeopleCanDo": "Что здесь можно делать",
+        "capabilitiesHint": "Из настроек доступа владельца. Здесь только для чтения."
       }
     },
     "tools": {
@@ -845,7 +1033,6 @@
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
         "reconnectServer": "Переподключить сервер",
-        "reenterCredentials": "Введите учетные данные ещё раз, чтобы проверить и обновить подключение.",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -890,7 +1077,18 @@
           "oauthFailed": "OAuth process failed or was cancelled",
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
-        }
+        },
+        "sharedByEditor": "Предоставил(а) {{owner}} · вы редактор",
+        "aTeammate": "участник команды",
+        "sharedCredentialsNotice": "Сохранённые учётные данные скрыты. Введённые вами данные заменят их для всех, кто пользуется этим инструментом.",
+        "serverChangedNotice": "Сервер изменился, поэтому сохранённый {{credential}} будет удалён. Введите его для нового сервера, чтобы сохранить.",
+        "credentialNames": {
+          "apiKey": "API-ключ",
+          "bearer": "токен",
+          "password": "пароль"
+        },
+        "savedKeyHint": "Ключ сохранён. Оставьте поле пустым, чтобы сохранить его (только пока сервер не изменился).",
+        "sharedOAuthOwnerOnly": "Переподключить вход может только владелец: вы можете переименовать инструмент, но не менять его сервер или аккаунт."
       },
       "configErrors": {
         "required": "Поле «{{field}}» обязательно",
@@ -898,7 +1096,14 @@
         "maxTimeout": "Максимальный тайм-аут — 300 секунд"
       },
       "headerValuePlaceholder": "например, application/json",
-      "toolIconTitle": "Значок {{name}}"
+      "toolIconTitle": "Значок {{name}}",
+      "view": "Просмотр",
+      "inMyChats": "В моих чатах",
+      "useInMyChatsAria": "Использовать {{toolName}} в моих чатах",
+      "statusUpdateFailed": "Не удалось изменить, используется ли этот инструмент в ваших чатах.",
+      "deleteFailed": "Не удалось удалить этот инструмент.",
+      "sharedBy": "Предоставлено: {{team}}",
+      "savedSecretPlaceholder": "Сохранено · введите новое значение для замены"
     },
     "devices": {
       "label": "Устройства",
@@ -1409,7 +1614,9 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "Сбросить ключ",
-      "resetKeyConfirm": "Вы уверены, что хотите сбросить API-ключ? Текущий ключ немедленно перестанет работать, и это действие нельзя отменить."
+      "resetKeyConfirm": "Вы уверены, что хотите сбросить API-ключ? Текущий ключ немедленно перестанет работать, и это действие нельзя отменить.",
+      "actionFailed": "Не получилось. Попробуйте ещё раз.",
+      "apiKeyAfterPublish": "Опубликуйте агента, чтобы создать его API-ключ."
     },
     "importSpec": {
       "title": "Импорт спецификации API",
@@ -1838,7 +2045,6 @@
         "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
         "remove": "Remove",
         "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
         "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
         "floorControl": "{{stage}}: {{action}} — required by the instance policy",
         "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
@@ -1856,7 +2062,8 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        }
+        },
+        "readOnly": "Вы видите эту политику, но ваша роль не позволяет её изменить."
       },
       "byline": {
         "new": "Настройте агента и опубликуйте его, чтобы с ним общаться."
@@ -2310,7 +2517,8 @@
       "classicDescription": "Создайте стандартного ИИ-агента с одной моделью, инструментами и источниками знаний",
       "workflowTitle": "Агент рабочего процесса",
       "workflowDescription": "Создавайте сложные многошаговые рабочие процессы с разными моделями, условной логикой и управлением состоянием"
-    }
+    },
+    "deleteFailed": "Не удалось удалить агента. Попробуйте ещё раз."
   },
   "components": {
     "fileUpload": {

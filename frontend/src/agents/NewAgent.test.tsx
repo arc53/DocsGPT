@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => {
     dispatch: vi.fn(),
     getAgent: vi.fn(() => jsonResponse({})),
     createAgent: vi.fn(() => jsonResponse({ message: 'Name is taken' }, false)),
+    deleteAgent: vi.fn(() => jsonResponse({})),
+    guardrailsProps: vi.fn(),
   };
 });
 const { jsonResponse } = mocks;
@@ -53,7 +55,7 @@ vi.mock('../api/services/userService', () => ({
     getAgent: mocks.getAgent,
     createAgent: mocks.createAgent,
     updateAgent: () => jsonResponse({}),
-    deleteAgent: () => jsonResponse({}),
+    deleteAgent: mocks.deleteAgent,
     createPrompt: () => jsonResponse({}),
   },
 }));
@@ -97,13 +99,29 @@ vi.mock('./workflow/WorkflowBuilder', () => ({ default: () => null }));
 vi.mock('./AgentPreview', () => ({ default: () => null }));
 vi.mock('../settings/Prompts', () => ({ default: () => null }));
 vi.mock('./components/GuardrailsSection', () => ({
-  default: () => null,
+  default: (props: { disabled?: boolean }) => {
+    mocks.guardrailsProps(props);
+    return null;
+  },
   guardrailsIncomplete: () => false,
 }));
 vi.mock('../upload/Upload', () => ({ default: () => null }));
 vi.mock('../modals/AgentDetailsModal', () => ({ default: () => null }));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
-vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
+vi.mock('../modals/ConfirmationModal', () => ({
+  default: ({
+    modalState,
+    handleSubmit,
+  }: {
+    modalState: string;
+    handleSubmit: () => void;
+  }) =>
+    modalState === 'ACTIVE' ? (
+      <button type="button" data-testid="confirm-delete" onClick={handleSubmit}>
+        confirm
+      </button>
+    ) : null,
+}));
 vi.mock('../preferences/PromptsModal', () => ({ default: () => null }));
 vi.mock('../navigation/SectionPills', () => ({
   default: () => <div data-testid="section-pills" />,
@@ -532,5 +550,180 @@ describe('NewAgent form', () => {
     for (const label of labels) {
       expect(label.className).toContain('bg-background');
     }
+  });
+});
+
+describe('NewAgent gating by role', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  const OWNER = [
+    'delete',
+    'edit',
+    'edit_policy',
+    'export',
+    'manage_access_details',
+    'manage_schedules',
+    'manage_settings',
+    'move_folder',
+    'pin',
+    'publish',
+    'share',
+    'use',
+    'view',
+    'view_logs',
+  ];
+  const EDITOR = [
+    'edit',
+    'edit_policy',
+    'export',
+    'manage_access_details',
+    'manage_schedules',
+    'pin',
+    'publish',
+    'use',
+    'view',
+    'view_logs',
+  ];
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    mocks.dispatch.mockClear();
+    mocks.getAgent.mockReset();
+    mocks.getAgent.mockImplementation(() => jsonResponse({}));
+    mocks.deleteAgent.mockReset();
+    mocks.deleteAgent.mockImplementation(() => jsonResponse({}));
+    mocks.guardrailsProps.mockClear();
+  });
+
+  const renderEdit = async (access: 'owner' | 'editor', allowed: string[]) => {
+    mocks.getAgent.mockImplementation(() =>
+      jsonResponse({
+        id: 'agent-1',
+        name: 'Deal Desk',
+        description: 'Researches deals',
+        status: 'published',
+        agent_type: 'classic',
+        prompt_id: 'default',
+        ownership: access === 'owner' ? 'user' : 'team',
+        team_access: access === 'owner' ? null : access,
+        access,
+        allowed_actions: allowed,
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/agent-1']}>
+          <Routes>
+            <Route
+              path="/agents/edit/:agentId"
+              element={<NewAgent mode="edit" />}
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  const buttonByText = (text: string) =>
+    Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes(text),
+    );
+
+  const menuLabels = async () => {
+    const menu = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="agents.form.buttons.moreActions"]',
+    )!;
+    await act(async () => {
+      menu.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+    });
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((item) => item.textContent);
+  };
+
+  const lastGuardrailsDisabled = () =>
+    mocks.guardrailsProps.mock.calls.at(-1)?.[0].disabled;
+
+  it('gives the owner Share, Access details and the danger zone', async () => {
+    await renderEdit('owner', OWNER);
+    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeDefined();
+    expect(await menuLabels()).toEqual([
+      'agents.form.buttons.accessDetails',
+      'agents.shareWithTeam',
+    ]);
+  });
+
+  it('hides Share and Delete from an editor but keeps Access details', async () => {
+    await renderEdit('editor', EDITOR);
+    expect(buttonByText('agents.form.dangerZone.deleteButton')).toBeUndefined();
+    expect(await menuLabels()).toEqual(['agents.form.buttons.accessDetails']);
+  });
+
+  it('lets an editor change guardrails and quotas', async () => {
+    await renderEdit('editor', EDITOR);
+    expect(lastGuardrailsDisabled()).toBe(false);
+    await act(async () =>
+      buttonByText('agents.form.sections.advanced')!.click(),
+    );
+    const switches =
+      container.querySelectorAll<HTMLButtonElement>('[role="switch"]');
+    expect(switches.length).toBeGreaterThan(0);
+    for (const s of Array.from(switches)) expect(s.disabled).toBe(false);
+  });
+
+  it('locks guardrails and quotas without edit_policy', async () => {
+    await renderEdit(
+      'editor',
+      EDITOR.filter((a) => a !== 'edit_policy'),
+    );
+    expect(lastGuardrailsDisabled()).toBe(true);
+    await act(async () =>
+      buttonByText('agents.form.sections.advanced')!.click(),
+    );
+    const token = container.querySelector<HTMLInputElement>(
+      'input[placeholder="agents.form.placeholders.enterTokenLimit"]',
+    )!;
+    const tokenSwitch = token
+      .closest('[data-slot="setting-row"]')
+      ?.querySelector<HTMLButtonElement>('[role="switch"]');
+    expect(tokenSwitch?.disabled).toBe(true);
+    expect(token.disabled).toBe(true);
+  });
+
+  it('hides Access details without manage_access_details', async () => {
+    await renderEdit(
+      'editor',
+      EDITOR.filter((a) => a !== 'manage_access_details'),
+    );
+    expect(await menuLabels()).toEqual([]);
+  });
+
+  it('reports a failed delete in a toast instead of throwing', async () => {
+    mocks.deleteAgent.mockImplementation(() =>
+      jsonResponse({ message: 'Only the owner can delete' }, false),
+    );
+    await renderEdit('owner', OWNER);
+    await act(async () =>
+      buttonByText('agents.form.dangerZone.deleteButton')!.click(),
+    );
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="confirm-delete"]')!
+        .click(),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith({
+      type: 'actionToast/showActionToast',
+      payload: { variant: 'destructive', message: 'Only the owner can delete' },
+    });
   });
 });

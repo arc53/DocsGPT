@@ -10,6 +10,7 @@ from sqlalchemy import text as _sql_text
 from docsgpt.api import api
 from docsgpt.core.settings import settings
 from docsgpt.api.user.base import resolve_tool_details
+from docsgpt.api.user.resource_access import AccessDenied, require, resolve
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
@@ -21,12 +22,38 @@ agents_sharing_ns = Namespace(
 )
 
 
+# A caller who reached an agent only through its public link may chat with it
+# and pin it; a team grant, when there is one, gives more.
+LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
+
+
+def _link_access(conn, agent_id: str, user_id) -> dict:
+    """The ``access`` payload for an agent the caller reached by share link.
+
+    Args:
+        conn: Open database connection.
+        agent_id: The agent's id.
+        user_id: The caller, or None when anonymous.
+
+    Returns:
+        The caller's own access (owner or a team grant) when they have one,
+        else viewer with ``pin`` and ``use``.
+    """
+    if user_id:
+        ra = resolve(conn, "agent", agent_id, user_id)
+        if ra is not None:
+            return ra.payload()
+    return dict(LINK_SHARED_ACCESS)
+
+
 def _serialize_agent_basic(agent: dict) -> dict:
-    """Shape a PG agent row into the API response dict."""
+    """Shape a PG agent row into the API response dict.
+
+    The owner's user id is deliberately not included: a share link is public.
+    """
     source_id = agent.get("source_id")
     return {
         "id": str(agent["id"]),
-        "user": agent.get("user_id", ""),
         "name": agent.get("name", ""),
         "image": (
             generate_image_url(
@@ -91,8 +118,8 @@ class SharedAgent(Resource):
                     enriched_tools.append(detail.get("name", ""))
                 data["tools"] = enriched_tools
             decoded_token = getattr(request, "decoded_token", None)
-            if decoded_token:
-                user_id = decoded_token.get("sub")
+            user_id = decoded_token.get("sub") if decoded_token else None
+            if user_id:
                 owner_id = shared_agent.get("user_id")
 
                 if user_id != owner_id:
@@ -100,6 +127,8 @@ class SharedAgent(Resource):
                         users_repo = UsersRepository(conn)
                         users_repo.upsert(user_id)
                         users_repo.add_shared(user_id, agent_id)
+            with db_readonly() as conn:
+                data.update(_link_access(conn, agent_id, user_id))
             return make_response(jsonify(data), 200)
         except Exception as err:
             current_app.logger.error(f"Error retrieving shared agent: {err}")
@@ -152,6 +181,10 @@ class SharedAgents(Resource):
                     if isinstance(user_doc.get("agent_preferences"), dict)
                     else []
                 )
+                access_by_id = {
+                    str(agent["id"]): _link_access(conn, str(agent["id"]), user_id)
+                    for agent in shared_agents
+                }
 
             list_shared_agents = []
             for agent in shared_agents:
@@ -185,6 +218,7 @@ class SharedAgents(Resource):
                         "shared": bool(agent.get("shared", False)),
                         "shared_token": agent.get("shared_token", "") or "",
                         "shared_metadata": agent.get("shared_metadata", {}) or {},
+                        **access_by_id[agent_id_str],
                     }
                 )
 
@@ -244,7 +278,15 @@ class ShareAgent(Resource):
         try:
             with db_session() as conn:
                 repo = AgentsRepository(conn)
-                agent = repo.get_any(agent_id, user)
+                # The public link is an access detail; it is written as the owner.
+                try:
+                    ra = require(conn, "agent", agent_id, user, "manage_access_details")
+                except AccessDenied as denied:
+                    return make_response(
+                        jsonify({"success": False, "message": denied.message}), denied.status
+                    )
+                owner_id = ra.owner_id
+                agent = repo.get_by_id(ra.resource_id)
                 if not agent:
                     return make_response(
                         jsonify({"success": False, "message": "Agent not found"}), 404
@@ -258,7 +300,7 @@ class ShareAgent(Resource):
                     }
                     shared_token = secrets.token_urlsafe(32)
                     repo.update(
-                        str(agent["id"]), user,
+                        str(agent["id"]), owner_id,
                         {
                             "shared": True,
                             "shared_token": shared_token,
@@ -267,7 +309,7 @@ class ShareAgent(Resource):
                     )
                 else:
                     repo.update(
-                        str(agent["id"]), user,
+                        str(agent["id"]), owner_id,
                         {
                             "shared": False,
                             "shared_token": None,

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { isChatToolVisible, isClassicAgentToolVisible } from './toolUtils';
+import {
+  canAddToolToOwn,
+  isAgentPickerToolVisible,
+  isChatPickerToolVisible,
+  isChatToolVisible,
+  isClassicAgentToolVisible,
+  toolInChat,
+} from './toolUtils';
 
 // Regression for the filter drift introduced when ``scheduler`` was
 // dual-registered (both ``default: true`` and ``builtin: true``). The
@@ -36,5 +43,88 @@ describe('isClassicAgentToolVisible', () => {
   it('keeps non-workflow-only tools', () => {
     expect(isClassicAgentToolVisible({ workflow_only: false })).toBe(true);
     expect(isClassicAgentToolVisible({})).toBe(true);
+  });
+});
+
+// The "In my chats" switch: the owner's value is ``status``; a grantee's is
+// their own ``in_chat`` preference, which the server sends for everyone.
+describe('toolInChat', () => {
+  it('prefers in_chat over status', () => {
+    expect(toolInChat({ status: true, in_chat: false })).toBe(false);
+    expect(toolInChat({ status: false, in_chat: true })).toBe(true);
+  });
+
+  it('falls back to status when in_chat is absent', () => {
+    expect(toolInChat({ status: true })).toBe(true);
+    expect(toolInChat({ status: false })).toBe(false);
+  });
+});
+
+describe('canAddToolToOwn', () => {
+  it("allows the caller's own tools", () => {
+    expect(canAddToolToOwn({})).toBe(true);
+    expect(canAddToolToOwn({ access: 'owner', allowed_actions: [] })).toBe(
+      true,
+    );
+  });
+
+  it('follows use_in_own for a shared tool', () => {
+    expect(
+      canAddToolToOwn({ access: 'viewer', allowed_actions: ['use'] }),
+    ).toBe(false);
+    expect(
+      canAddToolToOwn({
+        access: 'viewer',
+        allowed_actions: ['use', 'use_in_own'],
+      }),
+    ).toBe(true);
+  });
+
+  it('falls back to the role default for a legacy shared row', () => {
+    // Viewers and editors may add a shared tool to their own agents by default.
+    expect(canAddToolToOwn({ ownership: 'team', team_access: 'editor' })).toBe(
+      true,
+    );
+  });
+});
+
+describe('isChatPickerToolVisible', () => {
+  it('hides shared tools the caller may not add to their own chats', () => {
+    expect(
+      isChatPickerToolVisible({ access: 'viewer', allowed_actions: ['use'] }),
+    ).toBe(false);
+  });
+
+  it("keeps shared tools with use_in_own and the caller's own tools", () => {
+    expect(
+      isChatPickerToolVisible({
+        access: 'editor',
+        allowed_actions: ['use', 'use_in_own', 'edit'],
+      }),
+    ).toBe(true);
+    expect(isChatPickerToolVisible({})).toBe(true);
+  });
+
+  it('still drops pure builtins', () => {
+    expect(isChatPickerToolVisible({ builtin: true })).toBe(false);
+  });
+});
+
+describe('isAgentPickerToolVisible', () => {
+  it('keeps own tools and shared tools usable in own agents', () => {
+    expect(isAgentPickerToolVisible({})).toBe(true);
+    expect(
+      isAgentPickerToolVisible({
+        access: 'viewer',
+        allowed_actions: ['use', 'use_in_own'],
+      }),
+    ).toBe(true);
+  });
+
+  it('hides shared tools without use_in_own and workflow-only builtins', () => {
+    expect(
+      isAgentPickerToolVisible({ access: 'viewer', allowed_actions: ['use'] }),
+    ).toBe(false);
+    expect(isAgentPickerToolVisible({ workflow_only: true })).toBe(false);
   });
 });

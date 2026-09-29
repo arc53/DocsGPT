@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, TriangleAlert } from 'lucide-react';
+import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -29,6 +29,22 @@ interface MCPServerModalProps {
   server?: any;
   onServerSaved: () => void;
 }
+
+/** The host of a URL, or '' while it doesn't parse. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url.trim()).host.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+// The saved secret each auth type keeps, named for the host-change notice.
+const SECRET_FIELDS: Record<string, { field: string; nameKey: string }> = {
+  api_key: { field: 'api_key', nameKey: 'apiKey' },
+  bearer: { field: 'bearer_token', nameKey: 'bearer' },
+  basic: { field: 'password', nameKey: 'password' },
+};
 
 export default function MCPServerModal({
   modalState,
@@ -94,6 +110,24 @@ export default function MCPServerModal({
   const popupOpenedRef = useRef(false);
   const [oauthCompleted, setOAuthCompleted] = useState(false);
   const [saveActive, setSaveActive] = useState(false);
+
+  // A tool shared with the caller (an editor reconnecting the owner's
+  // server): its saved secrets stay hidden and a new entry replaces them.
+  const isShared = !!server?.access && server.access !== 'owner';
+  // Only the owner can re-run an OAuth sign-in (the tokens are theirs), so a
+  // teammate may rename an OAuth tool but not change its server or account.
+  const oauthOwnerOnly = isShared && server?.auth_type === 'oauth';
+  const savedSecret = SECRET_FIELDS[formData.auth_type];
+  const hasSavedSecret =
+    !!server?.has_encrypted_credentials &&
+    !!savedSecret &&
+    formData.auth_type === server?.auth_type;
+  // The server clears the saved secret when the host changes, so the key
+  // can't be pointed at another server.
+  const serverChanged =
+    hasSavedSecret &&
+    hostOf(formData.server_url) !== hostOf(server?.server_url || '');
+  const keepSavedSecret = hasSavedSecret && !serverChanged;
 
   const cleanupOAuthListener = useCallback(() => {
     setOauthTaskId(null);
@@ -167,17 +201,17 @@ export default function MCPServerModal({
 
     const authFieldChecks: { [key: string]: () => void } = {
       api_key: () => {
-        if (!formData.api_key.trim())
+        if (!formData.api_key.trim() && !keepSavedSecret)
           newErrors.api_key = t('settings.tools.mcp.errors.apiKeyRequired');
       },
       bearer: () => {
-        if (!formData.bearer_token.trim())
+        if (!formData.bearer_token.trim() && !keepSavedSecret)
           newErrors.bearer_token = t('settings.tools.mcp.errors.tokenRequired');
       },
       basic: () => {
         if (!formData.username.trim())
           newErrors.username = t('settings.tools.mcp.errors.usernameRequired');
-        if (!formData.password.trim())
+        if (!formData.password.trim() && !keepSavedSecret)
           newErrors.password = t('settings.tools.mcp.errors.passwordRequired');
       },
     };
@@ -299,6 +333,7 @@ export default function MCPServerModal({
             setTestResult({
               success: true,
               message: t('settings.tools.mcp.oauthPopupBlocked', {
+                interpolation: { escapeValue: false },
                 defaultValue:
                   'Popup blocked by browser. Click below to authorize:',
               }),
@@ -369,7 +404,11 @@ export default function MCPServerModal({
     setOAuthCompleted(false);
     try {
       const config = buildToolConfig();
-      const response = await userService.testMCPConnection({ config }, token);
+      // The id lets the server test with the saved secret left empty.
+      const response = await userService.testMCPConnection(
+        { config, ...(server?.id && { id: server.id }) },
+        token,
+      );
       const result = await response.json();
 
       if (
@@ -441,7 +480,10 @@ export default function MCPServerModal({
         resetForm();
       } else {
         setErrors({
-          general: result.error || t('settings.tools.mcp.errors.saveFailed'),
+          general:
+            result.message ||
+            result.error ||
+            t('settings.tools.mcp.errors.saveFailed'),
         });
       }
     } catch {
@@ -460,6 +502,11 @@ export default function MCPServerModal({
               label={t('settings.tools.mcp.authTypes.apiKey')}
               required
               error={errors.api_key}
+              hint={
+                keepSavedSecret
+                  ? t('settings.tools.mcp.savedKeyHint')
+                  : undefined
+              }
             >
               <Input
                 type="text"
@@ -486,6 +533,9 @@ export default function MCPServerModal({
             label={t('settings.tools.mcp.authTypes.bearer')}
             required
             error={errors.bearer_token}
+            hint={
+              keepSavedSecret ? t('settings.tools.mcp.savedKeyHint') : undefined
+            }
           >
             <Input
               type="text"
@@ -516,6 +566,11 @@ export default function MCPServerModal({
               label={t('settings.tools.mcp.password')}
               required
               error={errors.password}
+              hint={
+                keepSavedSecret
+                  ? t('settings.tools.mcp.savedKeyHint')
+                  : undefined
+              }
             >
               <Input
                 type="password"
@@ -536,6 +591,7 @@ export default function MCPServerModal({
                 handleInputChange('oauth_scopes', e.target.value)
               }
               placeholder="read, write"
+              disabled={oauthOwnerOnly}
             />
           </FormField>
         );
@@ -560,21 +616,31 @@ export default function MCPServerModal({
             })
           : t('settings.tools.mcp.addServer')
       }
+      description={
+        isShared
+          ? t('settings.tools.mcp.sharedByEditor', {
+              interpolation: { escapeValue: false },
+              owner: server.owner_label || t('settings.tools.mcp.aTeammate'),
+            })
+          : undefined
+      }
       size="lg"
       mobileVariant="sheet"
       footer={
         <ModalActions
           footerStart={
-            <Button
-              type="button"
-              variant="outline"
-              onClick={testConnection}
-              loading={testing}
-              size="lg"
-              shape="pill"
-            >
-              {t('settings.tools.mcp.testConnection')}
-            </Button>
+            oauthOwnerOnly ? undefined : (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={testConnection}
+                loading={testing}
+                size="lg"
+                shape="pill"
+              >
+                {t('settings.tools.mcp.testConnection')}
+              </Button>
+            )
           }
           cancelLabel={t('settings.tools.mcp.cancel')}
           onCancel={() => {
@@ -584,23 +650,21 @@ export default function MCPServerModal({
           submitLabel={t('settings.tools.mcp.save')}
           onSubmit={handleSave}
           pending={loading}
-          disabled={!saveActive}
+          disabled={!saveActive && !oauthOwnerOnly}
         />
       }
     >
       <div className="flex flex-col gap-5">
-        {server?.has_encrypted_credentials &&
-          formData.auth_type !== 'oauth' && (
-            <Alert variant="warning">
-              <TriangleAlert className="size-4" aria-hidden="true" />
-              <AlertDescription>
-                {t('settings.tools.mcp.reenterCredentials', {
-                  defaultValue:
-                    'Re-enter your credentials to test and update the connection.',
-                })}
-              </AlertDescription>
-            </Alert>
-          )}
+        {isShared && (
+          <Alert variant="info">
+            <Info aria-hidden="true" />
+            <AlertDescription>
+              {t('settings.tools.mcp.sharedCredentialsNotice')}
+              {oauthOwnerOnly &&
+                ` ${t('settings.tools.mcp.sharedOAuthOwnerOnly')}`}
+            </AlertDescription>
+          </Alert>
+        )}
         <FormField
           label={t('settings.tools.mcp.serverName')}
           required
@@ -624,13 +688,28 @@ export default function MCPServerModal({
             value={formData.server_url}
             onChange={(e) => handleInputChange('server_url', e.target.value)}
             placeholder="https://example.com/mcp"
+            disabled={oauthOwnerOnly}
           />
         </FormField>
+        {serverChanged && (
+          <Alert variant="warning">
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>
+              {t('settings.tools.mcp.serverChangedNotice', {
+                interpolation: { escapeValue: false },
+                credential: t(
+                  `settings.tools.mcp.credentialNames.${savedSecret.nameKey}`,
+                ),
+              })}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <FormField label={t('settings.tools.mcp.authType')}>
           <Select
             value={formData.auth_type}
             onValueChange={(v) => handleInputChange('auth_type', v)}
+            disabled={oauthOwnerOnly}
           >
             <SelectTrigger size="field" className="w-full">
               <SelectValue placeholder={t('settings.tools.mcp.authType')} />

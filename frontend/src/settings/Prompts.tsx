@@ -1,7 +1,7 @@
 import { ChevronDown, Copy, Eye, Pencil, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
 import {
@@ -22,11 +22,21 @@ import {
 import { SectionHeader } from '../components/ui/section-header';
 import { SettingRow } from '../components/ui/setting-row';
 import ConfirmationModal from '../modals/ConfirmationModal';
-import { ActiveState, PromptProps } from '../models/misc';
+import { ActiveState, Prompt, PromptProps } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import PromptsModal from '../preferences/PromptsModal';
+import { can } from '../utils/accessUtils';
 import { cn } from '@/lib/utils';
+
+// Presets (`public`) carry no access fields and are never edited in place.
+const canEditPrompt = (prompt: Prompt) =>
+  prompt.type !== 'public' && can(prompt, 'edit');
+const canDeletePrompt = (prompt: Prompt) =>
+  prompt.type !== 'public' && can(prompt, 'delete');
+const canSharePrompt = (prompt: Prompt) =>
+  prompt.type !== 'public' && can(prompt, 'share');
 
 type PromptsDropdownProps = {
   className?: string;
@@ -62,18 +72,27 @@ export default function Prompts({
   labelSurface = 'card',
 }: ExtendedPromptProps) {
   const token = useSelector(selectToken);
+  const dispatch = useDispatch();
   const { t } = useTranslation();
+  const showError = (message: string) =>
+    dispatch(showActionToast({ variant: 'destructive', message }));
   const pickerId = React.useId();
   const titleText = title ? title : t('settings.general.prompt');
   const [newPromptName, setNewPromptName] = React.useState('');
   const [newPromptContent, setNewPromptContent] = React.useState('');
   const [editPromptName, setEditPromptName] = React.useState('');
   const [editPromptContent, setEditPromptContent] = React.useState('');
-  const [currentPromptEdit, setCurrentPromptEdit] = React.useState({
+  const [currentPromptEdit, setCurrentPromptEdit] = React.useState<Prompt>({
     id: '',
     name: '',
     type: '',
   });
+  // The open prompt's version, sent back so a save over someone else's
+  // newer edit is refused (409) instead of overwriting it.
+  const [editPromptUpdatedAt, setEditPromptUpdatedAt] = React.useState<
+    string | null
+  >(null);
+  const [editReadOnly, setEditReadOnly] = React.useState(false);
   const [modalType, setModalType] = React.useState<'ADD' | 'EDIT'>('ADD');
   const [duplicateSource, setDuplicateSource] = React.useState<string | null>(
     null,
@@ -138,13 +157,15 @@ export default function Prompts({
 
   const confirmDeletePrompt = () => {
     if (promptToDelete) {
-      setPrompts(prompts.filter((prompt) => prompt.id !== promptToDelete.id));
       userService
         .deletePrompt({ id: promptToDelete.id }, token)
         .then((response) => {
           if (!response.ok) {
             throw new Error('Failed to delete prompt');
           }
+          setPrompts(
+            prompts.filter((prompt) => prompt.id !== promptToDelete.id),
+          );
           // Only change selection if we're deleting the currently selected prompt
           if (
             prompts.length > 0 &&
@@ -163,6 +184,7 @@ export default function Prompts({
         })
         .catch((error) => {
           console.error(error);
+          showError(t('settings.general.promptActions.deleteFailed'));
         });
       setPromptToDelete(null);
     }
@@ -176,17 +198,16 @@ export default function Prompts({
       }
       const promptContent = await response.json();
       setEditPromptContent(promptContent.content);
+      setEditPromptUpdatedAt(promptContent.updated_at ?? null);
     } catch (error) {
       console.error(error);
     }
   };
 
-  const openEditModal = (prompt: {
-    id: string;
-    name: string;
-    type: string;
-  }) => {
+  const openEditModal = (prompt: Prompt) => {
     setModalType('EDIT');
+    setEditReadOnly(!canEditPrompt(prompt));
+    setEditPromptUpdatedAt(null);
     setEditPromptName(prompt.name);
     setEditPromptContent('');
     handleFetchPromptContent(prompt.id);
@@ -244,12 +265,22 @@ export default function Prompts({
           id: id,
           name: editPromptName,
           content: editPromptContent,
+          ...(editPromptUpdatedAt && {
+            expected_updated_at: editPromptUpdatedAt,
+          }),
         },
         token,
       )
       .then((response) => {
         if (!response.ok) {
-          throw new Error('Failed to update prompt');
+          showError(
+            t(
+              response.status === 409
+                ? 'settings.general.promptActions.editConflict'
+                : 'settings.general.promptActions.saveFailed',
+            ),
+          );
+          return;
         }
         if (setPrompts) {
           const existingPromptIndex = prompts.findIndex(
@@ -322,12 +353,7 @@ export default function Prompts({
             <CommandEmpty>{t('settings.sources.noResults')}</CommandEmpty>
             {prompts.map((prompt) => {
               const isActive = selectedPrompt?.id === prompt.id;
-              const canModify = prompt.type !== 'public';
-              // Sharing is an owner-only action: hide it for public
-              // prompts and prompts shared into the workspace by a
-              // team.
-              const canShare =
-                prompt.type !== 'public' && prompt.type !== 'team';
+              const canEdit = canEditPrompt(prompt);
               return (
                 <CommandItem
                   key={prompt.id}
@@ -346,29 +372,31 @@ export default function Prompts({
                         openEditModal(prompt);
                       }}
                       label={
-                        canModify
+                        canEdit
                           ? t('settings.general.promptActions.edit')
                           : t('settings.general.promptActions.view')
                       }
                     >
-                      {canModify ? (
+                      {canEdit ? (
                         <Pencil className="text-current" aria-hidden="true" />
                       ) : (
                         <Eye className="text-current" aria-hidden="true" />
                       )}
                     </IconButton>
-                    <IconButton
-                      variant="ghost-on-accent"
-                      size="icon-xs"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDuplicatePrompt(prompt);
-                      }}
-                      label={t('settings.general.promptActions.duplicate')}
-                    >
-                      <Copy className="text-current" aria-hidden="true" />
-                    </IconButton>
-                    {canShare && (
+                    {can(prompt, 'duplicate') && (
+                      <IconButton
+                        variant="ghost-on-accent"
+                        size="icon-xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicatePrompt(prompt);
+                        }}
+                        label={t('settings.general.promptActions.duplicate')}
+                      >
+                        <Copy className="text-current" aria-hidden="true" />
+                      </IconButton>
+                    )}
+                    {canSharePrompt(prompt) && (
                       <IconButton
                         variant="ghost-on-accent"
                         size="icon-xs"
@@ -385,7 +413,7 @@ export default function Prompts({
                         <Users className="text-current" aria-hidden="true" />
                       </IconButton>
                     )}
-                    {canModify && (
+                    {canDeletePrompt(prompt) && (
                       <IconButton
                         variant="ghost-destructive-on-accent"
                         size="icon-xs"
@@ -408,12 +436,16 @@ export default function Prompts({
     </Popover>
   );
 
-  const editButton = selectedPrompt?.id && selectedPrompt.type !== 'public' && (
+  // The listed row carries the access fields; a stored selection may not.
+  const selectedListed =
+    prompts.find((prompt) => prompt.id === selectedPrompt?.id) ??
+    selectedPrompt;
+  const editButton = selectedPrompt?.id && canEditPrompt(selectedListed) && (
     <IconButton
       variant="ghost-muted"
       size="icon-xs"
       shape="pill"
-      onClick={() => openEditModal(selectedPrompt)}
+      onClick={() => openEditModal(selectedListed)}
       label={t('settings.general.promptActions.edit')}
       icon={Pencil}
     />
@@ -502,7 +534,16 @@ export default function Prompts({
         currentPromptEdit={currentPromptEdit}
         handleAddPrompt={handleAddPrompt}
         handleEditPrompt={handleSaveChanges}
-        onDuplicate={handleDuplicateFromModal}
+        readOnly={editReadOnly}
+        onDuplicate={
+          can(
+            prompts.find((prompt) => prompt.id === currentPromptEdit.id) ??
+              currentPromptEdit,
+            'duplicate',
+          )
+            ? handleDuplicateFromModal
+            : undefined
+        }
         duplicateSourceName={duplicateSource}
       />
       {promptToDelete && (

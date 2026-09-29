@@ -92,7 +92,10 @@
         "edit": "編輯提示詞",
         "view": "檢視提示詞",
         "duplicate": "複製提示詞",
-        "delete": "刪除提示詞"
+        "delete": "刪除提示詞",
+        "deleteFailed": "無法刪除此提示詞。",
+        "saveFailed": "無法儲存此提示詞。",
+        "editConflict": "其他人已變更此提示詞。請重新開啟以查看其版本。"
       }
     },
     "sources": {
@@ -428,7 +431,15 @@
       "editChunk": "編輯文本塊",
       "editChunkDescription": "{{file}} · 第 {{n}} 個文本塊 · {{tokens}} Token",
       "previousChunk": "上一個文本塊",
-      "nextChunk": "下一個文本塊"
+      "nextChunk": "下一個文本塊",
+      "viewConfig": "檢視來源設定",
+      "errors": {
+        "forbidden": "你沒有權限對此來源執行該操作。",
+        "delete": "無法刪除來源。",
+        "sync": "無法同步來源。",
+        "syncFrequency": "無法變更同步頻率。",
+        "reingest": "無法開始重新匯入。"
+      }
     },
     "analytics": {
       "label": "分析",
@@ -720,7 +731,184 @@
         "teamLabel": "團隊",
         "viaTeam": "透過 {{team}}",
         "removeAccess": "移除存取權",
-        "access": "存取權"
+        "access": "存取權",
+        "showAll": "顯示全部 {{count}} 個",
+        "andMore": "還有 {{count}} 個",
+        "back": "返回",
+        "allSummary": "{{name}} · 團隊：{{teams}} · 人員：{{people}}",
+        "searchAccess": "搜尋人員和團隊…",
+        "filterLabel": "篩選具有存取權的人員",
+        "filter": {
+          "all": "全部",
+          "teams": "團隊",
+          "people": "人員",
+          "editors": "編輯者"
+        }
+      },
+      "accessChangeError": "無法變更存取權。",
+      "accessSettings": {
+        "title": "存取設定",
+        "saveError": "無法儲存存取設定。",
+        "agent": {
+          "editors_can_share": {
+            "label": "編輯者可以共用",
+            "description": "新增人員和團隊並變更其存取權。"
+          },
+          "editors_can_delete": {
+            "label": "編輯者可以刪除",
+            "description": "為所有人刪除此代理。"
+          },
+          "editors_can_manage_access_details": {
+            "label": "編輯者可以管理存取詳細資料",
+            "description": "API 金鑰、Webhook 和公開連結。"
+          },
+          "viewers_can_see_logs": {
+            "label": "檢視者可以查看記錄",
+            "description": "此代理的對話和分析。"
+          }
+        },
+        "source": {
+          "editors_can_share": {
+            "label": "編輯者可以共用",
+            "description": "新增人員和團隊並變更其存取權。"
+          },
+          "editors_can_delete": {
+            "label": "編輯者可以刪除",
+            "description": "為所有人刪除此來源。"
+          },
+          "viewers_can_see_config": {
+            "label": "檢視者可以查看設定",
+            "description": "分塊、檢索器和同步設定，唯讀。"
+          }
+        },
+        "tool": {
+          "editors_can_change_credentials": {
+            "label": "編輯者可以變更憑證和連線",
+            "description": "他們會取代已儲存的密鑰；任何人都無法讀回。"
+          },
+          "editors_can_share": {
+            "label": "編輯者可以共用",
+            "description": "新增人員和團隊並變更其存取權。"
+          },
+          "viewers_can_use_in_agents": {
+            "label": "檢視者可以在自己的代理中使用",
+            "description": "它會以你的憑證執行。"
+          }
+        },
+        "prompt": {
+          "editors_can_share": {
+            "label": "編輯者可以共用",
+            "description": "新增人員和團隊並變更其存取權。"
+          },
+          "viewers_can_duplicate": {
+            "label": "檢視者可以複製",
+            "description": "建立自己的副本來編輯。"
+          }
+        }
+      },
+      "editorHint": {
+        "agent": "編輯者可以修改它，包括記錄、排程和存取詳細資料。",
+        "agentNoAccessDetails": "編輯者可以修改它，包括記錄和排程，但不能修改存取詳細資料。",
+        "source": "編輯者可以編輯分塊和檔案、同步並變更設定。",
+        "tool": "編輯者可以變更動作並取代憑證，但無法讀取密鑰。",
+        "toolNoCredentials": "編輯者可以變更動作，但不能變更憑證。",
+        "prompt": "編輯者可以修改文字。",
+        "noShareNoDelete": "他們不能共用或刪除它。",
+        "shareOnly": "他們也可以共用它，但不能刪除。",
+        "deleteOnly": "他們也可以刪除它，但不能共用。",
+        "shareAndDelete": "他們也可以共用和刪除它。",
+        "noShare": "他們不能共用或刪除它。",
+        "share": "他們也可以共用它，但不能刪除。"
+      },
+      "capabilities": {
+        "agent": {
+          "viewers": "檢視者：與其對話並釘選",
+          "editors": "編輯者：編輯、發布、查看記錄和管理排程"
+        },
+        "source": {
+          "viewers": "檢視者：瀏覽、搜尋並在自己的代理中使用",
+          "editors": "編輯者：編輯分塊和檔案、同步、變更設定"
+        },
+        "tool": {
+          "viewers": "檢視者：在擁有者的代理中使用",
+          "editors": "編輯者：變更動作和核准"
+        },
+        "prompt": {
+          "viewers": "檢視者：閱讀並在自己的代理中使用",
+          "editors": "編輯者：修改文字"
+        },
+        "switch": {
+          "editors_can_share": {
+            "on": "編輯者可以共用",
+            "off": "編輯者不能共用"
+          },
+          "editors_can_delete": {
+            "on": "編輯者可以刪除",
+            "off": "編輯者不能刪除"
+          },
+          "editors_can_manage_access_details": {
+            "on": "編輯者可以管理 API 金鑰、Webhook 和公開連結",
+            "off": "編輯者不能管理 API 金鑰、Webhook 或公開連結"
+          },
+          "viewers_can_see_logs": {
+            "on": "檢視者可以查看記錄",
+            "off": "檢視者不能查看記錄"
+          },
+          "viewers_can_see_config": {
+            "on": "檢視者可以查看設定",
+            "off": "檢視者不能查看設定"
+          },
+          "editors_can_change_credentials": {
+            "on": "編輯者可以取代憑證",
+            "off": "編輯者不能變更憑證"
+          },
+          "viewers_can_use_in_agents": {
+            "on": "檢視者可以在自己的代理中使用",
+            "off": "檢視者不能在自己的代理中使用"
+          },
+          "viewers_can_duplicate": {
+            "on": "檢視者可以複製",
+            "off": "檢視者不能複製"
+          }
+        }
+      },
+      "sharedList": {
+        "badgeWithEditors": "{{level}} · +{{count}} 編輯者",
+        "meta": "{{type}} · {{owner}}",
+        "filterLabel": "篩選共用資源",
+        "filter": {
+          "all": "全部",
+          "agent": "代理",
+          "source": "來源",
+          "tool": "工具",
+          "prompt": "提示"
+        },
+        "search": "搜尋共用…",
+        "noMatches": "沒有相符項目。"
+      },
+      "drawer": {
+        "close": "關閉",
+        "subtitle": "{{type}} · 擁有者：{{owner}}",
+        "open": "開啟{{type}}",
+        "manageSharing": "管理共用",
+        "owner": "擁有者",
+        "shared": "共用時間",
+        "sharedOnBy": "{{date}}，由 {{name}}",
+        "yourAccess": "你的存取權",
+        "yourAccessLevel": {
+          "owner": "擁有者",
+          "editor": "編輯者",
+          "viewer": "檢視者",
+          "none": "無存取權"
+        },
+        "accessIn": "{{team}} 中的存取權",
+        "everyone": "{{team}} 的所有人",
+        "teamGrant": "整個團隊",
+        "memberGrant": "僅此人",
+        "removeGrant": "移除存取權",
+        "otherTeamsHint": "也與其他團隊共用了嗎？這些授權在「管理共用」中管理。",
+        "whatPeopleCanDo": "這裡的人員可以做什麼",
+        "capabilitiesHint": "來自擁有者的存取設定。此處為唯讀。"
       }
     },
     "tools": {
@@ -794,7 +982,6 @@
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
         "reconnectServer": "重新連線伺服器",
-        "reenterCredentials": "重新輸入您的憑證以測試並更新連線。",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -839,7 +1026,18 @@
           "oauthFailed": "OAuth process failed or was cancelled",
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
-        }
+        },
+        "sharedByEditor": "由 {{owner}} 分享 · 你是編輯者",
+        "aTeammate": "一位隊友",
+        "sharedCredentialsNotice": "已儲存的憑證不會顯示。你輸入的內容將為所有使用此工具的人取代它們。",
+        "serverChangedNotice": "伺服器已變更，因此已儲存的{{credential}}將被清除。請為新伺服器輸入後再儲存。",
+        "credentialNames": {
+          "apiKey": "API 金鑰",
+          "bearer": "權杖",
+          "password": "密碼"
+        },
+        "savedKeyHint": "已儲存金鑰。留空即可保留（僅在伺服器未變更時）。",
+        "sharedOAuthOwnerOnly": "只有擁有者可以重新連結其登入，因此你可以重新命名，但不能變更其伺服器或帳戶。"
       },
       "configErrors": {
         "required": "{{field}}為必填項",
@@ -847,7 +1045,14 @@
         "maxTimeout": "逾時時間最長為 300 秒"
       },
       "headerValuePlaceholder": "例如：application/json",
-      "toolIconTitle": "{{name}} 圖示"
+      "toolIconTitle": "{{name}} 圖示",
+      "view": "檢視",
+      "inMyChats": "在我的聊天中",
+      "useInMyChatsAria": "在我的聊天中使用 {{toolName}}",
+      "statusUpdateFailed": "無法變更此工具是否用於你的聊天。",
+      "deleteFailed": "無法刪除此工具。",
+      "sharedBy": "由 {{team}} 分享",
+      "savedSecretPlaceholder": "已儲存 · 輸入新值以取代"
     },
     "devices": {
       "label": "裝置",
@@ -1344,7 +1549,9 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "重設金鑰",
-      "resetKeyConfirm": "確定要重設 API 金鑰嗎？目前的金鑰將立即停止運作，此操作無法復原。"
+      "resetKeyConfirm": "確定要重設 API 金鑰嗎？目前的金鑰將立即停止運作，此操作無法復原。",
+      "actionFailed": "操作未成功，請再試一次。",
+      "apiKeyAfterPublish": "發布此代理後即可建立其 API 金鑰。"
     },
     "importSpec": {
       "title": "匯入 API 規格",
@@ -1761,7 +1968,6 @@
         "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
         "remove": "Remove",
         "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
         "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
         "floorControl": "{{stage}}: {{action}} — required by the instance policy",
         "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
@@ -1779,7 +1985,8 @@
         "modes": {
           "monitorOnly": "Monitor only",
           "scanAll": "Enforce everywhere"
-        }
+        },
+        "readOnly": "你可以檢視此政策，但你的角色無法變更它。"
       },
       "byline": {
         "new": "設定好代理後發佈，即可與它對話。"
@@ -2221,7 +2428,8 @@
       "classicDescription": "建立一個使用單一模型、工具和知識來源的標準 AI 代理",
       "workflowTitle": "工作流程代理",
       "workflowDescription": "設計包含不同模型、條件邏輯和狀態管理的複雜多步驟工作流程"
-    }
+    },
+    "deleteFailed": "無法刪除此代理，請再試一次。"
   },
   "components": {
     "fileUpload": {

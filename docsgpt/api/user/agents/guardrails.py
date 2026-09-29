@@ -4,7 +4,7 @@ from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource
 
 from docsgpt.api import api
-from docsgpt.api.user.team_sharing import team_access_for
+from docsgpt.api.user.resource_access import AccessDenied, ResourceAccess, require
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.checks.patterns import DEFAULT_PII_ENTITIES, PII_PATTERNS
 from docsgpt.guardrails.config import DEFAULT_BLOCK_MESSAGE, MODES
@@ -70,15 +70,30 @@ class GuardrailCatalog(Resource):
         )
 
 
-def _readable_agent(conn, agent_id: str, user: str):
-    """Return the agent row when the caller may read it, else None."""
-    repo = AgentsRepository(conn)
-    agent = repo.get_any(agent_id, user)
-    if agent:
-        return agent
-    if team_access_for(conn, user, "agent", agent_id):
-        return repo.get_by_id(agent_id)
-    return None
+def _logs_access(conn, agent_id: str, user: str) -> tuple[dict, ResourceAccess]:
+    """The agent row and the caller's access, for reading its guardrail journal.
+
+    Args:
+        conn: Open database connection.
+        agent_id: The agent's id (UUID or legacy).
+        user: The caller.
+
+    Returns:
+        ``(agent, access)``; rows are read as ``access.owner_id``, so a team
+        member with ``view_logs`` sees exactly what the owner sees.
+
+    Raises:
+        AccessDenied: 404 when the agent isn't visible, 403 without ``view_logs``.
+    """
+    ra = require(conn, "agent", agent_id, user, "view_logs")
+    agent = AgentsRepository(conn).get_by_id(ra.resource_id)
+    if agent is None:
+        raise AccessDenied(404, "Agent not found")
+    return agent, ra
+
+
+def _denied(err: AccessDenied):
+    return make_response(jsonify({"success": False, "message": err.message}), err.status)
 
 
 @agents_guardrails_ns.route("/guardrails/events")
@@ -106,17 +121,16 @@ class GuardrailEvents(Resource):
                 400,
             )
         with db_readonly() as conn:
-            agent = _readable_agent(conn, agent_id, user)
-            if not agent:
-                return make_response(
-                    jsonify({"success": False, "message": "Agent not found"}), 404
-                )
+            try:
+                agent, ra = _logs_access(conn, agent_id, user)
+            except AccessDenied as denied:
+                return _denied(denied)
             # Query on the row's UUID, not the caller's argument: a legacy
             # 24-hex Mongo id resolves fine above but would blow up the cast.
-            # Rows stay scoped to the requesting user even on a shared agent —
-            # another member's blocked prompts are not this caller's to read.
+            # Rows are the owner's view: ``view_logs`` shows a team member
+            # what the owner sees, never other members' own chats.
             events = GuardrailEventsRepository(conn).list_for_agent(
-                str(agent["id"]), user, limit=limit, offset=offset
+                str(agent["id"]), ra.owner_id, limit=limit, offset=offset
             )
         return make_response(jsonify({"success": True, "events": events}), 200)
 
@@ -143,14 +157,15 @@ class GuardrailSummary(Resource):
         agent_id = request.args.get("agent_id")
         with db_readonly() as conn:
             scoped_id = None
+            scope_user = user
             if agent_id:
-                agent = _readable_agent(conn, agent_id, user)
-                if not agent:
-                    return make_response(
-                        jsonify({"success": False, "message": "Agent not found"}), 404
-                    )
+                try:
+                    agent, ra = _logs_access(conn, agent_id, user)
+                except AccessDenied as denied:
+                    return _denied(denied)
                 scoped_id = str(agent["id"])
+                scope_user = ra.owner_id
             summary = GuardrailEventsRepository(conn).summary_for_user(
-                user, days=days, agent_id=scoped_id
+                scope_user, days=days, agent_id=scoped_id
             )
         return make_response(jsonify({"success": True, **summary}), 200)

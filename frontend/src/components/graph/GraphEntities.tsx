@@ -62,6 +62,7 @@ export default function GraphEntities({
   onShowInGraph,
   overview,
   onOpenInFiles,
+  canEdit = true,
 }: {
   docId: string;
   fold: FoldedGraphTypes;
@@ -70,6 +71,8 @@ export default function GraphEntities({
   overview?: ForceGraphData;
   /** Show a chunk's file on the Files tab. */
   onOpenInFiles?: (path: string) => void;
+  /** Whether the chunk drawer offers Edit (`can(source, 'edit')`). */
+  canEdit?: boolean;
 }) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -157,6 +160,7 @@ export default function GraphEntities({
       overview={overview}
       onOpenInFiles={onOpenInFiles}
       onChunkSaved={nodeDetail.reload}
+      canEdit={canEdit}
       action={
         <Button
           type="button"

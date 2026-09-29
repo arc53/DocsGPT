@@ -131,4 +131,40 @@ describe('PromptsModal', () => {
       'modals.prompts.systemVariablesDropdownLabel',
     );
   });
+
+  it('opens a prompt the caller may not edit read-only', async () => {
+    await act(async () => {
+      root.render(
+        <PromptsModal
+          existingPrompts={[]}
+          modalState="ACTIVE"
+          setModalState={() => undefined}
+          type="EDIT"
+          newPromptName=""
+          setNewPromptName={() => undefined}
+          newPromptContent=""
+          setNewPromptContent={() => undefined}
+          editPromptName="Carrier rates"
+          setEditPromptName={() => undefined}
+          editPromptContent="Summarise {{ source.content }}"
+          setEditPromptContent={() => undefined}
+          currentPromptEdit={{ name: 'Carrier rates', id: 'p1', type: 'team' }}
+          handleEditPrompt={() => undefined}
+          readOnly
+        />,
+      );
+    });
+    expect(document.body.textContent).toContain('modals.prompts.viewPrompt');
+    expect(
+      document.body.querySelector<HTMLTextAreaElement>('textarea')?.readOnly,
+    ).toBe(true);
+    expect(
+      document.body.querySelector<HTMLInputElement>('input[type="text"]')
+        ?.disabled,
+    ).toBe(true);
+    const labels = Array.from(document.body.querySelectorAll('button')).map(
+      (b) => b.textContent,
+    );
+    expect(labels).not.toContain('modals.prompts.save');
+  });
 });

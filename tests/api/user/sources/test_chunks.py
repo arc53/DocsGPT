@@ -30,15 +30,12 @@ def _seed_source(pg_conn, user="u", name="src"):
 
 
 class TestResolveSource:
-    def test_returns_none_for_missing(self, pg_conn):
+    def test_missing_raises_404(self, pg_conn):
+        from docsgpt.api.user.resource_access import AccessDenied
         from docsgpt.api.user.sources.chunks import _resolve_source
-        with _patch_db(pg_conn):
-            assert (
-                _resolve_source(
-                    "00000000-0000-0000-0000-000000000000", "u"
-                )
-                is None
-            )
+        with _patch_db(pg_conn), pytest.raises(AccessDenied) as exc:
+            _resolve_source("00000000-0000-0000-0000-000000000000", "u")
+        assert exc.value.status == 404
 
     def test_returns_source_when_found(self, pg_conn):
         from docsgpt.api.user.sources.chunks import _resolve_source
@@ -49,7 +46,8 @@ class TestResolveSource:
         assert got is not None
         assert str(got["id"]) == str(src["id"])
 
-    def test_team_viewer_can_read(self, pg_conn):
+    def test_team_viewer_can_read_not_edit(self, pg_conn):
+        from docsgpt.api.user.resource_access import AccessDenied
         from docsgpt.api.user.sources.chunks import _resolve_source
         from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
         from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
@@ -65,10 +63,13 @@ class TestResolveSource:
         )
         with _patch_db(pg_conn):
             got = _resolve_source(str(src["id"]), viewer)
-            stranger = _resolve_source(str(src["id"]), "u-resolve-stranger")
-        assert got is not None
+            with pytest.raises(AccessDenied) as edit:
+                _resolve_source(str(src["id"]), viewer, "edit")
+            with pytest.raises(AccessDenied) as stranger:
+                _resolve_source(str(src["id"]), "u-resolve-stranger")
         assert str(got["id"]) == str(src["id"])
-        assert stranger is None
+        assert edit.value.status == 403
+        assert stranger.value.status == 404
 
 
 class TestChunkMatchesPath:
@@ -398,9 +399,9 @@ class TestAddChunk:
             response = AddChunk().post()
         assert response.status_code == 400
 
-    def test_returns_403_inaccessible_source(self, app, pg_conn):
-        # No ownership and no team editor grant resolves to None, which the
-        # owner-or-editor gate answers as 403 "Source not accessible".
+    def test_returns_404_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team grant: the source isn't visible → 404
+        # (403 is reserved for a visible source the role can't change).
         from docsgpt.api.user.sources.chunks import AddChunk
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -413,7 +414,7 @@ class TestAddChunk:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = AddChunk().post()
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_adds_chunk(self, app, pg_conn):
         from docsgpt.api.user.sources.chunks import AddChunk
@@ -472,9 +473,9 @@ class TestDeleteChunk:
             response = DeleteChunk().delete()
         assert response.status_code == 401
 
-    def test_returns_403_inaccessible_source(self, app, pg_conn):
-        # No ownership and no team editor grant resolves to None, which the
-        # owner-or-editor gate answers as 403 "Source not accessible".
+    def test_returns_404_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team grant: the source isn't visible → 404
+        # (403 is reserved for a visible source the role can't change).
         from docsgpt.api.user.sources.chunks import DeleteChunk
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -484,7 +485,7 @@ class TestDeleteChunk:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = DeleteChunk().delete()
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_deletes_chunk(self, app, pg_conn):
         from docsgpt.api.user.sources.chunks import DeleteChunk
@@ -551,9 +552,9 @@ class TestUpdateChunk:
             response = UpdateChunk().put()
         assert response.status_code == 400
 
-    def test_returns_403_inaccessible_source(self, app, pg_conn):
-        # No ownership and no team editor grant resolves to None, which the
-        # owner-or-editor gate answers as 403 "Source not accessible".
+    def test_returns_404_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team grant: the source isn't visible → 404
+        # (403 is reserved for a visible source the role can't change).
         from docsgpt.api.user.sources.chunks import UpdateChunk
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -566,7 +567,7 @@ class TestUpdateChunk:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = UpdateChunk().put()
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_returns_404_chunk_not_found(self, app, pg_conn):
         from docsgpt.api.user.sources.chunks import UpdateChunk

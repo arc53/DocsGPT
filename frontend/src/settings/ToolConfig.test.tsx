@@ -393,4 +393,144 @@ describe('ToolConfig', () => {
     expect(cancel?.dataset.size).toBe('sm');
     expect(cancel?.dataset.shape).toBe('pill');
   });
+
+  describe('access', () => {
+    const viewer = { access: 'viewer', allowed_actions: ['use'] };
+    const editorNoCreds = {
+      access: 'editor',
+      allowed_actions: ['edit', 'use', 'use_in_own'],
+    };
+    const configTool = {
+      ...userTool,
+      configRequirements: {
+        token: { type: 'string', label: 'Token', secret: true, required: true },
+      },
+      config: { has_encrypted_credentials: true },
+    } as unknown as UserToolType;
+    // A disabled fieldset disables its controls in the browser; jsdom doesn't
+    // apply that to `:disabled`, so check for the fieldset as well.
+    const disabled = (el: Element) =>
+      el.matches(':disabled') || el.closest('fieldset[disabled]') !== null;
+    const nameInput = () =>
+      container.querySelector<HTMLInputElement>(
+        'input[placeholder="settings.tools.customNamePlaceholder"]',
+      )!;
+    const expandFirstAction = async () => {
+      await act(async () => {
+        (
+          container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        ).click();
+      });
+    };
+
+    it('opens read-only without edit or edit_credentials: no Save, every field disabled', async () => {
+      await render({ ...configTool, ...viewer } as UserToolType);
+      expect(buttonByText('settings.tools.save')).toBeUndefined();
+      expect(nameInput().disabled).toBe(true);
+      const secret = Array.from(
+        container.querySelectorAll<HTMLInputElement>('input'),
+      ).find((i) => i.placeholder === '••••••••');
+      expect(secret && disabled(secret)).toBe(true);
+      container
+        .querySelectorAll<HTMLButtonElement>('[role="switch"]')
+        .forEach((sw) => expect(disabled(sw)).toBe(true));
+      await expandFirstAction();
+      container
+        .querySelectorAll<HTMLInputElement>('table input')
+        .forEach((input) => expect(disabled(input)).toBe(true));
+    });
+
+    it('keeps the actions search usable when read-only', async () => {
+      await render({ ...userTool, ...viewer } as UserToolType);
+      const label = Array.from(container.querySelectorAll('label')).find(
+        (el) => el.textContent === 'settings.tools.searchActions',
+      )!;
+      expect(
+        container.querySelector<HTMLInputElement>(
+          `input[id="${label.htmlFor}"]`,
+        )?.disabled,
+      ).toBe(false);
+    });
+
+    it('hides the API tool Import and Add action buttons when read-only', async () => {
+      await render({ ...apiTool, ...viewer } as APIToolType);
+      expect(buttonByText('settings.tools.importSpec')).toBeUndefined();
+      expect(buttonByText('settings.tools.addAction')).toBeUndefined();
+    });
+
+    it('lets an editor without edit_credentials rename but not touch credentials', async () => {
+      await render({ ...configTool, ...editorNoCreds } as UserToolType);
+      expect(nameInput().disabled).toBe(false);
+      const authInputs = Array.from(
+        container.querySelectorAll<HTMLInputElement>('input'),
+      ).filter((i) => i !== nameInput() && !i.closest('table'));
+      const credential = authInputs.find((i) => i.placeholder === '••••••••');
+      expect(credential && disabled(credential)).toBe(true);
+    });
+
+    it("disables an API tool's URL and header values without edit_credentials", async () => {
+      await render({ ...apiTool, ...editorNoCreds } as APIToolType);
+      await expandFirstAction();
+      const url = Array.from(
+        container.querySelectorAll<HTMLInputElement>('input'),
+      ).find((i) => i.value === 'https://example.com');
+      expect(url?.disabled).toBe(true);
+      const headerValue = container.querySelector<HTMLInputElement>(
+        'input[placeholder="settings.tools.headerValuePlaceholder"]',
+      );
+      expect(headerValue?.disabled).toBe(true);
+    });
+  });
+
+  it('masks a saved API header value with a replace-to-change placeholder', async () => {
+    const saved = JSON.parse(JSON.stringify(apiTool)) as APIToolType;
+    saved.config.actions.list.headers.properties.Accept.has_value = true;
+    await render(saved);
+    await act(async () => {
+      (
+        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+      ).click();
+    });
+    const masked = container.querySelector<HTMLInputElement>(
+      'input[placeholder="settings.tools.savedSecretPlaceholder"]',
+    );
+    expect(masked).not.toBeNull();
+    expect(masked?.type).toBe('password');
+    expect(masked?.value).toBe('');
+  });
+
+  it('shows a non-2xx save response as a destructive Alert', async () => {
+    updateTool.mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: () => Promise.resolve({ success: false, message: 'Forbidden' }),
+    });
+    const goBack = vi.fn();
+    await act(async () => {
+      root.render(
+        <ToolConfig
+          tool={{ ...userTool, customName: '' }}
+          setTool={() => {}}
+          handleGoBack={goBack}
+        />,
+      );
+    });
+    const name = container.querySelector<HTMLInputElement>(
+      'input[placeholder="settings.tools.customNamePlaceholder"]',
+    );
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )?.set?.call(name, 'Renamed');
+      name?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      buttonByText('settings.tools.save')?.click();
+    });
+    expect(
+      container.querySelector<HTMLElement>('[role="alert"]')?.textContent,
+    ).toBe('settings.tools.saveFailed');
+    expect(goBack).not.toHaveBeenCalled();
+  });
 });
