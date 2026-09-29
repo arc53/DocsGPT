@@ -1890,16 +1890,16 @@
         "endpointUrl": "Пользовательский URL эндпоинта (необязательно)",
         "initialContent": "Исходное содержимое (необязательно)"
       },
-      "groupUploadWeb": "Без аккаунта",
-      "groupConnection": "Из подключения",
-      "tileConnectedAs": "Подключено как {{account}}",
       "newCredentials": "Ввести новые учётные данные",
-      "tileNotConnected": "Не подключено",
       "github": {
         "privateHint": "Приватный репозиторий? Подключите аккаунт GitHub, чтобы синхронизировать его.",
         "connectedHint": "Приватные репозитории синхронизируются через ваше подключение GitHub ({{account}}).",
         "connect": "Подключить GitHub",
         "pickRepository": "Выбрать репозиторий"
+      },
+      "connectData": {
+        "title": "Подключите свои данные",
+        "description": "Синхронизируйте Google Drive, SharePoint, Confluence и другие сервисы"
       }
     },
     "createAPIKey": {

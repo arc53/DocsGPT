@@ -1795,16 +1795,16 @@
         "endpointUrl": "自訂端點 URL（選填）",
         "initialContent": "初始內容（選填）"
       },
-      "groupUploadWeb": "不需帳號",
-      "groupConnection": "來自連線",
-      "tileConnectedAs": "已以 {{account}} 連線",
       "newCredentials": "輸入新的憑證",
-      "tileNotConnected": "未連線",
       "github": {
         "privateHint": "私人儲存庫？連結你的 GitHub 帳號即可同步。",
         "connectedHint": "私人儲存庫透過你的 GitHub 連線（{{account}}）同步。",
         "connect": "連結 GitHub",
         "pickRepository": "選擇儲存庫"
+      },
+      "connectData": {
+        "title": "連接你的資料",
+        "description": "同步 Google Drive、SharePoint、Confluence 等"
       }
     },
     "createAPIKey": {

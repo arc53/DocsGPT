@@ -1795,16 +1795,16 @@
         "endpointUrl": "自定义端点 URL（可选）",
         "initialContent": "初始内容（可选）"
       },
-      "groupUploadWeb": "无需账号",
-      "groupConnection": "来自连接",
-      "tileConnectedAs": "已作为 {{account}} 连接",
       "newCredentials": "输入新的凭据",
-      "tileNotConnected": "未连接",
       "github": {
         "privateHint": "私有仓库？连接你的 GitHub 账号即可同步。",
         "connectedHint": "私有仓库通过你的 GitHub 连接（{{account}}）同步。",
         "connect": "连接 GitHub",
         "pickRepository": "选择仓库"
+      },
+      "connectData": {
+        "title": "连接你的数据",
+        "description": "同步 Google Drive、SharePoint、Confluence 等"
       }
     },
     "createAPIKey": {

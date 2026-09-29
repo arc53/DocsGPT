@@ -65,7 +65,11 @@ export interface IngestorSchema {
   fields: FormField[];
 }
 
-/** Add Source groups: what needs no account, and what comes from a connection. */
+/**
+ * Add Source tiles: what needs no account. The connection types sync from
+ * the Connectors page; their forms open only when a connector card hands
+ * one over (`initialIngestor`).
+ */
 export const UPLOAD_AND_WEB_INGESTORS: IngestorType[] = [
   'local_file',
   'url',

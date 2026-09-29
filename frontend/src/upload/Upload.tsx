@@ -1,4 +1,4 @@
-import { ChevronLeft, FileText, Lock } from 'lucide-react';
+import { ChevronLeft, FileText, Lock, Plug } from 'lucide-react';
 import { envVar } from '@/env';
 import { cn } from '@/lib/utils';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -6,6 +6,7 @@ import { nanoid } from '@reduxjs/toolkit';
 import type { FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import type { RootState } from '../store';
 import userService from '../api/services/userService';
@@ -26,11 +27,8 @@ import { Textarea } from '../components/ui/textarea';
 import { Modal } from '../components/ui/modal';
 import { Separator } from '../components/ui/separator';
 import { OptionCard } from '../components/ui/option-card';
-import { SectionHeader } from '../components/ui/section-header';
-import ConnectorIcon from '../connectors/ConnectorIcon';
 import ConnectorSetupNotice from '../connectors/ConnectorSetupNotice';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
-import { formatCount } from '../utils/dateTimeUtils';
 import {
   loadConnectors,
   selectConnections,
@@ -110,8 +108,10 @@ function Upload({
   const connections = useSelector(selectConnections);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
-  // A connection tile hands over to the connect wizard, the one flow every
-  // entry point uses; this modal steps aside and closes with it.
+  const navigate = useNavigate();
+  // GitHub's private-repository hand-over goes to the connect wizard, the
+  // one flow every entry point uses; this modal steps aside and closes
+  // with it.
   const [handedOver, setHandedOver] = useState(false);
   const { launch, modals: connectModals } = useConnectorLauncher({
     onConnected: () => close(),
@@ -1151,119 +1151,38 @@ function Upload({
     }
   };
 
-  const connectionTileState = (type: IngestorType) => {
-    const connector = connectorFor(type);
-    if (!connector) return undefined;
-    if (!connector.available)
-      return t('settings.connectors.status.needsAdminSetup');
-    const accounts = connections.filter(
-      (c) => c.connector_key === connector.key && c.status === 'connected',
-    );
-    if (accounts.length === 1)
-      return t('modals.uploadDoc.tileConnectedAs', {
-        account: accounts[0].account_label,
-        interpolation: { escapeValue: false },
-      });
-    if (accounts.length > 1)
-      return t('settings.connectors.status.connectedCount', {
-        count: accounts.length,
-        formatted: formatCount(accounts.length),
-      });
-    // A status, not a button: the tile itself starts the connection.
-    return t('modals.uploadDoc.tileNotConnected');
-  };
-
-  // With the catalog loaded, members only see connections they can use:
-  // a connector that needs admin setup, or that an admin turned off, is not
-  // offered. Without connectors (or before the catalog loads) every source
-  // type stays, as before connectors existed.
-  const offersConnection = (type: IngestorType) =>
-    !connectorsEnabled || !connectorsLoaded || !!connectorFor(type)?.available;
+  // Services that sync into Knowledge are connected on the Connectors page,
+  // so the picker offers one way there instead of a tile per service.
+  const offersConnect =
+    connectorsEnabled &&
+    connectorCatalog.some((c) => c.capabilities?.includes('sync'));
 
   const renderIngestorSelection = () => {
-    const optionsFor = (types: IngestorType[]) =>
-      types
-        .map((type) => ingestorOptions.find((o) => o.value === type))
-        .filter((option): option is IngestorOption => !!option);
-    const connectionOptions = optionsFor(CONNECTION_INGESTORS).filter(
-      (option) => offersConnection(option.value),
-    );
+    const options = UPLOAD_AND_WEB_INGESTORS.map((type) =>
+      ingestorOptions.find((o) => o.value === type),
+    ).filter((option): option is IngestorOption => !!option);
     return (
-      <div className="flex w-full flex-col gap-6">
-        <section className="flex flex-col gap-3">
-          <SectionHeader
-            as="h3"
-            size="sm"
-            title={t('modals.uploadDoc.groupUploadWeb')}
+      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+        {options.map((option) => (
+          <OptionCard
+            key={option.value}
+            icon={
+              <img src={option.icon} alt="" className="size-6 dark:invert" />
+            }
+            title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
+            onClick={() => handleIngestorTypeChange(option.value)}
           />
-          <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-            {optionsFor(UPLOAD_AND_WEB_INGESTORS).map((option) => (
-              <OptionCard
-                key={option.value}
-                icon={
-                  <img
-                    src={option.icon}
-                    alt=""
-                    className="size-6 dark:invert"
-                  />
-                }
-                title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
-                onClick={() => handleIngestorTypeChange(option.value)}
-              />
-            ))}
-          </div>
-        </section>
-        {connectionOptions.length > 0 && (
-          <section className="flex flex-col gap-3">
-            <SectionHeader
-              as="h3"
-              size="sm"
-              title={t('modals.uploadDoc.groupConnection')}
-            />
-            <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-              {connectionOptions.map((option) => {
-                const connector = connectorFor(option.value);
-                return (
-                  <OptionCard
-                    key={option.value}
-                    icon={
-                      <ConnectorIcon
-                        icon={connector?.icon ?? option.value}
-                        className="size-6"
-                      />
-                    }
-                    title={t(
-                      `modals.uploadDoc.ingestors.${option.value}.label`,
-                    )}
-                    description={connectionTileState(option.value)}
-                    onClick={() => {
-                      if (connectorsEnabled && connector?.available) {
-                        const account = connections.find(
-                          (c) =>
-                            c.connector_key === connector.key &&
-                            c.status === 'connected',
-                        );
-                        setHandedOver(true);
-                        // Opened to add knowledge: syncing starts switched on.
-                        launch(
-                          connector,
-                          account
-                            ? {
-                                mode: 'sync',
-                                connectionId: account.id,
-                                purpose: 'knowledge',
-                              }
-                            : { purpose: 'knowledge' },
-                        );
-                        return;
-                      }
-                      handleIngestorTypeChange(option.value);
-                    }}
-                  />
-                );
-              })}
-            </div>
-          </section>
+        ))}
+        {offersConnect && (
+          <OptionCard
+            icon={<Plug />}
+            title={t('modals.uploadDoc.connectData.title')}
+            description={t('modals.uploadDoc.connectData.description')}
+            onClick={() => {
+              handleClose();
+              navigate('/settings/connectors?capability=sync');
+            }}
+          />
         )}
       </div>
     );

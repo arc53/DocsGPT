@@ -1795,16 +1795,16 @@
         "endpointUrl": "カスタムエンドポイント URL（任意）",
         "initialContent": "初期コンテンツ（任意）"
       },
-      "groupUploadWeb": "アカウント不要",
-      "groupConnection": "接続から",
-      "tileConnectedAs": "{{account}} として接続中",
       "newCredentials": "新しい認証情報を入力",
-      "tileNotConnected": "未接続",
       "github": {
         "privateHint": "プライベートリポジトリですか？同期するには GitHub アカウントを接続してください。",
         "connectedHint": "プライベートリポジトリは GitHub 接続（{{account}}）から同期されます。",
         "connect": "GitHub を接続",
         "pickRepository": "リポジトリを選択"
+      },
+      "connectData": {
+        "title": "データを接続",
+        "description": "Google Drive、SharePoint、Confluence などを同期"
       }
     },
     "createAPIKey": {

@@ -1806,16 +1806,16 @@
         "endpointUrl": "Benutzerdefinierte Endpunkt-URL (optional)",
         "initialContent": "Anfangsinhalt (optional)"
       },
-      "groupUploadWeb": "Kein Konto nötig",
-      "groupConnection": "Aus einer Verbindung",
-      "tileConnectedAs": "Verbunden als {{account}}",
       "newCredentials": "Neue Zugangsdaten eingeben",
-      "tileNotConnected": "Nicht verbunden",
       "github": {
         "privateHint": "Privates Repository? Verbinde dein GitHub-Konto, um es zu synchronisieren.",
         "connectedHint": "Private Repositorys werden über deine GitHub-Verbindung ({{account}}) synchronisiert.",
         "connect": "GitHub verbinden",
         "pickRepository": "Repository auswählen"
+      },
+      "connectData": {
+        "title": "Deine Daten verbinden",
+        "description": "Google Drive, SharePoint, Confluence und mehr synchronisieren"
       }
     },
     "createAPIKey": {

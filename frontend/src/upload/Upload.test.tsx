@@ -8,6 +8,7 @@ vi.mock('react-i18next', () => ({
 const connectorsState = vi.hoisted(() => ({
   catalog: [] as Record<string, unknown>[],
   connections: [] as Record<string, unknown>[],
+  enabled: true,
 }));
 
 vi.mock('react-redux', () => ({
@@ -17,6 +18,7 @@ vi.mock('react-redux', () => ({
       connectors: {
         catalog: connectorsState.catalog,
         connections: connectorsState.connections,
+        enabled: connectorsState.enabled,
         loaded: true,
         loading: false,
         failed: false,
@@ -39,6 +41,8 @@ vi.mock('../api/services/userService', () => ({
 }));
 
 const launch = vi.hoisted(() => vi.fn());
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 vi.mock('../connectors/useConnectorLauncher', () => ({
   default: () => ({ launch, modals: null }),
 }));
@@ -81,6 +85,7 @@ describe('Upload source-type tiles', () => {
     container.remove();
   });
 
+  const close = vi.fn();
   const render = async () => {
     await act(async () => {
       root.render(
@@ -89,7 +94,7 @@ describe('Upload source-type tiles', () => {
           setModalState={vi.fn()}
           isOnboarding={false}
           renderTab={null}
-          close={vi.fn()}
+          close={close}
         />,
       );
     });
@@ -129,137 +134,74 @@ describe('Upload source-type tiles', () => {
     );
   });
 
-  it('groups upload and web apart from connections', async () => {
-    connectorsState.catalog = [
-      { key: 's3', icon: 's3', sync_ingestor: 's3', available: true },
-    ];
-    await render();
-    expect(document.body.textContent).toContain(
-      'modals.uploadDoc.groupUploadWeb',
+  const DRIVE = {
+    key: 'google_drive',
+    icon: 'drive',
+    sync_ingestor: 'google_drive',
+    capabilities: ['sync'],
+    available: true,
+    missing_settings: [],
+  };
+  const connectTile = () =>
+    tiles().find((tile) =>
+      tile.textContent?.includes('modals.uploadDoc.connectData.title'),
     );
-    expect(document.body.textContent).toContain(
-      'modals.uploadDoc.groupConnection',
-    );
-    connectorsState.catalog = [];
-  });
 
-  it('hides connector tiles members cannot use', async () => {
-    connectorsState.catalog = [
-      {
-        key: 'google_drive',
-        icon: 'drive',
-        sync_ingestor: 'google_drive',
-        available: false,
-        missing_settings: [],
-      },
-      {
-        key: 's3',
-        icon: 's3',
-        sync_ingestor: 's3',
-        auth_kind: 'api_key',
-        available: true,
-        missing_settings: [],
-      },
-    ];
+  // One list of what needs no account, then one tile that sends the user to
+  // connect a service; connected services sync from the Connectors page.
+  it('lists the no-account types and one Connect your data tile', async () => {
+    connectorsState.catalog = [DRIVE];
     await render();
     const labels = tiles().map((tile) => tile.textContent ?? '');
-    expect(labels.some((l) => l.includes('ingestors.google_drive.label'))).toBe(
-      false,
-    );
-    // Not in the catalog at all (needs setup, or turned off): not offered.
-    expect(labels.some((l) => l.includes('ingestors.confluence.label'))).toBe(
-      false,
-    );
-    expect(labels.some((l) => l.includes('ingestors.s3.label'))).toBe(true);
-    expect(document.body.textContent).not.toContain(
-      'settings.connectors.status.needsAdminSetup',
-    );
+    for (const type of ['local_file', 'url', 'crawler', 'github', 'wiki'])
+      expect(labels.some((l) => l.includes(`ingestors.${type}.label`))).toBe(
+        true,
+      );
+    for (const type of [
+      'google_drive',
+      'share_point',
+      'confluence',
+      's3',
+      'reddit',
+    ])
+      expect(labels.some((l) => l.includes(`ingestors.${type}.label`))).toBe(
+        false,
+      );
+    expect(labels.at(-1)).toContain('modals.uploadDoc.connectData.title');
+    expect(labels.at(-1)).toContain('modals.uploadDoc.connectData.description');
+    expect(document.body.querySelector('h3')).toBeNull();
     connectorsState.catalog = [];
   });
 
-  it('hides the connection group when no connector is usable', async () => {
-    connectorsState.catalog = [];
+  it('opens the Connectors page on the syncing services', async () => {
+    connectorsState.catalog = [DRIVE];
+    navigate.mockClear();
+    close.mockClear();
     await render();
-    expect(document.body.textContent).not.toContain(
-      'modals.uploadDoc.groupConnection',
+    await act(async () => connectTile()!.click());
+    expect(close).toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith(
+      '/settings/connectors?capability=sync',
     );
+    expect(launch).not.toHaveBeenCalled();
+    connectorsState.catalog = [];
   });
 
-  it('names the connected account on a connection tile', async () => {
+  it('offers no Connect tile when no service can sync', async () => {
     connectorsState.catalog = [
-      {
-        key: 'confluence',
-        icon: 'confluence',
-        sync_ingestor: 'confluence',
-        available: true,
-        missing_settings: [],
-      },
-    ];
-    connectorsState.connections = [
-      {
-        id: 'c1',
-        connector_key: 'confluence',
-        status: 'connected',
-        account_label: 'alex@example.com',
-      },
+      { key: 'telegram', capabilities: ['write'], available: true },
     ];
     await render();
-    const confluence = tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.ingestors.confluence.label'),
-    );
-    expect(confluence!.textContent).toContain(
-      'modals.uploadDoc.tileConnectedAs',
-    );
+    expect(connectTile()).toBeUndefined();
     connectorsState.catalog = [];
-    connectorsState.connections = [];
   });
 
-  it('hands a connection tile over to the connect wizard', async () => {
-    launch.mockClear();
-    const s3 = {
-      key: 's3',
-      icon: 's3',
-      sync_ingestor: 's3',
-      auth_kind: 'api_key',
-      available: true,
-      missing_settings: [],
-    };
-    connectorsState.catalog = [s3];
-    connectorsState.connections = [
-      { id: 'k1', connector_key: 's3', status: 'connected' },
-    ];
+  it('offers no Connect tile when connectors are off', async () => {
+    connectorsState.catalog = [DRIVE];
+    connectorsState.enabled = false;
     await render();
-    const tile = tiles().find((t) =>
-      t.textContent?.includes('ingestors.s3.label'),
-    )!;
-    await act(async () => tile.click());
-    // An existing account goes straight to choosing what to sync.
-    expect(launch).toHaveBeenCalledWith(s3, {
-      mode: 'sync',
-      connectionId: 'k1',
-      purpose: 'knowledge',
-    });
-    connectorsState.catalog = [];
-    connectorsState.connections = [];
-  });
-
-  it('connects a new account for Knowledge, syncing switched on', async () => {
-    launch.mockClear();
-    const s3 = {
-      key: 's3',
-      icon: 's3',
-      sync_ingestor: 's3',
-      auth_kind: 'api_key',
-      available: true,
-      missing_settings: [],
-    };
-    connectorsState.catalog = [s3];
-    await render();
-    const tile = tiles().find((t) =>
-      t.textContent?.includes('ingestors.s3.label'),
-    )!;
-    await act(async () => tile.click());
-    expect(launch).toHaveBeenCalledWith(s3, { purpose: 'knowledge' });
+    expect(connectTile()).toBeUndefined();
+    connectorsState.enabled = true;
     connectorsState.catalog = [];
   });
 
