@@ -104,6 +104,22 @@ class TestResolution:
             resolved = resolve_connection(_tool(owner, mode="member"), "bob")
         assert resolved.available and resolved.connection_id == newer
 
+    def test_member_gets_the_account_they_just_connected(self, pg_conn):
+        from docsgpt.connectors.resolve import resolve_connection
+
+        owner = _connection(pg_conn)
+        used = _connection(pg_conn, user="bob")
+        pg_conn.execute(text(
+            "UPDATE connector_sessions SET account_label = 'bob-work', created_at = now() - interval '30 days', "
+            "updated_at = now() - interval '30 days', last_used_at = now() - interval '1 hour' "
+            "WHERE id = CAST(:i AS uuid)"
+        ), {"i": used})
+        # Added by "Connect to continue": never used yet.
+        added = _connection(pg_conn, user="bob")
+        with _service_db(pg_conn):
+            resolved = resolve_connection(_tool(owner, mode="member"), "bob")
+        assert resolved.available and resolved.connection_id == added
+
     def test_member_mode_without_own_connection_is_unavailable(self, pg_conn):
         from docsgpt.connectors.resolve import resolve_connection
 

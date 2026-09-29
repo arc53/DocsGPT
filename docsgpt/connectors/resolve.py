@@ -122,8 +122,9 @@ def _member_connection(repo: ConnectorSessionsRepository, owned: Optional[dict],
     """The invoker's own connection to the service the owner's connection is for.
 
     A member with several connected accounts of that service gets the one
-    they used most recently (then the most recently connected): the account
-    they are working in, and the one a "Connect to continue" just added.
+    most recently used or connected, whichever is later: the account they
+    are working in, or the one a "Connect to continue" just added (never
+    used yet). Ties go to the last used, then the last updated.
     """
     if owned is None:
         return None
@@ -144,7 +145,8 @@ def _member_connection(repo: ConnectorSessionsRepository, owned: Optional[dict],
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
     def recency(row: dict) -> tuple:
-        return tuple(when(row.get(field)) for field in ("last_used_at", "updated_at", "created_at"))
+        used, updated, created = (when(row.get(field)) for field in ("last_used_at", "updated_at", "created_at"))
+        return max(used, created), used, updated, created
 
     return max(candidates, key=recency)
 
