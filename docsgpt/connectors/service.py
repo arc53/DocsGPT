@@ -151,12 +151,14 @@ def serialize_source(row: dict, connection_status: Optional[str] = None) -> dict
     }
 
 
-def serialize_parameters(action: dict) -> list[dict]:
+def serialize_parameters(action: dict, account_parameters: Optional[dict] = None) -> list[dict]:
     """An action's parameters as the connection drawer shows them.
 
     ``fixed`` parameters are sent with ``value`` on every call and hidden
-    from the model; the others are left to it.
+    from the model; the others are left to it. A parameter the connection
+    itself sets (Telegram's default chat) is fixed with ``set_by: account``.
     """
+    account_parameters = account_parameters or {}
     from docsgpt.agents.tool_pins import is_pinned, iter_parameters
 
     schema = action.get("parameters") if isinstance(action.get("parameters"), dict) else {}
@@ -164,21 +166,29 @@ def serialize_parameters(action: dict) -> list[dict]:
     parameters = []
     for _section, name, details in iter_parameters(action):
         fixed = is_pinned(details)
-        parameters.append(
-            {
-                "name": name,
-                "description": details.get("description") or "",
-                "type": details.get("type") if isinstance(details.get("type"), str) else "string",
-                "required": bool(details.get("required")) or name in required,
-                "fixed": fixed,
-                "value": details.get("value") if fixed else None,
-            }
-        )
+        entry = {
+            "name": name,
+            "description": details.get("description") or "",
+            "type": details.get("type") if isinstance(details.get("type"), str) else "string",
+            "required": bool(details.get("required")) or name in required,
+            "fixed": fixed,
+            "value": details.get("value") if fixed else None,
+            "set_by": "tool" if fixed else None,
+        }
+        if name in account_parameters:
+            entry.update(fixed=True, value=account_parameters[name], set_by="account")
+        parameters.append(entry)
     return parameters
 
 
-def serialize_tool(row: dict) -> dict:
-    """A tool linked to a connection, with its actions, permissions and parameters."""
+def serialize_tool(row: dict, account_parameters: Optional[dict] = None) -> dict:
+    """A tool linked to a connection, with its actions, permissions and parameters.
+
+    Args:
+        row: The ``user_tools`` row.
+        account_parameters: Parameters its connection sets, from
+            :func:`connection_parameters`.
+    """
     from docsgpt.connectors.permissions import action_access, action_permission
 
     actions = []
@@ -192,7 +202,7 @@ def serialize_tool(row: dict) -> dict:
                 "description": action.get("description", ""),
                 "access": access,
                 "permission": action_permission(action),
-                "parameters": serialize_parameters(action),
+                "parameters": serialize_parameters(action, account_parameters),
             }
         )
     return {
@@ -210,7 +220,8 @@ def connection_detail(conn, row: dict) -> dict:
     repo = ConnectorSessionsRepository(conn)
     status = normalize_status(row)
     sources = [serialize_source(s, status) for s in repo.list_sources(str(row["id"]))]
-    tools = [serialize_tool(t) for t in repo.list_tools(str(row["id"]))]
+    account_parameters = connection_parameters(row) if status == STATUS_CONNECTED else {}
+    tools = [serialize_tool(t, account_parameters) for t in repo.list_tools(str(row["id"]))]
     detail = serialize_connection(row, {"sources": len(sources), "tools": len(tools)})
     detail["sources"] = sources
     detail["tools"] = tools
@@ -700,6 +711,35 @@ def access_credentials(row: dict) -> dict:
             raise ConnectionUnavailable(f"Connection is {status}", connection_id=str(row["id"]), status=status)
         return {"access_token": get_valid_token_info(str(row["id"])).get("access_token")}
     return get_credentials(row)
+
+
+def connection_parameters(row: Optional[dict]) -> dict:
+    """Tool parameters a connection sets, from its credential fields.
+
+    Only fields the catalog marks with ``parameter`` count (Telegram's
+    default chat); an empty value sets nothing. A connection that cannot be
+    read sets nothing either: the call then fails on its credentials.
+
+    Args:
+        row: The connection row, or None.
+
+    Returns:
+        Parameter name to value.
+    """
+    if row is None:
+        return {}
+    fields = catalog.parameter_fields(catalog.connector_key_for_row(row))
+    if not fields:
+        return {}
+    try:
+        credentials = get_credentials(row)
+    except ConnectionUnavailable:
+        return {}
+    return {
+        f.parameter: credentials[f.key]
+        for f in fields
+        if credentials.get(f.key) not in (None, "")
+    }
 
 
 def _api_key_account(

@@ -35,15 +35,30 @@ class CredentialField:
             ``settings.connectors.fields.<key>`` when it has one.
         secret: Masked in the form and never returned by the API.
         required: Whether connecting fails without it.
+        parameter: A tool parameter this field sets. When the connection has
+            a value for it, every call through the connection uses that
+            value and the model is not asked for the parameter (Telegram's
+            default chat).
+        hint: English help shown under the field; the frontend shows the
+            translated ``settings.connectors.fieldHints.<connector>_<key>``.
     """
 
     key: str
     label: str
     secret: bool = True
     required: bool = True
+    parameter: Optional[str] = None
+    hint: Optional[str] = None
 
     def to_dict(self) -> dict:
-        return {"key": self.key, "label": self.label, "secret": self.secret, "required": self.required}
+        return {
+            "key": self.key,
+            "label": self.label,
+            "secret": self.secret,
+            "required": self.required,
+            "parameter": self.parameter,
+            "hint": self.hint,
+        }
 
 
 @dataclass(frozen=True)
@@ -292,7 +307,20 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
         category="messaging",
         auth_kind="api_key",
         capabilities=("write",),
-        credential_fields=(CredentialField("token", "Bot token"),),
+        credential_fields=(
+            CredentialField("token", "Bot token"),
+            CredentialField(
+                "chat_id",
+                "Default chat ID",
+                secret=False,
+                required=False,
+                parameter="chat_id",
+                hint=(
+                    "Messages go to this chat, and the AI cannot pick another. Add the bot to the chat, send "
+                    "it a message, then find the chat's id in https://api.telegram.org/bot<token>/getUpdates."
+                ),
+            ),
+        ),
         tool_templates=("telegram",),
         setup={"tools": "auto", "sync": "off"},
     ),
@@ -420,6 +448,14 @@ def definition_for_tool(tool_name: str) -> Optional[ConnectorDefinition]:
         if definition.publisher == "built_in" and tool_name in definition.tool_templates:
             return definition
     return None
+
+
+def parameter_fields(key: Optional[str]) -> tuple[CredentialField, ...]:
+    """The credential fields of connector ``key`` that set a tool parameter."""
+    definition = get_definition(key)
+    if definition is None:
+        return ()
+    return tuple(f for f in definition.credential_fields if f.parameter)
 
 
 def connector_key_for_row(row: dict) -> Optional[str]:

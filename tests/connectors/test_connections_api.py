@@ -75,6 +75,18 @@ class TestCreate:
         assert actions["telegram_send_message"]["access"] == "write"
         assert actions["telegram_send_message"]["permission"] == "ask"
 
+    def test_same_bot_with_another_default_chat_is_another_connection(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionsList
+
+        with _db(pg_conn):
+            first = _call(app, ConnectionsList, "post", "/api/connections",
+                          body={"connector_key": "telegram", "credentials": {"token": "123:abcdefgh"}})
+            second = _call(app, ConnectionsList, "post", "/api/connections",
+                           body={"connector_key": "telegram",
+                                 "credentials": {"token": "123:abcdefgh", "chat_id": "-1001"}})
+        assert first.status_code == 201 and second.status_code == 201
+        assert first.get_json()["connection"]["id"] != second.get_json()["connection"]["id"]
+
     def test_setup_is_idempotent_for_tools(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionSetup
 
@@ -378,6 +390,19 @@ class TestParameters:
         with _db(pg_conn):
             resp = self._put(app, cid, tool_id, body)
         assert resp.status_code == 400
+
+    def test_a_chat_set_on_the_account_shows_as_set_there(self, app, pg_conn):
+        cid = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
+        row = service.ConnectorSessionsRepository(pg_conn).get(cid)
+        tool_id = str(service.ensure_connection_tools(pg_conn, "alice", row)[0]["id"])
+        detail = service.connection_detail(pg_conn, row)
+        action = next(a for a in detail["tools"][0]["actions"] if a["name"] == "telegram_send_message")
+        chat_id = next(p for p in action["parameters"] if p["name"] == "chat_id")
+        assert chat_id == {**chat_id, "fixed": True, "value": "-1001", "set_by": "account"}
+        with _db(pg_conn):
+            resp = self._put(app, cid, tool_id, {"action": "telegram_send_message", "parameters": {"text": "hi"}})
+        chat_id = self._parameters(resp.get_json())["chat_id"]
+        assert chat_id["set_by"] == "account"
 
     def test_another_user_cannot_fix_values(self, app, pg_conn):
         cid, tool_id = self._tool(pg_conn)

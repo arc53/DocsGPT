@@ -11,12 +11,22 @@ class TelegramTool(Tool):
     """
     Telegram Bot
     A flexible Telegram tool for performing various actions (e.g., sending messages, images).
-    Requires a bot token and chat ID for configuration
+    Requires a bot token; a default chat ID set on the connection is used when no chat is named
     """
 
     def __init__(self, config):
         self.config = config
         self.token = config.get("token", "")
+        self.default_chat_id = config.get("chat_id") or None
+
+    def _no_chat(self):
+        return {
+            "status": "error",
+            "error": (
+                "No chat to send to. Name a chat_id, or set a default chat ID on the Telegram "
+                "connection in Settings > Connectors."
+            ),
+        }
 
     def execute_action(self, action_name, **kwargs):
         actions = {
@@ -27,14 +37,20 @@ class TelegramTool(Tool):
             raise ValueError(f"Unknown action: {action_name}")
         return actions[action_name](**kwargs)
 
-    def _send_message(self, text, chat_id):
+    def _send_message(self, text, chat_id=None):
+        chat_id = chat_id or self.default_chat_id
+        if not chat_id:
+            return self._no_chat()
         logger.debug("Sending Telegram message to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text}
         response = requests.post(url, data=payload, timeout=100)
         return {"status_code": response.status_code, "message": "Message sent"}
 
-    def _send_image(self, image_url, chat_id):
+    def _send_image(self, image_url, chat_id=None):
+        chat_id = chat_id or self.default_chat_id
+        if not chat_id:
+            return self._no_chat()
         logger.debug("Sending Telegram image to chat_id=%s", chat_id)
         url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
         payload = {"chat_id": chat_id, "photo": image_url}

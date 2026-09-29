@@ -256,7 +256,8 @@ class ConnectionSetup(Resource):
                         conn, user_id, row, permissions=body.get("tool_permissions") or None,
                         mcp_actions=mcp_actions,
                     )
-                tool_payload = [service.serialize_tool(tool) for tool in tools]
+                account_parameters = service.connection_parameters(row)
+                tool_payload = [service.serialize_tool(tool, account_parameters) for tool in tools]
             sources = []
             if body.get("sync"):
                 started = _start_sync(user_id, row, body["sync"])
@@ -514,7 +515,7 @@ class ConnectionToolPermissions(Resource):
             tool = service.set_tool_permissions(conn, user_id, connection_id, tool_id, permissions)
             if tool is None:
                 return _not_found()
-            payload = service.serialize_tool(tool)
+            payload = service.serialize_tool(tool, service.connection_parameters(row))
         return make_response(jsonify({"success": True, "tool": payload}), 200)
 
 
@@ -544,7 +545,7 @@ class ConnectionToolParameters(Resource):
                 return _error(str(err), 400)
             if tool is None:
                 return _not_found()
-            payload = service.serialize_tool(tool)
+            payload = service.serialize_tool(tool, service.connection_parameters(row))
         return make_response(jsonify({"success": True, "tool": payload}), 200)
 
 

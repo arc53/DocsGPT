@@ -496,6 +496,8 @@ class ToolExecutor:
         # Per-turn connection resolution for connection-backed tools, keyed
         # by tool row id, so check_pause and execute share one lookup.
         self._connections: Dict[str, Any] = {}
+        # Tool parameters those connections set (Telegram's default chat).
+        self._connection_params: Dict[str, Dict] = {}
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -748,7 +750,9 @@ class ToolExecutor:
             if is_client:
                 params = action.get("parameters", {})
             else:
-                params = self._build_tool_parameters(action)
+                params = self._build_tool_parameters(
+                    action, hidden=set(self._connection_parameters(tools_dict[tool_id])),
+                )
 
             result.append(
                 {
@@ -815,6 +819,34 @@ class ToolExecutor:
                 logger.exception("connection resolution failed for tool %s", key)
                 self._connections[key] = None
         return self._connections[key]
+
+    def _connection_parameters(self, tool_data: Dict) -> Dict:
+        """Tool parameters the connection a call runs with sets, e.g. Telegram's default chat.
+
+        Resolved like the credentials: in member mode each member's own
+        connection (and so their own chat) applies. Only connectors with
+        such fields are looked up.
+        """
+        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+            return {}
+        from docsgpt.connectors import catalog
+
+        definition = catalog.definition_for_tool(tool_data.get("name") or "")
+        if definition is None or not catalog.parameter_fields(definition.key):
+            return {}
+        key = str(tool_data.get("id") or tool_data.get("connection_id"))
+        if key not in self._connection_params:
+            resolved = self._resolve_connection(tool_data)
+            params: Dict = {}
+            if resolved is not None and resolved.available:
+                from docsgpt.connectors.service import connection_parameters
+
+                try:
+                    params = connection_parameters(resolved.row)
+                except Exception:
+                    logger.exception("connection parameters failed for tool %s", key)
+            self._connection_params[key] = params
+        return self._connection_params[key]
 
     @staticmethod
     def _connection_payload(resolved) -> Dict:
@@ -1400,7 +1432,7 @@ class ToolExecutor:
             tool_call_data["access"] = action_access(tool_data.get("name"), action_data)
 
         # Fixed values win over whatever the model sent for the same key.
-        sections = resolve_arguments(action_data, call_args)
+        sections = resolve_arguments(action_data, call_args, self._connection_parameters(tool_data))
         query_params, headers = sections["query_params"], sections["headers"]
         body, parameters = sections["body"], sections["parameters"]
 

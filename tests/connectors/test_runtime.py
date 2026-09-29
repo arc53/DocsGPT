@@ -213,6 +213,69 @@ class TestExecutor:
         assert "connection_id" not in config
 
 
+def _telegram_tool(connection_id, *, user="alice", mode="owner"):
+    from docsgpt.agents.tools.telegram import TelegramTool
+    from docsgpt.connectors.service import _transform_actions
+
+    return {
+        **_tool(connection_id, user=user, mode=mode),
+        "actions": _transform_actions(TelegramTool({}).get_actions_metadata()),
+    }
+
+
+def _run_send(executor, tool, arguments):
+    with patch("docsgpt.agents.tool_executor.ToolActionParser") as parser, \
+            patch("docsgpt.agents.tool_executor.ToolManager") as manager:
+        parser.return_value.parse_args.return_value = ("t1", "telegram_send_message", arguments)
+        gen = executor.execute({"t1": tool}, _call(), "OpenAILLM")
+        while True:
+            try:
+                next(gen)
+            except StopIteration:
+                break
+    return manager.return_value.load_tool.return_value.execute_action.call_args
+
+
+class TestTelegramDefaultChat:
+    def test_the_connection_offers_a_default_chat_field(self):
+        from docsgpt.connectors import catalog
+
+        fields = {f.key: f for f in catalog.get_definition("telegram").credential_fields}
+        chat = fields["chat_id"]
+        assert chat.secret is False and chat.required is False
+        assert chat.parameter == "chat_id"
+        assert chat.hint
+        assert chat.to_dict()["hint"] == chat.hint
+
+    def test_the_model_is_not_asked_for_a_chat_the_connection_sets(self, pg_conn):
+        cid = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
+        with _service_db(pg_conn):
+            functions = _executor().prepare_tools_for_llm({"t1": _telegram_tool(cid)})
+        by_name = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
+        assert "chat_id" not in by_name["telegram_send_message"]["properties"]
+        assert "chat_id" not in by_name["telegram_send_image"]["properties"]
+
+    def test_without_a_default_chat_the_model_still_names_one(self, pg_conn):
+        cid = _connection(pg_conn, secrets={"credentials": {"token": "t"}})
+        with _service_db(pg_conn):
+            functions = _executor().prepare_tools_for_llm({"t1": _telegram_tool(cid)})
+        params = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
+        assert "chat_id" in params["telegram_send_message"]["properties"]
+
+    def test_the_default_chat_wins_over_what_the_model_sends(self, pg_conn):
+        cid = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
+        with _service_db(pg_conn):
+            call = _run_send(_executor(), _telegram_tool(cid), {"text": "hi", "chat_id": "666"})
+        assert call.kwargs == {"text": "hi", "chat_id": "-1001"}
+
+    def test_each_member_uses_their_own_chat(self, pg_conn):
+        owner = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
+        _connection(pg_conn, user="bob", secrets={"credentials": {"token": "b", "chat_id": "-2002"}})
+        with _service_db(pg_conn):
+            call = _run_send(_executor(user="bob"), _telegram_tool(owner, mode="member"), {"text": "hi"})
+        assert call.kwargs == {"text": "hi", "chat_id": "-2002"}
+
+
 class TestScheduledSync:
     def test_connector_sources_with_a_connection_are_dispatched(self, pg_conn):
         from docsgpt import worker

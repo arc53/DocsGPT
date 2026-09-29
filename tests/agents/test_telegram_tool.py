@@ -63,6 +63,20 @@ class TestTelegramExecuteAction:
 
         assert result["status_code"] == 403
 
+    @patch("docsgpt.agents.tools.telegram.requests.post")
+    def test_sends_to_the_default_chat_when_none_is_named(self, mock_post):
+        mock_post.return_value = MagicMock(status_code=200)
+        tool = TelegramTool(config={"token": "bot123:ABC", "chat_id": "-1001"})
+        tool.execute_action("telegram_send_message", text="Hello")
+        assert mock_post.call_args[1]["data"]["chat_id"] == "-1001"
+
+    @patch("docsgpt.agents.tools.telegram.requests.post")
+    def test_without_any_chat_it_says_how_to_set_one(self, mock_post, tool):
+        result = tool.execute_action("telegram_send_message", text="Hello")
+        mock_post.assert_not_called()
+        assert result["status"] == "error"
+        assert "chat" in result["error"].lower()
+
 
 @pytest.mark.unit
 class TestTelegramMetadata:
