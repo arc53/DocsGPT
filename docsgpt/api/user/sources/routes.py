@@ -452,6 +452,8 @@ class SyncSource(Resource):
                 sync_frequency=doc.get("sync_frequency", "never"),
                 retriever=doc.get("retriever", "classic"),
                 doc_id=str(doc["id"]),
+                # S3 and GitHub sources made from a connection read with its keys.
+                connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
             )
         except Exception as err:
             current_app.logger.error(

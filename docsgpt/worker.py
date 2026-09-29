@@ -32,6 +32,7 @@ from docsgpt.parser.file.image_parser import (
     VISION_CONVERTIBLE_MIME_TYPES,
     convert_image_to_png,
 )
+from docsgpt.parser.remote.github_loader import GitHubTokenRejected
 from docsgpt.parser.remote.remote_creator import (
     RemoteCreator,
     normalize_remote_data,
@@ -1291,7 +1292,19 @@ def remote_worker(
                 from docsgpt.connectors.service import ConnectionUnavailable
 
                 raise ConnectionUnavailable("Reconnect to continue", connection_id=str(connection_id))
-        raw_docs = remote_loader.load_data(loader_input)
+        try:
+            raw_docs = remote_loader.load_data(loader_input)
+        except GitHubTokenRejected as exc:
+            # A revoked token pauses the connection's sources until the
+            # owner reconnects, instead of failing on every schedule.
+            from docsgpt.connectors import service as connection_service
+
+            if not connection_id:
+                raise
+            connection_service.mark_reconnect_needed(str(connection_id), str(exc))
+            raise connection_service.ConnectionUnavailable(
+                str(exc), connection_id=str(connection_id),
+            ) from exc
 
         cfg = SourceConfig.parse(config)
         chunker = ChunkerCreator.create_chunker(
@@ -2184,9 +2197,12 @@ def _webhook_tool_allowlist(agent_config):
 def _with_connection_credentials(source_data, connection_id: str):
     """Loader input with the connection's stored keys merged in, or None.
 
-    S3 and Reddit sources made from a connection keep their keys on the
-    connection only, never in ``sources.remote_data``. Returns None when the
-    connection is gone, needs reconnecting, or its connector is turned off.
+    S3, Reddit and GitHub sources made from a connection keep their keys on
+    the connection only, never in ``sources.remote_data``. A JSON string
+    stays a JSON string and a dict a dict; any other string (a GitHub
+    repository URL) becomes ``{"url": ...}`` next to the keys. Returns None
+    when the connection is gone, needs reconnecting, or its connector is
+    turned off.
     """
     from docsgpt.connectors import service
     from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
@@ -2197,13 +2213,18 @@ def _with_connection_credentials(source_data, connection_id: str):
     if row is None or not enabled:
         return None
     try:
-        credentials = service.get_credentials(row)
+        credentials = service.access_credentials(row)
     except service.ConnectionUnavailable:
         return None
-    as_text = isinstance(source_data, str)
-    data = json.loads(source_data) if as_text else dict(source_data or {})
-    data.update(credentials)
-    return json.dumps(data) if as_text else data
+    if isinstance(source_data, str):
+        try:
+            parsed = json.loads(source_data)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            return json.dumps({**parsed, **credentials})
+        return {"url": source_data, **credentials}
+    return {**dict(source_data or {}), **credentials}
 
 
 def _link_source_to_connection(source_id: str, connection_id: str) -> None:

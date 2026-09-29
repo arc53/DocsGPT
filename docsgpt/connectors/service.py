@@ -654,6 +654,27 @@ def get_credentials(row: dict) -> dict:
     return dict(secrets.get("credentials") or {})
 
 
+def access_credentials(row: dict) -> dict:
+    """What a loader or tool authenticates with through this connection.
+
+    Pasted credentials for an ``api_key`` connection. An OAuth connection
+    whose token a loader or tool sends itself (GitHub's App sign-in) gives
+    its current access token as ``access_token``, refreshed first when it
+    has expired.
+
+    Raises:
+        ConnectionUnavailable: Disconnected, flagged, undecryptable, or the
+            refresh was refused (the connection is then flagged).
+        TransientConnectionError: The provider failed in a retryable way.
+    """
+    if (row.get("auth_kind") or "") == "oauth":
+        status = normalize_status(row)
+        if status in (STATUS_DISCONNECTED, STATUS_RECONNECT):
+            raise ConnectionUnavailable(f"Connection is {status}", connection_id=str(row["id"]), status=status)
+        return {"access_token": get_valid_token_info(str(row["id"])).get("access_token")}
+    return get_credentials(row)
+
+
 def _api_key_account(
     repo: ConnectorSessionsRepository,
     user_id: str,

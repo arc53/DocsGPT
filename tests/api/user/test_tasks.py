@@ -165,9 +165,19 @@ class TestSyncSourceTask:
         )
 
         mock_sync.assert_called_once_with(
-            ANY, {"data": 1}, "job1", "user1", "web", "daily", "classic", "doc1"
+            ANY, {"data": 1}, "job1", "user1", "web", "daily", "classic", "doc1",
+            connection_id=None,
         )
         assert result == {"status": "ok"}
+
+    @pytest.mark.unit
+    @patch("docsgpt.api.user.tasks.sync")
+    def test_passes_the_sources_connection(self, mock_sync):
+        from docsgpt.api.user.tasks import sync_source
+
+        sync_source({"data": 1}, "job1", "user1", "s3", "daily", "classic", "doc1", connection_id="c-1")
+
+        assert mock_sync.call_args.kwargs["connection_id"] == "c-1"
 
 
 class TestStoreAttachmentTask:

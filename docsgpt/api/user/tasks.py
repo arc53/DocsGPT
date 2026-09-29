@@ -277,6 +277,7 @@ def sync_source(
     sync_frequency,
     retriever,
     doc_id,
+    connection_id=None,
 ):
     resp = sync(
         self,
@@ -287,6 +288,7 @@ def sync_source(
         sync_frequency,
         retriever,
         doc_id,
+        connection_id=connection_id,
     )
     return resp
 

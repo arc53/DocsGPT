@@ -512,3 +512,107 @@ class TestGitHubLoaderStaleTokenFallback:
         assert mock_get.call_count == 2
         # Second attempt carried no Authorization header.
         assert "Authorization" not in mock_get.call_args.kwargs["headers"]
+
+
+def _stub_repo(loader, monkeypatch):
+    monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+    monkeypatch.setattr(loader, "fetch_repo_tree", lambda repo, branch: ([("README.md", 5)], False))
+    monkeypatch.setattr(loader, "fetch_file_content", lambda repo, path: "readme")
+
+
+class TestGitHubLoaderConnectionToken:
+    def test_uses_the_connections_token(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GITHUB_ACCESS_TOKEN", "instance-token")
+        loader = GitHubLoader()
+        _stub_repo(loader, monkeypatch)
+        with patch("docsgpt.parser.remote.github_loader.requests.get") as get:
+            docs = loader.load_data({"repo_url": "owner/private-repo", "access_token": "user-token"})
+        # A user's own token reads their private repos: no public check.
+        get.assert_not_called()
+        assert loader.headers["Authorization"] == "Bearer user-token"
+        assert [d.doc_id for d in docs] == ["README.md"]
+
+    def test_accepts_a_url_key_and_a_plain_string(self, monkeypatch):
+        loader = GitHubLoader()
+        _stub_repo(loader, monkeypatch)
+        assert loader.load_data({"url": "https://github.com/owner/repo"})[0].extra_info["source"].startswith(
+            "https://github.com/owner/repo/"
+        )
+        assert loader.load_data("owner/repo")
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_rejected_connection_token_is_not_retried_anonymously(self, mock_get):
+        from docsgpt.parser.remote.github_loader import GitHubTokenRejected
+
+        loader = GitHubLoader(access_token="revoked")
+        mock_get.return_value = MagicMock(status_code=401)
+        with pytest.raises(GitHubTokenRejected):
+            loader._make_request("https://api.github.com/repos/o/r")
+        assert mock_get.call_count == 1
+
+
+class TestGitHubLoaderInstanceTokenIsPublicOnly:
+    """GITHUB_ACCESS_TOKEN is shared by every user: it must never read a private repo."""
+
+    @pytest.fixture(autouse=True)
+    def _instance_token(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GITHUB_ACCESS_TOKEN", "instance-token")
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_private_repo_is_refused(self, mock_get, monkeypatch):
+        from docsgpt.parser.remote.github_loader import PrivateRepositoryError
+
+        loader = GitHubLoader()
+        _stub_repo(loader, monkeypatch)
+        fetched = MagicMock()
+        monkeypatch.setattr(loader, "fetch_file_content", fetched)
+        mock_get.return_value = make_response({"private": True, "visibility": "private"})
+
+        with pytest.raises(PrivateRepositoryError, match="Connect"):
+            loader.load_data("https://github.com/acme/secret")
+        fetched.assert_not_called()
+
+    @pytest.mark.parametrize("status", [404, 403])
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_unreadable_repo_is_refused(self, mock_get, status, monkeypatch):
+        from docsgpt.parser.remote.github_loader import PrivateRepositoryError
+
+        loader = GitHubLoader()
+        _stub_repo(loader, monkeypatch)
+        mock_get.return_value = make_response({"message": "Not Found"}, status_code=status)
+        with pytest.raises(PrivateRepositoryError):
+            loader.load_data("acme/secret")
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_internal_repo_is_refused(self, mock_get, monkeypatch):
+        from docsgpt.parser.remote.github_loader import PrivateRepositoryError
+
+        loader = GitHubLoader()
+        _stub_repo(loader, monkeypatch)
+        mock_get.return_value = make_response({"private": False, "visibility": "internal"})
+        with pytest.raises(PrivateRepositoryError):
+            loader.load_data("acme/internal")
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_public_repo_uses_the_instance_token(self, mock_get, monkeypatch):
+        loader = GitHubLoader()
+        _stub_repo(loader, monkeypatch)
+        mock_get.return_value = make_response({"private": False, "visibility": "public"})
+
+        docs = loader.load_data("owner/repo")
+
+        assert [d.doc_id for d in docs] == ["README.md"]
+        assert mock_get.call_args.kwargs["headers"]["Authorization"] == "Bearer instance-token"
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_stale_instance_token_reads_public_repos_anonymously(self, mock_get, monkeypatch):
+        loader = GitHubLoader()
+        _stub_repo(loader, monkeypatch)
+        mock_get.side_effect = [MagicMock(status_code=401), make_response({"private": False})]
+
+        assert loader.load_data("owner/repo")
+        assert "Authorization" not in loader.headers

@@ -600,6 +600,38 @@ class TestSyncSource:
         assert response.status_code == 200
         assert response.json["task_id"] == "task-123"
 
+    def test_syncs_with_the_sources_connection(self, app, pg_conn):
+        """A source synced from a connection (S3, GitHub) reads with that connection's keys."""
+        from sqlalchemy import text
+
+        from docsgpt.api.user.sources.routes import SyncSource
+
+        user = "u-conn-sync"
+        cid = str(pg_conn.execute(text(
+            "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status) "
+            "VALUES (:u, 'github', 'github', 'api_key', 'connected') RETURNING id"
+        ), {"u": user}).scalar())
+        src = _seed_source(
+            pg_conn, user, name="repo", type="github",
+            remote_data=json.dumps({"repo_url": "acme/private"}),
+        )
+        pg_conn.execute(text("UPDATE sources SET connection_id = CAST(:c AS uuid) WHERE id = :s"),
+                        {"c": cid, "s": src["id"]})
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.sync_source.delay",
+            return_value=MagicMock(id="task-conn"),
+        ) as mock_delay, app.test_request_context(
+            "/api/sync_source", method="POST", json={"source_id": str(src["id"])},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = SyncSource().post()
+
+        assert response.status_code == 200
+        assert mock_delay.call_args.kwargs["connection_id"] == cid
+        assert mock_delay.call_args.kwargs["source_data"] == "acme/private"
+
     def test_normalizes_dict_remote_data_before_dispatch(self, app, pg_conn):
         """The route must hand the sync task the normalized URL string."""
         from docsgpt.api.user.sources.routes import SyncSource

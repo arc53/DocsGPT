@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -294,6 +295,61 @@ class TestScheduledSync:
             assert worker._with_connection_credentials({"bucket": "b"}, cid)["aws_access_key_id"] == "AKIA"
             ConnectorPoliciesRepository(pg_conn).upsert("s3", enabled=False)
             assert worker._with_connection_credentials({"bucket": "b"}, cid) is None
+
+    def test_repository_url_gets_the_connections_token(self, pg_conn):
+        """A GitHub source's loader input is a plain URL, not JSON."""
+        from docsgpt import worker
+
+        cid = _connection(pg_conn, provider="github", auth_kind="api_key",
+                          secrets={"credentials": {"access_token": "github_pat_x"}})
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        with patch.object(worker, "db_readonly", _yield):
+            data = worker._with_connection_credentials("https://github.com/acme/private", cid)
+            as_json = worker._with_connection_credentials('{"search_queries": ["x"]}', cid)
+        assert data == {"url": "https://github.com/acme/private", "access_token": "github_pat_x"}
+        assert json.loads(as_json)["access_token"] == "github_pat_x"
+
+    def test_oauth_connection_gives_its_current_access_token(self, pg_conn):
+        """A GitHub App sign-in keeps an OAuth token, refreshed before use."""
+        from docsgpt import worker
+
+        cid = _connection(pg_conn, provider="github", auth_kind="oauth",
+                          secrets={"token_info": {"access_token": "ghu_fresh", "refresh_token": "ghr_x"}})
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        with patch.object(worker, "db_readonly", _yield), _service_db(pg_conn), patch(
+            "docsgpt.connectors.service.get_valid_token_info", return_value={"access_token": "ghu_fresh"},
+        ) as valid:
+            data = worker._with_connection_credentials({"repo_url": "acme/private"}, cid)
+        valid.assert_called_once_with(cid)
+        assert data == {"repo_url": "acme/private", "access_token": "ghu_fresh"}
+
+    def test_rejected_token_flags_the_connection(self, pg_conn):
+        """A revoked token pauses the source for reconnect instead of failing every sync."""
+        from docsgpt import worker
+        from docsgpt.connectors.service import ConnectionUnavailable
+        from docsgpt.parser.remote.github_loader import GitHubTokenRejected
+
+        loader = MagicMock()
+        loader.load_data.side_effect = GitHubTokenRejected("revoked")
+        task = MagicMock()
+        task.request.retries = 1
+        with patch.object(worker.RemoteCreator, "create_loader", return_value=loader), patch.object(
+            worker, "_with_connection_credentials", return_value={"url": "acme/r", "access_token": "t"},
+        ), patch.object(worker, "publish_user_event"), patch(
+            "docsgpt.connectors.service.mark_reconnect_needed",
+        ) as flag:
+            with pytest.raises(ConnectionUnavailable):
+                worker.remote_worker(task, "acme/r", "repo", "alice", "github", connection_id="c-1")
+        flag.assert_called_once()
+        assert flag.call_args.args[0] == "c-1"
 
     def test_sync_runs_as_the_connection_without_a_browser(self, pg_conn):
         from docsgpt import worker
