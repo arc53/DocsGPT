@@ -747,12 +747,10 @@ class ToolExecutor:
         result = []
         for index, (tool_id, tool_name, action_name, action, is_client) in enumerate(entries):
             service, account = connected.get(index, (None, None))
-            if service is None:
-                slug = ""
-            elif per_service[(action_name, service)] > 1:
-                slug = _account_slug(account)
-            else:
-                slug = _account_slug(service)
+            # The account is named only where it is what tells tools apart.
+            if service is not None and per_service[(action_name, service)] < 2:
+                account = None
+            slug = _account_slug(account or service)
             if name_counts[action_name] == 1 and len(action_name) <= _MAX_LLM_NAME_LEN:
                 llm_name = action_name
             else:
@@ -788,8 +786,10 @@ class ToolExecutor:
                 )
 
             description = action.get("description", "")
-            if service:
+            if account:
                 description = f"{description} ({service} account: {account})".strip()
+            elif service:
+                description = f"{description} ({service})".strip()
             result.append(
                 {
                     "type": "function",

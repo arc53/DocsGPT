@@ -315,7 +315,7 @@ class TestAccountsTellApartForTheModel:
         with _service_db(pg_conn):
             functions = {f["function"]["name"]: f["function"] for f in _executor().prepare_tools_for_llm(tools)}
         assert set(functions) == {"search_wiki", "search_tracker"}
-        assert functions["search_wiki"]["description"].startswith("Search (Wiki account:")
+        assert functions["search_wiki"]["description"] == "Search (Wiki)"
 
     def test_names_stay_within_provider_limits(self, pg_conn):
         tools = self._two_bots(pg_conn, ["x" * 80, "x" * 80])
