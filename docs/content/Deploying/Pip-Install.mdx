@@ -62,9 +62,9 @@ DocsGPT keeps its runtime files in a **data home**: the `.env` file it reads set
 Create a `.env` in the data home. The minimum for a hosted LLM:
 
 ```ini
-# LLM provider and model: see App Configuration for the options
+# LLM provider and model: see Models > Cloud Providers for the options
 LLM_PROVIDER=openai
-LLM_NAME=<model name>
+LLM_NAME=<model id from the catalog, e.g. gpt-5.5; optional>
 API_KEY=<provider API key>
 
 # User data
