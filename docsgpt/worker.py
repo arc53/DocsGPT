@@ -1519,7 +1519,7 @@ def sync_worker(self, frequency):
     with db_readonly() as conn:
         result = conn.execute(
             sql_text(
-                "SELECT id, name, user_id, type, remote_data, retriever, connection_id "
+                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata "
                 "FROM sources WHERE sync_frequency = :freq"
             ),
             {"freq": frequency},
@@ -1547,6 +1547,23 @@ def sync_worker(self, frequency):
                 sync_counts["sync_dispatched"] += 1
             else:
                 sync_counts["sync_skipped"] += 1
+            continue
+
+        metadata = doc.get("metadata")
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except ValueError:
+                metadata = {}
+        if (
+            doc.get("connection_id")
+            and isinstance(metadata, dict)
+            and metadata.get("sync_state") == "paused_reconnect"
+        ):
+            # An S3 or GitHub source whose connection needs reconnecting:
+            # it resumes when the owner reconnects, rather than failing (and
+            # notifying) on every schedule until then.
+            sync_counts["sync_skipped"] += 1
             continue
 
         source_data = normalize_remote_data(source_type, doc.get("remote_data"))

@@ -239,6 +239,27 @@ class TestScheduledSync:
         assert counts["sync_dispatched"] == 1
         assert counts["sync_skipped"] == 1
 
+    def test_paused_repository_is_skipped_until_reconnected(self, pg_conn):
+        """A GitHub or S3 source paused for reconnect is not retried (and failed) on every schedule."""
+        from docsgpt import worker
+
+        cid = _connection(pg_conn, provider="github", status="reconnect_needed",
+                          secrets={"credentials": {"access_token": "revoked"}})
+        pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name, type, sync_frequency, connection_id, remote_data, metadata) "
+            "VALUES ('alice', 'acme/api', 'github', 'daily', CAST(:c AS uuid), '{\"repo_url\": \"acme/api\"}', "
+            "'{\"sync_state\": \"paused_reconnect\"}')"
+        ), {"c": cid})
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        with patch.object(worker, "db_readonly", _yield), patch.object(worker, "sync") as sync:
+            counts = worker.sync_worker(MagicMock(), "daily")
+        sync.assert_not_called()
+        assert counts["sync_skipped"] == 1
+
     def test_paused_connection_is_not_synced(self, pg_conn):
         from docsgpt import worker
 
