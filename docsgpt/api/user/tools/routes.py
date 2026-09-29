@@ -1,5 +1,7 @@
 """Tool management routes."""
 
+import copy
+
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 
@@ -13,6 +15,7 @@ from docsgpt.agents.default_tools import (
     is_synthesized_tool_id,
     WORKFLOW_ONLY_BUILTINS,
 )
+from docsgpt.agents.tool_pins import merge_submitted_actions, PinChangeRefused
 from docsgpt.agents.tools.spec_parser import parse_spec
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.api import api
@@ -183,6 +186,24 @@ def transform_actions(actions_metadata):
                 param_details["value"] = ""
         transformed.append(action)
     return transformed
+
+
+def _stored_actions(tool_doc: dict) -> list:
+    """A tool's stored actions, or its class's own for a row stored without any.
+
+    Args:
+        tool_doc: The ``user_tools`` row.
+
+    Returns:
+        The action list submitted actions are validated against.
+    """
+    actions = tool_doc.get("actions") or []
+    if actions or tool_doc.get("name") in ("mcp_tool", "api_tool"):
+        return actions
+    tool_instance = tool_manager.tools.get(tool_doc.get("name"))
+    if tool_instance is None:
+        return actions
+    return transform_actions(copy.deepcopy(tool_instance.get_actions_metadata()))
 
 
 tools_ns = Namespace("tools", description="Tool management operations", path="/api")
@@ -814,18 +835,29 @@ class UpdateToolActions(Resource):
             with db_session() as conn:
                 repo = UserToolsRepository(conn)
                 tool_doc = repo.get_any(data["id"], user)
-                if tool_doc:
-                    repo.update(str(tool_doc["id"]), user, {"actions": data["actions"]})
-                else:
+                owner = user
+                if tool_doc is None:
                     # Team editor write path (secrets stay owner-only — actions
                     # carry no credentials, so editing them is safe).
                     owner = effective_write_owner(conn, "tool", data["id"], user)
-                    if not owner:
+                    tool_doc = repo.get_by_id(data["id"]) if owner else None
+                    if not tool_doc or tool_doc.get("user_id") != owner:
                         return make_response(
                             jsonify({"success": False, "message": "Tool not found"}),
                             404,
                         )
-                    repo.update(data["id"], owner, {"actions": data["actions"]})
+                # The stored actions are the schema: nothing can be added,
+                # and a fixed value is the owner's to set (an editor pinning
+                # a Telegram chat would redirect the owner's bot).
+                try:
+                    actions = merge_submitted_actions(
+                        _stored_actions(tool_doc), data["actions"], may_change_pins=owner == user,
+                    )
+                except PinChangeRefused as err:
+                    return make_response(jsonify({"success": False, "message": str(err)}), 403)
+                except ValueError as err:
+                    return make_response(jsonify({"success": False, "message": str(err)}), 400)
+                repo.update(str(tool_doc["id"]), owner, {"actions": actions})
         except Exception as err:
             current_app.logger.error(
                 f"Error updating tool actions: {err}", exc_info=True
