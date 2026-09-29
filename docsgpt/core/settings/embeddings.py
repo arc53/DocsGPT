@@ -26,7 +26,11 @@ class EmbeddingsSettings(SettingsGroup):
         default=None, description="Remote embeddings API URL (OpenAI-compatible)."
     )
     EMBEDDINGS_KEY: Optional[str] = Field(
-        default=None, description="API key for embeddings (with OpenAI, the same value as API_KEY)."
+        default=None,
+        description=(
+            "API key for remote or OpenAI embeddings. OpenAI embeddings fall back to OPENAI_API_KEY, then to "
+            "API_KEY when LLM_PROVIDER=openai."
+        ),
     )
     EMBEDDINGS_MAX_INPUT_TOKENS: Optional[int] = Field(
         default=None, description="Truncate each remote embed input to N tokens (overflow is lost)."

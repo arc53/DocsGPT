@@ -255,7 +255,7 @@ configure_embeddings() {
             ;;
         2)
             echo "EMBEDDINGS_NAME=openai_text-embedding-ada-002" >> "$ENV_FILE"
-            read -p "$(echo -e "${DEFAULT_FG}Enter Embeddings API key (leave empty to reuse LLM API_KEY): ${NC}")" emb_key
+            read -p "$(echo -e "${DEFAULT_FG}Enter OpenAI API key for embeddings (leave empty to reuse API_KEY, only if the LLM provider is OpenAI): ${NC}")" emb_key
             [ -n "$emb_key" ] && echo "EMBEDDINGS_KEY=$emb_key" >> "$ENV_FILE"
             echo -e "${GREEN}Embeddings set to OpenAI.${NC}"
             ;;

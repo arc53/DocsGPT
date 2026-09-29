@@ -368,7 +368,7 @@ Remote embeddings API URL (OpenAI-compatible).
 
 Type `str`, default unset.
 
-API key for embeddings (with OpenAI, the same value as API_KEY).
+API key for remote or OpenAI embeddings. OpenAI embeddings fall back to OPENAI_API_KEY, then to API_KEY when LLM_PROVIDER=openai.
 
 ### `EMBEDDINGS_MAX_INPUT_TOKENS`
 

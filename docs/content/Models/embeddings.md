@@ -51,14 +51,27 @@ python -m docsgpt.scripts.prefetch_models
 
 ## Using OpenAI Embeddings
 
-To use OpenAI's `text-embedding-ada-002` embedding model, you need to set `EMBEDDINGS_NAME` to `openai_text-embedding-ada-002` and ensure you have your OpenAI API key configured correctly via `API_KEY` in your `.env` file (if you are not using Azure OpenAI).
+To use OpenAI's `text-embedding-ada-002` embedding model, set `EMBEDDINGS_NAME` to `openai_text-embedding-ada-002` and give DocsGPT an OpenAI key. The embeddings client uses the first of these that is set:
+
+1. `EMBEDDINGS_KEY`
+2. `OPENAI_API_KEY`
+3. `API_KEY`, but only when `LLM_PROVIDER=openai`, because only then is it an OpenAI key
 
 **Example `.env` configuration for OpenAI Embeddings:**
 
 ```
 LLM_PROVIDER=openai
-API_KEY=YOUR_OPENAI_API_KEY # Your OpenAI API Key
+API_KEY=YOUR_OPENAI_API_KEY # Used for both chat and embeddings
 EMBEDDINGS_NAME=openai_text-embedding-ada-002
+```
+
+If your chat model comes from another provider, set the OpenAI key separately:
+
+```
+LLM_PROVIDER=anthropic
+API_KEY=YOUR_ANTHROPIC_API_KEY
+EMBEDDINGS_NAME=openai_text-embedding-ada-002
+EMBEDDINGS_KEY=YOUR_OPENAI_API_KEY
 ```
 
 ## Remote (OpenAI-compatible) Embeddings
@@ -73,7 +86,7 @@ EMBEDDINGS_KEY=YOUR_API_KEY                 # optional; sent as a Bearer token
 
 - `EMBEDDINGS_BASE_URL` — base URL of the remote server. Setting it switches DocsGPT into remote-embeddings mode.
 - `EMBEDDINGS_NAME` — forwarded as the `model` field in each request.
-- `EMBEDDINGS_KEY` — optional bearer token. If you are using OpenAI directly you can copy `API_KEY` here.
+- `EMBEDDINGS_KEY` — optional bearer token. In this mode it is the only key sent: `OPENAI_API_KEY` and `API_KEY` are not used, so set it even if it is the same OpenAI key.
 
 ### Guarding against oversized inputs
 

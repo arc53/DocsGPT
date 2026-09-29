@@ -380,7 +380,7 @@ function Configure-Embeddings {
         }
         "2" {
             "EMBEDDINGS_NAME=openai_text-embedding-ada-002" | Add-Content -Path $ENV_FILE -Encoding utf8
-            $emb_key = Read-Host "Enter Embeddings API key (leave empty to reuse LLM API_KEY)"
+            $emb_key = Read-Host "Enter OpenAI API key for embeddings (leave empty to reuse API_KEY, only if the LLM provider is OpenAI)"
             if ($emb_key) { "EMBEDDINGS_KEY=$emb_key" | Add-Content -Path $ENV_FILE -Encoding utf8 }
             Write-ColorText "Embeddings set to OpenAI." -ForegroundColor "Green"
         }
