@@ -82,9 +82,15 @@ export default function Connectors() {
   const [filter, setFilter] = useState<Filter>(
     initialFilter && FILTERS.includes(initialFilter) ? initialFilter : 'all',
   );
-  const [openKey, setOpenKey] = useState<string | null>(
-    searchParams.get('connector'),
-  );
+  const connectorParam = searchParams.get('connector');
+  const [openKey, setOpenKey] = useState<string | null>(connectorParam);
+  // A `?connector=` link followed while this page is already open (the
+  // global Reconnect toast) changes only the search: open what it names.
+  const [seenConnectorParam, setSeenConnectorParam] = useState(connectorParam);
+  if (connectorParam !== seenConnectorParam) {
+    setSeenConnectorParam(connectorParam);
+    if (connectorParam) setOpenKey(connectorParam);
+  }
   const { launch, modals } = useConnectorLauncher();
 
   useEffect(() => {

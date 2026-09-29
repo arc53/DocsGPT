@@ -2,7 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
-import { MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -144,6 +144,10 @@ describe('Connectors page', () => {
       root.render(
         <Provider store={store}>
           <MemoryRouter initialEntries={[path]}>
+            <Link
+              data-testid="reconnect-link"
+              to="/settings/connectors?connector=google_drive"
+            />
             <Connectors />
           </MemoryRouter>
         </Provider>,
@@ -376,6 +380,18 @@ describe('Connectors page', () => {
     expect(document.body.textContent).toContain(
       'settings.connectors.descriptions.mcp_atlassian',
     );
+  });
+
+  it('opens the page a ?connector= link names while already on the list', async () => {
+    await render();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () =>
+      container
+        .querySelector<HTMLAnchorElement>('[data-testid="reconnect-link"]')!
+        .click(),
+    );
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain('Google Drive');
   });
 
   it('shows a retry when the catalog fails to load', async () => {
