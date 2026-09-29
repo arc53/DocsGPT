@@ -17,6 +17,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+import { ChatCompanionContext } from './chatCompanion';
 import ConversationBubble from './ConversationBubble';
 import { ToolCallsType } from './types';
 
@@ -431,5 +432,28 @@ describe('ConversationBubble', () => {
     expect(header.getAttribute('aria-haspopup')).toBe('dialog');
     await act(async () => header.click());
     expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+  });
+
+  it("opens the sources in the chat's side panel slot when there is one", async () => {
+    const sources = [1, 2, 3, 4].map((n) => ({
+      title: `Doc ${n}`,
+      text: `Excerpt ${n}`,
+      link: `doc-${n}.pdf`,
+    }));
+    const openSources = vi.fn();
+    await render(
+      <ChatCompanionContext.Provider value={{ openSources }}>
+        <ConversationBubble type="ANSWER" message="Answer" sources={sources} />
+      </ChatCompanionContext.Provider>,
+    );
+    const header = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        'button[data-variant="ghost"]',
+      ),
+    ).find((b) => b.textContent?.includes(tr('conversation.sources.title')))!;
+    expect(header.hasAttribute('aria-haspopup')).toBe(false);
+    await act(async () => header.click());
+    expect(openSources).toHaveBeenCalledWith(sources);
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 });

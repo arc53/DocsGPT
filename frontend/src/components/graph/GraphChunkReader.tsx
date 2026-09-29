@@ -13,42 +13,40 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { Button } from '../ui/button';
 import { FormField } from '../ui/form-field';
 import { Input } from '../ui/input';
-import { Separator } from '../ui/separator';
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '../ui/sheet';
+import { PanelBody, PanelFooter, PanelHeader } from '../ui/side-panel';
 import type { GraphNodeChunk } from '../graphViewUtils';
 import { chunkFileName, chunkFilePath, chunkHeading } from './graphCanvasUtils';
 
-interface GraphChunkSheetProps {
+interface GraphChunkReaderProps {
   docId: string;
-  /** The chunk to show; null closes both drawers. */
-  chunk: GraphNodeChunk | null;
+  chunk: GraphNodeChunk;
   /** The entity's name, marked in the rendered chunk. */
   highlight: string;
-  /** Called once the drawers close (the node stays selected). */
-  onClose: () => void;
+  /** Back to the entity (the header's arrow, Open in Files, a saved edit). */
+  onBack: () => void;
   /** Show the chunk's file on the Files tab; omitted hides the button. */
   onOpenInFiles?: (path: string) => void;
   /** Called after a saved edit, to refetch the node detail. */
   onSaved?: () => void;
-  /** Whether the read drawer offers Edit (`can(source, 'edit')`). */
+  /** Whether the reader offers Edit (`can(source, 'edit')`). */
   canEdit?: boolean;
 }
 
 /**
- * A source chunk of a graph entity, opened from the node panel: a read drawer
- * with the chunk rendered (the entity's name marked), "Open in Files" and
- * Edit; Edit swaps it for the shared edit drawer. Built like
- * WorkflowDetailsSheet: header, one scrolling body, then the actions.
+ * A source chunk of a graph entity, the second level of the node's side
+ * panel: a Back arrow, the chunk rendered (the entity's name marked), then
+ * "Open in Files" and Edit. Edit opens the shared modal edit drawer over it.
+ * Render it inside the node's SidePanel, keyed on the chunk.
  */
-export default function GraphChunkSheet({
+export default function GraphChunkReader({
   docId,
   chunk,
   highlight,
-  onClose,
+  onBack,
   onOpenInFiles,
   onSaved,
   canEdit = true,
-}: GraphChunkSheetProps) {
+}: GraphChunkReaderProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
@@ -58,13 +56,11 @@ export default function GraphChunkSheet({
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
 
-  // Every newly opened chunk starts in the read drawer.
+  // Every newly opened chunk starts in the reader.
   useEffect(() => {
     setEditing(false);
     setSaveFailed(false);
-  }, [chunk?.chunk_id]);
-
-  if (!chunk) return null;
+  }, [chunk.chunk_id]);
 
   const file = chunkFileName(chunk.metadata);
   // The tree path "Open in Files" opens (a web page's is not its URL).
@@ -99,10 +95,10 @@ export default function GraphChunkSheet({
   const close = () => {
     setEditing(false);
     setSaveFailed(false);
-    onClose();
+    onBack();
   };
 
-  // Leaving the edit drawer without saving returns to the read drawer.
+  // Leaving the edit drawer without saving returns to the reader.
   const leaveEdit = () => {
     setEditing(false);
     setSaveFailed(false);
@@ -154,66 +150,43 @@ export default function GraphChunkSheet({
 
   return (
     <>
-      <Sheet open={!editing} onOpenChange={(open) => !open && close()}>
-        <SheetContent
-          side="right"
-          size="detail"
-          className="p-0"
-          closeLabel={t('settings.sources.editor.close')}
-        >
-          <div className="flex min-h-0 flex-1 flex-col">
-            {/* pr-12 keeps the header clear of the close X at top-2 right-2. */}
-            <div className="flex flex-col gap-1 px-6 pt-6 pr-12 pb-4">
-              <SheetTitle className="wrap-break-word">{title}</SheetTitle>
-              {readMeta ? (
-                <SheetDescription className="wrap-anywhere">
-                  {readMeta}
-                </SheetDescription>
-              ) : null}
-            </div>
-            <Separator />
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-              <SourceMarkdown
-                content={chunk.text ?? ''}
-                highlight={highlight}
-              />
-            </div>
-            {/* A reader with nothing to open or edit gets no action row. */}
-            {showOpenInFiles || canEdit ? (
-              <>
-                <Separator />
-                <div className="flex justify-end gap-3 px-6 py-4">
-                  {showOpenInFiles ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="lg"
-                      shape="pill"
-                      onClick={() => {
-                        close();
-                        onOpenInFiles?.(path);
-                      }}
-                    >
-                      {t('settings.sources.graphrag.view.openInFiles')}
-                    </Button>
-                  ) : null}
-                  {canEdit ? (
-                    <Button
-                      type="button"
-                      size="lg"
-                      shape="pill"
-                      onClick={startEdit}
-                    >
-                      <Pencil />
-                      {t('modals.chunk.edit')}
-                    </Button>
-                  ) : null}
-                </div>
-              </>
-            ) : null}
-          </div>
-        </SheetContent>
-      </Sheet>
+      <PanelHeader
+        title={title}
+        description={
+          readMeta ? (
+            <span className="wrap-anywhere">{readMeta}</span>
+          ) : undefined
+        }
+        onBack={onBack}
+      />
+      <PanelBody>
+        <SourceMarkdown content={chunk.text ?? ''} highlight={highlight} />
+      </PanelBody>
+      {/* A reader with nothing to open or edit gets no action row. */}
+      {showOpenInFiles || canEdit ? (
+        <PanelFooter>
+          {showOpenInFiles ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              shape="pill"
+              onClick={() => {
+                close();
+                onOpenInFiles?.(path);
+              }}
+            >
+              {t('settings.sources.graphrag.view.openInFiles')}
+            </Button>
+          ) : null}
+          {canEdit ? (
+            <Button type="button" size="lg" shape="pill" onClick={startEdit}>
+              <Pencil />
+              {t('modals.chunk.edit')}
+            </Button>
+          ) : null}
+        </PanelFooter>
+      ) : null}
       <SourceEditSheet
         open={canEdit && editing}
         onClose={leaveEdit}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -7,9 +7,11 @@ import userService from '../api/services/userService';
 import { canOpenAgentEditor } from '../agents/agentAccess';
 import SharedAgentCard from '../agents/SharedAgentCard';
 import { Agent } from '../agents/types';
-import ArtifactSidebar from '../components/ArtifactSidebar';
+import ActionButtons from '../components/ActionButtons';
+import ArtifactPanel from '../components/ArtifactPanel';
 import ErrorBoundary from '../components/ErrorBoundary';
 import MessageInput from '../components/MessageInput';
+import { SidePanel } from '../components/ui/side-panel';
 import { agentChatPath, agentEditPathFor } from '../agents/paths';
 import { useMediaQuery } from '../hooks';
 import {
@@ -20,8 +22,10 @@ import {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import { ChatCompanionContext, type AnswerSource } from './chatCompanion';
 import { handleSendFeedback } from './conversationHandlers';
 import ConversationMessages from './ConversationMessages';
+import SourcesPanel from './SourcesPanel';
 import { FEEDBACK, Query } from './conversationModels';
 import { ToolCallsType } from './types';
 import {
@@ -42,6 +46,11 @@ import {
   selectCompletedAttachments,
 } from '../upload/uploadSlice';
 import { cn } from '@/lib/utils';
+
+/** What the chat's one docked side panel shows (DESIGN.md "Side panels"). */
+type ChatCompanion =
+  | { kind: 'artifact'; id: string; toolName: string }
+  | { kind: 'sources'; sources: AnswerSource[] };
 
 export default function Conversation() {
   const { t } = useTranslation();
@@ -147,10 +156,10 @@ export default function Conversation() {
   const didInitArtifactAutoOpen = useRef(false);
   const prevConversationId = useRef<string | null>(conversationId);
 
-  const [openArtifact, setOpenArtifact] = useState<{
-    id: string;
-    toolName: string;
-  } | null>(null);
+  const [companion, setCompanion] = useState<ChatCompanion | null>(null);
+  // Keeps the last content on screen while the phone sheet slides out.
+  const [shownCompanion, setShownCompanion] = useState(companion);
+  if (companion && companion !== shownCompanion) setShownCompanion(companion);
 
   const [conversationMountKey, setConversationMountKey] = useState(0);
   const [prevMountConversationId, setPrevMountConversationId] = useState<
@@ -172,7 +181,7 @@ export default function Conversation() {
       prevId === null && conversationId !== null && status === 'loading';
 
     if (!isServerAssignedId && prevId !== conversationId) {
-      setOpenArtifact(null);
+      setCompanion(null);
       lastAutoOpenedArtifactId.current = null;
     }
 
@@ -357,7 +366,8 @@ export default function Conversation() {
     if (latest.artifact_id === lastAutoOpenedArtifactId.current) return;
 
     lastAutoOpenedArtifactId.current = latest.artifact_id;
-    setOpenArtifact({
+    setCompanion({
+      kind: 'artifact',
       id: latest.artifact_id,
       toolName: latest.tool_name,
     });
@@ -366,118 +376,128 @@ export default function Conversation() {
   const handleOpenArtifact = useCallback(
     (artifact: { id: string; toolName: string }) => {
       lastAutoOpenedArtifactId.current = artifact.id;
-      setOpenArtifact(artifact);
+      setCompanion({ kind: 'artifact', ...artifact });
     },
     [],
   );
 
-  const handleCloseArtifact = useCallback(() => setOpenArtifact(null), []);
+  const companionContext = useMemo(
+    () => ({
+      openSources: (sources: AnswerSource[]) =>
+        setCompanion({ kind: 'sources', sources }),
+    }),
+    [],
+  );
 
-  const isSplitArtifactOpen = !isMobile && openArtifact !== null;
+  const isCompanionDocked = !isMobile && companion !== null;
+
+  const companionPanel =
+    shownCompanion?.kind === 'artifact' ? (
+      <ArtifactPanel
+        artifactId={shownCompanion.id}
+        toolName={shownCompanion.toolName}
+        conversationId={conversationId}
+      />
+    ) : shownCompanion?.kind === 'sources' ? (
+      <SourcesPanel sources={shownCompanion.sources} />
+    ) : null;
 
   return (
-    <div className="flex h-full">
-      <div
-        className={cn(
-          'flex h-full min-h-0 flex-col transition-[width,padding]',
-          isSplitArtifactOpen ? 'w-[60%] px-6' : 'w-full',
-        )}
-      >
-        <div className="relative min-h-0 flex-1">
-          {/* A render crash in the message list must leave the composer
-              usable; the boundary resets on conversation switch. */}
-          <ErrorBoundary key={conversationMountKey}>
-            <ConversationMessages
-              handleQuestion={handleQuestion}
-              handleQuestionSubmission={handleQuestionSubmission}
-              handleFeedback={handleFeedback}
-              queries={queries}
-              status={status}
-              showHeroOnEmpty={selectedAgent ? false : true}
-              onOpenArtifact={handleOpenArtifact}
-              onToolAction={handleToolAction}
-              isSplitView={isSplitArtifactOpen}
-              agentId={selectedAgent?.id}
-              headerContent={
-                selectedAgent ? (
-                  <div className="flex w-full items-center justify-center py-4">
-                    <SharedAgentCard
-                      agent={selectedAgent}
-                      onEdit={
-                        // Only a role that may open the edit page gets Edit.
-                        canOpenAgentEditor(selectedAgent, agents)
-                          ? () => navigate(agentEditPathFor(selectedAgent))
-                          : undefined
-                      }
-                    />
-                  </div>
-                ) : undefined
-              }
-            />
-          </ErrorBoundary>
-          <div
-            className={cn(
-              'from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2',
-              isSplitArtifactOpen
-                ? 'max-w-325'
-                : 'max-w-325 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12',
-            )}
-          />
-        </div>
-
-        {/* One notch narrower than the message column above it, which keeps its
-            own width. */}
+    <ChatCompanionContext.Provider value={companionContext}>
+      <div className="relative flex h-full overflow-hidden">
         <div
           className={cn(
-            'z-10 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1',
-            isSplitArtifactOpen
-              ? 'max-w-290'
-              : 'max-w-290 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12',
+            'relative flex h-full min-h-0 min-w-0 flex-1 flex-col transition-[padding] duration-300 ease-in-out',
+            isCompanionDocked && 'px-6',
           )}
         >
-          <div className="flex w-full items-center rounded-full px-2">
-            <MessageInput
-              key={conversationMountKey}
-              onSubmit={(text) => {
-                handleQuestionSubmission(text);
-              }}
-              queuedQuestion={queuedQuestion}
-              onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
-              loading={status === 'loading'}
-              showSourceButton={selectedAgent ? false : true}
-              showToolButton={selectedAgent ? false : true}
+          <ActionButtons placement="column" />
+          <div className="relative min-h-0 flex-1">
+            {/* A render crash in the message list must leave the composer
+              usable; the boundary resets on conversation switch. */}
+            <ErrorBoundary key={conversationMountKey}>
+              <ConversationMessages
+                handleQuestion={handleQuestion}
+                handleQuestionSubmission={handleQuestionSubmission}
+                handleFeedback={handleFeedback}
+                queries={queries}
+                status={status}
+                showHeroOnEmpty={selectedAgent ? false : true}
+                onOpenArtifact={handleOpenArtifact}
+                onToolAction={handleToolAction}
+                isSplitView={isCompanionDocked}
+                agentId={selectedAgent?.id}
+                headerContent={
+                  selectedAgent ? (
+                    <div className="flex w-full items-center justify-center py-4">
+                      <SharedAgentCard
+                        agent={selectedAgent}
+                        onEdit={
+                          // Only a role that may open the edit page gets Edit.
+                          canOpenAgentEditor(selectedAgent, agents)
+                            ? () => navigate(agentEditPathFor(selectedAgent))
+                            : undefined
+                        }
+                      />
+                    </div>
+                  ) : undefined
+                }
+              />
+            </ErrorBoundary>
+            <div
+              className={cn(
+                'from-background pointer-events-none absolute bottom-0 left-1/2 h-6 w-full -translate-x-1/2 rounded-t-2xl bg-linear-to-t to-transparent bg-clip-content px-2',
+                isCompanionDocked
+                  ? 'max-w-325'
+                  : 'max-w-325 md:w-11/12 lg:w-10/12 xl:w-9/12 2xl:w-8/12',
+              )}
             />
           </div>
 
-          <p className="text-muted-foreground hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
-            {t('tagline')}
-          </p>
+          {/* One notch narrower than the message column above it, which keeps its
+            own width. */}
+          <div
+            className={cn(
+              'z-10 flex h-auto w-full flex-col items-end self-center rounded-2xl py-1',
+              isCompanionDocked
+                ? 'max-w-290'
+                : 'max-w-290 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12',
+            )}
+          >
+            <div className="flex w-full items-center rounded-full px-2">
+              <MessageInput
+                key={conversationMountKey}
+                onSubmit={(text) => {
+                  handleQuestionSubmission(text);
+                }}
+                queuedQuestion={queuedQuestion}
+                onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
+                loading={status === 'loading'}
+                showSourceButton={selectedAgent ? false : true}
+                showToolButton={selectedAgent ? false : true}
+              />
+            </div>
+
+            <p className="text-muted-foreground hidden w-full self-center bg-transparent py-2 text-center text-xs md:inline">
+              {t('tagline')}
+            </p>
+          </div>
         </div>
+
+        {/* One docked slot: an artifact or an answer's sources. */}
+        <SidePanel
+          variant="docked"
+          open={companion !== null}
+          onOpenChange={(open) => {
+            if (!open) setCompanion(null);
+          }}
+          expandable={
+            shownCompanion?.kind === 'artifact' ? 'artifact' : undefined
+          }
+        >
+          {companionPanel}
+        </SidePanel>
       </div>
-
-      {isSplitArtifactOpen && (
-        <div className="h-full min-h-0 w-[40%]">
-          <ArtifactSidebar
-            variant="split"
-            isOpen={true}
-            onClose={handleCloseArtifact}
-            artifactId={openArtifact?.id ?? null}
-            toolName={openArtifact?.toolName}
-            conversationId={conversationId}
-          />
-        </div>
-      )}
-
-      {isMobile && (
-        <ArtifactSidebar
-          variant="overlay"
-          isOpen={openArtifact !== null}
-          onClose={handleCloseArtifact}
-          artifactId={openArtifact?.id ?? null}
-          toolName={openArtifact?.toolName}
-          conversationId={conversationId}
-        />
-      )}
-    </div>
+    </ChatCompanionContext.Provider>
   );
 }

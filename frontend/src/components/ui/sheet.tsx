@@ -83,20 +83,17 @@ const sheetContentVariants = cva(
         // SheetFooter bring their own padding.
         bottom: `${sheetBottomShape} pb-safe-0 gap-0`,
       },
-      // A right drawer's width by role (DESIGN.md "Modal, not Dialog"):
-      // default, a companion list read beside the chat (384px); detail, one
-      // record's fields (576px, full width on a phone); wide, a working
-      // surface such as a trace waterfall or an agent preview (600 / 700 /
-      // 800px).
+      // A right drawer's width by role (DESIGN.md "Side panels"): default
+      // (480px) for every panel; wide (600 / 700 / 800px) only for a working
+      // surface: a trace, an agent preview, the source editor. Both are full
+      // width on a phone.
       size: {
         default: '',
-        detail: '',
         wide: '',
       },
     },
     compoundVariants: [
-      { side: 'right', size: 'default', class: 'w-3/4 sm:max-w-sm' },
-      { side: 'right', size: 'detail', class: 'w-full sm:max-w-xl' },
+      { side: 'right', size: 'default', class: 'w-full sm:max-w-120' },
       {
         side: 'right',
         size: 'wide',
@@ -123,8 +120,8 @@ function SheetContent({
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left';
-  /** Width of a right drawer: default (384px), detail (576px), wide (800px). */
-  size?: 'default' | 'detail' | 'wide';
+  /** Width of a right drawer: default (480px) or wide (800px). */
+  size?: 'default' | 'wide';
   showCloseButton?: boolean;
   /** Accessible name for the built-in X; pass a translated one. */
   closeLabel?: string;

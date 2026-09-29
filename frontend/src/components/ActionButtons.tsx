@@ -11,7 +11,12 @@ import { cn } from '@/lib/utils';
 interface ActionButtonsProps {
   className?: string;
   showShare?: boolean;
-  isArtifactOpen?: boolean;
+  /**
+   * `viewport`: the window's top-right corner. `column`: the top-right of a
+   * `relative` page column, so the chat's actions stay beside the chat when
+   * its side panel is docked.
+   */
+  placement?: 'viewport' | 'column';
 }
 
 /**
@@ -21,7 +26,7 @@ interface ActionButtonsProps {
 export default function ActionButtons({
   className = '',
   showShare = true,
-  isArtifactOpen = false,
+  placement = 'viewport',
 }: ActionButtonsProps) {
   const { t } = useTranslation();
   const conversationId = useSelector(selectConversationId);
@@ -30,8 +35,8 @@ export default function ActionButtons({
   return (
     <div
       className={cn(
-        'fixed top-0 z-10 hidden h-16 flex-col justify-center transition-[right] duration-300 ease-in-out lg:flex',
-        isArtifactOpen ? 'right-[calc(50%+1rem)]' : 'right-4',
+        'top-0 right-4 z-10 hidden h-16 flex-col justify-center lg:flex',
+        placement === 'viewport' ? 'fixed' : 'absolute',
       )}
     >
       <div className={cn('flex items-center gap-2 sm:gap-4', className)}>

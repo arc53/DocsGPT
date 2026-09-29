@@ -163,6 +163,12 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import {
+  PanelBody,
+  PanelFooter,
+  PanelHeader,
+  SidePanel,
+} from '@/components/ui/side-panel';
 import { Switch } from '@/components/ui/switch';
 import {
   Table,
@@ -464,6 +470,8 @@ export default function DesignSystem() {
   const [toolOn, setToolOn] = useState(false);
   const [sectionOpen, setSectionOpen] = useState(false);
   const [agentPreviewOpen, setAgentPreviewOpen] = useState(false);
+  const [modalPanel, setModalPanel] = useState<'default' | 'wide' | null>(null);
+  const [dockedPanelOpen, setDockedPanelOpen] = useState(true);
   const [demoStepsOpen, setDemoStepsOpen] = useState(true);
   const [scopes, setScopes] = useState<string[]>(['agents:read']);
   const [tokenLimit, setTokenLimit] = useState(true);
@@ -2696,11 +2704,11 @@ export default function DesignSystem() {
         <Section
           id="overlays"
           title="Overlays"
-          intro="Modal is the only dialog API for app code; the Radix Dialog underneath is private to ui/. Sheet is for side panels and phone bottom sheets. Popovers and menus share the popover surface."
+          intro="Modal is the only dialog API for app code; the Radix Dialog underneath is private to ui/. SidePanel is every right-side panel (modal or docked); Sheet is for phone bottom sheets and left or top drawers. Popovers and menus share the popover surface."
         >
           <Example
             title="Modal and sheet"
-            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SheetContent side="right" size="default | detail | wide"> · <SheetContent side="left | top"> · <SheetContent side="bottom" handle>'
+            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SidePanel size="default | wide"><PanelHeader/><PanelBody/><PanelFooter/></SidePanel> · <SheetContent side="left | top"> · <SheetContent side="bottom" handle>'
           >
             <div className="flex flex-wrap items-center gap-3">
               <Button variant="outline" onClick={() => setModalOpen(true)}>
@@ -2733,48 +2741,50 @@ export default function DesignSystem() {
                   </Select>
                 </div>
               </Modal>
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button variant="outline">Open sheet</Button>
-                </SheetTrigger>
-                <SheetContent side="right">
-                  <SheetHeader>
-                    <SheetTitle>Sources</SheetTitle>
-                    <SheetDescription>
-                      size=&quot;default&quot; (384px): a companion list read
-                      beside the chat.
-                    </SheetDescription>
-                  </SheetHeader>
-                </SheetContent>
-              </Sheet>
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button variant="outline">Detail sheet</Button>
-                </SheetTrigger>
-                <SheetContent side="right" size="detail">
-                  <SheetHeader>
-                    <SheetTitle>Run details</SheetTitle>
-                    <SheetDescription>
-                      size=&quot;detail&quot; (576px, full width on a phone):
-                      one record&apos;s fields.
-                    </SheetDescription>
-                  </SheetHeader>
-                </SheetContent>
-              </Sheet>
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button variant="outline">Wide sheet</Button>
-                </SheetTrigger>
-                <SheetContent side="right" size="wide">
-                  <SheetHeader>
-                    <SheetTitle>Trace</SheetTitle>
-                    <SheetDescription>
-                      size=&quot;wide&quot; (600 / 700 / 800px): a working
-                      surface such as a trace or an agent preview.
-                    </SheetDescription>
-                  </SheetHeader>
-                </SheetContent>
-              </Sheet>
+              {(['default', 'wide'] as const).map((size) => (
+                <Button
+                  key={size}
+                  variant="outline"
+                  onClick={() => setModalPanel(size)}
+                >
+                  Modal panel · {size}
+                </Button>
+              ))}
+              <SidePanel
+                open={modalPanel !== null}
+                onOpenChange={(open) => !open && setModalPanel(null)}
+                size={modalPanel ?? 'default'}
+              >
+                <PanelHeader
+                  title="Run details"
+                  description={`variant="modal" size="${modalPanel ?? 'default'}": a form, one record or a preview, over the blurred scrim.`}
+                />
+                <PanelBody>
+                  <Card variant="subtle" padding="lg">
+                    <p className="text-muted-foreground text-sm">
+                      Panels in a side panel are subtle; the body is the one
+                      scroller.
+                    </p>
+                  </Card>
+                </PanelBody>
+                <PanelFooter>
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    shape="pill"
+                    onClick={() => setModalPanel(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="lg"
+                    shape="pill"
+                    onClick={() => setModalPanel(null)}
+                  >
+                    Save
+                  </Button>
+                </PanelFooter>
+              </SidePanel>
               <Sheet>
                 <SheetTrigger asChild>
                   <Button variant="outline">Left sheet</Button>
@@ -2845,6 +2855,44 @@ export default function DesignSystem() {
                   </SheetHeader>
                 </SheetContent>
               </Sheet>
+            </div>
+          </Example>
+          <Example
+            title="Docked side panel"
+            code='<div className="relative flex"><main className="min-w-0 flex-1"/><SidePanel variant="docked" expandable="design-demo">…</SidePanel></div>'
+          >
+            <div className="relative flex h-96 overflow-hidden rounded-xl border">
+              <div className="flex min-w-0 flex-1 flex-col items-start gap-3 p-6">
+                <p className="text-muted-foreground text-sm">
+                  The page stays live beside a docked panel: no scrim. Expand
+                  steps compact, half and full.
+                </p>
+                {!dockedPanelOpen ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => setDockedPanelOpen(true)}
+                  >
+                    Open docked panel
+                  </Button>
+                ) : null}
+              </div>
+              <SidePanel
+                variant="docked"
+                expandable="design-demo"
+                open={dockedPanelOpen}
+                onOpenChange={setDockedPanelOpen}
+              >
+                <PanelHeader
+                  title="renewal-note-dana.md"
+                  description="Note · updated just now"
+                />
+                <PanelBody>
+                  <p className="text-sm leading-6">
+                    The Halvorsen MSA auto-renews for 24 months unless notice is
+                    given by 3 August.
+                  </p>
+                </PanelBody>
+              </SidePanel>
             </div>
           </Example>
           <Example

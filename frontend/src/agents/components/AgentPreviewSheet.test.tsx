@@ -63,15 +63,38 @@ describe('AgentPreviewSheet', () => {
     ).toBe('Carrier onboarding FAQ');
   });
 
-  it('keeps header actions clear of the close button', async () => {
+  it('puts header actions beside the X in the fixed panel header', async () => {
     await render();
-    const action = document.querySelector('[data-testid="action"]')!;
-    const header = action.parentElement!;
-    // The X sits at top-2 right-2 (32px wide); pr-12 keeps 48px free.
-    expect(header.className).toContain('pr-12');
+    const header = document.querySelector('[data-slot="panel-header"]')!;
+    const action = header.querySelector('[data-testid="action"]')!;
+    const close = header.querySelector<HTMLElement>(
+      '[aria-label="sidePanel.close"]',
+    )!;
+    expect(close).not.toBeNull();
+    // Actions come before the X, in the same row.
+    expect(action.parentElement).toBe(close.parentElement);
     expect(
       header.contains(document.querySelector('[data-slot="sheet-title"]')),
     ).toBe(true);
+    // No hand-built clearance for an absolute X any more.
+    expect(document.querySelector('.pr-12')).toBeNull();
+  });
+
+  it('closes from the header X', async () => {
+    const onOpenChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <AgentPreviewSheet open onOpenChange={onOpenChange} title="Preview">
+          <div />
+        </AgentPreviewSheet>,
+      );
+    });
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="sidePanel.close"]')!
+        .click(),
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   // DESIGN maps "running" to info, as schedule runs do (was primary text).

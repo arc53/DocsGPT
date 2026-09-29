@@ -931,7 +931,8 @@ both `ghost-muted icon-sm pill` like every other answer action.
 The rows in an answer's step column (Sources, Reasoning, each tool step) are
 one recipe: `Button variant="ghost" size="sm"` at `ml-3.5 w-fit`, which puts a
 16px muted icon on the `ml-6` text column, then muted 14px text and a chevron.
-Sources adds its count and a right chevron, and opens the All sources sheet.
+Sources adds its count and a right chevron, and opens the answer's sources in
+the chat's side panel (see Side panels).
 
 ### Breadcrumb (`ui/breadcrumb.tsx`)
 
@@ -1134,7 +1135,7 @@ variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
   Delete and Add chunk show only to a role that may edit (see Access and
   roles).
 - **Read in the page, edit in a drawer**: Edit and Add chunk open
-  `SourceEditSheet`, a right `Sheet size="wide"` (a working surface): title
+  `SourceEditSheet`, a modal `SidePanel size="wide"` (a working surface): title
   and a mono description (path, version, tokens), then any `fields` edited
   with the content (a chunk's Title, a `FormField` + `Input` with
   `labelSurface="background"` and the hint "The name answers cite this
@@ -1168,13 +1169,10 @@ pill`) and Save (`default lg pill`, off until the draft or a field changes, and 
   builder's `CanvasControls` strip without React Flow or Undo / Redo; change
   the two together. Type colours come from `graph/GraphTypeDot`
   (`GraphTypeDot`, `GraphTypeBadge`, `GraphSeriesDot`), never a hand-picked
-  hue; the node panel docks
-  inside it only while a node is selected (a bottom Sheet on phones), as
-  `GraphNodePanelDock`: a `border-l` column at `w-80`, `xl:w-2/5` capped at
-  `max-w-xl` (the detail drawer's 576px). Its header is the workflow node
-  panel's (`px-4 py-3`, the close `ghost-muted icon-sm`); in the phone bottom
-  Sheet (`handle`) the panel passes `showClose={false}`, so there's no X and the
-  scrim closes it. The Entities tab is
+  hue; the node panel is a docked `SidePanel expandable="graph-node"` inside
+  the Card (which is `relative`), open only while a node is selected (see Side
+  panels): the entity's name, its type Badge as the description, "Show in
+  graph" under the title on the Entities tab. The Entities tab is
   the same frame: toolbar (`SearchInput` with a `label`, the type Select),
   then the `h-[70svh]` Card holding the `Table` (no `TableContainer`, it
   scrolls inside) and the same dock, the open entity's row `selected`, and the
@@ -1183,13 +1181,13 @@ pill`) and Save (`default lg pill`, off until the draft or a field changes, and 
   unconnected to the selection to 15%. The panel lists the node's
   relationships, one row per neighbour with its normalised edge labels
   (`groupRelationships`), each a button that selects that neighbour, then its
-  source chunks as `filled sm interactive` tiles. A tile opens a read drawer
-  (`Sheet size="detail"`, one record) with the chunk rendered and the entity's
-  name marked in the brand tint (`bg-secondary`), and Open in Files and Edit
-  (the same `SourceEditSheet`) in its footer, which is omitted when neither
-  applies; Cancel or Discard in that edit
-  drawer returns to the read drawer, Save closes both, and closing it leaves
-  the node selected. The relationship list is capped server-side: its heading
+  source chunks as `filled sm interactive` tiles. A tile opens the chunk as
+  the panel's second level (`graph/GraphChunkReader`): a Back arrow, the chunk
+  rendered with the entity's name marked in the brand tint (`bg-secondary`),
+  and Open in Files and Edit (the modal `SourceEditSheet`) in its footer,
+  which is omitted when neither applies. Cancel or Discard in the edit drawer
+  returns to the chunk; Back, Open in Files and a saved edit return to the
+  entity. The relationship list is capped server-side: its heading
   counts the true total (`relationships_total`) and, when the list is partial,
   a muted `text-xs` line says how many are shown.
 
@@ -1233,13 +1231,13 @@ changes" as muted `text-sm` meta while there are any, Preview, Save, and the
 anyone who doesn't try the name), then Access details, Share with team and
 Delete once the workflow is saved, each only when the role allows it.
 
-The workflow details are a right `Sheet size="default"`
-(`components/WorkflowDetailsSheet.tsx`), built like AgentPreviewSheet (header,
-`Separator`, one scrolling body) with the classic Basics phone layout: a
+The workflow details are a modal `SidePanel size="default"`
+(`components/WorkflowDetailsSheet.tsx`, see Side panels) with the classic
+Basics phone layout: a
 `subtle lg` Basics panel with `FileUpload size="tile" tileSize="fixed"` beside
 the Name pill and Description across the row, then an Advanced panel with the
-prompt-override `SettingRow`. Its footer is a `ghost lg pill` Cancel and a
-`default lg pill` Save after a `Separator`. The sheet edits a copy: Cancel,
+prompt-override `SettingRow`. Its `PanelFooter` is a `ghost lg pill` Cancel
+and a `default lg pill` Save. The panel edits a copy: Cancel,
 the X, Escape and the scrim drop the edits; Save is disabled until something
 changes, then saves the workflow and closes, or stays open with a destructive
 `Alert` listing the errors.
@@ -1268,16 +1266,13 @@ ring-warning/50`). Node meta is translated and muted (the agent type · the
   `Separator`, Zoom out, the zoom level, Zoom in and Fit view, each
   `ghost-muted icon-sm pill` with a top tooltip. React Flow's own
   `<Controls />` and attribution are not shown.
-- **Node settings** dock at the canvas's right edge (`panels/NodePanel.tsx`):
-  a `w-96 border-l bg-background` column at full height whose body is the one
-  scroller, with no shadow or `z-*`. The header holds the type's `size-8
-rounded-md` icon square, the node's title with a `neutral` type Badge (only
-  once the title differs from the type's name), the
-  id in `font-mono text-xs` with a `CopyButton`, an `ActionMenu
-size="toolbar"` (Duplicate, Delete node; none on Start) and the close
-  button. Start and End have no Title field: their body is one muted
-  `text-sm` line saying what the node does. The body is `flex flex-col gap-6
-p-4`, so its fields pass
+- **Node settings** are a docked `SidePanel expandable="workflow-node"` at
+  the canvas's right edge (`panels/NodePanel.tsx`), under the builder header
+  (see Side panels). The header's `leading` is the type's `size-8 rounded-md`
+  icon square; the description is the type's name, then the id in `font-mono
+text-xs` with a `CopyButton`; `actions` is an `ActionMenu size="toolbar"`
+  (Duplicate, Delete node; none on Start). Start and End have no Title field:
+  their body is one muted `text-sm` line saying what the node does. Its fields pass
   `labelSurface="background"` and its row boxes (a condition case, a state
   assignment) are `Card variant="subtle" padding="sm"`. The agent node's
   fields are grouped by `SectionHeader size="xs" as="h3"` (Model, Prompt,
@@ -1356,26 +1351,69 @@ dims the top bar, with SheetOverlay's `animate-in fade-in-0`) share one scrim,
 `overlayScrim` in `lib/utils.ts` (`bg-black/25 backdrop-blur-xs
 dark:bg-black/50`).
 
-A right drawer (`SheetContent side="right"`) is on `bg-background`, like the
-page: its content paints no surface of its own, and panels in it are
-`subtle` (see Card surfaces). Its width is `size`, by role, never a `w-*` or
-`max-w-*` class (enforced): `default` (384px, 75% on a phone) for a companion
-list read beside the chat (an answer's sources, the phone artifact sheet);
-`detail` (576px, full width on a phone) for one record's fields (a schedule
-run); `wide` (600 / 700 / 800px at `sm` / `md` / `lg`, full width on a phone)
-for a working surface (a trace, an agent preview). An agent is previewed in
-one shared drawer, `agents/components/AgentPreviewSheet`, for workflow and
-classic agents alike: `size="wide"`, a `SheetTitle`
-and a one-line `SheetDescription` (the agent's name) in a header padded
-`pr-12` to clear the close X, an `info` Running badge while it answers, a
-`Separator`, then the preview. Every right drawer with a custom header
-(AgentPreviewSheet, SourceEditSheet, GraphChunkSheet, a team's resource
-detail) is that recipe: `SheetContent` `p-0`, a header at `px-6 pt-6 pr-12
-pb-4` that never scrolls, a `Separator`, then the one scrolling body at `px-6
-py-6`. The title wraps (`wrap-break-word`), it doesn't truncate. The row whose
-drawer is open is `selected` (ListRow or TableRow). The workflow preview's Execution details and
-Artifacts rows are the answer's step-row recipe (see Alert), each step a
-`subtle sm` panel with its output in a `filled sm` well.
+#### Side panels
+
+Every right-side panel is `ui/side-panel`: a `SidePanel` holding one
+`PanelHeader`, one `PanelBody` and an optional `PanelFooter`. Pick the
+variant with one question: do you need to keep working with what's behind
+it?
+
+- **`variant="modal"`** (no): a form, one record, editing or a preview (a
+  connection, a team resource, a schedule run, a trace, the workflow details,
+  the source edit drawer, an agent preview). A right `Sheet` over the blurred
+  `overlayScrim`, the full viewport high, focus kept inside.
+- **`variant="docked"`** (yes): what you read or tweak beside a live page
+  (the chat's artifact or an answer's sources, a workflow node's settings, a
+  graph entity). An `<aside>` in the page: no scrim, `border-l` on
+  `bg-background`, the full height of its host, sliding in and out like the
+  modal one. The host is a `relative flex overflow-hidden` row with the page
+  as a `min-w-0 flex-1` sibling. The chat's Share and account menu sit in its
+  column (`ActionButtons placement="column"`), not in the viewport corner, so
+  they stay beside the chat and never land on the panel. One docked slot per
+  page: opening another thing replaces what is there, never stacks.
+  The chat's slot (`conversation/chatCompanion`) holds an artifact or an
+  answer's sources; where there is no slot (a shared chat, an agent preview)
+  the sources open modal.
+
+Two widths, by `size`, never a `w-*` or `max-w-*` class (enforced):
+`default` 480px for every panel, and `wide` (600 / 700 / 800px) only for a
+working surface: a trace, an agent preview, the source editor. A docked
+panel can be
+`expandable="<surface>"`: Expand in its header steps compact (its `size`),
+half of the host (never narrower than compact) and full (covering the host,
+the page keeping its scroll underneath), then back, and the last width is
+remembered per surface (the artifact, a workflow node, a graph entity). A
+modal panel never expands. Below `lg` both variants are the same full-width
+right sheet; a docked panel's sheet opens on the panel, without a ring on
+its first control.
+
+The panel is itself a place: it paints no card of its own, panels in it are
+`subtle` and tiles `filled` (see Card surfaces). The anatomy never changes:
+
+- **`PanelHeader`**: fixed at `px-6 pt-6 pb-4`, then a `Separator`. The
+  title is the 20px Title role and wraps (`wrap-break-word`), it doesn't
+  truncate; `description` is one muted line (a span inside carries its own
+  typography: `font-mono text-xs` for a path). `leading` takes a node tile or
+  a connector icon; `actions` (a badge, a ⋯ menu), Expand and the X share the
+  title row, so nothing is placed absolutely and no `pr-12` is needed.
+  `onBack` adds a Back arrow for a second level inside the panel (a graph
+  entity's chunk); `children` sit under the title row, still fixed (a team
+  resource's Open and Manage sharing).
+- **`PanelBody`**: the one scroller (`scrollbar-overlay`), its sections
+  `gap-6` apart at `px-6 py-6`; `scroll={false}` when the content owns its
+  scroller (an artifact's iframe or code view).
+- **`PanelFooter`**: a `Separator`, then the actions at the right, `gap-3
+px-6 py-4` (Cancel `ghost lg pill`, Save `default lg pill`).
+
+The row whose panel is open is `selected` (ListRow or TableRow). An agent is
+previewed in one shared panel, `agents/components/AgentPreviewSheet`, for
+workflow and classic agents alike: `size="wide"`, the agent's name as the
+one-line description, an `info` Running badge in `actions` while it answers,
+then the preview, which owns its scroller. The workflow preview's Execution
+details and Artifacts rows are the answer's step-row recipe (see Alert), each
+step a `subtle sm` panel with its output in a `filled sm` well. Never
+hand-build a right panel (an `<aside border-l>` column or a `SheetContent
+side="right"`); compose SidePanel.
 
 Every phone bottom sheet has one shape: `bg-card`, 18px top corners (`rounded-t-2xl`), no top
 border, `shadow-lg` (both `SheetContent side="bottom"` and Modal's phone
@@ -1407,10 +1445,9 @@ and the one-frame life were measured on an iPhone (6px at the bottom, 16px at
 the top), and a strip behind the content, transparent or at `opacity-0` isn't
 sampled, so don't shrink or hide the strip.
 
-Content read alongside the chat (notes, todos, files) opens in
-`components/ArtifactSidebar`: a split column beside the chat on desktop, a
-right `Sheet` on phones. An answer's full source list is a right `Sheet`.
-Don't add a third pattern.
+Content read alongside the chat (notes, todos, files, `components/ArtifactPanel`)
+and an answer's full source list (`conversation/SourcesPanel`) share the chat's
+docked side panel (see Side panels). Don't add another pattern.
 
 ### ActionMenu (`ui/dropdown-menu.tsx`)
 
@@ -1501,9 +1538,8 @@ runs under the tab bar, and the app shell can be dragged and bounce. ESLint
 leading-tight font-semibold`. `DialogTitle` and `SheetTitle` default to it;
   `font-bold` is never a title weight. A picker popover's header is a
   sub-heading, not a title. The composer's drag-and-drop prompt is a Title
-  in `foreground`. The artifact panel's title (phone sheet and desktop split
-  column alike) is a sub-heading, `text-sm font-semibold wrap-anywhere`: the
-  panel sits beside the chat and its title is often a long generated name.
+  in `foreground`. Every side panel's title, the artifact's included, is this
+  role (`PanelHeader`), and wraps.
 - **Section title**: `SectionHeader` (18px). **Sub-heading** inside a panel,
   drawer or modal: `SectionHeader size="xs"` (14px semibold). **Eyebrow**
   (anything set in caps): `SectionHeader size="sm"`; never `uppercase` on a
@@ -1600,15 +1636,16 @@ shows.
   `onCloseAutoFocus` from app code to remember focus yourself (ESLint rejects
   it); the primitive already does. `onOpenAutoFocus` with `preventDefault()`
   is still how a phone picker keeps the keyboard down (`MultiSelectPopover`),
-  and how a phone panel sheet opens without a focus ring on its first control
-  (the graph node panel's bottom Sheet).
+  and how a docked side panel's phone sheet opens without a focus ring on its
+  first control (`SidePanel` does it).
   A dialog panel is a `tabIndex=-1` focus target that Radix can focus, so it
   carries `outline-none`: Safari draws its own blue `outline: auto` there and
   ignores our `outline-color`. Any new focusable container needs the same.
-- **Close buttons**: every Modal, Sheet and DialogContent uses its built-in
-  close (a phone sheet with a handle has none), a `ghost-muted` `size="icon-sm"` Button (32px, accent square on
-  hover) at `top-2 right-2`, the artifact sheet included; never hand-place
-  another X.
+- **Close buttons**: every Modal, bottom Sheet and DialogContent uses its
+  built-in close (a phone sheet with a handle has none), a `ghost-muted`
+  `size="icon-sm"` Button (32px, accent square on hover) at `top-2 right-2`;
+  a side panel's is the same Button in `PanelHeader`'s title row. Never
+  hand-place another X.
 - **Disabled**: buttons (Button, Accordion, Tabs) use
   `disabled:pointer-events-none disabled:opacity-50`, so the pointer passes
   through. Fields (Input, SelectTrigger, Switch, Textarea, CommandInput,
@@ -1654,34 +1691,34 @@ Places where a rule is knowingly disabled. Each one carries the same reason
 as a comment at the call site; add a row here when you add a disable so the
 list stays reviewable.
 
-| Where                                                               | Rule                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `components/Notification.tsx`                                       | `shadcn/no-restyle`             | The promo banner's close X (`ghost icon-xs`) sits on the purple gradient. Any fill would be a grey square on it, so hover dims the icon instead (`hover:bg-transparent hover:opacity-70`, plus `dark:hover:bg-transparent` to beat ghost's dark hover), and `text-primary-foreground` keeps it white, because the button inherits the page colour. One user, so it isn't a variant.                                                                                                             |
-| `components/ui/calendar.tsx`                                        | `shadcn/require-static-classes` | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
-| `navigation/SidebarLevel.tsx`                                       | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
-| `components/MessageInput.tsx`                                       | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
-| `Hero.tsx`                                                          | `shadcn/no-restyle`             | The landing page's model picker keeps its hero look: a borderless muted pill at 16px (`rounded-4xl px-6 py-4 text-base`) whose menu hangs from it as one shape. Three disables: `SelectTrigger`, `SelectContent`, `SelectItem`.                                                                                                                                                                                                                                                                 |
-| `agents/AgentsList.tsx`                                             | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`). It's the only breadcrumb that does.                                                                                                                                                                                                                                                                                        |
-| `conversation/MarkdownAnswer.tsx`, `components/ArtifactSidebar.tsx` | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable per file.                                                                                                                                                                                                                                                                                        |
-| `agents/workflow/WorkflowPreview.tsx`                               | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
-| `agents/schedules/ScheduleFormModal.tsx`                            | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle`. One disable.                                                                                                                                                                                                                                                                                                                                    |
-| `components/MermaidRenderer.tsx`                                    | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
-| `Hero.tsx`                                                          | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. One disable.                                                                                                                                                                            |
-| `Navigation.tsx`, `conversation/ConversationTile.tsx`               | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
-| `admin/Usage.tsx`                                                   | `shadcn/no-restyle`             | The Top users id is a `link inline` Button inside a mono table cell; it keeps the cell's type and wraps (`font-mono text-xs font-normal whitespace-normal text-left`). One disable.                                                                                                                                                                                                                                                                                                             |
-| `agents/workflow/panels/ConditionPanel.tsx`                         | `shadcn/no-restyle`             | The "Learn more" link in the Condition node's Advanced-mode 12px hint keeps the sentence's size and weight (`text-xs font-normal` on `link inline`). One disable; the Set state node's link sits in its `text-sm` intro and needs none.                                                                                                                                                                                                                                                         |
-| `components/MessageInput.tsx`                                       | `shadcn/no-restyle`             | The queued-send Cancel is a `link inline` inside the composer's 12px status line, so it takes the line's size (`text-xs`). One disable, beside the send button's.                                                                                                                                                                                                                                                                                                                               |
-| `settings/PersonalAccessTokens.tsx`                                 | `shadcn/no-restyle`             | Token scope chips are identifiers, so the `neutral` Badge is set in mono (`font-mono`). One disable.                                                                                                                                                                                                                                                                                                                                                                                            |
-| `agents/workflow/WorkflowPreview.tsx`                               | `shadcn/no-restyle`             | A step's state changes (keys and values the app serialised) are `neutral` Badges set in mono (`font-mono`), like token scopes. One disable.                                                                                                                                                                                                                                                                                                                                                     |
-| `settings/traces/TraceChips.tsx`                                    | `shadcn/no-restyle`             | Trace stat chips (durations, counts) use tabular figures so they don't jitter between rows (`tabular-nums` on Badge). One disable.                                                                                                                                                                                                                                                                                                                                                              |
-| `connectors/ConnectorSetupNotice.tsx`                               | `shadcn/no-restyle`             | The setup-guide link inside the needs-setup warning Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                       |
-| `modals/MCPServerModal.tsx`                                         | `shadcn/no-restyle`             | The authorization link inside the test-result Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                             |
-| `components/MermaidRenderer.tsx`                                    | `shadcn/no-restyle`             | The zoom readout between − and + is a `link inline` Button on the `bg-black/70` overlay; it keeps the overlay's white 12px regular text (`text-xs font-normal text-current`). One disable, beside the two zoom-button ones above.                                                                                                                                                                                                                                                               |
-| `conversation/SharedConversation.tsx`                               | `shadcn/no-restyle`             | The "DocsGPT" link sits in the `/share/:id` page's regular-weight byline (`font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                                                                          |
-| `conversation/ConversationBubble.tsx`                               | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
-| `admin/Overview.tsx`                                                | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
-| `settings/PairDeviceModal.tsx`                                      | `shadcn/no-restyle`             | The install link in Pair a remote machine sits in a 12px hint (`text-xs font-normal`, `self-start` in its column). One disable.                                                                                                                                                                                                                                                                                                                                                                 |
-| `agents/workflow/WorkflowBuilder.tsx`                               | `shadcn/no-restyle`             | The publish-error Alert floats over the canvas with its close button in the top-right corner, so it pads `pr-10` to keep a long title clear of the button. One disable.                                                                                                                                                                                                                                                                                                                         |
+| Where                                                             | Rule                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `components/Notification.tsx`                                     | `shadcn/no-restyle`             | The promo banner's close X (`ghost icon-xs`) sits on the purple gradient. Any fill would be a grey square on it, so hover dims the icon instead (`hover:bg-transparent hover:opacity-70`, plus `dark:hover:bg-transparent` to beat ghost's dark hover), and `text-primary-foreground` keeps it white, because the button inherits the page colour. One user, so it isn't a variant.                                                                                                             |
+| `components/ui/calendar.tsx`                                      | `shadcn/require-static-classes` | The day button merges `defaultClassNames.day`, which react-day-picker returns from `getDefaultClassNames()` at runtime; no static form exists.                                                                                                                                                                                                                                                                                                                                                  |
+| `navigation/SidebarLevel.tsx`                                     | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
+| `components/MessageInput.tsx`                                     | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
+| `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's model picker keeps its hero look: a borderless muted pill at 16px (`rounded-4xl px-6 py-4 text-base`) whose menu hangs from it as one shape. Three disables: `SelectTrigger`, `SelectContent`, `SelectItem`.                                                                                                                                                                                                                                                                 |
+| `agents/AgentsList.tsx`                                           | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`). It's the only breadcrumb that does.                                                                                                                                                                                                                                                                                        |
+| `conversation/MarkdownAnswer.tsx`, `components/ArtifactPanel.tsx` | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable per file.                                                                                                                                                                                                                                                                                        |
+| `agents/workflow/WorkflowPreview.tsx`                             | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
+| `agents/schedules/ScheduleFormModal.tsx`                          | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle`. One disable.                                                                                                                                                                                                                                                                                                                                    |
+| `components/MermaidRenderer.tsx`                                  | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
+| `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. One disable.                                                                                                                                                                            |
+| `Navigation.tsx`, `conversation/ConversationTile.tsx`             | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
+| `admin/Usage.tsx`                                                 | `shadcn/no-restyle`             | The Top users id is a `link inline` Button inside a mono table cell; it keeps the cell's type and wraps (`font-mono text-xs font-normal whitespace-normal text-left`). One disable.                                                                                                                                                                                                                                                                                                             |
+| `agents/workflow/panels/ConditionPanel.tsx`                       | `shadcn/no-restyle`             | The "Learn more" link in the Condition node's Advanced-mode 12px hint keeps the sentence's size and weight (`text-xs font-normal` on `link inline`). One disable; the Set state node's link sits in its `text-sm` intro and needs none.                                                                                                                                                                                                                                                         |
+| `components/MessageInput.tsx`                                     | `shadcn/no-restyle`             | The queued-send Cancel is a `link inline` inside the composer's 12px status line, so it takes the line's size (`text-xs`). One disable, beside the send button's.                                                                                                                                                                                                                                                                                                                               |
+| `settings/PersonalAccessTokens.tsx`                               | `shadcn/no-restyle`             | Token scope chips are identifiers, so the `neutral` Badge is set in mono (`font-mono`). One disable.                                                                                                                                                                                                                                                                                                                                                                                            |
+| `agents/workflow/WorkflowPreview.tsx`                             | `shadcn/no-restyle`             | A step's state changes (keys and values the app serialised) are `neutral` Badges set in mono (`font-mono`), like token scopes. One disable.                                                                                                                                                                                                                                                                                                                                                     |
+| `settings/traces/TraceChips.tsx`                                  | `shadcn/no-restyle`             | Trace stat chips (durations, counts) use tabular figures so they don't jitter between rows (`tabular-nums` on Badge). One disable.                                                                                                                                                                                                                                                                                                                                                              |
+| `connectors/ConnectorSetupNotice.tsx`                             | `shadcn/no-restyle`             | The setup-guide link inside the needs-setup warning Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                       |
+| `modals/MCPServerModal.tsx`                                       | `shadcn/no-restyle`             | The authorization link inside the test-result Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                             |
+| `components/MermaidRenderer.tsx`                                  | `shadcn/no-restyle`             | The zoom readout between − and + is a `link inline` Button on the `bg-black/70` overlay; it keeps the overlay's white 12px regular text (`text-xs font-normal text-current`). One disable, beside the two zoom-button ones above.                                                                                                                                                                                                                                                               |
+| `conversation/SharedConversation.tsx`                             | `shadcn/no-restyle`             | The "DocsGPT" link sits in the `/share/:id` page's regular-weight byline (`font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                                                                          |
+| `conversation/ConversationBubble.tsx`                             | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
+| `admin/Overview.tsx`                                              | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
+| `settings/PairDeviceModal.tsx`                                    | `shadcn/no-restyle`             | The install link in Pair a remote machine sits in a 12px hint (`text-xs font-normal`, `self-start` in its column). One disable.                                                                                                                                                                                                                                                                                                                                                                 |
+| `agents/workflow/WorkflowBuilder.tsx`                             | `shadcn/no-restyle`             | The publish-error Alert floats over the canvas with its close button in the top-right corner, so it pads `pr-10` to keep a long title clear of the button. One disable.                                                                                                                                                                                                                                                                                                                         |
 
 Note that a multi-line reason has to be a `/* ... */` block comment;
 consecutive `//` lines only disable the next comment line, not the code.

@@ -104,7 +104,7 @@ describe('SheetContent side="bottom"', () => {
 });
 
 describe('SheetContent side="right" size', () => {
-  const widthClasses = async (size?: 'default' | 'detail' | 'wide') => {
+  const widthClasses = async (size?: 'default' | 'wide') => {
     await render(
       <Sheet open>
         <SheetContent
@@ -120,12 +120,8 @@ describe('SheetContent side="right" size', () => {
       .filter((c) => /^(sm:|md:|lg:)?(max-)?w-/.test(c));
   };
 
-  it('is a 384px companion drawer by default', async () => {
-    expect(await widthClasses()).toEqual(['w-3/4', 'sm:max-w-sm']);
-  });
-
-  it('is full width on a phone and 576px from sm at detail', async () => {
-    expect(await widthClasses('detail')).toEqual(['w-full', 'sm:max-w-xl']);
+  it('is full width on a phone and 480px from sm by default', async () => {
+    expect(await widthClasses()).toEqual(['w-full', 'sm:max-w-120']);
   });
 
   it('steps 600 / 700 / 800px at wide', async () => {

@@ -36,12 +36,7 @@ import {
 } from '../components/ui/select';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '../components/ui/sheet';
+import { PanelBody, PanelHeader, SidePanel } from '../components/ui/side-panel';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { showActionToast } from '../notifications/actionToastSlice';
@@ -957,133 +952,195 @@ export default function ConnectionDrawer({
 
   return (
     <>
-      <Sheet open onOpenChange={(open) => !open && onClose()}>
-        <SheetContent
-          side="right"
-          size="detail"
-          closeLabel={t('agents.close')}
-          className="overflow-y-auto"
-        >
-          <div className="flex flex-col gap-6 p-6">
-            {/* pr-12 keeps the header clear of the close X. */}
-            <div className="flex items-center gap-4 pr-12">
-              <span className="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
-                <ConnectorIcon icon={connector.icon} className="size-7" />
-              </span>
-              <SheetTitle className="min-w-0 truncate">{name}</SheetTitle>
-            </div>
-            <SheetDescription>
-              {connectorDescription(t, connector)}
-            </SheetDescription>
-            <CapabilityBadges capabilities={connector.capabilities} />
+      <SidePanel open onOpenChange={(open) => !open && onClose()}>
+        <PanelHeader
+          title={name}
+          description={connectorDescription(t, connector)}
+          leading={
+            <span className="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
+              <ConnectorIcon icon={connector.icon} className="size-7" />
+            </span>
+          }
+        />
+        <PanelBody>
+          <CapabilityBadges capabilities={connector.capabilities} />
 
-            {connector.publisher === 'custom' && (
-              <Alert variant="warning" role="note">
-                <TriangleAlert />
-                <AlertDescription>
-                  {t('settings.connectors.unverified')}
-                </AlertDescription>
-              </Alert>
-            )}
+          {connector.publisher === 'custom' && (
+            <Alert variant="warning" role="note">
+              <TriangleAlert />
+              <AlertDescription>
+                {t('settings.connectors.unverified')}
+              </AlertDescription>
+            </Alert>
+          )}
 
-            {connector.needs_setup && (
-              <ConnectorSetupNotice connector={connector} />
-            )}
+          {connector.needs_setup && (
+            <ConnectorSetupNotice connector={connector} />
+          )}
 
-            <section className="flex flex-col gap-3">
-              <SectionHeader
-                as="h3"
+          <section className="flex flex-col gap-3">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('settings.connectors.detail.accounts')}
+              actions={
+                connector.available && ownDetails.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="-mr-3"
+                    onClick={() => onConnect(connector)}
+                  >
+                    <Plus />
+                    {t('settings.connectors.detail.connectAnother')}
+                  </Button>
+                ) : undefined
+              }
+            />
+            {loading && details.length === 0 ? (
+              <LoadingState fill="block" />
+            ) : failed ? (
+              <EmptyState
+                tone="destructive"
+                size="sm"
+                illustration="none"
+                title={t('settings.connectors.detail.failed')}
+                action={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    shape="pill"
+                    onClick={() => setReloadKey((key) => key + 1)}
+                  >
+                    {t('retry')}
+                  </Button>
+                }
+              />
+            ) : ownDetails.length === 0 ? (
+              <EmptyState
                 size="xs"
-                title={t('settings.connectors.detail.accounts')}
-                actions={
-                  connector.available && ownDetails.length > 0 ? (
+                illustration="none"
+                title={t('settings.connectors.detail.noAccounts')}
+                action={
+                  connector.available ? (
                     <Button
                       type="button"
-                      variant="link"
-                      size="sm"
-                      className="-mr-3"
+                      shape="pill"
                       onClick={() => onConnect(connector)}
                     >
-                      <Plus />
-                      {t('settings.connectors.detail.connectAnother')}
+                      {t('settings.connectors.status.connect')}
                     </Button>
                   ) : undefined
                 }
               />
-              {loading && details.length === 0 ? (
-                <LoadingState fill="block" />
-              ) : failed ? (
-                <EmptyState
-                  tone="destructive"
-                  size="sm"
-                  illustration="none"
-                  title={t('settings.connectors.detail.failed')}
-                  action={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      shape="pill"
-                      onClick={() => setReloadKey((key) => key + 1)}
-                    >
-                      {t('retry')}
-                    </Button>
-                  }
-                />
-              ) : ownDetails.length === 0 ? (
-                <EmptyState
+            ) : (
+              <div className="flex flex-col gap-6">
+                {ownDetails.length > 1 && (
+                  <AccountPicker
+                    accounts={ownDetails}
+                    value={
+                      shownAccount(
+                        ownDetails,
+                        pickedIn(connector.key, ownDetails),
+                      )!.id
+                    }
+                    onChange={(id) =>
+                      setPicked((state) => ({
+                        ...state,
+                        [connector.key]: id,
+                      }))
+                    }
+                  />
+                )}
+                {[
+                  shownAccount(
+                    ownDetails,
+                    pickedIn(connector.key, ownDetails),
+                  )!,
+                ].map((detail) => (
+                  <AccountSection
+                    key={detail.id}
+                    connector={connector}
+                    detail={detail}
+                    onReconnect={reconnect}
+                    onDisconnect={setToDisconnect}
+                    onRemove={setToRemove}
+                    onRename={setToRename}
+                    onSyncMore={(d) =>
+                      onConnect(connector, {
+                        mode: 'sync',
+                        connectionId: d.id,
+                      })
+                    }
+                    onRefreshTools={refreshTools}
+                    onToggleTool={toggleTool}
+                    onSyncNow={syncNow}
+                    onAddTools={addTools}
+                    onSwitchWrites={switchWrites}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {parts.map((part) => {
+            const partDetails = details.filter(
+              (detail) => detail.connector_key === part.key,
+            );
+            return (
+              <section key={part.key} className="flex flex-col gap-3">
+                <SectionHeader
+                  as="h3"
                   size="xs"
-                  illustration="none"
-                  title={t('settings.connectors.detail.noAccounts')}
-                  action={
-                    connector.available ? (
+                  title={connectorName(t, part)}
+                  description={connectorDescription(t, part)}
+                  actions={
+                    part.available && partDetails.length === 0 ? (
                       <Button
                         type="button"
+                        size="sm"
                         shape="pill"
-                        onClick={() => onConnect(connector)}
+                        onClick={() => onConnect(part)}
                       >
                         {t('settings.connectors.status.connect')}
                       </Button>
                     ) : undefined
                   }
                 />
-              ) : (
-                <div className="flex flex-col gap-6">
-                  {ownDetails.length > 1 && (
-                    <AccountPicker
-                      accounts={ownDetails}
-                      value={
-                        shownAccount(
-                          ownDetails,
-                          pickedIn(connector.key, ownDetails),
-                        )!.id
-                      }
-                      onChange={(id) =>
-                        setPicked((state) => ({
-                          ...state,
-                          [connector.key]: id,
-                        }))
-                      }
-                    />
-                  )}
-                  {[
-                    shownAccount(
-                      ownDetails,
-                      pickedIn(connector.key, ownDetails),
-                    )!,
-                  ].map((detail) => (
+                <CapabilityBadges capabilities={part.capabilities} />
+                {partDetails.length > 1 && (
+                  <AccountPicker
+                    accounts={partDetails}
+                    value={
+                      shownAccount(
+                        partDetails,
+                        pickedIn(part.key, partDetails),
+                      )!.id
+                    }
+                    onChange={(id) =>
+                      setPicked((state) => ({ ...state, [part.key]: id }))
+                    }
+                  />
+                )}
+                {partDetails
+                  .filter(
+                    (detail) =>
+                      detail.id ===
+                      shownAccount(partDetails, pickedIn(part.key, partDetails))
+                        ?.id,
+                  )
+                  .map((detail) => (
                     <AccountSection
                       key={detail.id}
-                      connector={connector}
+                      connector={part}
                       detail={detail}
                       onReconnect={reconnect}
                       onDisconnect={setToDisconnect}
                       onRemove={setToRemove}
                       onRename={setToRename}
                       onSyncMore={(d) =>
-                        onConnect(connector, {
-                          mode: 'sync',
-                          connectionId: d.id,
-                        })
+                        onConnect(part, { mode: 'sync', connectionId: d.id })
                       }
                       onRefreshTools={refreshTools}
                       onToggleTool={toggleTool}
@@ -1092,83 +1149,11 @@ export default function ConnectionDrawer({
                       onSwitchWrites={switchWrites}
                     />
                   ))}
-                </div>
-              )}
-            </section>
-
-            {parts.map((part) => {
-              const partDetails = details.filter(
-                (detail) => detail.connector_key === part.key,
-              );
-              return (
-                <section key={part.key} className="flex flex-col gap-3">
-                  <SectionHeader
-                    as="h3"
-                    size="xs"
-                    title={connectorName(t, part)}
-                    description={connectorDescription(t, part)}
-                    actions={
-                      part.available && partDetails.length === 0 ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          shape="pill"
-                          onClick={() => onConnect(part)}
-                        >
-                          {t('settings.connectors.status.connect')}
-                        </Button>
-                      ) : undefined
-                    }
-                  />
-                  <CapabilityBadges capabilities={part.capabilities} />
-                  {partDetails.length > 1 && (
-                    <AccountPicker
-                      accounts={partDetails}
-                      value={
-                        shownAccount(
-                          partDetails,
-                          pickedIn(part.key, partDetails),
-                        )!.id
-                      }
-                      onChange={(id) =>
-                        setPicked((state) => ({ ...state, [part.key]: id }))
-                      }
-                    />
-                  )}
-                  {partDetails
-                    .filter(
-                      (detail) =>
-                        detail.id ===
-                        shownAccount(
-                          partDetails,
-                          pickedIn(part.key, partDetails),
-                        )?.id,
-                    )
-                    .map((detail) => (
-                      <AccountSection
-                        key={detail.id}
-                        connector={part}
-                        detail={detail}
-                        onReconnect={reconnect}
-                        onDisconnect={setToDisconnect}
-                        onRemove={setToRemove}
-                        onRename={setToRename}
-                        onSyncMore={(d) =>
-                          onConnect(part, { mode: 'sync', connectionId: d.id })
-                        }
-                        onRefreshTools={refreshTools}
-                        onToggleTool={toggleTool}
-                        onSyncNow={syncNow}
-                        onAddTools={addTools}
-                        onSwitchWrites={switchWrites}
-                      />
-                    ))}
-                </section>
-              );
-            })}
-          </div>
-        </SheetContent>
-      </Sheet>
+              </section>
+            );
+          })}
+        </PanelBody>
+      </SidePanel>
       <ConfirmationModal
         message={t('settings.connectors.disconnect.title', {
           name,

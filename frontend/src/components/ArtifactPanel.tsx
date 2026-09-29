@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import ReactMarkdown from 'react-markdown';
@@ -25,8 +24,7 @@ import { LoadingState } from '@/components/ui/loading-state';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
-import { IconButton } from './ui/icon-button';
-import { Sheet, SheetContent, SheetTitle } from './ui/sheet';
+import { PanelBody, PanelHeader } from './ui/side-panel';
 
 type TodoItem = {
   todo_id: number;
@@ -54,17 +52,10 @@ type ArtifactData =
   | { artifact_type: 'note'; data: NoteArtifactData }
   | { artifact_type: 'memory'; data: Record<string, unknown> };
 
-type ArtifactSidebarProps = {
-  isOpen: boolean;
-  onClose: () => void;
+type ArtifactPanelProps = {
   artifactId: string | null;
   toolName?: string;
   conversationId: string | null;
-  /**
-   * overlay: current fixed slide-in sidebar
-   * split: renders as a normal panel (to be placed in a split layout)
-   */
-  variant?: 'overlay' | 'split';
 };
 
 const ARTIFACT_TITLE_KEY_BY_TYPE: Record<
@@ -294,14 +285,16 @@ function NoteView({ data }: { data: NoteArtifactData }) {
   );
 }
 
-export default function ArtifactSidebar({
-  isOpen,
-  onClose,
+/**
+ * Content read alongside the chat (notes, todos, files): the header and body
+ * of the chat's docked side panel (DESIGN.md "Side panels"). Render it inside
+ * a SidePanel; the content owns its scroller.
+ */
+export default function ArtifactPanel({
   artifactId,
   toolName,
   conversationId,
-  variant = 'overlay',
-}: ArtifactSidebarProps) {
+}: ArtifactPanelProps) {
   const lastSuccessfulTodoArtifactIdRef = React.useRef<string | null>(null);
   const currentFetchIdRef = React.useRef<string | null>(null);
   const { t } = useTranslation();
@@ -326,16 +319,12 @@ export default function ArtifactSidebar({
 
   // Reset effectiveArtifactId when artifactId changes
   useEffect(() => {
-    if (!isOpen) {
-      setEffectiveArtifactId(null);
-      return;
-    }
     setEffectiveArtifactId(artifactId);
-  }, [isOpen, artifactId]);
+  }, [artifactId]);
 
   // Fetch artifact when effectiveArtifactId changes
   useEffect(() => {
-    if (!isOpen || !effectiveArtifactId) {
+    if (!effectiveArtifactId) {
       setArtifact(null);
       setDocumentArtifact(null);
       setError(null);
@@ -449,14 +438,7 @@ export default function ArtifactSidebar({
           setLoading(false);
         });
     }
-  }, [
-    isOpen,
-    effectiveArtifactId,
-    token,
-    toolName,
-    conversationId,
-    refreshNonce,
-  ]);
+  }, [effectiveArtifactId, token, toolName, conversationId, refreshNonce]);
 
   const renderContent = () => {
     if (loading) {
@@ -520,54 +502,10 @@ export default function ArtifactSidebar({
     }
   };
 
-  if (variant === 'split') {
-    if (!isOpen) return null;
-
-    return (
-      <div className="flex h-full w-full flex-col p-3">
-        {/* Space for top bar / actions */}
-        <div className="h-14 shrink-0" />
-        {/* Artifact panel */}
-        <div className="border-border flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-transparent">
-          <div className="flex w-full items-center justify-between gap-2 px-4 py-2">
-            <h2 className="text-foreground min-w-0 text-sm leading-tight font-semibold wrap-anywhere">
-              {title}
-            </h2>
-            <IconButton
-              label={t('agents.close')}
-              side="bottom"
-              variant="ghost"
-              size="icon-sm"
-              shape="pill"
-              onClick={onClose}
-            >
-              <X aria-hidden="true" className="size-4" />
-            </IconButton>
-          </div>
-          <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <Sheet
-      open={isOpen}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <SheetContent side="right" closeLabel={t('agents.close')} className="p-0">
-        <div className="flex min-h-0 flex-1 flex-col">
-          {/* pr-12 keeps the title clear of the built-in close X. */}
-          <div className="border-border flex w-full items-center border-b px-4 py-3 pr-12">
-            <SheetTitle className="min-w-0 text-sm font-semibold wrap-anywhere">
-              {title || t('components.artifact.preview')}
-            </SheetTitle>
-          </div>
-          <div className="flex-1 overflow-hidden p-4">{renderContent()}</div>
-        </div>
-      </SheetContent>
-    </Sheet>
+    <>
+      <PanelHeader title={title || t('components.artifact.preview')} />
+      <PanelBody scroll={false}>{renderContent()}</PanelBody>
+    </>
   );
 }

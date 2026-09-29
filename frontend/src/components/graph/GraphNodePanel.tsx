@@ -1,4 +1,4 @@
-import { File, X } from 'lucide-react';
+import { File } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
@@ -7,10 +7,9 @@ import { Button } from '../ui/button';
 import { Card, CardFooter } from '../ui/card';
 import { DescriptionItem, DescriptionList } from '../ui/description-list';
 import { EmptyState } from '../ui/empty-state';
-import { IconButton } from '../ui/icon-button';
 import { ListRow } from '../ui/list-row';
 import { SectionHeader } from '../ui/section-header';
-import { Separator } from '../ui/separator';
+import { PanelBody, PanelHeader } from '../ui/side-panel';
 import { Skeleton } from '../ui/skeleton';
 import { formatCount } from '../../utils/dateTimeUtils';
 import { chunkPreviewText } from '../chunkUtils';
@@ -21,7 +20,7 @@ import {
   type GraphNodeDetail,
   type FoldedGraphTypes,
 } from '../graphViewUtils';
-import GraphChunkSheet from './GraphChunkSheet';
+import GraphChunkReader from './GraphChunkReader';
 import {
   chunkFileName,
   overviewRelationships,
@@ -50,12 +49,6 @@ interface GraphNodePanelProps {
   status: GraphNodeDetailStatus;
   onRetry: () => void;
   fold: FoldedGraphTypes;
-  onClose: () => void;
-  /**
-   * Draw the panel's own close X. Off in the phone bottom sheet, whose
-   * handle means no X (the scrim closes it).
-   */
-  showClose?: boolean;
   /** Select another node (a relationship row). */
   onSelectNode: (node: GraphNodeRef) => void;
   /** An extra control under the type badge ("Show in graph"). */
@@ -74,24 +67,11 @@ interface GraphNodePanelProps {
 }
 
 /**
- * The node panel docked in a graph frame, the Graph tab's canvas and the
- * Entities table alike: a `border-l` column at 320px, 40% of the frame from
- * `xl` (capped at the 576px detail-drawer width), so the relationship list has
- * room once the screen does.
- */
-export function GraphNodePanelDock({ children }: { children: ReactNode }) {
-  return (
-    <aside className="border-border flex w-80 shrink-0 flex-col border-l xl:w-2/5 xl:max-w-xl">
-      {children}
-    </aside>
-  );
-}
-
-/**
- * One entity's panel: its facts, the relationships you can follow, then the
- * chunks it was extracted from. Docked beside the canvas or the entity table
- * on desktop, in a bottom sheet on a phone. Key it on the node id so the
- * disclosures reset per node.
+ * One entity's side panel content: its facts, the relationships you can
+ * follow, then the chunks it was extracted from; a chunk opens as the
+ * panel's second level. Render it in the frame's docked SidePanel (a
+ * full-width right sheet on a phone), keyed on the node id so the
+ * disclosures and the open chunk reset per node.
  */
 export default function GraphNodePanel({
   docId,
@@ -100,8 +80,6 @@ export default function GraphNodePanel({
   status,
   onRetry,
   fold,
-  onClose,
-  showClose = true,
   onSelectNode,
   action,
   overview,
@@ -110,38 +88,34 @@ export default function GraphNodePanel({
   canEdit = true,
 }: GraphNodePanelProps) {
   const { t } = useTranslation();
+  const [openChunk, setOpenChunk] = useState<GraphNodeChunk | null>(null);
   const name = detail?.name ?? node.name;
   const type = detail ? detail.type : node.type;
 
+  if (openChunk) {
+    return (
+      <GraphChunkReader
+        key={openChunk.chunk_id}
+        docId={docId}
+        chunk={openChunk}
+        highlight={name}
+        onBack={() => setOpenChunk(null)}
+        onOpenInFiles={onOpenInFiles}
+        onSaved={onChunkSaved}
+        canEdit={canEdit}
+      />
+    );
+  }
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-start gap-3 px-4 py-3">
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <SectionHeader
-              as="h3"
-              size="xs"
-              className="wrap-break-word"
-              title={name}
-            />
-            <GraphTypeBadge fold={fold} type={type} />
-          </div>
-          {action ? <div>{action}</div> : null}
-        </div>
-        {showClose ? (
-          <IconButton
-            variant="ghost-muted"
-            size="icon-sm"
-            className="shrink-0"
-            onClick={onClose}
-            label={t('settings.sources.graphrag.view.close')}
-            icon={X}
-            side="bottom"
-          />
-        ) : null}
-      </div>
-      <Separator />
-      <div className="scrollbar-overlay flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4">
+    <>
+      <PanelHeader
+        title={name}
+        description={<GraphTypeBadge fold={fold} type={type} />}
+      >
+        {action ? <div>{action}</div> : null}
+      </PanelHeader>
+      <PanelBody>
         {status === 'error' ? (
           <EmptyState
             size="sm"
@@ -162,14 +136,11 @@ export default function GraphNodePanel({
           />
         ) : detail && status === 'ready' ? (
           <NodeDetailBody
-            docId={docId}
             detail={detail}
             fold={fold}
             onSelectNode={onSelectNode}
+            onOpenChunk={setOpenChunk}
             overview={overview}
-            onOpenInFiles={onOpenInFiles}
-            onChunkSaved={onChunkSaved}
-            canEdit={canEdit}
           />
         ) : (
           <div
@@ -184,34 +155,27 @@ export default function GraphNodePanel({
             <Skeleton className="h-3 w-3/4" />
           </div>
         )}
-      </div>
-    </div>
+      </PanelBody>
+    </>
   );
 }
 
 function NodeDetailBody({
-  docId,
   detail,
   fold,
   onSelectNode,
+  onOpenChunk,
   overview,
-  onOpenInFiles,
-  onChunkSaved,
-  canEdit,
 }: {
-  docId: string;
   detail: GraphNodeDetail;
   fold: FoldedGraphTypes;
   onSelectNode: (node: GraphNodeRef) => void;
+  onOpenChunk: (chunk: GraphNodeChunk) => void;
   overview?: ForceGraphData;
-  onOpenInFiles?: (path: string) => void;
-  onChunkSaved?: () => void;
-  canEdit: boolean;
 }) {
   const { t } = useTranslation();
   const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [allRelationships, setAllRelationships] = useState(false);
-  const [openChunk, setOpenChunk] = useState<GraphNodeChunk | null>(null);
   const rows = useMemo(
     () =>
       groupRelationships(
@@ -392,7 +356,7 @@ function NodeDetailBody({
                   className="gap-2 text-left"
                   asChild
                 >
-                  <button type="button" onClick={() => setOpenChunk(chunk)}>
+                  <button type="button" onClick={() => onOpenChunk(chunk)}>
                     <p className="text-foreground line-clamp-3 text-xs leading-relaxed wrap-break-word">
                       {chunkPreviewText(chunk.text)}
                     </p>
@@ -411,16 +375,6 @@ function NodeDetailBody({
           </div>
         )}
       </section>
-
-      <GraphChunkSheet
-        docId={docId}
-        chunk={openChunk}
-        highlight={detail.name}
-        onClose={() => setOpenChunk(null)}
-        onOpenInFiles={onOpenInFiles}
-        onSaved={onChunkSaved}
-        canEdit={canEdit}
-      />
     </>
   );
 }

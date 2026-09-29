@@ -65,13 +65,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
-import { Separator } from '../components/ui/separator';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '../components/ui/sheet';
+import { PanelBody, PanelHeader, SidePanel } from '../components/ui/side-panel';
 import { Textarea } from '../components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { cn } from '../lib/utils';
@@ -1124,241 +1118,220 @@ export default function Teams() {
         </div>
       )}
 
-      <Sheet
+      <SidePanel
         open={drawerOpen && openResource !== null}
         onOpenChange={(open) => !open && closeDrawer()}
       >
         {openResource && selected && (
-          <SheetContent
-            side="right"
-            size="detail"
-            className="p-0"
-            closeLabel={t('settings.teams.drawer.close')}
-          >
-            <div className="flex min-h-0 flex-1 flex-col">
-              {/* A fixed header: pr-12 keeps it clear of the close X. */}
-              <div className="flex flex-col gap-4 px-6 pt-6 pr-12 pb-4">
-                <div className="flex items-start gap-3">
-                  <span
-                    aria-hidden="true"
-                    className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
-                  >
-                    {resourceTypeIcon(openResource.type)}
-                  </span>
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <SheetTitle className="wrap-break-word">
-                      {resourceName(openResource)}
-                    </SheetTitle>
-                    <SheetDescription>
-                      {t('settings.teams.drawer.subtitle', {
-                        interpolation: { escapeValue: false },
-                        type: resourceTypeLabel(openResource.type),
-                        owner: ownerLabel(openResource),
-                      })}
-                    </SheetDescription>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
+          <>
+            <PanelHeader
+              title={resourceName(openResource)}
+              description={t('settings.teams.drawer.subtitle', {
+                interpolation: { escapeValue: false },
+                type: resourceTypeLabel(openResource.type),
+                owner: ownerLabel(openResource),
+              })}
+              leading={
+                <span
+                  aria-hidden="true"
+                  className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                >
+                  {resourceTypeIcon(openResource.type)}
+                </span>
+              }
+            >
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  onClick={() => {
+                    const path = openAssetPath(openResource);
+                    closeDrawer();
+                    navigate(path);
+                  }}
+                >
+                  <ArrowUpRight aria-hidden />
+                  {t('settings.teams.drawer.open', {
+                    interpolation: { escapeValue: false },
+                    type: resourceTypeLabel(openResource.type),
+                  })}
+                </Button>
+                {callerCanShare && (
                   <Button
                     variant="outline"
                     size="sm"
                     shape="pill"
                     onClick={() => {
-                      const path = openAssetPath(openResource);
-                      closeDrawer();
-                      navigate(path);
+                      setDrawerOpen(false);
+                      setShareTarget(openResource);
                     }}
                   >
-                    <ArrowUpRight aria-hidden />
-                    {t('settings.teams.drawer.open', {
-                      interpolation: { escapeValue: false },
-                      type: resourceTypeLabel(openResource.type),
-                    })}
+                    <Users aria-hidden />
+                    {t('settings.teams.drawer.manageSharing')}
                   </Button>
-                  {callerCanShare && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      shape="pill"
-                      onClick={() => {
-                        setDrawerOpen(false);
-                        setShareTarget(openResource);
-                      }}
-                    >
-                      <Users aria-hidden />
-                      {t('settings.teams.drawer.manageSharing')}
-                    </Button>
-                  )}
-                </div>
+                )}
               </div>
-              <Separator />
-              <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
-                <DescriptionList size="sm">
-                  <DescriptionItem label={t('settings.teams.drawer.owner')}>
-                    {ownerLabel(openResource)}
-                  </DescriptionItem>
-                  <DescriptionItem label={t('settings.teams.drawer.shared')}>
-                    {grantedAt(openResource)}
-                  </DescriptionItem>
-                  <DescriptionItem
-                    label={t('settings.teams.drawer.yourAccess')}
-                  >
-                    {callerAccessLabel(openCaller?.access)}
-                  </DescriptionItem>
-                </DescriptionList>
+            </PanelHeader>
+            <PanelBody>
+              <DescriptionList size="sm">
+                <DescriptionItem label={t('settings.teams.drawer.owner')}>
+                  {ownerLabel(openResource)}
+                </DescriptionItem>
+                <DescriptionItem label={t('settings.teams.drawer.shared')}>
+                  {grantedAt(openResource)}
+                </DescriptionItem>
+                <DescriptionItem label={t('settings.teams.drawer.yourAccess')}>
+                  {callerAccessLabel(openCaller?.access)}
+                </DescriptionItem>
+              </DescriptionList>
 
-                <section className="flex flex-col gap-3">
-                  <SectionHeader
-                    as="h3"
-                    size="xs"
-                    title={t('settings.teams.drawer.accessIn', {
-                      interpolation: { escapeValue: false },
-                      team: selected.name,
-                    })}
-                  />
-                  <Card variant="subtle" padding="none">
-                    <ListRows>
-                      {[
-                        ...(openResource.teamGrant
-                          ? [openResource.teamGrant]
-                          : []),
-                        ...openResource.memberGrants,
-                      ].map((g) => {
-                        const isTeam = !g.target_user_id;
-                        const label = isTeam
-                          ? t('settings.teams.drawer.everyone', {
-                              interpolation: { escapeValue: false },
-                              team: selected.name,
-                            })
-                          : g.target_user_label ||
-                            truncateSub(g.target_user_id!);
-                        const busy = busyGrants.has(grantKey(g));
-                        return (
-                          <ListRow
-                            key={grantKey(g)}
-                            leading={
-                              <span aria-hidden="true" className="contents">
-                                <Avatar
-                                  alt=""
-                                  size="sm"
-                                  variant="primary"
-                                  shape={isTeam ? 'square' : 'circle'}
+              <section className="flex flex-col gap-3">
+                <SectionHeader
+                  as="h3"
+                  size="xs"
+                  title={t('settings.teams.drawer.accessIn', {
+                    interpolation: { escapeValue: false },
+                    team: selected.name,
+                  })}
+                />
+                <Card variant="subtle" padding="none">
+                  <ListRows>
+                    {[
+                      ...(openResource.teamGrant
+                        ? [openResource.teamGrant]
+                        : []),
+                      ...openResource.memberGrants,
+                    ].map((g) => {
+                      const isTeam = !g.target_user_id;
+                      const label = isTeam
+                        ? t('settings.teams.drawer.everyone', {
+                            interpolation: { escapeValue: false },
+                            team: selected.name,
+                          })
+                        : g.target_user_label || truncateSub(g.target_user_id!);
+                      const busy = busyGrants.has(grantKey(g));
+                      return (
+                        <ListRow
+                          key={grantKey(g)}
+                          leading={
+                            <span aria-hidden="true" className="contents">
+                              <Avatar
+                                alt=""
+                                size="sm"
+                                variant="primary"
+                                shape={isTeam ? 'square' : 'circle'}
+                              >
+                                {initialOf(isTeam ? selected.name : label)}
+                              </Avatar>
+                            </span>
+                          }
+                          title={<span title={label}>{label}</span>}
+                          description={
+                            isTeam
+                              ? t('settings.teams.drawer.teamGrant')
+                              : t('settings.teams.drawer.memberGrant')
+                          }
+                          trailing={
+                            <>
+                              {callerCanShare ? (
+                                <Select
+                                  value={g.access_level}
+                                  disabled={busy}
+                                  onValueChange={(value) =>
+                                    handleGrantAccess(g, value as AccessLevel)
+                                  }
                                 >
-                                  {initialOf(isTeam ? selected.name : label)}
-                                </Avatar>
-                              </span>
-                            }
-                            title={<span title={label}>{label}</span>}
-                            description={
-                              isTeam
-                                ? t('settings.teams.drawer.teamGrant')
-                                : t('settings.teams.drawer.memberGrant')
-                            }
-                            trailing={
-                              <>
-                                {callerCanShare ? (
-                                  <Select
-                                    value={g.access_level}
-                                    disabled={busy}
-                                    onValueChange={(value) =>
-                                      handleGrantAccess(g, value as AccessLevel)
-                                    }
-                                  >
-                                    <SelectTrigger
-                                      size="sm"
-                                      className="w-28 shrink-0"
-                                      aria-label={t(
-                                        'settings.teams.share.access',
-                                      )}
-                                    >
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {(['viewer', 'editor'] as const).map(
-                                        (level) => (
-                                          <SelectItem key={level} value={level}>
-                                            {accessLevelLabel(level)}
-                                          </SelectItem>
-                                        ),
-                                      )}
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <Badge variant="neutral" className="shrink-0">
-                                    {accessLevelLabel(g.access_level)}
-                                  </Badge>
-                                )}
-                                {(callerCanShare || isAdmin) && (
-                                  <IconButton
-                                    variant="ghost-destructive"
-                                    size="icon-sm"
-                                    className="shrink-0"
-                                    disabled={busy}
-                                    label={t(
-                                      'settings.teams.drawer.removeGrant',
+                                  <SelectTrigger
+                                    size="sm"
+                                    className="w-28 shrink-0"
+                                    aria-label={t(
+                                      'settings.teams.share.access',
                                     )}
-                                    icon={Trash2}
-                                    onClick={() => handleUnshare(g)}
-                                  />
-                                )}
-                              </>
-                            }
-                          />
-                        );
-                      })}
-                    </ListRows>
-                  </Card>
-                  <p className="text-muted-foreground text-xs">
-                    {t('settings.teams.drawer.otherTeamsHint')}
-                  </p>
-                </section>
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {(['viewer', 'editor'] as const).map(
+                                      (level) => (
+                                        <SelectItem key={level} value={level}>
+                                          {accessLevelLabel(level)}
+                                        </SelectItem>
+                                      ),
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Badge variant="neutral" className="shrink-0">
+                                  {accessLevelLabel(g.access_level)}
+                                </Badge>
+                              )}
+                              {(callerCanShare || isAdmin) && (
+                                <IconButton
+                                  variant="ghost-destructive"
+                                  size="icon-sm"
+                                  className="shrink-0"
+                                  disabled={busy}
+                                  label={t('settings.teams.drawer.removeGrant')}
+                                  icon={Trash2}
+                                  onClick={() => handleUnshare(g)}
+                                />
+                              )}
+                            </>
+                          }
+                        />
+                      );
+                    })}
+                  </ListRows>
+                </Card>
+                <p className="text-muted-foreground text-xs">
+                  {t('settings.teams.drawer.otherTeamsHint')}
+                </p>
+              </section>
 
-                <section className="flex flex-col gap-3">
-                  <SectionHeader
-                    as="h3"
-                    size="xs"
-                    title={t('settings.teams.drawer.whatPeopleCanDo')}
-                  />
-                  <ul className="flex flex-col gap-2 text-sm">
-                    {capabilityLines(
-                      t,
+              <section className="flex flex-col gap-3">
+                <SectionHeader
+                  as="h3"
+                  size="xs"
+                  title={t('settings.teams.drawer.whatPeopleCanDo')}
+                />
+                <ul className="flex flex-col gap-2 text-sm">
+                  {capabilityLines(
+                    t,
+                    openResource.type,
+                    resolveSettings(
                       openResource.type,
-                      resolveSettings(
-                        openResource.type,
-                        drawerSettings?.settings,
-                      ),
-                    ).map((line) => (
-                      <li key={line.key} className="flex items-center gap-2">
-                        {line.allowed ? (
-                          <Check
-                            className="text-success size-4 shrink-0"
-                            aria-hidden
-                          />
-                        ) : (
-                          <X
-                            className="text-muted-foreground size-4 shrink-0"
-                            aria-hidden
-                          />
-                        )}
-                        <span
-                          className={cn(
-                            !line.allowed && 'text-muted-foreground',
-                          )}
-                        >
-                          {line.text}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-muted-foreground text-xs">
-                    {t('settings.teams.drawer.capabilitiesHint')}
-                  </p>
-                </section>
-              </div>
-            </div>
-          </SheetContent>
+                      drawerSettings?.settings,
+                    ),
+                  ).map((line) => (
+                    <li key={line.key} className="flex items-center gap-2">
+                      {line.allowed ? (
+                        <Check
+                          className="text-success size-4 shrink-0"
+                          aria-hidden
+                        />
+                      ) : (
+                        <X
+                          className="text-muted-foreground size-4 shrink-0"
+                          aria-hidden
+                        />
+                      )}
+                      <span
+                        className={cn(!line.allowed && 'text-muted-foreground')}
+                      >
+                        {line.text}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-muted-foreground text-xs">
+                  {t('settings.teams.drawer.capabilitiesHint')}
+                </p>
+              </section>
+            </PanelBody>
+          </>
         )}
-      </Sheet>
+      </SidePanel>
 
       {shareTarget && (
         <ShareToTeamModal

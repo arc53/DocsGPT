@@ -226,7 +226,6 @@
           "empty": "Noch kein Graph – die Extraktion läuft möglicherweise noch.",
           "selectNode": "Wähle einen Knoten aus, um seine Details zu sehen.",
           "noChunks": "Keine verknüpften Chunks für diese Entität.",
-          "close": "Schließen",
           "tabs": {
             "graph": "Graph",
             "entities": "Entitäten",
@@ -442,7 +441,6 @@
         "preview": "Vorschau",
         "previewEmpty": "Noch nichts für die Vorschau.",
         "cancel": "Abbrechen",
-        "close": "Schließen",
         "discardMessage": "Ungespeicherte Änderungen verwerfen?",
         "discard": "Verwerfen"
       },
@@ -946,7 +944,6 @@
         "noMatches": "Keine Treffer."
       },
       "drawer": {
-        "close": "Schließen",
         "subtitle": "{{type}} · Eigentümer: {{owner}}",
         "open": "{{type}} öffnen",
         "manageSharing": "Freigabe verwalten",
@@ -2022,7 +2019,9 @@
       "connectMore": "Weitere verbinden",
       "fromConnector": "Aus {{name}}",
       "fromConnectorTitle": "Aus {{name}}: {{title}}",
-      "knowledge": "Wissen"
+      "knowledge": "Wissen",
+      "forAnswer_one": "{{count}} Quelle für diese Antwort",
+      "forAnswer_other": "{{count}} Quellen für diese Antwort"
     },
     "attachments": {
       "attach": "Anhängen",
@@ -3016,5 +3015,11 @@
     "viewOnlyNotice": "Du kannst dies ansehen, aber deine Rolle kann es nicht ändern.",
     "credentialsLockedNotice": "Nur der Eigentümer kann die Zugangsdaten dieses Tools ändern.",
     "savedSecretHint": "Gespeichert. Leer lassen, um es zu behalten."
+  },
+  "sidePanel": {
+    "close": "Schließen",
+    "expand": "Erweitern",
+    "collapse": "Verkleinern",
+    "back": "Zurück"
   }
 }

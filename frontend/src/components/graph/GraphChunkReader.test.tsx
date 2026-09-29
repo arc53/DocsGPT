@@ -17,7 +17,8 @@ vi.mock('../../api/services/userService', () => ({
 
 import userService from '../../api/services/userService';
 import type { GraphNodeChunk } from '../graphViewUtils';
-import GraphChunkSheet from './GraphChunkSheet';
+import { SidePanel } from '../ui/side-panel';
+import GraphChunkReader from './GraphChunkReader';
 
 const updateChunk = (
   userService as unknown as { updateChunk: ReturnType<typeof vi.fn> }
@@ -25,7 +26,7 @@ const updateChunk = (
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-describe('GraphChunkSheet', () => {
+describe('GraphChunkReader', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -52,12 +53,14 @@ describe('GraphChunkSheet', () => {
   const saveEdit = async (chunk: GraphNodeChunk, value: string) => {
     await act(async () => {
       root.render(
-        <GraphChunkSheet
-          docId="doc"
-          chunk={chunk}
-          highlight=""
-          onClose={vi.fn()}
-        />,
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <GraphChunkReader
+            docId="doc"
+            chunk={chunk}
+            highlight=""
+            onBack={vi.fn()}
+          />
+        </SidePanel>,
       );
     });
     await act(async () => button('modals.chunk.edit')!.click());
@@ -102,12 +105,14 @@ describe('GraphChunkSheet', () => {
   it('the edit drawer edits the title like Chunks', async () => {
     await act(async () => {
       root.render(
-        <GraphChunkSheet
-          docId="doc"
-          chunk={{ chunk_id: 'c1', text: 'Body', metadata: { title: 'Old' } }}
-          highlight=""
-          onClose={vi.fn()}
-        />,
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <GraphChunkReader
+            docId="doc"
+            chunk={{ chunk_id: 'c1', text: 'Body', metadata: { title: 'Old' } }}
+            highlight=""
+            onBack={vi.fn()}
+          />
+        </SidePanel>,
       );
     });
     await act(async () => button('modals.chunk.edit')!.click());
@@ -141,21 +146,23 @@ describe('GraphChunkSheet', () => {
     const onOpenInFiles = vi.fn();
     await act(async () => {
       root.render(
-        <GraphChunkSheet
-          docId="doc"
-          chunk={{
-            chunk_id: 'c1',
-            text: 'Body',
-            metadata: {
-              source: 'https://docs.example.com/guides/setup',
-              file_path: 'guides/setup.md',
-              title: 'Setup',
-            },
-          }}
-          highlight=""
-          onClose={vi.fn()}
-          onOpenInFiles={onOpenInFiles}
-        />,
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <GraphChunkReader
+            docId="doc"
+            chunk={{
+              chunk_id: 'c1',
+              text: 'Body',
+              metadata: {
+                source: 'https://docs.example.com/guides/setup',
+                file_path: 'guides/setup.md',
+                title: 'Setup',
+              },
+            }}
+            highlight=""
+            onBack={vi.fn()}
+            onOpenInFiles={onOpenInFiles}
+          />
+        </SidePanel>,
       );
     });
     await act(async () =>
@@ -164,39 +171,44 @@ describe('GraphChunkSheet', () => {
     expect(onOpenInFiles).toHaveBeenCalledWith('guides/setup.md');
   });
 
-  // Leaving the edit drawer (Cancel, Discard, Esc, X) returns to the read
-  // drawer on the same chunk; only a successful save closes both.
-  it('Cancel in the edit drawer returns to the read drawer', async () => {
-    const onClose = vi.fn();
+  // Leaving the edit drawer (Cancel, Discard, Esc, X) returns to the reader
+  // on the same chunk; only a successful save goes back to the node.
+  it('Cancel in the edit drawer returns to the reader', async () => {
+    const onBack = vi.fn();
     await act(async () => {
       root.render(
-        <GraphChunkSheet
-          docId="doc"
-          chunk={{ chunk_id: 'c1', text: 'Old body', metadata: {} }}
-          highlight=""
-          onClose={onClose}
-        />,
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <GraphChunkReader
+            docId="doc"
+            chunk={{ chunk_id: 'c1', text: 'Old body', metadata: {} }}
+            highlight=""
+            onBack={onBack}
+          />
+        </SidePanel>,
       );
     });
     await act(async () => button('modals.chunk.edit')!.click());
     expect(document.body.querySelector('textarea')).not.toBeNull();
     await act(async () => button('settings.sources.editor.cancel')!.click());
-    expect(onClose).not.toHaveBeenCalled();
+    expect(onBack).not.toHaveBeenCalled();
     expect(document.body.querySelector('textarea')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     expect(button('modals.chunk.edit')).toBeDefined();
     expect(document.body.textContent).toContain('Old body');
   });
 
-  it('a successful save closes both drawers', async () => {
-    const onClose = vi.fn();
+  it('a successful save goes back to the node', async () => {
+    const onBack = vi.fn();
     await act(async () => {
       root.render(
-        <GraphChunkSheet
-          docId="doc"
-          chunk={{ chunk_id: 'c1', text: 'Old', metadata: {} }}
-          highlight=""
-          onClose={onClose}
-        />,
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <GraphChunkReader
+            docId="doc"
+            chunk={{ chunk_id: 'c1', text: 'Old', metadata: {} }}
+            highlight=""
+            onBack={onBack}
+          />
+        </SidePanel>,
       );
     });
     await act(async () => button('modals.chunk.edit')!.click());
@@ -209,6 +221,34 @@ describe('GraphChunkSheet', () => {
       field.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await act(async () => button('modals.chunk.save')!.click());
-    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('heads the reader with a Back arrow, in the docked panel', async () => {
+    const onBack = vi.fn();
+    await act(async () => {
+      root.render(
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <GraphChunkReader
+            docId="doc"
+            chunk={{ chunk_id: 'c1', text: '# Brief\n\nBody', metadata: {} }}
+            highlight=""
+            onBack={onBack}
+          />
+        </SidePanel>,
+      );
+    });
+    const header = document.body.querySelector('[data-slot="panel-header"]')!;
+    expect(header.closest('aside')).not.toBeNull();
+    expect(header.querySelector('h2')?.textContent).toBe('Brief');
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () =>
+      (
+        document.body.querySelector(
+          'button[aria-label="sidePanel.back"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

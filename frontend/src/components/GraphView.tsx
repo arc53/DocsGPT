@@ -14,15 +14,11 @@ import ForceGraph2D, {
   type NodeObject,
 } from 'react-force-graph-2d';
 
-import { useMediaQuery } from '../hooks';
 import { useThemeVersion } from '../utils/chartUtils';
 import { formatCount } from '../utils/dateTimeUtils';
 import GraphCanvasControls from './graph/GraphCanvasControls';
 import GraphEntitySearch from './graph/GraphEntitySearch';
-import GraphNodePanel, {
-  GraphNodePanelDock,
-  type GraphNodeRef,
-} from './graph/GraphNodePanel';
+import GraphNodePanel, { type GraphNodeRef } from './graph/GraphNodePanel';
 import { GraphSeriesDot } from './graph/GraphTypeDot';
 import {
   DIM_ALPHA,
@@ -42,7 +38,7 @@ import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { EmptyState } from './ui/empty-state';
 import { LoadingState } from './ui/loading-state';
-import { Sheet, SheetContent } from './ui/sheet';
+import { SidePanel } from './ui/side-panel';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import {
   type FoldedGraphTypes,
@@ -98,7 +94,7 @@ const LABEL_GAP_PX = 2;
 /**
  * The Graph tab of a knowledge-graph source: entity search, the "Show top"
  * size, the type legend (a filter), and the canvas with its controls and the
- * docked node panel (a bottom sheet on a phone).
+ * node's docked side panel (a full-width sheet on a phone).
  */
 const GraphView: React.FC<GraphViewProps> = ({
   docId,
@@ -115,7 +111,6 @@ const GraphView: React.FC<GraphViewProps> = ({
   canEdit = true,
 }) => {
   const { t } = useTranslation();
-  const { isDesktop } = useMediaQuery();
   const showTopId = useId();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -587,8 +582,6 @@ const GraphView: React.FC<GraphViewProps> = ({
       status={nodeDetail.status}
       onRetry={nodeDetail.retry}
       fold={fold}
-      onClose={() => onSelect(null)}
-      showClose={isDesktop}
       onSelectNode={onSelect}
       overview={data}
       onOpenInFiles={onOpenInFiles}
@@ -603,7 +596,7 @@ const GraphView: React.FC<GraphViewProps> = ({
       <Card
         variant="subtle"
         padding="none"
-        className="h-[70svh] flex-row gap-0 overflow-hidden"
+        className="relative h-[70svh] flex-row gap-0 overflow-hidden"
       >
         <div
           ref={containerRef}
@@ -653,28 +646,17 @@ const GraphView: React.FC<GraphViewProps> = ({
             </>
           )}
         </div>
-        {isDesktop && panel ? (
-          <GraphNodePanelDock>{panel}</GraphNodePanelDock>
-        ) : null}
-      </Card>
-      {!isDesktop ? (
-        <Sheet
-          open={!!selected && active}
+        <SidePanel
+          variant="docked"
+          expandable="graph-node"
+          open={!!panel && active}
           onOpenChange={(open) => {
             if (!open) onSelect(null);
           }}
         >
-          <SheetContent
-            side="bottom"
-            handle
-            title={selected?.name}
-            // Open on the panel, not with a ring on its first control.
-            onOpenAutoFocus={(event) => event.preventDefault()}
-          >
-            {panel}
-          </SheetContent>
-        </Sheet>
-      ) : null}
+          {panel}
+        </SidePanel>
+      </Card>
     </div>
   );
 };

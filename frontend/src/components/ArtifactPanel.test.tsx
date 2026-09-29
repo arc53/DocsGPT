@@ -11,6 +11,7 @@ vi.mock('react-redux', () => ({
 
 vi.mock('../hooks', () => ({
   useDarkTheme: () => [false],
+  useMediaQuery: () => ({ isMobile: false, isDesktop: true }),
 }));
 
 const documentMock = vi.fn();
@@ -22,11 +23,12 @@ vi.mock('../api/services/userService', () => ({
   },
 }));
 
-import ArtifactSidebar from './ArtifactSidebar';
+import ArtifactPanel from './ArtifactPanel';
+import { SidePanel } from './ui/side-panel';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-describe('ArtifactSidebar', () => {
+describe('ArtifactPanel', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -43,29 +45,35 @@ describe('ArtifactSidebar', () => {
     container.remove();
   });
 
-  // Every Sheet closes with its built-in X (ghost-muted icon-sm, top-2
-  // right-2); the header only names the artifact.
-  it('closes the phone sheet with the built-in close button', async () => {
+  // The artifact is the chat's docked side panel: one header with its title,
+  // Expand and the one X; the content owns its scroller.
+  it('heads the docked panel with its title, Expand and one X', async () => {
     documentMock.mockResolvedValue({ ok: false, status: 500 });
     legacyMock.mockRejectedValue(new Error('offline'));
     await act(async () => {
       root.render(
-        <ArtifactSidebar
-          isOpen
-          onClose={vi.fn()}
-          artifactId="a1"
-          conversationId="c1"
-          variant="overlay"
-        />,
+        <SidePanel
+          variant="docked"
+          expandable="artifact"
+          open
+          onOpenChange={vi.fn()}
+        >
+          <ArtifactPanel artifactId="a1" conversationId="c1" />
+        </SidePanel>,
       );
     });
-    const sheet = document.querySelector('[data-slot="sheet-content"]')!;
-    // One close: the Sheet's built-in X, named in the UI language.
-    const closes = sheet.querySelectorAll('button[aria-label="agents.close"]');
-    expect(closes).toHaveLength(1);
-    expect(closes[0].getAttribute('data-variant')).toBe('ghost-muted');
-    expect(sheet.querySelector('[aria-label="Close"]')).toBeNull();
-    expect(sheet.querySelector('[data-slot="sheet-title"]')).not.toBeNull();
+    const header = container.querySelector('[data-slot="panel-header"]')!;
+    expect(header.querySelector('h2')?.textContent).toBe(
+      'components.artifact.fallbackTitle',
+    );
+    expect(
+      header.querySelectorAll('button[aria-label="sidePanel.close"]'),
+    ).toHaveLength(1);
+    expect(
+      header.querySelector('[aria-label="sidePanel.expand"]'),
+    ).not.toBeNull();
+    const body = container.querySelector('[data-slot="panel-body"]')!;
+    expect(body.className).toContain('overflow-hidden');
   });
 
   it('shows a failed load as an alert with Retry that refetches', async () => {
@@ -74,13 +82,9 @@ describe('ArtifactSidebar', () => {
 
     await act(async () => {
       root.render(
-        <ArtifactSidebar
-          isOpen
-          onClose={vi.fn()}
-          artifactId="a1"
-          conversationId="c1"
-          variant="split"
-        />,
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <ArtifactPanel artifactId="a1" conversationId="c1" />
+        </SidePanel>,
       );
     });
 
@@ -105,13 +109,9 @@ describe('ArtifactSidebar', () => {
 
     await act(async () => {
       root.render(
-        <ArtifactSidebar
-          isOpen
-          onClose={vi.fn()}
-          artifactId="a2"
-          conversationId="c1"
-          variant="split"
-        />,
+        <SidePanel variant="docked" open onOpenChange={vi.fn()}>
+          <ArtifactPanel artifactId="a2" conversationId="c1" />
+        </SidePanel>,
       );
     });
 

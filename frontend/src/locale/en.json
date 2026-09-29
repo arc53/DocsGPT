@@ -231,7 +231,6 @@
           "empty": "No graph yet — extraction may still be running.",
           "selectNode": "Select a node to see its details.",
           "noChunks": "No linked chunks for this entity.",
-          "close": "Close",
           "tabs": {
             "graph": "Graph",
             "entities": "Entities",
@@ -447,7 +446,6 @@
         "preview": "Preview",
         "previewEmpty": "Nothing to preview yet.",
         "cancel": "Cancel",
-        "close": "Close",
         "discardMessage": "Discard your unsaved changes?",
         "discard": "Discard"
       },
@@ -952,7 +950,6 @@
         "noMatches": "Nothing matches."
       },
       "drawer": {
-        "close": "Close",
         "subtitle": "{{type}} · owned by {{owner}}",
         "open": "Open {{type}}",
         "manageSharing": "Manage sharing",
@@ -2028,7 +2025,9 @@
       "connectMore": "Connect more",
       "fromConnector": "From {{name}}",
       "fromConnectorTitle": "From {{name}}: {{title}}",
-      "knowledge": "Knowledge"
+      "knowledge": "Knowledge",
+      "forAnswer_one": "{{count}} source for this answer",
+      "forAnswer_other": "{{count}} sources for this answer"
     },
     "attachments": {
       "attach": "Attach",
@@ -3067,5 +3066,11 @@
     "viewOnlyNotice": "You can view this, but your role can't change it.",
     "credentialsLockedNotice": "Only the owner can change this tool's credentials.",
     "savedSecretHint": "Saved. Leave empty to keep it."
+  },
+  "sidePanel": {
+    "close": "Close",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "back": "Back"
   }
 }

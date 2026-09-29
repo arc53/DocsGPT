@@ -110,4 +110,23 @@ describe('WorkflowDetailsSheet', () => {
     expect(alert?.textContent).toContain('agents.workflow.builder.unableSave');
     expect(alert?.textContent).toContain('Workflow must have an end node');
   });
+
+  it('sits in a side panel: fixed header with the X, one scroller, a footer', () => {
+    const { onOpenChange } = render();
+    const header = document.querySelector('[data-slot="panel-header"]')!;
+    expect(header.querySelector('[data-slot="sheet-title"]')?.textContent).toBe(
+      'agents.workflow.builder.detailsTitle',
+    );
+    expect(
+      header.querySelector('[data-slot="sheet-description"]')?.textContent,
+    ).toBe('agents.workflow.builder.detailsDescription');
+    expect(document.querySelectorAll('.overflow-y-auto')).toHaveLength(1);
+    expect(document.querySelector('.pr-12')).toBeNull();
+    act(() =>
+      header
+        .querySelector<HTMLButtonElement>('[aria-label="sidePanel.close"]')!
+        .click(),
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });

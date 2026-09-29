@@ -11,12 +11,7 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { FormField } from '../components/ui/form-field';
 import { ListRow, ListRows } from '../components/ui/list-row';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from '../components/ui/sheet';
+import { PanelBody, PanelHeader, SidePanel } from '../components/ui/side-panel';
 import {
   DescriptionItem,
   DescriptionList,
@@ -555,46 +550,46 @@ export default function Connectors() {
       )}
 
       {detail && (
-        <Sheet open onOpenChange={(open) => !open && setDetailKey(null)}>
-          <SheetContent side="right" size="detail" closeLabel="Close">
-            <div className="flex flex-col gap-6 p-6">
-              <div className="flex items-center gap-3 pr-12">
-                <ConnectorIcon icon={detail.icon} className="size-7" />
-                <SheetTitle className="truncate">{detail.name}</SheetTitle>
-              </div>
-              <SheetDescription>{summary(detail)}</SheetDescription>
-              <SettingRows>
-                <SettingRow
-                  label="Enabled"
-                  description={
-                    detail.configured
-                      ? 'Members can connect and use it.'
-                      : 'Add its server settings first (Setup guide).'
-                  }
-                >
-                  {enabledSwitch(detail)}
-                </SettingRow>
-              </SettingRows>
-              {hasTools(detail) && (
-                <FormField label="Shared tools use">
-                  {policyControl(detail, true)}
-                </FormField>
-              )}
-              {hasSetupGuide(detail) && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  shape="pill"
-                  className="w-fit"
-                  onClick={() => setGuide(detail)}
-                >
-                  Setup guide
-                </Button>
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
+        <SidePanel open onOpenChange={(open) => !open && setDetailKey(null)}>
+          <PanelHeader
+            title={detail.name}
+            description={summary(detail)}
+            leading={
+              <ConnectorIcon icon={detail.icon} className="size-7 shrink-0" />
+            }
+          />
+          <PanelBody>
+            <SettingRows>
+              <SettingRow
+                label="Enabled"
+                description={
+                  detail.configured
+                    ? 'Members can connect and use it.'
+                    : 'Add its server settings first (Setup guide).'
+                }
+              >
+                {enabledSwitch(detail)}
+              </SettingRow>
+            </SettingRows>
+            {hasTools(detail) && (
+              <FormField label="Shared tools use">
+                {policyControl(detail, true)}
+              </FormField>
+            )}
+            {hasSetupGuide(detail) && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                shape="pill"
+                className="w-fit"
+                onClick={() => setGuide(detail)}
+              >
+                Setup guide
+              </Button>
+            )}
+          </PanelBody>
+        </SidePanel>
       )}
 
       {guide && (

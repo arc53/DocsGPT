@@ -14,7 +14,6 @@ import {
   Pencil,
   ThumbsDown,
   ThumbsUp,
-  ExternalLink,
 } from 'lucide-react';
 import {
   forwardRef,
@@ -35,7 +34,7 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
-import { Sheet, SheetContent } from '../components/ui/sheet';
+import { SidePanel } from '../components/ui/side-panel';
 import { Textarea } from '../components/ui/textarea';
 import SpeakButton from '../components/TextToSpeechButton';
 import { useOutsideAlerter } from '../hooks';
@@ -52,8 +51,10 @@ import ConnectorIcon from '../connectors/ConnectorIcon';
 import { connectorIconKey } from '../connectors/i18n';
 import { AnswerSegment } from './answerSegments';
 import { deriveArtifactChips } from './artifactChips';
+import { useChatCompanion } from './chatCompanion';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import ResearchProgress from './ResearchProgress';
+import SourcesPanel from './SourcesPanel';
 import { shownArguments, ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
@@ -141,8 +142,13 @@ const ConversationBubble = forwardRef<
   const messageRef = useRef<HTMLDivElement>(null);
   const [shouldShowToggle, setShouldShowToggle] = useState(false);
 
+  const companion = useChatCompanion();
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
-  const openSources = useCallback(() => setIsSidebarOpen(true), []);
+  // The chat's docked slot when there is one, else a modal panel.
+  const openSources = useCallback(() => {
+    if (companion && sources) companion.openSources(sources);
+    else setIsSidebarOpen(true);
+  }, [companion, sources]);
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
@@ -319,8 +325,8 @@ const ConversationBubble = forwardRef<
                   type="button"
                   variant="ghost"
                   size="sm"
-                  aria-haspopup="dialog"
-                  onClick={() => setIsSidebarOpen(true)}
+                  aria-haspopup={companion ? undefined : 'dialog'}
+                  onClick={openSources}
                   className="my-2 ml-3.5 w-fit"
                 >
                   <Database className="text-muted-foreground" aria-hidden />
@@ -349,7 +355,7 @@ const ConversationBubble = forwardRef<
                           <button
                             type="button"
                             className="block w-full cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-4xl"
-                            onClick={() => setIsSidebarOpen(true)}
+                            onClick={openSources}
                           >
                             <span className="line-clamp-3 h-12 text-xs wrap-break-word">
                               {source.text}
@@ -415,7 +421,7 @@ const ConversationBubble = forwardRef<
                           'bg-answer-bubble text-primary hover:bg-accent hover:text-primary flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 text-left outline-none',
                           focusRing,
                         )}
-                        onClick={() => setIsSidebarOpen(true)}
+                        onClick={openSources}
                       >
                         <span className="line-clamp-3 h-22 text-xs">
                           {t('conversation.sources.view_more', {
@@ -658,14 +664,10 @@ const ConversationBubble = forwardRef<
             )}
           </div>
         )}
-        {sources && (
-          <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
-            <SheetContent side="right" title={t('conversation.sources.title')}>
-              <div className="flex h-full flex-col items-center gap-2 px-6 py-4 text-center">
-                <AllSources sources={sources} />
-              </div>
-            </SheetContent>
-          </Sheet>
+        {sources && !companion && (
+          <SidePanel open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
+            <SourcesPanel sources={sources} />
+          </SidePanel>
         )}
       </div>
     );
@@ -673,102 +675,6 @@ const ConversationBubble = forwardRef<
   return bubble;
 });
 
-/** Runs `action` on Enter or Space, for a `role="button"` element. */
-function onActivateKey(
-  action: () => void,
-): (e: React.KeyboardEvent<HTMLElement>) => void {
-  return (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      action();
-    }
-  };
-}
-
-type AllSourcesProps = {
-  sources: {
-    title: string;
-    text: string;
-    link?: string;
-    connector_key?: string | null;
-    connector_name?: string | null;
-  }[];
-};
-
-function AllSources(sources: AllSourcesProps) {
-  const { t } = useTranslation();
-
-  const handleCardClick = (link: string) => {
-    if (link && link !== 'local') {
-      window.open(link, '_blank', 'noopener,noreferrer');
-    }
-  };
-
-  return (
-    <div className="h-full w-full">
-      <div className="w-full">
-        <p className="text-left text-xl">{`${sources.sources.length} ${t('conversation.sources.title')}`}</p>
-        <div className="bg-border mx-1 mt-2 h-[0.8px] w-full rounded-full lg:w-[95%]"></div>
-      </div>
-      <div className="mt-6 flex h-[90%] w-52 flex-col gap-4 overflow-y-auto pr-3 sm:w-64">
-        {sources.sources.map((source, index) => {
-          const isExternalSource = source.link && source.link !== 'local';
-          return (
-            <div
-              key={index}
-              className={cn(
-                'group/card bg-card hover:bg-accent relative w-full rounded-4xl p-4 transition-colors',
-                isExternalSource ? 'cursor-pointer' : '',
-              )}
-              onClick={() =>
-                isExternalSource && source.link && handleCardClick(source.link)
-              }
-              {...(isExternalSource && source.link
-                ? {
-                    role: 'button',
-                    tabIndex: 0,
-                    onKeyDown: onActivateKey(() =>
-                      handleCardClick(source.link as string),
-                    ),
-                  }
-                : {})}
-            >
-              <p
-                title={source.title}
-                className={cn(
-                  'line-clamp-3 text-left text-sm font-semibold wrap-break-word',
-                  isExternalSource ? 'group-hover/card:text-primary' : '',
-                )}
-              >
-                {`${index + 1}. ${source.title}`}
-                {isExternalSource && (
-                  <ExternalLink className="text-muted-foreground group-hover/card:text-primary ml-1 inline size-3" />
-                )}
-              </p>
-              {source.connector_name && (
-                <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
-                  <ConnectorIcon
-                    icon={connectorIconKey(source.connector_key)}
-                    className="text-muted-foreground size-3.5 shrink-0"
-                  />
-                  <span className="truncate">
-                    {t('conversation.sources.fromConnector', {
-                      name: source.connector_name,
-                      interpolation: { escapeValue: false },
-                    })}
-                  </span>
-                </p>
-              )}
-              <p className="text-foreground mt-3 line-clamp-4 rounded-md text-left text-xs wrap-break-word">
-                {source.text}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 export default ConversationBubble;
 
 function ToolCallApprovalBar({

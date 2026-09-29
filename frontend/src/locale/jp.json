@@ -226,7 +226,6 @@
           "empty": "グラフはまだありません。抽出が実行中の可能性があります。",
           "selectNode": "ノードを選択すると詳細が表示されます。",
           "noChunks": "このエンティティにリンクされたチャンクはありません。",
-          "close": "閉じる",
           "tabs": {
             "graph": "グラフ",
             "entities": "エンティティ",
@@ -439,7 +438,6 @@
         "preview": "プレビュー",
         "previewEmpty": "プレビューする内容がまだありません。",
         "cancel": "キャンセル",
-        "close": "閉じる",
         "discardMessage": "保存されていない変更を破棄しますか?",
         "discard": "破棄"
       },
@@ -945,7 +943,6 @@
         "noMatches": "一致するものはありません。"
       },
       "drawer": {
-        "close": "閉じる",
         "subtitle": "{{type}} · 所有者: {{owner}}",
         "open": "{{type}}を開く",
         "manageSharing": "共有を管理",
@@ -2009,7 +2006,8 @@
       "connectMore": "さらに接続",
       "fromConnector": "{{name}} から",
       "fromConnectorTitle": "{{name}} から: {{title}}",
-      "knowledge": "ナレッジ"
+      "knowledge": "ナレッジ",
+      "forAnswer": "この回答のソース{{count}}件"
     },
     "attachments": {
       "attach": "添付",
@@ -3001,5 +2999,11 @@
     "viewOnlyNotice": "表示はできますが、あなたのロールでは変更できません。",
     "credentialsLockedNotice": "このツールの認証情報を変更できるのはオーナーだけです。",
     "savedSecretHint": "保存済みです。空のままにすると保持されます。"
+  },
+  "sidePanel": {
+    "close": "閉じる",
+    "expand": "拡大",
+    "collapse": "縮小",
+    "back": "戻る"
   }
 }

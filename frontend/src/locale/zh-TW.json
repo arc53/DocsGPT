@@ -226,7 +226,6 @@
           "empty": "尚無圖譜——擷取可能仍在進行中。",
           "selectNode": "選擇節點以查看其詳細資訊。",
           "noChunks": "此實體沒有關聯的區塊。",
-          "close": "關閉",
           "tabs": {
             "graph": "圖譜",
             "entities": "實體",
@@ -439,7 +438,6 @@
         "preview": "預覽",
         "previewEmpty": "目前沒有可預覽的內容。",
         "cancel": "取消",
-        "close": "關閉",
         "discardMessage": "要捨棄未儲存的變更嗎？",
         "discard": "捨棄"
       },
@@ -945,7 +943,6 @@
         "noMatches": "沒有相符項目。"
       },
       "drawer": {
-        "close": "關閉",
         "subtitle": "{{type}} · 擁有者：{{owner}}",
         "open": "開啟{{type}}",
         "manageSharing": "管理共用",
@@ -2009,7 +2006,8 @@
       "connectMore": "連線更多",
       "fromConnector": "來自 {{name}}",
       "fromConnectorTitle": "來自 {{name}}：{{title}}",
-      "knowledge": "知識庫"
+      "knowledge": "知識庫",
+      "forAnswer": "此回答的 {{count}} 個來源"
     },
     "attachments": {
       "attach": "附件",
@@ -3001,5 +2999,11 @@
     "viewOnlyNotice": "你可以檢視此內容，但你的角色無法變更它。",
     "credentialsLockedNotice": "只有擁有者可以變更此工具的憑證。",
     "savedSecretHint": "已儲存。留空即可保留。"
+  },
+  "sidePanel": {
+    "close": "關閉",
+    "expand": "展開",
+    "collapse": "收合",
+    "back": "返回"
   }
 }

@@ -226,7 +226,6 @@
           "empty": "暂无图谱——提取可能仍在进行中。",
           "selectNode": "选择一个节点以查看其详情。",
           "noChunks": "此实体没有关联的文本块。",
-          "close": "关闭",
           "tabs": {
             "graph": "图谱",
             "entities": "实体",
@@ -439,7 +438,6 @@
         "preview": "预览",
         "previewEmpty": "暂无可预览的内容。",
         "cancel": "取消",
-        "close": "关闭",
         "discardMessage": "放弃未保存的更改？",
         "discard": "放弃"
       },
@@ -945,7 +943,6 @@
         "noMatches": "没有匹配项。"
       },
       "drawer": {
-        "close": "关闭",
         "subtitle": "{{type}} · 所有者：{{owner}}",
         "open": "打开{{type}}",
         "manageSharing": "管理共享",
@@ -2007,7 +2004,8 @@
       "connectMore": "连接更多",
       "fromConnector": "来自 {{name}}",
       "fromConnectorTitle": "来自 {{name}}：{{title}}",
-      "knowledge": "知识库"
+      "knowledge": "知识库",
+      "forAnswer": "此回答的{{count}}个来源"
     },
     "attachments": {
       "attach": "附件",
@@ -2999,5 +2997,11 @@
     "viewOnlyNotice": "你可以查看此内容，但你的角色无法更改它。",
     "credentialsLockedNotice": "只有所有者可以更改此工具的凭据。",
     "savedSecretHint": "已保存。留空即可保留。"
+  },
+  "sidePanel": {
+    "close": "关闭",
+    "expand": "展开",
+    "collapse": "收起",
+    "back": "返回"
   }
 }

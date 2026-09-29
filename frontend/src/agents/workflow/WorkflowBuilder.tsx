@@ -2000,7 +2000,7 @@ function WorkflowBuilderInner() {
           </div>
         )}
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
           <NodePalette
             onAdd={handleAddNodeFromPalette}
             onDragStart={handleNodeDragStart}
@@ -2060,7 +2060,6 @@ function WorkflowBuilderInner() {
 
           {showNodeConfig && selectedNode && (
             <NodePanel
-              key={selectedNode.id}
               node={selectedNode}
               onClose={() => setShowNodeConfig(false)}
               onDuplicate={handleDuplicateNode}

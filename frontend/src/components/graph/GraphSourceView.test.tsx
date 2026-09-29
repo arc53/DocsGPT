@@ -388,8 +388,8 @@ describe('GraphSourceView', () => {
     await flush();
     expect(service.getSourceGraphNode).toHaveBeenCalledWith('doc', 'n', null);
 
-    // One frame, as on the Graph tab: the table and the panel docked beside
-    // it (border-l, 40% from xl), the open entity's row marked.
+    // One frame, as on the Graph tab: the table and the side panel docked
+    // beside it (border-l, expandable), the open entity's row marked.
     const openRow = Array.from(container.querySelectorAll('tbody tr')).find(
       (r) => r.textContent?.includes('Nordhaven'),
     ) as HTMLTableRowElement;
@@ -397,14 +397,15 @@ describe('GraphSourceView', () => {
     const frame = openRow.closest('[data-slot="card"]')!;
     expect(frame.getAttribute('data-variant')).toBe('subtle');
     expect(frame.className).toContain('h-[70svh]');
-    const dock = frame.querySelector('aside')!;
+    expect(frame.className).toContain('relative');
+    const dock = frame.querySelector('aside[data-slot="side-panel"]')!;
     expect(dock.className).toContain('border-l');
-    expect(dock.className).toContain('xl:w-2/5');
-    expect(dock.querySelector('h3')?.textContent).toBe('Nordhaven');
+    expect(
+      dock.querySelector('[aria-label="sidePanel.expand"]'),
+    ).not.toBeNull();
+    expect(dock.querySelector('h2')?.textContent).toBe('Nordhaven');
     expect(container.querySelector('[data-slot="table-container"]')).toBeNull();
-    const close = dock.querySelector(
-      'button[aria-label="settings.sources.graphrag.view.close"]',
-    )!;
+    const close = dock.querySelector('button[aria-label="sidePanel.close"]')!;
     expect(close.getAttribute('data-size')).toBe('icon-sm');
 
     await act(async () =>
@@ -418,7 +419,7 @@ describe('GraphSourceView', () => {
     )!;
     expect(graphTab.getAttribute('aria-selected')).toBe('true');
     // The graph tab's docked panel has the node open.
-    expect(container.querySelector('aside h3')?.textContent).toBe('Nordhaven');
+    expect(container.querySelector('aside h2')?.textContent).toBe('Nordhaven');
   });
 
   it('renders the embedded file view on the Files tab', async () => {
@@ -614,12 +615,13 @@ describe('GraphSourceView', () => {
     await act(async () => tile.click());
   };
 
+  // The chunk reader is the side panel's second level, beside the table.
   const drawerButtons = () =>
-    Array.from(document.body.querySelectorAll('[role="dialog"] button')).map(
-      (b) => b.textContent,
-    );
+    Array.from(
+      document.body.querySelectorAll('[data-slot="panel-footer"] button'),
+    ).map((b) => b.textContent);
 
-  it("a read-only graph's chunk drawer has Open in Files but no Edit", async () => {
+  it("a read-only graph's chunk reader has Open in Files but no Edit", async () => {
     await render(undefined, vi.fn(), true, false);
     await openEntityChunk();
     expect(drawerButtons()).toContain(
@@ -628,7 +630,7 @@ describe('GraphSourceView', () => {
     expect(drawerButtons()).not.toContain('modals.chunk.edit');
   });
 
-  it("an editor's graph chunk drawer keeps Edit", async () => {
+  it("an editor's graph chunk reader keeps Edit", async () => {
     await render(undefined, vi.fn(), true, true);
     await openEntityChunk();
     expect(drawerButtons()).toContain('modals.chunk.edit');
