@@ -72,6 +72,7 @@ class TestNativeUp:
         assert env["CELERY_RESULT_BACKEND"] == "redis://localhost:6379/1"
         assert env["CACHE_REDIS_URL"] == "redis://localhost:6379/2"
         assert env["INTERNAL_KEY"], "the worker needs it to hand indexes to the API"
+        assert env["ENCRYPTION_SECRET_KEY"], "a first install seals credentials with its own key"
         assert env["API_URL"] == "http://127.0.0.1:7091"
         assert "DOCSGPT_IMAGE_TAG" not in env, "nothing here runs an image"
 
@@ -139,6 +140,21 @@ class TestNativeUp:
         assert env["DOCSGPT_PORT"] == "7099"
         assert env["API_URL"] == "http://127.0.0.1:7099"
         assert services.units[_names(tmp_path)[0]].arguments[-1] == "7099"
+
+    def test_a_configured_install_gets_no_new_encryption_key(self, tmp_path):
+        """Credentials it already stored are sealed with the key it ran with, so a new one would lock them out."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        envfile.update(tmp_path / ".env", {"ENCRYPTION_SECRET_KEY": None})
+
+        assert _run(["up", "--dir", str(tmp_path), "--yes"], _native_context()) == 0
+        assert "ENCRYPTION_SECRET_KEY" not in envfile.read(tmp_path / ".env")
+
+    def test_an_existing_encryption_key_is_kept(self, tmp_path):
+        envfile.update(tmp_path / ".env", {"ENCRYPTION_SECRET_KEY": "mine"})
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        assert envfile.read(tmp_path / ".env")["ENCRYPTION_SECRET_KEY"] == "mine"
 
     def test_it_refuses_to_run_beside_a_docker_install(self, tmp_path):
         """Native services on the same port would orphan the containers from down/status/uninstall."""

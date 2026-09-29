@@ -108,8 +108,10 @@ def plan(
     """The ``.env`` changes for an ``up``: only keys that change, ``None`` for a key to remove.
 
     Settings the user did not ask to change are left alone, secrets are generated
-    once, and the database password is only set for a database that does not exist
-    yet (Postgres reads it when the volume is created).
+    once, and the database password and the credential encryption key are only set
+    for a database that does not exist yet: Postgres reads the password when the
+    volume is created, and credentials an existing database already holds are
+    sealed with the key it ran with.
     """
     secret = secret or (lambda: secrets.token_hex(32))
     wanted: dict[str, Optional[str]] = {"DOCSGPT_IMAGE_TAG": image_tag}
@@ -134,8 +136,10 @@ def plan(
     for key in ("INTERNAL_KEY", "JWT_SECRET_KEY"):
         if not existing.get(key):
             wanted[key] = secret()
-    if not existing.get("POSTGRES_PASSWORD") and fresh_database:
-        wanted["POSTGRES_PASSWORD"] = secret()
+    if fresh_database:
+        for key in ("POSTGRES_PASSWORD", "ENCRYPTION_SECRET_KEY"):
+            if not existing.get(key):
+                wanted[key] = secret()
     if "VITE_API_STREAMING" not in existing:
         wanted["VITE_API_STREAMING"] = "true"
     if port is not None:

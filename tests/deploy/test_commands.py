@@ -182,7 +182,19 @@ class TestUpFirstInstall:
 
     def test_a_local_install_does_not_warn(self, tmp_path, capsys):
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context()) == 0
-        assert "plain HTTP" not in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "plain HTTP" not in err
+        assert "ENCRYPTION_SECRET_KEY" not in err
+
+    def test_an_existing_database_with_auth_and_no_encryption_key_is_pointed_at_the_rotation(self, tmp_path, capsys):
+        """Its key is not generated (stored credentials would be lost), but connecting services is refused."""
+        envfile.update(tmp_path / ".env", {"AUTH_TYPE": "simple_jwt", "DOCSGPT_BIND": "0.0.0.0"})
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(docker)) == 0
+        assert "ENCRYPTION_SECRET_KEY" not in envfile.read(tmp_path / ".env")
+        err = capsys.readouterr().err
+        assert "ENCRYPTION_SECRET_KEY" in err
+        assert "docsgpt connectors reencrypt" in err
 
     def test_an_unhealthy_start_points_at_the_logs(self, tmp_path, capsys):
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(healthy=False)) == 1

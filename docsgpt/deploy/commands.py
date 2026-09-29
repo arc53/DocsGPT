@@ -418,6 +418,10 @@ def _native_up(args, context: Context, directory: Path) -> int:
     for key in ("INTERNAL_KEY", "JWT_SECRET_KEY"):
         if not existing.get(key):
             updates[key] = secrets.token_hex(32)
+    # Only a first install gets its own encryption key: credentials a configured one already
+    # stored are sealed with the key it ran with, and a new key would make them unreadable.
+    if not configured and not existing.get("ENCRYPTION_SECRET_KEY"):
+        updates["ENCRYPTION_SECRET_KEY"] = secrets.token_hex(32)
     if "VITE_API_STREAMING" not in existing:
         updates["VITE_API_STREAMING"] = "true"
     provider = _choose_provider(args, context, existing, ask)
@@ -527,6 +531,18 @@ def up(args, context: Optional[Context] = None) -> int:
         print(
             "DocsGPT will listen on every interface over plain HTTP: its access token travels as "
             "readable text. Use `docsgpt up --domain <name>` for HTTPS outside a trusted network.",
+            file=sys.stderr,
+        )
+    if env.get("AUTH_TYPE") and not env.get("ENCRYPTION_SECRET_KEY"):
+        # Only a fresh database gets a generated key (stack.plan); this one may hold credentials
+        # sealed with the public default, so the operator has to rotate onto a key of their own.
+        print(
+            "ENCRYPTION_SECRET_KEY is not set, so DocsGPT refuses to store connector, MCP and tool "
+            "credentials. To set it on this existing database, put the new key in ENCRYPTION_SECRET_KEY "
+            "and `default-docsgpt-encryption-key` in ENCRYPTION_SECRET_KEY_PREVIOUS, restart, run "
+            "`docker compose exec backend python -m docsgpt connectors reencrypt` in the stack directory, "
+            "then remove the previous key. Tool, MCP and custom-model keys stored under the old key have to be "
+            "entered again: https://docs.docsgpt.cloud/Deploying/Security#secrets",
             file=sys.stderr,
         )
     up_args = ["up", "-d", "--remove-orphans", *recreate]

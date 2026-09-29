@@ -33,8 +33,18 @@ class TestFirstInstall:
 
     def test_secrets_are_generated_once_each(self):
         updates = _first_install()
-        generated = {updates["INTERNAL_KEY"], updates["JWT_SECRET_KEY"], updates["POSTGRES_PASSWORD"]}
-        assert len(generated) == 3
+        generated = {
+            updates["INTERNAL_KEY"],
+            updates["JWT_SECRET_KEY"],
+            updates["ENCRYPTION_SECRET_KEY"],
+            updates["POSTGRES_PASSWORD"],
+        }
+        assert len(generated) == 4
+
+    def test_an_existing_database_gets_no_new_encryption_key(self):
+        """Its stored credentials are sealed with whatever key it ran with, so a new one would lock them out."""
+        updates = _first_install(fresh_database=False)
+        assert "ENCRYPTION_SECRET_KEY" not in updates
 
     def test_an_existing_database_keeps_its_password(self):
         """Postgres reads the password only when its volume is created."""
@@ -48,6 +58,7 @@ class TestRerun:
             "DOCSGPT_IMAGE_TAG": "0.20.0",
             "INTERNAL_KEY": "k",
             "JWT_SECRET_KEY": "j",
+            "ENCRYPTION_SECRET_KEY": "e",
             "POSTGRES_PASSWORD": "p",
             "VITE_API_STREAMING": "true",
             "LLM_PROVIDER": "anthropic",
@@ -57,6 +68,11 @@ class TestRerun:
         }
         updates = stack.plan(existing, image_tag="0.21.0", fresh_database=False, secret=_secrets())
         assert updates == {"DOCSGPT_IMAGE_TAG": "0.21.0"}
+
+    def test_an_existing_encryption_key_is_never_replaced(self):
+        existing = {"INTERNAL_KEY": "k", "JWT_SECRET_KEY": "j", "ENCRYPTION_SECRET_KEY": "e"}
+        updates = stack.plan(existing, image_tag="x", fresh_database=True, secret=_secrets())
+        assert "ENCRYPTION_SECRET_KEY" not in updates
 
     def test_a_missing_password_is_not_invented_for_an_existing_database(self):
         updates = stack.plan({"INTERNAL_KEY": "k", "JWT_SECRET_KEY": "j"}, image_tag="x", fresh_database=False)
