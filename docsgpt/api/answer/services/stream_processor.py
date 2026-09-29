@@ -1002,7 +1002,9 @@ class StreamProcessor:
             agent_id, self.initial_user_id
         )
         self.agent_id = str(agent_id) if agent_id else None
-        self.agent_config["public_link_caller"] = bool(self.agent_id and self.public_link_usage)
+        self.agent_config["public_link_caller"] = bool(
+            self.agent_id and getattr(self, "public_link_usage", False)
+        )
 
         # Determine the effective API key (explicit > agent-derived)
         effective_key = self.data.get("api_key") or self.agent_key
