@@ -242,7 +242,8 @@ def _encrypt_session_secrets(bind) -> None:
         rows = bind.execute(
             text(
                 """
-                SELECT id, user_id, token_info, session_data FROM connector_sessions
+                SELECT id, user_id, token_info, token_info IS NOT NULL AS has_token_info, session_data
+                FROM connector_sessions
                 WHERE encrypted_credentials IS NULL
                   AND (token_info IS NOT NULL OR session_data ? 'tokens' OR session_data ? 'client_info')
                 LIMIT :batch
@@ -253,11 +254,16 @@ def _encrypt_session_secrets(bind) -> None:
         if not rows:
             return
         for row in rows:
-            token_info = row.token_info if isinstance(row.token_info, dict) else None
+            token_info = _token_info_object(row.token_info)
             session_data = dict(row.session_data or {})
             secrets = {}
-            if token_info:
+            if token_info is not None:
                 secrets["token_info"] = token_info
+            elif row.has_token_info:
+                # A value the app never read as a token (a bare string, a number,
+                # JSON ``null``): kept apart from ``token_info`` so downgrade can
+                # restore it, and the row is not selected again.
+                secrets["legacy_token_info"] = row.token_info
             for key in ("tokens", "client_info"):
                 if key in session_data:
                     secrets[key] = session_data.pop(key)
@@ -286,6 +292,25 @@ def _encrypt_session_secrets(bind) -> None:
                     "id": row.id,
                 },
             )
+
+
+def _token_info_object(value):
+    """``token_info`` as an object, decoding one stored as a JSON string.
+
+    Args:
+        value: The decoded ``token_info`` column value.
+
+    Returns:
+        The object, or ``None`` when the value is not (and does not encode) one.
+    """
+    import json
+
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None
+    return value if isinstance(value, dict) else None
 
 
 def _link_api_key_tools(bind) -> None:
@@ -459,11 +484,28 @@ def _decrypt_back(bind) -> None:
                 "session_data = CAST(:session_data AS jsonb) WHERE id = :id"
             ),
             {
-                "token_info": json.dumps(secrets["token_info"]) if "token_info" in secrets else None,
+                "token_info": _restored_token_info(secrets),
                 "session_data": json.dumps(session_data),
                 "id": row.id,
             },
         )
+
+
+def _restored_token_info(secrets: dict):
+    """The ``token_info`` JSON downgrade writes back, ``None`` for SQL NULL.
+
+    Args:
+        secrets: The decrypted envelope.
+
+    Returns:
+        The JSON text of ``token_info`` or of a preserved non-object value.
+    """
+    import json
+
+    for key in ("token_info", "legacy_token_info"):
+        if key in secrets:
+            return json.dumps(secrets[key])
+    return None
 
 
 def _restore_account_index() -> None:

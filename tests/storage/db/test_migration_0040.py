@@ -298,6 +298,60 @@ class TestMigration0040Credentials:
                 ).one()._mapping)
                 assert read_secrets(row) == {"credentials": {"token": token}}
 
+    def test_non_object_token_info_is_kept_in_the_envelope(self, pg_engine):
+        from docsgpt.connectors.service import read_secrets
+        from docsgpt.security.encryption import decrypt_json
+
+        values = {
+            # An object stored as a JSON string by an older writer.
+            "gina": json.dumps(json.dumps({"access_token": "dbl-at", "refresh_token": "dbl-rt", "scopes": "a b"})),
+            "hank": json.dumps("opaque-token"),
+            "ivan": "null",
+        }
+
+        def seed(conn):
+            return {
+                user: conn.execute(
+                    text(
+                        "INSERT INTO connector_sessions (user_id, provider, session_token, status, token_info) "
+                        "VALUES (:u, 'google_drive', :t, 'authorized', CAST(:ti AS jsonb)) RETURNING id"
+                    ),
+                    {"u": user, "t": f"tok-{user}", "ti": raw},
+                ).scalar()
+                for user, raw in values.items()
+            }
+
+        url, ids = self._upgrade_with(pg_engine, seed)
+        with pg_engine.connect() as conn:
+            rows = {
+                user: dict(conn.execute(
+                    text("SELECT * FROM connector_sessions WHERE id = :i"), {"i": row_id}
+                ).one()._mapping)
+                for user, row_id in ids.items()
+            }
+            plaintext = conn.execute(
+                text("SELECT count(*) FROM connector_sessions WHERE id = ANY(:ids) AND token_info IS NOT NULL"),
+                {"ids": list(ids.values())},
+            ).scalar()
+        assert plaintext == 0
+        gina = rows["gina"]
+        assert read_secrets(gina)["token_info"]["refresh_token"] == "dbl-rt"
+        assert gina["has_refresh_token"] is True
+        assert gina["scopes"] == ["a", "b"]
+        assert decrypt_json(rows["hank"]["encrypted_credentials"], "hank")["legacy_token_info"] == "opaque-token"
+        assert "token_info" not in read_secrets(rows["hank"])
+
+        _run_alembic(url, "downgrade", _0037)
+        with pg_engine.connect() as conn:
+            restored = dict(conn.execute(
+                text("SELECT id, token_info::text FROM connector_sessions WHERE id = ANY(:ids)"),
+                {"ids": list(ids.values())},
+            ).fetchall())
+        assert json.loads(restored[ids["gina"]])["access_token"] == "dbl-at"
+        assert restored[ids["hank"]] == '"opaque-token"'
+        assert restored[ids["ivan"]] == "null"
+        _run_alembic(url, "upgrade", "head")
+
     def test_oauth_mcp_tools_keep_member_credentials(self, pg_engine):
         _, ids = self._upgrade_with(pg_engine, _seed_secrets)
         with pg_engine.connect() as conn:
