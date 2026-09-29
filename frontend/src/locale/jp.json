@@ -1193,7 +1193,8 @@
         "addTools": "ツールを追加",
         "noTools": "この接続のツールはまだありません。",
         "addToolsFailed": "ツールを追加できませんでした。もう一度お試しください。",
-        "rename": "名前を変更"
+        "rename": "名前を変更",
+        "accountPicker": "アカウントを選択"
       },
       "permission": {
         "always": "許可",

@@ -1193,7 +1193,8 @@
         "addTools": "添加工具",
         "noTools": "此连接还没有工具。",
         "addToolsFailed": "无法添加工具。请重试。",
-        "rename": "重命名"
+        "rename": "重命名",
+        "accountPicker": "选择账号"
       },
       "permission": {
         "always": "允许",

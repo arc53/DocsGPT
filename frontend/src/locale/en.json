@@ -1208,7 +1208,8 @@
         "addTools": "Add tools",
         "noTools": "No tools from this connection yet.",
         "addToolsFailed": "Could not add the tools. Try again.",
-        "rename": "Rename"
+        "rename": "Rename",
+        "accountPicker": "Choose an account"
       },
       "permission": {
         "always": "Allow",

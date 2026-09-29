@@ -26,6 +26,13 @@ import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import {
@@ -44,7 +51,11 @@ import { ACCOUNT_NAME_MAX } from './accounts';
 import { CapabilityBadges } from './ConnectorCard';
 import ConnectorIcon from './ConnectorIcon';
 import ConnectorSetupNotice from './ConnectorSetupNotice';
-import { loadConnectors, selectConnections } from './connectorsSlice';
+import {
+  connectionNeedsSignIn,
+  loadConnectors,
+  selectConnections,
+} from './connectorsSlice';
 import { connectorDescription, connectorName, isKeyHint } from './i18n';
 import ToolPermissions from './ToolPermissions';
 import type {
@@ -354,6 +365,58 @@ function WritesSwitch({
   );
 }
 
+/**
+ * Which of several accounts of a service the panel shows. The rest of the
+ * panel is that one account: its knowledge and its tools.
+ */
+function AccountPicker({
+  accounts,
+  value,
+  onChange,
+}: {
+  accounts: ConnectionDetail[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const accountTitle = useAccountTitle();
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        className="w-full"
+        aria-label={t('settings.connectors.detail.accountPicker')}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {accounts.map((account) => (
+          <SelectItem key={account.id} value={account.id}>
+            {account.account_name || accountTitle(account)}
+            {connectionNeedsSignIn(account) &&
+              ` · ${t('settings.connectors.health.signInAgain')}`}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * The account to show from ``accounts``: the one picked, else one that needs
+ * signing in again (so a problem is not hidden behind another account), else
+ * the first.
+ */
+function shownAccount(
+  accounts: ConnectionDetail[],
+  picked: string | undefined,
+): ConnectionDetail | undefined {
+  return (
+    accounts.find((account) => account.id === picked) ??
+    accounts.find(connectionNeedsSignIn) ??
+    accounts[0]
+  );
+}
+
 function AccountSection({
   connector,
   detail,
@@ -648,12 +711,15 @@ function AccountSection({
 export default function ConnectionDrawer({
   connector,
   parts = [],
+  initialConnectionId,
   onClose,
   onConnect,
 }: {
   connector: ConnectorDefinition | null;
   /** The same service offered another way, shown here (Jira & Confluence). */
   parts?: ConnectorDefinition[];
+  /** The account to show first, e.g. the one behind the tool it opened from. */
+  initialConnectionId?: string;
   onClose: () => void;
   onConnect: (connector: ConnectorDefinition, options?: LaunchOptions) => void;
 }) {
@@ -670,6 +736,16 @@ export default function ConnectionDrawer({
   );
   const [toRemove, setToRemove] = useState<ConnectionDetail | null>(null);
   const [toRename, setToRename] = useState<ConnectionDetail | null>(null);
+  // The account shown per service (the connector and each of its parts).
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setPicked({});
+  }, [connector?.key, initialConnectionId]);
+  const pickedIn = (key: string, accounts: ConnectionDetail[]) =>
+    picked[key] ??
+    (accounts.some((account) => account.id === initialConnectionId)
+      ? initialConnectionId
+      : undefined);
 
   const keys = [connector?.key, ...parts.map((part) => part.key)];
   const accountIds = connections
@@ -960,7 +1036,29 @@ export default function ConnectionDrawer({
                 />
               ) : (
                 <div className="flex flex-col gap-6">
-                  {ownDetails.map((detail) => (
+                  {ownDetails.length > 1 && (
+                    <AccountPicker
+                      accounts={ownDetails}
+                      value={
+                        shownAccount(
+                          ownDetails,
+                          pickedIn(connector.key, ownDetails),
+                        )!.id
+                      }
+                      onChange={(id) =>
+                        setPicked((state) => ({
+                          ...state,
+                          [connector.key]: id,
+                        }))
+                      }
+                    />
+                  )}
+                  {[
+                    shownAccount(
+                      ownDetails,
+                      pickedIn(connector.key, ownDetails),
+                    )!,
+                  ].map((detail) => (
                     <AccountSection
                       key={detail.id}
                       connector={connector}
@@ -1011,25 +1109,48 @@ export default function ConnectionDrawer({
                     }
                   />
                   <CapabilityBadges capabilities={part.capabilities} />
-                  {partDetails.map((detail) => (
-                    <AccountSection
-                      key={detail.id}
-                      connector={part}
-                      detail={detail}
-                      onReconnect={reconnect}
-                      onDisconnect={setToDisconnect}
-                      onRemove={setToRemove}
-                      onRename={setToRename}
-                      onSyncMore={(d) =>
-                        onConnect(part, { mode: 'sync', connectionId: d.id })
+                  {partDetails.length > 1 && (
+                    <AccountPicker
+                      accounts={partDetails}
+                      value={
+                        shownAccount(
+                          partDetails,
+                          pickedIn(part.key, partDetails),
+                        )!.id
                       }
-                      onRefreshTools={refreshTools}
-                      onToggleTool={toggleTool}
-                      onSyncNow={syncNow}
-                      onAddTools={addTools}
-                      onSwitchWrites={switchWrites}
+                      onChange={(id) =>
+                        setPicked((state) => ({ ...state, [part.key]: id }))
+                      }
                     />
-                  ))}
+                  )}
+                  {partDetails
+                    .filter(
+                      (detail) =>
+                        detail.id ===
+                        shownAccount(
+                          partDetails,
+                          pickedIn(part.key, partDetails),
+                        )?.id,
+                    )
+                    .map((detail) => (
+                      <AccountSection
+                        key={detail.id}
+                        connector={part}
+                        detail={detail}
+                        onReconnect={reconnect}
+                        onDisconnect={setToDisconnect}
+                        onRemove={setToRemove}
+                        onRename={setToRename}
+                        onSyncMore={(d) =>
+                          onConnect(part, { mode: 'sync', connectionId: d.id })
+                        }
+                        onRefreshTools={refreshTools}
+                        onToggleTool={toggleTool}
+                        onSyncNow={syncNow}
+                        onAddTools={addTools}
+                        onSwitchWrites={switchWrites}
+                      />
+                    ))}
                 </section>
               );
             })}

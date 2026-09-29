@@ -1202,7 +1202,8 @@
         "addTools": "Añadir herramientas",
         "noTools": "Todavía no hay herramientas de esta conexión.",
         "addToolsFailed": "No se pudieron añadir las herramientas. Inténtalo de nuevo.",
-        "rename": "Cambiar nombre"
+        "rename": "Cambiar nombre",
+        "accountPicker": "Elegir una cuenta"
       },
       "permission": {
         "always": "Permitir",

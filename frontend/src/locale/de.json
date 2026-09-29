@@ -1202,7 +1202,8 @@
         "addTools": "Werkzeuge hinzufügen",
         "noTools": "Noch keine Werkzeuge aus dieser Verbindung.",
         "addToolsFailed": "Die Werkzeuge konnten nicht hinzugefügt werden. Versuche es erneut.",
-        "rename": "Umbenennen"
+        "rename": "Umbenennen",
+        "accountPicker": "Konto auswählen"
       },
       "permission": {
         "always": "Erlauben",

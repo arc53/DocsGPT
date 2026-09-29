@@ -82,7 +82,7 @@ describe('ConnectionDrawer', () => {
   let container: HTMLDivElement;
   let root: Root;
   let store: ReturnType<typeof makeStore>;
-  const makeStore = () =>
+  const makeStore = (extra: Record<string, unknown>[] = []) =>
     configureStore({
       reducer: {
         connectors: connectorsReducer,
@@ -103,6 +103,7 @@ describe('ConnectionDrawer', () => {
               status: 'connected',
             },
             { id: 'conn-gh', connector_key: 'github', status: 'connected' },
+            ...extra,
           ],
         },
         preference: { token: null },
@@ -125,13 +126,20 @@ describe('ConnectionDrawer', () => {
     container.remove();
   });
 
-  const render = async (connector: ConnectorDefinition = DRIVE) => {
-    store = makeStore();
+  const render = async (
+    connector: ConnectorDefinition = DRIVE,
+    options: {
+      extra?: Record<string, unknown>[];
+      initialConnectionId?: string;
+    } = {},
+  ) => {
+    store = makeStore(options.extra);
     await act(async () => {
       root.render(
         <Provider store={store}>
           <ConnectionDrawer
             connector={connector}
+            initialConnectionId={options.initialConnectionId}
             onClose={vi.fn()}
             onConnect={vi.fn()}
           />
@@ -144,6 +152,54 @@ describe('ConnectionDrawer', () => {
     Array.from(
       document.body.querySelectorAll<HTMLButtonElement>('button'),
     ).find((b) => b.textContent === text)!;
+
+  it('shows one account at a time, switched from a dropdown', async () => {
+    connectors.getConnection.mockImplementation(async (id: string) => ({
+      success: true,
+      connection:
+        id === 'conn-2'
+          ? { ...DETAIL, id: 'conn-2', account_name: 'Max' }
+          : { ...DETAIL, account_name: 'Lena' },
+    }));
+    await render(DRIVE, {
+      extra: [
+        { id: 'conn-2', connector_key: 'google_drive', status: 'connected' },
+      ],
+      initialConnectionId: 'conn-2',
+    });
+    const text = () => document.body.textContent ?? '';
+    // The account the panel was opened for, and only that one.
+    expect(text()).toContain('Max');
+    expect(text()).not.toContain('Lena');
+
+    const trigger = document.body.querySelector<HTMLElement>(
+      '[aria-label="settings.connectors.detail.accountPicker"]',
+    )!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          pointerType: 'mouse',
+        }),
+      );
+    });
+    const other = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    ).find((o) => o.textContent?.includes('Lena'))!;
+    await act(async () => other.click());
+    expect(text()).toContain('Lena');
+    expect(text()).not.toContain('Max');
+  });
+
+  it('has no account dropdown with a single account', async () => {
+    await render();
+    expect(
+      document.body.querySelector(
+        '[aria-label="settings.connectors.detail.accountPicker"]',
+      ),
+    ).toBeNull();
+  });
 
   it('turns a tool on and off from its connection page', async () => {
     users.updateToolStatus.mockResolvedValue({ ok: true });

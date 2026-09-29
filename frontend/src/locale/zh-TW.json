@@ -1193,7 +1193,8 @@
         "addTools": "新增工具",
         "noTools": "此連線還沒有工具。",
         "addToolsFailed": "無法新增工具。請再試一次。",
-        "rename": "重新命名"
+        "rename": "重新命名",
+        "accountPicker": "選擇帳號"
       },
       "permission": {
         "always": "允許",

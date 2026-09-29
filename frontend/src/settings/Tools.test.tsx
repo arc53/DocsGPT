@@ -106,8 +106,16 @@ vi.mock('../api/services/connectorsService', () => ({
 // The connector panel itself is tested on its own; here it only has to open
 // for the right service.
 vi.mock('../connectors/ConnectionDrawer', () => ({
-  default: ({ connector }: { connector: { key: string } | null }) =>
-    connector ? <div data-testid="drawer">{connector.key}</div> : null,
+  default: ({
+    connector,
+    initialConnectionId,
+  }: {
+    connector: { key: string } | null;
+    initialConnectionId?: string;
+  }) =>
+    connector ? (
+      <div data-testid="drawer">{`${connector.key}:${initialConnectionId}`}</div>
+    ) : null,
 }));
 vi.mock('../connectors/useConnectorLauncher', () => ({
   default: () => ({ launch: vi.fn(), modals: null }),
@@ -194,7 +202,7 @@ describe('Tools page', () => {
     );
     expect(
       document.body.querySelector('[data-testid="drawer"]')?.textContent,
-    ).toBe('telegram');
+    ).toBe('telegram:conn-1');
     // Stays on the Tools page.
     expect(document.body.querySelector('[data-testid="where"]')).toBeNull();
   });

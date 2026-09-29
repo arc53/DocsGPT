@@ -76,9 +76,10 @@ export default function Tools() {
     null,
   );
   // The connection panel, opened here for a connected tool's service.
-  const [managed, setManaged] = React.useState<ConnectorDefinition | null>(
-    null,
-  );
+  const [managed, setManaged] = React.useState<{
+    connector: ConnectorDefinition;
+    connectionId: string;
+  } | null>(null);
   const [mcpStatuses, setMcpStatuses] = React.useState<{
     [toolId: string]: string;
   }>({});
@@ -262,7 +263,7 @@ export default function Tools() {
     const connection = connectionOf(tool);
     if (connection) {
       const connector = catalog.find((c) => c.key === connection.connector_key);
-      if (connector) setManaged(connector);
+      if (connector) setManaged({ connector, connectionId: connection.id });
       else
         navigate(
           `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`,
@@ -607,7 +608,8 @@ export default function Tools() {
             }}
           />
           <ConnectionDrawer
-            connector={managed}
+            connector={managed?.connector ?? null}
+            initialConnectionId={managed?.connectionId}
             onClose={() => {
               setManaged(null);
               getUserTools();
