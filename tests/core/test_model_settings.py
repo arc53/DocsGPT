@@ -31,7 +31,6 @@ class TestModelProvider:
         assert ModelProvider.GOOGLE == "google"
         assert ModelProvider.GROQ == "groq"
         assert ModelProvider.DOCSGPT == "docsgpt"
-        assert ModelProvider.HUGGINGFACE == "huggingface"
         assert ModelProvider.NOVITA == "novita"
         assert ModelProvider.OPENROUTER == "openrouter"
 

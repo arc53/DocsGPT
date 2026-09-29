@@ -23,7 +23,6 @@ class LLMSettings(SettingsGroup):
     ANTHROPIC_API_KEY: Optional[str] = Field(default=None, description="Anthropic API key.")
     GOOGLE_API_KEY: Optional[str] = Field(default=None, description="Google AI API key.")
     GROQ_API_KEY: Optional[str] = Field(default=None, description="Groq API key.")
-    HUGGINGFACE_API_KEY: Optional[str] = Field(default=None, description="Hugging Face API key.")
     OPEN_ROUTER_API_KEY: Optional[str] = Field(default=None, description="OpenRouter API key.")
     NOVITA_API_KEY: Optional[str] = Field(default=None, description="Novita API key.")
 

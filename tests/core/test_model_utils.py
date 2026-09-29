@@ -63,7 +63,6 @@ class TestGetApiKeyForProvider:
             mock_settings.ANTHROPIC_API_KEY = None
             mock_settings.GOOGLE_API_KEY = None
             mock_settings.GROQ_API_KEY = None
-            mock_settings.HUGGINGFACE_API_KEY = None
 
             from docsgpt.core.model_utils import get_api_key_for_provider
 
@@ -118,16 +117,6 @@ class TestGetApiKeyForProvider:
             from docsgpt.core.model_utils import get_api_key_for_provider
 
             assert get_api_key_for_provider("novita") == "sk-novita"
-
-    @pytest.mark.unit
-    def test_huggingface_key(self):
-        with patch("docsgpt.core.settings.settings") as mock_settings:
-            mock_settings.HUGGINGFACE_API_KEY = "hf-key"
-            mock_settings.API_KEY = "sk-fallback"
-
-            from docsgpt.core.model_utils import get_api_key_for_provider
-
-            assert get_api_key_for_provider("huggingface") == "hf-key"
 
     @pytest.mark.unit
     def test_docsgpt_returns_fallback(self):

@@ -174,6 +174,15 @@ class TestDiagnostics:
         assert problem.hosted_fallback
         assert "not a known provider" in problem.message and "llama.cpp server" in problem.message
 
+    def test_huggingface_is_not_a_provider(self, monkeypatch):
+        """It had no LLM class, so its catalog model became a default that failed every answer."""
+        from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+        assert "huggingface" not in PROVIDERS_BY_NAME
+        assert "huggingface" not in {c.provider for c in load_model_yamls([BUILTIN_MODELS_DIR])}
+        (problem,) = _problems(_settings(monkeypatch, LLM_PROVIDER="huggingface", API_KEY="hf"))
+        assert problem.hosted_fallback and "not a known provider" in problem.message
+
     def test_openai_compatible_without_a_model(self, monkeypatch):
         problems = _problems(
             _settings(monkeypatch, LLM_PROVIDER="openai_compatible", API_KEY="x", LLM_NAME="deepseek-chat")

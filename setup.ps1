@@ -265,11 +265,10 @@ function Prompt-CloudAPIProviderOptions {
     Write-ColorText "2) Google (Vertex AI, Gemini)" -ForegroundColor "Yellow"
     Write-ColorText "3) Anthropic (Claude)" -ForegroundColor "Yellow"
     Write-ColorText "4) Groq" -ForegroundColor "Yellow"
-    Write-ColorText "5) HuggingFace Inference API" -ForegroundColor "Yellow"
-    Write-ColorText "6) Novita" -ForegroundColor "Yellow"
+    Write-ColorText "5) Novita" -ForegroundColor "Yellow"
     Write-ColorText "b) Back to Main Menu" -ForegroundColor "Yellow"
     Write-Host ""
-    $script:provider_choice = Read-Host "Choose option (1-6, or b)"
+    $script:provider_choice = Read-Host "Choose option (1-5, or b)"
 }
 
 # Function to prompt for Ollama CPU/GPU options
@@ -1006,14 +1005,7 @@ function Connect-CloudAPIProvider {
                 Get-APIKey
                 break
             }
-            "5" {  # HuggingFace Inference API
-                $script:provider_name = "HuggingFace Inference API"
-                $script:llm_name = "huggingface"
-                $script:model_name = "meta-llama/Llama-3.1-8B-Instruct"
-                Get-APIKey
-                break
-            }
-            "6" {  # Novita
+            "5" {  # Novita
                 $script:provider_name = "Novita"
                 $script:llm_provider = "novita"
                 $script:model_name = "moonshotai/kimi-k2.5"
@@ -1024,7 +1016,7 @@ function Connect-CloudAPIProvider {
             "B" { Clear-Host; return }
             default {
                 Write-Host ""
-                Write-ColorText "Invalid choice. Please choose 1-6, or b." -ForegroundColor "Red"
+                Write-ColorText "Invalid choice. Please choose 1-5, or b." -ForegroundColor "Red"
                 Start-Sleep -Seconds 1
             }
         }

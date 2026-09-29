@@ -15,7 +15,6 @@ from docsgpt.llm.providers.base import Provider
 from docsgpt.llm.providers.docsgpt import DocsGPTProvider
 from docsgpt.llm.providers.google import GoogleProvider
 from docsgpt.llm.providers.groq import GroqProvider
-from docsgpt.llm.providers.huggingface import HuggingFaceProvider
 from docsgpt.llm.providers.novita import NovitaProvider
 from docsgpt.llm.providers.openai import OpenAIProvider
 from docsgpt.llm.providers.openai_compatible import OpenAICompatibleProvider
@@ -35,7 +34,6 @@ ALL_PROVIDERS: List[Provider] = [
     GroqProvider(),
     OpenRouterProvider(),
     NovitaProvider(),
-    HuggingFaceProvider(),
 ]
 
 PROVIDERS_BY_NAME: Dict[str, Provider] = {p.name: p for p in ALL_PROVIDERS}
