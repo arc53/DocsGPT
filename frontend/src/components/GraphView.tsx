@@ -79,6 +79,8 @@ interface GraphViewProps {
   active?: boolean;
   /** Show a chunk's file on the Files tab (the chunk drawer's "Open in Files"). */
   onOpenInFiles?: (path: string) => void;
+  /** Whether the chunk drawer offers Edit (`can(source, 'edit')`). */
+  canEdit?: boolean;
 }
 
 type PositionedNode = NodeObject<GraphNode> & { x?: number; y?: number };
@@ -110,6 +112,7 @@ const GraphView: React.FC<GraphViewProps> = ({
   onSelect,
   active = true,
   onOpenInFiles,
+  canEdit = true,
 }) => {
   const { t } = useTranslation();
   const { isDesktop } = useMediaQuery();
@@ -590,6 +593,7 @@ const GraphView: React.FC<GraphViewProps> = ({
       overview={data}
       onOpenInFiles={onOpenInFiles}
       onChunkSaved={nodeDetail.reload}
+      canEdit={canEdit}
     />
   ) : null;
 

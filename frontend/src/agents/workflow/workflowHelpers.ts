@@ -2,6 +2,7 @@ import { type TFunction } from 'i18next';
 
 import { ConditionCase } from '../types/workflow';
 import { FilePassing } from './documentConfig';
+import type { AccessFields } from '../../utils/accessUtils';
 
 // Names and handles are the user's own text: React escapes on render, so
 // i18next must not escape them first.
@@ -32,6 +33,10 @@ export interface UserTool {
   // Workflow-only builtins (e.g. read_document) are kept here; the classic
   // agent picker filters them out.
   workflow_only?: boolean;
+  /** Team sharing: shared tools the caller can't use in their own agents are hidden. */
+  access?: AccessFields['access'];
+  allowed_actions?: string[];
+  ownership?: AccessFields['ownership'];
 }
 
 /**

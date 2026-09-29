@@ -10,6 +10,12 @@
   "loading": "Wird geladen...",
   "retry": "Erneut versuchen",
   "cancel": "Abbrechen",
+  "common": {
+    "close": "Schließen",
+    "viewOnlyNotice": "Du kannst dies ansehen, aber deine Rolle kann es nicht ändern.",
+    "credentialsLockedNotice": "Nur der Eigentümer kann die Zugangsdaten dieses Tools ändern.",
+    "savedSecretHint": "Gespeichert. Leer lassen, um es zu behalten."
+  },
   "help": "Hilfe",
   "emailUs": "E-Mail senden",
   "documentation": "Dokumentation",
@@ -92,7 +98,10 @@
         "edit": "Prompt bearbeiten",
         "view": "Prompt anzeigen",
         "duplicate": "Prompt duplizieren",
-        "delete": "Prompt löschen"
+        "delete": "Prompt löschen",
+        "deleteFailed": "Dieser Prompt konnte nicht gelöscht werden.",
+        "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
+        "editConflict": "Jemand anderes hat diesen Prompt geändert. Öffne ihn erneut, um dessen Version zu sehen."
       }
     },
     "sources": {
@@ -393,7 +402,6 @@
         "subtitle": "Konfiguriere, wie \"{{name}}\" in Chunks aufgeteilt und abgerufen wird.",
         "subtitleGeneric": "Konfiguriere, wie diese Quelle in Chunks aufgeteilt und abgerufen wird.",
         "save": "Speichern",
-        "readOnly": "Du hast nur Lesezugriff auf diese geteilte Quelle und kannst ihre Konfiguration nicht ändern.",
         "chunkingChangeHint": "Du hast eine Chunking-Einstellung geändert. Nach dem Speichern muss diese Quelle erneut indexiert werden, damit die Änderung wirkt.",
         "prescreenInvalidHint": "Prüfe die Vorfilter-Werte: Die abzurufenden Kandidaten müssen mindestens der Chunk-Anzahl entsprechen, und die zu behaltenden Chunks dürfen die Kandidatenzahl nicht überschreiten.",
         "reingestRequired": "Deine Änderungen wurden gespeichert. Die geänderten Chunking-Einstellungen wirken erst nach einem erneuten Indexieren. Jetzt erneut indexieren?",
@@ -437,7 +445,15 @@
       "editChunk": "Chunk bearbeiten",
       "editChunkDescription": "{{file}} · Chunk {{n}} · {{tokens}} Tokens",
       "previousChunk": "Vorheriger Chunk",
-      "nextChunk": "Nächster Chunk"
+      "nextChunk": "Nächster Chunk",
+      "viewConfig": "Quelleneinstellungen ansehen",
+      "errors": {
+        "forbidden": "Dazu hast du für diese Quelle keine Berechtigung.",
+        "delete": "Die Quelle konnte nicht gelöscht werden.",
+        "sync": "Die Quelle konnte nicht synchronisiert werden.",
+        "syncFrequency": "Die Synchronisierungshäufigkeit konnte nicht geändert werden.",
+        "reingest": "Die Neuaufnahme konnte nicht gestartet werden."
+      }
     },
     "analytics": {
       "label": "Analytik",
@@ -660,9 +676,10 @@
       "createTeamError": "Team konnte nicht erstellt werden.",
       "noTeams": "Noch keine Teams.",
       "noDescription": "Keine Beschreibung",
-      "memberCountOne": "{{count}} Mitglied",
-      "memberCountOther": "{{count}} Mitglieder",
-      "sharedCount": "{{count}} geteilt",
+      "memberCount_one": "{{formatted}} Mitglied",
+      "memberCount_other": "{{formatted}} Mitglieder",
+      "sharedCount_one": "{{formatted}} geteilt",
+      "sharedCount_other": "{{formatted}} geteilt",
       "loadError": "Teams konnten nicht geladen werden.",
       "roleAdmin": "Admin",
       "roleMember": "Mitglied",
@@ -729,7 +746,186 @@
         "teamLabel": "Team",
         "viaTeam": "über {{team}}",
         "removeAccess": "Zugriff entfernen",
-        "access": "Zugriff"
+        "access": "Zugriff",
+        "showAll": "Alle {{formatted}} anzeigen",
+        "andMore_one": "und {{formatted}} weitere",
+        "andMore_other": "und {{formatted}} weitere",
+        "back": "Zurück",
+        "allSummary": "{{name}} · Teams: {{teams}} · Personen: {{people}}",
+        "searchAccess": "Personen und Teams suchen…",
+        "filterLabel": "Personen mit Zugriff filtern",
+        "filter": {
+          "all": "Alle",
+          "teams": "Teams",
+          "people": "Personen",
+          "editors": "Bearbeiter"
+        }
+      },
+      "accessChangeError": "Zugriff konnte nicht geändert werden.",
+      "accessSettings": {
+        "title": "Zugriffseinstellungen",
+        "saveError": "Die Zugriffseinstellung konnte nicht gespeichert werden.",
+        "agent": {
+          "editors_can_share": {
+            "label": "Bearbeiter dürfen teilen",
+            "description": "Personen und Teams hinzufügen und ihren Zugriff ändern."
+          },
+          "editors_can_delete": {
+            "label": "Bearbeiter dürfen löschen",
+            "description": "Den Agenten für alle löschen."
+          },
+          "editors_can_manage_access_details": {
+            "label": "Bearbeiter dürfen Zugangsdaten verwalten",
+            "description": "API-Schlüssel, Webhook und öffentlicher Link."
+          },
+          "viewers_can_see_logs": {
+            "label": "Betrachter sehen Protokolle",
+            "description": "Unterhaltungen und Analysen dieses Agenten."
+          }
+        },
+        "source": {
+          "editors_can_share": {
+            "label": "Bearbeiter dürfen teilen",
+            "description": "Personen und Teams hinzufügen und ihren Zugriff ändern."
+          },
+          "editors_can_delete": {
+            "label": "Bearbeiter dürfen löschen",
+            "description": "Die Quelle für alle löschen."
+          },
+          "viewers_can_see_config": {
+            "label": "Betrachter sehen Einstellungen",
+            "description": "Chunking-, Retriever- und Sync-Einstellungen, nur lesend."
+          }
+        },
+        "tool": {
+          "editors_can_change_credentials": {
+            "label": "Bearbeiter dürfen Anmeldedaten und Verbindung ändern",
+            "description": "Sie ersetzen gespeicherte Geheimnisse; niemand kann sie auslesen."
+          },
+          "editors_can_share": {
+            "label": "Bearbeiter dürfen teilen",
+            "description": "Personen und Teams hinzufügen und ihren Zugriff ändern."
+          },
+          "viewers_can_use_in_agents": {
+            "label": "Betrachter dürfen es in eigenen Agenten nutzen",
+            "description": "Es läuft mit deinen Anmeldedaten."
+          }
+        },
+        "prompt": {
+          "editors_can_share": {
+            "label": "Bearbeiter dürfen teilen",
+            "description": "Personen und Teams hinzufügen und ihren Zugriff ändern."
+          },
+          "viewers_can_duplicate": {
+            "label": "Betrachter dürfen duplizieren",
+            "description": "Eine eigene Kopie zum Bearbeiten anlegen."
+          }
+        }
+      },
+      "editorHint": {
+        "agent": "Bearbeiter können ihn ändern, einschließlich Protokollen, Zeitplänen und Zugangsdaten.",
+        "agentNoAccessDetails": "Bearbeiter können ihn ändern, einschließlich Protokollen und Zeitplänen, aber nicht die Zugangsdaten.",
+        "source": "Bearbeiter können Chunks und Dateien bearbeiten, synchronisieren und Einstellungen ändern.",
+        "tool": "Bearbeiter können Aktionen ändern und Anmeldedaten ersetzen, aber keine Geheimnisse lesen.",
+        "toolNoCredentials": "Bearbeiter können Aktionen ändern, aber keine Anmeldedaten.",
+        "prompt": "Bearbeiter können den Text ändern.",
+        "noShareNoDelete": "Sie können es weder teilen noch löschen.",
+        "shareOnly": "Sie können es auch teilen, aber nicht löschen.",
+        "deleteOnly": "Sie können es auch löschen, aber nicht teilen.",
+        "shareAndDelete": "Sie können es auch teilen und löschen.",
+        "noShare": "Sie können es weder teilen noch löschen.",
+        "share": "Sie können es auch teilen, aber nicht löschen."
+      },
+      "capabilities": {
+        "agent": {
+          "viewers": "Betrachter: damit chatten und ihn anheften",
+          "editors": "Bearbeiter: bearbeiten, veröffentlichen, Protokolle sehen und Zeitpläne verwalten"
+        },
+        "source": {
+          "viewers": "Betrachter: durchsuchen und in eigenen Agenten nutzen",
+          "editors": "Bearbeiter: Chunks und Dateien bearbeiten, synchronisieren, Einstellungen ändern"
+        },
+        "tool": {
+          "viewers": "Betrachter: in den Agenten des Eigentümers nutzen",
+          "editors": "Bearbeiter: Aktionen und Freigaben ändern"
+        },
+        "prompt": {
+          "viewers": "Betrachter: lesen und in eigenen Agenten nutzen",
+          "editors": "Bearbeiter: den Text ändern"
+        },
+        "switch": {
+          "editors_can_share": {
+            "on": "Bearbeiter können es teilen",
+            "off": "Bearbeiter können es nicht teilen"
+          },
+          "editors_can_delete": {
+            "on": "Bearbeiter können es löschen",
+            "off": "Bearbeiter können es nicht löschen"
+          },
+          "editors_can_manage_access_details": {
+            "on": "Bearbeiter verwalten API-Schlüssel, Webhook und öffentlichen Link",
+            "off": "Bearbeiter verwalten weder API-Schlüssel noch Webhook oder öffentlichen Link"
+          },
+          "viewers_can_see_logs": {
+            "on": "Betrachter sehen Protokolle",
+            "off": "Betrachter sehen keine Protokolle"
+          },
+          "viewers_can_see_config": {
+            "on": "Betrachter sehen die Einstellungen",
+            "off": "Betrachter sehen die Einstellungen nicht"
+          },
+          "editors_can_change_credentials": {
+            "on": "Bearbeiter können Anmeldedaten ersetzen",
+            "off": "Bearbeiter können Anmeldedaten nicht ändern"
+          },
+          "viewers_can_use_in_agents": {
+            "on": "Betrachter können es in eigenen Agenten nutzen",
+            "off": "Betrachter können es nicht in eigenen Agenten nutzen"
+          },
+          "viewers_can_duplicate": {
+            "on": "Betrachter können es duplizieren",
+            "off": "Betrachter können es nicht duplizieren"
+          }
+        }
+      },
+      "sharedList": {
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} Bearbeiter",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} Bearbeiter",
+        "meta": "{{type}} · {{owner}}",
+        "filterLabel": "Geteilte Ressourcen filtern",
+        "filter": {
+          "all": "Alle",
+          "agent": "Agenten",
+          "source": "Quellen",
+          "tool": "Werkzeuge",
+          "prompt": "Prompts"
+        },
+        "search": "Geteilte suchen…",
+        "noMatches": "Keine Treffer."
+      },
+      "drawer": {
+        "close": "Schließen",
+        "subtitle": "{{type}} · Eigentümer: {{owner}}",
+        "open": "{{type}} öffnen",
+        "manageSharing": "Freigabe verwalten",
+        "owner": "Eigentümer",
+        "shared": "Geteilt",
+        "sharedOnBy": "{{date}} von {{name}}",
+        "yourAccess": "Dein Zugriff",
+        "yourAccessLevel": {
+          "owner": "Eigentümer",
+          "editor": "Bearbeiter",
+          "viewer": "Betrachter",
+          "none": "Kein Zugriff"
+        },
+        "accessIn": "Zugriff in {{team}}",
+        "everyone": "Alle in {{team}}",
+        "teamGrant": "Ganzes Team",
+        "memberGrant": "Nur diese Person",
+        "removeGrant": "Zugriff entfernen",
+        "otherTeamsHint": "Auch mit anderen Teams geteilt? Diese Freigaben verwaltest du unter „Freigabe verwalten“.",
+        "whatPeopleCanDo": "Was Personen hier dürfen",
+        "capabilitiesHint": "Aus den Zugriffseinstellungen des Eigentümers. Hier nur lesend."
       }
     },
     "tools": {
@@ -803,7 +999,6 @@
         "addServer": "MCP-Server hinzufügen",
         "editServer": "Server bearbeiten",
         "reconnectServer": "Server erneut verbinden",
-        "reenterCredentials": "Gib deine Zugangsdaten erneut ein, um die Verbindung zu testen und zu aktualisieren.",
         "serverName": "Servername",
         "serverUrl": "Server-URL",
         "headerName": "Header-Name",
@@ -848,7 +1043,18 @@
           "oauthFailed": "OAuth-Prozess fehlgeschlagen oder abgebrochen",
           "oauthTimeout": "OAuth-Prozess abgelaufen, bitte erneut versuchen",
           "timeoutRange": "Timeout muss zwischen 1 und 300 Sekunden liegen"
-        }
+        },
+        "sharedByEditor": "Geteilt von {{owner}} · du bist Bearbeiter",
+        "aTeammate": "einem Teammitglied",
+        "sharedCredentialsNotice": "Gespeicherte Zugangsdaten bleiben verborgen. Was du eingibst, ersetzt sie für alle, die dieses Tool nutzen.",
+        "serverChangedNotice": "Der Server hat sich geändert, daher werden die gespeicherten Zugangsdaten ({{credential}}) gelöscht. Gib sie für den neuen Server ein, um zu speichern.",
+        "credentialNames": {
+          "apiKey": "API-Schlüssel",
+          "bearer": "Token",
+          "password": "Passwort"
+        },
+        "savedKeyHint": "Ein Schlüssel ist gespeichert. Leer lassen, um ihn zu behalten (nur solange der Server unverändert ist).",
+        "sharedOAuthOwnerOnly": "Nur der Eigentümer kann die Verbindung dieses Servers ändern oder die Anmeldung neu verbinden. Du kannst ihn weiterhin umbenennen und seine Aktionen bearbeiten."
       },
       "configErrors": {
         "required": "{{field}} ist erforderlich",
@@ -856,7 +1062,14 @@
         "maxTimeout": "Das maximale Timeout beträgt 300 Sekunden"
       },
       "headerValuePlaceholder": "z. B. application/json",
-      "toolIconTitle": "{{name}}-Symbol"
+      "toolIconTitle": "{{name}}-Symbol",
+      "view": "Ansehen",
+      "inMyChats": "In meinen Chats",
+      "useInMyChatsAria": "{{toolName}} in meinen Chats verwenden",
+      "statusUpdateFailed": "Konnte nicht ändern, ob dieses Tool in deinen Chats ist.",
+      "deleteFailed": "Dieses Tool konnte nicht gelöscht werden.",
+      "sharedBy": "Geteilt von {{team}}",
+      "savedSecretPlaceholder": "Gespeichert · neuen Wert eingeben zum Ersetzen"
     },
     "devices": {
       "label": "Geräte",
@@ -1353,7 +1566,9 @@
       "test": "Testen",
       "learnMore": "Mehr erfahren",
       "resetKey": "Schlüssel zurücksetzen",
-      "resetKeyConfirm": "Möchten Sie den API-Schlüssel wirklich zurücksetzen? Der aktuelle Schlüssel funktioniert sofort nicht mehr und diese Aktion kann nicht rückgängig gemacht werden."
+      "resetKeyConfirm": "Möchten Sie den API-Schlüssel wirklich zurücksetzen? Der aktuelle Schlüssel funktioniert sofort nicht mehr und diese Aktion kann nicht rückgängig gemacht werden.",
+      "actionFailed": "Das hat nicht funktioniert. Bitte versuche es erneut.",
+      "apiKeyAfterPublish": "Veröffentliche den Agenten, um seinen API-Schlüssel zu erstellen."
     },
     "importSpec": {
       "title": "API-Spezifikation importieren",
@@ -1571,6 +1786,7 @@
   "agents": {
     "title": "Agenten",
     "edit": "Bearbeiten",
+    "view": "Ansehen",
     "card": {
       "pin": "Agent anheften",
       "unpin": "Agent lösen",
@@ -1608,10 +1824,6 @@
       "byMe": "Von mir",
       "team": "Team",
       "shared": "Mit mir geteilt"
-    },
-    "teamBadge": {
-      "editor": "Bearbeiter",
-      "viewer": "Betrachter"
     },
     "sections": {
       "template": {
@@ -1774,7 +1986,6 @@
         "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
         "remove": "Remove",
         "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
         "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
         "floorControl": "{{stage}}: {{action}} — required by the instance policy",
         "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
@@ -1799,6 +2010,13 @@
       },
       "status": {
         "published": "Veröffentlicht"
+      },
+      "sponsors": {
+        "attachNote": "Tools, Quellen und Prompts, die du aus deiner eigenen Bibliothek hinzufügst, laufen für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
+        "publicLinkNote": "Dieser Agent hat einen öffentlichen Link, daher kann jeder mit dem Link Antworten daraus erhalten.",
+        "addedBy": "Hinzugefügt von {{person}}: {{names}}",
+        "unavailable": "Nicht aktiv: {{names}}. {{person}} hat sie hinzugefügt und hat keinen Zugriff mehr. Entferne sie oder wähle welche, die der Eigentümer nutzen kann.",
+        "unknownItem": "Unbenanntes Element"
       }
     },
     "logs": {
@@ -2234,7 +2452,8 @@
       "classicDescription": "Erstelle einen Standard-KI-Agenten mit einem Modell, Tools und Wissensquellen",
       "workflowTitle": "Workflow-Agent",
       "workflowDescription": "Entwirf komplexe mehrstufige Workflows mit verschiedenen Modellen, bedingter Logik und Zustandsverwaltung"
-    }
+    },
+    "deleteFailed": "Der Agent konnte nicht gelöscht werden. Bitte versuche es erneut."
   },
   "components": {
     "fileUpload": {

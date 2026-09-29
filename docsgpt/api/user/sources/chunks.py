@@ -7,8 +7,8 @@ from flask_restx import fields, Namespace, Resource
 
 from docsgpt.api import api
 from docsgpt.api.user.base import get_vector_store
-from docsgpt.api.user.team_sharing import can_access, effective_write_owner
-from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.api.user.resource_access import AccessDenied
+from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.utils import check_required_fields, num_tokens_from_string
 from docsgpt.vectorstore.base import InvalidChunkMetadataError
@@ -18,38 +18,27 @@ sources_chunks_ns = Namespace(
 )
 
 
-def _resolve_source(doc_id: str, user: str):
-    """Resolve a source (UUID or legacy ObjectId) the caller may READ.
+def _resolve_source(doc_id: str, user: str, action: str = "use") -> dict:
+    """Resolve a source (UUID or legacy ObjectId) the caller may ``action`` on.
 
-    Read access = owner or any team grant (viewer/editor). Returns the row
-    dict (with PG UUID in ``id``) or ``None`` if missing or not visible.
+    ``use`` (browse chunks) is open to every role; ``edit`` (add / delete /
+    update chunks) needs owner or team editor. The vector partition is keyed
+    by source id, so a team editor's write needs no owner id.
+
+    Args:
+        doc_id: Source id from the request.
+        user: The caller's ``sub``.
+        action: ``use`` for reads, ``edit`` for chunk writes.
+
+    Returns:
+        dict: The source row (PG UUID in ``id``).
+
+    Raises:
+        AccessDenied: 404 when not visible, 403 when the role can't do it.
     """
     with db_readonly() as conn:
-        doc = SourcesRepository(conn).get_any(doc_id, user)
-        if doc is not None:
-            return doc
-        if not can_access(conn, "source", doc_id, user):
-            return None
-        return SourcesRepository(conn).get_by_id(doc_id)
-
-
-def _resolve_source_for_write(doc_id: str, user: str):
-    """Resolve a source the caller may WRITE chunks on.
-
-    Returns the row dict when ``user`` owns the source, or when they hold a
-    team ``editor`` grant (adding/removing/editing documents is editor-allowed
-    — the vector partition is keyed by source_id, owner-agnostic). Returns
-    ``None`` for viewer-only / no access. Source deletion stays owner-only and
-    is handled elsewhere.
-    """
-    with db_readonly() as conn:
-        doc = SourcesRepository(conn).get_any(doc_id, user)
-        if doc is not None:
-            return doc
-        owner = effective_write_owner(conn, "source", doc_id, user)
-        if not owner:
-            return None
-        return SourcesRepository(conn).get_any(doc_id, owner)
+        doc, _ra = load_source(conn, doc_id, user, action)
+    return doc
 
 
 def _remap_graph_chunk(doc: dict, old_chunk_id: str, new_chunk_id: str) -> None:
@@ -193,13 +182,11 @@ class GetChunks(Resource):
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
             doc = _resolve_source(doc_id, user)
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as e:
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-        if not doc:
-            return make_response(
-                jsonify({"error": "Document not found or access denied"}), 404
-            )
         resolved_id = str(doc["id"])
         try:
             store = get_vector_store(resolved_id)
@@ -278,12 +265,12 @@ class AddChunk(Resource):
         metadata["token_count"] = token_count
 
         try:
-            doc = _resolve_source_for_write(doc_id, user)
+            doc = _resolve_source(doc_id, user, "edit")
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as e:
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-        if not doc:
-            return make_response(jsonify({"error": "Source not accessible"}), 403)
         try:
             store = get_vector_store(str(doc["id"]))
             chunk_id = store.add_chunk(text, metadata)
@@ -311,12 +298,12 @@ class DeleteChunk(Resource):
         chunk_id = request.args.get("chunk_id")
 
         try:
-            doc = _resolve_source_for_write(doc_id, user)
+            doc = _resolve_source(doc_id, user, "edit")
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as e:
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-        if not doc:
-            return make_response(jsonify({"error": "Source not accessible"}), 403)
         try:
             store = get_vector_store(str(doc["id"]))
             deleted = store.delete_chunk(chunk_id)
@@ -378,12 +365,12 @@ class UpdateChunk(Resource):
                 metadata = {}
             metadata["token_count"] = token_count
         try:
-            doc = _resolve_source_for_write(doc_id, user)
+            doc = _resolve_source(doc_id, user, "edit")
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as e:
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
-        if not doc:
-            return make_response(jsonify({"error": "Source not accessible"}), 403)
         try:
             store = get_vector_store(str(doc["id"]))
 

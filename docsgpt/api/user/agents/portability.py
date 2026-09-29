@@ -37,6 +37,7 @@ from docsgpt.agents.default_tools import (
 )
 from docsgpt.api import api
 from docsgpt.api.pat.rules import allowed_ids
+from docsgpt.api.user.resource_access import AccessDenied, require
 from docsgpt.core.model_utils import validate_model_id
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
@@ -1756,14 +1757,23 @@ class ExportAgent(Resource):
             return make_response(jsonify({"success": False, "message": "id is required"}), 400)
         with db_session() as conn:
             repo = AgentsRepository(conn)
-            agent = repo.get_any(agent_id, user)
+            try:
+                ra = require(conn, "agent", agent_id, user, "export")
+            except AccessDenied as denied:
+                return make_response(
+                    jsonify({"success": False, "message": denied.message}), denied.status
+                )
+            agent = repo.get_by_id(ra.resource_id)
             if not agent:
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
-            agent["slug"] = ensure_agent_slug(conn, agent, user)
+            # Serialized as the owner: the agent's prompt, sources, tools and
+            # workflow are the owner's (secrets are never exported).
+            owner_id = ra.owner_id
+            agent["slug"] = ensure_agent_slug(conn, agent, owner_id)
             try:
-                export = serialize_agent(conn, agent, user)
+                export = serialize_agent(conn, agent, owner_id)
             except AgentExportError as exc:
                 return make_response(
                     jsonify({"success": False, "message": str(exc)}), 400

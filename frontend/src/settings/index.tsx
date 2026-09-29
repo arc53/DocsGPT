@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
@@ -6,6 +7,7 @@ import { useMediaQuery } from '../hooks';
 import { Doc } from '../models/misc';
 import SectionIndexPage from '../navigation/SectionIndexPage';
 import SectionShell from '../navigation/SectionShell';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { SETTINGS_SECTION } from '../navigation/sections';
 import {
   selectPaginatedDocuments,
@@ -29,6 +31,7 @@ import Tools from './Tools';
  * `/settings` shows the destination list as page content instead.
  */
 export default function Settings() {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
   const location = useLocation();
   const { isMobile } = useMediaQuery();
@@ -39,27 +42,36 @@ export default function Settings() {
   const documents = useSelector(selectSourceDocs);
   const paginatedDocuments = useSelector(selectPaginatedDocuments);
 
-  const updateDocumentsList = (documents: Doc[], index: number) => [
-    ...documents.slice(0, index),
-    ...documents.slice(index + 1),
-  ];
+  const showDeleteError = (message: string) =>
+    dispatch(showActionToast({ variant: 'destructive', message }));
 
-  const handleDeleteClick = (index: number, doc: Doc) => {
+  /**
+   * Deletes a source and drops it from both lists by id. A refused or failed
+   * delete (403 for a role without `delete`) shows a destructive toast and
+   * leaves the lists alone.
+   */
+  const handleDeleteClick = (_index: number, doc: Doc) => {
+    const withoutDoc = (list: Doc[]) => list.filter((d) => d.id !== doc.id);
     userService
       .deletePath(doc.id ?? '', token)
-      .then((response) => {
-        if (response.ok && documents) {
-          if (paginatedDocuments) {
-            dispatch(
-              setPaginatedDocuments(
-                updateDocumentsList(paginatedDocuments, index),
-              ),
-            );
-          }
-          dispatch(setSourceDocs(updateDocumentsList(documents, index)));
+      .then((response: Response) => {
+        if (!response.ok) {
+          showDeleteError(
+            response.status === 403
+              ? t('settings.sources.errors.forbidden')
+              : t('settings.sources.errors.delete'),
+          );
+          return;
         }
+        if (paginatedDocuments) {
+          dispatch(setPaginatedDocuments(withoutDoc(paginatedDocuments)));
+        }
+        if (documents) dispatch(setSourceDocs(withoutDoc(documents)));
       })
-      .catch((error) => console.error(error));
+      .catch((error) => {
+        console.error(error);
+        showDeleteError(t('settings.sources.errors.delete'));
+      });
   };
 
   if (showIndex) {

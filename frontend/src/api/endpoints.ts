@@ -44,6 +44,7 @@ const endpoints = {
     TEAM_TRANSFER_OWNER: (id: string) => `/api/teams/${id}/transfer_owner`,
     RESOURCE_SHARES: (resourceType: string, resourceId: string) =>
       `/api/resource_shares?resource_type=${resourceType}&resource_id=${resourceId}`,
+    RESOURCE_SETTINGS: '/api/resource_settings',
     ALL_TEAMS: '/api/admin/teams',
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',

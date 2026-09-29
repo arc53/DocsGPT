@@ -1,17 +1,19 @@
-import { Pencil, RefreshCw, Trash2, Users } from 'lucide-react';
+import { Eye, Pencil, RefreshCw, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
 import PageToolbar from '../components/PageToolbar';
 import SearchInput from '../components/SearchInput';
+import RoleBadge from '../components/RoleBadge';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardDescription, CardTitle } from '../components/ui/card';
+import { Label } from '../components/ui/label';
 import { Switch } from '../components/ui/switch';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
@@ -20,8 +22,15 @@ import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import MCPServerModal from '../modals/MCPServerModal';
 import { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
+import { can, isOwner, roleOf } from '../utils/accessUtils';
+import {
+  canAddToolToOwn,
+  isSharedOAuthMcp,
+  toolInChat,
+} from '../utils/toolUtils';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
@@ -29,6 +38,7 @@ import { APIToolType, UserToolType } from './types';
 export default function Tools() {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  const dispatch = useDispatch();
 
   const [searchTerm, setSearchTerm] = React.useState('');
   const [addToolModalState, setAddToolModalState] =
@@ -81,7 +91,21 @@ export default function Tools() {
         .catch((error) => console.error('Failed to revoke device:', error));
       return;
     }
-    userService.deleteTool({ id: toolToDelete.id }, token).then(afterDelete);
+    userService
+      .deleteTool({ id: toolToDelete.id }, token)
+      .then((response: Response) => {
+        if (response.ok) return afterDelete();
+        setDeleteModalState('INACTIVE');
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: t('settings.tools.deleteFailed'),
+          }),
+        );
+      })
+      .catch((error: unknown) =>
+        console.error('Failed to delete tool:', error),
+      );
   };
 
   const handleReconnect = (tool: UserToolType) => {
@@ -97,41 +121,56 @@ export default function Tools() {
       timeout: config.timeout || 30,
       oauth_scopes: oauthScopes,
       has_encrypted_credentials: !!config.has_encrypted_credentials,
+      access: roleOf(tool),
+      owner_label: tool.owner_label ?? null,
     });
     setReconnectModalState('ACTIVE');
   };
 
   const getMenuOptions = (tool: UserToolType): MenuOption[] => {
+    const canEdit = can(tool, 'edit') || can(tool, 'edit_credentials');
     const options: MenuOption[] = [
-      {
-        icon: Pencil,
-        label: t('settings.tools.edit'),
-        onClick: () => handleSettingsClick(tool),
-        variant: 'default',
-      },
-      {
-        icon: Trash2,
-        label: t('settings.tools.delete'),
-        onClick: () => handleDeleteTool(tool),
-        variant: 'destructive',
-      },
+      canEdit
+        ? {
+            icon: Pencil,
+            label: t('settings.tools.edit'),
+            onClick: () => handleSettingsClick(tool),
+            variant: 'default',
+          }
+        : {
+            icon: Eye,
+            label: t('settings.tools.view'),
+            onClick: () => handleSettingsClick(tool),
+            variant: 'default',
+          },
     ];
-    // Sharing is an owner-only action: hide it for tools shared into the
-    // user's workspace by a team.
-    if (tool.ownership !== 'team') {
-      options.splice(options.length - 1, 0, {
+    // A shared OAuth server's sign-in is the owner's to redo.
+    if (
+      tool.name === 'mcp_tool' &&
+      can(tool, 'edit_credentials') &&
+      !isSharedOAuthMcp(tool)
+    ) {
+      options.push({
+        icon: RefreshCw,
+        label: t('settings.tools.reconnect'),
+        onClick: () => handleReconnect(tool),
+        variant: 'default',
+      });
+    }
+    if (can(tool, 'share')) {
+      options.push({
         icon: Users,
         label: t('settings.tools.shareWithTeam'),
         onClick: () => setToolToShare(tool),
         variant: 'default',
       });
     }
-    if (tool.name === 'mcp_tool') {
-      options.splice(1, 0, {
-        icon: RefreshCw,
-        label: t('settings.tools.reconnect'),
-        onClick: () => handleReconnect(tool),
-        variant: 'default',
+    if (can(tool, 'delete')) {
+      options.push({
+        icon: Trash2,
+        label: t('settings.tools.delete'),
+        onClick: () => handleDeleteTool(tool),
+        variant: 'destructive',
       });
     }
     return options;
@@ -174,18 +213,37 @@ export default function Tools() {
       });
   };
 
+  const setToolInChat = (toolId: string, value: boolean) =>
+    setUserTools((prevTools) =>
+      prevTools.map((tool) =>
+        tool.id !== toolId
+          ? tool
+          : isOwner(tool)
+            ? { ...tool, status: value, in_chat: value }
+            : { ...tool, in_chat: value },
+      ),
+    );
+
+  // The switch moves at once and flips back when the server refuses it.
   const updateToolStatus = (toolId: string, newStatus: boolean) => {
+    setToolInChat(toolId, newStatus);
+    const fail = () => {
+      setToolInChat(toolId, !newStatus);
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('settings.tools.statusUpdateFailed'),
+        }),
+      );
+    };
     userService
       .updateToolStatus({ id: toolId, status: newStatus }, token)
-      .then(() => {
-        setUserTools((prevTools) =>
-          prevTools.map((tool) =>
-            tool.id === toolId ? { ...tool, status: newStatus } : tool,
-          ),
-        );
+      .then((response: Response) => {
+        if (!response.ok) fail();
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         console.error('Failed to update tool status:', error);
+        fail();
       });
   };
 
@@ -317,6 +375,7 @@ export default function Tools() {
                             <ToolIcon
                               name={tool.name}
                               title={t('settings.tools.toolIconTitle', {
+                                interpolation: { escapeValue: false },
                                 name: tool.displayName,
                               })}
                               className="size-6"
@@ -346,14 +405,7 @@ export default function Tools() {
                                         )}
                                 </Badge>
                               )}
-                            {tool.ownership === 'team' && (
-                              <Badge variant="neutral">
-                                <Users className="size-3" aria-hidden="true" />
-                                {tool.team_access === 'editor'
-                                  ? t('teamAccess.editor')
-                                  : t('teamAccess.viewer')}
-                              </Badge>
-                            )}
+                            <RoleBadge item={tool} />
                           </div>
                           <div className="mt-[9px] px-1">
                             <CardTitle
@@ -372,18 +424,29 @@ export default function Tools() {
                             </CardDescription>
                           </div>
                         </div>
-                        <div className="absolute right-4 bottom-4">
-                          <Switch
-                            checked={tool.status}
-                            onCheckedChange={(checked) =>
-                              updateToolStatus(tool.id, checked)
-                            }
-                            id={`toolToggle-${index}`}
-                            aria-label={t('settings.tools.toggleToolAria', {
-                              toolName: tool.customName || tool.displayName,
-                            })}
-                          />
-                        </div>
+                        {/* A shared tool without use_in_own can't be in the
+                            caller's chats at all, so there is no switch. */}
+                        {canAddToolToOwn(tool) && (
+                          <div className="absolute right-4 bottom-4 flex items-center gap-2">
+                            <Label
+                              htmlFor={`toolToggle-${index}`}
+                              className="text-muted-foreground text-xs font-normal"
+                            >
+                              {t('settings.tools.inMyChats')}
+                            </Label>
+                            <Switch
+                              checked={toolInChat(tool)}
+                              onCheckedChange={(checked) =>
+                                updateToolStatus(tool.id, checked)
+                              }
+                              id={`toolToggle-${index}`}
+                              aria-label={t('settings.tools.useInMyChatsAria', {
+                                interpolation: { escapeValue: false },
+                                toolName: tool.customName || tool.displayName,
+                              })}
+                            />
+                          </div>
+                        )}
                       </Card>
                     ))}
                   </div>
@@ -401,6 +464,7 @@ export default function Tools() {
           />
           <ConfirmationModal
             message={t('settings.tools.deleteWarning', {
+              interpolation: { escapeValue: false },
               toolName:
                 toolToDelete?.customName || toolToDelete?.displayName || '',
             })}

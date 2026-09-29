@@ -526,9 +526,9 @@ class TestSyncSource:
             response = SyncSource().post()
         assert response.status_code == 400
 
-    def test_returns_403_inaccessible_source(self, app, pg_conn):
-        # No ownership and no team editor grant resolves to None, which the
-        # owner-or-editor gate answers as 403 "Source not accessible".
+    def test_returns_404_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team grant: the source isn't visible → 404
+        # (403 is reserved for a visible source the role can't change).
         from docsgpt.api.user.sources.routes import SyncSource
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -539,7 +539,7 @@ class TestSyncSource:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = SyncSource().post()
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_returns_400_for_connector_type(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import SyncSource
@@ -675,9 +675,9 @@ class TestReingestSource:
             response = ReingestSource().post()
         assert response.status_code == 400
 
-    def test_returns_403_inaccessible_source(self, app, pg_conn):
-        # No ownership and no team editor grant resolves to None, which the
-        # owner-or-editor gate answers as 403 "Source not accessible".
+    def test_returns_404_inaccessible_source(self, app, pg_conn):
+        # No ownership and no team grant: the source isn't visible → 404
+        # (403 is reserved for a visible source the role can't change).
         from docsgpt.api.user.sources.routes import ReingestSource
 
         with _patch_db(pg_conn), app.test_request_context(
@@ -688,7 +688,7 @@ class TestReingestSource:
             from flask import request
             request.decoded_token = {"sub": "u"}
             response = ReingestSource().post()
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     def test_triggers_reingest_task(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import ReingestSource

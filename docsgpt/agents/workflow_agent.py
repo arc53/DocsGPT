@@ -45,6 +45,7 @@ class WorkflowAgent(BaseAgent):
     ):
         super().__init__(*args, **kwargs)
         self.workflow_id = workflow_id
+        self.workflow_row: Optional[Dict[str, Any]] = None
         self.workflow_owner = workflow_owner
         self._workflow_data = workflow
         self._engine: Optional[WorkflowEngine] = None
@@ -195,6 +196,9 @@ class WorkflowAgent(BaseAgent):
                 if workflow_row is None:
                     logger.error(f"Workflow {self.workflow_id} not found or inaccessible for user {owner_id}")
                     return None
+                # Node tools/sources the owner can't use resolve through its
+                # ``resource_sponsors`` (see WorkflowEngine).
+                self.workflow_row = workflow_row
                 pg_workflow_id = str(workflow_row["id"])
                 graph_version = workflow_row.get("current_graph_version", 1)
                 try:

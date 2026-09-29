@@ -10,6 +10,12 @@
   "loading": "読み込み中...",
   "retry": "再試行",
   "cancel": "キャンセル",
+  "common": {
+    "close": "閉じる",
+    "viewOnlyNotice": "表示はできますが、あなたのロールでは変更できません。",
+    "credentialsLockedNotice": "このツールの認証情報を変更できるのはオーナーだけです。",
+    "savedSecretHint": "保存済みです。空のままにすると保持されます。"
+  },
   "help": "ヘルプ",
   "emailUs": "メールを送る",
   "documentation": "ドキュメント",
@@ -92,7 +98,10 @@
         "edit": "プロンプトを編集",
         "view": "プロンプトを表示",
         "duplicate": "プロンプトを複製",
-        "delete": "プロンプトを削除"
+        "delete": "プロンプトを削除",
+        "deleteFailed": "このプロンプトを削除できませんでした。",
+        "saveFailed": "このプロンプトを保存できませんでした。",
+        "editConflict": "他のユーザーがこのプロンプトを変更しました。開き直して最新の内容を確認してください。"
       }
     },
     "sources": {
@@ -167,6 +176,7 @@
           }
         },
         "badge": "リビングWiki",
+        "byline_one": "{{pages}} ページ · {{tokens}} トークン",
         "byline_other": "{{pages}} ページ · {{tokens}} トークン",
         "explainer": "エージェントは作業しながらこれらのページを読み、書き換えます。",
         "explainerEditable": "エージェントは作業しながらこれらのページを読み、書き換えます。このソースを使うエージェントは誰でも編集できます。",
@@ -225,6 +235,7 @@
           "byConnections": "（接続数順）",
           "typeFilter": "種類で絞り込む",
           "otherTypes": "その他: {{types}}",
+          "otherTypesMore_one": "他{{formatted}}件",
           "otherTypesMore_other": "他{{formatted}}件",
           "untyped": "種類なし",
           "loadFailed": "グラフを読み込めませんでした。",
@@ -236,6 +247,7 @@
           "showMore": "もっと見る",
           "showLess": "表示を減らす",
           "relationships": "関係",
+          "relationshipsCapped_one": "{{total}}件の関係のうち、強い順に{{shown}}件を表示しています。",
           "relationshipsCapped_other": "{{total}}件の関係のうち、強い順に{{shown}}件を表示しています。",
           "noRelationships": "このエンティティには関係がありません。",
           "relatedTo": "関連",
@@ -244,8 +256,11 @@
           "sourceChunks": "ソースチャンク",
           "showInGraph": "グラフで表示",
           "allTypes": "すべての種類",
+          "chunkCount_one": "{{formatted}}件のチャンク",
           "chunkCount_other": "{{formatted}}件のチャンク",
+          "entityCount_one": "{{formatted}}件のエンティティ",
           "entityCount_other": "{{formatted}}件のエンティティ",
+          "relationshipCount_one": "{{formatted}}件の関係",
           "relationshipCount_other": "{{formatted}}件の関係",
           "chunk": "チャンク",
           "chunkMeta": "{{file}} · {{tokens}} トークン",
@@ -386,7 +401,6 @@
         "subtitle": "「{{name}}」のチャンク分割と検索の方法を設定します。",
         "subtitleGeneric": "このソースのチャンク分割と検索の方法を設定します。",
         "save": "保存",
-        "readOnly": "この共有ソースには閲覧のみのアクセス権があるため、設定を変更できません。",
         "chunkingChangeHint": "チャンク分割の設定を変更しました。保存後、反映にはこのソースの再インデックスが必要です。",
         "prescreenInvalidHint": "プリスクリーニングの値を確認してください。取得する候補数はチャンク数以上、保持するチャンク数は取得する候補数以下である必要があります。",
         "reingestRequired": "変更を保存しました。変更したチャンク分割の設定は再インデックス後にのみ反映されます。今すぐ再インデックスしますか？",
@@ -412,9 +426,11 @@
       "chunkTitleHint": "回答がこのチャンクを引用するときの名前です。",
       "files": "ファイル",
       "filesLoadError": "ファイルを読み込めませんでした",
+      "filesByline_one": "{{files}} ファイル · {{tokens}} トークン",
       "filesByline_other": "{{files}} ファイル · {{tokens}} トークン",
       "filterFiles": "ファイルを絞り込む",
       "searchChunks": "チャンクを検索",
+      "chunkCount_one": "{{formatted}} 件のチャンク",
       "chunkCount_other": "{{formatted}} 件のチャンク",
       "editor": {
         "write": "編集",
@@ -428,7 +444,15 @@
       "editChunk": "チャンクを編集",
       "editChunkDescription": "{{file}} · チャンク {{n}} · {{tokens}} トークン",
       "previousChunk": "前のチャンク",
-      "nextChunk": "次のチャンク"
+      "nextChunk": "次のチャンク",
+      "viewConfig": "ソース設定を表示",
+      "errors": {
+        "forbidden": "このソースでその操作を行う権限がありません。",
+        "delete": "ソースを削除できませんでした。",
+        "sync": "ソースを同期できませんでした。",
+        "syncFrequency": "同期頻度を変更できませんでした。",
+        "reingest": "再取り込みを開始できませんでした。"
+      }
     },
     "analytics": {
       "label": "分析",
@@ -651,9 +675,10 @@
       "createTeamError": "チームを作成できませんでした。",
       "noTeams": "チームはまだありません。",
       "noDescription": "説明なし",
-      "memberCountOne": "{{count}}人のメンバー",
-      "memberCountOther": "{{count}}人のメンバー",
-      "sharedCount": "{{count}}件の共有",
+      "memberCount_one": "{{formatted}}人のメンバー",
+      "memberCount_other": "{{formatted}}人のメンバー",
+      "sharedCount_one": "{{formatted}}件の共有",
+      "sharedCount_other": "{{formatted}}件の共有",
       "loadError": "チームの読み込みに失敗しました。",
       "roleAdmin": "管理者",
       "roleMember": "メンバー",
@@ -720,7 +745,186 @@
         "teamLabel": "チーム",
         "viaTeam": "{{team}}経由",
         "removeAccess": "アクセス権を削除",
-        "access": "アクセス"
+        "access": "アクセス",
+        "showAll": "すべて表示（{{formatted}}）",
+        "andMore_one": "ほか {{formatted}} 件",
+        "andMore_other": "ほか {{formatted}} 件",
+        "back": "戻る",
+        "allSummary": "{{name}} · チーム: {{teams}} · ユーザー: {{people}}",
+        "searchAccess": "ユーザーとチームを検索…",
+        "filterLabel": "アクセス権を持つユーザーを絞り込む",
+        "filter": {
+          "all": "すべて",
+          "teams": "チーム",
+          "people": "ユーザー",
+          "editors": "編集者"
+        }
+      },
+      "accessChangeError": "アクセス権を変更できませんでした。",
+      "accessSettings": {
+        "title": "アクセス設定",
+        "saveError": "アクセス設定を保存できませんでした。",
+        "agent": {
+          "editors_can_share": {
+            "label": "編集者が共有できる",
+            "description": "ユーザーやチームを追加し、アクセス権を変更します。"
+          },
+          "editors_can_delete": {
+            "label": "編集者が削除できる",
+            "description": "全員に対してエージェントを削除します。"
+          },
+          "editors_can_manage_access_details": {
+            "label": "編集者がアクセス情報を管理できる",
+            "description": "API キー、Webhook、公開リンク。"
+          },
+          "viewers_can_see_logs": {
+            "label": "閲覧者がログを見られる",
+            "description": "このエージェントの会話と分析。"
+          }
+        },
+        "source": {
+          "editors_can_share": {
+            "label": "編集者が共有できる",
+            "description": "ユーザーやチームを追加し、アクセス権を変更します。"
+          },
+          "editors_can_delete": {
+            "label": "編集者が削除できる",
+            "description": "全員に対してソースを削除します。"
+          },
+          "viewers_can_see_config": {
+            "label": "閲覧者が設定を見られる",
+            "description": "チャンク分割、リトリーバー、同期の設定（読み取り専用）。"
+          }
+        },
+        "tool": {
+          "editors_can_change_credentials": {
+            "label": "編集者が認証情報と接続を変更できる",
+            "description": "保存済みのシークレットを置き換えます。誰も読み戻せません。"
+          },
+          "editors_can_share": {
+            "label": "編集者が共有できる",
+            "description": "ユーザーやチームを追加し、アクセス権を変更します。"
+          },
+          "viewers_can_use_in_agents": {
+            "label": "閲覧者が自分のエージェントで使える",
+            "description": "あなたの認証情報で実行されます。"
+          }
+        },
+        "prompt": {
+          "editors_can_share": {
+            "label": "編集者が共有できる",
+            "description": "ユーザーやチームを追加し、アクセス権を変更します。"
+          },
+          "viewers_can_duplicate": {
+            "label": "閲覧者が複製できる",
+            "description": "編集用に自分のコピーを作成します。"
+          }
+        }
+      },
+      "editorHint": {
+        "agent": "編集者はログ、スケジュール、アクセス情報を含めて変更できます。",
+        "agentNoAccessDetails": "編集者はログとスケジュールを含めて変更できますが、アクセス情報は変更できません。",
+        "source": "編集者はチャンクとファイルの編集、同期、設定の変更ができます。",
+        "tool": "編集者はアクションの変更と認証情報の置き換えができますが、シークレットは読めません。",
+        "toolNoCredentials": "編集者はアクションを変更できますが、認証情報は変更できません。",
+        "prompt": "編集者はテキストを変更できます。",
+        "noShareNoDelete": "共有と削除はできません。",
+        "shareOnly": "共有もできますが、削除はできません。",
+        "deleteOnly": "削除もできますが、共有はできません。",
+        "shareAndDelete": "共有と削除もできます。",
+        "noShare": "共有と削除はできません。",
+        "share": "共有もできますが、削除はできません。"
+      },
+      "capabilities": {
+        "agent": {
+          "viewers": "閲覧者：チャットとピン留め",
+          "editors": "編集者：編集、公開、ログの閲覧、スケジュールの管理"
+        },
+        "source": {
+          "viewers": "閲覧者：閲覧、検索、自分のエージェントでの利用",
+          "editors": "編集者：チャンクとファイルの編集、同期、設定の変更"
+        },
+        "tool": {
+          "viewers": "閲覧者：所有者のエージェント内で利用",
+          "editors": "編集者：アクションと承認の変更"
+        },
+        "prompt": {
+          "viewers": "閲覧者：閲覧と自分のエージェントでの利用",
+          "editors": "編集者：テキストの変更"
+        },
+        "switch": {
+          "editors_can_share": {
+            "on": "編集者は共有できます",
+            "off": "編集者は共有できません"
+          },
+          "editors_can_delete": {
+            "on": "編集者は削除できます",
+            "off": "編集者は削除できません"
+          },
+          "editors_can_manage_access_details": {
+            "on": "編集者は API キー、Webhook、公開リンクを管理できます",
+            "off": "編集者は API キー、Webhook、公開リンクを管理できません"
+          },
+          "viewers_can_see_logs": {
+            "on": "閲覧者はログを見られます",
+            "off": "閲覧者はログを見られません"
+          },
+          "viewers_can_see_config": {
+            "on": "閲覧者は設定を見られます",
+            "off": "閲覧者は設定を見られません"
+          },
+          "editors_can_change_credentials": {
+            "on": "編集者は認証情報を置き換えられます",
+            "off": "編集者は認証情報を変更できません"
+          },
+          "viewers_can_use_in_agents": {
+            "on": "閲覧者は自分のエージェントで使えます",
+            "off": "閲覧者は自分のエージェントで使えません"
+          },
+          "viewers_can_duplicate": {
+            "on": "閲覧者は複製できます",
+            "off": "閲覧者は複製できません"
+          }
+        }
+      },
+      "sharedList": {
+        "badgeWithEditors_one": "{{level}} · +{{formatted}} 編集者",
+        "badgeWithEditors_other": "{{level}} · +{{formatted}} 編集者",
+        "meta": "{{type}} · {{owner}}",
+        "filterLabel": "共有リソースを絞り込む",
+        "filter": {
+          "all": "すべて",
+          "agent": "エージェント",
+          "source": "ソース",
+          "tool": "ツール",
+          "prompt": "プロンプト"
+        },
+        "search": "共有を検索…",
+        "noMatches": "一致するものはありません。"
+      },
+      "drawer": {
+        "close": "閉じる",
+        "subtitle": "{{type}} · 所有者: {{owner}}",
+        "open": "{{type}}を開く",
+        "manageSharing": "共有を管理",
+        "owner": "所有者",
+        "shared": "共有日",
+        "sharedOnBy": "{{date}}（{{name}}）",
+        "yourAccess": "あなたのアクセス権",
+        "yourAccessLevel": {
+          "owner": "所有者",
+          "editor": "編集者",
+          "viewer": "閲覧者",
+          "none": "アクセス権なし"
+        },
+        "accessIn": "{{team}} でのアクセス権",
+        "everyone": "{{team}} の全員",
+        "teamGrant": "チーム全体",
+        "memberGrant": "この人のみ",
+        "removeGrant": "アクセス権を削除",
+        "otherTeamsHint": "ほかのチームとも共有していますか？それらは「共有を管理」で管理します。",
+        "whatPeopleCanDo": "ここでできること",
+        "capabilitiesHint": "所有者のアクセス設定に基づきます。ここでは読み取り専用です。"
       }
     },
     "tools": {
@@ -794,7 +998,6 @@
         "addServer": "Add MCP Server",
         "editServer": "Edit Server",
         "reconnectServer": "サーバーに再接続",
-        "reenterCredentials": "接続をテストして更新するには、認証情報を再入力してください。",
         "serverName": "Server Name",
         "serverUrl": "Server URL",
         "headerName": "Header Name",
@@ -839,7 +1042,18 @@
           "oauthFailed": "OAuth process failed or was cancelled",
           "oauthTimeout": "OAuth process timed out, please try again",
           "timeoutRange": "Timeout must be between 1 and 300 seconds"
-        }
+        },
+        "sharedByEditor": "{{owner}} が共有 · あなたは編集者です",
+        "aTeammate": "チームメンバー",
+        "sharedCredentialsNotice": "保存済みの認証情報は表示されません。入力した内容は、このツールを使うすべての人の認証情報を置き換えます。",
+        "serverChangedNotice": "サーバーが変更されたため、保存済みの{{credential}}は消去されます。保存するには新しいサーバー用に入力してください。",
+        "credentialNames": {
+          "apiKey": "API キー",
+          "bearer": "トークン",
+          "password": "パスワード"
+        },
+        "savedKeyHint": "キーが保存されています。空のままにすると保持されます（サーバーが変わらない場合のみ）。",
+        "sharedOAuthOwnerOnly": "このサーバーの接続を変更したり、サインインを再接続したりできるのはオーナーだけです。名前の変更とアクションの編集は引き続き行えます。"
       },
       "configErrors": {
         "required": "{{field}}は必須です",
@@ -847,7 +1061,14 @@
         "maxTimeout": "タイムアウトの上限は300秒です"
       },
       "headerValuePlaceholder": "例: application/json",
-      "toolIconTitle": "{{name}}のアイコン"
+      "toolIconTitle": "{{name}}のアイコン",
+      "view": "表示",
+      "inMyChats": "自分のチャットで使用",
+      "useInMyChatsAria": "{{toolName}} を自分のチャットで使用",
+      "statusUpdateFailed": "このツールをチャットで使うかどうかを変更できませんでした。",
+      "deleteFailed": "このツールを削除できませんでした。",
+      "sharedBy": "{{team}} が共有",
+      "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力"
     },
     "devices": {
       "label": "デバイス",
@@ -1344,7 +1565,9 @@
       "test": "Test",
       "learnMore": "Learn more",
       "resetKey": "キーをリセット",
-      "resetKeyConfirm": "APIキーをリセットしてもよろしいですか？現在のキーは直ちに無効になり、この操作は元に戻せません。"
+      "resetKeyConfirm": "APIキーをリセットしてもよろしいですか？現在のキーは直ちに無効になり、この操作は元に戻せません。",
+      "actionFailed": "うまくいきませんでした。もう一度お試しください。",
+      "apiKeyAfterPublish": "APIキーを作成するには、エージェントを公開してください。"
     },
     "importSpec": {
       "title": "API仕様のインポート",
@@ -1559,6 +1782,7 @@
   "agents": {
     "title": "エージェント",
     "edit": "編集",
+    "view": "表示",
     "card": {
       "pin": "エージェントをピン留め",
       "unpin": "エージェントのピン留めを解除",
@@ -1596,10 +1820,6 @@
       "byMe": "自分の",
       "team": "チーム",
       "shared": "共有された"
-    },
-    "teamBadge": {
-      "editor": "編集者",
-      "viewer": "閲覧者"
     },
     "sections": {
       "template": {
@@ -1761,7 +1981,6 @@
         "pickAtLeastOne": "Pick at least one — the check cannot run with none selected.",
         "remove": "Remove",
         "instanceDisabled": "Guardrails are switched off for this instance, so nothing configured here will run. Ask your administrator to set GUARDRAILS_ENABLED.",
-        "ownerOnly": "Guardrails are set by the agent's owner. You can see this policy but only the owner can change it.",
         "floorNotice": "{{count}} control(s) are required by this instance and always apply.",
         "floorControl": "{{stage}}: {{action}} — required by the instance policy",
         "unknownCheck": "This agent uses a check that is not available here ({{check}}). It will still run if the check returns.",
@@ -1786,6 +2005,13 @@
       },
       "status": {
         "published": "公開済み"
+      },
+      "sponsors": {
+        "attachNote": "自分のライブラリから追加したツール、ソース、プロンプトは、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。",
+        "publicLinkNote": "このエージェントには公開リンクがあるため、リンクを知っている人は誰でもそれらから回答を得られます。",
+        "addedBy": "{{person}} が追加: {{names}}",
+        "unavailable": "実行されていません: {{names}}。追加した {{person}} はアクセス権を失いました。削除するか、オーナーが使用できるものを選んでください。",
+        "unknownItem": "名前のない項目"
       }
     },
     "logs": {
@@ -2221,7 +2447,8 @@
       "classicDescription": "単一のモデル、ツール、ナレッジソースを持つ標準的な AI エージェントを作成します",
       "workflowTitle": "ワークフローエージェント",
       "workflowDescription": "複数のモデル、条件ロジック、状態管理を使った複雑なマルチステップのワークフローを設計します"
-    }
+    },
+    "deleteFailed": "エージェントを削除できませんでした。もう一度お試しください。"
   },
   "components": {
     "fileUpload": {
@@ -2246,6 +2473,7 @@
         "empty": "ToDo はまだありません"
       },
       "note": {
+        "lines_one": "{{count}} 行",
         "lines_other": "{{count}} 行",
         "empty": "空のメモ"
       },

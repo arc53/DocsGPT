@@ -35,6 +35,13 @@ import { Pagination } from './ui/pagination';
 /** Chunks per page: divisible by 2, 3 and 4 columns, so a page fills the grid. */
 const PAGE_SIZE_OPTIONS = [12, 24, 48];
 
+/**
+ * Where the open chunk is, as reported to an embedding host: its 1-based
+ * position, 'unplaced' while it is open but its place in the list is unknown
+ * (a save moved it off every probed position), or null while the grid shows.
+ */
+export type OpenChunkPosition = number | 'unplaced' | null;
+
 /** Lets the host's crumbs close the open chunk (see TreeBrowser). */
 export interface ChunksController {
   closeChunk: () => void;
@@ -79,9 +86,14 @@ interface ChunksProps {
    * (`onOpenChunkChange`) and close it (`controllerRef`).
    */
   embedded?: boolean;
-  /** The open chunk's position (1-based), or null while the grid shows. */
-  onOpenChunkChange?: (position: number | null) => void;
+  /** Where the open chunk is; see {@link OpenChunkPosition}. */
+  onOpenChunkChange?: (position: OpenChunkPosition) => void;
   controllerRef?: React.MutableRefObject<ChunksController | null>;
+  /**
+   * Whether the caller may change the source (`can(source, 'edit')`). False
+   * hides Add chunk, Edit and Delete; reading, copying and paging stay.
+   */
+  canEdit?: boolean;
 }
 
 type SheetMode = 'edit' | 'add';
@@ -96,6 +108,7 @@ const Chunks: React.FC<ChunksProps> = ({
   embedded = false,
   onOpenChunkChange,
   controllerRef,
+  canEdit = true,
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
@@ -296,7 +309,11 @@ const Chunks: React.FC<ChunksProps> = ({
     closeChunk: () => closeChunk(),
   }));
 
-  const openChunkPosition = openChunk ? openPosition : null;
+  const openChunkPosition: OpenChunkPosition = !openChunk
+    ? null
+    : positionLost
+      ? 'unplaced'
+      : openPosition;
   const onOpenChunkChangeRef = useRef(onOpenChunkChange);
   useEffect(() => {
     onOpenChunkChangeRef.current = onOpenChunkChange;
@@ -545,15 +562,17 @@ const Chunks: React.FC<ChunksProps> = ({
           })}
         </p>
       ) : null}
-      <Button
-        type="button"
-        size="field"
-        shape="pill"
-        className="sm:ml-auto"
-        onClick={() => openSheet('add')}
-      >
-        {t('settings.sources.addChunk')}
-      </Button>
+      {canEdit ? (
+        <Button
+          type="button"
+          size="field"
+          shape="pill"
+          className="sm:ml-auto"
+          onClick={() => openSheet('add')}
+        >
+          {t('settings.sources.addChunk')}
+        </Button>
+      ) : null}
     </div>
   );
 
@@ -664,16 +683,18 @@ const Chunks: React.FC<ChunksProps> = ({
             disabled={!canGoNext}
             onClick={() => goToChunk(openPosition + 1)}
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            shape="pill"
-            onClick={() => openSheet('edit')}
-          >
-            <Pencil />
-            {t('modals.chunk.edit')}
-          </Button>
+          {canEdit ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              shape="pill"
+              onClick={() => openSheet('edit')}
+            >
+              <Pencil />
+              {t('modals.chunk.edit')}
+            </Button>
+          ) : null}
           <ActionMenu
             size="toolbar"
             triggerLabel={t('settings.sources.menuAlt')}
@@ -691,12 +712,16 @@ const Chunks: React.FC<ChunksProps> = ({
                   );
                 },
               },
-              {
-                icon: Trash2,
-                label: t('modals.chunk.delete'),
-                variant: 'destructive',
-                onClick: () => confirmDeleteChunk(chunk),
-              },
+              ...(canEdit
+                ? [
+                    {
+                      icon: Trash2,
+                      label: t('modals.chunk.delete'),
+                      variant: 'destructive' as const,
+                      onClick: () => confirmDeleteChunk(chunk),
+                    },
+                  ]
+                : []),
             ]}
           />
         </>

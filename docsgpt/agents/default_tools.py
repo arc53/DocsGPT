@@ -369,6 +369,11 @@ def resolve_tool_by_id(
 
     Dual-registered tools (e.g. ``scheduler``) get both flags on the resolved
     row so callers can branch on either path without losing the discriminator.
+
+    A ``user_tools`` row resolves when ``user`` owns it or a team grant gives
+    ``user`` the ``use_in_own`` action on it (checked live, so a revoked grant
+    drops the tool on the next run). The returned row is the owner's, so its
+    ``user_id`` is the credential owner.
     """
     default_name = default_tool_name_for_id(tool_id)
     builtin_name = builtin_agent_tool_name_for_id(tool_id)
@@ -382,4 +387,24 @@ def resolve_tool_by_id(
         return synthesize_builtin_agent_tool(builtin_name)
     if user_tools_repo is None or not user:
         return None
-    return user_tools_repo.get_any(str(tool_id), user)
+    row = user_tools_repo.get_any(str(tool_id), user)
+    if row is not None:
+        return row
+    return _resolve_shared_tool(str(tool_id), user, user_tools_repo)
+
+
+def _resolve_shared_tool(tool_id: str, user: str, user_tools_repo: Any) -> Optional[Dict[str, Any]]:
+    """The owner's row for a team-shared tool ``user`` may use in their own agents."""
+    conn = getattr(user_tools_repo, "_conn", None)
+    if conn is None:
+        return None
+    # Lazy: resource_access lives under docsgpt.api, whose package import
+    # pulls in every route module (and those import this module).
+    from docsgpt.api.user.resource_access import resolve
+
+    ra = resolve(conn, "tool", tool_id, user)
+    if ra is None or ra.access == "owner" or not ra.can("use_in_own"):
+        if ra is not None:
+            logger.info("shared tool %s not usable by %s (access=%s); dropped", tool_id, user, ra.access)
+        return None
+    return user_tools_repo.get_any(ra.resource_id, ra.owner_id)

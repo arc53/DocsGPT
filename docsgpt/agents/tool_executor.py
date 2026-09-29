@@ -1,3 +1,4 @@
+import copy
 import logging
 import re
 import uuid
@@ -28,6 +29,45 @@ from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
+
+#: ``user_tools.config`` key holding an api_tool's encrypted header /
+#: query-param values: ``{action: {section: {param: value}}}``, keyed by the
+#: tool owner's id. The plaintext ``value`` of those entries is kept empty.
+API_TOOL_SECRETS_KEY = "encrypted_action_secrets"
+API_TOOL_SECRET_SECTIONS = ("headers", "query_params")
+
+
+def api_tool_action_with_secrets(tool_data: Dict, action_name: str, fallback_owner: Optional[str] = None) -> Dict:
+    """An api_tool action definition with its stored secret values merged back.
+
+    Secrets are decrypted with the tool row's ``user_id`` (the owner), never
+    the invoker's id. Legacy rows that still hold plaintext values need no
+    merge and are returned as stored.
+
+    Args:
+        tool_data: The ``user_tools`` row.
+        action_name: The action key in ``config["actions"]``.
+        fallback_owner: Used only when the row carries no ``user_id``.
+
+    Returns:
+        A deep copy of the action with header / query-param values filled in.
+    """
+    config = tool_data.get("config") or {}
+    action = copy.deepcopy(config["actions"][action_name])
+    blob = config.get(API_TOOL_SECRETS_KEY)
+    owner = tool_data.get("user_id") or fallback_owner
+    if not blob or not owner:
+        return action
+    secrets = decrypt_credentials(blob, owner).get(action_name) or {}
+    for section in API_TOOL_SECRET_SECTIONS:
+        block = action.get(section)
+        props = block.get("properties") if isinstance(block, dict) else None
+        if not isinstance(props, dict):
+            continue
+        for param, value in (secrets.get(section) or {}).items():
+            if isinstance(props.get(param), dict):
+                props[param]["value"] = value
+    return action
 
 
 def record_tool_span_start(call: Any, **attributes: Any) -> Any:
@@ -465,6 +505,9 @@ class ToolExecutor:
         # get_tools() resolves EXACTLY these ids — builtin synthetic ids and
         # user_tools rows alike — with no defaults mixed in. None = unscoped.
         self.allowed_tool_ids: Optional[List[str]] = None
+        # Tool id -> the user to resolve it as, for a workflow node's tools
+        # sponsored by an editor (see resource_access.active_sponsor).
+        self.tool_principals: Dict[str, str] = {}
         self.conversation_id: Optional[str] = None
         # Set by the workflow engine for agent nodes so run-scoped tools
         # (artifact_generator / code_executor) address artifacts by the
@@ -527,6 +570,8 @@ class ToolExecutor:
             tools: List[Dict] = []
             for tid in tool_ids:
                 row = resolve_tool_by_id(tid, self.user, user_tools_repo=tools_repo)
+                if row is None and str(tid) in self.tool_principals:
+                    row = resolve_tool_by_id(tid, self.tool_principals[str(tid)], user_tools_repo=tools_repo)
                 if row is None:
                     logger.warning("tool id %s did not resolve; dropped from scoped toolset", tid)
                     continue
@@ -549,6 +594,15 @@ class ToolExecutor:
             for tid in tool_ids:
                 row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
                 if row is None:
+                    # A tool the owner can't use runs as the editor who
+                    # attached it, while they still qualify.
+                    # Lazy: docsgpt.api's package import pulls in every route module.
+                    from docsgpt.api.user.resource_access import active_sponsor
+
+                    sponsor = active_sponsor(conn, "agent", agent_data, "tool", str(tid))
+                    if sponsor:
+                        row = resolve_tool_by_id(tid, sponsor, user_tools_repo=tools_repo)
+                if row is None:
                     continue
                 # Workflow-only builtins (read_document) never resolve for a
                 # chat/scheduled agent — nodes get them via the scoped-id path.
@@ -565,6 +619,7 @@ class ToolExecutor:
         """Resolve an agentless chat's toolset: explicit user tools plus defaults."""
         with db_readonly() as conn:
             user_tools = UserToolsRepository(conn).list_active_for_user(user)
+            user_tools.extend(self._shared_in_chat_tools(conn, user))
             user_doc = UsersRepository(conn).get(user) if self.agent_id is None else None
         # Headless agentless runs (e.g. scheduled fire) drop chat-only
         # tools (``scheduler``) from explicit user_tools too.
@@ -580,6 +635,32 @@ class ToolExecutor:
             ):
                 tools[str(default_row["id"])] = default_row
         return tools
+
+    @staticmethod
+    def _shared_in_chat_tools(conn, user: str) -> List[Dict]:
+        """Team-shared tools the user switched into their chats and may still use.
+
+        The grant (and the ``use_in_own`` switch) is re-checked on every call;
+        a revoked tool is dropped silently. Rows are the owner's, so their
+        credentials decrypt with the owner's id.
+        """
+        from docsgpt.storage.db.repositories.user_tool_preferences import (
+            UserToolPreferencesRepository,
+        )
+
+        tool_ids = UserToolPreferencesRepository(conn).list_in_chat_tool_ids(user)
+        if not tool_ids:
+            return []
+        repo = UserToolsRepository(conn)
+        rows: List[Dict] = []
+        for tid in tool_ids:
+            row = resolve_tool_by_id(tid, user, user_tools_repo=repo)
+            if row is None or row.get("user_id") == user:
+                if row is None:
+                    logger.info("in-chat shared tool %s no longer usable by %s; dropped", tid, user)
+                continue
+            rows.append(row)
+        return rows
 
     def merge_client_tools(self, tools_dict: Dict, client_tools: List[Dict]) -> Dict:
         """Merge client-provided tool definitions into tools_dict.
@@ -1261,7 +1342,7 @@ class ToolExecutor:
             return error_message, call_id
         yield {"type": "tool_call", "data": {**tool_call_data, "status": "pending"}}
         action_data = (
-            tool_data["config"]["actions"][action_name]
+            api_tool_action_with_secrets(tool_data, action_name, self.user)
             if tool_data["name"] == "api_tool"
             else next(action for action in tool_data["actions"] if action["name"] == action_name)
         )
@@ -1528,10 +1609,13 @@ class ToolExecutor:
             if tool_data["name"] == "mcp_tool":
                 tool_config["query_mode"] = True
 
+        # MCP OAuth tokens are looked up by user id: a shared server runs on
+        # the owner's connection, like every other credential.
+        load_user = (tool_data.get("user_id") or self.user) if tool_data["name"] == "mcp_tool" else self.user
         tool = tm.load_tool(
             tool_data["name"],
             tool_config=tool_config,
-            user_id=self.user,
+            user_id=load_user,
         )
 
         # Don't cache api_tool since config varies by action

@@ -1,4 +1,5 @@
 import { ConfigRequirements } from '../../modals/types';
+import type { Access } from '../../utils/accessUtils';
 
 export type ChunkType = {
   doc_id: string;
@@ -140,6 +141,9 @@ export type ParameterGroupType = {
       value: string | number;
       filled_by_llm: boolean;
       required?: boolean;
+      // A saved secret header / query value: the server sends `value: ""`
+      // and this flag; an empty value on save keeps the stored one.
+      has_value?: boolean;
     };
   };
 };
@@ -168,6 +172,16 @@ export type UserToolType = {
   // Access level when shared via a team: 'viewer' (use) or 'editor' (edit
   // actions; secrets stay owner-only). Null/absent for tools the caller owns.
   team_access?: 'viewer' | 'editor' | null;
+  // Caller's role and what it may do (`utils/accessUtils` `can`).
+  access?: Access | null;
+  allowed_actions?: string[];
+  // Whether the tool joins the caller's own agentless chats: the owner's
+  // `status`, or a grantee's personal preference (default off).
+  in_chat?: boolean;
+  // A team through which a shared tool reaches the caller.
+  shared_via?: string | null;
+  // The owner's email or name, when the server can resolve it.
+  owner_label?: string | null;
   config: {
     [key: string]: any;
   };
@@ -228,4 +242,8 @@ export type APIToolType = {
   status: boolean;
   config: { actions: { [key: string]: APIActionType } };
   configRequirements?: ConfigRequirements;
+  access?: Access | null;
+  allowed_actions?: string[];
+  ownership?: 'user' | 'team';
+  team_access?: 'viewer' | 'editor' | null;
 };

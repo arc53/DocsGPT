@@ -35,6 +35,24 @@ def looks_like_uuid(value: Any) -> bool:
     return isinstance(value, str) and bool(_UUID_RE.match(value))
 
 
+def canonical_uuid(value: Any) -> Any:
+    """The lowercase canonical form of a UUID string; anything else unchanged.
+
+    Postgres accepts any casing on ``CAST(... AS uuid)`` but returns the
+    lowercase form, so an id used as a dict key or stored in a JSON/array
+    column must be canonical to match what the database hands back.
+
+    Args:
+        value: A candidate id.
+
+    Returns:
+        ``str(UUID(value))`` for a UUID, else ``value`` as given.
+    """
+    if isinstance(value, UUID):
+        return str(value)
+    return str(UUID(value)) if looks_like_uuid(value) else value
+
+
 def row_to_dict(row: Any) -> dict:
     """Convert a SQLAlchemy ``Row`` to a plain JSON-safe dict.
 

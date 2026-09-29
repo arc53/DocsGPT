@@ -187,6 +187,23 @@ Index(
     team_resource_grants_table.c.resource_id,
 )
 
+# Per-asset sharing switches set by the owner (migration 0038). A missing row
+# means every switch is at its default; keys are validated in
+# ``docsgpt/api/user/resource_access.py``.
+resource_share_settings_table = Table(
+    "resource_share_settings",
+    metadata,
+    Column("resource_type", Text, primary_key=True),
+    Column("resource_id", UUID(as_uuid=True), primary_key=True),
+    Column("settings", JSONB, nullable=False, server_default="{}"),
+    Column("updated_by", Text),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "resource_type IN ('agent', 'source', 'prompt', 'tool')",
+        name="resource_share_settings_type_check",
+    ),
+)
+
 
 prompts_table = Table(
     "prompts",
@@ -216,6 +233,22 @@ user_tools_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+)
+
+# A grantee's personal "In my chats" switch for a tool shared with them
+# (migration 0038). The owner's own switch stays ``user_tools.status``.
+user_tool_preferences_table = Table(
+    "user_tool_preferences",
+    metadata,
+    Column("user_id", Text, primary_key=True),
+    Column(
+        "tool_id",
+        UUID(as_uuid=True),
+        ForeignKey("user_tools.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("in_chat", Boolean, nullable=False, server_default="false"),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 token_usage_table = Table(
@@ -367,6 +400,9 @@ agents_table = Table(
     # Per-agent behavior contract (AgentConfig — guardrails today). Empty
     # ``{}`` parses to guardrails-disabled.
     Column("config", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # ``"<type>:<id>" -> user_id`` of the editor vouching for a referenced
+    # resource the owner can't use (migration 0039, see resource_access.py).
+    Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("default_model_id", Text),
     Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
@@ -925,6 +961,8 @@ workflows_table = Table(
     Column("name", Text, nullable=False),
     Column("description", Text),
     Column("current_graph_version", Integer, nullable=False, server_default="1"),
+    # Same shape as ``agents.resource_sponsors``, for node tools and sources.
+    Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),

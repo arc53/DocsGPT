@@ -1,17 +1,27 @@
-import { CircleAlert, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronRight,
+  CircleAlert,
+  Trash2,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import teamsService, {
   AccessLevel,
+  ResourceSetting,
+  ResourceSettingsResponse,
   ResourceShare,
   ResourceType,
   TeamMember,
 } from '../api/services/teamsService';
+import SearchInput from '../components/SearchInput';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { EmptyState } from '../components/ui/empty-state';
 import {
   Command,
   CommandEmpty,
@@ -24,6 +34,9 @@ import { IconButton } from '../components/ui/icon-button';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { Modal } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
+import { SettingRow, SettingRows } from '../components/ui/setting-row';
+import { Switch } from '../components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import {
   Popover,
   PopoverContent,
@@ -36,9 +49,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import { can } from '../utils/accessUtils';
+import { formatCount } from '../utils/dateTimeUtils';
 import { decodeJwtPayload } from '../utils/jwtUtils';
+import {
+  anyChanged,
+  editorHint,
+  errorMessage,
+  resolveSettings,
+  settingCopy,
+} from './accessSettings';
 import { loadTeams, selectTeams } from './teamsSlice';
 
 type Props = {
@@ -68,6 +91,13 @@ const initialOf = (label: string): string => {
 // Stable identity for a grant row: team + optional member target.
 const shareKey = (share: ResourceShare): string =>
   `${share.team_id}:${share.target_user_id ?? ''}`;
+
+// Up to this many grants the dialog lists them all; above it, You plus the
+// PREVIEW_COUNT most recent and a "Show all" step.
+const SHORT_LIST_MAX = 5;
+const PREVIEW_COUNT = 3;
+
+type AccessFilter = 'all' | 'teams' | 'people' | 'editors';
 
 type Suggestion =
   | { kind: 'team'; key: string; teamId: string; teamName: string }
@@ -100,6 +130,21 @@ export default function ShareToTeamModal({
   const [shares, setShares] = useState<ResourceShare[]>([]);
   const [loadError, setLoadError] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // The owner's per-resource switches and the caller's own access, from
+  // GET /api/resource_settings. Null until loaded (or when it fails: the hint
+  // then uses the defaults and the settings group stays hidden).
+  const [settingsInfo, setSettingsInfo] =
+    useState<ResourceSettingsResponse | null>(null);
+  // Access settings is collapsed by default and opens itself once when a
+  // switch is off its default; after that it follows the user's clicks.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [savingSettings, setSavingSettings] = useState<Set<string>>(new Set());
+
+  // 'all' is the "People with access" step with search and filters.
+  const [step, setStep] = useState<'main' | 'all'>('main');
+  const [accessQuery, setAccessQuery] = useState('');
+  const [accessFilter, setAccessFilter] = useState<AccessFilter>('all');
 
   // The access level applied to the next suggestion picked from the combobox.
   const [accessLevel, setAccessLevel] = useState<AccessLevel>('viewer');
@@ -171,7 +216,61 @@ export default function ShareToTeamModal({
   useEffect(() => {
     dispatch(loadTeams({ token }));
     refreshShares();
+    setSettingsInfo(null);
+    teamsService
+      .getResourceSettings(resourceType, resourceId, token)
+      .then((r) => {
+        setSettingsInfo(r);
+        if (anyChanged(resolveSettings(resourceType, r?.settings))) {
+          setSettingsOpen(true);
+        }
+      })
+      .catch(() => {
+        // Without settings the hint falls back to the defaults and the
+        // owner-only group stays hidden; sharing itself still works.
+      });
   }, [resourceType, resourceId]);
+
+  const settings = useMemo<ResourceSetting[]>(
+    () => resolveSettings(resourceType, settingsInfo?.settings),
+    [resourceType, settingsInfo],
+  );
+  const canManageSettings = can(settingsInfo, 'manage_settings');
+
+  // Optimistically flip one switch, then adopt the server's answer; revert
+  // and show an Alert when the PUT fails.
+  const toggleSetting = async (key: string, value: boolean) => {
+    if (!settingsInfo) return;
+    const previous = settingsInfo;
+    setActionError(null);
+    setSettingsInfo({
+      ...previous,
+      settings: resolveSettings(resourceType, previous.settings).map((s) =>
+        s.key === key ? { ...s, value } : s,
+      ),
+    });
+    setSavingSettings((prev) => new Set(prev).add(key));
+    try {
+      const r = await teamsService.updateResourceSettings(
+        resourceType,
+        resourceId,
+        { [key]: value },
+        token,
+      );
+      if (r?.settings) setSettingsInfo(r);
+    } catch (error) {
+      setSettingsInfo(previous);
+      setActionError(
+        errorMessage(error, t('settings.teams.accessSettings.saveError')),
+      );
+    } finally {
+      setSavingSettings((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
 
   // Stable signature of the current team set; lets the fan-out effect below
   // depend on team identity rather than the array reference (which is a fresh
@@ -327,8 +426,8 @@ export default function ShareToTeamModal({
         },
         token,
       );
-    } catch {
-      setActionError(t('settings.teams.share.shareError'));
+    } catch (error) {
+      setActionError(errorMessage(error, t('settings.teams.share.shareError')));
     } finally {
       // Clear this action's in-flight flag *before* reconciling so the refresh
       // adopts the server's canonical state for this pick (while still
@@ -363,8 +462,8 @@ export default function ShareToTeamModal({
         },
         token,
       );
-    } catch {
-      setActionError(t('settings.teams.share.shareError'));
+    } catch (error) {
+      setActionError(errorMessage(error, t('settings.teams.share.shareError')));
     } finally {
       // Free this row before reconciling so the refresh adopts server state for
       // it; other rows still busy keep their in-flight optimistic edits.
@@ -389,8 +488,10 @@ export default function ShareToTeamModal({
         },
         token,
       );
-    } catch {
-      setActionError(t('settings.teams.share.unshareError'));
+    } catch (error) {
+      setActionError(
+        errorMessage(error, t('settings.teams.share.unshareError')),
+      );
     } finally {
       setRowBusy(key, false);
       await refreshShares();
@@ -398,8 +499,12 @@ export default function ShareToTeamModal({
   };
 
   const title = resourceName
-    ? t('settings.teams.share.titleNamed', { name: resourceName })
+    ? t('settings.teams.share.titleNamed', {
+        interpolation: { escapeValue: false },
+        name: resourceName,
+      })
     : t('settings.teams.share.titleGeneric', {
+        interpolation: { escapeValue: false },
         type: t(`settings.teams.resourceType.${resourceType}`).toLowerCase(),
       });
 
@@ -448,7 +553,10 @@ export default function ShareToTeamModal({
       : memberDisplay(share.team_id, share.target_user_id!);
     const secondary = isTeam
       ? t('settings.teams.share.teamLabel')
-      : t('settings.teams.share.viaTeam', { team: name });
+      : t('settings.teams.share.viaTeam', {
+          interpolation: { escapeValue: false },
+          team: name,
+        });
     return (
       <ListRow
         key={shareKey(share)}
@@ -469,6 +577,390 @@ export default function ShareToTeamModal({
     );
   };
 
+  // Grant rows for the preview: the most recent first (by created_at when
+  // the server sends it, else the server's order, newest last).
+  const recentShares = useMemo(() => {
+    const indexed = shares.map((share, index) => ({ share, index }));
+    indexed.sort((x, y) => {
+      const ax = x.share.created_at ?? '';
+      const ay = y.share.created_at ?? '';
+      if (ax !== ay) return ax < ay ? 1 : -1;
+      return y.index - x.index;
+    });
+    return indexed.map((entry) => entry.share);
+  }, [shares]);
+
+  const isLongList = shares.length > SHORT_LIST_MAX;
+  const previewShares = isLongList
+    ? recentShares.slice(0, PREVIEW_COUNT)
+    : shares;
+
+  const teamGrantCount = shares.filter((s) => !s.target_user_id).length;
+  const personGrantCount = shares.length - teamGrantCount;
+  const editorGrantCount = shares.filter(
+    (s) => s.access_level === 'editor',
+  ).length;
+
+  const shareLabel = (share: ResourceShare): string => {
+    const name = share.team_name ?? teamName(share.team_id);
+    return share.target_user_id
+      ? `${memberDisplay(share.team_id, share.target_user_id)} ${share.target_user_id} ${name}`
+      : name;
+  };
+
+  const filteredShares = shares.filter((share) => {
+    if (accessFilter === 'teams' && share.target_user_id) return false;
+    if (accessFilter === 'people' && !share.target_user_id) return false;
+    if (accessFilter === 'editors' && share.access_level !== 'editor')
+      return false;
+    return matches(shareLabel(share), accessQuery);
+  });
+
+  const openAllStep = () => {
+    setAccessQuery('');
+    setAccessFilter('all');
+    setStep('all');
+  };
+
+  // The caller's own row: the owner, or an editor the owner let share.
+  const yourRole =
+    settingsInfo?.access === 'editor'
+      ? t('settings.teams.share.accessLevel.editor')
+      : t('settings.teams.share.owner');
+
+  const youRow = (
+    <ListRow
+      leading={
+        <Avatar alt="" variant="primary" size="default" shape="circle">
+          {initialOf(t('settings.teams.share.you'))}
+        </Avatar>
+      }
+      title={t('settings.teams.share.you')}
+      trailing={
+        <span className="text-muted-foreground shrink-0 pr-3 text-sm">
+          {yourRole}
+        </span>
+      }
+    />
+  );
+
+  const errors = (
+    <>
+      {loadError && (
+        <Alert variant="destructive">
+          <CircleAlert className="size-4" aria-hidden="true" />
+          <AlertDescription>
+            {t('settings.teams.share.loadError')}
+          </AlertDescription>
+        </Alert>
+      )}
+      {actionError && (
+        <Alert variant="destructive">
+          <CircleAlert className="size-4" aria-hidden="true" />
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      )}
+    </>
+  );
+
+  const filterOptions: Array<{ value: AccessFilter; count: number }> = [
+    { value: 'all', count: shares.length },
+    { value: 'teams', count: teamGrantCount },
+    { value: 'people', count: personGrantCount },
+    { value: 'editors', count: editorGrantCount },
+  ];
+
+  const allStep = (
+    <div className="flex flex-col gap-4">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="-ml-3 w-fit justify-start"
+        onClick={() => setStep('main')}
+      >
+        <ArrowLeft aria-hidden />
+        {t('settings.teams.share.back')}
+      </Button>
+      <div>
+        <h2 className="text-foreground text-xl leading-tight font-semibold">
+          {t('settings.teams.share.peopleWithAccess')}
+        </h2>
+        <p className="text-muted-foreground mt-2 text-sm">
+          {t('settings.teams.share.allSummary', {
+            interpolation: { escapeValue: false },
+            name: resourceName ?? '',
+            teams: formatCount(teamGrantCount),
+            people: formatCount(personGrantCount),
+          })}
+        </p>
+      </div>
+      {errors}
+      <SearchInput
+        placeholder={t('settings.teams.share.searchAccess')}
+        labelSurface="card"
+        value={accessQuery}
+        onChange={(e) => setAccessQuery(e.target.value)}
+      />
+      <div className="bg-muted w-fit max-w-full rounded-full p-1">
+        <ToggleGroup
+          type="single"
+          size="xs"
+          value={accessFilter}
+          onValueChange={(value) =>
+            value && setAccessFilter(value as AccessFilter)
+          }
+          aria-label={t('settings.teams.share.filterLabel')}
+        >
+          {filterOptions.map((option) => (
+            <ToggleGroupItem key={option.value} value={option.value}>
+              {t(`settings.teams.share.filter.${option.value}`)}{' '}
+              {formatCount(option.count)}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </div>
+      <ListRows>
+        {accessFilter === 'all' && !accessQuery.trim() && youRow}
+        {filteredShares.map(renderShareRow)}
+      </ListRows>
+      {filteredShares.length === 0 && (
+        <EmptyState
+          size="xs"
+          illustration="none"
+          title={t('settings.teams.share.noMatches')}
+        />
+      )}
+    </div>
+  );
+
+  const accessSettings = canManageSettings && (
+    <section className="flex flex-col gap-3">
+      {/* An inline disclosure: no Card around it draws section-toggle's
+          ring, so the link button shows its own focus. */}
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        aria-expanded={settingsOpen}
+        className="-ml-3 w-fit justify-start"
+        onClick={() => setSettingsOpen((open) => !open)}
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className={cn(
+            'transition-transform duration-200',
+            settingsOpen && 'rotate-90',
+          )}
+        />
+        {t('settings.teams.accessSettings.title')}
+      </Button>
+      {settingsOpen && (
+        <SettingRows>
+          {settings.map((setting) => {
+            const copy = settingCopy(t, resourceType, setting.key);
+            const id = `share-setting-${setting.key}`;
+            return (
+              <SettingRow
+                key={setting.key}
+                htmlFor={id}
+                label={copy.label}
+                description={copy.description || undefined}
+              >
+                <Switch
+                  id={id}
+                  checked={setting.value}
+                  disabled={savingSettings.has(setting.key)}
+                  onCheckedChange={(value) => toggleSetting(setting.key, value)}
+                />
+              </SettingRow>
+            );
+          })}
+        </SettingRows>
+      )}
+    </section>
+  );
+
+  const mainStep = (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3">
+        <p className="text-muted-foreground text-sm">
+          {t('settings.teams.share.subtitle')}
+        </p>
+        {errors}
+      </div>
+
+      {teams.length === 0 ? (
+        <p className="text-sm">{t('settings.teams.share.noTeams')}</p>
+      ) : (
+        <>
+          <div>
+            {/* Add row: type-ahead combobox + access level select. */}
+            <div className="flex items-center gap-2">
+              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="combobox"
+                    role="combobox"
+                    aria-expanded={pickerOpen}
+                    disabled={committing}
+                    data-placeholder=""
+                    className="min-w-0 flex-1 justify-start"
+                  >
+                    <span className="truncate">
+                      {t('settings.teams.share.addPlaceholder')}
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[min(22rem,calc(100vw-2rem))] p-0"
+                  align="start"
+                >
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder={t('settings.teams.share.searchPlaceholder')}
+                      value={query}
+                      onValueChange={setQuery}
+                    />
+                    <CommandList>
+                      {!hasSuggestions && (
+                        <CommandEmpty>
+                          {t('settings.teams.share.noMatches')}
+                        </CommandEmpty>
+                      )}
+                      {teamSuggestions.length > 0 && (
+                        <CommandGroup
+                          heading={t('settings.teams.share.teamsGroup')}
+                        >
+                          {teamSuggestions.map((suggestion) => (
+                            <CommandItem
+                              key={suggestion.key}
+                              value={suggestion.key}
+                              onSelect={() => commitSuggestion(suggestion)}
+                            >
+                              <Avatar
+                                alt=""
+                                variant="primary"
+                                size="xs"
+                                shape="square"
+                              >
+                                {initialOf(suggestion.teamName)}
+                              </Avatar>
+                              <span className="min-w-0 flex-1 truncate">
+                                {suggestion.teamName}
+                              </span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      )}
+                      {memberSuggestions.length > 0 && (
+                        <CommandGroup
+                          heading={t('settings.teams.share.peopleGroup')}
+                        >
+                          {memberSuggestions.map((suggestion) =>
+                            suggestion.kind === 'member' ? (
+                              <CommandItem
+                                key={suggestion.key}
+                                value={`${suggestion.key} ${suggestion.label} ${suggestion.teamName}`}
+                                onSelect={() => commitSuggestion(suggestion)}
+                              >
+                                <Avatar
+                                  alt=""
+                                  variant="primary"
+                                  size="xs"
+                                  shape="circle"
+                                >
+                                  {initialOf(suggestion.label)}
+                                </Avatar>
+                                <span className="min-w-0 flex-1 truncate">
+                                  {suggestion.label}
+                                  <span className="text-muted-foreground">
+                                    {' · '}
+                                    {suggestion.teamName}
+                                  </span>
+                                </span>
+                              </CommandItem>
+                            ) : null,
+                          )}
+                        </CommandGroup>
+                      )}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+
+              <Select
+                value={accessLevel}
+                disabled={committing}
+                onValueChange={(value) => setAccessLevel(value as AccessLevel)}
+              >
+                <SelectTrigger
+                  className="w-28 shrink-0"
+                  aria-label={t('settings.teams.share.access')}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="viewer">
+                    {t('settings.teams.share.accessLevel.viewer')}
+                  </SelectItem>
+                  <SelectItem value="editor">
+                    {t('settings.teams.share.accessLevel.editor')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p
+              data-testid="share-editor-hint"
+              className="text-muted-foreground mt-1.5 text-xs"
+            >
+              {editorHint(t, resourceType, settings)}
+            </p>
+          </div>
+
+          {/* People with access. */}
+          <section className="flex flex-col gap-1">
+            <SectionHeader
+              as="h3"
+              size="xs"
+              title={t('settings.teams.share.peopleWithAccess')}
+              actions={
+                isLongList && (
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="inline"
+                    onClick={openAllStep}
+                  >
+                    {t('settings.teams.share.showAll', {
+                      formatted: formatCount(shares.length),
+                    })}
+                    <ArrowRight className="size-3" aria-hidden />
+                  </Button>
+                )
+              }
+            />
+            <ListRows>
+              {youRow}
+              {previewShares.map(renderShareRow)}
+            </ListRows>
+            {isLongList && (
+              <p className="text-muted-foreground px-4 text-xs">
+                {t('settings.teams.share.andMore', {
+                  count: shares.length - previewShares.length,
+                  formatted: formatCount(shares.length - previewShares.length),
+                })}
+              </p>
+            )}
+          </section>
+        </>
+      )}
+
+      {accessSettings}
+    </div>
+  );
+
   return (
     <Modal
       open
@@ -477,7 +969,12 @@ export default function ShareToTeamModal({
         if (!open && !inFlight) onClose();
       }}
       isPerformingTask={inFlight}
-      title={title}
+      // The "all" step draws its own heading under a Back button (Upload's
+      // step pattern); the dialog keeps an accessible title either way.
+      title={
+        step === 'all' ? t('settings.teams.share.peopleWithAccess') : title
+      }
+      hideTitle={step === 'all'}
       size="md"
       footer={
         <Button size="lg" shape="pill" disabled={inFlight} onClick={onClose}>
@@ -485,178 +982,7 @@ export default function ShareToTeamModal({
         </Button>
       }
     >
-      <p className="text-muted-foreground mt-1 text-sm">
-        {t('settings.teams.share.subtitle')}
-      </p>
-
-      {loadError && (
-        <Alert variant="destructive" className="mt-3">
-          <CircleAlert className="size-4" aria-hidden="true" />
-          <AlertDescription>
-            {t('settings.teams.share.loadError')}
-          </AlertDescription>
-        </Alert>
-      )}
-      {actionError && (
-        <Alert variant="destructive" className="mt-3">
-          <CircleAlert className="size-4" aria-hidden="true" />
-          <AlertDescription>{actionError}</AlertDescription>
-        </Alert>
-      )}
-
-      {teams.length === 0 ? (
-        <p className="mt-6 text-sm">{t('settings.teams.share.noTeams')}</p>
-      ) : (
-        <>
-          {/* Add row: type-ahead combobox + access level select. */}
-          <div className="mt-4 flex items-center gap-2">
-            <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  variant="combobox"
-                  role="combobox"
-                  aria-expanded={pickerOpen}
-                  disabled={committing}
-                  data-placeholder=""
-                  className="min-w-0 flex-1 justify-start"
-                >
-                  <span className="truncate">
-                    {t('settings.teams.share.addPlaceholder')}
-                  </span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                className="w-[min(22rem,calc(100vw-2rem))] p-0"
-                align="start"
-              >
-                <Command shouldFilter={false}>
-                  <CommandInput
-                    placeholder={t('settings.teams.share.searchPlaceholder')}
-                    value={query}
-                    onValueChange={setQuery}
-                  />
-                  <CommandList>
-                    {!hasSuggestions && (
-                      <CommandEmpty>
-                        {t('settings.teams.share.noMatches')}
-                      </CommandEmpty>
-                    )}
-                    {teamSuggestions.length > 0 && (
-                      <CommandGroup
-                        heading={t('settings.teams.share.teamsGroup')}
-                      >
-                        {teamSuggestions.map((suggestion) => (
-                          <CommandItem
-                            key={suggestion.key}
-                            value={suggestion.key}
-                            onSelect={() => commitSuggestion(suggestion)}
-                          >
-                            <Avatar
-                              alt=""
-                              variant="primary"
-                              size="xs"
-                              shape="square"
-                            >
-                              {initialOf(suggestion.teamName)}
-                            </Avatar>
-                            <span className="min-w-0 flex-1 truncate">
-                              {suggestion.teamName}
-                            </span>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    )}
-                    {memberSuggestions.length > 0 && (
-                      <CommandGroup
-                        heading={t('settings.teams.share.peopleGroup')}
-                      >
-                        {memberSuggestions.map((suggestion) =>
-                          suggestion.kind === 'member' ? (
-                            <CommandItem
-                              key={suggestion.key}
-                              value={`${suggestion.key} ${suggestion.label} ${suggestion.teamName}`}
-                              onSelect={() => commitSuggestion(suggestion)}
-                            >
-                              <Avatar
-                                alt=""
-                                variant="primary"
-                                size="xs"
-                                shape="circle"
-                              >
-                                {initialOf(suggestion.label)}
-                              </Avatar>
-                              <span className="min-w-0 flex-1 truncate">
-                                {suggestion.label}
-                                <span className="text-muted-foreground">
-                                  {' · '}
-                                  {suggestion.teamName}
-                                </span>
-                              </span>
-                            </CommandItem>
-                          ) : null,
-                        )}
-                      </CommandGroup>
-                    )}
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-
-            <Select
-              value={accessLevel}
-              disabled={committing}
-              onValueChange={(value) => setAccessLevel(value as AccessLevel)}
-            >
-              <SelectTrigger
-                className="h-9 w-28 shrink-0"
-                aria-label={t('settings.teams.share.access')}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="viewer">
-                  {t('settings.teams.share.accessLevel.viewer')}
-                </SelectItem>
-                <SelectItem value="editor">
-                  {t('settings.teams.share.accessLevel.editor')}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* People with access. */}
-          <section className="mt-6 flex flex-col gap-1">
-            <SectionHeader
-              as="h3"
-              size="xs"
-              title={t('settings.teams.share.peopleWithAccess')}
-            />
-            <ListRows className="max-h-72 overflow-auto">
-              {/* Owner — pinned, non-interactive. */}
-              <ListRow
-                leading={
-                  <Avatar
-                    alt=""
-                    variant="primary"
-                    size="default"
-                    shape="circle"
-                  >
-                    {initialOf(t('settings.teams.share.you'))}
-                  </Avatar>
-                }
-                title={t('settings.teams.share.you')}
-                trailing={
-                  <span className="text-muted-foreground shrink-0 pr-3 text-sm">
-                    {t('settings.teams.share.owner')}
-                  </span>
-                }
-              />
-              {shares.map(renderShareRow)}
-            </ListRows>
-          </section>
-        </>
-      )}
+      {step === 'all' ? allStep : mainStep}
     </Modal>
   );
 }

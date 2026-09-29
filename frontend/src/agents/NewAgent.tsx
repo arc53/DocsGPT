@@ -56,6 +56,7 @@ import AgentDetailsModal from '../modals/AgentDetailsModal';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Prompt } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
 import {
   selectAgentFolders,
   selectSelectedAgent,
@@ -69,6 +70,7 @@ import {
 import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
+import { can } from '../utils/accessUtils';
 import Upload from '../upload/Upload';
 import {
   selectedSourceIdsFromAgent,
@@ -78,7 +80,7 @@ import {
 } from '../utils/sourceUtils';
 import {
   getToolDisplayName,
-  isClassicAgentToolVisible,
+  isAgentPickerToolVisible,
 } from '../utils/toolUtils';
 import { agentsListPath } from './paths';
 import GuardrailsSection, {
@@ -89,7 +91,8 @@ import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
 import SectionShell from '../navigation/SectionShell';
-import { Agent, ToolSummary } from './types';
+import SponsoredResourcesNotice from './components/SponsoredResourcesNotice';
+import { Agent, ResourceSponsor, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
@@ -280,6 +283,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [agent.source_details, sourceDocs, t],
   );
 
+  // Name of a tool/source/prompt that runs with an editor's access, from the
+  // same owner-agnostic details the pickers show.
+  const resolveSponsoredName = useCallback(
+    (sponsor: ResourceSponsor): string => {
+      if (sponsor.type === 'source') return resolveSourceLabel(sponsor.id);
+      if (sponsor.type === 'prompt') {
+        return (
+          prompts.find((prompt) => prompt.id === sponsor.id)?.name ||
+          agent.prompt_name ||
+          t('agents.form.sponsors.unknownItem')
+        );
+      }
+      const tool = selectedTools.find((item) => item.id === sponsor.id);
+      return tool
+        ? getToolDisplayName(tool)
+        : t('agents.form.sponsors.unknownItem');
+    },
+    [agent.prompt_name, prompts, resolveSourceLabel, selectedTools, t],
+  );
+
   const sourceItems = useMemo(() => {
     const items = toSourcePickerItems(
       sourceDocs,
@@ -359,9 +382,27 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   };
 
   const handleDelete = async (agentId: string) => {
-    const response = await userService.deleteAgent(agentId, token);
-    if (!response.ok) throw new Error('Failed to delete agent');
-    navigateBackToAgents();
+    try {
+      const response = await userService.deleteAgent(agentId, token);
+      if (!response.ok) {
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: await extractApiError(response, t('agents.deleteFailed')),
+          }),
+        );
+        return;
+      }
+      navigateBackToAgents();
+    } catch (error) {
+      console.error('Error deleting agent:', error);
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: t('agents.deleteFailed'),
+        }),
+      );
+    }
   };
 
   const handleSaveDraft = async () => {
@@ -588,7 +629,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       // Hide workflow-only builtins (e.g. read_document) from the classic
       // agent picker; they belong to the workflow-node picker only.
       const visibleTools = (data.tools as UserToolType[]).filter(
-        isClassicAgentToolVisible,
+        isAgentPickerToolVisible,
       );
       const devicesById = new Map<
         string,
@@ -829,6 +870,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [agent, dispatch, effectiveMode, imageFile, jsonSchemaText]);
 
   const isPublished = agent.status === 'published';
+  // What the caller's role allows on this agent (`allowed_actions` from the
+  // API). A new agent carries no access fields, so it reads as the owner's.
+  const canEditPolicy = can(agent, 'edit_policy');
+  // Save on a published agent is an edit; on a draft or a new agent the main
+  // button publishes it.
+  const canSubmit = can(agent, effectiveMode === 'edit' ? 'edit' : 'publish');
   const agentDisplayName =
     agent.name?.trim() || t('agents.pageHeader.fallbackName');
 
@@ -845,7 +892,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             onClick: () => setPreviewOpen(true),
           },
         ]),
-    ...(modeConfig[effectiveMode].showAccessDetails
+    ...(modeConfig[effectiveMode].showAccessDetails &&
+    can(agent, 'manage_access_details')
       ? [
           {
             label: t('agents.form.buttons.accessDetails'),
@@ -853,10 +901,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           },
         ]
       : []),
-    // Sharing is owner-only — hidden for agents shared into the workspace by
-    // a team (ownership === 'team').
+    // Sharing is the owner's, unless the owner lets editors share.
     ...(modeConfig[effectiveMode].showAccessDetails &&
-    agent.ownership !== 'team' &&
+    can(agent, 'share') &&
     agent.id
       ? [
           {
@@ -882,7 +929,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           {t('agents.form.buttons.cancel')}
         </Button>
       )}
-      {modeConfig[effectiveMode].showSaveDraft && (
+      {modeConfig[effectiveMode].showSaveDraft && can(agent, 'edit') && (
         <Button
           type="button"
           variant="outline"
@@ -907,17 +954,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           {t('agents.form.sections.preview')}
         </Button>
       )}
-      <Button
-        type="button"
-        size="field"
-        shape="pill"
-        disabled={!isPublishable() || !hasChanges}
-        loading={publishLoading}
-        onClick={handlePublish}
-        className="flex-1 sm:flex-none"
-      >
-        {modeConfig[effectiveMode].buttonText}
-      </Button>
+      {canSubmit && (
+        <Button
+          type="button"
+          size="field"
+          shape="pill"
+          disabled={!isPublishable() || !hasChanges}
+          loading={publishLoading}
+          onClick={handlePublish}
+          className="flex-1 sm:flex-none"
+        >
+          {modeConfig[effectiveMode].buttonText}
+        </Button>
+      )}
     </div>
   );
 
@@ -1157,6 +1206,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 {t('agents.form.buttons.add')}
               </Button>
             </div>
+            <SponsoredResourcesNotice
+              agent={agent}
+              resolveName={resolveSponsoredName}
+            />
           </div>
         </Card>
         <Card variant="subtle" padding="lg" className="gap-5">
@@ -1369,7 +1422,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                             : undefined,
                         })
                       }
-                      disabled={!agent.limited_token_mode}
+                      disabled={!agent.limited_token_mode || !canEditPolicy}
                       placeholder={t(
                         'agents.form.placeholders.enterTokenLimit',
                       )}
@@ -1381,6 +1434,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   <Switch
                     id={tokenLimitSwitchId}
                     checked={agent.limited_token_mode}
+                    disabled={!canEditPolicy}
                     onCheckedChange={(checked) => {
                       setAgent({
                         ...agent,
@@ -1411,7 +1465,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                             : undefined,
                         })
                       }
-                      disabled={!agent.limited_request_mode}
+                      disabled={!agent.limited_request_mode || !canEditPolicy}
                       placeholder={t(
                         'agents.form.placeholders.enterRequestLimit',
                       )}
@@ -1423,6 +1477,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   <Switch
                     id={requestLimitSwitchId}
                     checked={agent.limited_request_mode}
+                    disabled={!canEditPolicy}
                     onCheckedChange={(checked) => {
                       setAgent({
                         ...agent,
@@ -1459,16 +1514,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         <GuardrailsSection
           value={agent.config?.guardrails}
           token={token}
-          // Guardrails are the owner's policy: the update route drops
-          // ``config`` for team members, editors included. Leaving the
-          // controls live for editors let them save a change the server
-          // silently discarded, and the success toast said it had worked.
-          disabled={Boolean(agent.team_access)}
-          disabledNotice={
-            agent.team_access
-              ? t('agents.form.guardrails.ownerOnly')
-              : undefined
-          }
+          // Guardrails are policy (`edit_policy`): editors and the owner
+          // change them; anyone else sees them read-only.
+          disabled={!canEditPolicy}
           onChange={(guardrails) =>
             setAgent({
               ...agent,
@@ -1476,29 +1524,31 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             })
           }
         />
-        {modeConfig[effectiveMode].showDelete && agent.id && (
-          <Card
-            tone="destructive"
-            padding="lg"
-            className="flex-row flex-wrap items-start justify-between"
-          >
-            <SectionHeader
+        {modeConfig[effectiveMode].showDelete &&
+          agent.id &&
+          can(agent, 'delete') && (
+            <Card
               tone="destructive"
-              title={t('agents.form.dangerZone.heading')}
-              description={t('agents.form.dangerZone.description')}
-              className="min-w-0 flex-1"
-            />
-            <Button
-              type="button"
-              variant="destructive-outline"
-              size="sm"
-              onClick={() => setDeleteConfirmation('ACTIVE')}
-              className="shrink-0"
+              padding="lg"
+              className="flex-row flex-wrap items-start justify-between"
             >
-              {t('agents.form.dangerZone.deleteButton')}
-            </Button>
-          </Card>
-        )}
+              <SectionHeader
+                tone="destructive"
+                title={t('agents.form.dangerZone.heading')}
+                description={t('agents.form.dangerZone.description')}
+                className="min-w-0 flex-1"
+              />
+              <Button
+                type="button"
+                variant="destructive-outline"
+                size="sm"
+                onClick={() => setDeleteConfirmation('ACTIVE')}
+                className="shrink-0"
+              >
+                {t('agents.form.dangerZone.deleteButton')}
+              </Button>
+            </Card>
+          )}
       </div>
       <ConfirmationModal
         message={t('agents.deleteConfirmation')}
@@ -1595,16 +1645,18 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               title={t('agents.form.preview.publishTitle')}
               description={t('agents.form.preview.publishDescription')}
               action={
-                <Button
-                  type="button"
-                  size="sm"
-                  shape="pill"
-                  disabled={!isPublishable()}
-                  loading={publishLoading}
-                  onClick={handlePublish}
-                >
-                  {t('agents.form.buttons.publish')}
-                </Button>
+                can(agent, 'publish') ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    shape="pill"
+                    disabled={!isPublishable()}
+                    loading={publishLoading}
+                    onClick={handlePublish}
+                  >
+                    {t('agents.form.buttons.publish')}
+                  </Button>
+                ) : undefined
               }
             />
           </div>

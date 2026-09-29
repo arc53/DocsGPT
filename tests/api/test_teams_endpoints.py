@@ -3,7 +3,7 @@
 These drive the real app.py chokepoint + team_authz plane (only handle_auth /
 resolve_roles and the leaf repos are mocked), so they catch regressions in the
 authorization wiring: who can read/manage a team, that team_id comes from the
-URL path (never the body), and that sharing requires resource ownership. Data
+URL path (never the body), and that sharing requires the ``share`` action. Data
 correctness lives in tests/storage/db/repositories/test_teams.py.
 """
 
@@ -14,6 +14,11 @@ from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
 import pytest
+
+from docsgpt.api.user.resource_access import AccessDenied, build
+
+# What ``require(..., "share")`` returns for the resource owner.
+_OWNER_RA = build("agent", "22222222-2222-2222-2222-222222222222", "owner", "alice", {})
 
 
 @pytest.fixture
@@ -234,10 +239,13 @@ class TestTeamAccessControl:
 
 @pytest.mark.unit
 class TestSharingAuthz:
-    def test_share_requires_ownership(self, client):
+    def test_share_requires_share_action(self, client):
         patches = _auth(sub="bob", team_role="team_member") + [
             patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=False),
+            patch(
+                "docsgpt.api.user.teams.routes.require",
+                side_effect=AccessDenied(403, "no share"),
+            ),
         ]
         _apply(patches)
         try:
@@ -257,7 +265,7 @@ class TestSharingAuthz:
         grants_repo.grant.return_value = {"id": "g1", "access_level": "viewer"}
         patches = _auth(sub="alice", team_role="team_member") + [
             patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.require", return_value=_OWNER_RA),
             patch(
                 "docsgpt.api.user.teams.routes.TeamResourceGrantsRepository",
                 return_value=grants_repo,
@@ -299,7 +307,7 @@ class TestSharingAuthz:
         members_repo.is_member.return_value = False
         patches = _auth(sub="alice", team_role="team_member") + [
             patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.require", return_value=_OWNER_RA),
             patch(
                 "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
@@ -326,7 +334,7 @@ class TestSharingAuthz:
         grants_repo.grant.return_value = {"id": "g1", "target_user_id": "bob"}
         patches = _auth(sub="alice", team_role="team_member") + [
             patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.require", return_value=_OWNER_RA),
             patch(
                 "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
@@ -357,7 +365,7 @@ class TestSharingAuthz:
         # rejected cleanly, not cast-and-poison the txn into a generic error.
         patches = _auth(sub="alice", team_role="team_member") + [
             patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
-            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.require", return_value=_OWNER_RA),
         ]
         _apply(patches)
         try:
@@ -480,7 +488,7 @@ class TestTeamNotifications:
         patches = _auth(sub="alice", team_role="team_member") + [
             patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
             patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
-            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.require", return_value=_OWNER_RA),
             patch(
                 "docsgpt.api.user.teams.routes.TeamResourceGrantsRepository",
                 return_value=grants_repo,
@@ -531,7 +539,7 @@ class TestTeamNotifications:
         patches = _auth(sub="alice", team_role="team_member") + [
             patch("docsgpt.api.user.teams.routes.db_session", lambda: _cm(Mock())),
             patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
-            patch("docsgpt.api.user.teams.routes.owns_resource", return_value=True),
+            patch("docsgpt.api.user.teams.routes.require", return_value=_OWNER_RA),
             patch(
                 "docsgpt.api.user.teams.routes.TeamResourceGrantsRepository",
                 return_value=grants_repo,

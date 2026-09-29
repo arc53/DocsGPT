@@ -14,7 +14,11 @@ from docsgpt.api.answer.services.prompt_renderer import (
     prompt_embeds_documents,
     resolve_prompt_skeleton,
 )
-from docsgpt.api.answer.services.stream_processor import get_prompt
+from docsgpt.api.answer.services.stream_processor import (
+    authorized_prompt_id,
+    get_prompt,
+)
+from docsgpt.api.user.resource_access import ref_principal
 from docsgpt.core.settings import settings
 from docsgpt.quotas.service import QuotaExceededError, QuotaService
 from docsgpt.retriever.retriever_creator import RetrieverCreator
@@ -148,7 +152,13 @@ def _run_agent_headless(
     source_active: Any = {}
     if source_id:
         with db_readonly() as conn:
-            src_row = SourcesRepository(conn).get(str(source_id), owner)
+            # Owned or team-shared to the owner, else attached by an editor
+            # who still qualifies; read unscoped once authorized.
+            src_row = (
+                SourcesRepository(conn).get_by_id(str(source_id))
+                if ref_principal(conn, "agent", agent_config, "source", str(source_id))
+                else None
+            )
         if src_row:
             source_active = str(src_row["id"])
             retriever_kind = src_row.get("retriever", retriever_kind)
@@ -156,7 +166,9 @@ def _run_agent_headless(
     # ``chunks=0`` switches retrieval off; only a missing value takes the default.
     raw_chunks = agent_config.get("chunks")
     chunks = 6 if raw_chunks in (None, "") else int(raw_chunks)
-    prompt_id = agent_config.get("prompt_id", "default")
+    # Runs as the owner: a prompt they can no longer use (revoked grant,
+    # deleted) falls back to the default instead of rendering anyway.
+    prompt_id = authorized_prompt_id(agent_config.get("prompt_id", "default"), owner, agent_config)
     user_api_key = agent_config.get("key")
     agent_id = _resolve_agent_id(agent_config)
     agent_type = agent_config.get("agent_type", "classic")

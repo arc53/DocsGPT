@@ -69,6 +69,8 @@ interface GraphNodePanelProps {
   onOpenInFiles?: (path: string) => void;
   /** Refetch the detail after a chunk edit, keeping it on screen. */
   onChunkSaved?: () => void;
+  /** Whether the chunk drawer offers Edit (`can(source, 'edit')`). */
+  canEdit?: boolean;
 }
 
 /**
@@ -105,6 +107,7 @@ export default function GraphNodePanel({
   overview,
   onOpenInFiles,
   onChunkSaved,
+  canEdit = true,
 }: GraphNodePanelProps) {
   const { t } = useTranslation();
   const name = detail?.name ?? node.name;
@@ -166,6 +169,7 @@ export default function GraphNodePanel({
             overview={overview}
             onOpenInFiles={onOpenInFiles}
             onChunkSaved={onChunkSaved}
+            canEdit={canEdit}
           />
         ) : (
           <div
@@ -193,6 +197,7 @@ function NodeDetailBody({
   overview,
   onOpenInFiles,
   onChunkSaved,
+  canEdit,
 }: {
   docId: string;
   detail: GraphNodeDetail;
@@ -201,6 +206,7 @@ function NodeDetailBody({
   overview?: ForceGraphData;
   onOpenInFiles?: (path: string) => void;
   onChunkSaved?: () => void;
+  canEdit: boolean;
 }) {
   const { t } = useTranslation();
   const [descriptionOpen, setDescriptionOpen] = useState(false);
@@ -413,6 +419,7 @@ function NodeDetailBody({
         onClose={() => setOpenChunk(null)}
         onOpenInFiles={onOpenInFiles}
         onSaved={onChunkSaved}
+        canEdit={canEdit}
       />
     </>
   );

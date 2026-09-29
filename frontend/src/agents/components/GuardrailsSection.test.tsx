@@ -135,7 +135,6 @@ describe('GuardrailsSection', () => {
           value={config}
           onChange={() => undefined}
           token="tok"
-          disabledNotice="Read only"
           {...props}
         />,
       );
@@ -232,9 +231,11 @@ describe('GuardrailsSection', () => {
 
   it('shows the section notices as polite or warning alerts', async () => {
     await render({ disabled: true });
+    // View-only: the shared quiet note, not an announced status.
     const readOnly = q('guardrails-read-only');
-    expect(readOnly?.getAttribute('role')).toBe('status');
-    expect(readOnly?.textContent).toContain('Read only');
+    expect(readOnly?.getAttribute('role')).toBe('note');
+    expect(readOnly?.dataset.variant).toBe('default');
+    expect(readOnly?.textContent).toBe('common.viewOnlyNotice');
     const instance = q('guardrails-instance-disabled');
     expect(instance?.getAttribute('role')).toBe('alert');
     expect(instance?.className).toContain('text-warning');

@@ -21,7 +21,8 @@ from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError
 
 from docsgpt.api import api
-from docsgpt.api.user.sources.routes import _resolve_readable_source
+from docsgpt.api.user.resource_access import AccessDenied
+from docsgpt.api.user.sources.access import denied_response, load_source
 from docsgpt.core.model_utils import get_default_model_id
 from docsgpt.retriever.dispatcher import Dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
@@ -102,20 +103,15 @@ class SourceSearch(Resource):
             # Read access = owner or any team grant (viewer included), matching
             # the other source read endpoints (wiki pages, graph).
             with db_readonly() as conn:
-                doc = _resolve_readable_source(conn, source_id, user)
+                doc, _ra = load_source(conn, source_id, user, "use")
+        except AccessDenied as err:
+            return denied_response(err)
         except Exception as e:
-            # An unresolvable id yields None (→ 404); reaching here means the
+            # An unresolvable id is AccessDenied (404); reaching here means the
             # lookup itself failed, which is ours, not the caller's.
             logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(
                 jsonify({"success": False, "message": "Could not resolve source"}), 500
-            )
-        if not doc:
-            return make_response(
-                jsonify(
-                    {"success": False, "message": "Source not found or access denied"}
-                ),
-                404,
             )
         resolved_id = str(doc["id"])
 

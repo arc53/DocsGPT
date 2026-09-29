@@ -1,13 +1,21 @@
 """Workflow management routes."""
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
-from flask import current_app, request
+from flask import current_app, jsonify, make_response, request
 from flask_restx import Namespace, Resource
+from sqlalchemy import text as sql_text
 
 from docsgpt.agents.workflows.cel_evaluator import (
     CelEvaluationError,
     validate_cel_expression,
+)
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    can_use_ref,
+    resolve,
+    sponsor_details,
+    sponsors_after_save,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
@@ -44,6 +52,118 @@ def _resolve_workflow(repo: WorkflowsRepository, workflow_id: str, user_id: str)
         if row is not None:
             return row
     return repo.get_by_legacy_id(workflow_id, user_id)
+
+
+def _workflow_access(conn, workflow_id: str, user_id: str, action: str):
+    """Resolve a workflow the caller may ``action``, and the id to act as.
+
+    The caller's own workflow is always theirs. Otherwise access comes from
+    an agent of the workflow's owner that uses it: ``view`` to read it,
+    ``edit`` to change it, ``delete`` to remove it (checked on that agent).
+
+    Args:
+        conn: Open database connection.
+        workflow_id: Workflow UUID or legacy id.
+        user_id: The caller.
+        action: Agent action required (``view``, ``edit`` or ``delete``).
+
+    Returns:
+        ``(workflow, acting_user_id)``.
+
+    Raises:
+        AccessDenied: 404 when not visible, 403 when the role can't ``action``.
+    """
+    repo = WorkflowsRepository(conn)
+    own = _resolve_workflow(repo, workflow_id, user_id)
+    if own is not None:
+        return own, user_id
+    if not looks_like_uuid(str(workflow_id)):
+        raise AccessDenied(404, "Workflow not found")
+    workflow = repo.get_by_id(str(workflow_id))
+    if workflow is None:
+        raise AccessDenied(404, "Workflow not found")
+    agent_ids = conn.execute(
+        sql_text(
+            "SELECT id FROM agents WHERE workflow_id = CAST(:wid AS uuid) AND user_id = :owner"
+        ),
+        {"wid": str(workflow["id"]), "owner": workflow["user_id"]},
+    ).scalars().all()
+    visible = False
+    for agent_id in agent_ids:
+        ra = resolve(conn, "agent", str(agent_id), user_id)
+        if ra is None:
+            continue
+        visible = True
+        if ra.can(action):
+            return workflow, ra.owner_id
+    if not visible:
+        raise AccessDenied(404, "Workflow not found")
+    raise AccessDenied(403, "Your access to this item doesn't allow that")
+
+
+def _node_refs(nodes: List[Dict]) -> List[Tuple[str, str]]:
+    """The ``(type, id)`` tools and sources a workflow's agent nodes reference.
+
+    Args:
+        nodes: Nodes as the builder sends them (config under ``data`` or
+            ``data.config``, like the engine reads it).
+
+    Returns:
+        list: ``("tool", id)`` and ``("source", id)`` pairs.
+    """
+    refs: List[Tuple[str, str]] = []
+    for node in nodes or []:
+        if not isinstance(node, dict) or node.get("type") != "agent":
+            continue
+        data = node.get("data") or {}
+        cfg = data.get("config") if isinstance(data.get("config"), dict) else data
+        for resource_type, key in (("tool", "tools"), ("source", "sources")):
+            values = cfg.get(key) or []
+            if isinstance(values, (str, int)):
+                values = [values]
+            refs.extend((resource_type, str(v)) for v in values if v)
+    return refs
+
+
+def _new_node_ref_denied(
+    conn, previous_nodes: List[Dict], new_nodes: List[Dict], caller: str
+) -> Optional[AccessDenied]:
+    """403 for the first node tool/source ``caller`` newly adds but can't use.
+
+    A workflow runs as its owner, so an editor saving the owner's graph must
+    not reference the owner's private tools or sources: the caller's own
+    access counts (``use_in_own`` for a tool, ``use`` for a source), not the
+    owner's. Refs already in the stored graph stay, like an agent's.
+
+    Args:
+        conn: Open database connection.
+        previous_nodes: The stored graph's nodes, in builder shape.
+        new_nodes: The nodes being saved.
+        caller: The editor saving.
+
+    Returns:
+        An :class:`AccessDenied` to return, or None when every new ref is fine.
+    """
+    from docsgpt.agents.default_tools import is_synthesized_tool_id
+
+    existing = set(_node_refs(previous_nodes))
+    for resource_type, resource_id in _node_refs(new_nodes):
+        if (resource_type, resource_id) in existing:
+            continue
+        if resource_type == "tool" and is_synthesized_tool_id(resource_id):
+            continue
+        if resource_type == "source" and resource_id == "default":
+            continue
+        if not can_use_ref(conn, resource_type, resource_id, caller):
+            return AccessDenied(403, f"{resource_type.capitalize()} not accessible")
+    return None
+
+
+def _denied(err: AccessDenied):
+    """403/404 in this module's ``error`` shape, plus the shared ``message`` key."""
+    return make_response(
+        jsonify({"success": False, "error": err.message, "message": err.message}), err.status
+    )
 
 
 def _write_graph(
@@ -499,10 +619,10 @@ class WorkflowDetail(Resource):
         user_id = get_user_id()
         try:
             with db_readonly() as conn:
-                repo = WorkflowsRepository(conn)
-                workflow = _resolve_workflow(repo, workflow_id, user_id)
-                if workflow is None:
-                    return error_response("Workflow not found", 404)
+                try:
+                    workflow, _acting = _workflow_access(conn, workflow_id, user_id, "view")
+                except AccessDenied as denied:
+                    return _denied(denied)
                 pg_workflow_id = str(workflow["id"])
                 graph_version = get_workflow_graph_version(workflow)
                 nodes = WorkflowNodesRepository(conn).find_by_version(
@@ -511,6 +631,7 @@ class WorkflowDetail(Resource):
                 edges = WorkflowEdgesRepository(conn).find_by_version(
                     pg_workflow_id, graph_version,
                 )
+                sponsored = sponsor_details(conn, "workflow", workflow)
         except Exception as err:
             return _workflow_error_response("Failed to fetch workflow", err)
 
@@ -519,6 +640,7 @@ class WorkflowDetail(Resource):
                 "workflow": serialize_workflow(workflow),
                 "nodes": [serialize_node(n) for n in nodes],
                 "edges": [serialize_edge(e) for e in edges],
+                "resource_sponsors": sponsored,
             }
         )
 
@@ -533,37 +655,54 @@ class WorkflowDetail(Resource):
         nodes_data = data.get("nodes", [])
         edges_data = data.get("edges", [])
 
-        validation_errors = validate_workflow_structure(
-            nodes_data, edges_data, user_id=user_id
-        )
-        if validation_errors:
-            return error_response(
-                "Workflow validation failed", errors=validation_errors
-            )
-        nodes_data = normalize_agent_node_json_schemas(nodes_data)
-
         try:
             with db_session() as conn:
                 repo = WorkflowsRepository(conn)
-                workflow = _resolve_workflow(repo, workflow_id, user_id)
-                if workflow is None:
-                    return error_response("Workflow not found", 404)
+                try:
+                    workflow, acting = _workflow_access(conn, workflow_id, user_id, "edit")
+                except AccessDenied as denied:
+                    return _denied(denied)
+                # Validated as the owner: the workflow runs with the owner's
+                # models, so their BYOM ids are the ones that must resolve.
+                validation_errors = validate_workflow_structure(
+                    nodes_data, edges_data, user_id=acting
+                )
+                if validation_errors:
+                    return error_response(
+                        "Workflow validation failed", errors=validation_errors
+                    )
+                nodes_data = normalize_agent_node_json_schemas(nodes_data)
                 pg_workflow_id = str(workflow["id"])
                 current_graph_version = get_workflow_graph_version(workflow)
+                if acting != user_id:
+                    previous_nodes = [
+                        serialize_node(n)
+                        for n in WorkflowNodesRepository(conn).find_by_version(
+                            pg_workflow_id, current_graph_version,
+                        )
+                    ]
+                    denied = _new_node_ref_denied(conn, previous_nodes, nodes_data, user_id)
+                    if denied is not None:
+                        return _denied(denied)
                 next_graph_version = current_graph_version + 1
 
                 _write_graph(
                     conn, pg_workflow_id, next_graph_version,
                     nodes_data, edges_data,
                 )
-                repo.update(
-                    pg_workflow_id, user_id,
-                    {
-                        "name": name,
-                        "description": description,
-                        "current_graph_version": next_graph_version,
-                    },
+                workflow_fields = {
+                    "name": name,
+                    "description": description,
+                    "current_graph_version": next_graph_version,
+                }
+                # A node tool/source the owner can't use runs as the editor
+                # who attached it (its sponsor); record who that is.
+                sponsors = sponsors_after_save(
+                    conn, "workflow", workflow, acting, user_id, _node_refs(nodes_data)
                 )
+                if sponsors != (workflow.get("resource_sponsors") or {}):
+                    workflow_fields["resource_sponsors"] = sponsors
+                repo.update(pg_workflow_id, acting, workflow_fields)
                 WorkflowNodesRepository(conn).delete_other_versions(
                     pg_workflow_id, next_graph_version,
                 )
@@ -582,11 +721,12 @@ class WorkflowDetail(Resource):
         try:
             with db_session() as conn:
                 repo = WorkflowsRepository(conn)
-                workflow = _resolve_workflow(repo, workflow_id, user_id)
-                if workflow is None:
-                    return error_response("Workflow not found", 404)
+                try:
+                    workflow, acting = _workflow_access(conn, workflow_id, user_id, "delete")
+                except AccessDenied as denied:
+                    return _denied(denied)
                 # ON DELETE CASCADE on workflow_nodes/edges cleans children.
-                repo.delete(str(workflow["id"]), user_id)
+                repo.delete(str(workflow["id"]), acting)
         except Exception as err:
             return _workflow_error_response("Failed to delete workflow", err)
 

@@ -25,13 +25,18 @@ export function useSectionResolver(): (pathname: string) => Section | null {
       const scoped = matchAgentScopedRoute(pathname);
       if (!scoped) return getSectionForPath(pathname);
 
-      const name = [
+      const record = [
         ...(agents ?? []),
         ...(sharedAgents ?? []),
         ...(selectedAgent ? [selectedAgent] : []),
-      ].find((agent) => agent.id === scoped.agentId)?.name;
+      ].find((agent) => agent.id === scoped.agentId);
 
-      return buildAgentSection(scoped.agentId, name, scoped.workflow);
+      return buildAgentSection(
+        scoped.agentId,
+        record?.name,
+        scoped.workflow,
+        record,
+      );
     },
     [agents, sharedAgents, selectedAgent],
   );

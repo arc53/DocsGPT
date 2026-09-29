@@ -484,14 +484,32 @@ class TestConnectorSync:
             r = ConnectorSync().post()
         assert r.status_code == 401
 
-    def test_returns_400_missing_fields(self, app):
+    def test_returns_400_missing_source_id(self, app):
         from docsgpt.api.connector.routes import ConnectorSync
 
         with app.test_request_context(
-            "/api/connectors/sync", method="POST", json={"source_id": "x"}
+            "/api/connectors/sync", method="POST", json={"session_token": "y"}
         ):
             from flask import request
             request.decoded_token = {"sub": "u"}
+            r = ConnectorSync().post()
+        assert r.status_code == 400
+
+    def test_owner_without_session_token_returns_400(self, app, pg_conn):
+        # The owner syncs with their own session token; team editors don't
+        # send one (their sync uses the owner's session).
+        from docsgpt.api.connector.routes import ConnectorSync
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-sync-notoken"
+        src = SourcesRepository(pg_conn).create(
+            "s", user_id=user, remote_data={"provider": "github"}
+        )
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/connectors/sync", method="POST", json={"source_id": str(src["id"])}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
             r = ConnectorSync().post()
         assert r.status_code == 400
 

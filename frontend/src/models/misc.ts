@@ -85,6 +85,10 @@ export type Doc = {
   // Access level when shared via a team: 'viewer' (read-only) or 'editor'
   // (full write). Null/absent for sources the caller owns.
   team_access?: 'viewer' | 'editor' | null;
+  // The caller's role and what it allows (sources API); gate UI with
+  // `can(doc, action)` from utils/accessUtils.
+  access?: 'owner' | 'editor' | 'viewer' | null;
+  allowed_actions?: string[];
 };
 
 export type GetDocsResponse = {
@@ -98,10 +102,16 @@ export type Prompt = {
   name: string;
   id: string;
   type: string;
+  // The caller's role and what it allows (prompts API); gate UI with
+  // `can(prompt, action)` from utils/accessUtils. Absent on presets.
+  access?: 'owner' | 'editor' | 'viewer' | null;
+  allowed_actions?: string[];
+  team_access?: 'viewer' | 'editor' | null;
+  updated_at?: string | null;
 };
 
 export type PromptProps = {
-  prompts: { name: string; id: string; type: string }[];
+  prompts: Prompt[];
   selectedPrompt: { name: string; id: string; type: string };
   onSelectPrompt: (name: string, id: string, type: string) => void;
   setPrompts: (prompts: { name: string; id: string; type: string }[]) => void;

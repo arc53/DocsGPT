@@ -54,6 +54,31 @@ describe('AgentPageHeader sub-nav', () => {
     expect(tabs[0].getAttribute('data-active')).not.toBe('true');
   });
 
+  it('shows only the tabs the role allows', () => {
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <AgentPageHeader
+            agentId="a1"
+            agentName="Renewals"
+            currentPage="overview"
+            access={{
+              access: 'editor',
+              allowed_actions: ['view', 'view_logs'],
+            }}
+          />
+        </MemoryRouter>,
+      );
+    });
+    const nav = container.querySelector(
+      'nav[aria-label="agents.pageHeader.subnavAriaLabel"]',
+    );
+    expect(Array.from(nav?.children ?? []).map((t) => t.textContent)).toEqual([
+      'agents.pageHeader.tabs.overview',
+      'agents.pageHeader.tabs.logs',
+    ]);
+  });
+
   it('makes the current crumb a button with the avatar and a chevron that opens the details', () => {
     const onNameClick = vi.fn();
     act(() => {

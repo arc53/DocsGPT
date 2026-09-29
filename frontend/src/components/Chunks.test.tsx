@@ -495,7 +495,8 @@ describe('Chunks', () => {
       ok: true,
       json: async () => ({ chunk_id: 'c1-new' }),
     }));
-    await render({ embedded: true });
+    const onOpenChunkChange = vi.fn();
+    await render({ embedded: true, onOpenChunkChange });
     await act(async () => tile()!.click());
     await act(async () => buttonByText('modals.chunk.edit')!.click());
     // After the save, the open position holds nothing (or another chunk).
@@ -509,6 +510,8 @@ describe('Chunks', () => {
     expect(container.querySelector('h2')?.textContent).toBe('Rewritten');
     expect(container.textContent).toContain('chunkPositionUnplaced');
     expect(buttonByLabel('settings.sources.nextChunk')!.disabled).toBe(true);
+    // An embedding host draws the crumb: still open, but with no number.
+    expect(onOpenChunkChange).toHaveBeenLastCalledWith('unplaced');
   });
 
   it('deleting the only chunk on the last page lands on the page before', async () => {
@@ -839,5 +842,40 @@ describe('Chunks', () => {
     service.getDocumentChunks.mockImplementation(async () => chunksResponse());
     await act(async () => buttonByText('retry')!.click());
     expect(tile()).not.toBeNull();
+  });
+  const openReaderMenu = async () => {
+    const trigger = buttonByLabel('settings.sources.menuAlt')!;
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((el) => el.textContent);
+  };
+
+  it('read-only (canEdit false): no Add chunk, Edit or Delete; reading stays', async () => {
+    await render({ embedded: true, canEdit: false });
+    expect(buttonByText('settings.sources.addChunk')).toBeUndefined();
+    await act(async () => tile()!.click());
+    expect(container.querySelector('h2')?.textContent).toBe(
+      'Late pickup clause',
+    );
+    expect(buttonByText('modals.chunk.edit')).toBeUndefined();
+    expect(buttonByLabel('settings.sources.nextChunk')).not.toBeNull();
+    expect(await openReaderMenu()).toEqual(['settings.sources.copyText']);
+  });
+
+  it('an editor (canEdit true) keeps Add chunk, Edit and Delete', async () => {
+    await render({ embedded: true, canEdit: true });
+    expect(buttonByText('settings.sources.addChunk')).toBeDefined();
+    await act(async () => tile()!.click());
+    expect(buttonByText('modals.chunk.edit')).toBeDefined();
+    expect(await openReaderMenu()).toEqual([
+      'settings.sources.copyText',
+      'modals.chunk.delete',
+    ]);
   });
 });

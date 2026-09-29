@@ -19,6 +19,7 @@ class _WorkflowNodeMixin:
         model_id: str,
         api_key: str,
         tool_ids: Optional[List[str]] = None,
+        tool_principals: Optional[Dict[str, str]] = None,
         **kwargs,
     ):
         super().__init__(
@@ -34,6 +35,8 @@ class _WorkflowNodeMixin:
         # (Artifact / Code Executor / Read Document) and ``user_tools`` rows
         # alike, and an empty list means the node's LLM gets no tools.
         self.tool_executor.allowed_tool_ids = [str(t) for t in (tool_ids or [])]
+        # Tools the owner can't use resolve as the editor who attached them.
+        self.tool_executor.tool_principals = dict(tool_principals or {})
 
 
 class WorkflowNodeClassicAgent(_WorkflowNodeMixin, ClassicAgent):

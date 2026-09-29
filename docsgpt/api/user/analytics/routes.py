@@ -8,6 +8,7 @@ from flask_restx import fields, Namespace, Resource
 from sqlalchemy import Connection, text as _sql_text
 
 from docsgpt.api import api
+from docsgpt.api.user.resource_access import AccessDenied, resolve
 from docsgpt.api.user.base import (
     generate_date_range,
     generate_hourly_range,
@@ -74,25 +75,36 @@ def _intervals_for_filter(filter_option, start_date, end_date):
 
 
 def _resolve_agent(conn, api_key_id, user_id):
-    """Owner-scoped agent lookup for analytics filters.
+    """Access-checked agent lookup for analytics filters.
 
     Returns ``(agent, api_key, agent_pg_id)``. ``agent`` is ``None`` when
-    the id doesn't resolve to one of the caller's agents — callers must
+    the id doesn't resolve to an agent the caller can see — callers must
     short-circuit with an empty result, not fall back to sentinel filter
-    values. ``api_key`` is ``None`` (never ``""``) for key-less agents:
-    draft agents store ``key = ''``, and an ``''`` filter would match the
-    ``''`` that writers like ``stack_logs`` stamp on every key-less
-    request — leaking rows across users. NULL matches nothing. Accepts
-    UUID or legacy Mongo ObjectId ids.
+    values. A visible agent needs ``view_logs`` (owner and editors; viewers
+    when the owner turns on ``viewers_can_see_logs``), and the caller then
+    sees exactly the owner's view of it. ``api_key`` is ``None`` (never
+    ``""``) for key-less agents: draft agents store ``key = ''``, and an
+    ``''`` filter would match the ``''`` that writers like ``stack_logs``
+    stamp on every key-less request — leaking rows across users. NULL
+    matches nothing. Accepts UUID or legacy Mongo ObjectId ids.
+
+    Raises:
+        AccessDenied: 403 when the agent is visible but ``view_logs`` isn't allowed.
     """
-    agent = (
-        AgentsRepository(conn).get_any(api_key_id, user_id)
-        if api_key_id
-        else None
-    )
+    ra = resolve(conn, "agent", api_key_id, user_id) if api_key_id else None
+    if ra is None:
+        return None, None, None
+    if not ra.can("view_logs"):
+        raise AccessDenied(403, "Your access to this agent doesn't include its logs")
+    agent = AgentsRepository(conn).get_by_id(ra.resource_id)
     api_key = (agent or {}).get("key") or None
     agent_pg_id = str(agent["id"]) if agent else None
     return agent, api_key, agent_pg_id
+
+
+def _denied(err: AccessDenied):
+    """The JSON error response for an :class:`AccessDenied`."""
+    return make_response(jsonify({"success": False, "message": err.message}), err.status)
 
 
 def _trace_branch(name: str, sources_sql: str, scope: str) -> dict:
@@ -238,6 +250,8 @@ class GetTraces(Resource):
                 traces = RequestTracesRepository(conn).list_by_ref(
                     field, value, user_id=user, agent_id=agent_pg_id
                 )
+        except AccessDenied as denied:
+            return _denied(denied)
         except Exception as err:
             current_app.logger.error(f"Error getting traces: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -342,6 +356,8 @@ class GetMessageAnalytics(Resource):
             daily_messages = {interval: 0 for interval in intervals}
             for row in rows:
                 daily_messages[row._mapping["bucket"]] = int(row._mapping["count"])
+        except AccessDenied as denied:
+            return _denied(denied)
         except Exception as err:
             current_app.logger.error(
                 f"Error getting message analytics: {err}", exc_info=True
@@ -466,6 +482,8 @@ class GetTokenAnalytics(Resource):
                     if key not in series:
                         series[key] = {interval: 0 for interval in intervals}
                     series[key][bucket] = series[key].get(bucket, 0) + total
+        except AccessDenied as denied:
+            return _denied(denied)
         except Exception as err:
             current_app.logger.error(
                 f"Error getting token analytics: {err}", exc_info=True
@@ -592,6 +610,8 @@ class GetFeedbackAnalytics(Resource):
                     "positive": int(row._mapping["positive"] or 0),
                     "negative": int(row._mapping["negative"] or 0),
                 }
+        except AccessDenied as denied:
+            return _denied(denied)
         except Exception as err:
             current_app.logger.error(
                 f"Error getting feedback analytics: {err}", exc_info=True
@@ -710,6 +730,8 @@ class GetToolAnalytics(Resource):
                 }
                 for row in rows
             ]
+        except AccessDenied as denied:
+            return _denied(denied)
         except Exception as err:
             current_app.logger.error(
                 f"Error getting tool analytics: {err}", exc_info=True
@@ -825,6 +847,8 @@ class GetScheduleAnalytics(Resource):
                     "failed": int(row._mapping["failed"] or 0),
                     "skipped": int(row._mapping["skipped"] or 0),
                 }
+        except AccessDenied as denied:
+            return _denied(denied)
         except Exception as err:
             current_app.logger.error(
                 f"Error getting schedule analytics: {err}", exc_info=True
@@ -927,7 +951,8 @@ class GetUserLogs(Resource):
                         200,
                     )
                 params: dict = {
-                    "user_id": user,
+                    # Agent-scoped logs are the owner's view of the agent.
+                    "user_id": agent["user_id"] if agent else user,
                     "limit": page_size + 1,
                     "offset": (page - 1) * page_size,
                 }
@@ -1313,6 +1338,8 @@ class GetUserLogs(Resource):
                         "Could not attach trace summaries to the logs page",
                         exc_info=True,
                     )
+        except AccessDenied as denied:
+            return _denied(denied)
         except Exception as err:
             current_app.logger.error(
                 f"Error getting user logs: {err}", exc_info=True

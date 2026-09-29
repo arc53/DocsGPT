@@ -25,13 +25,73 @@ export type ResourceShare = {
   team_slug?: string;
   access_level: AccessLevel;
   target_user_id?: string | null;
+  created_at?: string | null;
 };
+
+// A grant row from GET /api/teams/<id>/grants. The server resolves names and
+// labels, plus the caller's own access to the resource (`caller`).
+export type TeamGrant = {
+  resource_type: ResourceType;
+  resource_id: string;
+  access_level: AccessLevel;
+  target_user_id?: string | null;
+  resource_name?: string | null;
+  owner_id?: string | null;
+  owner_label?: string | null;
+  target_user_label?: string | null;
+  created_at?: string | null;
+  granted_by?: string | null;
+  granted_by_label?: string | null;
+  caller?: {
+    access: 'owner' | 'editor' | 'viewer';
+    allowed_actions: string[];
+  } | null;
+};
+
+// One owner switch on a resource (`resource_share_settings`).
+export type ResourceSetting = { key: string; value: boolean; default: boolean };
+
+export type ResourceSettingsResponse = {
+  success: boolean;
+  resource_type: ResourceType;
+  resource_id: string;
+  settings: ResourceSetting[];
+  access?: 'owner' | 'editor' | 'viewer' | null;
+  allowed_actions?: string[];
+};
+
+/** A non-2xx teams API response; `message` is the server's own message. */
+export class TeamsApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'TeamsApiError';
+    this.status = status;
+  }
+}
 
 // apiClient resolves to the raw fetch Response (the app convention); services
 // consumed by slices/components parse the JSON here so callers get plain data.
+// A non-2xx status rejects with the server's message, so callers never mistake
+// a 403/404 for success.
 const json = async (response: Response | unknown) => {
   const r = response as Response;
   if (!r || !('json' in r) || typeof r.json !== 'function') return r as unknown;
+  if (typeof r.ok === 'boolean' && !r.ok) {
+    let message = `Request failed (${r.status})`;
+    try {
+      const body = await r.json();
+      if (body && typeof body.message === 'string' && body.message) {
+        message = body.message;
+      } else if (body && typeof body.error === 'string' && body.error) {
+        message = body.error;
+      }
+    } catch {
+      // Not JSON: keep the generic message.
+    }
+    throw new TeamsApiError(r.status, message);
+  }
   return r.json();
 };
 
@@ -153,6 +213,37 @@ const teamsService = {
         token,
       ),
     ),
+
+  getResourceSettings: async (
+    resourceType: ResourceType,
+    resourceId: string,
+    token: string | null,
+  ): Promise<ResourceSettingsResponse> =>
+    json(
+      await apiClient.get(
+        `${endpoints.USER.RESOURCE_SETTINGS}?resource_type=${resourceType}&resource_id=${encodeURIComponent(
+          resourceId,
+        )}`,
+        token,
+      ),
+    ) as Promise<ResourceSettingsResponse>,
+  updateResourceSettings: async (
+    resourceType: ResourceType,
+    resourceId: string,
+    settings: Record<string, boolean>,
+    token: string | null,
+  ): Promise<ResourceSettingsResponse> =>
+    json(
+      await apiClient.put(
+        endpoints.USER.RESOURCE_SETTINGS,
+        {
+          resource_type: resourceType,
+          resource_id: resourceId,
+          settings,
+        },
+        token,
+      ),
+    ) as Promise<ResourceSettingsResponse>,
 
   listAll: async (token: string | null): Promise<any> =>
     json(await apiClient.get(endpoints.USER.ALL_TEAMS, token)),
