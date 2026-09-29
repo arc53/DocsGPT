@@ -1890,7 +1890,7 @@
       "resetKeyConfirm": "¿Seguro que quieres restablecer la clave de API? La clave actual dejará de funcionar de inmediato y esta acción no se puede deshacer.",
       "apiWrites": {
         "title": "Acciones que los usuarios de la API, del widget y del enlace público pueden realizar en tu nombre",
-        "description": "Nadie puede aprobar una acción por ti a través de la clave de API, el widget, un webhook o el enlace público del agente, así que los cambios con tus cuentas conectadas y credenciales guardadas se bloquean salvo que los permitas aquí.",
+        "description": "Nadie puede aprobar una acción por ti a través de la clave de API, el widget o el enlace público del agente, así que los cambios con tus cuentas conectadas y credenciales guardadas se bloquean salvo que los permitas aquí.",
         "item": "{{tool}}: {{action}}",
         "saveFailed": "No se pudo guardar. Inténtalo de nuevo."
       },

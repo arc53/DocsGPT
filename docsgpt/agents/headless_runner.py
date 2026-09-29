@@ -90,7 +90,7 @@ def run_agent_headless(
     ``trace_user_id`` owns the trace when the run belongs to someone other
     than the agent's owner (a schedule a user set on a shared agent), so the
     trace is visible wherever that user sees the run; it defaults to the owner.
-    ``external_caller`` (a webhook, a schedule set through the API) and
+    ``external_caller`` (a schedule set through the API) and
     ``public_link_caller`` (a schedule a public-link user set) mark a run for
     someone who can't approve for the owner: writes on the owner's accounts
     and credentials then run only when the agent's API write allowlist has

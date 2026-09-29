@@ -162,8 +162,8 @@ def owner_credential_writes(tool: dict) -> list[str]:
     """Names of the tool's write actions that run on its owner's credentials.
 
     These are what someone who can't approve for the owner (an API-key or
-    widget caller, a public-link user, a webhook) may run only when the owner
-    allows them in the agent's API write allowlist.
+    widget caller, a public-link user) may run only when the owner allows
+    them in the agent's API write allowlist.
 
     Args:
         tool: A ``user_tools`` row.

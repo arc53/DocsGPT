@@ -1171,7 +1171,7 @@ class ToolExecutor:
                 entry = f"{tool_data.get('id') or tool_id}:{action_name}"
                 if entry in self.api_write_allowlist:
                     return None
-                route = "for API, widget or webhook callers" if self.external_caller else "from its public link"
+                route = "for API or widget callers" if self.external_caller else "from its public link"
                 target = (
                     f"the owner's {resolved.connector_name} account"
                     if resolved is not None and resolved.connector_name

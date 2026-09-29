@@ -35,8 +35,8 @@ type UserTool = {
 
 /**
  * The write actions on the owner's accounts and stored credentials that
- * anyone reaching this agent through its API key, widget, a webhook or its
- * public link may run. Nobody there can approve an action for the owner, so
+ * anyone reaching this agent through its API key, widget or its public link
+ * may run. Nobody there can approve an action for the owner, so
  * the server refuses every other such write. The server names these writes
  * per tool (`owner_credential_writes`).
  *
