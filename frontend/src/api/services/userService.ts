@@ -186,6 +186,17 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.put(endpoints.USER.WIKI_PAGE(sourceId, data.path), data, token),
+  getWikiSettings: (
+    sourceId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(endpoints.USER.WIKI_SETTINGS(sourceId), token),
+  updateWikiSettings: (
+    sourceId: string,
+    data: { allow_outside_edits: boolean },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.put(endpoints.USER.WIKI_SETTINGS(sourceId), data, token),
   getAvailableTools: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_AVAILABLE_TOOLS, token),
   getUserTools: (token: string | null): Promise<any> =>

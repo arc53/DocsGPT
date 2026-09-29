@@ -179,6 +179,16 @@
         "loadFailed": "Wikiページを読み込めませんでした。",
         "pageLoadFailed": "このページを読み込めませんでした。",
         "editTitle": "ページを編集",
+        "settings": {
+          "action": "Wiki設定",
+          "title": "Wiki設定",
+          "outsideEdits": {
+            "label": "API、ウィジェット、公開リンクの利用者にこのWikiの編集を許可",
+            "description": "オフの場合、APIキー、ウィジェット、公開リンクからエージェントを利用する人はこのWikiを読めますが、変更はできません。あなたとWikiの編集者はいつでも編集できます。"
+          },
+          "loadError": "Wiki設定を読み込めませんでした。",
+          "saveError": "変更を保存できませんでした。もう一度お試しください。"
+        },
         "byline_one": "{{pages}} ページ · {{tokens}} トークン"
       },
       "graphrag": {

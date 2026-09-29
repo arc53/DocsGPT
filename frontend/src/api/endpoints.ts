@@ -88,6 +88,7 @@ const endpoints = {
     WIKI_PAGES: (id: string) => `/api/sources/${id}/wiki/pages`,
     WIKI_PAGE: (id: string, path: string) =>
       `/api/sources/${id}/wiki/page?path=${encodeURIComponent(path)}`,
+    WIKI_SETTINGS: (id: string) => `/api/sources/${id}/wiki/settings`,
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',

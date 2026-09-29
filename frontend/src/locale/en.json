@@ -184,7 +184,17 @@
         "pagesTitle": "Pages",
         "loadFailed": "Could not load the wiki pages.",
         "pageLoadFailed": "Could not load this page.",
-        "editTitle": "Edit page"
+        "editTitle": "Edit page",
+        "settings": {
+          "action": "Wiki settings",
+          "title": "Wiki settings",
+          "outsideEdits": {
+            "label": "Let API, widget and public-link users edit this wiki",
+            "description": "When this is off, people who use an agent through its API key, widget or public link can read this wiki but not change it. You and the wiki's editors can always edit it."
+          },
+          "loadError": "Could not load the wiki settings.",
+          "saveError": "Could not save the change. Please try again."
+        }
       },
       "graphrag": {
         "badge": "GraphRAG",

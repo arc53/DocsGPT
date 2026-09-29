@@ -73,6 +73,7 @@ import EnableGraphRAGModal from './EnableGraphRAGModal';
 import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import SourceConfigModal from './SourceConfigModal';
 import TestRetrievalModal from './TestRetrievalModal';
+import WikiSettingsModal from './WikiSettingsModal';
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -129,6 +130,8 @@ export default function Sources({
   ];
   const [documentToView, setDocumentToView] = useState<Doc>();
   const [documentToShare, setDocumentToShare] = useState<Doc | null>(null);
+  const [documentForWikiSettings, setDocumentForWikiSettings] =
+    useState<Doc | null>(null);
   const [documentToConfigure, setDocumentToConfigure] = useState<Doc | null>(
     null,
   );
@@ -433,6 +436,18 @@ export default function Sources({
         onClick: () => {
           setDocumentToConfigure(document);
           setConfigModalState('ACTIVE');
+        },
+        variant: 'default',
+      });
+    }
+
+    // A wiki's own settings are the owner's (manage_settings).
+    if (document.id && isWiki && can(document, 'manage_settings')) {
+      actions.push({
+        icon: SlidersHorizontal,
+        label: t('settings.sources.wiki.settings.action'),
+        onClick: () => {
+          setDocumentForWikiSettings(document);
         },
         variant: 'default',
       });
@@ -929,6 +944,13 @@ export default function Sources({
         graphRAGAvailable={graphRAGAvailable}
         availableModels={availableModels}
       />
+
+      {documentForWikiSettings && (
+        <WikiSettingsModal
+          document={documentForWikiSettings}
+          onClose={() => setDocumentForWikiSettings(null)}
+        />
+      )}
 
       <ConvertToWikiModal
         modalState={convertModalState}

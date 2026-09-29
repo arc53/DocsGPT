@@ -179,7 +179,17 @@
         "pagesTitle": "Páginas",
         "loadFailed": "No se pudieron cargar las páginas del wiki.",
         "pageLoadFailed": "No se pudo cargar esta página.",
-        "editTitle": "Editar página"
+        "editTitle": "Editar página",
+        "settings": {
+          "action": "Configuración del wiki",
+          "title": "Configuración del wiki",
+          "outsideEdits": {
+            "label": "Permitir que los usuarios de la API, del widget y del enlace público editen este wiki",
+            "description": "Si está desactivado, quienes usan un agente mediante su clave de API, su widget o su enlace público pueden leer este wiki, pero no cambiarlo. Tú y los editores del wiki siempre pueden editarlo."
+          },
+          "loadError": "No se pudo cargar la configuración del wiki.",
+          "saveError": "No se pudo guardar el cambio. Inténtalo de nuevo."
+        }
       },
       "graphrag": {
         "badge": "GraphRAG",

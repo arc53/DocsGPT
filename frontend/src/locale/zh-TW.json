@@ -179,6 +179,16 @@
         "loadFailed": "無法載入 Wiki 頁面。",
         "pageLoadFailed": "無法載入此頁面。",
         "editTitle": "編輯頁面",
+        "settings": {
+          "action": "Wiki 設定",
+          "title": "Wiki 設定",
+          "outsideEdits": {
+            "label": "允許 API、小工具和公開連結使用者編輯此 Wiki",
+            "description": "關閉時，透過代理的 API 金鑰、小工具或公開連結使用它的人可以閱讀此 Wiki，但無法變更。你和此 Wiki 的編輯者隨時都能編輯它。"
+          },
+          "loadError": "無法載入 Wiki 設定。",
+          "saveError": "無法儲存變更。請再試一次。"
+        },
         "byline_one": "{{pages}} 個頁面 · {{tokens}} 個 token"
       },
       "graphrag": {

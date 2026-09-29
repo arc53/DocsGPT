@@ -179,7 +179,17 @@
         "pagesTitle": "Seiten",
         "loadFailed": "Die Wiki-Seiten konnten nicht geladen werden.",
         "pageLoadFailed": "Diese Seite konnte nicht geladen werden.",
-        "editTitle": "Seite bearbeiten"
+        "editTitle": "Seite bearbeiten",
+        "settings": {
+          "action": "Wiki-Einstellungen",
+          "title": "Wiki-Einstellungen",
+          "outsideEdits": {
+            "label": "API-, Widget- und Public-Link-Nutzern erlauben, dieses Wiki zu bearbeiten",
+            "description": "Wenn das aus ist, können Personen, die einen Agenten über seinen API-Schlüssel, sein Widget oder seinen öffentlichen Link nutzen, dieses Wiki lesen, aber nicht ändern. Du und die Bearbeiter des Wikis können es immer bearbeiten."
+          },
+          "loadError": "Die Wiki-Einstellungen konnten nicht geladen werden.",
+          "saveError": "Die Änderung konnte nicht gespeichert werden. Bitte versuche es erneut."
+        }
       },
       "graphrag": {
         "badge": "GraphRAG",

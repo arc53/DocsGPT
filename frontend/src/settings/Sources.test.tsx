@@ -62,6 +62,11 @@ vi.mock('../components/graph/GraphSourceView', () => ({
 vi.mock('./SourceConfigModal', () => ({ default: () => null }));
 vi.mock('./TestRetrievalModal', () => ({ default: () => null }));
 vi.mock('./ConvertToWikiModal', () => ({ default: () => null }));
+vi.mock('./WikiSettingsModal', () => ({
+  default: ({ document }: { document: { name: string } }) => (
+    <div data-testid="wiki-settings">{document.name}</div>
+  ),
+}));
 vi.mock('./EnableGraphRAGModal', () => ({ default: () => null }));
 vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
 vi.mock('../upload/Upload', () => ({ default: () => null }));
@@ -229,6 +234,41 @@ describe('Sources access', () => {
       'settings.sources.view',
       'settings.sources.testRetrieval.action',
     ]);
+  });
+
+  it('a wiki owner gets Wiki settings; editors and viewers do not', async () => {
+    const wiki = { type: 'wiki', config: { kind: 'wiki' } };
+    await render(
+      doc({ ...wiki, access: 'owner', allowed_actions: [...OWNER, 'use'] }),
+    );
+    expect(await menuItems()).toContain(
+      'settings.sources.wiki.settings.action',
+    );
+    await clickItem('settings.sources.wiki.settings.action');
+    expect(
+      document.querySelector('[data-testid="wiki-settings"]')?.textContent,
+    ).toBe('Contracts');
+
+    for (const allowed of [EDITOR, VIEWER]) {
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      document.body
+        .querySelectorAll('[role="menu"]')
+        .forEach((m) => m.remove());
+      await render(
+        doc({ ...wiki, access: 'editor', allowed_actions: allowed }),
+      );
+      expect(await menuItems()).not.toContain(
+        'settings.sources.wiki.settings.action',
+      );
+    }
+  });
+
+  it('a classic source has no Wiki settings', async () => {
+    await render(doc({ access: 'owner', allowed_actions: [...OWNER, 'use'] }));
+    expect(await menuItems()).not.toContain(
+      'settings.sources.wiki.settings.action',
+    );
   });
 
   it('sync and reingest are editor actions', async () => {
