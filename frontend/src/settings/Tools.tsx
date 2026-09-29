@@ -1,4 +1,4 @@
-import { Eye, Pencil, Plug, RefreshCw, Trash2, Users } from 'lucide-react';
+import { Eye, Pencil, RefreshCw, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -19,11 +19,8 @@ import {
   CardFooter,
   CardTitle,
 } from '../components/ui/card';
-import { Label } from '../components/ui/label';
-import { Switch } from '../components/ui/switch';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
-import ConnectionDrawer from '../connectors/ConnectionDrawer';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
   connectionNeedsSignIn,
@@ -32,9 +29,8 @@ import {
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import { connectorDescription } from '../connectors/i18n';
-import type { Connection, ConnectorDefinition } from '../connectors/types';
+import type { Connection } from '../connectors/types';
 import { toolServiceOf } from '../connectors/toolService';
-import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { useLoaderState } from '../hooks';
 import type { AvailableToolType } from '../modals/types';
 import AddToolModal from '../modals/AddToolModal';
@@ -48,11 +44,7 @@ import ShareToTeamModal, {
   type ShareCredentials,
 } from '../teams/ShareToTeamModal';
 import { can, isOwner, roleOf } from '../utils/accessUtils';
-import {
-  canAddToolToOwn,
-  isSharedOAuthMcp,
-  toolInChat,
-} from '../utils/toolUtils';
+import { isSharedOAuthMcp } from '../utils/toolUtils';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
 import { APIToolType, UserToolType } from './types';
@@ -85,11 +77,6 @@ export default function Tools() {
   const [toolToShare, setToolToShare] = React.useState<UserToolType | null>(
     null,
   );
-  // The connection panel, opened here for a connected tool's service.
-  const [managed, setManaged] = React.useState<{
-    connector: ConnectorDefinition;
-    connectionId: string;
-  } | null>(null);
   const [mcpStatuses, setMcpStatuses] = React.useState<{
     [toolId: string]: string;
   }>({});
@@ -187,31 +174,26 @@ export default function Tools() {
 
   const getMenuOptions = (tool: UserToolType): MenuOption[] => {
     const canEdit = can(tool, 'edit') || can(tool, 'edit_credentials');
-    // Only the caller's own connections are loaded, so a connection here
-    // means the caller owns it and manages it in place.
-    const connection = connectionOf(tool);
-    const options: MenuOption[] = [
-      connection
-        ? {
-            icon: Plug,
-            label: t('settings.connectors.manageConnection'),
-            onClick: () => handleSettingsClick(tool),
-            variant: 'default',
-          }
-        : canEdit
+    const options: MenuOption[] = [];
+    // The owner's connected tool (its connection is theirs) is managed on
+    // the Connectors page, so it has no editor here; a teammate's opens the
+    // tool editor like any other shared tool.
+    if (!(tool.connection_id && isOwner(tool)))
+      options.push(
+        canEdit
           ? {
               icon: Pencil,
               label: t('settings.tools.edit'),
-              onClick: () => handleSettingsClick(tool),
+              onClick: () => setSelectedTool(tool),
               variant: 'default',
             }
           : {
               icon: Eye,
               label: t('settings.tools.view'),
-              onClick: () => handleSettingsClick(tool),
+              onClick: () => setSelectedTool(tool),
               variant: 'default',
             },
-    ];
+      );
     // A connected server reconnects on its connector page, like any other
     // connection; only an MCP tool without one keeps the server form. The
     // tool's own connection id decides, for everyone: a teammate never sees
@@ -286,63 +268,12 @@ export default function Tools() {
       });
   };
 
-  const setToolInChat = (toolId: string, value: boolean) =>
-    setUserTools((prevTools) =>
-      prevTools.map((tool) =>
-        tool.id !== toolId
-          ? tool
-          : isOwner(tool)
-            ? { ...tool, status: value, in_chat: value }
-            : { ...tool, in_chat: value },
-      ),
-    );
-
-  // The switch moves at once and flips back when the server refuses it.
-  const updateToolStatus = (toolId: string, newStatus: boolean) => {
-    setToolInChat(toolId, newStatus);
-    const fail = () => {
-      setToolInChat(toolId, !newStatus);
-      dispatch(
-        showActionToast({
-          variant: 'destructive',
-          message: t('settings.tools.statusUpdateFailed'),
-        }),
-      );
-    };
-    userService
-      .updateToolStatus({ id: toolId, status: newStatus }, token)
-      .then((response: Response) => {
-        if (!response.ok) fail();
-      })
-      .catch((error: unknown) => {
-        console.error('Failed to update tool status:', error);
-        fail();
-      });
-  };
-
-  // A connected tool is managed on its connector's page (account, on/off,
-  // permissions); only other tools open the tool editor here.
+  // The caller's own connection behind a connected tool (only their own
+  // connections are loaded): the card names its account.
   const connectionOf = (tool: UserToolType) =>
     tool.connection_id
       ? connections.find((c) => c.id === tool.connection_id)
       : undefined;
-  const handleSettingsClick = (tool: UserToolType) => {
-    const connection = connectionOf(tool);
-    if (connection) {
-      const connector = catalog.find((c) => c.key === connection.connector_key);
-      if (connector) setManaged({ connector, connectionId: connection.id });
-      else
-        navigate(
-          `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`,
-        );
-      return;
-    }
-    setSelectedTool(tool);
-  };
-
-  const { launch, modals } = useConnectorLauncher({
-    onConnected: () => getUserTools(),
-  });
   // What tells two accounts of one service apart on their cards: the name
   // the owner gave it, else what identifies it.
   const accountLine = (connection: Connection) =>
@@ -597,52 +528,22 @@ export default function Tools() {
                               </CardDescription>
                             </div>
                           </div>
-                          {/* Which account this is (each account of a
-                              service is its own tool) and the caller's own
-                              "In my chats" switch share the meta row. A
-                              shared tool without use_in_own can't be in the
-                              caller's chats at all, so it has no switch. */}
-                          {(connection || canAddToolToOwn(tool)) && (
+                          {/* Which account this is: each account of a
+                              service is its own tool. */}
+                          {connection && (
                             <CardFooter>
-                              {connection && (
-                                <span className="flex min-w-0 items-center gap-2">
-                                  <ConnectorIcon
-                                    icon={connection.icon}
-                                    className="size-3.5 shrink-0"
-                                  />
-                                  <span
-                                    className="truncate"
-                                    title={accountLine(connection)}
-                                  >
-                                    {accountLine(connection)}
-                                  </span>
+                              <span className="flex min-w-0 items-center gap-2">
+                                <ConnectorIcon
+                                  icon={connection.icon}
+                                  className="size-3.5 shrink-0"
+                                />
+                                <span
+                                  className="truncate"
+                                  title={accountLine(connection)}
+                                >
+                                  {accountLine(connection)}
                                 </span>
-                              )}
-                              {canAddToolToOwn(tool) && (
-                                <span className="ml-auto flex shrink-0 items-center gap-2">
-                                  <Label
-                                    htmlFor={`toolToggle-${index}`}
-                                    className="text-muted-foreground text-xs font-normal"
-                                  >
-                                    {t('settings.tools.inMyChats')}
-                                  </Label>
-                                  <Switch
-                                    checked={toolInChat(tool)}
-                                    onCheckedChange={(checked) =>
-                                      updateToolStatus(tool.id, checked)
-                                    }
-                                    id={`toolToggle-${index}`}
-                                    aria-label={t(
-                                      'settings.tools.useInMyChatsAria',
-                                      {
-                                        interpolation: { escapeValue: false },
-                                        toolName:
-                                          tool.customName || tool.displayName,
-                                      },
-                                    )}
-                                  />
-                                </span>
-                              )}
+                              </span>
                             </CardFooter>
                           )}
                         </Card>
@@ -683,20 +584,6 @@ export default function Tools() {
               fetchMcpStatuses();
             }}
           />
-          <ConnectionDrawer
-            connector={managed?.connector ?? null}
-            initialConnectionId={managed?.connectionId}
-            onClose={() => {
-              setManaged(null);
-              getUserTools();
-              dispatch(loadConnectors({ token }));
-            }}
-            onConnect={(connector, options) => {
-              setManaged(null);
-              launch(connector, options);
-            }}
-          />
-          {modals}
           {toolToShare && (
             <ShareToTeamModal
               resourceType="tool"

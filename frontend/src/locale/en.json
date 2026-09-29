@@ -1604,7 +1604,6 @@
         "read": "Looks things up",
         "write": "Takes actions"
       },
-      "manageConnection": "Manage connection",
       "github": {
         "tokenHint": "Create a fine-grained token with read access to Contents and Metadata on the repositories you want to use. For agents to make changes, also give it read and write access to Issues and Pull requests.",
         "writes": "Also let agents make changes (issues, comments, pull requests)",

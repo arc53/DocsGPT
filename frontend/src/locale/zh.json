@@ -1588,7 +1588,6 @@
         "read": "查找信息",
         "write": "执行操作"
       },
-      "manageConnection": "管理连接",
       "github": {
         "tokenHint": "为要使用的仓库创建一个细粒度令牌，并授予 Contents 和 Metadata 的读取权限。如需让智能体进行更改，还需授予 Issues 和 Pull requests 的读写权限。",
         "writes": "也允许智能体进行更改（议题、评论、拉取请求）",

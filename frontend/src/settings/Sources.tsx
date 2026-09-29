@@ -5,7 +5,6 @@ import {
   Eye,
   HardDrive,
   Network,
-  Plug,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -373,23 +372,6 @@ export default function Sources({
         variant: 'default',
       },
     ];
-
-    // Synced from a connection: its account, sync and other uses live on
-    // the connector's page.
-    const connection = document.connectionId
-      ? connections.find((c) => c.id === document.connectionId)
-      : undefined;
-    if (connection) {
-      actions.push({
-        icon: Plug,
-        label: t('settings.connectors.manageConnection'),
-        onClick: () =>
-          navigate(
-            `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`,
-          ),
-        variant: 'default',
-      });
-    }
 
     if (canEdit && document.ingestStatus === 'failed') {
       actions.push({

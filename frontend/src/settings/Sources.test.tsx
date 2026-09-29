@@ -2,7 +2,8 @@ import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 
-const { dispatch, service, view } = vi.hoisted(() => ({
+const { dispatch, service, view, connectors } = vi.hoisted(() => ({
+  connectors: { connections: [] as Record<string, unknown>[] },
   // The heavy children: each view reports the canEdit it was given.
   view:
     (testId: string) =>
@@ -31,7 +32,7 @@ vi.mock('react-redux', () => ({
       preference: { token: null },
       upload: { tasks: [] },
       graphBuild: { builds: {} },
-      connectors: { connections: [], loaded: true },
+      connectors: { connections: connectors.connections, loaded: true },
     }),
 }));
 
@@ -168,6 +169,33 @@ describe('Sources access', () => {
       'settings.sources.shareWithTeam',
       'convTile.delete',
     ]);
+  });
+
+  // The connection is managed on the Connectors page; a synced source's
+  // menu keeps only what acts on the source itself.
+  it('a synced source has no Manage connection item', async () => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        icon: 'drive',
+        status: 'connected',
+        account_label: 'alex@example.com',
+      },
+    ];
+    await render(
+      doc({
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+        connectionId: 'conn-1',
+      } as Partial<Doc>),
+    );
+    const items = await menuItems();
+    connectors.connections = [];
+    expect(items).not.toContain('settings.connectors.manageConnection');
+    expect(items).toContain('settings.sources.editConfig');
+    expect(items).toContain('convTile.delete');
   });
 
   it('a source with no access fields is the caller’s own', async () => {

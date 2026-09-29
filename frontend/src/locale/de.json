@@ -1598,7 +1598,6 @@
         "read": "Schlägt nach",
         "write": "Führt Aktionen aus"
       },
-      "manageConnection": "Verbindung verwalten",
       "github": {
         "tokenHint": "Erstelle ein feingranulares Token mit Lesezugriff auf „Contents“ und „Metadata“ für die Repositorys, die du nutzen möchtest. Damit Agenten Änderungen vornehmen können, gib ihm außerdem Lese- und Schreibzugriff auf „Issues“ und „Pull requests“.",
         "writes": "Agenten auch Änderungen erlauben (Issues, Kommentare, Pull Requests)",

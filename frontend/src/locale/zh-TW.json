@@ -1588,7 +1588,6 @@
         "read": "查詢資訊",
         "write": "執行操作"
       },
-      "manageConnection": "管理連線",
       "github": {
         "tokenHint": "為要使用的儲存庫建立細部權杖，並授予 Contents 和 Metadata 的讀取權限。如要讓代理進行變更，還需授予 Issues 和 Pull requests 的讀寫權限。",
         "writes": "也允許代理進行變更（議題、留言、提取要求）",

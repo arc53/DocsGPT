@@ -1598,7 +1598,6 @@
         "read": "Consulta datos",
         "write": "Realiza acciones"
       },
-      "manageConnection": "Gestionar conexión",
       "github": {
         "tokenHint": "Crea un token detallado con acceso de lectura a Contents y Metadata en los repositorios que quieras usar. Para que los agentes hagan cambios, dale también acceso de lectura y escritura a Issues y Pull requests.",
         "writes": "Permitir también que los agentes hagan cambios (issues, comentarios, pull requests)",

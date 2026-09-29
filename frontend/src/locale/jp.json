@@ -1588,7 +1588,6 @@
         "read": "情報を調べる",
         "write": "操作を行う"
       },
-      "manageConnection": "接続を管理",
       "github": {
         "tokenHint": "使用するリポジトリに対して Contents と Metadata の読み取り権限を持つ fine-grained トークンを作成してください。エージェントに変更を許可する場合は、Issues と Pull requests の読み取りと書き込みの権限も付与してください。",
         "writes": "エージェントによる変更も許可する（Issue、コメント、プルリクエスト）",
