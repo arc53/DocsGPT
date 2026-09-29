@@ -21,6 +21,7 @@ import {
 import { Switch } from '../components/ui/switch';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
+import ConnectionDrawer from '../connectors/ConnectionDrawer';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
   connectionNeedsSignIn,
@@ -29,6 +30,8 @@ import {
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import { connectorDescription } from '../connectors/i18n';
+import type { Connection, ConnectorDefinition } from '../connectors/types';
+import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { useLoaderState } from '../hooks';
 import type { AvailableToolType } from '../modals/types';
 import AddToolModal from '../modals/AddToolModal';
@@ -70,6 +73,10 @@ export default function Tools() {
     React.useState<ActiveState>('INACTIVE');
   const [reconnectTool, setReconnectTool] = React.useState<any>(null);
   const [toolToShare, setToolToShare] = React.useState<UserToolType | null>(
+    null,
+  );
+  // The connection panel, opened here for a connected tool's service.
+  const [managed, setManaged] = React.useState<ConnectorDefinition | null>(
     null,
   );
   const [mcpStatuses, setMcpStatuses] = React.useState<{
@@ -254,13 +261,28 @@ export default function Tools() {
   const handleSettingsClick = (tool: UserToolType) => {
     const connection = connectionOf(tool);
     if (connection) {
-      navigate(
-        `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`,
-      );
+      const connector = catalog.find((c) => c.key === connection.connector_key);
+      if (connector) setManaged(connector);
+      else
+        navigate(
+          `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`,
+        );
       return;
     }
     setSelectedTool(tool);
   };
+
+  const { launch, modals } = useConnectorLauncher({
+    onConnected: () => getUserTools(),
+  });
+  // What tells two accounts of one service apart on their cards.
+  const accountLine = (connection: Connection) =>
+    connection.auth_kind === 'api_key'
+      ? t('settings.connectors.detail.keyEnding', {
+          hint: connection.account_label,
+          interpolation: { escapeValue: false },
+        })
+      : connection.account_label;
 
   const handleGoBack = () => {
     setSelectedTool(null);
@@ -447,15 +469,11 @@ export default function Tools() {
                                   {t('settings.tools.builtIn')}
                                 </Badge>
                               )}
-                              {connectionNeedsSignIn(connection) ? (
+                              {connectionNeedsSignIn(connection) && (
                                 <Badge variant="warning">
                                   {t('settings.connectors.health.signInAgain')}
                                 </Badge>
-                              ) : !tool.status ? (
-                                <Badge variant="neutral">
-                                  {t('settings.tools.off')}
-                                </Badge>
-                              ) : null}
+                              )}
                               {tool.name === 'mcp_tool' &&
                                 !connection &&
                                 mcpStatuses[tool.id] && (
@@ -509,37 +527,36 @@ export default function Tools() {
                             </div>
                           </div>
                           {connection && (
-                            // The way to the connection's page, marked with
-                            // the service it comes from.
+                            // Which account this is: each account of a
+                            // service is its own tool. mr-12 keeps the line
+                            // clear of the switch.
                             <CardFooter>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                shape="pill"
-                                onClick={() => handleSettingsClick(tool)}
-                              >
-                                <ConnectorIcon icon={connection.icon} />
-                                {t('settings.connectors.manageConnection')}
-                              </Button>
+                              <span className="mr-12 flex min-w-0 items-center gap-2">
+                                <ConnectorIcon
+                                  icon={connection.icon}
+                                  className="size-3.5 shrink-0"
+                                />
+                                <span
+                                  className="truncate"
+                                  title={accountLine(connection)}
+                                >
+                                  {accountLine(connection)}
+                                </span>
+                              </span>
                             </CardFooter>
                           )}
-                          {/* A connected tool is turned on and off on its
-                            connection's page, the one home for it. */}
-                          {!connection && (
-                            <div className="absolute right-4 bottom-4">
-                              <Switch
-                                checked={tool.status}
-                                onCheckedChange={(checked) =>
-                                  updateToolStatus(tool.id, checked)
-                                }
-                                id={`toolToggle-${index}`}
-                                aria-label={t('settings.tools.toggleToolAria', {
-                                  toolName: tool.customName || tool.displayName,
-                                })}
-                              />
-                            </div>
-                          )}
+                          <div className="absolute right-4 bottom-4">
+                            <Switch
+                              checked={tool.status}
+                              onCheckedChange={(checked) =>
+                                updateToolStatus(tool.id, checked)
+                              }
+                              id={`toolToggle-${index}`}
+                              aria-label={t('settings.tools.toggleToolAria', {
+                                toolName: tool.customName || tool.displayName,
+                              })}
+                            />
+                          </div>
                         </Card>
                       );
                     })}
@@ -577,6 +594,19 @@ export default function Tools() {
               fetchMcpStatuses();
             }}
           />
+          <ConnectionDrawer
+            connector={managed}
+            onClose={() => {
+              setManaged(null);
+              getUserTools();
+              dispatch(loadConnectors({ token }));
+            }}
+            onConnect={(connector, options) => {
+              setManaged(null);
+              launch(connector, options);
+            }}
+          />
+          {modals}
           {toolToShare && (
             <ShareToTeamModal
               resourceType="tool"

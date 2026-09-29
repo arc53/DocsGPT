@@ -102,6 +102,16 @@ vi.mock('../api/services/connectorsService', () => ({
   },
 }));
 
+// The connector panel itself is tested on its own; here it only has to open
+// for the right service.
+vi.mock('../connectors/ConnectionDrawer', () => ({
+  default: ({ connector }: { connector: { key: string } | null }) =>
+    connector ? <div data-testid="drawer">{connector.key}</div> : null,
+}));
+vi.mock('../connectors/useConnectorLauncher', () => ({
+  default: () => ({ launch: vi.fn(), modals: null }),
+}));
+
 import connectorsReducer from '../connectors/connectorsSlice';
 import notificationsReducer from '../notifications/notificationsSlice';
 import Tools from './Tools';
@@ -169,7 +179,12 @@ describe('Tools page', () => {
       document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
     ).find((item) => item.textContent?.includes(text));
 
-  it('sends a connected tool to its connector page to manage it', async () => {
+  const card = (title: string) =>
+    Array.from(container.querySelectorAll<HTMLElement>('h2'))
+      .find((h) => h.textContent === title)!
+      .closest<HTMLElement>('[data-slot="card"]')!;
+
+  it('opens the connection panel right here to manage a connected tool', async () => {
     await render();
     await openMenu(0);
     expect(menuItem('settings.tools.edit')).toBeUndefined();
@@ -177,30 +192,26 @@ describe('Tools page', () => {
       menuItem('settings.connectors.manageConnection')!.click(),
     );
     expect(
-      document.body.querySelector('[data-testid="where"]')?.textContent,
-    ).toBe('/settings/connectors?connector=telegram');
+      document.body.querySelector('[data-testid="drawer"]')?.textContent,
+    ).toBe('telegram');
+    // Stays on the Tools page.
+    expect(document.body.querySelector('[data-testid="where"]')).toBeNull();
   });
 
-  const card = (title: string) =>
-    Array.from(container.querySelectorAll<HTMLElement>('h2'))
-      .find((h) => h.textContent === title)!
-      .closest<HTMLElement>('[data-slot="card"]')!;
-
-  it('manages a connected tool on its connector page, not with its own switch', async () => {
+  it('shows each connected account as its own tool with its own switch', async () => {
     await render();
     const telegram = card('Telegram');
-    expect(telegram.querySelector('[role="switch"]')).toBeNull();
-    // The catalog's plain description, not the tool's setup notes.
+    expect(telegram.querySelector('[role="switch"]')).not.toBeNull();
+    // Which account this card is, and the catalog's plain description.
+    expect(telegram.textContent).toContain('…abcd');
     expect(telegram.textContent).toContain(
       'settings.connectors.descriptions.telegram',
     );
-    const manage = Array.from(telegram.querySelectorAll('button')).find(
-      (b) => b.textContent === 'settings.connectors.manageConnection',
-    )!;
-    await act(async () => manage.click());
     expect(
-      document.body.querySelector('[data-testid="where"]')?.textContent,
-    ).toBe('/settings/connectors?connector=telegram');
+      Array.from(telegram.querySelectorAll('button')).some(
+        (b) => b.textContent === 'settings.connectors.manageConnection',
+      ),
+    ).toBe(false);
   });
 
   it('says a connected tool needs signing in again, with no raw MCP reconnect', async () => {
