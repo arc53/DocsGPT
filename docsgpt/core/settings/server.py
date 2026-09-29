@@ -15,8 +15,8 @@ class ServerSettings(SettingsGroup):
     DEPLOYMENT_TYPE: Optional[str] = Field(
         default=None,
         description=(
-            "Deployment class, e.g. cloud or production. A production class refuses to run without a "
-            "configured JWT_SECRET_KEY instead of generating a local one on disk."
+            "Deployment class: cloud or production makes a missing JWT_SECRET_KEY fatal at startup. Otherwise "
+            "the API generates .jwt_secret_key in the data home, which suits a single local process only."
         ),
     )
     SERVE_UI: bool = Field(
