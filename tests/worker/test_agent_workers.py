@@ -375,4 +375,4 @@ class TestRunAgentHeadlessFromWebhook:
         outcome = headless_runner.run_agent_headless(agent_config, "hello")
 
         assert outcome["answer"] == "done"
-        assert captured_source.get("active_docs") == source_id
+        assert captured_source.get("active_docs") == [source_id]

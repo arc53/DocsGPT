@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Set, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, TypeVar
 
 from flask import after_this_request
 
@@ -181,6 +181,39 @@ def _agent_source_doc(conn: Any, sources_repo: Any, agent: dict, source_id: Any)
         logger.info("agent %s source %s not usable; skipped", agent.get("id"), source_id)
         return None
     return sources_repo.get_by_id(str(source_id))
+
+
+def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], List[dict]]:
+    """The source rows an agent run retrieves from: primary first, then extras.
+
+    Each is authorized like :func:`_agent_source_doc` (the owner, else the
+    editor who attached it), and a source listed twice appears once.
+
+    Args:
+        conn: An open database connection.
+        agent: The ``agents`` row.
+
+    Returns:
+        The primary source row (None when unset or not usable) and every
+        usable row in run order.
+    """
+    sources_repo = SourcesRepository(conn)
+    primary: Optional[dict] = None
+    rows: List[dict] = []
+    seen: set = set()
+    refs = [(True, agent.get("source_id"))]
+    refs.extend((False, sid) for sid in agent.get("extra_source_ids") or [])
+    for is_primary, sid_raw in refs:
+        if not sid_raw:
+            continue
+        source_doc = _agent_source_doc(conn, sources_repo, agent, sid_raw)
+        if not source_doc or str(source_doc["id"]) in seen:
+            continue
+        if is_primary:
+            primary = source_doc
+        seen.add(str(source_doc["id"]))
+        rows.append(source_doc)
+    return primary, rows
 
 
 def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
@@ -751,7 +784,6 @@ class StreamProcessor:
             agent = AgentsRepository(conn).find_by_key(api_key)
             if not agent:
                 raise Exception("Invalid API Key, please generate a new key", 401)
-            sources_repo = SourcesRepository(conn)
             # The repo dict uses "user_id" — the streaming path expects
             # a "user" key (legacy Mongo shape) for identity propagation.
             data: Dict[str, Any] = dict(agent)
@@ -761,68 +793,29 @@ class StreamProcessor:
             # ``_configure_source`` ignores an empty ``data["sources"]``,
             # so the primary must appear in the union too — not only in
             # the legacy ``data["source"]`` slot.
-            sources_list: list = []
-            seen: set = set()
-            primary_id = agent.get("source_id")
-            # ``sources`` row may have NULL ``retriever``/``chunks`` —
-            # fall back to the agent's value (``dict.get`` returns None
-            # even when the key exists with value None).
-            if primary_id:
-                source_doc = _agent_source_doc(conn, sources_repo, agent, primary_id)
-                if source_doc:
-                    sid = str(source_doc["id"])
-                    data["source"] = sid
-                    src_retriever = source_doc.get("retriever")
-                    if src_retriever:
-                        data["retriever"] = src_retriever
-                    src_chunks = source_doc.get("chunks")
-                    if src_chunks is not None:
-                        data["chunks"] = src_chunks
-                    sources_list.append(
-                        {
-                            "id": sid,
-                            "retriever": src_retriever or "classic",
-                            "chunks": (
-                                src_chunks if src_chunks is not None
-                                else data.get("chunks", "6")
-                            ),
-                            # Per-source behaviour contract (lenient read).
-                            "retrieval": SourceConfig.parse(
-                                source_doc.get("config")
-                            ).retrieval,
-                        }
-                    )
-                    seen.add(sid)
-                else:
-                    data["source"] = None
-            else:
-                data["source"] = None
-
-            for sid_raw in agent.get("extra_source_ids") or []:
-                if not sid_raw:
-                    continue
-                source_doc = _agent_source_doc(conn, sources_repo, agent, sid_raw)
-                if not source_doc:
-                    continue
-                sid = str(source_doc["id"])
-                if sid in seen:
-                    continue
-                src_retriever = source_doc.get("retriever")
-                src_chunks = source_doc.get("chunks")
-                sources_list.append(
-                    {
-                        "id": sid,
-                        "retriever": src_retriever or "classic",
-                        "chunks": (
-                            src_chunks if src_chunks is not None
-                            else data.get("chunks", "6")
-                        ),
-                        "retrieval": SourceConfig.parse(
-                            source_doc.get("config")
-                        ).retrieval,
-                    }
-                )
-                seen.add(sid)
+            primary, source_docs = authorized_agent_sources(conn, agent)
+        # ``sources`` row may have NULL ``retriever``/``chunks`` — fall back to
+        # the agent's value (``dict.get`` returns None even when the key
+        # exists with value None). The primary's own values win for the agent.
+        data["source"] = str(primary["id"]) if primary else None
+        if primary:
+            if primary.get("retriever"):
+                data["retriever"] = primary["retriever"]
+            if primary.get("chunks") is not None:
+                data["chunks"] = primary["chunks"]
+        sources_list: list = [
+            {
+                "id": str(source_doc["id"]),
+                "retriever": source_doc.get("retriever") or "classic",
+                "chunks": (
+                    source_doc["chunks"] if source_doc.get("chunks") is not None
+                    else data.get("chunks", "6")
+                ),
+                # Per-source behaviour contract (lenient read).
+                "retrieval": SourceConfig.parse(source_doc.get("config")).retrieval,
+            }
+            for source_doc in source_docs
+        ]
         data["sources"] = sources_list
         data["default_model_id"] = data.get("default_model_id", "")
         return data

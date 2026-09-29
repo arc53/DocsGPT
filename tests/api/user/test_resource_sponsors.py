@@ -39,6 +39,7 @@ from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 OWNER, EDITOR, VIEWER, OTHER = "sp-owner", "sp-editor", "sp-viewer", "sp-other"
 
 _DB_MODULES = (
+    "docsgpt.agents.headless_runner",
     "docsgpt.api.user.agents.routes",
     "docsgpt.api.user.workflows.routes",
     "docsgpt.api.user.base",
@@ -375,6 +376,40 @@ class TestRunTime:
         with _patch_db(pg_conn):
             data = processor._get_data_from_api_key(agent["key"])
         assert [s["id"] for s in data["sources"]] == [source, shared]
+
+    def test_headless_run_retrieves_from_every_agent_source(self, app, pg_conn, monkeypatch):
+        """A scheduled or webhook run searches the same sources a chat does."""
+        from unittest.mock import MagicMock
+
+        from docsgpt.agents import headless_runner as hr
+
+        agent, team_id, _, _, source = self._sponsored_agent(app, pg_conn)
+        shared = str(SourcesRepository(pg_conn).create("shared-src", user_id=OTHER)["id"])
+        TeamMembersRepository(pg_conn).add_member(team_id, OWNER)
+        TeamResourceGrantsRepository(pg_conn).grant(team_id, "source", shared, OTHER, OTHER)
+        foreign = str(SourcesRepository(pg_conn).create("foreign-src", user_id="sp-stranger")["id"])
+        AgentsRepository(pg_conn).update_by_id(str(agent["id"]), {"extra_source_ids": [shared, foreign]})
+
+        searched = []
+        retriever = MagicMock(search=MagicMock(return_value=[]))
+
+        def _create_retriever(cls, *_args, **kwargs):
+            searched.append(kwargs["source"].get("active_docs"))
+            return retriever
+
+        run_agent = MagicMock(gen=MagicMock(return_value=iter([{"answer": "ok"}])))
+        run_agent.llm.token_usage = {}
+        monkeypatch.setattr(hr.RetrieverCreator, "create_retriever", classmethod(_create_retriever))
+        monkeypatch.setattr(hr, "ToolExecutor", lambda *a, **kw: MagicMock(headless_denials=[]))
+        monkeypatch.setattr(hr.AgentCreator, "create_agent", classmethod(lambda cls, *a, **kw: run_agent))
+        monkeypatch.setattr(hr.QuotaService, "check", lambda *a, **kw: None)
+        with _patch_db(pg_conn), \
+                patch("docsgpt.core.model_utils.validate_model_id", return_value=True), \
+                patch("docsgpt.core.model_utils.get_provider_from_model_id", return_value="openai"), \
+                patch("docsgpt.core.model_utils.get_api_key_for_provider", return_value="k"), \
+                patch("docsgpt.utils.calculate_doc_token_budget", return_value=1000):
+            hr.run_agent_headless(_row(pg_conn, str(agent["id"])), "q")
+        assert searched == [[source, shared]]
 
     def test_search_service_authorizes_sponsored_source(self, app, pg_conn):
         from docsgpt.services.search_service import _authorized_source_ids
