@@ -108,6 +108,7 @@ class TestListing:
         actions = {a["name"]: a for a in detail["tools"][0]["actions"]}
         assert actions["search_pages"] == {
             "name": "search_pages", "description": "Search", "access": "read", "permission": "always",
+            "parameters": [],
         }
         assert actions["create_page"]["access"] == "write"
         assert actions["create_page"]["permission"] == "ask"

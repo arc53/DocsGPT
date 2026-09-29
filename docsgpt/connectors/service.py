@@ -151,8 +151,34 @@ def serialize_source(row: dict, connection_status: Optional[str] = None) -> dict
     }
 
 
+def serialize_parameters(action: dict) -> list[dict]:
+    """An action's parameters as the connection drawer shows them.
+
+    ``fixed`` parameters are sent with ``value`` on every call and hidden
+    from the model; the others are left to it.
+    """
+    from docsgpt.agents.tool_pins import is_pinned, iter_parameters
+
+    schema = action.get("parameters") if isinstance(action.get("parameters"), dict) else {}
+    required = set(schema.get("required") or []) if isinstance(schema.get("required"), list) else set()
+    parameters = []
+    for _section, name, details in iter_parameters(action):
+        fixed = is_pinned(details)
+        parameters.append(
+            {
+                "name": name,
+                "description": details.get("description") or "",
+                "type": details.get("type") if isinstance(details.get("type"), str) else "string",
+                "required": bool(details.get("required")) or name in required,
+                "fixed": fixed,
+                "value": details.get("value") if fixed else None,
+            }
+        )
+    return parameters
+
+
 def serialize_tool(row: dict) -> dict:
-    """A tool linked to a connection, with its actions and their permissions."""
+    """A tool linked to a connection, with its actions, permissions and parameters."""
     from docsgpt.connectors.permissions import action_access, action_permission
 
     actions = []
@@ -166,6 +192,7 @@ def serialize_tool(row: dict) -> dict:
                 "description": action.get("description", ""),
                 "access": access,
                 "permission": action_permission(action),
+                "parameters": serialize_parameters(action),
             }
         )
     return {
@@ -1272,6 +1299,46 @@ def set_tool_permissions(
     actions = [
         apply_permission(action, permissions[action.get("name")]) if action.get("name") in permissions else action
         for action in (_json(tool.get("actions")) or [])
+    ]
+    tools.update(str(tool["id"]), user_id, {"actions": actions})
+    return tools.get_any(str(tool["id"]), user_id)
+
+
+def set_tool_parameters(
+    conn, user_id: str, connection_id: str, tool_id: str, action_name: str, pins: dict,
+) -> Optional[dict]:
+    """Fix or release parameters of one action of a tool the user owns.
+
+    Args:
+        conn: Open database connection.
+        user_id: The caller, who must own the tool.
+        connection_id: The connection the tool must belong to.
+        tool_id: The tool to update.
+        action_name: The action whose parameters change.
+        pins: Parameter name to the value to always use, or None to let the
+            model decide.
+
+    Returns:
+        The updated tool, or None (nothing written) when the tool is not the
+        user's or belongs to another connection.
+
+    Raises:
+        ValueError: The action or a parameter does not exist, or a value does
+            not fit its parameter.
+    """
+    from docsgpt.agents.tool_pins import set_pins
+    from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+    tools = UserToolsRepository(conn)
+    tool = tools.get_any(tool_id, user_id)
+    if tool is None or tool.get("user_id") != user_id or str(tool.get("connection_id")) != connection_id:
+        return None
+    actions = _json(tool.get("actions")) or []
+    if not any(isinstance(a, dict) and a.get("name") == action_name for a in actions):
+        raise ValueError(f"Unknown action: {action_name}")
+    actions = [
+        set_pins(action, pins) if isinstance(action, dict) and action.get("name") == action_name else action
+        for action in actions
     ]
     tools.update(str(tool["id"]), user_id, {"actions": actions})
     return tools.get_any(str(tool["id"]), user_id)

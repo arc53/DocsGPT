@@ -518,6 +518,36 @@ class ConnectionToolPermissions(Resource):
         return make_response(jsonify({"success": True, "tool": payload}), 200)
 
 
+@connections_ns.route("/connections/<string:connection_id>/tools/<string:tool_id>/parameters")
+class ConnectionToolParameters(Resource):
+    @api.doc(
+        description=(
+            "Fix or release an action's parameters: {action, parameters: {name: value | null}}. "
+            "A value is sent on every call and hidden from the model; null lets the model decide. Owner only."
+        )
+    )
+    def put(self, connection_id: str, tool_id: str):
+        user_id = _user_id()
+        if not user_id:
+            return _unauthorized()
+        body = _json_body()
+        action, pins = body.get("action"), body.get("parameters")
+        if not isinstance(action, str) or not isinstance(pins, dict) or not pins:
+            return _error("Send the action and a map of parameters to values or null", 400)
+        with db_session() as conn:
+            row = _owned(conn, connection_id, user_id)
+            if row is None:
+                return _not_found()
+            try:
+                tool = service.set_tool_parameters(conn, user_id, connection_id, tool_id, action, pins)
+            except ValueError as err:
+                return _error(str(err), 400)
+            if tool is None:
+                return _not_found()
+            payload = service.serialize_tool(tool)
+        return make_response(jsonify({"success": True, "tool": payload}), 200)
+
+
 @connections_ns.route("/connections/<string:connection_id>/refresh-tools")
 class ConnectionRefreshTools(Resource):
     @api.doc(description="MCP: re-scan the server's actions and return what was added and removed")

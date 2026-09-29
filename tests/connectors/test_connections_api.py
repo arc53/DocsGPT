@@ -320,6 +320,78 @@ class TestPermissions:
         assert resp.status_code == 400
 
 
+class TestParameters:
+    @staticmethod
+    def _tool(pg_conn, user="alice"):
+        cid = _connection(pg_conn, user=user, secrets={"credentials": {"token": "t"}})
+        tool = service.ensure_connection_tools(pg_conn, user, service.ConnectorSessionsRepository(pg_conn).get(cid))[0]
+        return cid, str(tool["id"])
+
+    @staticmethod
+    def _put(app, cid, tool_id, body, user="alice"):
+        from docsgpt.api.connector.connections import ConnectionToolParameters
+
+        return _call(app, ConnectionToolParameters, "put", f"/api/connections/{cid}/tools/{tool_id}/parameters",
+                     user=user, body=body, args=[cid, tool_id])
+
+    @staticmethod
+    def _parameters(payload, action="telegram_send_message"):
+        actions = {a["name"]: a for a in payload["tool"]["actions"]}
+        return {p["name"]: p for p in actions[action]["parameters"]}
+
+    def test_serialized_actions_list_their_parameters(self, pg_conn):
+        cid, _ = self._tool(pg_conn)
+        detail = service.connection_detail(pg_conn, service.ConnectorSessionsRepository(pg_conn).get(cid))
+        action = next(a for a in detail["tools"][0]["actions"] if a["name"] == "telegram_send_message")
+        names = [p["name"] for p in action["parameters"]]
+        assert names == ["text", "chat_id"]
+        chat_id = action["parameters"][1]
+        assert chat_id["fixed"] is False and chat_id["value"] is None
+        assert chat_id["type"] == "string"
+        assert chat_id["description"]
+
+    def test_owner_fixes_and_releases_a_parameter(self, app, pg_conn):
+        cid, tool_id = self._tool(pg_conn)
+        with _db(pg_conn):
+            fixed = self._put(app, cid, tool_id, {"action": "telegram_send_message",
+                                                  "parameters": {"chat_id": "-1001"}})
+            assert fixed.status_code == 200
+            chat_id = self._parameters(fixed.get_json())["chat_id"]
+            assert chat_id["fixed"] is True and chat_id["value"] == "-1001"
+            released = self._put(app, cid, tool_id, {"action": "telegram_send_message",
+                                                     "parameters": {"chat_id": None}})
+        chat_id = self._parameters(released.get_json())["chat_id"]
+        assert chat_id["fixed"] is False and chat_id["value"] is None
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"action": "telegram_send_message", "parameters": {"token": "x"}},
+            {"action": "not_an_action", "parameters": {"chat_id": "1"}},
+            {"action": "telegram_send_message", "parameters": {"chat_id": ""}},
+            {"action": "telegram_send_message", "parameters": "chat_id"},
+            {"parameters": {"chat_id": "1"}},
+        ],
+    )
+    def test_rejects_what_the_action_does_not_have(self, app, pg_conn, body):
+        cid, tool_id = self._tool(pg_conn)
+        with _db(pg_conn):
+            resp = self._put(app, cid, tool_id, body)
+        assert resp.status_code == 400
+
+    def test_another_user_cannot_fix_values(self, app, pg_conn):
+        cid, tool_id = self._tool(pg_conn)
+        with _db(pg_conn):
+            resp = self._put(app, cid, tool_id, {"action": "telegram_send_message",
+                                                 "parameters": {"chat_id": "666"}}, user="mallory")
+        assert resp.status_code == 404
+        stored = pg_conn.execute(
+            text("SELECT actions FROM user_tools WHERE id = CAST(:i AS uuid)"), {"i": tool_id}
+        ).scalar()
+        chat_id = stored[0]["parameters"]["properties"]["chat_id"]
+        assert chat_id["filled_by_llm"] is True
+
+
 class TestDelete:
     def test_delete_with_source_removal(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionDetail
