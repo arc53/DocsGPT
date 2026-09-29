@@ -496,7 +496,7 @@ def diagnose_model_setup(
       chunks and chat history leave the deployment). Naming ``docsgpt-local``
       in ``LLM_NAME`` is taken as intentional and not reported.
     * No model is registered at all, typically ``OPENAI_BASE_URL`` without
-      ``LLM_NAME`` (a WARNING).
+      ``LLM_NAME`` (an ERROR; every chat fails).
     * ``LLM_NAME`` is set but none of its entries is a registered id, so it is
       ignored (a WARNING). The legacy ``.env-template`` value ``docsgpt`` is
       not reported while the default is the hosted model it stands for.
@@ -542,7 +542,7 @@ def diagnose_model_setup(
             detail = "Set an API key for a provider, or OPENAI_BASE_URL and LLM_NAME for your own server."
         problems.append(
             ModelSetupProblem(
-                level=logging.WARNING,
+                level=logging.ERROR,
                 message=f"No model is registered, so there is no default model and chats will fail. {detail}",
             )
         )

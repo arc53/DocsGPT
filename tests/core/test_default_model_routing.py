@@ -226,10 +226,11 @@ class TestDiagnostics:
         """``.env-template`` has long shipped ``LLM_NAME=docsgpt``; it means the hosted model."""
         assert _problems(_settings(monkeypatch, LLM_NAME="docsgpt")) == []
 
-    def test_own_server_without_llm_name_is_a_warning(self, monkeypatch):
+    def test_own_server_without_llm_name_is_an_error(self, monkeypatch):
+        """No model at all means every chat fails, so it is logged as loudly as the hosted fallback."""
         s = _settings(monkeypatch, LLM_PROVIDER="openai", OPENAI_BASE_URL="http://localhost:11434/v1", LLM_NAME="None")
         (problem,) = _problems(s)
-        assert problem.level == logging.WARNING
+        assert problem.level == logging.ERROR
         assert "LLM_NAME" in problem.message
 
 
