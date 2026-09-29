@@ -304,6 +304,7 @@ def connection_detail(conn, row: dict) -> dict:
     detail = serialize_connection(row, {"sources": len(sources), "tools": len(tools)})
     detail["sources"] = sources
     detail["tools"] = tools
+    detail["writes"] = builtin_writes(catalog.get_definition(detail["connector_key"]), tool_rows)
     return detail
 
 
@@ -361,6 +362,7 @@ def catalog_for_user(conn, user_id: str, *, is_admin: bool, policies: Optional[d
                 "status": status,
                 "state": _card_state(definition, available, disabled, status),
                 "credential_policy": policy.get("credential_mode") or "choose",
+                "writes_allowed": writes_allowed(policies, definition.key),
             }
         )
     return entries
@@ -1269,11 +1271,16 @@ def split_secrets(config: dict, config_requirements: dict) -> tuple[dict, dict]:
     return public, secrets
 
 
-def builtin_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dict]:
+def builtin_mcp_config(definition: Optional[ConnectorDefinition], writes: bool = False) -> Optional[dict]:
     """Tool config of a built-in connector whose tool is its service's MCP server.
 
     The token is not part of it: the executor reads it from the connection
     at run time and sends it as a bearer token.
+
+    Args:
+        definition: The connector.
+        writes: Use the endpoint that also offers write actions, when the
+            connector has one (GitHub's full server).
 
     Returns:
         The config, or None when the connector has no such tool.
@@ -1285,7 +1292,40 @@ def builtin_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[di
         or "mcp_tool" not in definition.tool_templates
     ):
         return None
-    return {"server_url": definition.mcp_url, "auth_type": "bearer", "transport_type": "http", "timeout": 30}
+    url = definition.mcp_write_url if writes and definition.mcp_write_url else definition.mcp_url
+    return {"server_url": url, "auth_type": "bearer", "transport_type": "http", "timeout": 30}
+
+
+def builtin_mcp_url(definition: Optional[ConnectorDefinition], stored_url: Optional[str], allowed: bool) -> str:
+    """The endpoint a built-in connector's MCP tool may call, whatever its config says.
+
+    Only the connector's own endpoints are ever used: the write endpoint when
+    the tool was set up for writes and an admin allows them, the read-only
+    one otherwise (another path on the same host included).
+
+    Args:
+        definition: The connector, with ``mcp_url`` set.
+        stored_url: The ``server_url`` in the tool's config.
+        allowed: Whether an admin allows writes through this connector.
+    """
+    if allowed and definition.mcp_write_url and stored_url == definition.mcp_write_url:
+        return definition.mcp_write_url
+    return definition.mcp_url or ""
+
+
+def builtin_writes(definition: Optional[ConnectorDefinition], tool_rows: Iterable[dict]) -> Optional[bool]:
+    """Whether a connection's built-in MCP tool is set up for writes.
+
+    Returns:
+        None when the connector offers no writes or the connection has no such
+        tool yet; otherwise whether the tool uses the write endpoint.
+    """
+    if definition is None or not definition.mcp_write_url or builtin_mcp_config(definition) is None:
+        return None
+    for tool in tool_rows:
+        if tool.get("name") == "mcp_tool":
+            return (_json(tool.get("config")) or {}).get("server_url") == definition.mcp_write_url
+    return None
 
 
 def needs_mcp_discovery(conn, connection: dict) -> bool:
@@ -1303,6 +1343,7 @@ def ensure_connection_tools(
     connection: dict,
     permissions: Optional[dict] = None,
     mcp_actions: Optional[list] = None,
+    mcp_writes: bool = False,
 ) -> list[dict]:
     """Create the connector's tools once; later calls return the existing ones.
 
@@ -1317,6 +1358,8 @@ def ensure_connection_tools(
         mcp_actions: The actions of a built-in connector's MCP server
             (GitHub's), discovered by the caller outside this transaction.
             Without them that tool is not created.
+        mcp_writes: Point that tool at the endpoint that also offers writes;
+            the caller checked that an admin allows them.
     """
     repo = ConnectorSessionsRepository(conn)
     existing = repo.list_tools(str(connection["id"]))
@@ -1325,7 +1368,7 @@ def ensure_connection_tools(
     if not definition or not definition.tool_templates:
         return existing
     have = {tool.get("name") for tool in existing}
-    mcp_config = builtin_mcp_config(definition)
+    mcp_config = builtin_mcp_config(definition, writes=mcp_writes)
     created = []
     for template in definition.tool_templates:
         if template in have:
@@ -1522,6 +1565,10 @@ class ConnectorDisabled(Exception):
     """An admin turned this connector (or custom MCP servers) off."""
 
 
+class WritesForbidden(Exception):
+    """An admin forbade write actions through this connector (GitHub's changes)."""
+
+
 def custom_mcp_allowed(conn) -> bool:
     """The instance-wide "Allow custom MCP servers" switch (on unless turned off)."""
     from docsgpt.storage.db.repositories.app_metadata import AppMetadataRepository
@@ -1549,13 +1596,39 @@ def connector_is_enabled(policies: dict, connector_key: Optional[str]) -> bool:
 
 
 def load_policies(conn) -> dict[str, dict]:
-    """Every connector's policy, with custom MCP folded in from its switch."""
-    from docsgpt.storage.db.repositories.connector_policies import ConnectorPoliciesRepository
+    """Every connector's policy, with custom MCP and write switches folded in.
+
+    A connector that offers writes (GitHub) gets ``allow_writes``: False when
+    an admin forbade them.
+    """
+    from docsgpt.storage.db.repositories.app_metadata import AppMetadataRepository
+    from docsgpt.storage.db.repositories.connector_policies import ConnectorPoliciesRepository, allow_writes_key
 
     policies = dict(ConnectorPoliciesRepository(conn).all())
     if not custom_mcp_allowed(conn):
         policies["custom_mcp"] = {**policies.get("custom_mcp", {}), "enabled": False}
+    metadata = AppMetadataRepository(conn)
+    for definition in catalog.all_definitions():
+        if definition.mcp_write_url and metadata.get(allow_writes_key(definition.key)) == "false":
+            policies[definition.key] = {**policies.get(definition.key, {}), "allow_writes": False}
     return policies
+
+
+def writes_allowed(policies: dict, connector_key: Optional[str]) -> bool:
+    """Whether a connection to this connector may be set up for write actions.
+
+    Args:
+        policies: ``connector_key`` to policy row, from :func:`load_policies`.
+        connector_key: The catalog key.
+
+    Returns:
+        False for a connector that offers no writes, or whose writes an admin
+        forbade.
+    """
+    definition = catalog.get_definition(connector_key) if connector_key else None
+    if definition is None or not definition.mcp_write_url:
+        return False
+    return (policies.get(connector_key) or {}).get("allow_writes") is not False
 
 
 def connector_enabled(conn, row: dict) -> bool:

@@ -12,6 +12,16 @@ CREDENTIAL_POLICIES = ("choose", "owner", "member")
 ALLOW_CUSTOM_MCP_KEY = "connectors.allow_custom_mcp"
 
 
+def allow_writes_key(connector_key: str) -> str:
+    """``app_metadata`` key of the admin's "let agents make changes" switch for a connector.
+
+    Only connectors whose tools opt into writes (GitHub) have one. It lives in
+    ``app_metadata`` like the custom MCP switch: ``"false"`` forbids writes,
+    anything else (or nothing) allows them.
+    """
+    return f"connectors.{connector_key}.allow_writes"
+
+
 class ConnectorPoliciesRepository:
     """Whether a connector is enabled and which credential mode it forces."""
 

@@ -34,6 +34,8 @@ class ResolvedConnection:
         connector_key: Catalog key of the service.
         connector_name: Name shown to the user ("Notion", or a custom label).
         delegated: The row belongs to someone other than the invoker.
+        writes_allowed: Whether an admin lets agents make changes through a
+            connector that offers them as an opt-in (GitHub); True elsewhere.
     """
 
     row: Optional[dict]
@@ -41,6 +43,7 @@ class ResolvedConnection:
     connector_key: Optional[str]
     connector_name: Optional[str]
     delegated: bool = False
+    writes_allowed: bool = True
 
     @property
     def connection_id(self) -> Optional[str]:
@@ -104,7 +107,15 @@ def resolve_connection(resource: dict, invoker_user_id: Optional[str]) -> Option
         connector_key=key,
         connector_name=_name_for(row or owned, key),
         delegated=bool(row and invoker_user_id and row.get("user_id") != invoker_user_id),
+        writes_allowed=_writes_allowed(policies, key),
     )
+
+
+def _writes_allowed(policies: dict, key: Optional[str]) -> bool:
+    definition = catalog.get_definition(key) if key else None
+    if definition is None or not definition.mcp_write_url:
+        return True
+    return service.writes_allowed(policies, key)
 
 
 def _member_connection(repo: ConnectorSessionsRepository, owned: Optional[dict], invoker: str) -> Optional[dict]:

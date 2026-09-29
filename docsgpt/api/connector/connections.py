@@ -229,8 +229,9 @@ class ConnectionDisconnect(Resource):
 class ConnectionSetup(Resource):
     @api.doc(
         description=(
-            "Apply the connect wizard's choices: {create_tools, tool_permissions?, "
-            "sync?: {items, frequency, name?}}. Honours an Idempotency-Key header for the sync."
+            "Apply the connect wizard's choices: {create_tools, allow_writes?, tool_permissions?, "
+            "sync?: {items, frequency, name?}}. allow_writes points GitHub's tool at its write endpoint. "
+            "Honours an Idempotency-Key header for the sync."
         )
     )
     def post(self, connection_id: str):
@@ -239,22 +240,31 @@ class ConnectionSetup(Resource):
             return _unauthorized()
         body = _json_body()
         create_tools = body.get("create_tools", True)
+        allow_writes = body.get("allow_writes", False)
+        if not isinstance(allow_writes, bool):
+            return _error("allow_writes must be true or false", 400)
         try:
             mcp_actions = None
             with db_readonly() as conn:
                 row = _owned(conn, connection_id, user_id)
                 discover = bool(row) and create_tools and service.needs_mcp_discovery(conn, row)
+                forbidden = bool(row) and allow_writes and not service.writes_allowed(
+                    service.load_policies(conn), catalog.connector_key_for_row(row),
+                )
             if row is None:
                 return _not_found()
             if service.normalize_status(row) != service.STATUS_CONNECTED:
                 return _error("Reconnect before setting up", 409, code="reconnect")
+            if forbidden:
+                return _error("Changes through this connector are turned off by an admin", 403,
+                              code="writes_forbidden")
             if discover:
                 # GitHub's tool is its MCP server: read its actions before
                 # the write transaction, not while holding it open.
                 from docsgpt.connectors.mcp import discover_builtin_actions
 
                 try:
-                    mcp_actions = discover_builtin_actions(user_id, row)
+                    mcp_actions = discover_builtin_actions(user_id, row, writes=allow_writes)
                 except service.ConnectionUnavailable:
                     return _error("Reconnect before setting up", 409, code="reconnect")
                 except Exception as err:
@@ -269,7 +279,7 @@ class ConnectionSetup(Resource):
                 if create_tools:
                     tools = service.ensure_connection_tools(
                         conn, user_id, row, permissions=body.get("tool_permissions") or None,
-                        mcp_actions=mcp_actions,
+                        mcp_actions=mcp_actions, mcp_writes=allow_writes,
                     )
                 account_parameters = service.connection_parameters(row)
                 tool_payload = [service.serialize_tool(tool, account_parameters) for tool in tools]
@@ -585,6 +595,43 @@ class ConnectionRefreshTools(Resource):
             current_app.logger.error(f"Error refreshing MCP tools: {err}", exc_info=True)
             return _error("Failed to refresh tools", 502)
         return make_response(jsonify({"success": True, **diff}), 200)
+
+
+@connections_ns.route("/connections/<string:connection_id>/writes")
+class ConnectionWrites(Resource):
+    @api.doc(
+        description=(
+            "GitHub: let agents make changes through this connection, or only read: {allow}. "
+            "Re-reads the tool's actions from the matching endpoint. Owner only."
+        )
+    )
+    def put(self, connection_id: str):
+        from docsgpt.connectors.mcp import NoMcpTool, set_builtin_writes
+
+        user_id = _user_id()
+        if not user_id:
+            return _unauthorized()
+        allow = _json_body().get("allow")
+        if not isinstance(allow, bool):
+            return _error("allow must be true or false", 400)
+        with db_readonly() as conn:
+            row = _owned(conn, connection_id, user_id)
+        if row is None:
+            return _not_found()
+        try:
+            result = set_builtin_writes(user_id, row, allow)
+        except service.WritesForbidden as err:
+            return _error(str(err), 403, code="writes_forbidden")
+        except NoMcpTool as err:
+            return _error(str(err), 409, code="no_tools")
+        except ValueError as err:
+            return _error(str(err), 400)
+        except service.ConnectionUnavailable:
+            return _error("Reconnect to continue", 409, code="reconnect")
+        except Exception as err:
+            current_app.logger.error(f"Error switching write access: {err}", exc_info=True)
+            return _error("The service's tools could not be reached. Try again.", 502, code="tools_unavailable")
+        return make_response(jsonify({"success": True, **result}), 200)
 
 
 @connections_ns.route("/connections/tools/<string:tool_id>/credential-mode")

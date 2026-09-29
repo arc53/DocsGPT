@@ -23,6 +23,7 @@ from docsgpt.storage.db.repositories.connector_policies import (
     ALLOW_CUSTOM_MCP_KEY,
     CREDENTIAL_POLICIES,
     ConnectorPoliciesRepository,
+    allow_writes_key,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -57,6 +58,7 @@ class AdminConnectorsResource(Resource):
         """Every connector with its policy, setup state and connection count."""
         with db_readonly() as conn:
             policies = ConnectorPoliciesRepository(conn).all()
+            loaded = service.load_policies(conn)
             allow_custom = service.custom_mcp_allowed(conn)
             counts = _connection_counts(conn)
         connectors = []
@@ -88,6 +90,11 @@ class AdminConnectorsResource(Resource):
                     "connection_count": counts.get(definition.key, 0),
                     "docs_url": definition.docs_url,
                     "mcp_url": definition.mcp_url,
+                    # Whether members may let agents make changes (GitHub);
+                    # None where the connector offers no such choice.
+                    "allow_writes": (
+                        service.writes_allowed(loaded, definition.key) if definition.mcp_write_url else None
+                    ),
                 }
             )
         return make_response(
@@ -106,7 +113,7 @@ class AdminConnectorsResource(Resource):
 
     @admin_required
     def put(self):
-        """Update policies: {policies: {key: {enabled?, credential_mode?}}, allow_custom_mcp?}."""
+        """Update policies: {policies: {key: {enabled?, credential_mode?, allow_writes?}}, allow_custom_mcp?}."""
         body = request.get_json(silent=True) or {}
         updates = body.get("policies") or {}
         if not isinstance(updates, dict):
@@ -119,6 +126,15 @@ class AdminConnectorsResource(Resource):
                 return make_response(jsonify({"success": False, "message": "Unknown credential mode"}), 400)
             if "enabled" in change and not isinstance(change["enabled"], bool):
                 return make_response(jsonify({"success": False, "message": "enabled must be true or false"}), 400)
+            if "allow_writes" in change:
+                if not catalog.get_definition(key).mcp_write_url:
+                    return make_response(
+                        jsonify({"success": False, "message": f"{key} has no write access to allow"}), 400,
+                    )
+                if not isinstance(change["allow_writes"], bool):
+                    return make_response(
+                        jsonify({"success": False, "message": "allow_writes must be true or false"}), 400,
+                    )
         allow_custom = body.get("allow_custom_mcp")
         if allow_custom is not None and not isinstance(allow_custom, bool):
             return make_response(jsonify({"success": False, "message": "allow_custom_mcp must be a boolean"}), 400)
@@ -126,6 +142,11 @@ class AdminConnectorsResource(Resource):
         with db_session() as conn:
             repo = ConnectorPoliciesRepository(conn)
             for key, change in updates.items():
+                if "allow_writes" in change:
+                    value = "true" if change["allow_writes"] else "false"
+                    AppMetadataRepository(conn).set(allow_writes_key(key), value)
+                if set(change) == {"allow_writes"}:
+                    continue
                 repo.upsert(
                     key,
                     enabled=change.get("enabled"),

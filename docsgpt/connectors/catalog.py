@@ -89,6 +89,10 @@ class ConnectorDefinition:
             (created and enabled), ``ask`` or ``off``; ``sync`` likewise.
         mcp_url: MCP endpoint for presets, and for a built-in connector whose
             tool is its service's own MCP server (GitHub).
+        mcp_write_url: The same server's endpoint that also offers write
+            actions, which a connection opts into and an admin can forbid
+            (GitHub's full server beside its read-only one). ``mcp_url``
+            stays the default.
         publisher: ``built_in``, ``preset`` or ``custom``.
         docs_url: Setup guide for admins.
         oauth_scopes: Scopes an MCP preset requests.
@@ -115,6 +119,7 @@ class ConnectorDefinition:
     tool_templates: tuple[str, ...] = ()
     setup: dict = field(default_factory=lambda: {"tools": "auto", "sync": "ask"})
     mcp_url: Optional[str] = None
+    mcp_write_url: Optional[str] = None
     publisher: str = "built_in"
     docs_url: Optional[str] = None
     oauth_scopes: tuple[str, ...] = ()
@@ -163,6 +168,7 @@ class ConnectorDefinition:
             "tool_templates": list(self.tool_templates),
             "setup": dict(self.setup),
             "mcp_url": self.mcp_url,
+            "writes_opt_in": bool(self.mcp_write_url),
             "publisher": self.publisher,
             "docs_url": self.docs_url,
             "oauth_scopes": list(self.oauth_scopes),
@@ -181,6 +187,7 @@ def base_url(url: Optional[str]) -> str:
 
 _DOCS = "https://docs.docsgpt.cloud/Guides/Connectors"
 GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/readonly"
+GITHUB_MCP_WRITE_URL = "https://api.githubcopilot.com/mcp/"
 
 # Tool templates any connector's server can use (an MCP server, an OpenAPI
 # spec): a tool made from one belongs to its connection, not to a connector.
@@ -239,9 +246,11 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
         oauth_settings=("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_APP_SLUG"),
         sync_ingestor="github",
         setup_fields=(CredentialField("repo_url", "Repository", secret=False),),
-        # GitHub's own MCP server, read-only: agents look things up, never change them.
+        # GitHub's own MCP server, read-only unless the connection opts into
+        # changes (issues, comments, pull requests) and an admin allows them.
         tool_templates=("mcp_tool",),
         mcp_url=GITHUB_MCP_URL,
+        mcp_write_url=GITHUB_MCP_WRITE_URL,
         setup={"tools": "ask", "sync": "ask"},
         docs_url=f"{_DOCS}#github",
     ),

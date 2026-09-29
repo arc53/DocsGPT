@@ -1033,6 +1033,29 @@ class ToolExecutor:
                 or require_approval
             )
 
+        # An admin forbade changes through this connector (GitHub): its tool
+        # already calls the read-only endpoint, so say why instead of failing.
+        if resolved is not None and not resolved.writes_allowed:
+            from docsgpt.connectors.permissions import ACCESS_WRITE, action_access
+
+            if action_access(tool_data.get("name"), action_data) == ACCESS_WRITE:
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": (
+                        f"An admin turned off changes through {resolved.connector_name or 'this service'}. "
+                        "It can only look things up."
+                    ),
+                    "error_type": "tool_not_allowed",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
+
         # A member running someone else's account (a shared tool in owner
         # mode) always confirms write actions, whatever the owner chose for
         # themselves.
@@ -1792,6 +1815,12 @@ class ToolExecutor:
                 raise service.ConnectionUnavailable(
                     f"{resolved.connector_name or 'This service'} needs to be connected",
                     connection_id=resolved.connection_id,
+                )
+            if service.builtin_mcp_config(definition) is not None:
+                # Only the connector's own endpoints: GitHub's write one while
+                # the tool opted in and an admin allows it, else read-only.
+                tool_config["server_url"] = service.builtin_mcp_url(
+                    definition, tool_config.get("server_url"), resolved.writes_allowed,
                 )
         audit_delegation(
             resolved,
