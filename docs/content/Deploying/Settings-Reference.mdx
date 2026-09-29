@@ -305,6 +305,18 @@ Type `str`, default `redis://localhost:6379/2`.
 
 Redis URL for the LLM cache.
 
+### `LLM_CACHE_ENABLED`
+
+Type `bool`, default `true`.
+
+Cache LLM answers in Redis (CACHE_REDIS_URL) and replay them for an identical request: same model, messages and generation parameters. Calls that pass tools are never cached. False turns it off.
+
+### `LLM_CACHE_TTL`
+
+Type `int`, default `1800`, must be `> 0`.
+
+Seconds a cached LLM answer is kept in Redis before it expires.
+
 ### `OPENAI_RESPONSES_STORE`
 
 Type `bool`, default `false`.

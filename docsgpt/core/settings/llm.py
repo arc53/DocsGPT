@@ -75,6 +75,16 @@ class LLMSettings(SettingsGroup):
         description="Tokens held back from the context window for the system prompt, the query and a safety buffer.",
     )
     CACHE_REDIS_URL: str = Field(default="redis://localhost:6379/2", description="Redis URL for the LLM cache.")
+    LLM_CACHE_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Cache LLM answers in Redis (CACHE_REDIS_URL) and replay them for an identical request: same model, "
+            "messages and generation parameters. Calls that pass tools are never cached. False turns it off."
+        ),
+    )
+    LLM_CACHE_TTL: int = Field(
+        default=1800, gt=0, description="Seconds a cached LLM answer is kept in Redis before it expires."
+    )
 
     # OpenAI Responses API.
     OPENAI_RESPONSES_STORE: bool = Field(
