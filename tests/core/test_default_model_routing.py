@@ -201,6 +201,10 @@ class TestDiagnostics:
         assert not problem.hosted_fallback
         assert "gpt-4o" in problem.message and "gpt-5.5" in problem.message
 
+    def test_the_legacy_template_name_is_not_a_warning(self, monkeypatch):
+        """``.env-template`` has long shipped ``LLM_NAME=docsgpt``; it means the hosted model."""
+        assert _problems(_settings(monkeypatch, LLM_NAME="docsgpt")) == []
+
     def test_own_server_without_llm_name_is_a_warning(self, monkeypatch):
         s = _settings(monkeypatch, LLM_PROVIDER="openai", OPENAI_BASE_URL="http://localhost:11434/v1", LLM_NAME="None")
         (problem,) = _problems(s)

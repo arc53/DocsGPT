@@ -498,7 +498,8 @@ def diagnose_model_setup(
     * No model is registered at all, typically ``OPENAI_BASE_URL`` without
       ``LLM_NAME`` (a WARNING).
     * ``LLM_NAME`` is set but none of its entries is a registered id, so it is
-      ignored (a WARNING).
+      ignored (a WARNING). The legacy ``.env-template`` value ``docsgpt`` is
+      not reported while the default is the hosted model it stands for.
 
     Args:
         settings: The settings the catalog was built from.
@@ -545,7 +546,13 @@ def diagnose_model_setup(
                 message=f"No model is registered, so there is no default model and chats will fail. {detail}",
             )
         )
-    elif names and not any(name in models for name in names):
+    elif (
+        names
+        and not any(name in models for name in names)
+        # ``LLM_NAME=docsgpt`` is what .env-template has long shipped; it
+        # means the hosted model, which is the default it gets.
+        and not (names == ["docsgpt"] and default is not None and default.provider.value == "docsgpt")
+    ):
         provider_ids = [m.id for m in models.values() if m.provider.value == provider_name]
         registered = ", ".join((provider_ids or list(models))[:8])
         problems.append(
