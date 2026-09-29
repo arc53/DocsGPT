@@ -718,11 +718,14 @@ def create_api_key_connection(
     Raises:
         ConnectorDisabled: An admin turned the connector off. Checked first,
             so callers that fall back to a legacy path on the other errors
-            never do so for a disabled connector.
+            never do so for a disabled connector. A custom MCP server at a
+            preset's address is that preset (see
+            :func:`catalog.connector_key_for_row`), so its switch applies.
         ValueError: A required credential field is missing.
         EncryptionKeyNotConfigured: See :func:`ensure_can_store_credentials`.
     """
-    ensure_connector_allowed(conn, definition.key)
+    preset = catalog.preset_for_url(server_url) if definition.key == "custom_mcp" else None
+    ensure_connector_allowed(conn, preset.key if preset else definition.key)
     fields = {f.key: f for f in definition.credential_fields}
     if fields:
         missing = [f.label for f in fields.values() if f.required and not str(credentials.get(f.key) or "").strip()]

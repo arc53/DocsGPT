@@ -130,6 +130,34 @@ class TestAdminPolicies:
                     pg_conn, "bob", catalog.get_definition("telegram"), {"token": "long-enough-token"},
                 )
 
+    def test_a_preset_server_on_a_key_follows_the_preset_switch(self, app, pg_conn):
+        """A key-based connection to a preset's server is that preset, not a
+        custom server: turning custom servers off leaves it alone, and turning
+        the preset off stops it."""
+        from docsgpt.api.admin.connectors import AdminConnectorsResource
+
+        linear = catalog.get_definition("mcp:linear")
+        custom = catalog.get_definition("custom_mcp")
+        with _db(pg_conn):
+            _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"], body={
+                "policies": {}, "allow_custom_mcp": False,
+            })
+            row, _ = service.create_api_key_connection(
+                pg_conn, "bob", custom, {"api_key": "lin-key-123456"}, server_url=linear.mcp_base_url,
+            )
+            assert catalog.connector_key_for_row(row) == "mcp:linear"
+            with pytest.raises(service.ConnectorDisabled):
+                service.create_api_key_connection(
+                    pg_conn, "bob", custom, {"api_key": "other-key-123456"}, server_url="https://mcp.example.com",
+                )
+            _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"], body={
+                "policies": {"mcp:linear": {"enabled": False}}, "allow_custom_mcp": True,
+            })
+            with pytest.raises(service.ConnectorDisabled):
+                service.create_api_key_connection(
+                    pg_conn, "bob", custom, {"api_key": "lin-key-654321"}, server_url=linear.mcp_base_url,
+                )
+
     def test_unconfigured_connectors_are_off_until_an_admin_turns_them_on(self, app, pg_conn, monkeypatch):
         from docsgpt.api.admin.connectors import AdminConnectorsResource
         from docsgpt.core.settings import settings
