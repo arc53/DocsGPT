@@ -116,3 +116,33 @@ class TestWikiConfigAccess:
         assert cfg["source_owner_id"] == OWNER and cfg["user"] == "ed"
         assert self._cfg(use_conn, "vi", sid) is None
         assert self._cfg(use_conn, "eve", sid) is None
+
+
+class TestWikiOutsideEdits:
+    """API, widget and public-link runs edit a wiki only when its owner allows."""
+
+    def _tools(self, conn, caller, sid, agent_config):
+        from docsgpt.agents.tools.wiki import WIKI_TOOL_ID, add_wiki_tool
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        proc = StreamProcessor.__new__(StreamProcessor)
+        proc.all_sources = [{"id": sid}]
+        proc.decoded_token = {"sub": caller}
+        proc.agent_config = agent_config
+        cfg = proc._build_wiki_config()
+        tools = {}
+        add_wiki_tool(tools, cfg)
+        return {a["name"] for a in tools[WIKI_TOOL_ID]["actions"]}
+
+    @pytest.mark.parametrize("flag", ["external_api_caller", "public_link_caller"])
+    def test_outside_caller_reads_until_the_owner_allows_edits(self, use_conn, flag):
+        sid = str(SourcesRepository(use_conn).create("W", user_id=OWNER, config={"kind": "wiki"})["id"])
+        assert self._tools(use_conn, OWNER, sid, {flag: True}) == {"wiki_view"}
+        SourcesRepository(use_conn).set_wiki_outside_edits(sid, OWNER, True)
+        assert "wiki_create" in self._tools(use_conn, OWNER, sid, {flag: True})
+
+    def test_owner_and_team_editor_keep_every_action(self, use_conn):
+        sid = str(SourcesRepository(use_conn).create("W", user_id=OWNER, config={"kind": "wiki"})["id"])
+        _share(use_conn, "source", sid, "ed", "editor")
+        assert "wiki_create" in self._tools(use_conn, OWNER, sid, {})
+        assert "wiki_create" in self._tools(use_conn, "ed", sid, {})

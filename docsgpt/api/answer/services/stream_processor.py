@@ -27,6 +27,7 @@ from docsgpt.core.model_utils import (
     get_provider_from_model_id,
     validate_model_id,
 )
+from docsgpt.agents.tools.wiki import outside_edits_allowed
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig
 from sqlalchemy import text as sql_text
@@ -1259,10 +1260,22 @@ class StreamProcessor:
         writable wiki source; the first match wins and the scan stops there so
         this runs at most one owner+source lookup per chat on the hot path.
         Returns None when no writable wiki source is present.
+
+        An API-key, widget or public-link run (``outside_caller``) gets the
+        edit actions only when the wiki's owner turned on
+        ``wiki_outside_edits``; otherwise ``writes_allowed`` is False and the
+        tool offers only ``wiki_view``.
         """
         caller = self.decoded_token.get("sub") if self.decoded_token else None
         if not caller:
             return None
+        # Processors built without __init__ (tests, resume helpers) lack these.
+        run_config = getattr(self, "agent_config", None) or {}
+        outside_caller = bool(
+            run_config.get("external_api_caller")
+            or run_config.get("public_link_caller")
+            or getattr(self, "external_caller", False)
+        )
 
         wiki_config: Optional[Dict[str, Any]] = None
         try:
@@ -1286,6 +1299,8 @@ class StreamProcessor:
                         "source_owner_id": owner,
                         "decoded_token": self.decoded_token,
                         "user": caller,
+                        "outside_caller": outside_caller,
+                        "writes_allowed": not outside_caller or outside_edits_allowed(source_doc),
                     }
                     break
         except Exception:

@@ -1056,6 +1056,87 @@ class WikiPage(Resource):
         )
 
 
+def _wiki_settings_body(doc: dict, ra) -> dict:
+    """The wiki settings response: the stored switch plus the caller's access."""
+    return {
+        "success": True,
+        "allow_outside_edits": bool(doc.get("wiki_outside_edits")),
+        **ra.payload(),
+    }
+
+
+@sources_ns.route("/sources/<string:source_id>/wiki/settings")
+class WikiSettings(Resource):
+    @api.doc(
+        description="A wiki's settings. Anyone who can see the wiki may read "
+        "them; returns allow_outside_edits plus the caller's access."
+    )
+    def get(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_readonly() as conn:
+                try:
+                    doc, ra = load_source(conn, source_id, user, "use")
+                except AccessDenied as err:
+                    return denied_response(err)
+        except Exception as err:
+            current_app.logger.error(
+                f"Error reading wiki settings for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(_wiki_settings_body(doc, ra)), 200)
+
+    @api.doc(
+        description="Change a wiki's settings (owner only, manage_settings). "
+        "Body: {\"allow_outside_edits\": bool}: whether runs from the agent's "
+        "API key, widget or public link may edit the wiki."
+    )
+    def put(self, source_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        allowed = data.get("allow_outside_edits")
+        if not isinstance(allowed, bool):
+            return make_response(
+                jsonify(
+                    {"success": False, "message": "allow_outside_edits must be true or false"}
+                ),
+                400,
+            )
+        try:
+            with db_session() as conn:
+                try:
+                    doc, ra = load_source(conn, source_id, user, "manage_settings")
+                except AccessDenied as err:
+                    return denied_response(err)
+                if SourceConfig.parse(doc.get("config")).kind != "wiki":
+                    return make_response(
+                        jsonify({"success": False, "message": "Source is not a wiki"}), 400
+                    )
+                SourcesRepository(conn).set_wiki_outside_edits(
+                    str(doc["id"]), ra.owner_id, allowed
+                )
+                record_event(
+                    conn,
+                    "source.wiki_settings_updated",
+                    actor=user,
+                    source_id=str(doc["id"]),
+                    allow_outside_edits=allowed,
+                )
+                doc["wiki_outside_edits"] = allowed
+        except Exception as err:
+            current_app.logger.error(
+                f"Error updating wiki settings for {source_id}: {err}", exc_info=True
+            )
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify(_wiki_settings_body(doc, ra)), 200)
+
+
 def _source_is_blank(doc):
     """True when a source has no ingested files to convert into pages."""
     structure = doc.get("directory_structure") or {}

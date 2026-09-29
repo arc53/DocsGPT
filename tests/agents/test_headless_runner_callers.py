@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def _executor_kwargs(monkeypatch, config_extra=None, **run_kwargs):
+def _executor_kwargs(monkeypatch, config_extra=None, agent_kwargs=None, **run_kwargs):
     from docsgpt.agents import headless_runner as hr
 
     agent = MagicMock(name="agent")
@@ -27,7 +27,12 @@ def _executor_kwargs(monkeypatch, config_extra=None, **run_kwargs):
     monkeypatch.setattr(hr, "get_prompt", lambda _pid: "system prompt")
     monkeypatch.setattr(hr.RetrieverCreator, "create_retriever", classmethod(lambda cls, *a, **kw: retriever))
     monkeypatch.setattr(hr, "ToolExecutor", _executor)
-    monkeypatch.setattr(hr.AgentCreator, "create_agent", classmethod(lambda cls, *a, **kw: agent))
+    def _create_agent(cls, *_args, **kwargs):
+        if agent_kwargs is not None:
+            agent_kwargs.update(kwargs)
+        return agent
+
+    monkeypatch.setattr(hr.AgentCreator, "create_agent", classmethod(_create_agent))
     monkeypatch.setattr(hr.QuotaService, "check", lambda *a, **kw: None)
     config = {"user_id": "u1", "id": "agent-1", "default_model_id": "m", **(config_extra or {})}
     with patch("docsgpt.core.model_utils.validate_model_id", return_value=True), \
@@ -51,3 +56,12 @@ class TestHeadlessCallerRules:
         kwargs = _executor_kwargs(monkeypatch, config, **{flag: True})
         assert kwargs[flag] is True
         assert kwargs["api_write_allowlist"] == ["tool-1:send"]
+
+    @pytest.mark.parametrize("flag", ["external_caller", "public_link_caller"])
+    def test_outside_caller_run_gets_no_wiki_editor(self, monkeypatch, flag):
+        # A scheduled or webhook run has no wiki tool at all, so an outside
+        # caller's schedule can't edit a wiki whatever the wiki allows.
+        agent_kwargs = {}
+        _executor_kwargs(monkeypatch, agent_kwargs=agent_kwargs, **{flag: True})
+        assert agent_kwargs
+        assert "wiki_config" not in agent_kwargs

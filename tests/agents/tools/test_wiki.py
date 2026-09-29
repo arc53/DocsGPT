@@ -640,3 +640,154 @@ class TestBuildAgentGating:
         assert cfg is not None
         # v1 binds the first writable wiki source; the extra is skipped.
         assert cfg["source_id"] == "wiki-1"
+
+
+# =====================================================================
+# API, widget and public-link callers (the wiki's outside-edits setting)
+# =====================================================================
+
+
+def _outside_tool(monkeypatch, allowed):
+    from docsgpt.agents.tools.wiki import WikiTool
+
+    class _Sources:
+        def __init__(self, conn):
+            pass
+
+        def get_by_id(self, sid):
+            return {"id": sid, "wiki_outside_edits": allowed}
+
+    monkeypatch.setattr("docsgpt.agents.tools.wiki.SourcesRepository", _Sources)
+    return WikiTool(
+        {
+            "source_id": "src-1",
+            "source_owner_id": "owner-sub",
+            "decoded_token": {"sub": "owner-sub"},
+            "user": "owner-sub",
+            "outside_caller": True,
+        }
+    )
+
+
+_WRITES = (
+    ("create", {"path": "/b.md", "content": "x"}),
+    ("str_replace", {"path": "/a.md", "old_str": "one", "new_str": "two"}),
+    ("insert", {"path": "/a.md", "insert_line": 1, "insert_text": "x"}),
+    ("delete", {"path": "/a.md"}),
+    ("rename", {"old_path": "/a.md", "new_path": "/c.md"}),
+)
+
+
+@pytest.mark.unit
+class TestOutsideCallerWrites:
+    def test_refused_while_the_setting_is_off(self, patched_wiki, monkeypatch, reembed_mock):
+        _FakeWikiRepo().upsert("src-1", "/a.md", "one")
+        tool = _outside_tool(monkeypatch, False)
+        for action, kwargs in _WRITES:
+            result = tool.execute_action(action, **kwargs)
+            assert "API, widget or public-link" in result, action
+        reembed_mock.assert_not_called()
+        assert _FakeWikiRepo().get_by_path("src-1", "/a.md")["content"] == "one"
+        # Reading stays open to them.
+        assert "one" in tool.execute_action("view", path="/a.md")
+
+    def test_allowed_once_the_owner_turns_it_on(self, patched_wiki, monkeypatch):
+        tool = _outside_tool(monkeypatch, True)
+        assert tool.execute_action("create", path="/b.md", content="x") == "Page created: /b.md"
+
+    def test_a_missing_row_refuses(self, patched_wiki, monkeypatch):
+        tool = _outside_tool(monkeypatch, True)
+
+        class _Gone:
+            def __init__(self, conn):
+                pass
+
+            def get_by_id(self, sid):
+                return None
+
+        monkeypatch.setattr("docsgpt.agents.tools.wiki.SourcesRepository", _Gone)
+        assert "API, widget or public-link" in tool.execute_action("create", path="/b.md", content="x")
+
+    def test_owner_and_team_runs_skip_the_setting(self, wiki_tool, monkeypatch):
+        class _Boom:
+            def __init__(self, conn):
+                raise AssertionError("an in-app run must not read the setting")
+
+        monkeypatch.setattr("docsgpt.agents.tools.wiki.SourcesRepository", _Boom)
+        assert wiki_tool.execute_action("create", path="/b.md", content="x") == "Page created: /b.md"
+
+
+@pytest.mark.unit
+class TestReadOnlyEntry:
+    def _entry(self, **extra):
+        from docsgpt.agents.tools.wiki import WIKI_TOOL_ID, add_wiki_tool
+
+        tools_dict = {}
+        add_wiki_tool(tools_dict, {"source_id": "s1", "source_owner_id": "owner", "user": "owner", **extra})
+        return tools_dict[WIKI_TOOL_ID]
+
+    def test_outside_caller_without_the_setting_is_offered_only_view(self):
+        entry = self._entry(outside_caller=True, writes_allowed=False)
+        assert [a["name"] for a in entry["actions"]] == ["wiki_view"]
+        assert entry["config"]["outside_caller"] is True
+
+    def test_writes_offered_when_allowed(self):
+        entry = self._entry(outside_caller=True, writes_allowed=True)
+        names = {a["name"] for a in entry["actions"]}
+        assert {"wiki_view", "wiki_create", "wiki_str_replace", "wiki_delete"} <= names
+        assert entry["config"]["outside_caller"] is True
+
+    def test_in_app_config_keeps_every_action(self):
+        entry = self._entry()
+        assert len(entry["actions"]) == 6
+        assert entry["config"]["outside_caller"] is False
+
+
+@pytest.mark.unit
+class TestBuildConfigOutsideCallers:
+    def _cfg(self, monkeypatch, agent_config, allowed=False):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        class _SrcRepo:
+            def __init__(self, conn):
+                pass
+
+            def get_any(self, sid, owner):
+                return {"id": sid, "config": {"kind": "wiki"}, "wiki_outside_edits": allowed}
+
+        monkeypatch.setattr("docsgpt.api.answer.services.stream_processor.SourcesRepository", _SrcRepo)
+        monkeypatch.setattr("docsgpt.api.answer.services.stream_processor.db_readonly", _noop_conn)
+        monkeypatch.setattr(
+            "docsgpt.api.answer.services.stream_processor._wiki_write_owner", lambda conn, sid, uid: "owner-x"
+        )
+        proc = StreamProcessor.__new__(StreamProcessor)
+        proc.all_sources = [{"id": "wiki-src"}]
+        proc.decoded_token = {"sub": "owner-x"}
+        if agent_config is not None:
+            proc.agent_config = agent_config
+        return proc._build_wiki_config()
+
+    @pytest.mark.parametrize("flag", ["external_api_caller", "public_link_caller"])
+    def test_outside_caller_gets_read_only_while_off(self, monkeypatch, flag):
+        cfg = self._cfg(monkeypatch, {flag: True})
+        assert cfg["outside_caller"] is True
+        assert cfg["writes_allowed"] is False
+
+    @pytest.mark.parametrize("flag", ["external_api_caller", "public_link_caller"])
+    def test_outside_caller_may_write_when_on(self, monkeypatch, flag):
+        cfg = self._cfg(monkeypatch, {flag: True}, allowed=True)
+        assert cfg["outside_caller"] is True
+        assert cfg["writes_allowed"] is True
+
+    def test_v1_key_holder_gets_read_only(self, monkeypatch):
+        from docsgpt.api.answer.services.stream_processor import StreamProcessor
+
+        monkeypatch.setattr(StreamProcessor, "external_caller", True, raising=False)
+        cfg = self._cfg(monkeypatch, {})
+        assert cfg["writes_allowed"] is False
+
+    @pytest.mark.parametrize("agent_config", [None, {}, {"external_api_caller": False}])
+    def test_owner_and_team_unaffected(self, monkeypatch, agent_config):
+        cfg = self._cfg(monkeypatch, agent_config)
+        assert cfg["outside_caller"] is False
+        assert cfg["writes_allowed"] is True

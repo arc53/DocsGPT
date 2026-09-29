@@ -98,6 +98,8 @@ class TestClassification:
             ("/api/devices/pairings", "POST"),
             ("/api/connectors/auth", "GET"),
             ("/api/mcp_server/callback", "GET"),
+            ("/api/resource_settings", "PUT"),
+            ("/api/sources/<string:source_id>/wiki/settings", "PUT"),
         ],
     )
     def test_sensitive_routes_are_never_token_reachable(self, rule, method):
