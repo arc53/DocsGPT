@@ -143,12 +143,13 @@ Sharing rules:
 - Each share carries an access level: **`viewer`** (read-only) or **`editor`** (read and modify).
 - `editor` is not the same as owner — an editor can change a resource but cannot delete it or re-share it.
 - Shared tools run server-side with the **owner's** credentials; a grantee never sees the owner's secrets.
+- A wiki's editors can edit its pages, but only its owner decides whether API, widget and public-link users can edit it through an agent (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
 
 ## Audit log
 
 Access-control actions are appended to the `auth_events` table alongside the [authentication events](/Deploying/OIDC-SSO#login-auditing). This includes admin actions — `admin_user_activated` / `admin_user_deactivated`, `admin_sessions_revoked`, `role_granted` / `role_revoked` (with `metadata.source` = `manual` or `oidc_group`), `quota_policy_set` / `quota_policy_deleted` — and team events (`team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete`).
 
-Data-plane actions are recorded too: `source.created` / `source.deleted` / `source.reingested`, `agent.created` / `agent.updated` / `agent.deleted` / `agent.key_regenerated`, and `conversation.deleted` / `conversation.deleted_all`.
+Data-plane actions are recorded too: `source.created` / `source.deleted` / `source.reingested` / `source.wiki_settings_updated`, `agent.created` / `agent.updated` / `agent.deleted` / `agent.key_regenerated`, and `conversation.deleted` / `conversation.deleted_all`.
 
 Every row carries `actor_id` (who did it) and `target_id` (the user it was done to, or `NULL` when the event is not about a user), so "everything this admin did" is a single query:
 

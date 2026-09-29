@@ -90,7 +90,23 @@ PUT  /api/sources/<source_id>/wiki/page           # create or overwrite a page (
 
 Human edits are stamped with `human` provenance and trigger the same re-embed as agent edits. Read access follows source sharing (owner or anyone the source is shared with); writing requires owner or team `editor` access.
 
+## Edits from the API, widget and public links
+
+An agent called with its API key (the website widget, the API) runs as its owner, and people who open an agent from its public link are strangers to the owner. By default, neither can change a wiki: they can still read it through the agent, but the agent isn't offered the create, edit, delete or rename actions in those chats, and the Wiki tool refuses them if it's asked anyway.
+
+The wiki's owner can allow such edits. On the **Sources** page, open the wiki's menu, choose **Wiki settings**, and turn on **Let API, widget and public-link users edit this wiki**. The change applies from the next message, including in chats that are already open. Only the owner sees it; team editors can't change it. You and the wiki's editors can always edit it in DocsGPT, and so can agents you or they use there.
+
+Scheduled and webhook runs don't get the Wiki tool, so they read a wiki through search but never edit it.
+
+From the API, only a signed-in session can change the setting; a personal access token can read it but not change it:
+
+```text
+GET /api/sources/<source_id>/wiki/settings   # {"allow_outside_edits": false, ...}
+PUT /api/sources/<source_id>/wiki/settings   # owner only; body {"allow_outside_edits": true}
+```
+
 ## Related
 
 - [Per-Source Configuration](/Sources/Per-source-configuration) — exposure and retrieval settings a wiki uses.
 - [Access Control & Teams](/Deploying/Access-Control) — sharing a wiki with a team.
+- [Connectors](/Guides/Connectors#agents-used-through-an-api-key) — what else an agent can and can't do for API, widget and public-link users.
