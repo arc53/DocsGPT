@@ -62,7 +62,8 @@ export default function useConnectorLauncher({
         setActive({
           kind: 'wizard',
           connector,
-          mode: options.mode === 'reconnect' ? 'reconnect' : 'connect',
+          // Sync more from an account skips signing in, like any connector.
+          mode: options.mode ?? 'connect',
           connectionId: options.connectionId,
           mcpToolId:
             typeof options.mcpServer?.id === 'string'
