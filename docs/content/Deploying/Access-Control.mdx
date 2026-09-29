@@ -151,10 +151,10 @@ An agent (and its workflow) runs as its owner, so its tools, sources and prompts
 
 - Only someone who **owns** the resource, or has **`editor`** access to it through any team, can sponsor it. `viewer` access lets you use a resource in your own agents, but not extend it to another agent's users: the save is refused with `403` and `code: "sponsor_not_allowed"`.
 - Sponsoring is never implied. A save that would make you a new sponsor is refused with `409` until you confirm it. In DocsGPT, a dialog names each resource and who will reach it through the agent. Through the API, send the save again with `confirm_sponsor` listing every resource from the response as `"<type>:<id>"`. A `confirm_sponsor` entry for anything the save doesn't ask you to sponsor is refused with `400`.
-- A sponsored resource stops running when its sponsor can no longer edit the agent, or no longer owns or edits the resource. It stays on the agent but does nothing, and it doesn't pass to whoever saves the agent next. The agent's edit page says why it stopped. An editor who may sponsor it can choose **Run … with my access** there, and it runs with their access from their next save. Through the API, include its key in `confirm_sponsor` on any save. Otherwise, someone removes it.
+- A sponsored resource stops running when its sponsor can no longer edit the agent, or no longer owns or edits the resource. It stays on the agent but does nothing, and it doesn't pass to whoever saves the agent next. The agent's edit page says why it stopped. An editor who may sponsor it can choose **Run … with my access** there; after they confirm in the same dialog that names who reaches the agent, it runs with their access from their next save. Through the API, include its key in `confirm_sponsor` on any save. Otherwise, someone removes it.
 - A resource that is removed and later added again needs a new confirmation, even if its old sponsor could still sponsor it.
 - Editors can remove any tool, source or prompt from the agent or its workflow nodes, including the owner's private ones they can't open.
-- Workflow nodes follow the same rules, through `PUT /api/workflows/<id>`.
+- Workflow nodes follow the same rules, through `PUT /api/workflows/<id>`. The owner's own saves are checked too: a node can't name a tool or source its owner can't use.
 - The confirmation covers the audience the agent has at that moment. If the owner later shares the agent with more teams, or turns on a public link, sponsored resources reach those people too, and their sponsors aren't asked again.
 - `audience.teams` lists every team the agent is shared with, including teams where only some members were given access.
 
@@ -175,6 +175,23 @@ Owners and editors see sponsored resources on the agent's edit page and in `reso
 <Callout type="warning" emoji="⚠️">
 After upgrading, resources sponsored by someone with only `viewer` access to them stop running. An editor who owns or can edit such a resource can choose **Run … with my access** on the agent's edit page to start it again.
 </Callout>
+
+### When a resource stops working
+
+Every run checks each tool, source and prompt on the agent (and each tool and source on its workflow nodes) against the owner's access, or the sponsor's. One that no longer passes is left out of the run; a prompt falls back to the default prompt. The agent's edit page, and the workflow builder for node resources, lists each one that stopped with the reason and what you can do:
+
+| Reason | What happened | What you can do |
+| --- | --- | --- |
+| `deleted` | The tool or source was deleted. | Remove it. |
+| `owner_lost_access` | The owner can no longer use it, for example a team stopped sharing it with them. | Ask whoever shares it to share it again, choose **Run … with my access** if you may sponsor it, or remove it. |
+| `sponsor_cannot_edit_agent`, `sponsor_cannot_edit_resource` | Its sponsor lost access (see above). | Choose **Run … with my access** if you may sponsor it, or remove it. |
+| `connection_needs_reconnect` | The account a connected tool uses was disconnected or needs signing in again. | If it is your account, choose **Reconnect**; otherwise ask the tool's owner. |
+| `connection_removed` | The connection was removed but the tool was kept. | Ask the tool's owner to connect the account again, or remove it. |
+| `connector_disabled` | An admin turned the service off. | Ask an admin to turn it back on, or remove it. |
+
+**Remove** takes the item off the form; save to store it. Through the API, `GET /api/get_agent` and `GET /api/workflows/<id>` return `resource_states` to owners and editors (an empty list to everyone else): one entry per attached resource with `key`, `type`, `id`, `name`, `state` (`active` or `stopped`), `reason`, `sponsor` and `contact` (`{user_id, label}`: the recorded sponsor, and someone else who can fix it), `connection` (the service, for a connection reason), `can_confirm` and `can_reconnect`. When anything can be taken over, the response also carries `sponsor_audience`, the same shape as `audience` above. A name is shown only for a resource that runs, that someone sponsored, that you can see yourself, or that is on an agent (agent saves check every reference).
+
+The check is the one the run uses, so the page never shows a resource as running when the run leaves it out. Each resource a run leaves out is logged as `resource_stopped` with the agent or workflow, the resource's type and id, and the reason.
 
 ## Audit log
 
