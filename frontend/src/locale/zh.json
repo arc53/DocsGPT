@@ -2353,15 +2353,37 @@
         "attachNote": "你添加的、所有者无法使用的工具、来源和提示词，会以你的访问权限为所有使用此智能体的人运行。你必须拥有它们或能够编辑它们，并且需要确认。",
         "publicLinkNote": "此智能体有公开链接，任何拥有该链接的人都可以从中获得回答。",
         "addedBy": "由 {{person}} 添加：{{names}}",
-        "unavailable": "未运行：{{names}}。添加它们的 {{person}} 已无法再通过此智能体共享它们。请移除它们，或选择所有者可以使用的项目。",
         "unknownItem": "未命名项目",
         "notAllowed": "无法将 {{names}} 添加到此智能体。所有者无法使用它们，而你只能共享自己拥有或可以编辑的项目。",
-        "stoppedCannotEditAgent": "未运行：{{names}}。添加它们的 {{person}} 已无法再编辑此智能体。请移除它们，或选择所有者可以使用的项目。",
-        "stoppedCannotEditItem": "未运行：{{names}}。{{person}} 添加了它们，但已无法再编辑它们，而只有拥有或可以编辑某个项目的人才能通过智能体共享它。请移除它们，或选择所有者可以使用的项目。",
         "takeOver": "以我的访问权限运行 {{name}}",
         "takeOverPending": "保存后，{{name}} 将以你的访问权限运行。",
         "undoTakeOver": "撤销",
         "confirmationOutdated": "在你确认以你的访问权限运行的内容之后，此智能体已更改。请查看提示并重新保存。"
+      },
+      "resourceStates": {
+        "title": "部分工具、来源或提示词未在运行",
+        "reason": {
+          "deleted": "{{name}} 已被删除。",
+          "ownerLostAccessYou": "你已无法使用 {{name}}。",
+          "ownerLostAccess": "智能体的所有者已无法使用 {{name}}。",
+          "sponsorCannotEditAgent": "{{name}} 此前以 {{person}} 的访问权限运行，而其已无法编辑此智能体。",
+          "sponsorCannotEditItem": "{{name}} 此前以 {{person}} 的访问权限运行，而其已无法编辑它。",
+          "connectionNeedsReconnect": "{{name}} 的 {{service}} 账户需要重新登录。",
+          "connectionRemoved": "{{name}} 使用的 {{service}} 账户已被移除。",
+          "connectorDisabled": "管理员已关闭 {{service}}，因此 {{name}} 无法运行。",
+          "unknown": "{{name}} 未在运行。"
+        },
+        "ask": {
+          "shareAgain": "请让 {{person}} 重新共享。",
+          "signInAgain": "请让 {{person}} 重新登录。",
+          "connectAgain": "请让 {{person}} 重新连接该账户。",
+          "admin": "请让管理员重新开启。"
+        },
+        "promptFallback": "在此之前，智能体使用默认提示词。",
+        "serviceFallback": "该服务",
+        "remove": "移除",
+        "removeLabel": "移除 {{name}}",
+        "reconnectLabel": "重新连接 {{name}}"
       },
       "sponsorConfirm": {
         "title": "以你的访问权限运行？",

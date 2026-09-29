@@ -2368,15 +2368,37 @@
         "attachNote": "Las herramientas, fuentes y prompts que añadas y que el propietario no pueda usar se ejecutan con tu acceso para todos los que usen este agente. Debes ser su propietario o poder editarlos, y se te pedirá que lo confirmes.",
         "publicLinkNote": "Este agente tiene un enlace público, así que cualquiera con el enlace puede obtener respuestas de ellos.",
         "addedBy": "Añadido por {{person}}: {{names}}",
-        "unavailable": "Sin ejecutarse: {{names}}. {{person}} los añadió y ya no puede compartirlos a través de este agente. Quítalos o elige otros que el propietario pueda usar.",
         "unknownItem": "Elemento sin nombre",
         "notAllowed": "No puedes añadir {{names}} a este agente. El propietario no puede usarlos y solo puedes compartir lo que es tuyo o puedes editar.",
-        "stoppedCannotEditAgent": "Sin ejecutarse: {{names}}. {{person}} los añadió y ya no puede editar este agente. Quítalos o elige otros que el propietario pueda usar.",
-        "stoppedCannotEditItem": "Sin ejecutarse: {{names}}. {{person}} los añadió pero ya no puede editarlos, y solo quien es propietario de un elemento o puede editarlo puede compartirlo a través de un agente. Quítalos o elige otros que el propietario pueda usar.",
         "takeOver": "Ejecutar {{name}} con mi acceso",
         "takeOverPending": "{{name}} se ejecutará con tu acceso cuando guardes.",
         "undoTakeOver": "Deshacer",
         "confirmationOutdated": "Este agente cambió desde que confirmaste lo que se ejecuta con tu acceso. Revisa los avisos y vuelve a guardar."
+      },
+      "resourceStates": {
+        "title": "Algunas herramientas, fuentes o prompts no se están ejecutando",
+        "reason": {
+          "deleted": "{{name}} se eliminó.",
+          "ownerLostAccessYou": "Ya no puedes usar {{name}}.",
+          "ownerLostAccess": "El propietario del agente ya no puede usar {{name}}.",
+          "sponsorCannotEditAgent": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editar este agente.",
+          "sponsorCannotEditItem": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editarlo.",
+          "connectionNeedsReconnect": "{{name}} necesita que su cuenta de {{service}} vuelva a iniciar sesión.",
+          "connectionRemoved": "Se eliminó la cuenta de {{service}} que usaba {{name}}.",
+          "connectorDisabled": "Un administrador desactivó {{service}}, así que {{name}} no puede ejecutarse.",
+          "unknown": "{{name}} no se está ejecutando."
+        },
+        "ask": {
+          "shareAgain": "Pide a {{person}} que lo vuelva a compartir.",
+          "signInAgain": "Pide a {{person}} que vuelva a iniciar sesión.",
+          "connectAgain": "Pide a {{person}} que vuelva a conectar la cuenta.",
+          "admin": "Pide a un administrador que lo vuelva a activar."
+        },
+        "promptFallback": "Mientras tanto, el agente usa el prompt predeterminado.",
+        "serviceFallback": "el servicio",
+        "remove": "Quitar",
+        "removeLabel": "Quitar {{name}}",
+        "reconnectLabel": "Reconectar {{name}}"
       },
       "sponsorConfirm": {
         "title": "¿Ejecutar con tu acceso?",

@@ -2353,15 +2353,37 @@
         "attachNote": "オーナーが使用できないツール、ソース、プロンプトを追加すると、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。自分が所有しているか編集できるものに限られ、追加時に確認を求められます。",
         "publicLinkNote": "このエージェントには公開リンクがあるため、リンクを知っている人は誰でもそれらから回答を得られます。",
         "addedBy": "{{person}} が追加: {{names}}",
-        "unavailable": "実行されていません: {{names}}。追加した {{person}} は、このエージェントを通じてそれらを共有できなくなりました。削除するか、オーナーが使用できるものを選んでください。",
         "unknownItem": "名前のない項目",
         "notAllowed": "{{names}} をこのエージェントに追加できません。オーナーはそれらを使用できず、共有できるのは自分が所有しているか編集できるものだけです。",
-        "stoppedCannotEditAgent": "実行されていません: {{names}}。追加した {{person}} は、このエージェントを編集できなくなりました。削除するか、オーナーが使用できるものを選んでください。",
-        "stoppedCannotEditItem": "実行されていません: {{names}}。{{person}} が追加しましたが、それらを編集できなくなりました。エージェントを通じて共有できるのは、項目を所有しているか編集できる人だけです。削除するか、オーナーが使用できるものを選んでください。",
         "takeOver": "{{name}} を自分のアクセス権で実行",
         "takeOverPending": "保存すると、{{name}} はあなたのアクセス権で実行されます。",
         "undoTakeOver": "元に戻す",
         "confirmationOutdated": "あなたのアクセス権で実行するものを確認した後に、このエージェントが変更されました。通知を確認して、もう一度保存してください。"
+      },
+      "resourceStates": {
+        "title": "一部のツール、ソース、プロンプトが実行されていません",
+        "reason": {
+          "deleted": "{{name}} は削除されました。",
+          "ownerLostAccessYou": "{{name}} を使用できなくなりました。",
+          "ownerLostAccess": "エージェントの所有者は {{name}} を使用できなくなりました。",
+          "sponsorCannotEditAgent": "{{name}} は {{person}} のアクセス権で実行されていましたが、この人はこのエージェントを編集できなくなりました。",
+          "sponsorCannotEditItem": "{{name}} は {{person}} のアクセス権で実行されていましたが、この人はそれを編集できなくなりました。",
+          "connectionNeedsReconnect": "{{name}} の {{service}} アカウントに再度サインインする必要があります。",
+          "connectionRemoved": "{{name}} が使っていた {{service}} アカウントは削除されました。",
+          "connectorDisabled": "管理者が {{service}} をオフにしたため、{{name}} は実行できません。",
+          "unknown": "{{name}} は実行されていません。"
+        },
+        "ask": {
+          "shareAgain": "{{person}} に再度共有するよう依頼してください。",
+          "signInAgain": "{{person}} に再度サインインするよう依頼してください。",
+          "connectAgain": "{{person}} にアカウントを再接続するよう依頼してください。",
+          "admin": "管理者にオンに戻すよう依頼してください。"
+        },
+        "promptFallback": "それまでエージェントはデフォルトのプロンプトを使用します。",
+        "serviceFallback": "サービス",
+        "remove": "削除",
+        "removeLabel": "{{name}} を削除",
+        "reconnectLabel": "{{name}} を再接続"
       },
       "sponsorConfirm": {
         "title": "あなたのアクセス権で実行しますか？",

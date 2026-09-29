@@ -2353,15 +2353,37 @@
         "attachNote": "你新增的、擁有者無法使用的工具、來源和提示詞，會以你的存取權限為所有使用此智慧代理的人執行。你必須擁有它們或能夠編輯它們，並且需要確認。",
         "publicLinkNote": "此智慧代理有公開連結，任何擁有該連結的人都可以從中取得回答。",
         "addedBy": "由 {{person}} 新增：{{names}}",
-        "unavailable": "未執行：{{names}}。新增它們的 {{person}} 已無法再透過此智慧代理分享它們。請移除它們，或選擇擁有者可以使用的項目。",
         "unknownItem": "未命名項目",
         "notAllowed": "無法將 {{names}} 新增到此智慧代理。擁有者無法使用它們，而你只能分享自己擁有或可以編輯的項目。",
-        "stoppedCannotEditAgent": "未執行：{{names}}。新增它們的 {{person}} 已無法再編輯此智慧代理。請移除它們，或選擇擁有者可以使用的項目。",
-        "stoppedCannotEditItem": "未執行：{{names}}。{{person}} 新增了它們，但已無法再編輯它們，而只有擁有或可以編輯某個項目的人才能透過智慧代理分享它。請移除它們，或選擇擁有者可以使用的項目。",
         "takeOver": "以我的存取權限執行 {{name}}",
         "takeOverPending": "儲存後，{{name}} 將以你的存取權限執行。",
         "undoTakeOver": "復原",
         "confirmationOutdated": "在你確認以你的存取權限執行的內容之後，此智慧代理已變更。請查看提示並重新儲存。"
+      },
+      "resourceStates": {
+        "title": "部分工具、來源或提示詞未在執行",
+        "reason": {
+          "deleted": "{{name}} 已被刪除。",
+          "ownerLostAccessYou": "你已無法使用 {{name}}。",
+          "ownerLostAccess": "代理的擁有者已無法使用 {{name}}。",
+          "sponsorCannotEditAgent": "{{name}} 先前以 {{person}} 的存取權限執行，而對方已無法編輯此代理。",
+          "sponsorCannotEditItem": "{{name}} 先前以 {{person}} 的存取權限執行，而對方已無法編輯它。",
+          "connectionNeedsReconnect": "{{name}} 的 {{service}} 帳戶需要重新登入。",
+          "connectionRemoved": "{{name}} 使用的 {{service}} 帳戶已被移除。",
+          "connectorDisabled": "管理員已關閉 {{service}}，因此 {{name}} 無法執行。",
+          "unknown": "{{name}} 未在執行。"
+        },
+        "ask": {
+          "shareAgain": "請 {{person}} 重新分享。",
+          "signInAgain": "請 {{person}} 重新登入。",
+          "connectAgain": "請 {{person}} 重新連接該帳戶。",
+          "admin": "請管理員重新開啟。"
+        },
+        "promptFallback": "在此之前，代理會使用預設提示詞。",
+        "serviceFallback": "該服務",
+        "remove": "移除",
+        "removeLabel": "移除 {{name}}",
+        "reconnectLabel": "重新連接 {{name}}"
       },
       "sponsorConfirm": {
         "title": "以你的存取權限執行？",

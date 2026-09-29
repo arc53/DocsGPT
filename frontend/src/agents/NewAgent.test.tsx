@@ -39,13 +39,14 @@ const mocks = vi.hoisted(() => {
     >(() => jsonResponse({})),
     guardrailsProps: vi.fn(),
     detailsProps: vi.fn(),
+    reconnect: vi.fn(),
   };
 });
 const { jsonResponse } = mocks;
 
 vi.mock('../connectors/SignInAgainNotice', () => ({
   default: () => null,
-  useSignInAgain: () => ({ reconnect: vi.fn(), modals: null }),
+  useSignInAgain: () => ({ reconnect: mocks.reconnect, modals: null }),
 }));
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) => selector(mockState),
@@ -518,24 +519,44 @@ describe('NewAgent form', () => {
     expect(container.querySelector('[data-item="owners"]')).toBeNull();
   });
 
-  it('sends a take-over of a stopped item with the next save', async () => {
-    const stopped = {
-      key: 'tool:t1',
-      type: 'tool',
-      id: 't1',
-      name: 'Jira',
-      user_id: 'bob',
-      label: 'bob@example.com',
-      state: 'inactive',
-      reason: 'sponsor_cannot_edit_agent',
-      active: false,
-      can_confirm: true,
-    };
-    await renderEdit({ resource_sponsors: [stopped] });
+  const stoppedTool = {
+    key: 'tool:t1',
+    type: 'tool',
+    id: 't1',
+    name: 'Jira',
+    state: 'stopped',
+    reason: 'sponsor_cannot_edit_agent',
+    sponsor: { user_id: 'bob', label: 'bob@example.com' },
+    can_confirm: true,
+  };
+  const withStoppedTool = (item: Record<string, unknown> = {}) => ({
+    tools: ['t1'],
+    tool_details: [{ id: 't1', name: 'jira', display_name: 'Jira' }],
+    resource_states: [{ ...stoppedTool, ...item }],
+    sponsor_audience: {
+      teams: ['Sales'],
+      api_key: false,
+      public_link: false,
+      webhook: false,
+    },
+  });
+
+  it('asks before taking over a stopped item and sends it with the next save', async () => {
+    await renderEdit(withStoppedTool());
     const save = buttonByText('agents.form.buttons.save');
     expect(save.disabled).toBe(true);
     await act(async () =>
       buttonByText('agents.form.sponsors.takeOver').click(),
+    );
+    // Nothing is taken over until the reader agrees in the dialog.
+    expect(save.disabled).toBe(true);
+    const confirm = container.querySelector<HTMLButtonElement>(
+      '[data-testid="confirm-sponsor"]',
+    )!;
+    expect(confirm.textContent).toBe('Jira');
+    await act(async () => confirm.click());
+    expect(container.textContent).toContain(
+      'agents.form.sponsors.takeOverPending',
     );
     expect(save.disabled).toBe(false);
     await act(async () => save.click());
@@ -543,8 +564,45 @@ describe('NewAgent form', () => {
     expect(JSON.parse(sent.get('confirm_sponsor') as string)).toEqual([
       'tool:t1',
     ]);
-    // The saved agent is fetched again for its fresh sponsor details.
+    // The saved agent is fetched again for its fresh details.
     expect(mocks.getAgent).toHaveBeenCalledTimes(2);
+  });
+
+  it('removes a stopped item from the agent', async () => {
+    await renderEdit(withStoppedTool({ reason: 'deleted', sponsor: null }));
+    expect(container.textContent).toContain(
+      'agents.form.resourceStates.reason.deleted',
+    );
+    await act(async () =>
+      buttonByText('agents.form.resourceStates.remove').click(),
+    );
+    // Off the form, so off the notice too.
+    expect(container.textContent).not.toContain(
+      'agents.form.resourceStates.reason.deleted',
+    );
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const sent = mocks.updateAgent.mock.calls[0][1];
+    expect(JSON.parse(sent.get('tools') as string)).toEqual([]);
+  });
+
+  it('reconnects the account of a stopped tool in place', async () => {
+    mocks.reconnect.mockClear();
+    await renderEdit(
+      withStoppedTool({
+        reason: 'connection_needs_reconnect',
+        sponsor: null,
+        can_confirm: false,
+        can_reconnect: true,
+        connection: { id: 'c1', connector_key: 'telegram', name: 'Telegram' },
+      }),
+    );
+    await act(async () =>
+      buttonByText('settings.connectors.status.reconnect').click(),
+    );
+    expect(mocks.reconnect).toHaveBeenCalledWith(
+      { id: 'c1', connector_key: 'telegram' },
+      undefined,
+    );
   });
 
   it('explains an outdated confirmation and reloads the sponsors', async () => {

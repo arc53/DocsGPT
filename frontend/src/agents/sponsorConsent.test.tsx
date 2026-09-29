@@ -1,5 +1,7 @@
 import type { MultiSelectPopoverItem } from '../components/MultiSelectPopover';
 import {
+  confirmTakeOver,
+  NO_AUDIENCE,
   readSponsorRefusal,
   saveWithSponsorConsent,
   withAttachedOptions,
@@ -177,5 +179,41 @@ describe('withAttachedOptions', () => {
   it('falls back to the id when no name is known', () => {
     const options = withAttachedOptions([], [], ['x1'], (name) => name);
     expect(options).toEqual([{ value: 'x1', label: 'x1' }]);
+  });
+});
+
+describe('confirmTakeOver', () => {
+  const item = { key: 'tool:t1', type: 'tool' as const, id: 't1' };
+  const audience = {
+    teams: ['Sales'],
+    api_key: true,
+    public_link: false,
+    webhook: false,
+  };
+
+  it('shows the item and who reaches it, and agrees when confirmed', async () => {
+    const ask = vi.fn(() => Promise.resolve(['tool:t1']));
+    await expect(confirmTakeOver(ask, item, 'Jira', audience)).resolves.toBe(
+      true,
+    );
+    expect(ask).toHaveBeenCalledWith({
+      resources: [{ ...item, name: 'Jira' }],
+      audience,
+    });
+  });
+
+  it('does not agree when the caller cancels', async () => {
+    const ask = vi.fn(() => Promise.resolve(null));
+    await expect(confirmTakeOver(ask, item, 'Jira', audience)).resolves.toBe(
+      false,
+    );
+  });
+
+  it('asks with an empty audience when the read sent none', async () => {
+    const ask = vi.fn(() => Promise.resolve(['tool:t1']));
+    await confirmTakeOver(ask, item, 'Jira', undefined);
+    expect(ask).toHaveBeenCalledWith(
+      expect.objectContaining({ audience: NO_AUDIENCE }),
+    );
   });
 });

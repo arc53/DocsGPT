@@ -2386,15 +2386,37 @@
         "attachNote": "Tools, sources and prompts you add that the owner can't use run with your access for everyone who uses this agent. You need to own them or be able to edit them, and you'll be asked to confirm.",
         "publicLinkNote": "This agent has a public link, so anyone with the link can get answers from them.",
         "addedBy": "Added by {{person}}: {{names}}",
-        "unavailable": "Not running: {{names}}. {{person}} added them and can no longer share them through this agent. Remove them or choose ones the owner can use.",
         "unknownItem": "Unnamed item",
         "notAllowed": "You can't add {{names}} to this agent. The owner can't use them, and you can only share what you own or can edit.",
-        "stoppedCannotEditAgent": "Not running: {{names}}. {{person}} added them and can no longer edit this agent. Remove them or choose ones the owner can use.",
-        "stoppedCannotEditItem": "Not running: {{names}}. {{person}} added them but can no longer edit them, and only people who own or can edit an item can share it through an agent. Remove them or choose ones the owner can use.",
         "takeOver": "Run {{name}} with my access",
         "takeOverPending": "{{name}} will run with your access when you save.",
         "undoTakeOver": "Undo",
         "confirmationOutdated": "This agent changed since you confirmed what runs with your access. Check the notices and save again."
+      },
+      "resourceStates": {
+        "title": "Some tools, sources or prompts aren't running",
+        "reason": {
+          "deleted": "{{name}} was deleted.",
+          "ownerLostAccessYou": "You can no longer use {{name}}.",
+          "ownerLostAccess": "The agent's owner can no longer use {{name}}.",
+          "sponsorCannotEditAgent": "{{name}} ran with {{person}}'s access, and they can no longer edit this agent.",
+          "sponsorCannotEditItem": "{{name}} ran with {{person}}'s access, and they can no longer edit it.",
+          "connectionNeedsReconnect": "{{name}} needs its {{service}} account signed in again.",
+          "connectionRemoved": "The {{service}} account {{name}} used was removed.",
+          "connectorDisabled": "An admin turned off {{service}}, so {{name}} can't run.",
+          "unknown": "{{name}} isn't running."
+        },
+        "ask": {
+          "shareAgain": "Ask {{person}} to share it again.",
+          "signInAgain": "Ask {{person}} to sign in again.",
+          "connectAgain": "Ask {{person}} to connect the account again.",
+          "admin": "Ask an admin to turn it back on."
+        },
+        "promptFallback": "The agent uses the default prompt until then.",
+        "serviceFallback": "the service",
+        "remove": "Remove",
+        "removeLabel": "Remove {{name}}",
+        "reconnectLabel": "Reconnect {{name}}"
       },
       "sponsorConfirm": {
         "title": "Run with your access?",

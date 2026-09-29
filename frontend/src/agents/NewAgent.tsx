@@ -99,15 +99,18 @@ import { resetPreview, selectPreviewStatus } from './agentPreviewSlice';
 import AgentPageToolbar, { LastUsedMeta } from './components/AgentPageToolbar';
 import AgentPreviewSheet from './components/AgentPreviewSheet';
 import SectionShell from '../navigation/SectionShell';
-import SponsoredResourcesNotice from './components/SponsoredResourcesNotice';
+import ResourceStatusNotice, {
+  type NamedResource,
+} from './components/ResourceStatusNotice';
 import {
+  confirmTakeOver,
   readSponsorRefusal,
   saveWithSponsorConsent,
   sponsorNotAllowedMessage,
   withAttachedToolRows,
 } from './sponsorConsent';
 import { useSponsorPrompt } from './useSponsorPrompt';
-import { Agent, ResourceSponsor, ToolSummary } from './types';
+import { Agent, ResourceState, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
@@ -185,8 +188,13 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     { connection: Connection; mcpToolId?: string }[]
   >([]);
   const [toolsReloadKey, setToolsReloadKey] = useState(0);
+  // Bumped after a reconnect so the agent's run state is read again.
+  const [detailsReloadKey, setDetailsReloadKey] = useState(0);
   const signInAgain = useSignInAgain({
-    onConnected: () => setToolsReloadKey((key) => key + 1),
+    onConnected: () => {
+      setToolsReloadKey((key) => key + 1);
+      setDetailsReloadKey((key) => key + 1);
+    },
   });
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [isSourcePopupOpen, setIsSourcePopupOpen] = useState(false);
@@ -317,7 +325,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // Name of a tool/source/prompt that runs with an editor's access, from the
   // same owner-agnostic details the pickers show.
   const resolveSponsoredName = useCallback(
-    (sponsor: ResourceSponsor): string => {
+    (sponsor: NamedResource): string => {
       if (sponsor.name) return sponsor.name;
       if (sponsor.type === 'source') return resolveSourceLabel(sponsor.id);
       if (sponsor.type === 'prompt') {
@@ -448,7 +456,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
-  // Fresh sponsor details after a save, without touching unsaved fields.
+  // Fresh sponsor details and run state after a save or a reconnect,
+  // without touching unsaved fields.
   const refreshSponsors = useCallback(
     async (id?: string) => {
       if (!id) return;
@@ -456,19 +465,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         const response = await userService.getAgent(id, token);
         if (!response.ok) return;
         const data = await response.json();
-        const sponsors = data.resource_sponsors ?? [];
-        setAgent((prev) => ({ ...prev, resource_sponsors: sponsors }));
+        const details: Partial<Agent> = {
+          resource_sponsors: data.resource_sponsors ?? [],
+          resource_states: data.resource_states ?? [],
+          sponsor_audience: data.sponsor_audience,
+        };
+        setAgent((prev) => ({ ...prev, ...details }));
         if (initialAgentRef.current)
-          initialAgentRef.current = {
-            ...initialAgentRef.current,
-            resource_sponsors: sponsors,
-          };
+          initialAgentRef.current = { ...initialAgentRef.current, ...details };
       } catch {
         // The notice keeps what it showed.
       }
     },
     [token],
   );
+
+  useEffect(() => {
+    if (detailsReloadKey > 0) void refreshSponsors(agent.id);
+    // Only a reconnect asks for this; agent.id is read when it does.
+  }, [detailsReloadKey, refreshSponsors]);
 
   /** The message for a refused save. */
   const saveFailureMessage = async (
@@ -516,10 +531,80 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     }
   };
 
-  const toggleTakeover = (key: string) =>
-    setTakeovers((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+  const undoTakeover = (key: string) =>
+    setTakeovers((prev) => prev.filter((k) => k !== key));
+
+  // Stopped items still on the agent in the form: one removed here (not yet
+  // saved) leaves the notice.
+  const stoppedResources = useMemo(() => {
+    const toolIds = new Set(
+      selectedTools.map((tool) => String(tool?.id).toLowerCase()),
     );
+    const sourceIds = new Set(
+      Array.from(selectedSourceIds, (id) => id.toLowerCase()),
+    );
+    const promptId = String(agent.prompt_id || '').toLowerCase();
+    return (agent.resource_states ?? []).filter(
+      (item) =>
+        item.state === 'stopped' &&
+        (item.type === 'tool'
+          ? toolIds.has(item.id)
+          : item.type === 'source'
+            ? sourceIds.has(item.id)
+            : promptId === item.id),
+    );
+  }, [
+    agent.resource_states,
+    agent.prompt_id,
+    selectedSourceIds,
+    selectedTools,
+  ]);
+
+  /** Take a stopped item off the agent; the next save stores it. */
+  const removeResource = (item: ResourceState) => {
+    if (item.type === 'tool')
+      setSelectedTools((prev) =>
+        prev.filter((tool) => String(tool?.id).toLowerCase() !== item.id),
+      );
+    else if (item.type === 'source')
+      setSelectedSourceIds(
+        (prev) =>
+          new Set(
+            Array.from(prev).filter((id) => id.toLowerCase() !== item.id),
+          ),
+      );
+    else setAgent((prev) => ({ ...prev, prompt_id: 'default' }));
+    undoTakeover(item.key);
+  };
+
+  /**
+   * Ask before a stopped item runs with the caller's access, naming who
+   * reaches it through the agent; on yes the next save confirms it.
+   */
+  const takeOverResource = async (item: ResourceState) => {
+    const agreed = await confirmTakeOver(
+      sponsorPrompt.ask,
+      item,
+      resolveSponsoredName(item),
+      agent.sponsor_audience,
+    );
+    if (agreed)
+      setTakeovers((prev) =>
+        prev.includes(item.key) ? prev : [...prev, item.key],
+      );
+  };
+
+  /** Sign a stopped tool's connection in again, in place where possible. */
+  const reconnectResource = (item: ResourceState) => {
+    const connection = item.connection;
+    if (!connection?.id || !connection.connector_key) return;
+    const isMcp =
+      rawUserTools.find((tool) => tool.id === item.id)?.name === 'mcp_tool';
+    signInAgain.reconnect(
+      { id: connection.id, connector_key: connection.connector_key },
+      isMcp ? item.id : undefined,
+    );
+  };
 
   const handleSaveDraft = async () => {
     const formData = new FormData();
@@ -1397,11 +1482,15 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 {t('agents.form.buttons.add')}
               </Button>
             </div>
-            <SponsoredResourcesNotice
+            <ResourceStatusNotice
               agent={agent}
+              stopped={stoppedResources}
               resolveName={resolveSponsoredName}
               takeovers={takeovers}
-              onToggleTakeover={toggleTakeover}
+              onTakeOver={(item) => void takeOverResource(item)}
+              onUndoTakeover={undoTakeover}
+              onRemove={removeResource}
+              onReconnect={reconnectResource}
             />
           </div>
         </Card>

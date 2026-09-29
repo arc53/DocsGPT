@@ -25,6 +25,14 @@ export type SponsorAudience = {
   webhook: boolean;
 };
 
+/** An audience with nobody in it, for a read that sent none. */
+export const NO_AUDIENCE: SponsorAudience = {
+  teams: [],
+  api_key: false,
+  public_link: false,
+  webhook: false,
+};
+
 /** What a save asks the caller to agree to before it goes ahead. */
 export type SponsorConfirmation = {
   resources: SponsorResource[];
@@ -180,4 +188,30 @@ export function withAttachedToolRows(
     });
   }
   return extra.length ? [...items, ...extra] : items;
+}
+
+/**
+ * Ask the caller to run one stopped item with their access, naming who
+ * reaches it through the agent (the read's `sponsor_audience`).
+ *
+ * Args:
+ *   ask: Shows the confirmation; resolves to the agreed keys, or null.
+ *   item: The stopped item.
+ *   name: Its display name.
+ *   audience: Who reaches the agent's resources.
+ *
+ * Returns:
+ *   Whether they agreed; the next save then sends its key.
+ */
+export async function confirmTakeOver(
+  ask: (confirmation: SponsorConfirmation) => Promise<string[] | null>,
+  item: Pick<SponsorResource, 'key' | 'type' | 'id'>,
+  name: string,
+  audience: SponsorAudience | undefined,
+): Promise<boolean> {
+  const agreed = await ask({
+    resources: [{ key: item.key, type: item.type, id: item.id, name }],
+    audience: audience ?? NO_AUDIENCE,
+  });
+  return Boolean(agreed?.includes(item.key));
 }

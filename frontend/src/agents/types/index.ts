@@ -1,3 +1,4 @@
+import type { SponsorAudience } from '../sponsorConsent';
 import type { AccessFields } from '../../utils/accessUtils';
 
 export type ToolSummary = {
@@ -28,6 +29,48 @@ export type ResourceSponsor = {
   active: boolean;
   /** The reader may take a stopped item over by confirming it on a save. */
   can_confirm?: boolean;
+};
+
+/** Why an attached item doesn't run (`ResourceState.reason`). */
+export type ResourceStateReason =
+  | 'deleted'
+  | 'owner_lost_access'
+  | ResourceSponsorReason
+  | 'connection_needs_reconnect'
+  | 'connection_removed'
+  | 'connector_disabled';
+
+/** A person the page names: their email when on file, else their user id. */
+export type ResourcePerson = { user_id: string; label: string };
+
+/**
+ * Whether an attached tool, source or prompt runs (`resource_states` on the
+ * agent and workflow reads, for people who may edit them).
+ */
+export type ResourceState = {
+  /** `"<type>:<id>"`, the value `confirm_sponsor` takes. */
+  key: string;
+  type: 'tool' | 'source' | 'prompt';
+  id: string;
+  /** Null when the reader may not see it. */
+  name?: string | null;
+  state: 'active' | 'stopped';
+  /** Null while it runs. */
+  reason: ResourceStateReason | null;
+  /** Who it ran with the access of, when someone else added it. */
+  sponsor?: ResourcePerson | null;
+  /** Someone other than the reader who can fix it. */
+  contact?: ResourcePerson | null;
+  /** The service, for a connection reason. */
+  connection?: {
+    id: string | null;
+    connector_key: string | null;
+    name: string | null;
+  } | null;
+  /** The reader may run it with their access by confirming on a save. */
+  can_confirm?: boolean;
+  /** The reader owns the connection that needs signing in again. */
+  can_reconnect?: boolean;
 };
 
 export type Agent = {
@@ -68,6 +111,12 @@ export type Agent = {
   // Resources the owner can't use that run as the editor who attached them
   // (GET /api/get_agent, callers who may view the config).
   resource_sponsors?: ResourceSponsor[];
+  // Whether each attached tool, source and prompt runs, and why not
+  // (GET /api/get_agent, callers who may edit the agent).
+  resource_states?: ResourceState[];
+  // Who reaches the agent's resources, sent when the caller may take one
+  // over, so the take-over confirmation can say who it extends to.
+  sponsor_audience?: SponsorAudience;
   created_at?: string;
   updated_at?: string;
   last_used_at?: string;

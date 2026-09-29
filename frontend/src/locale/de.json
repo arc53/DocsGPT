@@ -2368,15 +2368,37 @@
         "attachNote": "Tools, Quellen und Prompts, die du hinzufügst und die der Eigentümer nicht nutzen kann, laufen für alle, die diesen Agenten nutzen, mit deinem Zugriff. Du musst sie besitzen oder bearbeiten können und wirst um Bestätigung gebeten.",
         "publicLinkNote": "Dieser Agent hat einen öffentlichen Link, daher kann jeder mit dem Link Antworten daraus erhalten.",
         "addedBy": "Hinzugefügt von {{person}}: {{names}}",
-        "unavailable": "Nicht aktiv: {{names}}. {{person}} hat sie hinzugefügt und kann sie nicht mehr über diesen Agenten teilen. Entferne sie oder wähle welche, die der Eigentümer nutzen kann.",
         "unknownItem": "Unbenanntes Element",
         "notAllowed": "Du kannst {{names}} diesem Agenten nicht hinzufügen. Der Eigentümer kann sie nicht nutzen, und du kannst nur teilen, was du besitzt oder bearbeiten kannst.",
-        "stoppedCannotEditAgent": "Nicht aktiv: {{names}}. {{person}} hat sie hinzugefügt und kann diesen Agenten nicht mehr bearbeiten. Entferne sie oder wähle welche, die der Eigentümer nutzen kann.",
-        "stoppedCannotEditItem": "Nicht aktiv: {{names}}. {{person}} hat sie hinzugefügt, kann sie aber nicht mehr bearbeiten, und nur wer ein Element besitzt oder bearbeiten kann, kann es über einen Agenten teilen. Entferne sie oder wähle welche, die der Eigentümer nutzen kann.",
         "takeOver": "{{name}} mit meinem Zugriff ausführen",
         "takeOverPending": "{{name}} läuft mit deinem Zugriff, sobald du speicherst.",
         "undoTakeOver": "Rückgängig",
         "confirmationOutdated": "Dieser Agent hat sich geändert, seit du bestätigt hast, was mit deinem Zugriff läuft. Prüfe die Hinweise und speichere erneut."
+      },
+      "resourceStates": {
+        "title": "Einige Tools, Quellen oder Prompts laufen nicht",
+        "reason": {
+          "deleted": "{{name}} wurde gelöscht.",
+          "ownerLostAccessYou": "Du kannst {{name}} nicht mehr verwenden.",
+          "ownerLostAccess": "Der Eigentümer des Agenten kann {{name}} nicht mehr verwenden.",
+          "sponsorCannotEditAgent": "{{name}} lief mit dem Zugriff von {{person}}, und diese Person kann den Agenten nicht mehr bearbeiten.",
+          "sponsorCannotEditItem": "{{name}} lief mit dem Zugriff von {{person}}, und diese Person kann es nicht mehr bearbeiten.",
+          "connectionNeedsReconnect": "Für {{name}} muss das {{service}}-Konto erneut angemeldet werden.",
+          "connectionRemoved": "Das {{service}}-Konto, das {{name}} verwendet hat, wurde entfernt.",
+          "connectorDisabled": "Ein Admin hat {{service}} deaktiviert, daher kann {{name}} nicht laufen.",
+          "unknown": "{{name}} läuft nicht."
+        },
+        "ask": {
+          "shareAgain": "Bitte {{person}}, es erneut zu teilen.",
+          "signInAgain": "Bitte {{person}}, sich erneut anzumelden.",
+          "connectAgain": "Bitte {{person}}, das Konto erneut zu verbinden.",
+          "admin": "Bitte einen Admin, es wieder zu aktivieren."
+        },
+        "promptFallback": "Bis dahin verwendet der Agent den Standard-Prompt.",
+        "serviceFallback": "Dienst",
+        "remove": "Entfernen",
+        "removeLabel": "{{name}} entfernen",
+        "reconnectLabel": "{{name}} neu verbinden"
       },
       "sponsorConfirm": {
         "title": "Mit deinem Zugriff ausführen?",
