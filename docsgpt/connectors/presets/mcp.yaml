@@ -9,6 +9,9 @@
 #
 # Keys look like ``mcp:<name>``. The frontend reads ``settings.connectors
 # .descriptions.mcp_<name>`` for a translated description.
+#
+# A preset with ``sync_ingestor`` also syncs into Knowledge through its own
+# MCP server, signed in with the same connection (Linear's issues).
 
 - key: mcp:notion
   name: Notion
@@ -22,12 +25,13 @@
 
 - key: mcp:linear
   name: Linear
-  description: Find, create and update Linear issues and projects.
+  description: Sync issues and documents into Knowledge, and let agents find, create and update issues.
   icon: linear
   category: projects
   mcp_url: https://mcp.linear.app/mcp
   auth_kind: mcp_oauth
-  capabilities: [read, write]
+  capabilities: [sync, read, write]
+  sync_ingestor: linear
   docs_url: https://linear.app/docs/mcp
 
 - key: mcp:atlassian

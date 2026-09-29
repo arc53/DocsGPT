@@ -1512,6 +1512,10 @@ def sync(
     return {"status": "success"}
 
 
+# Remote loaders that can only read with a connection (no public fallback).
+_CONNECTION_ONLY_LOADERS = frozenset({"linear"})
+
+
 def sync_worker(self, frequency):
     from sqlalchemy import text as sql_text
 
@@ -1563,6 +1567,11 @@ def sync_worker(self, frequency):
             # An S3 or GitHub source whose connection needs reconnecting:
             # it resumes when the owner reconnects, rather than failing (and
             # notifying) on every schedule until then.
+            sync_counts["sync_skipped"] += 1
+            continue
+        if source_type in _CONNECTION_ONLY_LOADERS and not doc.get("connection_id"):
+            # Linear is read only with a connection's sign-in; its
+            # connection was removed and the content kept.
             sync_counts["sync_skipped"] += 1
             continue
 
@@ -2217,9 +2226,10 @@ def _with_connection_credentials(source_data, connection_id: str):
     S3, Reddit and GitHub sources made from a connection keep their keys on
     the connection only, never in ``sources.remote_data``. A JSON string
     stays a JSON string and a dict a dict; any other string (a GitHub
-    repository URL) becomes ``{"url": ...}`` next to the keys. Returns None
-    when the connection is gone, needs reconnecting, or its connector is
-    turned off.
+    repository URL) becomes ``{"url": ...}`` next to the keys. An MCP
+    sign-in (Linear) gets its ``connection_id`` instead: its tokens stay
+    with the MCP client, which renews them. Returns None when the
+    connection is gone, needs reconnecting, or its connector is turned off.
     """
     from docsgpt.connectors import service
     from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
@@ -2229,10 +2239,15 @@ def _with_connection_credentials(source_data, connection_id: str):
         enabled = row is not None and service.connector_enabled(conn, row)
     if row is None or not enabled:
         return None
-    try:
-        credentials = service.access_credentials(row)
-    except service.ConnectionUnavailable:
-        return None
+    if (row.get("auth_kind") or "") == "mcp_oauth":
+        if service.normalize_status(row) != service.STATUS_CONNECTED:
+            return None
+        credentials = {"connection_id": str(row["id"])}
+    else:
+        try:
+            credentials = service.access_credentials(row)
+        except service.ConnectionUnavailable:
+            return None
     if isinstance(source_data, str):
         try:
             parsed = json.loads(source_data)

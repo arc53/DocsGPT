@@ -326,6 +326,14 @@ def _start_sync(user_id: str, row: dict, sync: dict):
             return ("Pick a GitHub repository", 400)
         items = {**items, "repo_url": repo}
         name = name or repo
+    elif definition.sync_ingestor == "linear":
+        from docsgpt.connectors import linear
+
+        try:
+            items = linear.normalize_selection(items)
+        except ValueError as err:
+            return (str(err), 400)
+        name = name or linear.selection_name(items)
     name = name or definition.name
     # Validate before claiming the idempotency key: a rejected request must
     # leave the key free for the corrected retry.
@@ -346,11 +354,15 @@ def _start_sync(user_id: str, row: dict, sync: dict):
             "sync_frequency": frequency,
         }
     else:
-        fields = {f.key for f in definition.setup_fields}
-        source_data = {k: v for k, v in items.items() if k in fields and v not in (None, "")}
-        missing = [f.label for f in definition.setup_fields if f.required and f.key not in source_data]
-        if missing:
-            return (f"Missing: {', '.join(missing)}", 400)
+        if definition.sync_ingestor == "linear":
+            # The teams and projects picked, read with the connection's MCP sign-in.
+            source_data = items
+        else:
+            fields = {f.key for f in definition.setup_fields}
+            source_data = {k: v for k, v in items.items() if k in fields and v not in (None, "")}
+            missing = [f.label for f in definition.setup_fields if f.required and f.key not in source_data]
+            if missing:
+                return (f"Missing: {', '.join(missing)}", 400)
         task_fn = ingest_remote
         kwargs = {
             "source_data": source_data,
@@ -416,6 +428,36 @@ class ConnectionRepositories(Resource):
         return make_response(
             jsonify({"success": True, "repositories": repositories, "install_url": install_url}), 200,
         )
+
+
+@connections_ns.route("/connections/<string:connection_id>/linear")
+class LinearWorkspace(Resource):
+    @api.doc(
+        description=(
+            "Linear: the teams and projects the connection can see, for the sync picker. "
+            "Read through Linear's MCP server with the connection's sign-in."
+        )
+    )
+    def get(self, connection_id: str):
+        from docsgpt.connectors import linear, mcp
+
+        user_id = _user_id()
+        if not user_id:
+            return _unauthorized()
+        with db_readonly() as conn:
+            row = _owned(conn, connection_id, user_id)
+        if row is None or catalog.connector_key_for_row(row) != linear.LINEAR_CONNECTOR:
+            return _not_found()
+        try:
+            workspace = mcp.run_connection_session(row, linear.mcp_url(), linear.list_workspace)
+        except service.ConnectionUnavailable:
+            return _error("Reconnect to continue", 409, code="reconnect")
+        except service.TransientConnectionError:
+            return _error("Linear is not responding. Try again.", 503)
+        except Exception as err:
+            current_app.logger.error(f"Error listing Linear teams: {err}", exc_info=True)
+            return _error("Failed to list Linear teams", 502)
+        return make_response(jsonify({"success": True, **workspace}), 200)
 
 
 @connections_ns.route("/connections/<string:connection_id>/reconnect")

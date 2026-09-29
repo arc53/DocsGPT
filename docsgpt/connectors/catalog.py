@@ -406,7 +406,9 @@ def _load_presets(path: Optional[Path] = None) -> tuple[ConnectorDefinition, ...
                 auth_kind=entry.get("auth_kind", "mcp_oauth"),
                 capabilities=tuple(entry.get("capabilities") or ("read", "write")),
                 tool_templates=("mcp_tool",),
-                setup={"tools": "auto", "sync": "off"},
+                # Linear also syncs into Knowledge, read through its MCP server.
+                sync_ingestor=entry.get("sync_ingestor"),
+                setup={"tools": "auto", "sync": "ask" if entry.get("sync_ingestor") else "off"},
                 mcp_url=entry["mcp_url"],
                 publisher="preset",
                 docs_url=entry.get("docs_url"),
