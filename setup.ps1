@@ -285,6 +285,75 @@ function Prompt-OllamaOptions {
 }
 
 # ========================
+# .env helpers
+# ========================
+
+# .env holds API keys and the JWT, encryption and OIDC secrets, so only the current user may read it
+function Protect-EnvFile {
+    try {
+        if ($PSVersionTable.PSEdition -eq "Desktop" -or $IsWindows) {
+            # Drop the entries inherited from the folder (Users, Authenticated Users) and grant the current user alone.
+            $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+            & icacls "$ENV_FILE" /inheritance:r /grant:r "*${sid}:(F)" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "icacls exited with $LASTEXITCODE" }
+        } else {
+            & chmod 600 "$ENV_FILE"
+        }
+    } catch {
+        Write-ColorText "Could not limit $ENV_FILE to your user ($_). It holds secrets: restrict its permissions yourself." -ForegroundColor "Yellow"
+    }
+}
+
+# Start a new, empty .env and lock it down before any secret is written to it
+function Reset-EnvFile {
+    [System.IO.File]::WriteAllText($ENV_FILE, "")
+    Protect-EnvFile
+}
+
+# The value as written in .env, so Docker Compose (env_file and --env-file) and python-dotenv (a native
+# run) both read it back unchanged. Only Compose does for a value holding a $ together with a single
+# quote, ${, or a backslash pair python-dotenv decodes; Write-EnvValue warns about those.
+function Format-EnvValue {
+    param([string]$Value)
+    if ($Value -cmatch '^[A-Za-z0-9_./:@+,=-]*$') { return $Value }
+    if (-not ($Value.Contains("'") -or $Value.Contains('${') -or $Value.Contains('\\') -or $Value.EndsWith('\'))) {
+        # Single quotes are literal to Compose; python-dotenv only expands ${...} and decodes \\ and \' in them.
+        return "'$Value'"
+    }
+    # Double quotes: both decode \\ and \". Compose also interpolates $, which $$ keeps literal, while
+    # python-dotenv keeps $$ as it is; a value without a $ reads the same to both.
+    return '"' + $Value.Replace('\', '\\').Replace('"', '\"').Replace('$', '$$') + '"'
+}
+
+# The value of a .env assignment, without the quotes Format-EnvValue adds
+function ConvertFrom-EnvValue {
+    param([string]$Raw)
+    if ($Raw.Length -ge 2 -and $Raw.StartsWith("'") -and $Raw.EndsWith("'")) { return $Raw.Substring(1, $Raw.Length - 2) }
+    if ($Raw.Length -ge 2 -and $Raw.StartsWith('"') -and $Raw.EndsWith('"')) {
+        $evaluator = { param($m) if ($m.Groups[1].Success) { $m.Groups[1].Value } else { '$' } }
+        return [regex]::Replace($Raw.Substring(1, $Raw.Length - 2), '\\([\\"])|\$\$', $evaluator)
+    }
+    return $Raw
+}
+
+# Append KEY=RAW to .env as it stands: RAW is a value read from a .env, already quoted
+function Write-EnvRaw {
+    param([string]$Key, [string]$Raw)
+    if (-not (Test-Path $ENV_FILE)) { Reset-EnvFile }
+    "$Key=$Raw" | Add-Content -Path $ENV_FILE -Encoding utf8
+}
+
+# Append KEY=VALUE to .env, quoted as Format-EnvValue does
+function Write-EnvValue {
+    param([string]$Key, [string]$Value)
+    $formatted = Format-EnvValue $Value
+    if ($formatted.StartsWith('"') -and $Value.Contains('$')) {
+        Write-ColorText "$Key is written for Docker Compose; a native (non-Docker) run reads it differently. Edit it in .env if you run DocsGPT natively." -ForegroundColor "Yellow"
+    }
+    Write-EnvRaw $Key $formatted
+}
+
+# ========================
 # Advanced Settings Functions
 # ========================
 
@@ -304,51 +373,51 @@ function Configure-VectorStore {
 
     switch ($vs_choice) {
         "1" {
-            "VECTOR_STORE=faiss" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue VECTOR_STORE "faiss"
             Write-ColorText "Vector store set to FAISS." -ForegroundColor "Green"
         }
         "2" {
-            "VECTOR_STORE=elasticsearch" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue VECTOR_STORE "elasticsearch"
             $elastic_url = Read-Host "Enter Elasticsearch URL (e.g. http://localhost:9200)"
-            if ($elastic_url) { "ELASTIC_URL=$elastic_url" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($elastic_url) { Write-EnvValue ELASTIC_URL "$elastic_url" }
             $elastic_cloud_id = Read-Host "Enter Elasticsearch Cloud ID (leave empty if using URL)"
-            if ($elastic_cloud_id) { "ELASTIC_CLOUD_ID=$elastic_cloud_id" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($elastic_cloud_id) { Write-EnvValue ELASTIC_CLOUD_ID "$elastic_cloud_id" }
             $elastic_user = Read-Host "Enter Elasticsearch username (leave empty if none)"
-            if ($elastic_user) { "ELASTIC_USERNAME=$elastic_user" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($elastic_user) { Write-EnvValue ELASTIC_USERNAME "$elastic_user" }
             $elastic_pass = Read-Host "Enter Elasticsearch password (leave empty if none)"
-            if ($elastic_pass) { "ELASTIC_PASSWORD=$elastic_pass" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($elastic_pass) { Write-EnvValue ELASTIC_PASSWORD "$elastic_pass" }
             $elastic_index = Read-Host "Enter Elasticsearch index name (default: docsgpt)"
             if ([string]::IsNullOrEmpty($elastic_index)) { $elastic_index = "docsgpt" }
-            "ELASTIC_INDEX=$elastic_index" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue ELASTIC_INDEX "$elastic_index"
             Write-ColorText "Vector store set to Elasticsearch." -ForegroundColor "Green"
         }
         "3" {
-            "VECTOR_STORE=qdrant" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue VECTOR_STORE "qdrant"
             $qdrant_url = Read-Host "Enter Qdrant URL (e.g. http://localhost:6333)"
-            if ($qdrant_url) { "QDRANT_URL=$qdrant_url" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($qdrant_url) { Write-EnvValue QDRANT_URL "$qdrant_url" }
             $qdrant_key = Read-Host "Enter Qdrant API key (leave empty if none)"
-            if ($qdrant_key) { "QDRANT_API_KEY=$qdrant_key" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($qdrant_key) { Write-EnvValue QDRANT_API_KEY "$qdrant_key" }
             $qdrant_collection = Read-Host "Enter Qdrant collection name (default: docsgpt)"
             if ([string]::IsNullOrEmpty($qdrant_collection)) { $qdrant_collection = "docsgpt" }
-            "QDRANT_COLLECTION_NAME=$qdrant_collection" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue QDRANT_COLLECTION_NAME "$qdrant_collection"
             Write-ColorText "Vector store set to Qdrant." -ForegroundColor "Green"
         }
         "4" {
-            "VECTOR_STORE=milvus" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue VECTOR_STORE "milvus"
             $milvus_uri = Read-Host "Enter Milvus URI (default: ./milvus_local.db)"
             if ([string]::IsNullOrEmpty($milvus_uri)) { $milvus_uri = "./milvus_local.db" }
-            "MILVUS_URI=$milvus_uri" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue MILVUS_URI "$milvus_uri"
             $milvus_token = Read-Host "Enter Milvus token (leave empty if none)"
-            if ($milvus_token) { "MILVUS_TOKEN=$milvus_token" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($milvus_token) { Write-EnvValue MILVUS_TOKEN "$milvus_token" }
             $milvus_collection = Read-Host "Enter Milvus collection name (default: docsgpt)"
             if ([string]::IsNullOrEmpty($milvus_collection)) { $milvus_collection = "docsgpt" }
-            "MILVUS_COLLECTION_NAME=$milvus_collection" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue MILVUS_COLLECTION_NAME "$milvus_collection"
             Write-ColorText "Vector store set to Milvus." -ForegroundColor "Green"
         }
         "5" {
-            "VECTOR_STORE=pgvector" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue VECTOR_STORE "pgvector"
             $pgvector_conn = Read-Host "Enter PGVector connection string (e.g. postgresql://user:pass@host:5432/db)"
-            if ($pgvector_conn) { "PGVECTOR_CONNECTION_STRING=$pgvector_conn" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($pgvector_conn) { Write-EnvValue PGVECTOR_CONNECTION_STRING "$pgvector_conn" }
             Write-ColorText "Vector store set to PGVector." -ForegroundColor "Green"
         }
         {$_ -eq "b" -or $_ -eq "B"} { return }
@@ -375,26 +444,26 @@ function Configure-Embeddings {
 
     switch ($emb_choice) {
         "1" {
-            "EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue EMBEDDINGS_NAME "ibm-granite/granite-embedding-311m-multilingual-r2"
             Write-ColorText "Embeddings set to granite-311m-multilingual-r2 (local)." -ForegroundColor "Green"
         }
         "2" {
-            "EMBEDDINGS_NAME=openai_text-embedding-ada-002" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue EMBEDDINGS_NAME "openai_text-embedding-ada-002"
             $emb_key = Read-Host "Enter OpenAI API key for embeddings (leave empty to reuse API_KEY, only if the LLM provider is OpenAI)"
-            if ($emb_key) { "EMBEDDINGS_KEY=$emb_key" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($emb_key) { Write-EnvValue EMBEDDINGS_KEY "$emb_key" }
             Write-ColorText "Embeddings set to OpenAI." -ForegroundColor "Green"
         }
         "3" {
             $emb_name = Read-Host "Enter embeddings model name"
-            if ($emb_name) { "EMBEDDINGS_NAME=$emb_name" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($emb_name) { Write-EnvValue EMBEDDINGS_NAME "$emb_name" }
             $emb_url = Read-Host "Enter remote embeddings API base URL"
-            if ($emb_url) { "EMBEDDINGS_BASE_URL=$emb_url" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($emb_url) { Write-EnvValue EMBEDDINGS_BASE_URL "$emb_url" }
             $emb_key = Read-Host "Enter embeddings API key (leave empty if none)"
-            if ($emb_key) { "EMBEDDINGS_KEY=$emb_key" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($emb_key) { Write-EnvValue EMBEDDINGS_KEY "$emb_key" }
             Write-ColorText "Custom remote embeddings configured." -ForegroundColor "Green"
         }
         "4" {
-            "EMBEDDINGS_NAME=huggingface_sentence-transformers/all-mpnet-base-v2" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue EMBEDDINGS_NAME "huggingface_sentence-transformers/all-mpnet-base-v2"
             Write-ColorText "Embeddings set to all-mpnet-base-v2 (legacy local)." -ForegroundColor "Green"
         }
         {$_ -eq "b" -or $_ -eq "B"} { return }
@@ -426,7 +495,7 @@ function Configure-Auth {
         }
         "2" {
             Remove-EnvKeys (@("AUTH_TYPE") + $script:OIDC_ENV_KEYS)
-            "AUTH_TYPE=simple_jwt" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue AUTH_TYPE "simple_jwt"
             Write-JwtSecretKey
             Write-ColorText "Authentication set to Simple JWT." -ForegroundColor "Green"
             Write-ColorText "The page asks for the access token. The backend prints it when it starts:" -ForegroundColor "White"
@@ -434,7 +503,7 @@ function Configure-Auth {
         }
         "3" {
             Remove-EnvKeys (@("AUTH_TYPE") + $script:OIDC_ENV_KEYS)
-            "AUTH_TYPE=session_jwt" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue AUTH_TYPE "session_jwt"
             Write-JwtSecretKey
             Write-ColorText "Authentication set to Session JWT." -ForegroundColor "Green"
         }
@@ -475,7 +544,7 @@ function Configure-Oidc {
     $client_id = Read-Required "Client ID"
     $client_secret = Read-Host "Client secret (leave empty for a public client; PKCE is always used)"
     $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
-    $api_url = Get-PreviousEnvValue "API_URL"
+    $api_url = ConvertFrom-EnvValue (Get-PreviousEnvValue "API_URL")
     if (-not [string]::IsNullOrEmpty($api_url)) {
         $frontend_url = Read-Host "Address people open DocsGPT at (leave empty for $api_url)"
         if ([string]::IsNullOrWhiteSpace($frontend_url)) { $frontend_url = $api_url }
@@ -489,11 +558,12 @@ function Configure-Oidc {
     $admin_groups = Read-Host "IdP groups whose members become DocsGPT admins, comma-separated (leave empty for none)"
 
     Remove-EnvKeys (@("AUTH_TYPE") + $script:OIDC_ENV_KEYS)
-    $lines = @("AUTH_TYPE=oidc", "OIDC_ISSUER=$issuer", "OIDC_CLIENT_ID=$client_id")
-    if (-not [string]::IsNullOrWhiteSpace($client_secret)) { $lines += "OIDC_CLIENT_SECRET=$client_secret" }
-    $lines += "OIDC_FRONTEND_URL=$frontend_url"
-    if (-not [string]::IsNullOrWhiteSpace($admin_groups)) { $lines += "OIDC_ADMIN_GROUPS=$admin_groups" }
-    $lines | Add-Content -Path $ENV_FILE -Encoding utf8
+    Write-EnvValue AUTH_TYPE "oidc"
+    Write-EnvValue OIDC_ISSUER $issuer
+    Write-EnvValue OIDC_CLIENT_ID $client_id
+    if (-not [string]::IsNullOrWhiteSpace($client_secret)) { Write-EnvValue OIDC_CLIENT_SECRET $client_secret }
+    Write-EnvValue OIDC_FRONTEND_URL $frontend_url
+    if (-not [string]::IsNullOrWhiteSpace($admin_groups)) { Write-EnvValue OIDC_ADMIN_GROUPS $admin_groups }
     Ensure-JwtSecretKey
 
     # The UI on 5173 calls the API on 7091; the backend image serves the UI on its own port.
@@ -522,7 +592,7 @@ function Write-JwtSecretKey {
     $jwt_key = Read-Host "Enter JWT secret key (leave empty to keep the one in .env)"
     if (-not [string]::IsNullOrEmpty($jwt_key)) {
         Remove-EnvKeys @("JWT_SECRET_KEY")
-        "JWT_SECRET_KEY=$jwt_key" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-EnvValue JWT_SECRET_KEY "$jwt_key"
     }
     Ensure-JwtSecretKey
 }
@@ -551,14 +621,14 @@ function Configure-Integrations {
     switch ($int_choice) {
         "1" {
             $google_id = Read-Host "Enter Google OAuth Client ID"
-            if ($google_id) { "GOOGLE_CLIENT_ID=$google_id" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($google_id) { Write-EnvValue GOOGLE_CLIENT_ID "$google_id" }
             $google_secret = Read-Host "Enter Google OAuth Client Secret"
-            if ($google_secret) { "GOOGLE_CLIENT_SECRET=$google_secret" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($google_secret) { Write-EnvValue GOOGLE_CLIENT_SECRET "$google_secret" }
             Write-ColorText "Google Drive integration configured." -ForegroundColor "Green"
         }
         "2" {
             $github_token = Read-Host "Enter GitHub Personal Access Token (with repo read access)"
-            if ($github_token) { "GITHUB_ACCESS_TOKEN=$github_token" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($github_token) { Write-EnvValue GITHUB_ACCESS_TOKEN "$github_token" }
             Write-ColorText "GitHub integration configured." -ForegroundColor "Green"
         }
         {$_ -eq "b" -or $_ -eq "B"} { return }
@@ -576,7 +646,7 @@ function Configure-DocProcessing {
     Write-ColorText "Document Processing Configuration" -ForegroundColor "White" -Bold
     $pdf_image = Read-Host "Parse PDF pages as images for better table/chart extraction? (y/N)"
     if ($pdf_image -eq "y" -or $pdf_image -eq "Y") {
-        "PARSE_PDF_AS_IMAGE=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-EnvValue PARSE_PDF_AS_IMAGE "true"
         Write-ColorText "PDF-as-image parsing enabled." -ForegroundColor "Green"
     }
 
@@ -588,23 +658,23 @@ function Configure-DocProcessing {
     if (-not ($ocr_enabled -eq "y" -or $ocr_enabled -eq "Y")) {
         return
     }
-    "OCR_ENABLED=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Write-EnvValue OCR_ENABLED "true"
     if ($COMPOSE_FILE -ne $COMPOSE_FILE_LOCAL) {
         # Pre-built images: pull arc53/docsgpt:<tag>-docling instead of the
         # slim default (about 1.5 GB more to download).
-        "DOCSGPT_IMAGE_VARIANT=-docling" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-EnvValue DOCSGPT_IMAGE_VARIANT "-docling"
         Write-ColorText "OCR enabled. The -docling image variant will be pulled (tesseract, docling layout engine and its models included). For a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env." -ForegroundColor "Green"
         return
     }
     # Bakes tesseract into the locally built images (docker compose
     # --env-file .env build).
-    "INSTALL_TESSERACT=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Write-EnvValue INSTALL_TESSERACT "true"
     Write-ColorText "OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); for a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env." -ForegroundColor "Green"
     $docling_ocr = Read-Host "Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N)"
     if ($docling_ocr -eq "y" -or $docling_ocr -eq "Y") {
         # Locally built images include docling via this build arg; it becomes
         # the OCR backend automatically (OCR_BACKEND=auto).
-        "INSTALL_DOCLING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-EnvValue INSTALL_DOCLING "true"
         Write-ColorText "Docling will be built into locally built images (docker compose --env-file .env build)." -ForegroundColor "Green"
     }
 }
@@ -622,13 +692,13 @@ function Configure-TTS {
 
     switch ($tts_choice) {
         "1" {
-            "TTS_PROVIDER=google_tts" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue TTS_PROVIDER "google_tts"
             Write-ColorText "TTS set to Google TTS." -ForegroundColor "Green"
         }
         "2" {
-            "TTS_PROVIDER=elevenlabs" | Add-Content -Path $ENV_FILE -Encoding utf8
+            Write-EnvValue TTS_PROVIDER "elevenlabs"
             $elevenlabs_key = Read-Host "Enter ElevenLabs API key"
-            if ($elevenlabs_key) { "ELEVENLABS_API_KEY=$elevenlabs_key" | Add-Content -Path $ENV_FILE -Encoding utf8 }
+            if ($elevenlabs_key) { Write-EnvValue ELEVENLABS_API_KEY "$elevenlabs_key" }
             Write-ColorText "TTS set to ElevenLabs." -ForegroundColor "Green"
         }
         {$_ -eq "b" -or $_ -eq "B"} { return }
@@ -647,7 +717,7 @@ function Ensure-InternalKey {
     if ($content -notmatch "(?m)^INTERNAL_KEY=") {
         $internal_key = $script:PREVIOUS_INTERNAL_KEY
         if ([string]::IsNullOrEmpty($internal_key)) { $internal_key = New-HexSecret }
-        "INTERNAL_KEY=$internal_key" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-EnvRaw INTERNAL_KEY $internal_key
     }
 }
 
@@ -659,26 +729,38 @@ function Ensure-JwtSecretKey {
     if ($content -notmatch "(?m)^JWT_SECRET_KEY=") {
         $jwt_key = $script:PREVIOUS_JWT_SECRET_KEY
         if ([string]::IsNullOrEmpty($jwt_key)) { $jwt_key = New-HexSecret }
-        "JWT_SECRET_KEY=$jwt_key" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-EnvRaw JWT_SECRET_KEY $jwt_key
     }
 }
 
 # Generate ENCRYPTION_SECRET_KEY, which seals stored connector, MCP and tool credentials. A key
 # is never replaced: credentials already stored are sealed with it. A rerun carries it over from
-# the .env it overwrites, and an install whose .env had none keeps the default rather than lose
-# the credentials it may already hold under it.
+# the .env it overwrites (with ENCRYPTION_SECRET_KEY_PREVIOUS, while a rotation is unfinished), and
+# an install whose .env had none keeps the default rather than lose the credentials it may already
+# hold under it. A new key keeps the default as the previous one: a Docker volume kept from an
+# earlier install may hold credentials sealed with it.
 function Ensure-EncryptionKey {
     $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
+    $has_previous = $content -match "(?m)^ENCRYPTION_SECRET_KEY_PREVIOUS="
+    if (-not $has_previous -and -not [string]::IsNullOrEmpty($script:PREVIOUS_ENCRYPTION_KEY_PREVIOUS)) {
+        Write-EnvRaw ENCRYPTION_SECRET_KEY_PREVIOUS $script:PREVIOUS_ENCRYPTION_KEY_PREVIOUS
+        $has_previous = $true
+    }
     if ($content -match "(?m)^ENCRYPTION_SECRET_KEY=") {
         return
     }
     if (-not [string]::IsNullOrEmpty($script:PREVIOUS_ENCRYPTION_KEY)) {
-        "ENCRYPTION_SECRET_KEY=$($script:PREVIOUS_ENCRYPTION_KEY)" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-EnvRaw ENCRYPTION_SECRET_KEY $script:PREVIOUS_ENCRYPTION_KEY
     } elseif ($script:HAD_ENV_FILE) {
         Write-ColorText "ENCRYPTION_SECRET_KEY was not generated: this install may already hold credentials sealed with" -ForegroundColor "Yellow"
         Write-ColorText "the default key. To set one, see https://docs.docsgpt.cloud/Deploying/Security#secrets" -ForegroundColor "Yellow"
     } else {
-        "ENCRYPTION_SECRET_KEY=$(New-HexSecret)" | Add-Content -Path $ENV_FILE -Encoding utf8
+        Write-EnvRaw ENCRYPTION_SECRET_KEY (New-HexSecret)
+        if (-not $has_previous) { Write-EnvRaw ENCRYPTION_SECRET_KEY_PREVIOUS "default-docsgpt-encryption-key" }
+        Write-ColorText "Generated ENCRYPTION_SECRET_KEY. ENCRYPTION_SECRET_KEY_PREVIOUS keeps credentials a Docker volume from an" -ForegroundColor "White"
+        Write-ColorText "earlier install stored under the public default readable. Once DocsGPT is running, reseal them with" -ForegroundColor "White"
+        Write-ColorText "  docker compose --env-file `"$ENV_FILE`" -f `"$COMPOSE_FILE`" exec backend python -m docsgpt connectors reencrypt" -ForegroundColor "White"
+        Write-ColorText "then remove ENCRYPTION_SECRET_KEY_PREVIOUS from .env once it reports nothing unreadable." -ForegroundColor "White"
     }
 }
 
@@ -705,14 +787,14 @@ function Configure-NetworkAccess {
     if ($expose_network -ne "y" -and $expose_network -ne "Y") {
         return
     }
-    "DOCSGPT_BIND=0.0.0.0" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Write-EnvValue DOCSGPT_BIND "0.0.0.0"
     # The backend builds agent image, webhook, device pairing and MCP OAuth callback URLs from API_URL,
     # which otherwise points at localhost. The worker keeps http://backend:7091 from the compose file.
     $default_api_url = if ([string]::IsNullOrEmpty($script:PREVIOUS_API_URL)) { "http://$(Get-LanIp):7091" } else { $script:PREVIOUS_API_URL }
     $api_url = Read-Host "Address other machines open DocsGPT at (leave empty for $default_api_url)"
     if ([string]::IsNullOrWhiteSpace($api_url)) { $api_url = $default_api_url }
     $api_url = $api_url.Trim().TrimEnd("/")
-    "API_URL=$api_url" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Write-EnvValue API_URL "$api_url"
     Write-Host ""
     Write-ColorText "Warning: anyone who can reach this machine can use DocsGPT and your model API key." -ForegroundColor "Yellow" -Bold
     Write-ColorText "Without authentication there is no sign-in: every visitor shares one account, with its documents," -ForegroundColor "Yellow"
@@ -780,8 +862,9 @@ function Use-DocsPublicAPIEndpoint {
     Write-ColorText "Setting up DocsGPT Public API Endpoint..." -ForegroundColor "White"
     
     # Create .env file
-    "LLM_PROVIDER=docsgpt" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
-    "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Reset-EnvFile
+    Write-EnvValue LLM_PROVIDER "docsgpt"
+    Write-EnvValue VITE_API_STREAMING "true"
     
     Write-ColorText ".env file configured for DocsGPT Public API." -ForegroundColor "Green"
 
@@ -894,12 +977,13 @@ function Serve-LocalOllama {
     Write-ColorText "Configuring for Ollama ($($docker_compose_file_suffix.ToUpper()))..." -ForegroundColor "White"
     
     # Create .env file
-    "API_KEY=xxxx" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
-    "LLM_PROVIDER=openai" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "LLM_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "OPENAI_BASE_URL=http://ollama:11434/v1" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Reset-EnvFile
+    Write-EnvValue API_KEY "xxxx"
+    Write-EnvValue LLM_PROVIDER "openai"
+    Write-EnvValue LLM_NAME "$model_name"
+    Write-EnvValue VITE_API_STREAMING "true"
+    Write-EnvValue OPENAI_BASE_URL "http://ollama:11434/v1"
+    Write-EnvValue EMBEDDINGS_NAME "ibm-granite/granite-embedding-311m-multilingual-r2"
     
     Write-ColorText ".env file configured for Ollama ($($docker_compose_file_suffix.ToUpper()))." -ForegroundColor "Green"
     Write-ColorText "Note: MODEL_NAME is set to '$model_name'. You can change it later in the .env file." -ForegroundColor "Yellow"
@@ -1062,12 +1146,13 @@ function Connect-LocalInferenceEngine {
     Write-ColorText "Configuring for Local Inference Engine: $engine_name..." -ForegroundColor "White"
     
     # Create .env file
-    "API_KEY=None" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
-    "LLM_PROVIDER=openai" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "LLM_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "OPENAI_BASE_URL=$openai_base_url" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "EMBEDDINGS_NAME=ibm-granite/granite-embedding-311m-multilingual-r2" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Reset-EnvFile
+    Write-EnvValue API_KEY "None"
+    Write-EnvValue LLM_PROVIDER "openai"
+    Write-EnvValue LLM_NAME "$model_name"
+    Write-EnvValue VITE_API_STREAMING "true"
+    Write-EnvValue OPENAI_BASE_URL "$openai_base_url"
+    Write-EnvValue EMBEDDINGS_NAME "ibm-granite/granite-embedding-311m-multilingual-r2"
     
     Write-ColorText ".env file configured for $engine_name with OpenAI API format." -ForegroundColor "Green"
     Write-ColorText "Note: MODEL_NAME is set to '$model_name'. You can change it later in the .env file." -ForegroundColor "Yellow"
@@ -1183,10 +1268,11 @@ function Connect-CloudAPIProvider {
     Write-ColorText "Configuring for Cloud API Provider: $provider_name..." -ForegroundColor "White"
     
     # Create .env file
-    "API_KEY=$api_key" | Out-File -FilePath $ENV_FILE -Encoding utf8 -Force
-    "LLM_PROVIDER=$llm_name" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "LLM_NAME=$model_name" | Add-Content -Path $ENV_FILE -Encoding utf8
-    "VITE_API_STREAMING=true" | Add-Content -Path $ENV_FILE -Encoding utf8
+    Reset-EnvFile
+    Write-EnvValue API_KEY "$api_key"
+    Write-EnvValue LLM_PROVIDER "$llm_name"
+    Write-EnvValue LLM_NAME "$model_name"
+    Write-EnvValue VITE_API_STREAMING "true"
 
     Write-ColorText ".env file configured for $provider_name." -ForegroundColor "Green"
 
@@ -1237,6 +1323,7 @@ function Get-PreviousEnvValue {
 }
 
 $script:PREVIOUS_ENCRYPTION_KEY = ""
+$script:PREVIOUS_ENCRYPTION_KEY_PREVIOUS = ""
 $script:PREVIOUS_JWT_SECRET_KEY = ""
 $script:PREVIOUS_INTERNAL_KEY = ""
 $script:PREVIOUS_API_URL = ""
@@ -1246,10 +1333,11 @@ if ((Test-Path $ENV_FILE) -and ((Get-Item $ENV_FILE).Length -gt 0)) {
     # Carried into the new .env: stored credentials are sealed with the encryption key, tokens
     # are signed with the JWT key, and a running worker holds the internal key.
     $script:PREVIOUS_ENCRYPTION_KEY = Get-PreviousEnvValue "ENCRYPTION_SECRET_KEY"
+    $script:PREVIOUS_ENCRYPTION_KEY_PREVIOUS = Get-PreviousEnvValue "ENCRYPTION_SECRET_KEY_PREVIOUS"
     $script:PREVIOUS_JWT_SECRET_KEY = Get-PreviousEnvValue "JWT_SECRET_KEY"
     $script:PREVIOUS_INTERNAL_KEY = Get-PreviousEnvValue "INTERNAL_KEY"
     # Offered again as the public address if DocsGPT is exposed on this run too.
-    $script:PREVIOUS_API_URL = Get-PreviousEnvValue "API_URL"
+    $script:PREVIOUS_API_URL = ConvertFrom-EnvValue (Get-PreviousEnvValue "API_URL")
     Write-Host ""
     Write-ColorText "Warning: An existing .env file was found with the following settings:" -ForegroundColor "Yellow" -Bold
     $envLines = Get-Content $ENV_FILE
@@ -1258,7 +1346,7 @@ if ((Test-Path $ENV_FILE) -and ((Get-Item $ENV_FILE).Length -gt 0)) {
         Write-Host "  ... and $($envLines.Count - 3) more lines"
     }
     Write-Host ""
-    Write-ColorText "Its INTERNAL_KEY, JWT_SECRET_KEY and ENCRYPTION_SECRET_KEY are kept." -ForegroundColor "White"
+    Write-ColorText "Its INTERNAL_KEY, JWT_SECRET_KEY and ENCRYPTION_SECRET_KEY (with any ENCRYPTION_SECRET_KEY_PREVIOUS) are kept." -ForegroundColor "White"
     $confirm_overwrite = Read-Host "Running setup will overwrite this file. Continue? (y/N)"
     if ($confirm_overwrite -ne "y" -and $confirm_overwrite -ne "Y") {
         Write-ColorText "Setup cancelled. Your .env file was not modified." -ForegroundColor "Green"
