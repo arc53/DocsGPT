@@ -1,48 +1,72 @@
 ---
-title: Comprehensive Guide to Setting Up the Chatwoot Extension with DocsGPT
-description: This step-by-step guide walks you through the process of setting up the Chatwoot extension with DocsGPT, enabling seamless integration for automated responses and enhanced customer support. Learn how to launch DocsGPT, retrieve your Chatwoot access token, configure the .env file, and start the extension.
+title: Chatwoot Extension
+description: Answer incoming Chatwoot messages with a DocsGPT agent. Set up the agent key, the Chatwoot access token and webhook, then configure and run the bridge in extensions/chatwoot.
 ---
 ## Chatwoot Extension Setup Guide
 
-### Step 1: Prepare and Start DocsGPT
+The Chatwoot extension is a small Flask app in [`extensions/chatwoot`](https://github.com/arc53/DocsGPT/tree/main/extensions/chatwoot). Chatwoot sends a signed webhook to its `POST /docsgpt` endpoint for every new message. The extension asks your DocsGPT agent through `/api/answer` and posts the answer back into the Chatwoot conversation.
 
-- **Launch DocsGPT**: Follow the instructions in our [Quickstart](/quickstart) to start DocsGPT. Make sure to load your documentation.
+The extension must be reachable from Chatwoot, and it must be able to reach both the DocsGPT API and Chatwoot.
 
-### Step 2: Get Access Token from Chatwoot
+### Step 1: Prepare DocsGPT and get an agent API key
+
+- **Launch DocsGPT**: Follow the [Quickstart](/quickstart) to start DocsGPT, and [add your documentation](/Guides/How-to-train-on-other-documentation) as knowledge.
+- **Create an agent**: Create an agent that uses that knowledge, publish it, and copy its API key from the agent's **Access Details**. See [Getting API key](/Extensions/api-key-guide). The extension sends this key as `api_key` to `/api/answer`, so it must be an agent key, not an OpenAI or other LLM provider key.
+
+### Step 2: Get an access token from Chatwoot
 
 - Go to Chatwoot.
-- In your profile settings (located at the bottom left), scroll down and copy the **Access Token**.
+- In your profile settings (bottom left), scroll down and copy the **Access Token**. The extension uses it to post replies.
 
-### Step 3: Set Up Chatwoot Extension
+### Step 3: Add a webhook in Chatwoot
 
-- Navigate to `/extensions/chatwoot`.
-- Copy the `.env_sample` file and create a new file named `.env`.
-- Fill in the values in the `.env` file as follows:
+- In Chatwoot, go to **Settings → Integrations → Webhooks**, click **Configure**, then **Add new webhook**.
+- Set the URL to the extension's endpoint, for example `http://<extension-host>:5000/docsgpt`.
+- Subscribe to the **Message created** event (`message_created`) and save.
+- Copy the webhook's secret. Chatwoot shows it after the webhook is created, and you can view it again in the webhook's edit form.
+
+The extension verifies Chatwoot's `X-Chatwoot-Signature` and `X-Chatwoot-Timestamp` headers with this secret. Requests with a missing or wrong signature, or signed more than five minutes ago, get `401`. Use a Chatwoot version that signs webhook deliveries, and keep the extension host's clock in sync.
+
+### Step 4: Configure the extension
+
+- Go to `extensions/chatwoot` and install its dependencies:
+
+```bash
+cd extensions/chatwoot
+pip install flask requests python-dotenv
+```
+
+- Copy `.env_sample` to `.env` in the same folder and fill in the values:
 
 ```env
-docsgpt_url=<Docsgpt_API_URL>
-chatwoot_url=<Chatwoot_URL>
-docsgpt_key=<OpenAI_API_Key or Other_LLM_Key>
-chatwoot_token=<Token from Step 2>
+docsgpt_url=<DocsGPT API URL, e.g. http://localhost:7091>
+docsgpt_key=<Agent API key from Step 1>
+chatwoot_url=<Chatwoot URL, e.g. https://app.chatwoot.com>
+chatwoot_token=<Access Token from Step 2>
+chatwoot_webhook_secret=<Webhook secret from Step 3>
 ```
 
-### Step 4: Start the Extension
+### Step 5: Start the extension
 
-- Use the command `flask run` to start the extension.
+Run the extension so Chatwoot can reach it. Plain `flask run` listens only on `127.0.0.1`, so bind to all interfaces:
 
-### Step 5: Optional - Extra Validation
-
-- In app.py, uncomment lines 12-13 and 71-75.
-- Add the following lines to your .env file:
-```account_id=(optional) 1
-assignee_id=(optional) 1
+```bash
+flask --app app run --host 0.0.0.0 --port 5000
 ```
-These Chatwoot values help ensure you respond to the correct widget and handle questions assigned to a specific user.
+
+The webhook URL from Step 3 is then `http://<extension-host>:5000/docsgpt`. For production, put the extension behind HTTPS.
+
+If DocsGPT or Chatwoot returns an error, the extension logs it and answers the webhook with `502` instead of posting a reply.
+
+### Step 6 (optional): Limit which conversations get answers
+
+Add these lines to `.env` to answer only in one Chatwoot account, or only conversations assigned to one Chatwoot agent. Leave them out to answer every incoming message.
+
+```env
+account_id=1
+assignee_id=1
+```
 
 ### Stopping Bot Responses for Specific User or Session
 
 - If you want the bot to stop responding to questions for a specific user or session, add a label `human-requested` in your conversation.
-
-### Additional Notes
-
-- For further details on training on other documentation, refer to our [wiki](https://github.com/arc53/DocsGPT/wiki/How-to-train-on-other-documentation).
