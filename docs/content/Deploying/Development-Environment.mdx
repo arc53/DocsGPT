@@ -11,7 +11,7 @@ This guide will walk you through setting up a development environment for DocsGP
 
 ## 1. Spin Up Postgres and Redis
 
-For development purposes, you can quickly start Postgres and Redis containers. Postgres is the user-data store for DocsGPT (conversations, agents, prompts, sources, attachments, workflows, logs, and token usage), and Redis is used as the cache and Celery broker. We provide a dedicated Docker Compose file, `docker-compose-dev.yaml`, located in the `deployment` directory, that includes only these essential services. The backend applies the Alembic schema automatically on first boot (`AUTO_MIGRATE=true` / `AUTO_CREATE_DB=true` ship enabled), so no separate migration step is required. You can still run `python scripts/db/init_postgres.py` or `docsgpt migrate` (`python -m docsgpt migrate` without installing) explicitly if you prefer.
+For development purposes, you can quickly start Postgres and Redis containers. Postgres is the user-data store for DocsGPT (conversations, agents, prompts, sources, attachments, workflows, logs, and token usage), and Redis is used as the cache and Celery broker. We provide a dedicated Docker Compose file, `docker-compose-dev.yaml`, located in the `deployment` directory, that includes only these essential services. Once `POSTGRES_URI` points at it (step 1 of section 2 below), the backend applies the Alembic schema automatically on first boot (`AUTO_MIGRATE=true` / `AUTO_CREATE_DB=true` ship enabled), so no separate migration step is required. You can still run `python scripts/db/init_postgres.py` or `docsgpt migrate` (`python -m docsgpt migrate` without installing) explicitly if you prefer.
 
 You can find the `docker-compose-dev.yaml` file [here](https://github.com/arc53/DocsGPT/blob/main/deployment/docker-compose-dev.yaml).
 
@@ -28,12 +28,12 @@ You can find the `docker-compose-dev.yaml` file [here](https://github.com/arc53/
     This starts Postgres and Redis in detached mode, running in the background. When the API boots against the fresh Postgres instance, it will automatically create the database (if missing) and apply the current Alembic schema.
 
 <Callout type="info" emoji="ℹ️">
-  MongoDB is no longer required for a default DocsGPT install. If you
-  specifically want to use MongoDB Atlas as the vector store
-  (`VECTOR_STORE=mongodb`), start it on the side via
-  `deployment/docker-compose.mongo.yaml`. For migrating an existing
-  Mongo-based install to Postgres, see
-  [PostgreSQL for User Data](/Deploying/Postgres-Migration).
+  MongoDB is not needed for a default DocsGPT install. The MongoDB vector store (`VECTOR_STORE=mongodb`)
+  runs its searches with Atlas `$vectorSearch`, so `MONGO_URI` must point at MongoDB Atlas (or a local
+  Atlas deployment with search); a plain `mongo` container does not provide it. The client library is not
+  part of the dependencies: install it with `pip install 'pymongo>=4.6'` (`uv pip install` in a uv
+  environment, where a later `uv sync` removes it again). For migrating an existing
+  Mongo-based install to Postgres, see [PostgreSQL for User Data](/Deploying/Postgres-Migration).
 </Callout>
 
 ## 2. Run the Backend
@@ -42,38 +42,97 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
 
 **Prerequisites:**
 
-*   **Python 3.12:** Ensure you have Python 3.12 installed on your system. You can check your Python version by running `python --version` or `python3 --version` in your terminal.
+*   **Python 3.12:** `pyproject.toml` requires 3.12 or newer, and CI tests on 3.12. Check your version with `python --version` or `python3 --version`.
+*   **[uv](https://docs.astral.sh/uv/) (recommended):** it installs the locked dependencies and the `docsgpt` command in one step. Plain pip works too.
 
 **Steps to run the backend:**
 
 1.  **Configure Environment Variables:**
 
-    DocsGPT backend settings are configured using environment variables. You can set these either in a `.env` file or directly in the `settings.py` file. For a comprehensive overview of all settings, please refer to the [DocsGPT Settings Guide](/Deploying/DocsGPT-Settings).
+    DocsGPT reads its settings from environment variables and from a `.env` file in the repository root. Start
+    from the template:
 
-    *   **Option 1: Using a `.env` file (Recommended):**
-        *   If you haven't already, create a file named `.env` in the **root directory** of your DocsGPT project.
-        *   Modify the `.env` file to adjust settings as needed. You can find a comprehensive list of configurable options in [`docsgpt/core/settings.py`](https://github.com/arc53/DocsGPT/blob/main/docsgpt/core/settings.py).
+    ```bash
+    cp .env-template .env
+    ```
 
-    *   **Option 2: Exporting Environment Variables:**
-        *   Alternatively, you can export environment variables directly in your terminal. However, using a `.env` file is generally more organized for development.
+    Then edit `.env` and set the two values a development setup needs:
 
-2.  **Create a Python Virtual Environment (Optional but Recommended):**
+    ```bash
+    # The Postgres started in section 1 (credentials from deployment/docker-compose-dev.yaml)
+    POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
+    # Any random string; generate one with: openssl rand -hex 32
+    INTERNAL_KEY=<paste the generated value>
+    ```
 
-    Using a virtual environment isolates project dependencies and avoids conflicts with system-wide Python packages.
+    `POSTGRES_URI` is commented out in the template, and without it the backend skips its database setup.
+    `INTERNAL_KEY` is how the worker hands a finished index back to the API, so without it every upload fails
+    after parsing. The API and the worker read the same `.env`, so they share the key.
 
-    *   **macOS and Linux:**
+    To pick a model provider, set `LLM_PROVIDER` and `API_KEY` as described in
+    [Cloud providers](/Models/cloud-providers) or [Local inference](/Models/local-inference). To work without
+    any provider or key, run the backend with `docsgpt dev --mock-llm` (step 4), which answers from a local mock.
 
-        ```bash
-        python -m venv venv
-        . venv/bin/activate
-        ```
+    You can also export any setting in your shell instead of writing it to `.env`. The
+    [App Configuration](/Deploying/DocsGPT-Settings) guide explains the common settings, and the
+    [Settings Reference](/Deploying/Settings-Reference) lists every one, generated from the definitions in
+    [`docsgpt/core/settings/`](https://github.com/arc53/DocsGPT/tree/main/docsgpt/core/settings).
 
-    *   **Windows:**
+2.  **Install the Backend:**
 
-        ```bash
-        python -m venv venv
-         venv/Scripts/activate
-        ```
+    From the repository root, with uv:
+
+    ```bash
+    uv sync
+    ```
+
+    This creates `.venv`, installs the dependencies pinned in `uv.lock` together with the test tools, and
+    installs DocsGPT itself in editable mode, which puts the `docsgpt` command in `.venv/bin`. Activate the
+    environment (`source .venv/bin/activate`, or `.venv\Scripts\activate` on Windows) or prefix commands with
+    `uv run`, as in `uv run docsgpt dev`. uv uses a Python 3.12 or newer that it finds on your system, or
+    downloads one; `uv sync --python 3.12` pins the version CI uses.
+
+    With pip instead, create a virtual environment, install the exported requirements, then install the
+    checkout itself so the `docsgpt` command exists:
+
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate          # Windows: .venv\Scripts\activate
+    pip install -r docsgpt/requirements.txt
+    pip install -e .
+    ```
+
+    Without the last line, run the commands in this guide as `python -m docsgpt …` (for example
+    `python -m docsgpt dev`).
+
+    Optional extras are not installed by default. Add them when you need the
+    feature (each file is the core set plus the extra):
+
+    ```bash
+    uv sync --extra docling --extra milvus            # name every extra you want: uv sync removes the others
+    # or with pip:
+    pip install -r docsgpt/requirements-docling.txt   # docling parser engine: OCR backend, read_document structured output
+    pip install -r docsgpt/requirements-milvus.txt    # VECTOR_STORE=milvus
+    ```
+
+    The docling file adds the PyTorch CPU index; pip handles that as-is, while
+    `uv pip install -r` needs `UV_INDEX_STRATEGY=unsafe-best-match` (or use
+    `uv sync --extra docling`, which reads the lock).
+
+    A feature whose extra is missing fails with the exact command to run.
+    Dependencies are declared in `pyproject.toml` and locked in `uv.lock`, and the `requirements*.txt` files are
+    exported from that lock. After changing `pyproject.toml`, run `uv lock` and
+    `bash scripts/export_requirements.sh` so the exported files stay in sync
+    (CI checks this).
+
+    With Postgres and Redis running, check the setup:
+
+    ```bash
+    docsgpt doctor
+    ```
+
+    It reports whether PostgreSQL and Redis answer, whether a model provider is configured, and whether the
+    API port is free. A missing `POSTGRES_URI` shows up here as a failure.
 
 3.  **Embedding Model (no action needed):**
 
@@ -82,41 +141,10 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     For an offline or air-gapped machine, fetch it ahead of time instead:
 
     ```bash
-    python -m docsgpt.scripts.prefetch_models
+    docsgpt prefetch-models
     ```
 
-4.  **Install Backend Dependencies:**
-
-    Navigate to the root of your DocsGPT repository and install the required Python packages:
-
-    ```bash
-    pip install -r docsgpt/requirements.txt
-    ```
-
-    Dependencies are declared in `pyproject.toml` and locked in `uv.lock`; the
-    `requirements*.txt` files are exported from that lock, so with
-    [uv](https://docs.astral.sh/uv/) installed `uv sync` sets up the same
-    environment (plus the test tools) in one step.
-
-    Optional extras are not installed by default. Add them when you need the
-    feature (each file is the core set plus the extra):
-
-    ```bash
-    pip install -r docsgpt/requirements-docling.txt   # docling parser engine: OCR backend, read_document structured output
-    pip install -r docsgpt/requirements-milvus.txt    # VECTOR_STORE=milvus
-    # or with uv: uv sync --extra docling --extra milvus
-    ```
-
-    The docling file adds the PyTorch CPU index; pip handles that as-is, while
-    `uv pip install -r` needs `UV_INDEX_STRATEGY=unsafe-best-match` (or use
-    `uv sync --extra docling`, which reads the lock).
-
-    A feature whose extra is missing fails with the exact command to run.
-    After changing `pyproject.toml`, run `uv lock` and
-    `bash scripts/export_requirements.sh` so the exported files stay in sync
-    (CI checks this).
-
-5.  **Run the Backend:**
+4.  **Run the Backend:**
 
     One command runs the API and the worker from this checkout, each restarting when you save a file:
 
@@ -131,7 +159,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     | --- | --- |
     | `--ui` | also start the Vite dev server, so the whole app runs from one command |
     | `--mock-llm` | run `scripts/mock_llm.py` and point DocsGPT at it, so no API key is needed |
-    | `--no-worker` | leave the worker to you, for instance when debugging it in your editor; start one as in step 6, or searches and scheduled tasks stop working |
+    | `--no-worker` | leave the worker to you, for instance when debugging it in your editor; start one as in step 5, or searches and scheduled tasks stop working |
     | `--no-reload` | do not restart anything on save |
     | `--port` | serve the API somewhere other than 7091 |
 
@@ -162,7 +190,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     But it serves **only** the WSGI Flask app, so the [ASGI-only features](#asgi-only-features) return 404 under
     it. Chat still works (`POST /stream` is a Flask route). Use `flask run` only when you don't need those features.
 
-6.  **Start the Celery Worker** (not needed if you used `docsgpt dev`)**:**
+5.  **Start the Celery Worker** (not needed if you used `docsgpt dev`)**:**
 
     Open a new terminal window (and activate your virtual environment if you used one), then start the worker
     from the repository root:
@@ -223,11 +251,14 @@ embeds the beat scheduler (`-B`), except on Windows, where it leaves `-B` out; s
 
 ## 3. Start the Frontend
 
-To run the DocsGPT frontend locally, you'll need Node.js and npm (Node Package Manager).
+To run the DocsGPT frontend locally, you'll need Node.js and npm (Node Package Manager). `docsgpt dev --ui` starts
+the frontend dev server together with the backend once its dependencies are installed (steps 1 and 2 below).
 
 **Prerequisites:**
 
-*   **Node.js version 16 or higher:** Ensure you have Node.js version 16 or greater installed. You can check your Node.js version by running `node -v` in your terminal. npm is usually bundled with Node.js.
+*   **Node.js 22:** the frontend declares `node >=22 <23` and pins 22 in `frontend/.nvmrc`, so with
+    [nvm](https://github.com/nvm-sh/nvm) you can run `nvm use` in `frontend/`. Check your version with `node -v`.
+    npm is bundled with Node.js.
 
 **Steps to start the frontend:**
 
@@ -239,17 +270,7 @@ To run the DocsGPT frontend locally, you'll need Node.js and npm (Node Package M
     cd frontend
     ```
 
-2.  **Install Global Packages (If Needed):**
-
-    If you don't have `husky` and `vite` installed globally, you can install them:
-
-    ```bash
-    npm install husky -g
-    npm install vite -g
-    ```
-    You can skip this step if you already have these packages installed or prefer to use local installations (though global installation simplifies running the commands in this guide).
-
-3.  **Install Frontend Dependencies:**
+2.  **Install Frontend Dependencies:**
 
     Install the project's frontend dependencies using npm:
 
@@ -257,9 +278,10 @@ To run the DocsGPT frontend locally, you'll need Node.js and npm (Node Package M
     npm install --include=dev
     ```
 
-    This command reads the `package.json` file in the `frontend` directory and installs all listed dependencies, including development dependencies.
+    This installs everything in `package.json`, development dependencies included. Vite runs from this local
+    install, and the install also sets up the Husky pre-commit hook, so neither needs a global install.
 
-4.  **Run the Frontend App:**
+3.  **Run the Frontend App:**
 
     Start the frontend development server:
 
@@ -306,7 +328,7 @@ other's units. `docsgpt status --dir ~/.docsgpt/review` reports on that one alon
 Run `docsgpt doctor` first. It checks PostgreSQL, Redis, the model provider and the API port.
 
 - **Searches hang for up to a minute or fail at once, and answers ignore your documents.** No worker is consuming the `embeddings`
-  queue. Start one as in step 6. A worker started with an explicit `-Q` must list `embeddings`.
+  queue. Start one as in step 5. A worker started with an explicit `-Q` must list `embeddings`.
 - **Scheduled agent runs and source syncs never fire.** No beat scheduler is running. Start the worker with
   `docsgpt worker` or add `-B` to the `celery` command. On Windows, also run `docsgpt beat`.
 - **Notifications never appear, a dropped answer doesn't resume, a paired device never receives commands, or
