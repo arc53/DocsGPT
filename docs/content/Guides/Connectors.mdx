@@ -126,7 +126,7 @@ To offer Google's own file picker, also build the frontend with `VITE_GOOGLE_CLI
 
 ### Publish the app
 
-Publish the OAuth consent screen, or make it an **Internal** Workspace app.
+Publish the OAuth consent screen, or make it an **Internal** Workspace app. DocsGPT requests the restricted `drive.readonly` scope, so a published **External** app needs Google's verification before accounts outside your organization can use it freely.
 
 <Callout type="warning" emoji="⚠️">
 Apps left in **Testing** get refresh tokens that expire after seven days, which stops background sync.
