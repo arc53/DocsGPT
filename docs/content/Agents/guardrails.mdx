@@ -302,7 +302,7 @@ Operators control guardrails deployment-wide with these settings:
 | `GUARDRAILS_STORE_SCANNED_TEXT` | `false` | Persist a sample of matched text with each journal row. |
 | `GUARDRAILS_EVENTS_RETENTION_DAYS` | `30` | Journal retention. Minimum 1. |
 
-`GUARDRAILS_CHECKS_ENABLED` takes a JSON list or comma-separated names, and an empty value means every check. `GUARDRAILS_FLOOR` must be JSON. For example:
+`GUARDRAILS_CHECKS_ENABLED` takes a JSON list or comma-separated names, and an empty value (or `[]`) means every check. `none` is not special here: it is read as a check called `none`, which matches nothing, so every check is disallowed and controls that use one are dropped. To turn guardrails off, set `GUARDRAILS_ENABLED=false` instead. `GUARDRAILS_FLOOR` must be JSON. For example:
 
 ```bash
 GUARDRAILS_CHECKS_ENABLED='["pii", "secrets", "denylist", "url", "injection", "groundedness"]'

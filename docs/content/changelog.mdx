@@ -65,19 +65,33 @@ Answers render math, and the chat widget is published at 0.8.0.
 - `DEFAULT_CHAT_TOOLS`, `GUARDRAILS_CHECKS_ENABLED` and `QUOTA_UNPRICED_RATE_PER_MILLION` accept a JSON
   list or comma-separated values; a comma-separated value used to stop the API and the worker from
   starting. An empty value keeps the default, and `DEFAULT_CHAT_TOOLS=none` turns the default chat
-  tools off.
+  tools off. `none` is not special for `GUARDRAILS_CHECKS_ENABLED`; use `GUARDRAILS_ENABLED=false`
+  to turn guardrails off.
 - One custom tool without a class docstring no longer empties the Add Tool list for every user; a
   tool that can't describe itself is skipped and logged.
 - A new [Code Execution Sandbox](/Deploying/Sandbox) page covers running the sandbox the Artifact and
   Code Executor tools need, and `scripts/build_daytona_snapshot.py` pins the runner image's render
   library versions.
 
+### Integrations
+
+- Chatwoot extension: verifies Chatwoot's timestamped webhook signature, sends a valid `history`,
+  returns 502 when DocsGPT or Chatwoot fails, and reads optional `account_id`/`assignee_id` filters
+  from `.env`.
+- Reddit connector: comma-separated search queries and the post count from the connector form are
+  now parsed correctly.
+- Widget docs: the CDN bundle is `dist/legacy/browser.js`.
+- `.env-template` no longer enables SharePoint with placeholder values.
+- Compose files drop the unused `VITE_CONFLUENCE_CLIENT_ID` and `VITE_SHARE_POINT_CLIENT_ID`.
+
 ### Deployment files
 
 - `deployment/docker-compose-azure.yaml` and `deployment/docker-compose-local.yaml` are removed.
   Neither was documented, and both had drifted: the Azure file's worker had no data volumes, no
-  scheduler and no `CACHE_REDIS_URL`. Use `docker-compose-hub.yaml` for pre-built images or
-  `docker-compose.yaml` to build from the checkout.
+  scheduler and no `CACHE_REDIS_URL`. Use `docker-compose-hub.yaml` for pre-built images,
+  `docker-compose.yaml` to build from the checkout, or `docker-compose-dev.yaml` in place of
+  `-local`. The database moves to a new volume; see
+  [Upgrading](/upgrading#azure-and-local-compose-files-removed).
 - The Mongo to Postgres backfill (`scripts/db/backfill.py`) applies the migrations before it
   copies, so it works against an empty database, and takes `--mongo-db` for a database not named
   `docsgpt`.
