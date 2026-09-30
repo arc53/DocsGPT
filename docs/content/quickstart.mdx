@@ -7,6 +7,23 @@ import { Callout } from 'nextra/components'
 
 # Quickstart
 
+<video
+  autoPlay
+  muted
+  loop
+  playsInline
+  controls
+  width={1440}
+  height={900}
+  poster="/quickstart-poster.png"
+  aria-label="Screen recording: starting DocsGPT with docsgpt up, then asking it a question in the browser"
+  style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
+>
+  <source src="/quickstart.mp4" type="video/mp4" />
+</video>
+
+*The recording runs `docsgpt up`, the step the installer ends with, on a fresh machine user, here with `--port 7391`. It answers the two setup questions with the defaults, only this computer and the DocsGPT public API, and Docker Compose pulls the database images and starts the services; the wait for the first start is sped up. When DocsGPT prints its address, the recording opens it in the browser, asks "What is DocsGPT? Answer in two sentences." and the answer streams in. The installer's own steps before `docsgpt up` (checking for Docker, installing uv and the package) are not shown.*
+
 **Prerequisites:**
 
 * **Docker:** DocsGPT runs on Docker, with Docker Compose 2.24 or newer. On macOS and Windows install [Docker Desktop](https://docs.docker.com/desktop/) (or [OrbStack](https://orbstack.dev) on macOS); on Linux, [Docker Engine](https://docs.docker.com/engine/install/). On Linux the installer offers to install Docker for you.
