@@ -176,7 +176,7 @@ The test runs the same retrieval pipeline as an answer: the same retriever, `chu
 
 - It never rephrases the query, as with the first message of a chat.
 - It applies the source's settings even when `PER_SOURCE_RETRIEVAL_ENABLED=false`, where answers use the classic retriever.
-- Pre-screening uses the instance's default model. Settings that differ from the saved ones may use at most 20 pre-screening LLM calls (`candidate_k` / `batch_size`).
+- Pre-screening without its own `model` uses the instance's default model, since a test has no chat model behind it. Settings that differ from the saved ones may use at most 20 pre-screening LLM calls (`candidate_k` / `batch_size`).
 
 ### Reading the scores
 
@@ -187,7 +187,7 @@ The meaning of a score depends on the retriever and the vector store, and the mo
 | **similarity** | `classic` on pgvector, MongoDB Atlas, Qdrant or Milvus | Cosine similarity: higher is better, at most 1. This is the value `score_threshold` is compared with. |
 | **distance** | `classic` on FAISS | L2 distance: lower is better, with no fixed upper bound. |
 | **RRF** | `hybrid` | A reciprocal-rank-fusion score. It only orders the results of this query; don't compare it across queries or with a threshold. |
-| **no score** | `graphrag`, and `classic` on Elasticsearch | The retriever ranks chunks without a comparable per-chunk score. |
+| **no score** | `graphrag`, and `classic` on Elasticsearch | The retriever ranks chunks without a comparable per-chunk score. A `graphrag` source that has no graph yet falls back to classic retrieval, so its results carry the vector store's scores instead. |
 
 When nothing comes back and a `score_threshold` is set, the modal says so: lower the threshold to see the near misses.
 
