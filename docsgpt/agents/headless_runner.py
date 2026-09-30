@@ -15,6 +15,7 @@ from docsgpt.api.answer.services.prompt_renderer import (
     resolve_prompt_skeleton,
 )
 from docsgpt.api.answer.services.stream_processor import (
+    WIKI_AGENT_TYPES,
     agent_prompt_id,
     authorized_agent_sources,
     authorized_prompt_id,
@@ -23,6 +24,7 @@ from docsgpt.api.answer.services.stream_processor import (
     per_source_list,
     plan_source_use,
     source_for_docs,
+    wiki_tool_config,
 )
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig
@@ -72,6 +74,29 @@ def _workflow_kwargs(agent_config: Dict[str, Any], owner: str) -> Dict[str, Any]
     return kwargs
 
 
+def _wiki_config(
+    conn: Any,
+    source_docs: List[Dict[str, Any]],
+    decoded_token: Dict[str, Any],
+    *,
+    outside_caller: bool,
+) -> Optional[Dict[str, Any]]:
+    """The run's WikiTool config, resolved as for a chat run by the owner.
+
+    A webhook's input comes from whoever holds its URL, and a schedule set
+    through the API or from a public link is that caller's, so those runs are
+    ``outside_caller``: they edit only when the wiki's owner allows outside
+    edits. Nobody can approve a headless write, so no action waits for one.
+    """
+    try:
+        return wiki_tool_config(
+            conn, [doc["id"] for doc in source_docs], decoded_token, outside_caller=outside_caller
+        )
+    except Exception:
+        logger.exception("Failed to resolve wiki tool config for a headless run")
+        return None
+
+
 def run_agent_headless(
     agent_config: Dict[str, Any],
     query: str,
@@ -99,7 +124,8 @@ def run_agent_headless(
     ``public_link_caller`` (a schedule a public-link user set) mark a run for
     someone who can't approve for the owner: writes on the owner's accounts
     and credentials then run only when the agent's API write allowlist has
-    them.
+    them, and wiki edits only when the wiki's owner allows outside edits (as
+    for a webhook run).
 
     Raises:
         QuotaExceededError: If the agent owner's usage quota is exhausted.
@@ -166,15 +192,24 @@ def _run_agent_headless(
         raise QuotaExceededError(exceeded)
 
     retriever_kind = agent_config.get("retriever", "classic")
+    agent_type = agent_config.get("agent_type", "classic")
     # Every source a chat with this agent searches: the primary and the
     # extras, each owned or team-shared to the owner, else attached by an
     # editor who still qualifies.
     sources_row = dict(agent_config)
     sources_row["source_id"] = agent_config.get("source_id") or agent_config.get("source")
     primary, source_docs = None, []
+    wiki_config: Optional[Dict[str, Any]] = None
     if sources_row["source_id"] or sources_row.get("extra_source_ids"):
         with db_readonly() as conn:
             primary, source_docs = authorized_agent_sources(conn, sources_row)
+            if agent_type in WIKI_AGENT_TYPES and source_docs:
+                wiki_config = _wiki_config(
+                    conn,
+                    source_docs,
+                    decoded_token,
+                    outside_caller=external_caller or public_link_caller or endpoint == "webhook",
+                )
     if primary:
         retriever_kind = primary.get("retriever") or retriever_kind
     per_source = [
@@ -191,7 +226,6 @@ def _run_agent_headless(
     prompt_id = authorized_prompt_id(agent_config.get("prompt_id", "default"), owner, agent_config)
     user_api_key = agent_config.get("key")
     agent_id = _resolve_agent_id(agent_config)
-    agent_type = agent_config.get("agent_type", "classic")
     json_schema = agent_config.get("json_schema")
     # Agentic and research agents render the agentic preset, as in a chat.
     prompt_id = agent_prompt_id(prompt_id, agent_type)
@@ -305,6 +339,8 @@ def _run_agent_headless(
         # agent, so it carries the same guardrails an interactive turn would.
         "agent_config": agent_config.get("config") or {},
     }
+    if wiki_config:
+        agent_kwargs["wiki_config"] = wiki_config
     if agent_type == "workflow":
         agent_kwargs.update(_workflow_kwargs(agent_config, owner))
     else:

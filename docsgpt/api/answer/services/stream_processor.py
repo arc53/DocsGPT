@@ -348,6 +348,60 @@ def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
     return ra.owner_id if ra is not None and ra.can("edit") else None
 
 
+#: Agent types that build a tools_dict and so can carry the Wiki tool.
+WIKI_AGENT_TYPES = ("classic", "agentic", "research")
+
+
+def wiki_tool_config(
+    conn: Any,
+    source_ids: List[Any],
+    decoded_token: Optional[Dict[str, Any]],
+    *,
+    outside_caller: bool = False,
+    approval_required: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """The WikiTool config for the first wiki source the caller may edit, or None.
+
+    A source qualifies when its ``kind`` is ``wiki`` and the token's user may
+    ``edit`` it (owner or team editor; viewers get no tool), resolved live
+    through ``resource_access``. One writable wiki per run: the scan stops at
+    the first match.
+
+    Args:
+        conn: An open database connection.
+        source_ids: The run's source ids, in run order.
+        decoded_token: The principal the run acts as.
+        outside_caller: The run is for someone other than that principal
+            (API key, widget, webhook); it edits only when the wiki's owner
+            allows outside edits, otherwise it gets only ``wiki_view``.
+        approval_required: Every write waits for the caller's approval.
+    """
+    caller = (decoded_token or {}).get("sub")
+    if not caller:
+        return None
+    repo = SourcesRepository(conn)
+    for sid in source_ids:
+        if not sid or sid == "default":
+            continue
+        sid = str(sid)
+        owner = _wiki_write_owner(conn, sid, caller)
+        if not owner:
+            continue
+        source_doc = repo.get_any(sid, owner)
+        if not source_doc or SourceConfig.parse(source_doc.get("config")).kind != "wiki":
+            continue
+        return {
+            "source_id": str(source_doc["id"]),
+            "source_owner_id": owner,
+            "decoded_token": decoded_token,
+            "user": caller,
+            "outside_caller": outside_caller,
+            "writes_allowed": not outside_caller or outside_edits_allowed(source_doc),
+            "approval_required": approval_required,
+        }
+    return None
+
+
 T = TypeVar("T")
 
 
@@ -1337,12 +1391,8 @@ class StreamProcessor:
     def _build_wiki_config(self) -> Optional[Dict[str, Any]]:
         """Resolve the WikiTool config for the first writable wiki source.
 
-        A source qualifies when ``SourceConfig.parse(config).kind == "wiki"`` and
-        the principal may ``edit`` it (owner or team editor; viewers get no
-        tool) — resolved live through ``resource_access``. v1 supports one
-        writable wiki source; the first match wins and the scan stops there so
-        this runs at most one owner+source lookup per chat on the hot path.
-        Returns None when no writable wiki source is present.
+        See :func:`wiki_tool_config`. Returns None when no writable wiki
+        source is present.
 
         An API-key or widget run (``outside_caller``) acts as the agent's
         owner, so it gets the edit actions only when the wiki's owner turned
@@ -1353,47 +1403,25 @@ class StreamProcessor:
         approval (``approval_required``), so the agent's prompt or sources
         can't steer the model into changing their wiki unasked.
         """
-        caller = self.decoded_token.get("sub") if self.decoded_token else None
-        if not caller:
+        if not (self.decoded_token or {}).get("sub"):
             return None
         # Processors built without __init__ (tests, resume helpers) lack these.
         run_config = getattr(self, "agent_config", None) or {}
         outside_caller = bool(
             run_config.get("external_api_caller") or getattr(self, "external_caller", False)
         )
-        approval_required = bool(run_config.get("public_link_caller"))
-
-        wiki_config: Optional[Dict[str, Any]] = None
         try:
             with db_readonly() as conn:
-                repo = SourcesRepository(conn)
-                for entry in self.all_sources or []:
-                    sid = entry.get("id")
-                    if not sid or sid == "default":
-                        continue
-                    sid = str(sid)
-                    owner = _wiki_write_owner(conn, sid, caller)
-                    if not owner:
-                        continue
-                    source_doc = repo.get_any(sid, owner)
-                    if not source_doc:
-                        continue
-                    if SourceConfig.parse(source_doc.get("config")).kind != "wiki":
-                        continue
-                    wiki_config = {
-                        "source_id": str(source_doc["id"]),
-                        "source_owner_id": owner,
-                        "decoded_token": self.decoded_token,
-                        "user": caller,
-                        "outside_caller": outside_caller,
-                        "writes_allowed": not outside_caller or outside_edits_allowed(source_doc),
-                        "approval_required": approval_required,
-                    }
-                    break
+                return wiki_tool_config(
+                    conn,
+                    [entry.get("id") for entry in self.all_sources or []],
+                    self.decoded_token,
+                    outside_caller=outside_caller,
+                    approval_required=bool(run_config.get("public_link_caller")),
+                )
         except Exception:
             logger.exception("Failed to resolve wiki tool config")
             return None
-        return wiki_config
 
     def _source_for_docs(self, doc_ids: list) -> Dict[str, Any]:
         """Build a ClassicRAG-style source dict scoped to ``doc_ids``."""
@@ -2155,7 +2183,7 @@ class StreamProcessor:
         # Wiki tool injection + authz: only for agent types that build a
         # tools_dict (classic/agentic/research), and only when a writable wiki
         # source is present for the principal (viewers get nothing).
-        if agent_type in ("classic", "agentic", "research"):
+        if agent_type in WIKI_AGENT_TYPES:
             wiki_config = self._build_wiki_config()
             if wiki_config:
                 agent_kwargs["wiki_config"] = wiki_config

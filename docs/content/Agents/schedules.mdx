@@ -96,7 +96,7 @@ A task set from chat pre-approves only the tools whose actions never need approv
 - Its tokens and trace are recorded under the schedule's user: the agent's owner for a schedule from the Schedules tab, and the person who set it for a task set from chat. So a teammate's chat task on your agent is checked against your quota but shows up in their [Analytics and Logs](/Using/analytics-and-logs).
 - A schedule created in the Schedules tab belongs to the agent's owner, whoever creates it. Owners and team editors of the agent can manage it.
 - A task someone sets from chat on a shared agent stays theirs. It stops running when they lose access to the agent.
-- A task set through the agent's API key, or by someone who reaches the agent only through its public link, keeps that caller's limits: it writes to the owner's connected accounts and saved credentials only for actions allowed under [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes).
+- A task set through the agent's API key, or by someone who reaches the agent only through its public link, keeps that caller's limits: it writes to the owner's connected accounts and saved credentials only for actions allowed under [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes). It edits the owner's [wikis](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links) only when the wiki's owner lets API and widget users edit them.
 
 ## REST API
 

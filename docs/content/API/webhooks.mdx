@@ -229,6 +229,7 @@ A webhook run happens in the background, with nobody watching it:
 
 - **It acts as the agent's owner.** Tools use the owner's connected accounts and saved credentials. A webhook is the owner's own automation, so the [API write allowlist](/API/agent-api#letting-api-callers-make-changes) that limits API-key and widget callers does not apply to it.
 - **Nobody can approve.** A tool action that needs approval is refused, and the agent is told so and carries on. So are client-side tools and tools whose connection needs signing in again.
+- **Wikis are read-only unless their owner allows outside edits.** Anyone with the URL decides the run's input, so the agent edits a [wiki source](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links) only when the wiki's owner turned on **Let API and widget users edit this wiki**. It can always read the wiki.
 - **Chat-only tools are unavailable.** The `scheduler` tool is not offered to the agent during a webhook run.
 - **Usage counts against the owner's quota.** When it is exhausted, the run is skipped (see the `quota_exceeded` result above).
 
