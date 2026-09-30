@@ -587,9 +587,20 @@ class ScheduleResource(Resource):
                         )
                     except ScheduleValidationError as exc:
                         return _err(str(exc))
+            # A reschedule only lands on a task that is still pending: the
+            # dispatcher may have claimed it (or someone paused it) since it
+            # was read above, and re-arming it then would lose the edit.
             updated = SchedulesRepository(conn).update(
                 schedule_id, acting, fields_in,
+                pending_once_status=(
+                    existing.get("status") if "run_at" in data else None
+                ),
             )
+            if updated is None and "run_at" in data:
+                return _err(
+                    "the task started or changed while you edited it; reload and try again",
+                    409,
+                )
         return _ok({"schedule": _format_schedule(updated or {})})
 
     @api.doc(description="Pause / resume a schedule.")

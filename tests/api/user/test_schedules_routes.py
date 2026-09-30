@@ -578,6 +578,64 @@ class TestPutRunAt:
         row = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")
         assert row["next_run_at"] is None
 
+    def test_dispatch_between_read_and_write_returns_409(self, app, pg_conn):
+        """The dispatcher claims the task after the PUT read it as pending."""
+        from docsgpt.api.user.schedules import routes
+
+        s = self._once(pg_conn)
+        original_run_at = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")["run_at"]
+        real_schedule_for = routes._schedule_for
+
+        def read_then_dispatch(conn, schedule_id, user_id):
+            row, acting = real_schedule_for(conn, schedule_id, user_id)
+            conn.execute(
+                text(
+                    "UPDATE schedules SET next_run_at = NULL, last_run_at = now() "
+                    "WHERE id = CAST(:id AS uuid)"
+                ),
+                {"id": schedule_id},
+            )
+            return row, acting
+
+        with patch.object(routes, "_schedule_for", read_then_dispatch):
+            resp = self._put(
+                app, pg_conn, str(s["id"]),
+                {"run_at": (_now() + timedelta(hours=5)).isoformat(), "name": "moved"},
+            )
+        assert resp.status_code == 409
+        row = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")
+        assert row["next_run_at"] is None
+        assert row["run_at"] == original_run_at
+        assert row["name"] is None
+
+    def test_pause_between_read_and_write_keeps_next_run_at_empty(self, app, pg_conn):
+        """A pause after the read must not be re-armed by the reschedule."""
+        from docsgpt.api.user.schedules import routes
+
+        s = self._once(pg_conn)
+        real_schedule_for = routes._schedule_for
+
+        def read_then_pause(conn, schedule_id, user_id):
+            row, acting = real_schedule_for(conn, schedule_id, user_id)
+            conn.execute(
+                text(
+                    "UPDATE schedules SET status = 'paused', next_run_at = NULL "
+                    "WHERE id = CAST(:id AS uuid)"
+                ),
+                {"id": schedule_id},
+            )
+            return row, acting
+
+        with patch.object(routes, "_schedule_for", read_then_pause):
+            resp = self._put(
+                app, pg_conn, str(s["id"]),
+                {"run_at": (_now() + timedelta(hours=5)).isoformat()},
+            )
+        assert resp.status_code == 409
+        row = SchedulesRepository(pg_conn).get(str(s["id"]), "u1")
+        assert row["status"] == "paused"
+        assert row["next_run_at"] is None
+
 
 class TestRunList:
     def test_list_owner_scoped(self, app, pg_conn):
