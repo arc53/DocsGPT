@@ -220,7 +220,7 @@ pool. A GPU helps it only with the docling extra installed
 `OCR_ENABLED=true` alone keeps the CPU-only native backend with the default
 `OCR_ENGINE=tesseract`, which GPU libraries do not accelerate. Setting
 `OCR_ENGINE=deepseek` instead moves the OCR cost onto the Ollama/vLLM endpoint
-and leaves this worker light.
+or a hosted API (`OCR_DEEPSEEK_PROVIDER`) and leaves this worker light.
 
 **Dev / single-worker setups:** a worker started without `-Q` already consumes
 every configured queue, `parsing` included, so no extra flag is needed. Only if

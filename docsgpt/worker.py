@@ -1932,7 +1932,7 @@ def attachment_worker(self, file_info, user):
         parser_metadata = {
             key: value
             for key, value in (attachment_document.extra_info or {}).items()
-            if key.startswith("transcript_") or key == "parse_warnings"
+            if key.startswith(("transcript_", "ocr_")) or key == "parse_warnings"
         }
         if parser_metadata:
             metadata = {**metadata, **parser_metadata}

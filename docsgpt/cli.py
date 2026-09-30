@@ -183,6 +183,7 @@ SCRIPTS = {
     "verify-offline": ("verify_offline", "check that the install runs with networking off"),
     "reembed": ("reembed", "re-embed every index with the configured embedding model"),
     "grant-admin": ("grant_admin", "grant, revoke or list the admin role (AUTH_TYPE=oidc)"),
+    "ocr-check": ("ocr_check", "send one page to the configured OCR engine and report what came back"),
 }
 
 

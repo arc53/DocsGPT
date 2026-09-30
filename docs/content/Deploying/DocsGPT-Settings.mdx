@@ -239,11 +239,16 @@ for the engines and flows.
 | `MARKUP_MAX_BYTES` | `8000000` | anydoc engine: HTML/XHTML larger than this are head-truncated before the `markdownify` parser runs (its tree costs ~50x the input). `0` disables the gate. |
 | `PDF_TRUST_CHECK` | `true` | Trust-check anydoc's PDF output for the two silent-loss classes (Type0 fonts without ToUnicode, CJK-declaring PDFs with CJK-less text). Flagged files re-parse on Docling when installed, else carry `parse_warnings` metadata. |
 | `ANYDOC_TABLEIZE` | `false` | Rewrite dot-leader / whitespace-aligned table runs in anydoc's PDF markdown into GFM tables. |
-| `OCR_ENGINE` | `tesseract` | OCR engine when OCR is on: `tesseract` (recommended, both backends; optional system package — build with `INSTALL_TESSERACT=true` or `apt`/`brew` install it), `deepseek` (VLM endpoint, both backends), or the Docling-only `auto`, `ocrmac`, `rapidocr`. Unavailable engines degrade with a warning. See the [OCR guide](/Sources/ocr). |
+| `OCR_ENGINE` | `tesseract` | OCR engine when OCR is on: `tesseract` (recommended, both backends; optional system package — build with `INSTALL_TESSERACT=true` or `apt`/`brew` install it), `deepseek` (DeepSeek-OCR on a local or hosted endpoint; always the native backend), or the Docling-only `auto`, `ocrmac`, `rapidocr`. Unavailable engines degrade with a warning. See the [OCR guide](/Sources/ocr). |
 | `OCR_LANGS` | `eng` | Tesseract language packs, `+`-separated (e.g. `eng+chi_sim+deu`). |
-| `OCR_DEEPSEEK_URL` | `http://localhost:11434/v1/chat/completions` | OpenAI-compatible endpoint for `OCR_ENGINE=deepseek` (Ollama or vLLM). |
-| `OCR_DEEPSEEK_MODEL` | `deepseek-ocr:3b` | Model name at that endpoint. |
-| `OCR_DEEPSEEK_TIMEOUT` | `300` | Seconds allowed per page request to the DeepSeek endpoint, on both backends (the native backend sends pages one at a time). |
+| `OCR_DEEPSEEK_PROVIDER` | `ollama` | Where DeepSeek-OCR runs: `ollama`, `vllm`, `novita`, `deepinfra` or `custom`. Each preset supplies the URL, model and concurrency. See [DeepSeek-OCR](/Sources/ocr#deepseek-ocr). |
+| `OCR_DEEPSEEK_URL` | preset | Chat-completions URL; overrides the preset's. |
+| `OCR_DEEPSEEK_MODEL` | preset | Model name at that endpoint; overrides the preset's. |
+| `OCR_DEEPSEEK_API_KEY` | unset | Bearer token. Required by `novita` (falls back to `NOVITA_API_KEY`) and `deepinfra`. |
+| `OCR_DEEPSEEK_CONCURRENCY` | preset | Page requests in flight per file: 4 for `vllm`, `novita`, `deepinfra`; 1 for `ollama`, `custom`. |
+| `OCR_DEEPSEEK_MAX_RETRIES` | `3` | Retries per page after a 429, 5xx or refused connection, with backoff honouring `Retry-After`. |
+| `OCR_DEEPSEEK_TIMEOUT` | `300` | Seconds allowed per page request. |
+| `OCR_DEEPSEEK_PROMPT` | `Free OCR.` | Instruction sent with each page. |
 | `OCR_RENDER_DPI` | `200` | Native backend: resolution at which pages without a text layer are rendered before OCR (clamped to 72-600). |
 | `OCR_MIN_CHARS_PER_PAGE` | `20` | Chars-per-page floor for the OCR dropout guard: a multi-page parse whose OCR returns nothing fails loudly instead of indexing an empty document (docling retries once on full-page OCR first); output below the floor but non-empty is indexed with a warning. `0` disables. Alias: `DOCLING_OCR_MIN_CHARS_PER_PAGE`. |
 

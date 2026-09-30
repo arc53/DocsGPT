@@ -159,11 +159,6 @@ class TestOcrEngineSelection:
         monkeypatch.setitem(sys.modules, "rapidocr", None)
         assert dp._resolve_ocr_engine("rapidocr") == "auto"
 
-    def test_deepseek_passes_through(self):
-        from docsgpt.parser.file.docling_parser import _resolve_ocr_engine
-
-        assert _resolve_ocr_engine("deepseek") == "deepseek"
-
     def test_build_auto_returns_none(self):
         from docsgpt.parser.file.docling_parser import _build_ocr_options
 
@@ -228,57 +223,34 @@ class TestOcrEngineSelection:
 
 
 @pytest.mark.unit
-class TestDeepseekVlmConverter:
-    """OCR_ENGINE=deepseek swaps the whole pipeline for docling's VLM route."""
+class TestDeepseekStaysOutOfDocling:
+    """DeepSeek-OCR runs only on the native backend; docling never builds a pipeline for it."""
 
-    @pytest.fixture(autouse=True)
-    def _requires_docling(self):
+    def test_deepseek_degrades_to_auto_inside_docling(self, caplog):
+        from docsgpt.parser.file.docling_parser import _resolve_ocr_engine
+
+        with caplog.at_level("WARNING"):
+            assert _resolve_ocr_engine("deepseek") == "auto"
+        assert "native" in caplog.text
+
+    def test_no_vlm_pipeline_is_built(self, monkeypatch):
         pytest.importorskip("docling")
-
-    def test_deepseek_builds_vlm_converter(self, monkeypatch):
-        from docsgpt.core.settings import settings
         from docsgpt.parser.file.docling_parser import DoclingParser
 
-        monkeypatch.setattr(settings, "OCR_DEEPSEEK_URL", "http://gpu-host:8000/v1/chat/completions")
-        monkeypatch.setattr(settings, "OCR_DEEPSEEK_MODEL", "deepseek-ocr-x")
-
+        assert not hasattr(DoclingParser, "_create_vlm_converter")
         built = {}
 
         def _capture_converter(format_options):
             built["format_options"] = format_options
             return MagicMock()
 
-        monkeypatch.setattr(
-            "docling.document_converter.DocumentConverter", _capture_converter
-        )
-        parser = DoclingParser(ocr_enabled=True, ocr_engine="deepseek")
-        parser._create_converter()
+        monkeypatch.setattr("docling.document_converter.DocumentConverter", _capture_converter)
+        DoclingParser(ocr_enabled=True, ocr_engine="deepseek")._create_converter()
 
         from docling.datamodel.base_models import InputFormat
-        from docling.pipeline.vlm_pipeline import VlmPipeline
 
         pdf_option = built["format_options"][InputFormat.PDF]
-        image_option = built["format_options"][InputFormat.IMAGE]
-        assert pdf_option.pipeline_cls is VlmPipeline
-        assert image_option.pipeline_cls is VlmPipeline
-        vlm = pdf_option.pipeline_options.vlm_options
-        assert vlm.url == "http://gpu-host:8000/v1/chat/completions"
-        assert vlm.params["model"] == "deepseek-ocr-x"
-        assert pdf_option.pipeline_options.enable_remote_services is True
-
-    def test_deepseek_ignored_when_ocr_disabled(self, monkeypatch):
-        from docsgpt.parser.file.docling_parser import DoclingParser
-
-        vlm_called = []
-        monkeypatch.setattr(
-            DoclingParser,
-            "_create_vlm_converter",
-            lambda self: vlm_called.append(True),
-        )
-        monkeypatch.setattr("docling.document_converter.DocumentConverter", MagicMock())
-        DoclingParser(ocr_enabled=False, ocr_engine="deepseek")._create_converter()
-
-        assert vlm_called == []
+        assert type(pdf_option.pipeline_options).__name__ == "PdfPipelineOptions"
 
 
 # =====================================================================
@@ -1649,7 +1621,7 @@ class TestDoclingTesseractPostprocessing:
         assert parser._export_content(document) == "## 互相保密协议\n\nhello world 你好"
 
     def test_other_engines_untouched(self):
-        parser, document = self._parser_with_export("deepseek")
+        parser, document = self._parser_with_export("ocrmac")
         assert parser._export_content(document) == "## 互相 保密 协议\n\nhello world 你 好"
 
     def test_ocr_off_untouched(self):
