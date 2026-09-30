@@ -521,6 +521,15 @@ def download_file(url, params, dest_path):
         raise
 
 
+def _worker_api_url() -> str:
+    """Where the worker reaches the API for its own calls: WORKER_API_URL, else API_URL.
+
+    Returns:
+        The base URL, without a path.
+    """
+    return settings.WORKER_API_URL or settings.API_URL
+
+
 def upload_index(full_path, file_data):
     files = None
     try:
@@ -545,7 +554,7 @@ def upload_index(full_path, file_data):
                 "file_pkl": open(pkl_path, "rb"),
             }
             response = requests.post(
-                urljoin(settings.API_URL, "/api/upload_index"),
+                urljoin(_worker_api_url(), "/api/upload_index"),
                 files=files,
                 data=file_data,
                 headers=headers,
@@ -553,7 +562,7 @@ def upload_index(full_path, file_data):
             )
         else:
             response = requests.post(
-                urljoin(settings.API_URL, "/api/upload_index"),
+                urljoin(_worker_api_url(), "/api/upload_index"),
                 data=file_data,
                 headers=headers,
                 timeout=100,
