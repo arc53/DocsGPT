@@ -3,7 +3,7 @@
 ``record_event`` inserts into ``message_events`` and publishes to
 ``channel:{message_id}``. Both are best-effort; the INSERT commits
 before the publish so a fast reconnect sees the row. See
-``docs/runbooks/sse-notifications.md``.
+``docs/content/Deploying/Troubleshooting/sse-notifications.mdx``.
 """
 
 from __future__ import annotations

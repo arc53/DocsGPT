@@ -3,7 +3,7 @@
 Subscribe-then-snapshot pattern: subscribe to ``user:{user_id}``
 pub/sub, snapshot the Redis Streams backlog past ``Last-Event-ID``
 inside the SUBSCRIBE-ack callback, flush snapshot, then tail live
-events (dedup'd by stream id). See ``docs/runbooks/sse-notifications.md``.
+events (dedup'd by stream id). See ``docs/content/Deploying/Troubleshooting/sse-notifications.mdx``.
 
 A native-async Starlette route mounted ahead of Flask in ``docsgpt/asgi.py``.
 Every open browser tab holds this stream, so it runs on the event loop with

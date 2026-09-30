@@ -40,7 +40,7 @@ class OCRSettings(SettingsGroup):
     OCR_ENGINE: Literal["tesseract", "deepseek", "auto", "ocrmac", "rapidocr"] = Field(
         default="tesseract",
         description=(
-            "OCR engine used when OCR is on. Benched 2026-08 on EN/ZH/table/degraded scans (docs/Guides/ocr has "
+            "OCR engine used when OCR is on. Benched 2026-08 on EN/ZH/table/degraded scans (docs page Sources/ocr has "
             "the menu). tesseract (recommended): best classic-engine accuracy (perfect EN word recall, 0.000 "
             "bilingual CER, 100% table cells), ~35 MB, CPU-only; needs the system binary and language packs, an "
             "optional install like every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew install "

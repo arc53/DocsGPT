@@ -9,7 +9,7 @@ Full guide: <https://docs.docsgpt.cloud/Extensions/Chatwoot-extension>
 ## Setup
 
 1. Create and publish an agent in DocsGPT, then copy its API key from the agent's **Access Details**
-   ([how](https://docs.docsgpt.cloud/Extensions/api-key-guide)).
+   ([how](https://docs.docsgpt.cloud/API/agent-keys)).
 2. In Chatwoot, copy the **Access Token** from your profile settings.
 3. In Chatwoot, go to **Settings → Integrations → Webhooks → Configure → Add new webhook**. Set the URL to
    `http://<bridge-host>:5000/docsgpt`, subscribe to **Message created**, save, and copy the webhook's secret.

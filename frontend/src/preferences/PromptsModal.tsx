@@ -566,7 +566,7 @@ export default function PromptsModal({
   const learnLink = (
     <Button variant="link" size="inline" asChild>
       <Link
-        to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
+        to="https://docs.docsgpt.cloud/Agents/prompts"
         target="_blank"
         rel="noopener noreferrer"
       >

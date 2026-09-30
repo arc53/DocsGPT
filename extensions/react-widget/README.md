@@ -10,7 +10,7 @@ npm install docsgpt
 
 The same React components are also published as `docsgpt-react`, a React-only build without the HTML embedding bundle. If you install that package instead, import from `"docsgpt-react"`.
 
-Every example below needs the API key of a published DocsGPT agent. See [Getting API key](https://docs.docsgpt.cloud/Extensions/api-key-guide). If you leave `apiKey` out, the chat widget answers from a public DocsGPT demo agent instead of your documents, and the search bar searches that demo agent. Full props reference: [chat widget](https://docs.docsgpt.cloud/Extensions/chat-widget) and [search widget](https://docs.docsgpt.cloud/Extensions/search-widget).
+Every example below needs the API key of a published DocsGPT agent. See [Agent API keys](https://docs.docsgpt.cloud/API/agent-keys). If you leave `apiKey` out, the chat widget answers from a public DocsGPT demo agent instead of your documents, and the search bar searches that demo agent. Full props reference: [chat widget](https://docs.docsgpt.cloud/Extensions/chat-widget) and [search widget](https://docs.docsgpt.cloud/Extensions/search-widget).
 
 ## Usage
 
