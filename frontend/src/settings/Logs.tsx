@@ -1,5 +1,5 @@
 import { Activity, ChevronRight } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
@@ -7,6 +7,7 @@ import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { useScrollSentinel } from '../hooks/useLoadMore';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import {
@@ -186,6 +187,7 @@ export default function Logs({ agentId, tableHeader }: LogsProps) {
           logs={logs}
           setPage={setPage}
           loading={loadingLogs}
+          hasMore={hasMore}
           tableHeader={tableHeader}
           onViewTrace={setOpenTrace}
         />
@@ -203,6 +205,7 @@ type LogsTableProps = {
   logs: LogData[];
   setPage: React.Dispatch<React.SetStateAction<number>>;
   loading: boolean;
+  hasMore: boolean;
   tableHeader?: string;
   onViewTrace: (ref: TraceRef) => void;
 };
@@ -210,11 +213,11 @@ function LogsTable({
   logs,
   setPage,
   loading,
+  hasMore,
   tableHeader,
   onViewTrace,
 }: LogsTableProps) {
   const { t } = useTranslation();
-  const observerRef = useRef<IntersectionObserver | null>(null);
   const [openLogId, setOpenLogId] = useState<string | null>(null);
 
   const handleLogToggle = (logId: string) => {
@@ -225,29 +228,12 @@ function LogsTable({
     }
   };
 
-  const firstObserver = useCallback((node: HTMLDivElement | null) => {
-    if (observerRef.current) {
-      observerRef.current.disconnect();
-    }
-
-    if (!node) return;
-
-    observerRef.current = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        setPage((prev) => prev + 1);
-      }
-    });
-
-    observerRef.current.observe(node);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, []);
+  // Loads the next page as the end of the list nears the screen.
+  const sentinelRef = useScrollSentinel(
+    () => setPage((prev) => prev + 1),
+    !loading && hasMore,
+    logs.length,
+  );
 
   return (
     <div className="border-border bg-card h-[55svh] w-full overflow-hidden rounded-xl border font-mono">
@@ -265,29 +251,16 @@ function LogsTable({
             className="w-full"
           />
         )}
-        {logs?.map((log, index) => {
-          if (index === logs.length - 1) {
-            return (
-              <div ref={firstObserver} key={index} className="w-full">
-                <Log
-                  log={log}
-                  isOpen={openLogId === log.id}
-                  onToggle={handleLogToggle}
-                  onViewTrace={onViewTrace}
-                />
-              </div>
-            );
-          } else
-            return (
-              <Log
-                key={index}
-                log={log}
-                isOpen={openLogId === log.id}
-                onToggle={handleLogToggle}
-                onViewTrace={onViewTrace}
-              />
-            );
-        })}
+        {logs?.map((log, index) => (
+          <Log
+            key={index}
+            log={log}
+            isOpen={openLogId === log.id}
+            onToggle={handleLogToggle}
+            onViewTrace={onViewTrace}
+          />
+        ))}
+        <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
         {loading && <SkeletonLoader component="logs" />}
       </div>
     </div>

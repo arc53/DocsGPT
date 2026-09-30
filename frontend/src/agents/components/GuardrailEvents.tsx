@@ -26,11 +26,14 @@ import StatCard from '@/components/StatCard';
 
 import userService from '../../api/services/userService';
 import SkeletonLoader from '../../components/SkeletonLoader';
+import { LoadMoreStatus } from '../../components/ui/load-more-status';
+import { useLoadMore, type LoadMorePage } from '../../hooks/useLoadMore';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { formatDateTime } from '../../utils/dateTimeUtils';
 import { GuardrailEvent, GuardrailSummary } from '../types';
 
-const PAGE_SIZE = 100;
+/** Decisions per request; older ones load as the table's end scrolls into view. */
+const PAGE_SIZE = 50;
 const WINDOWS = [7, 30, 90];
 
 const STAGE_KEYS: Record<string, string> = {
@@ -66,62 +69,80 @@ export default function GuardrailEvents({ agentId }: Props) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
 
-  const [events, setEvents] = React.useState<GuardrailEvent[]>([]);
   const [summary, setSummary] = React.useState<GuardrailSummary | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
+  const [summaryLoading, setSummaryLoading] = React.useState(true);
+  const [summaryError, setSummaryError] = React.useState(false);
   const [days, setDays] = React.useState(30);
   const [checkFilter, setCheckFilter] = React.useState('all');
   const [outcomeFilter, setOutcomeFilter] = React.useState('all');
-  // Bumped by Retry to re-run the fetch below.
+  // Bumped by Retry to re-run both fetches.
   const [reloadKey, setReloadKey] = React.useState(0);
 
   React.useEffect(() => {
     if (!agentId) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    Promise.all([
-      userService.getGuardrailEvents(agentId, token, PAGE_SIZE),
-      userService.getGuardrailSummary(token, agentId, days),
-    ])
-      .then(async ([eventsRes, summaryRes]) => {
+    setSummaryLoading(true);
+    setSummaryError(false);
+    userService
+      .getGuardrailSummary(token, agentId, days)
+      .then((res: Response) => res.json())
+      .then((body: GuardrailSummary & { success?: boolean }) => {
         if (cancelled) return;
-        const eventsBody = await eventsRes.json();
-        const summaryBody = await summaryRes.json();
-        if (!eventsBody?.success || !summaryBody?.success) {
-          setError(t('agents.guardrailEvents.loadError'));
-          return;
-        }
-        setEvents(eventsBody.events ?? []);
-        setSummary(summaryBody as GuardrailSummary);
+        if (!body?.success) setSummaryError(true);
+        else setSummary(body);
       })
       .catch(() => {
-        if (!cancelled) setError(t('agents.guardrailEvents.loadError'));
+        if (!cancelled) setSummaryError(true);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setSummaryLoading(false);
       });
-
     return () => {
       cancelled = true;
     };
-  }, [agentId, token, days, t, reloadKey]);
+  }, [agentId, token, days, reloadKey]);
 
-  const checkNames = React.useMemo(
-    () => Array.from(new Set(events.map((e) => e.check_name))).sort(),
-    [events],
-  );
+  // The window and both filters are applied by the server, so every page
+  // is filtered and scrolling reaches every match.
+  const check = checkFilter === 'all' ? undefined : checkFilter;
+  const outcome = outcomeFilter === 'all' ? undefined : outcomeFilter;
+  const feed = useLoadMore<GuardrailEvent, number>({
+    resetKey: [agentId, days, check, outcome, reloadKey].join('|'),
+    load: async (offset): Promise<LoadMorePage<GuardrailEvent, number>> => {
+      if (!agentId) return { items: [], next: null };
+      const from = offset ?? 0;
+      const res = await userService.getGuardrailEvents(
+        agentId,
+        token,
+        PAGE_SIZE,
+        from,
+        { days, check, outcome },
+      );
+      const body = await res.json();
+      if (!body?.success) throw new Error('guardrail events');
+      const page: GuardrailEvent[] = body.events ?? [];
+      return {
+        items: page,
+        next: page.length < PAGE_SIZE ? null : from + page.length,
+      };
+    },
+  });
+  const events = feed.items;
+  const firstPage = feed.loading && events.length === 0;
+  const loading = summaryLoading || firstPage;
+  const error =
+    summaryError || (feed.error && events.length === 0)
+      ? t('agents.guardrailEvents.loadError')
+      : null;
+  const filtered = check !== undefined || outcome !== undefined;
 
-  const visible = events.filter(
-    (e) =>
-      (checkFilter === 'all' || e.check_name === checkFilter) &&
-      (outcomeFilter === 'all' ||
-        (outcomeFilter === 'not_evaluated'
-          ? e.outcome === 'not_evaluated'
-          : e.outcome === 'triggered' && e.action === outcomeFilter)),
-  );
+  // Every check that fired in the window, from the summary, not only the
+  // ones on the loaded page; the picked one stays listed.
+  const checkNames = React.useMemo(() => {
+    const names = new Set(summary?.breakdown.map((row) => row.check_name));
+    if (check) names.add(check);
+    return Array.from(names).sort();
+  }, [summary, check]);
 
   const totals = summary?.totals;
   const tableHeadingId = React.useId();
@@ -251,7 +272,7 @@ export default function GuardrailEvents({ agentId }: Props) {
       </div>
 
       <div className="border-border bg-card mt-3 w-full overflow-hidden rounded-xl border">
-        <div className="max-h-[45svh] overflow-y-auto">
+        <div className="scrollbar-overlay max-h-[45svh] overflow-y-auto">
           {loading ? (
             <div className="p-3">
               <SkeletonLoader count={3} />
@@ -272,14 +293,14 @@ export default function GuardrailEvents({ agentId }: Props) {
                 </Button>
               }
             />
-          ) : visible.length === 0 ? (
+          ) : events.length === 0 ? (
             <p
               className="text-muted-foreground p-4 text-sm"
               data-testid="guardrail-events-empty"
             >
-              {events.length === 0
-                ? t('agents.guardrailEvents.empty')
-                : t('agents.guardrailEvents.emptyForFilter')}
+              {filtered
+                ? t('agents.guardrailEvents.emptyForFilter')
+                : t('agents.guardrailEvents.empty')}
             </p>
           ) : (
             <Table aria-labelledby={tableHeadingId}>
@@ -297,7 +318,7 @@ export default function GuardrailEvents({ agentId }: Props) {
                 </TableRow>
               </TableHead>
               <TableBody data-testid="guardrail-events-rows">
-                {visible.map((event) => (
+                {events.map((event) => (
                   <TableRow key={event.id}>
                     <TableCell className="text-muted-foreground whitespace-nowrap">
                       {formatDateTime(event.created_at)}
@@ -328,13 +349,18 @@ export default function GuardrailEvents({ agentId }: Props) {
               </TableBody>
             </Table>
           )}
+          <div ref={feed.sentinelRef} aria-hidden="true" className="h-px" />
         </div>
+        {events.length >= PAGE_SIZE ? (
+          <LoadMoreStatus
+            loading={feed.loading}
+            error={feed.error}
+            done={feed.done}
+            onRetry={feed.retry}
+            divider
+          />
+        ) : null}
       </div>
-      {events.length >= PAGE_SIZE && (
-        <p className="text-muted-foreground mt-2 text-xs">
-          {t('agents.guardrailEvents.truncated', { count: PAGE_SIZE })}
-        </p>
-      )}
     </div>
   );
 }

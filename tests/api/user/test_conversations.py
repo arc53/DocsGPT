@@ -854,3 +854,143 @@ class TestSubmitFeedbackWithApiKey:
         )
 
         assert response.status_code == 401
+
+
+def _call_get_conversations(app, pg_conn, user, query=""):
+    from docsgpt.api.user.conversations.routes import GetConversations
+
+    with _patch_conversations_db(pg_conn), app.test_request_context(
+        f"/api/get_conversations{query}"
+    ):
+        from flask import request
+
+        request.decoded_token = {"sub": user}
+        response = GetConversations().get()
+    assert response.status_code == 200
+    assert isinstance(response.json, list)
+    return response.json
+
+
+def _seed_dated(pg_conn, user, count, dates):
+    """Seed ``count`` conversations, the i-th dated ``dates(i)``."""
+    from sqlalchemy import text
+
+    ids = []
+    for i in range(count):
+        cid = _seed_conversation(pg_conn, user, name=f"c{i}")
+        pg_conn.execute(
+            text("UPDATE conversations SET date = :d WHERE id = CAST(:id AS uuid)"),
+            {"d": dates(i), "id": cid},
+        )
+        ids.append(cid)
+    return ids
+
+
+def _expected_order(pg_conn, user):
+    from sqlalchemy import text
+
+    rows = pg_conn.execute(
+        text(
+            "SELECT id::text FROM conversations WHERE user_id = :u "
+            "AND visibility = 'listed' ORDER BY date DESC, id DESC"
+        ),
+        {"u": user},
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+class TestGetConversationsPaging:
+    def test_default_returns_30_newest_with_date(self, app, pg_conn):
+        import datetime as dt
+
+        user = "user-page-default"
+        base = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+        _seed_dated(pg_conn, user, 35, lambda i: base + dt.timedelta(minutes=i))
+
+        items = _call_get_conversations(app, pg_conn, user)
+
+        assert [c["id"] for c in items] == _expected_order(pg_conn, user)[:30]
+        assert set(items[0]) == {
+            "id", "name", "agent_id", "is_shared_usage", "shared_token", "date",
+        }
+        parsed = dt.datetime.fromisoformat(items[0]["date"])
+        assert parsed == base + dt.timedelta(minutes=34)
+
+    def test_limit_is_clamped(self, app, pg_conn):
+        import datetime as dt
+
+        user = "user-page-clamp"
+        base = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+        _seed_dated(pg_conn, user, 105, lambda i: base + dt.timedelta(seconds=i))
+
+        assert len(_call_get_conversations(app, pg_conn, user, "?limit=5")) == 5
+        assert len(_call_get_conversations(app, pg_conn, user, "?limit=0")) == 1
+        assert len(_call_get_conversations(app, pg_conn, user, "?limit=-3")) == 1
+        assert len(_call_get_conversations(app, pg_conn, user, "?limit=500")) == 100
+
+    def test_pages_through_all_exactly_once_with_equal_timestamps(self, app, pg_conn):
+        import datetime as dt
+        from urllib.parse import urlencode
+
+        user = "user-page-walk"
+        base = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+        # 70 rows, many sharing a timestamp (groups of 7) so page
+        # boundaries land inside a tie group.
+        _seed_dated(pg_conn, user, 70, lambda i: base + dt.timedelta(minutes=i // 7))
+        hidden = _seed_conversation(pg_conn, user, name="hidden")
+        from sqlalchemy import text
+
+        pg_conn.execute(
+            text("UPDATE conversations SET visibility = 'hidden' WHERE id = CAST(:id AS uuid)"),
+            {"id": hidden},
+        )
+
+        seen = []
+        page = _call_get_conversations(app, pg_conn, user)
+        assert len(page) == 30
+        while page:
+            seen.extend(c["id"] for c in page)
+            last = page[-1]
+            query = "?" + urlencode(
+                {"limit": 30, "before": last["date"], "before_id": last["id"]}
+            )
+            page = _call_get_conversations(app, pg_conn, user, query)
+
+        assert seen == _expected_order(pg_conn, user)
+        assert len(seen) == len(set(seen)) == 70
+        assert hidden not in seen
+
+    def test_accepts_z_suffix_cursor(self, app, pg_conn):
+        import datetime as dt
+
+        user = "user-page-z"
+        base = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+        ids = _seed_dated(pg_conn, user, 3, lambda i: base + dt.timedelta(minutes=i))
+
+        items = _call_get_conversations(
+            app, pg_conn, user,
+            f"?before=2026-01-01T00:02:00Z&before_id={ids[2]}",
+        )
+        assert [c["id"] for c in items] == [ids[1], ids[0]]
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "?limit=abc",
+            "?before=not-a-date&before_id=00000000-0000-0000-0000-000000000000",
+            "?before=2026-01-01T00:00:00Z&before_id=not-a-uuid",
+            "?before=2026-01-01T00:00:00Z",
+            "?before_id=00000000-0000-0000-0000-000000000000",
+            "?before=&before_id=",
+            "?limit=&before=99999-99-99",
+        ],
+    )
+    def test_bad_params_are_ignored(self, app, pg_conn, query):
+        import datetime as dt
+
+        user = "user-page-bad"
+        base = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+        _seed_dated(pg_conn, user, 32, lambda i: base + dt.timedelta(minutes=i))
+
+        items = _call_get_conversations(app, pg_conn, user, query)
+        assert [c["id"] for c in items] == _expected_order(pg_conn, user)[:30]

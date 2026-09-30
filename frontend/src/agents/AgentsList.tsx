@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -43,7 +44,11 @@ import PageToolbar from '../components/PageToolbar';
 import SearchInput from '../components/SearchInput';
 import SectionPills from '../navigation/SectionPills';
 import { useAgentSearch } from './hooks/useAgentSearch';
-import { agentsListPath, filterFromPath } from './paths';
+import { agentsFilterPath, agentsListPath, filterFromPath } from './paths';
+import { Pagination, pageRangeParams } from '../components/ui/pagination';
+import { useGridColumns } from '../hooks/useGridColumns';
+import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
+import { formatCount } from '../utils/dateTimeUtils';
 import { useAgentsFetch } from './hooks/useAgentsFetch';
 import { Agent, AgentFolder } from './types';
 
@@ -393,6 +398,24 @@ function AgentSection({
   // "rendered fewer hooks than expected". Reachable now that each filter is
   // its own route — landing straight on an empty one renders once while the
   // data loads, then again once it arrives empty.
+  // The All view shows two full rows per section and links to the
+  // section's own page for the rest; that page (and a search or a folder)
+  // shows everything, 48 per page.
+  const columns = useGridColumns();
+  const capped = !isFilteredView && !searchQuery && !currentFolderId;
+  const cap = columns * 2;
+  const {
+    page: agentsPage,
+    setPage: setAgentsPage,
+    pageItems: pagedAgents,
+  } = useClientPage(
+    unfolderedAgents,
+    SHORT_LIST_PAGE_SIZE,
+    `${searchQuery}|${currentFolderId ?? ''}`,
+  );
+  const shownAgents = capped ? unfolderedAgents.slice(0, cap) : pagedAgents;
+  const moreThanCap = capped && unfolderedAgents.length > cap;
+
   const breadcrumbItems = useMemo(() => {
     if (!folders || folderPath.length === 0) return [];
     return folderPath.map((folderId) => {
@@ -480,9 +503,25 @@ function AgentSection({
               </BreadcrumbList>
             </Breadcrumb>
           ) : (
-            <h2 className="text-foreground text-lg font-semibold">
-              {t(`agents.sections.${config.id}.title`)}
-            </h2>
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-foreground text-lg font-semibold">
+                {t(`agents.sections.${config.id}.title`)}
+              </h2>
+              {moreThanCap && (
+                <Button
+                  type="button"
+                  variant="link"
+                  size="inline"
+                  onClick={() => navigate(agentsFilterPath(config.id))}
+                >
+                  {t('agents.showAll', {
+                    count: unfolderedAgents.length,
+                    formatted: formatCount(unfolderedAgents.length),
+                  })}
+                  <ChevronRight aria-hidden className="size-4" />
+                </Button>
+              )}
+            </div>
           )}
           <p className="text-muted-foreground text-sm">
             {t(`agents.sections.${config.id}.description`)}
@@ -585,17 +624,30 @@ function AgentSection({
 
             {/* Show agents at current level */}
             {unfolderedAgents.length > 0 ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {unfolderedAgents.map((agent) => (
-                  <AgentCard
-                    key={agent.id}
-                    agent={agent}
-                    agents={allAgents || []}
-                    updateAgents={updateAgents}
-                    section={config.id}
+              <>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {shownAgents.map((agent) => (
+                    <AgentCard
+                      key={agent.id}
+                      agent={agent}
+                      agents={allAgents || []}
+                      updateAgents={updateAgents}
+                      section={config.id}
+                    />
+                  ))}
+                </div>
+                {!capped && (
+                  <Pagination
+                    page={agentsPage}
+                    pageSize={SHORT_LIST_PAGE_SIZE}
+                    total={unfolderedAgents.length}
+                    onPageChange={setAgentsPage}
+                    rangeLabel={(range) =>
+                      t('agents.pageRange', pageRangeParams(range))
+                    }
                   />
-                ))}
-              </div>
+                )}
+              </>
             ) : hasNoAgentsAtAll && currentLevelFolders.length === 0 ? (
               <div className="text-muted-foreground flex h-40 w-full flex-col items-center justify-center gap-3">
                 <p>

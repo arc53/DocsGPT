@@ -16,6 +16,20 @@ import {
 } from './preferenceApi';
 
 import type { Model } from '../models/types';
+import type { ConversationSummary } from './types';
+
+/** Chats per request; a shorter page means the oldest chat is loaded. */
+export const CONVERSATIONS_PAGE_SIZE = 30;
+
+/** Whether `c` sorts after `last` in the list's (date, id) newest-first order. */
+const isOlderThan = (
+  c: ConversationSummary,
+  last: ConversationSummary,
+): boolean => {
+  if (!c.date || !last.date) return false;
+  if (c.date !== last.date) return c.date < last.date;
+  return c.id < last.id;
+};
 export interface Preference {
   apiKey: string;
   prompt: { name: string; id: string; type: string };
@@ -24,8 +38,10 @@ export interface Preference {
   selectedDocs: Doc[];
   sourceDocs: Doc[] | null;
   conversations: {
-    data: { name: string; id: string }[] | null;
+    data: ConversationSummary[] | null;
     loading: boolean;
+    /** Older chats exist past the last one loaded. */
+    hasMore?: boolean;
   };
   token: string | null;
   modalState: ActiveState;
@@ -101,6 +117,69 @@ export const prefSlice = createSlice({
     setConversations: (state, action) => {
       state.conversations = action.payload;
     },
+    /**
+     * The newest page, fetched again after a new chat, a rename or a
+     * delete. It replaces the top of the list and keeps the older chats
+     * already scrolled to; a short page is the whole list.
+     */
+    setConversationsHead: (
+      state,
+      action: PayloadAction<ConversationSummary[]>,
+    ) => {
+      const head = action.payload;
+      const existing = state.conversations.data ?? [];
+      if (head.length < CONVERSATIONS_PAGE_SIZE) {
+        state.conversations = { data: head, loading: false, hasMore: false };
+        return;
+      }
+      const last = head[head.length - 1];
+      const inHead = new Set(head.map((c) => c.id));
+      const older = existing.filter(
+        (c) => !inHead.has(c.id) && isOlderThan(c, last),
+      );
+      state.conversations = {
+        data: [...head, ...older],
+        loading: false,
+        hasMore: older.length ? (state.conversations.hasMore ?? true) : true,
+      };
+    },
+    /** A newest-page fetch: merged in as above, or cleared when it failed. */
+    receiveConversations: (
+      state,
+      action: PayloadAction<{
+        data: ConversationSummary[] | null;
+        loading: boolean;
+      }>,
+    ) => {
+      if (!action.payload.data) {
+        state.conversations = { data: null, loading: false };
+        return;
+      }
+      prefSlice.caseReducers.setConversationsHead(state, {
+        type: 'preference/setConversationsHead',
+        payload: action.payload.data,
+      });
+    },
+    /** An older page, loaded as the sidebar's end scrolls into view. */
+    appendConversations: (
+      state,
+      action: PayloadAction<ConversationSummary[]>,
+    ) => {
+      const existing = state.conversations.data ?? [];
+      const seen = new Set(existing.map((c) => c.id));
+      state.conversations.data = [
+        ...existing,
+        ...action.payload.filter((c) => !seen.has(c.id)),
+      ];
+      state.conversations.hasMore =
+        action.payload.length >= CONVERSATIONS_PAGE_SIZE;
+    },
+    removeConversation: (state, action: PayloadAction<string>) => {
+      if (!state.conversations.data) return;
+      state.conversations.data = state.conversations.data.filter(
+        (c) => c.id !== action.payload,
+      );
+    },
     setToken: (state, action) => {
       state.token = action.payload;
     },
@@ -163,6 +242,10 @@ export const {
   setSelectedDocs,
   setSourceDocs,
   setConversations,
+  setConversationsHead,
+  receiveConversations,
+  appendConversations,
+  removeConversation,
   setToken,
   setPrompt,
   setPrompts,

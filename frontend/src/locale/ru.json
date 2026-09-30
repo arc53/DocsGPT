@@ -1035,7 +1035,12 @@
       "pageRange_one": "{{from}}–{{to}} из {{formatted}} команды",
       "pageRange_few": "{{from}}–{{to}} из {{formatted}} команд",
       "pageRange_many": "{{from}}–{{to}} из {{formatted}} команд",
-      "pageRange_other": "{{from}}–{{to}} из {{formatted}} команды"
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} команды",
+      "searchMembers": "Поиск участников…",
+      "membersRange_one": "{{from}}–{{to}} из {{formatted}} участника",
+      "membersRange_few": "{{from}}–{{to}} из {{formatted}} участников",
+      "membersRange_many": "{{from}}–{{to}} из {{formatted}} участников",
+      "membersRange_other": "{{from}}–{{to}} из {{formatted}} участника"
     },
     "tools": {
       "label": "Инструменты",
@@ -2111,7 +2116,10 @@
     "pageOf": "Страница {{currentPage}} из {{totalPages}}",
     "goToPage": "Страница {{page}}",
     "previousPage": "Предыдущая страница",
-    "nextPage": "Следующая страница"
+    "nextPage": "Следующая страница",
+    "loadingOlder": "Загрузка более ранних…",
+    "noOlder": "Более ранних нет",
+    "olderFailed": "Не удалось загрузить более ранние записи."
   },
   "conversation": {
     "copy": "Копировать",
@@ -2716,7 +2724,8 @@
         "when": "Когда",
         "details": "Подробнее",
         "empty": "Для этого расписания пока нет запусков.",
-        "duration": "Длительность"
+        "duration": "Длительность",
+        "loadFailed": "Не удалось загрузить запуски."
       },
       "actions": "Действия с расписанием",
       "cancelTask": "Отменить задачу",
@@ -2795,7 +2804,6 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
@@ -3016,7 +3024,15 @@
       "workflowDescription": "Создавайте сложные многошаговые рабочие процессы с разными моделями, условной логикой и управлением состоянием"
     },
     "view": "Просмотр",
-    "deleteFailed": "Не удалось удалить агента. Попробуйте ещё раз."
+    "deleteFailed": "Не удалось удалить агента. Попробуйте ещё раз.",
+    "showAll_one": "Показать все ({{formatted}})",
+    "showAll_few": "Показать все ({{formatted}})",
+    "showAll_many": "Показать все ({{formatted}})",
+    "showAll_other": "Показать все ({{formatted}})",
+    "pageRange_one": "{{from}}–{{to}} из {{formatted}} агента",
+    "pageRange_few": "{{from}}–{{to}} из {{formatted}} агентов",
+    "pageRange_many": "{{from}}–{{to}} из {{formatted}} агентов",
+    "pageRange_other": "{{from}}–{{to}} из {{formatted}} агента"
   },
   "components": {
     "fileUpload": {

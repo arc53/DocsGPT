@@ -15,6 +15,34 @@ def _dump_jsonb(value: Any) -> str:
     return json.dumps(strip_null_bytes(value), cls=PGNativeJSONEncoder)
 
 
+# The trailing-window bounds shared by the summary and the events filter.
+MIN_WINDOW_DAYS = 1
+MAX_WINDOW_DAYS = 365
+
+# The event-list ``outcome`` filter, in the same buckets the summary totals
+# use: an action only counts when the control actually triggered, and a
+# control that could not run is ``not_evaluated`` whatever its action.
+_OUTCOME_CLAUSES = {
+    "block": "action = 'block' AND outcome = 'triggered'",
+    "redact": "action = 'redact' AND outcome = 'triggered'",
+    "flag": "action = 'flag' AND outcome = 'triggered'",
+    "not_evaluated": "outcome = 'not_evaluated'",
+}
+EVENT_OUTCOMES = tuple(_OUTCOME_CLAUSES)
+
+
+def clamp_window_days(days: int) -> int:
+    """Clamp a trailing window to the supported range.
+
+    Args:
+        days: Requested window length in days.
+
+    Returns:
+        ``days`` bounded to ``MIN_WINDOW_DAYS``..``MAX_WINDOW_DAYS``.
+    """
+    return max(MIN_WINDOW_DAYS, min(days, MAX_WINDOW_DAYS))
+
+
 class GuardrailEventsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -75,23 +103,61 @@ class GuardrailEventsRepository:
     )
 
     def list_for_agent(
-        self, agent_id: str, user_id: str, limit: int = 100, offset: int = 0
+        self,
+        agent_id: str,
+        user_id: str,
+        limit: int = 100,
+        offset: int = 0,
+        days: Optional[int] = None,
+        check: Optional[str] = None,
+        outcome: Optional[str] = None,
     ) -> List[dict]:
+        """One agent's decisions, newest first, optionally filtered.
+
+        Filters combine with AND and apply before ``limit``/``offset``, so
+        paging walks the filtered set.
+
+        Args:
+            agent_id: The agent's UUID.
+            user_id: Whose rows to read (the agent owner's view).
+            limit: Page size, capped to 1..500.
+            offset: Rows to skip, floored at 0.
+            days: Trailing window in days, clamped to 1..365; ``None`` for all time.
+            check: Exact ``check_name`` to keep; falsy for every check.
+            outcome: One of ``EVENT_OUTCOMES``; ``None`` or unknown for all.
+
+        Returns:
+            Rows projected to ``_PUBLIC_COLUMNS``.
+        """
+        params: Dict[str, Any] = {
+            "agent_id": agent_id,
+            "user_id": user_id,
+            "limit": max(1, min(limit, 500)),
+            "offset": max(0, offset),
+        }
+        # Built conditionally for the same reason as in ``summary_for_user``:
+        # an ``:x IS NULL`` guard leaves Postgres a bind with no inferable type.
+        clauses = ""
+        if days is not None:
+            clauses += " AND created_at >= NOW() - CAST(:days || ' days' AS interval)"
+            params["days"] = str(clamp_window_days(days))
+        if check:
+            clauses += " AND check_name = :check"
+            params["check"] = check
+        if outcome in _OUTCOME_CLAUSES:
+            # Fixed SQL from the whitelist above, never the caller's string.
+            clauses += f" AND {_OUTCOME_CLAUSES[outcome]}"
         result = self._conn.execute(
             text(
                 f"""
                 SELECT {self._PUBLIC_COLUMNS} FROM guardrail_events
                 WHERE agent_id = CAST(:agent_id AS uuid) AND user_id = :user_id
+                  {clauses}
                 ORDER BY created_at DESC
                 LIMIT :limit OFFSET :offset
                 """
             ),
-            {
-                "agent_id": agent_id,
-                "user_id": user_id,
-                "limit": max(1, min(limit, 500)),
-                "offset": max(0, offset),
-            },
+            params,
         )
         return [dict(row._mapping) for row in result.fetchall()]
 
@@ -106,7 +172,7 @@ class GuardrailEventsRepository:
         """
         params: Dict[str, Any] = {
             "user_id": user_id,
-            "days": str(max(1, min(days, 365))),
+            "days": str(clamp_window_days(days)),
         }
         # Built conditionally rather than with an ``IS NULL`` guard on the bind:
         # Postgres cannot infer a type for a NULL parameter that is only ever

@@ -206,6 +206,64 @@ describe('Teams page', () => {
     await flush();
   };
 
+  it('asks for members 25 at a time; no search or pager for a small team', async () => {
+    listMembers.mockResolvedValue({
+      members: [
+        {
+          user_id: 'u1',
+          email: 'a@x.io',
+          role: 'team_member',
+          source: 'manual',
+        },
+      ],
+      total: 1,
+    });
+    await render();
+    expect(listMembers).toHaveBeenCalledWith('t1', TOKEN, {
+      q: '',
+      page: 1,
+      pageSize: 25,
+    });
+    expect(
+      body().querySelector('input[placeholder="settings.teams.searchMembers"]'),
+    ).toBeNull();
+    expect(body().textContent).not.toContain('settings.teams.membersRange');
+  });
+
+  it('a large team gets member search and the numbered pager', async () => {
+    listMembers.mockImplementation(
+      async (_id: string, _t: unknown, opts: { page: number }) => ({
+        members: Array.from({ length: 25 }, (_, i) => ({
+          user_id: `u${(opts.page - 1) * 25 + i}`,
+          email: `m${(opts.page - 1) * 25 + i}@x.io`,
+          role: 'team_member',
+          source: 'manual',
+        })),
+        total: 312,
+      }),
+    );
+    await render();
+    expect(body().textContent).toContain('settings.teams.members · #312');
+    expect(
+      body().querySelector('input[placeholder="settings.teams.searchMembers"]'),
+    ).not.toBeNull();
+    const pagers = body().querySelectorAll('[data-slot="pagination-full"]');
+    expect(pagers[0].textContent).toContain('settings.teams.membersRange');
+    act(() =>
+      pagers[0]
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="pagination.goToPage(page=2)"]',
+        )!
+        .click(),
+    );
+    await flush();
+    expect(listMembers).toHaveBeenLastCalledWith('t1', TOKEN, {
+      q: '',
+      page: 2,
+      pageSize: 25,
+    });
+  });
+
   // A safety net: 48 per page, so a usual list never splits.
   it('pages past 48 shared resources; a filter starts on page 1', async () => {
     listGrants.mockResolvedValue({

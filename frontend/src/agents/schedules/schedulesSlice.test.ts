@@ -7,6 +7,9 @@ import {
 import type { Schedule, ScheduleRun } from '../types/schedule';
 import reducer, {
   applyEvent,
+  loadRunsForSchedule,
+  RUNS_PAGE_SIZE,
+  selectRunsEnd,
   selectRunsForSchedule,
   selectSchedulesForAgent,
   type SchedulesState,
@@ -276,5 +279,39 @@ describe('selectSchedulesForAgent', () => {
     expect(selectSchedulesForAgent(state, 'missing')).toBe(
       selectSchedulesForAgent(state, 'missing'),
     );
+  });
+});
+
+describe('loadRunsForSchedule paging', () => {
+  const wrap = (schedules: SchedulesState) => ({ schedules });
+  const fulfilled = (
+    runs: ScheduleRun[],
+    offset: number,
+    limit = RUNS_PAGE_SIZE,
+  ) => ({
+    type: loadRunsForSchedule.fulfilled.type,
+    payload: { scheduleId: 'sched-1', runs, offset, limit },
+  });
+  const runs = (from: number, n: number) =>
+    Array.from({ length: n }, (_, i) => sampleRun({ id: `run-${from + i}` }));
+
+  it('the first page replaces the list; a full page is not the end', () => {
+    const state = reducer(undefined, fulfilled(runs(0, RUNS_PAGE_SIZE), 0));
+    expect(state.runsBySchedule['sched-1']).toHaveLength(RUNS_PAGE_SIZE);
+    expect(selectRunsEnd(wrap(state), 'sched-1')).toBe(false);
+  });
+
+  it('an older page appends, skipping runs already listed', () => {
+    let state = reducer(undefined, fulfilled(runs(0, RUNS_PAGE_SIZE), 0));
+    // A run that arrived over SSE shifted the window by one.
+    state = reducer(
+      state,
+      fulfilled(runs(RUNS_PAGE_SIZE - 1, 10), RUNS_PAGE_SIZE),
+    );
+    const ids = state.runsBySchedule['sched-1'].map((r) => r.id);
+    expect(ids).toHaveLength(RUNS_PAGE_SIZE + 9);
+    expect(new Set(ids).size).toBe(ids.length);
+    // Shorter than a page: there are no older runs.
+    expect(selectRunsEnd(wrap(state), 'sched-1')).toBe(true);
   });
 });

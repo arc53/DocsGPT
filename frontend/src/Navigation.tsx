@@ -46,6 +46,9 @@ import ConfirmationModal from './modals/ConfirmationModal';
 import JWTModal from './modals/JWTModal';
 import SearchConversationsModal from './modals/SearchConversationsModal';
 import { ActiveState } from './models/misc';
+import { LoadMoreStatus } from './components/ui/load-more-status';
+import { Skeleton } from './components/ui/skeleton';
+import { useScrollSentinel } from './hooks/useLoadMore';
 import { getConversations } from './preferences/preferenceApi';
 import MobileTopBar from './navigation/MobileTopBar';
 import SectionNav from './navigation/SectionNav';
@@ -70,6 +73,9 @@ import {
   selectSharedAgents,
   selectToken,
   setAgents,
+  appendConversations,
+  receiveConversations,
+  removeConversation,
   setConversations,
   setModalStateDeleteConv,
   setSelectedAgent,
@@ -235,11 +241,37 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     }
   }
 
+  // Older chats load as the end of the list scrolls into view; the list
+  // scrolls with the sidebar column, so there is no inner scroller.
+  const [olderLoading, setOlderLoading] = useState(false);
+  const [olderError, setOlderError] = useState(false);
+  const loadOlderConversations = () => {
+    const list = conversations?.data ?? [];
+    const last = list[list.length - 1];
+    if (!last?.date || olderLoading) return;
+    setOlderLoading(true);
+    setOlderError(false);
+    getConversations(token, { date: last.date, id: last.id })
+      .then((result) => {
+        if (result.data) dispatch(appendConversations(result.data));
+        else setOlderError(true);
+      })
+      .finally(() => setOlderLoading(false));
+  };
+  const olderSentinelRef = useScrollSentinel(
+    loadOlderConversations,
+    !!conversations?.hasMore &&
+      !conversations.loading &&
+      !olderLoading &&
+      !olderError,
+    conversations?.data?.length,
+  );
+
   async function fetchConversations() {
     dispatch(setConversations({ ...conversations, loading: true }));
     return await getConversations(token)
       .then((fetchedConversations) => {
-        dispatch(setConversations(fetchedConversations));
+        dispatch(receiveConversations(fetchedConversations));
       })
       .catch((error) => {
         console.error('Failed to fetch conversations: ', error);
@@ -270,6 +302,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     conversationService
       .delete(id, {}, token)
       .then(() => {
+        // Out of the list at once, wherever it is, then refresh the top.
+        dispatch(removeConversation(id));
         fetchConversations();
         resetConversation();
       })
@@ -729,6 +763,33 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                         }
                       />
                     ))}
+                    {olderLoading
+                      ? Array.from({ length: 3 }, (_, i) => (
+                          <div
+                            key={i}
+                            aria-hidden="true"
+                            className="mx-4 mt-4 flex h-9 items-center px-3"
+                          >
+                            <Skeleton className="h-3 w-3/4" />
+                          </div>
+                        ))
+                      : null}
+                    {olderError ? (
+                      <LoadMoreStatus
+                        loading={false}
+                        error
+                        done={false}
+                        onRetry={() => {
+                          setOlderError(false);
+                          loadOlderConversations();
+                        }}
+                      />
+                    ) : null}
+                    <div
+                      ref={olderSentinelRef}
+                      aria-hidden="true"
+                      className="h-px"
+                    />
                   </div>
                 </div>
               ) : (

@@ -51,11 +51,16 @@ export async function getDocsWithPagination(
   }
 }
 
+/**
+ * The newest chats, or with `before` (the last chat loaded) the next older
+ * page; `CONVERSATIONS_PAGE_SIZE` per page.
+ */
 export async function getConversations(
   token: string | null,
+  before?: { date: string; id: string },
 ): Promise<GetConversationsResult> {
   try {
-    const response = await conversationService.getConversations(token);
+    const response = await conversationService.getConversations(token, before);
 
     if (!response.ok) {
       console.error('Error fetching conversations:', response.statusText);
@@ -75,6 +80,7 @@ export async function getConversations(
       id: item.id,
       name: item.name,
       agent_id: item.agent_id ?? null,
+      date: item.date,
     }));
     return { data: conversations, loading: false };
   } catch (error) {

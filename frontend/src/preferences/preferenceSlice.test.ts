@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Doc } from '../models/misc';
 import type { RootState } from '../store';
 import reducer, {
+  appendConversations,
   clearRoles,
+  CONVERSATIONS_PAGE_SIZE,
+  removeConversation,
+  setConversationsHead,
   prefListenerMiddleware,
   selectIsAdmin,
   selectRoles,
@@ -100,5 +104,56 @@ describe('setSourceDocs reconciler', () => {
     store.dispatch(setSourceDocs(null));
 
     expect(localStorage.getItem('DocsGPTRecentDocs')).not.toBeNull();
+  });
+});
+
+describe('conversation list paging', () => {
+  const conv = (i: number) => ({
+    id: `c${i}`,
+    name: `chat ${i}`,
+    agent_id: null,
+    // Newest first: a higher index is older.
+    date: new Date(Date.UTC(2026, 8, 30) - i * 60_000).toISOString(),
+  });
+  const range = (from: number, n: number) =>
+    Array.from({ length: n }, (_, i) => conv(from + i));
+  const ids = (state: ReturnType<typeof baseState>) =>
+    (state.conversations.data ?? []).map((c) => c.id);
+  const full = CONVERSATIONS_PAGE_SIZE;
+
+  it('a full newest page may have older chats; a short one is the whole list', () => {
+    let state = reducer(baseState(), setConversationsHead(range(0, full)));
+    expect(state.conversations.hasMore).toBe(true);
+    state = reducer(state, setConversationsHead(range(0, 3)));
+    expect(ids(state)).toEqual(['c0', 'c1', 'c2']);
+    expect(state.conversations.hasMore).toBe(false);
+  });
+
+  it('appends an older page without repeats, and a short one ends the list', () => {
+    let state = reducer(baseState(), setConversationsHead(range(0, full)));
+    state = reducer(state, appendConversations(range(full - 1, 10)));
+    expect(ids(state)).toHaveLength(full + 9);
+    expect(new Set(ids(state)).size).toBe(full + 9);
+    expect(state.conversations.hasMore).toBe(false);
+  });
+
+  // A new chat or a rename re-fetches the newest page; the older chats
+  // already scrolled to stay, so the list doesn't snap back to 30.
+  it('a refreshed newest page keeps the older chats already loaded', () => {
+    let state = reducer(baseState(), setConversationsHead(range(0, full)));
+    state = reducer(state, appendConversations(range(full, full)));
+    const fresh = [{ ...conv(-1), id: 'new' }, ...range(0, full - 1)];
+    state = reducer(state, setConversationsHead(fresh));
+    expect(ids(state)[0]).toBe('new');
+    expect(ids(state)).toHaveLength(2 * full + 1);
+    expect(state.conversations.hasMore).toBe(true);
+  });
+
+  it('removes a deleted chat wherever it is in the list', () => {
+    let state = reducer(baseState(), setConversationsHead(range(0, full)));
+    state = reducer(state, appendConversations(range(full, 5)));
+    state = reducer(state, removeConversation(`c${full + 2}`));
+    expect(ids(state)).not.toContain(`c${full + 2}`);
+    expect(ids(state)).toHaveLength(full + 4);
   });
 });

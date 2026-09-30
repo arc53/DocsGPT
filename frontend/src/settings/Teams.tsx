@@ -32,6 +32,7 @@ import {
   agentEditPathFor,
 } from '../agents/paths';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
+import { useDebouncedValue } from '../hooks';
 import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
@@ -160,6 +161,9 @@ const RESOURCE_TYPES: ReadonlyArray<ResourceType> = [
 ];
 
 // Filter pill order on the shared resources list.
+/** Members per page; search and the pager appear past one page. */
+const MEMBERS_PAGE_SIZE = 25;
+
 const FILTER_TYPES: ReadonlyArray<ResourceType> = [
   'agent',
   'source',
@@ -197,6 +201,14 @@ export default function Teams() {
 
   const [selected, setSelected] = useState<Team | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  // Members page from the server: search and 25 per page, shown only once
+  // a team has more than a page of members.
+  const [membersPage, setMembersPage] = useState(1);
+  const [memberQuery, setMemberQuery] = useState('');
+  const debouncedMemberQuery = useDebouncedValue(memberQuery.trim(), 300);
+  const [membersTotal, setMembersTotal] = useState(0);
+  const [membersAll, setMembersAll] = useState(0);
+  const [membersReload, setMembersReload] = useState(0);
   const [grants, setGrants] = useState<Grant[]>([]);
   // Tools aren't kept in Redux; lazily fetch the user's tool instances (keyed
   // by id) only when a team actually has a tool grant, so shared-tool rows can
@@ -312,6 +324,36 @@ export default function Teams() {
 
   // Friendly label for a grant's access level; reuses the share-modal keys
   // when present, otherwise renders the raw value.
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
+    teamsService
+      .listMembers(selected.id, token, {
+        q: debouncedMemberQuery,
+        page: membersPage,
+        pageSize: MEMBERS_PAGE_SIZE,
+      })
+      .then((m) => {
+        if (cancelled) return;
+        const rows: Member[] = m?.members ?? [];
+        const total: number = m?.total ?? rows.length;
+        // Removing the last member on the last page: step back a page.
+        if (rows.length === 0 && total > 0 && membersPage > 1) {
+          setMembersPage(Math.ceil(total / MEMBERS_PAGE_SIZE));
+          return;
+        }
+        setMembers(rows);
+        setMembersTotal(total);
+        if (!debouncedMemberQuery) setMembersAll(total);
+      })
+      .catch(() => {
+        if (!cancelled) setMembers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, token, debouncedMemberQuery, membersPage, membersReload]);
+
   const accessLevelLabel = (level: string): string => {
     const key = `settings.teams.share.accessLevel.${level}`;
     const label = t(key);
@@ -319,10 +361,20 @@ export default function Teams() {
   };
 
   const openTeam = async (team: Team) => {
+    // Re-opening the same team (after a role change or a removal) keeps the
+    // members page and search; another team starts on page 1.
+    const sameTeam = selected?.id === team.id;
     setSelected(team);
-    // Clear the previous team's data so the detail view doesn't flash stale
-    // members/grants while this team's fetch is in flight.
-    setMembers([]);
+    setMembersReload((n) => n + 1);
+    if (!sameTeam) {
+      // Clear the previous team's data so the detail view doesn't flash
+      // stale members/grants while this team's fetch is in flight.
+      setMembers([]);
+      setMembersPage(1);
+      setMemberQuery('');
+      setMembersTotal(0);
+      setMembersAll(0);
+    }
     setGrants([]);
     setTeamRole(null);
     setOpenResourceKey(null);
@@ -330,8 +382,6 @@ export default function Teams() {
     setResourceFilter('all');
     setResourceQuery('');
     try {
-      const m = await teamsService.listMembers(team.id, token);
-      setMembers(m?.members ?? []);
       const g = await teamsService.listGrants(team.id, undefined, token);
       setGrants(g?.grants ?? []);
       setTeamRole(g?.team_role ?? null);
@@ -967,23 +1017,46 @@ export default function Teams() {
             <SectionHeader
               as="h4"
               size="sm"
-              title={`${t('settings.teams.members')} · ${formatCount(members.length)}`}
+              title={`${t('settings.teams.members')} · ${formatCount(membersAll)}`}
               actions={
-                isAdmin && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={openAddMemberModal}
-                  >
-                    <Plus aria-hidden />
-                    {t('settings.teams.addMember')}
-                  </Button>
+                (membersAll > MEMBERS_PAGE_SIZE || isAdmin) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {membersAll > MEMBERS_PAGE_SIZE && (
+                      <SearchInput
+                        size="sm"
+                        className="w-full sm:w-56"
+                        placeholder={t('settings.teams.searchMembers')}
+                        value={memberQuery}
+                        onChange={(e) => {
+                          setMemberQuery(e.target.value);
+                          setMembersPage(1);
+                        }}
+                      />
+                    )}
+                    {isAdmin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={openAddMemberModal}
+                      >
+                        <Plus aria-hidden />
+                        {t('settings.teams.addMember')}
+                      </Button>
+                    )}
+                  </div>
                 )
               }
             />
             {members.length === 0 ? (
-              <EmptyState size="sm" title={t('settings.teams.noMembers')} />
+              <EmptyState
+                size="sm"
+                title={
+                  debouncedMemberQuery
+                    ? t('settings.teams.sharedList.noMatches')
+                    : t('settings.teams.noMembers')
+                }
+              />
             ) : (
               <ListRows>
                 {members.map((m) => (
@@ -1042,6 +1115,15 @@ export default function Teams() {
                 ))}
               </ListRows>
             )}
+            <Pagination
+              page={membersPage}
+              pageSize={MEMBERS_PAGE_SIZE}
+              total={membersTotal}
+              onPageChange={setMembersPage}
+              rangeLabel={(range) =>
+                t('settings.teams.membersRange', pageRangeParams(range))
+              }
+            />
           </div>
 
           <div className="border-border flex flex-col gap-3 border-t pt-6">

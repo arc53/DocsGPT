@@ -12,7 +12,7 @@ import {
   type SSEEvent,
 } from '../notifications/notificationsSlice';
 import { getConversations } from '../preferences/preferenceApi';
-import { setConversations } from '../preferences/preferenceSlice';
+import { receiveConversations } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
 import {
   clearAttachments,
@@ -245,7 +245,7 @@ export const fetchAnswer = createAsyncThunk<
               dispatch(conversationSlice.actions.setStatus('idle'));
               getConversations(state.preference.token)
                 .then((fetchedConversations) => {
-                  dispatch(setConversations(fetchedConversations));
+                  dispatch(receiveConversations(fetchedConversations));
                 })
                 .catch((error) => {
                   console.error('Failed to fetch conversations: ', error);
@@ -390,7 +390,7 @@ export const fetchAnswer = createAsyncThunk<
               }
               getConversations(state.preference.token)
                 .then((fetchedConversations) => {
-                  dispatch(setConversations(fetchedConversations));
+                  dispatch(receiveConversations(fetchedConversations));
                 })
                 .catch((error) => {
                   console.error('Failed to fetch conversations: ', error);
@@ -592,7 +592,7 @@ export const fetchAnswer = createAsyncThunk<
         );
         getConversations(state.preference.token)
           .then((fetchedConversations) => {
-            dispatch(setConversations(fetchedConversations));
+            dispatch(receiveConversations(fetchedConversations));
           })
           .catch((error) => {
             console.error('Failed to fetch conversations: ', error);
@@ -724,7 +724,7 @@ export const submitToolActions = createAsyncThunk<
         dispatch(conversationSlice.actions.setStatus('idle'));
         getConversations(state.preference.token)
           .then((fetchedConversations) => {
-            dispatch(setConversations(fetchedConversations));
+            dispatch(receiveConversations(fetchedConversations));
           })
           .catch((error) => {
             console.error('Failed to fetch conversations: ', error);
@@ -1239,7 +1239,7 @@ conversationListenerMiddleware.startListening({
     // Refresh sidebar; server reorders by updated_at which just bumped.
     try {
       const fetched = await getConversations(token);
-      listenerApi.dispatch(setConversations(fetched));
+      listenerApi.dispatch(receiveConversations(fetched));
     } catch (error) {
       console.error(
         'schedule.message.appended: conversations refresh failed',

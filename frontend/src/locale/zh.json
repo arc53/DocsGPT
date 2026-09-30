@@ -974,7 +974,10 @@
         "capabilitiesHint": "来自所有者的访问设置。此处只读。"
       },
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
-      "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队"
+      "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
+      "searchMembers": "搜索成员…",
+      "membersRange_one": "第 {{from}}–{{to}} 名，共 {{formatted}} 名成员",
+      "membersRange_other": "第 {{from}}–{{to}} 名，共 {{formatted}} 名成员"
     },
     "tools": {
       "label": "工具",
@@ -1993,7 +1996,10 @@
     "pageOf": "第 {{currentPage}} 页，共 {{totalPages}} 页",
     "goToPage": "第 {{page}} 页",
     "previousPage": "上一页",
-    "nextPage": "下一页"
+    "nextPage": "下一页",
+    "loadingOlder": "正在加载更早的内容…",
+    "noOlder": "没有更早的内容",
+    "olderFailed": "无法加载更早的内容。"
   },
   "conversation": {
     "copy": "复制",
@@ -2584,7 +2590,8 @@
         "when": "时间",
         "details": "详情",
         "empty": "此计划尚无运行记录。",
-        "duration": "时长"
+        "duration": "时长",
+        "loadFailed": "无法加载运行记录。"
       },
       "actions": "计划操作",
       "cancelTask": "取消任务",
@@ -2659,7 +2666,6 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
@@ -2874,7 +2880,11 @@
       "workflowDescription": "设计包含不同模型、条件逻辑和状态管理的复杂多步骤工作流"
     },
     "view": "查看",
-    "deleteFailed": "无法删除该代理，请重试。"
+    "deleteFailed": "无法删除该代理，请重试。",
+    "showAll_one": "查看全部 {{formatted}} 个",
+    "showAll_other": "查看全部 {{formatted}} 个",
+    "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个代理",
+    "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个代理"
   },
   "components": {
     "fileUpload": {

@@ -981,7 +981,10 @@
         "capabilitiesHint": "From the owner’s access settings. Read-only here."
       },
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} team",
-      "pageRange_other": "{{from}}–{{to}} of {{formatted}} teams"
+      "pageRange_other": "{{from}}–{{to}} of {{formatted}} teams",
+      "searchMembers": "Search members…",
+      "membersRange_one": "{{from}}–{{to}} of {{formatted}} member",
+      "membersRange_other": "{{from}}–{{to}} of {{formatted}} members"
     },
     "tools": {
       "label": "Tools",
@@ -2013,7 +2016,10 @@
     "pageOf": "Page {{currentPage}} of {{totalPages}}",
     "goToPage": "Page {{page}}",
     "previousPage": "Previous page",
-    "nextPage": "Next page"
+    "nextPage": "Next page",
+    "loadingOlder": "Loading older…",
+    "noOlder": "Nothing older",
+    "olderFailed": "Couldn't load older items."
   },
   "conversation": {
     "copy": "Copy",
@@ -2622,7 +2628,8 @@
         "when": "When",
         "details": "Details",
         "empty": "No runs recorded for this schedule yet.",
-        "duration": "Duration"
+        "duration": "Duration",
+        "loadFailed": "Couldn't load the runs."
       },
       "actions": "Schedule actions",
       "cancelTask": "Cancel task",
@@ -2698,7 +2705,6 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
@@ -2924,7 +2930,11 @@
       "workflowDescription": "Design complex multi-step workflows with different models, conditional logic, and state management"
     },
     "view": "View",
-    "deleteFailed": "Could not delete the agent. Please try again."
+    "deleteFailed": "Could not delete the agent. Please try again.",
+    "showAll_one": "Show all {{formatted}}",
+    "showAll_other": "Show all {{formatted}}",
+    "pageRange_one": "{{from}}–{{to}} of {{formatted}} agent",
+    "pageRange_other": "{{from}}–{{to}} of {{formatted}} agents"
   },
   "components": {
     "fileUpload": {

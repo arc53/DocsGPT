@@ -974,7 +974,10 @@
         "capabilitiesHint": "所有者のアクセス設定に基づきます。ここでは読み取り専用です。"
       },
       "pageRange_one": "チーム {{formatted}}件中 {{from}}–{{to}}件",
-      "pageRange_other": "チーム {{formatted}}件中 {{from}}–{{to}}件"
+      "pageRange_other": "チーム {{formatted}}件中 {{from}}–{{to}}件",
+      "searchMembers": "メンバーを検索…",
+      "membersRange_one": "メンバー {{formatted}}人中 {{from}}–{{to}}人",
+      "membersRange_other": "メンバー {{formatted}}人中 {{from}}–{{to}}人"
     },
     "tools": {
       "label": "ツール",
@@ -1995,7 +1998,10 @@
     "pageOf": "ページ {{currentPage}} / {{totalPages}}",
     "goToPage": "{{page}}ページ目",
     "previousPage": "前のページ",
-    "nextPage": "次のページ"
+    "nextPage": "次のページ",
+    "loadingOlder": "以前の項目を読み込み中…",
+    "noOlder": "これより古い項目はありません",
+    "olderFailed": "以前の項目を読み込めませんでした。"
   },
   "conversation": {
     "copy": "コピー",
@@ -2586,7 +2592,8 @@
         "when": "日時",
         "details": "詳細",
         "empty": "このスケジュールの実行記録はまだありません。",
-        "duration": "所要時間"
+        "duration": "所要時間",
+        "loadFailed": "実行履歴を読み込めませんでした。"
       },
       "actions": "スケジュールの操作",
       "cancelTask": "タスクをキャンセル",
@@ -2661,7 +2668,6 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
@@ -2876,7 +2882,11 @@
       "workflowDescription": "複数のモデル、条件ロジック、状態管理を使った複雑なマルチステップのワークフローを設計します"
     },
     "view": "表示",
-    "deleteFailed": "エージェントを削除できませんでした。もう一度お試しください。"
+    "deleteFailed": "エージェントを削除できませんでした。もう一度お試しください。",
+    "showAll_one": "すべて表示（{{formatted}}）",
+    "showAll_other": "すべて表示（{{formatted}}）",
+    "pageRange_one": "エージェント {{formatted}}件中 {{from}}–{{to}}件",
+    "pageRange_other": "エージェント {{formatted}}件中 {{from}}–{{to}}件"
   },
   "components": {
     "fileUpload": {

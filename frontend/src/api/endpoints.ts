@@ -14,8 +14,22 @@ const endpoints = {
     AGENT: (id: string) => `/api/get_agent?id=${id}`,
     AGENTS: '/api/get_agents',
     GUARDRAIL_CATALOG: '/api/guardrails/catalog',
-    GUARDRAIL_EVENTS: (agentId: string, limit = 100, offset = 0) =>
-      `/api/guardrails/events?agent_id=${agentId}&limit=${limit}&offset=${offset}`,
+    GUARDRAIL_EVENTS: (
+      agentId: string,
+      limit = 100,
+      offset = 0,
+      filters: { days?: number; check?: string; outcome?: string } = {},
+    ) => {
+      const params = new URLSearchParams({
+        agent_id: agentId,
+        limit: String(limit),
+        offset: String(offset),
+      });
+      if (filters.days) params.set('days', String(filters.days));
+      if (filters.check) params.set('check', filters.check);
+      if (filters.outcome) params.set('outcome', filters.outcome);
+      return `/api/guardrails/events?${params.toString()}`;
+    },
     GUARDRAIL_SUMMARY: (agentId?: string, days = 30) =>
       `/api/guardrails/summary?days=${days}` +
       (agentId ? `&agent_id=${agentId}` : ''),
@@ -200,7 +214,8 @@ const endpoints = {
     DEVICES: '/api/devices',
     DEVICE: (id: string) => `/api/devices/${id}`,
     DEVICE_AUTO_APPROVE: (id: string) => `/api/devices/${id}/auto-approve`,
-    DEVICE_AUDIT: (id: string) => `/api/devices/${id}/audit`,
+    DEVICE_AUDIT: (id: string, limit = 100, offset = 0) =>
+      `/api/devices/${id}/audit?limit=${limit}&offset=${offset}`,
     DEVICE_PAIRINGS: '/api/devices/pairings',
     DEVICE_PAIRING: (deviceCode: string) =>
       `/api/devices/pairings/${deviceCode}`,

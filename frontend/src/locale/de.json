@@ -975,7 +975,10 @@
         "capabilitiesHint": "Aus den Zugriffseinstellungen des Eigentümers. Hier nur lesend."
       },
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Team",
-      "pageRange_other": "{{from}}–{{to}} von {{formatted}} Teams"
+      "pageRange_other": "{{from}}–{{to}} von {{formatted}} Teams",
+      "searchMembers": "Mitglieder suchen…",
+      "membersRange_one": "{{from}}–{{to}} von {{formatted}} Mitglied",
+      "membersRange_other": "{{from}}–{{to}} von {{formatted}} Mitgliedern"
     },
     "tools": {
       "label": "Werkzeuge",
@@ -2007,7 +2010,10 @@
     "pageOf": "Seite {{currentPage}} von {{totalPages}}",
     "goToPage": "Seite {{page}}",
     "previousPage": "Vorherige Seite",
-    "nextPage": "Nächste Seite"
+    "nextPage": "Nächste Seite",
+    "loadingOlder": "Ältere werden geladen…",
+    "noOlder": "Nichts Älteres",
+    "olderFailed": "Ältere Einträge konnten nicht geladen werden."
   },
   "conversation": {
     "copy": "Kopieren",
@@ -2602,7 +2608,8 @@
         "when": "Wann",
         "details": "Details",
         "empty": "Für diesen Zeitplan wurden noch keine Läufe aufgezeichnet.",
-        "duration": "Dauer"
+        "duration": "Dauer",
+        "loadFailed": "Die Ausführungen konnten nicht geladen werden."
       },
       "actions": "Aktionen für den Zeitplan",
       "cancelTask": "Aufgabe abbrechen",
@@ -2677,7 +2684,6 @@
       "detail": "Detail",
       "empty": "No guardrail has fired on this agent yet.",
       "emptyForFilter": "No decisions match this filter.",
-      "truncated": "Showing the most recent {{count}} decisions.",
       "loadError": "Could not load guardrail activity"
     },
     "workflow": {
@@ -2892,7 +2898,11 @@
       "workflowDescription": "Entwirf komplexe mehrstufige Workflows mit verschiedenen Modellen, bedingter Logik und Zustandsverwaltung"
     },
     "view": "Ansehen",
-    "deleteFailed": "Der Agent konnte nicht gelöscht werden. Bitte versuche es erneut."
+    "deleteFailed": "Der Agent konnte nicht gelöscht werden. Bitte versuche es erneut.",
+    "showAll_one": "Alle {{formatted}} anzeigen",
+    "showAll_other": "Alle {{formatted}} anzeigen",
+    "pageRange_one": "{{from}}–{{to}} von {{formatted}} Agent",
+    "pageRange_other": "{{from}}–{{to}} von {{formatted}} Agenten"
   },
   "components": {
     "fileUpload": {

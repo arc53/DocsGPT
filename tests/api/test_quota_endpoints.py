@@ -37,6 +37,7 @@ def db(pg_conn):
             "docsgpt.api.admin.quotas.db_readonly",
             "docsgpt.api.admin.quotas.db_session",
             "docsgpt.quotas.service.db_readonly",
+            "docsgpt.api.user.teams.routes.db_readonly",
         ):
             stack.enter_context(patch(target, _yield))
         yield pg_conn
@@ -58,11 +59,11 @@ def _body(resp):
     return json.loads(resp.data)
 
 
-def _team(conn, slug="q-team", member=None):
+def _team(conn, slug="q-team", member=None, name=None):
     team_id = str(
         conn.execute(
             text("INSERT INTO teams (name, slug, owner_id) VALUES (:n, :s, 'o') RETURNING id"),
-            {"n": slug, "s": slug},
+            {"n": name or slug, "s": slug},
         ).scalar()
     )
     if member:
@@ -245,6 +246,165 @@ class TestUserPolicy:
             text("SELECT user_id, metadata FROM auth_events WHERE event = 'quota_policy_set'")
         ).one()
         assert row[0] == "u1" and row[1]["by"] == "admin1" and row[1]["scope"] == "user"
+
+
+def _seed_listing(conn):
+    """Three teams with allowances (one per two buckets) and three user overrides."""
+    repo = QuotaPoliciesRepository(conn)
+    teams = {
+        slug: _team(conn, slug, name=name)
+        for slug, name in (("q-eng", "Engineering"), ("q-ops", "Operations"), ("q-sales", "Sales Team"))
+    }
+    for team_id in teams.values():
+        repo.upsert(scope="team", subject_id=team_id, token_limit=100)
+    repo.upsert(scope="team", subject_id=teams["q-eng"], bucket="agent", token_limit=50)
+    users = UsersRepository(conn)
+    users.upsert("alice-sub", email="Alice@Example.com")
+    users.upsert("bob-sub", email="bob@corp.io")
+    users.upsert("carol-sub")
+    for sub in ("alice-sub", "bob-sub", "carol-sub"):
+        repo.upsert(scope="user", subject_id=sub, token_limit=10)
+    return teams
+
+
+class TestQuotaListing:
+    def test_defaults_return_every_row_plus_totals(self, client, db):
+        _seed_listing(db)
+        with _admin():
+            body = _body(client.get("/api/admin/quotas"))
+        assert set(body) == {
+            "success", "period", "period_start", "resets_at", "instance", "teams", "users",
+            "unpriced_models", "teams_total", "users_total",
+        }
+        assert (len(body["teams"]), body["teams_total"]) == (4, 4)
+        assert (len(body["users"]), body["users_total"]) == (3, 3)
+        assert [u["subject_id"] for u in body["users"]] == ["alice-sub", "bob-sub", "carol-sub"]
+        assert "email" not in body["users"][0]
+
+    def test_teams_q_matches_name_or_slug_case_insensitively(self, client, db):
+        _seed_listing(db)
+        with _admin():
+            by_name = _body(client.get("/api/admin/quotas?teams_q=sales team"))
+            by_slug = _body(client.get("/api/admin/quotas?teams_q=Q-ENG"))
+            none = _body(client.get("/api/admin/quotas?teams_q=%25"))
+        assert [t["team_slug"] for t in by_name["teams"]] == ["q-sales"]
+        assert by_name["teams_total"] == 1
+        assert {t["team_slug"] for t in by_slug["teams"]} == {"q-eng"}
+        assert (by_slug["teams_total"], [t["bucket"] for t in by_slug["teams"]]) == (2, ["all", "agent"])
+        # A literal ``%`` is not a wildcard; users are left unfiltered.
+        assert (none["teams"], none["teams_total"], none["users_total"]) == ([], 0, 3)
+
+    def test_users_q_matches_subject_or_email(self, client, db):
+        _seed_listing(db)
+        with _admin():
+            by_email = _body(client.get("/api/admin/quotas?users_q=example.COM"))
+            by_sub = _body(client.get("/api/admin/quotas?users_q=carol"))
+            both = _body(client.get("/api/admin/quotas?users_q=-sub"))
+        assert [u["subject_id"] for u in by_email["users"]] == ["alice-sub"]
+        assert (by_email["users_total"], by_email["teams_total"]) == (1, 4)
+        assert [u["subject_id"] for u in by_sub["users"]] == ["carol-sub"]
+        assert both["users_total"] == 3
+
+    def test_pages_only_the_list_whose_page_is_given(self, client, db):
+        _seed_listing(db)
+        with _admin():
+            first = _body(client.get("/api/admin/quotas?users_page=1&page_size=2"))
+            second = _body(client.get("/api/admin/quotas?users_page=2&page_size=2"))
+            beyond = _body(client.get("/api/admin/quotas?users_page=9&page_size=2"))
+            teams = _body(client.get("/api/admin/quotas?teams_page=2&page_size=3"))
+        assert [u["subject_id"] for u in first["users"]] == ["alice-sub", "bob-sub"]
+        assert [u["subject_id"] for u in second["users"]] == ["carol-sub"]
+        assert (beyond["users"], beyond["users_total"]) == ([], 3)
+        assert (first["users_total"], len(first["teams"]), first["teams_total"]) == (3, 4, 4)
+        assert (len(teams["teams"]), teams["teams_total"], len(teams["users"])) == (1, 4, 3)
+
+    def test_paging_is_deterministic_and_combines_with_the_filter(self, client, db):
+        _seed_listing(db)
+        with _admin():
+            everything = _body(client.get("/api/admin/quotas"))["teams"]
+            pages = [
+                _body(client.get(f"/api/admin/quotas?teams_page={n}&page_size=1"))["teams"] for n in (1, 2, 3, 4)
+            ]
+            filtered = _body(client.get("/api/admin/quotas?teams_q=q-&teams_page=2&page_size=2"))
+        assert [p[0] for p in pages] == everything
+        assert (filtered["teams"], filtered["teams_total"]) == (everything[2:], 4)
+
+    @pytest.mark.parametrize(
+        "query, expected",
+        [
+            ("users_page=1&page_size=0", 1),
+            ("users_page=1&page_size=500", 3),
+            ("users_page=0&page_size=2", 2),
+            ("users_page=abc&page_size=1", 1),
+            ("users_page=1&page_size=abc", 3),
+        ],
+    )
+    def test_page_params_are_clamped(self, client, db, query, expected):
+        _seed_listing(db)
+        with _admin():
+            body = _body(client.get(f"/api/admin/quotas?{query}"))
+        assert (len(body["users"]), body["users_total"]) == (expected, 3)
+
+
+class TestAdminTeamsSearch:
+    def test_no_params_lists_every_team(self, client, db):
+        teams = _seed_listing(db)
+        bare = _team(db, "q-bare", name="Bare")
+        with _admin():
+            body = _body(client.get("/api/admin/teams"))
+        assert {t["id"] for t in body["teams"]} == {*teams.values(), bare}
+
+    def test_without_quota_matches_the_all_bucket_rule(self, client, db):
+        teams = _seed_listing(db)
+        bare = _team(db, "q-bare", name="Bare")
+        agent_only = _team(db, "q-agent", name="Agent Only")
+        disabled = _team(db, "q-off", name="Disabled")
+        repo = QuotaPoliciesRepository(db)
+        # Only an ``all``-bucket row covers a team; a disabled one still does.
+        repo.upsert(scope="team", subject_id=agent_only, bucket="agent", token_limit=5)
+        repo.upsert(scope="team", subject_id=disabled, token_limit=5, enabled=False)
+        # A user override whose subject happens to equal a team id is not a team allowance.
+        repo.upsert(scope="user", subject_id=bare, token_limit=5)
+        with _admin():
+            body = _body(client.get("/api/admin/teams?without_quota=1"))
+        ids = [t["id"] for t in body["teams"]]
+        assert set(ids) == {bare, agent_only}
+        assert not set(ids) & {*teams.values(), disabled}
+        assert body["teams"][0]["member_count"] == 0
+
+    def test_q_filters_name_or_slug(self, client, db):
+        _seed_listing(db)
+        _team(db, "q-bare", name="Bare Metal")
+        with _admin():
+            by_name = _body(client.get("/api/admin/teams?q=METAL"))
+            by_slug = _body(client.get("/api/admin/teams?q=q-sa"))
+            combined = _body(client.get("/api/admin/teams?q=q-&without_quota=1"))
+            literal = _body(client.get("/api/admin/teams?q=_"))
+        assert [t["slug"] for t in by_name["teams"]] == ["q-bare"]
+        assert [t["slug"] for t in by_slug["teams"]] == ["q-sales"]
+        assert [t["slug"] for t in combined["teams"]] == ["q-bare"]
+        assert literal["teams"] == []
+
+    @pytest.mark.parametrize("limit, expected", [("2", 2), ("0", 1), ("1000", 5), ("abc", 5), (None, 5)])
+    def test_limit_is_clamped(self, client, db, limit, expected):
+        _seed_listing(db)
+        _team(db, "q-bare")
+        _team(db, "q-more")
+        query = "q=q-" + (f"&limit={limit}" if limit is not None else "")
+        with _admin():
+            body = _body(client.get(f"/api/admin/teams?{query}"))
+        assert len(body["teams"]) == expected
+
+    def test_default_limit_is_twenty(self, client, db):
+        for n in range(25):
+            _team(db, f"q-many-{n:02d}")
+        with _admin():
+            assert len(_body(client.get("/api/admin/teams?without_quota=1"))["teams"]) == 20
+            assert len(_body(client.get("/api/admin/teams"))["teams"]) == 25
+
+    def test_search_stays_admin_only(self, client, db):
+        with _as("u1"):
+            assert client.get("/api/admin/teams?without_quota=1").status_code == 403
 
 
 class TestUnpricedModels:

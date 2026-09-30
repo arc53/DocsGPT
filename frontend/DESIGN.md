@@ -998,14 +998,32 @@ page 1, and a page the server clamped is followed. Don't hand-roll a
 Previous / Next row.
 
 Pick the pattern by the list: a grid or table you browse or search pages;
-a newest-first feed (logs, run history, audit trails, the conversations
-sidebar) loads older items as it scrolls, never page numbers; a usually short
+a newest-first feed (logs, run history, guardrail decisions, a device's
+audit, the conversations sidebar) loads older items as it scrolls, never
+page numbers (see Feeds below); a usually short
 list that is loaded in full (tools, custom models, teams, a team's shared
 resources) pages client-side at `SHORT_LIST_PAGE_SIZE` (48, no size select,
 `useClientPage`), a safety net that never splits a normal list; a fixed
 catalog (connectors) and a table of a few rows (access tokens) have no pager;
-a sectioned gallery caps each section and links "Show all". Sources opens at
-24 per page on desktop and 12 below it.
+a sectioned gallery caps each section at two full rows (`useGridColumns`)
+and links "Show all N" beside the title to the section's own page, which
+shows everything at 48 per page. Sources opens at 24 per page on desktop and
+12 below it.
+
+**Feeds.** `useLoadMore` (items in the component) or `useScrollSentinel`
+(items in Redux, where SSE merges new rows) watches a 1px sentinel after the
+last item, so loading follows whatever already scrolls and never adds a
+scroller: in a Modal, Sheet or SidePanel the body is still the one scroller,
+and the sidebar's chats load inside the sidebar column. Only a feed on a page
+gets its own cap: an inner `scrollbar-overlay max-h-[45svh] overflow-y-auto`
+div inside the frame (the run log's schedule card, the guardrail table's
+frame, the audit accordion), never on the Card. Under it, outside the
+scroller, `LoadMoreStatus` (`divider` under a flush table) says "Loading
+older…", "Nothing older" or offers Retry; it keeps one row's height and so
+keeps the scrollbar clear of the rounded corner. A feed shorter than one page
+draws no strip. The end is a page shorter than requested, so no count is
+needed. A first load shows `LoadingState`, and a failed first load a
+destructive state with Retry, never the empty message.
 
 Counts and numbers in the UI format on the app language: `formatCount` (`utils/dateTimeUtils`, `Intl` on `intlLocale()`), never
 `toLocaleString()` or a raw `{{count}}`; plural keys get the number as `count`

@@ -5,12 +5,12 @@ import { useSelector } from 'react-redux';
 
 import devicesService, {
   ApprovalMode,
-  AuditEntry,
   Device,
 } from '../api/services/devicesService';
 import CopyButton from '../components/CopyButton';
 import ToolIcon from '../components/ToolIcon';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
+import DeviceAuditList from './DeviceAuditList';
 import {
   Accordion,
   AccordionContent,
@@ -93,9 +93,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const [audit, setAudit] = React.useState<AuditEntry[] | null>(null);
-  const [auditLoading, setAuditLoading] = React.useState(false);
-
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
 
   const applyDevice = React.useCallback((d: Device) => {
@@ -121,27 +118,6 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   React.useEffect(() => {
     loadDevice();
   }, [loadDevice]);
-
-  const loadAudit = React.useCallback(() => {
-    if (!deviceId) return;
-    setAuditLoading(true);
-    devicesService
-      .listAudit(deviceId, token)
-      .then((res) => setAudit(res.entries || []))
-      .catch((err) => {
-        console.error('load audit failed', err);
-        setAudit([]);
-      })
-      .finally(() => setAuditLoading(false));
-  }, [deviceId, token]);
-
-  const handleAuditToggle = (value: string) => {
-    // Radix Accordion (type="single") passes the open item id, or empty
-    // when closed. Lazy-fetch on first open.
-    if (value === 'audit' && audit === null) {
-      loadAudit();
-    }
-  };
 
   const hasUnsavedChanges =
     !!device &&
@@ -361,56 +337,13 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           title={t('settings.devices.auditTitle')}
         />
         <div className="border-border w-full rounded-xl border">
-          <Accordion
-            type="single"
-            collapsible
-            onValueChange={handleAuditToggle}
-          >
+          <Accordion type="single" collapsible>
             <AccordionItem value="audit">
               <AccordionTrigger>
                 {t('settings.devices.auditTitle')}
-                {audit !== null ? ` (${audit.length})` : ''}
               </AccordionTrigger>
               <AccordionContent>
-                {auditLoading ? (
-                  <p className="text-muted-foreground py-2 text-sm">
-                    {t('settings.devices.auditLoading')}
-                  </p>
-                ) : !audit || audit.length === 0 ? (
-                  <p className="text-muted-foreground py-2 text-sm">
-                    {t('settings.devices.auditEmpty')}
-                  </p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {audit.map((entry) => (
-                      <li
-                        key={entry.id}
-                        className="bg-muted flex flex-col gap-1 rounded-md px-3 py-2 text-xs"
-                      >
-                        <code className="text-foreground block font-mono wrap-anywhere whitespace-pre-wrap">
-                          {entry.command}
-                        </code>
-                        <div className="text-muted-foreground flex flex-wrap gap-3">
-                          <span>
-                            {t('settings.devices.auditDecision')}:{' '}
-                            {entry.decision}
-                          </span>
-                          <span>
-                            {t('settings.devices.auditExit')}:{' '}
-                            {entry.exit_code ?? '-'}
-                          </span>
-                          <span>
-                            {t('settings.devices.auditDuration')}:{' '}
-                            {t('settings.devices.auditDurationValue', {
-                              value: entry.duration_ms ?? '-',
-                            })}
-                          </span>
-                          <span>{formatTimestamp(entry.created_at)}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <DeviceAuditList deviceId={deviceId} token={token} />
               </AccordionContent>
             </AccordionItem>
           </Accordion>
