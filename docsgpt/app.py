@@ -98,6 +98,12 @@ from docsgpt.agents.default_tools import (  # noqa: E402
 
 validate_default_chat_tools()
 
+from docsgpt.guardrails.guardrail_creator import warn_unknown_checks_enabled  # noqa: E402
+
+# An allowlist entry that names no check (a typo, or "none" meant as "off") is
+# ignored, which can leave every check disabled; say so rather than stay silent.
+warn_unknown_checks_enabled()
+
 from docsgpt.core.model_registry import check_model_setup  # noqa: E402
 
 # The API and the Celery worker both import this module, so this runs at the
