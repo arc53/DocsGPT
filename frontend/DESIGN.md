@@ -1307,8 +1307,8 @@ tiles or a wide editor: Add tool, Test retrieval, the prompt editor), `full`.
 Never add a width or height class. The dialog caps itself at `85dvh` and
 its body is the one scroller, so the header and footer stay put; don't cap
 the body with `contentClassName`. `contentClassName="overflow-visible"`
-(`cn` drops the body's `overflow-y-auto` for it) is only for a body whose popover must escape it (the
-prompt editor, Share conversation, Move to folder). `className` is placement
+(`cn` drops the body's `overflow-y-auto` for it) is only for a body whose popover must escape it (Share
+conversation, Move to folder). A Select's list is portaled and needs no escape. `className` is placement
 only.
 
 A modal's body is `flex flex-col gap-5` when it stacks floating fields,
