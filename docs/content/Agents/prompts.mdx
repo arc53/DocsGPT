@@ -325,6 +325,17 @@ You are a technical support assistant.
 {{ source.content }}
 ```
 
+### 5. **Keep Answers to Your Sources**
+
+By default the model may fill gaps from its own knowledge. To make it answer only from the retrieved documents, say so in the prompt and tell it what to do when they don't cover the question. The built-in **strict** prompt does this.
+
+```jinja
+Answer only from the documents below. If they don't contain the answer,
+reply "I don't know based on the available documentation."
+
+{{ source.content }}
+```
+
 ---
 
 ## Advanced Features
