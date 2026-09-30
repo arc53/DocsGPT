@@ -66,11 +66,10 @@ Now, you can embed the widget within your React component's JSX:
 To use the DocsGPT Widget directly in HTML, include the widget script from a CDN in your HTML file:
 
 ```html filename="html"
-<script
-  src="https://unpkg.com/docsgpt/dist/legacy/main.js"
-  type="module"
-></script>
+<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
 ```
+
+The bundle defines `renderDocsGPTWidget` (and `renderSearchBar`) on `window`. `0.8.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version. `dist/modern/browser.js` is a smaller build for modern browsers only.
 
 ### Usage
 
@@ -80,12 +79,13 @@ In your HTML `<body>`, add a `<div>` element where you want to render the widget
 <div id="app"></div>
 ```
 
-Then, in a `<script type="module">` block, use the `renderDocsGPTWidget` function to initialize the widget, passing the `id` of your `<div>` and a configuration object. To link the widget to your DocsGPT API and specific documents, pass the relevant parameters within the configuration object of `renderDocsGPTWidget`.
+Then, in a `<script>` block after the widget script, use the `renderDocsGPTWidget` function to initialize the widget, passing the `id` of your `<div>` and a configuration object. To link the widget to your DocsGPT API and specific documents, pass the relevant parameters within the configuration object of `renderDocsGPTWidget`.
 
 ```html filename="html"
 <!DOCTYPE html>
 <div id="app"></div>
-<script type="module">
+<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+<script>
   window.onload = function() {
     renderDocsGPTWidget('app', {
       apiHost: 'https://gptcloud.arc53.com', // self-hosted: your API URL, e.g. http://localhost:7091
@@ -125,11 +125,16 @@ export default function MyApp({ Component, pageProps }) {
     return (
         <>
             <Component {...pageProps} />
-            <DocsGPTWidget selectDocs="local/docsgpt-sep.zip/"/>
+            <DocsGPTWidget
+                apiHost="https://gptcloud.arc53.com"
+                apiKey="your-agent-api-key"
+            />
         </>
     )
 }
 ```
+
+`pages/_app.js` is the Next.js Pages Router pattern. With the App Router, render the widget from a client component (`'use client'`) included in your root layout.
   </Tabs.Tab>
 </Tabs>
 
@@ -141,18 +146,21 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 
 | **Prop**          | **Type**         | **Default Value**                                           | **Description**                                                                                     |
 |--------------------|------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
-| **`apiHost`**      | `string`         | `"https://gptcloud.arc53.com"`                                     | **Required.** The URL of your DocsGPT API backend. This endpoint handles vector search and chatbot queries. |
-| **`apiKey`**       | `string`         | `"your-api-key"`                                            | API key for authentication with your DocsGPT API. Leave empty if no authentication is required.       |
+| **`apiHost`**      | `string`         | `"https://gptcloud.arc53.com"`                              | The URL of your DocsGPT API backend (DocsGPT Cloud by default). Self-hosted: your API URL, e.g. `http://localhost:7091`. |
+| **`apiKey`**       | `string`         | a DocsGPT demo agent's key                                  | The API key of your published agent (see [Getting API key](/Extensions/api-key-guide)). If you omit it, the widget answers from a public DocsGPT demo agent, not your documents. Always set it. |
 | **`avatar`**       | `string`         | built-in placeholder                                        | URL for the avatar image shown in the chatbot header. Defaults to a neutral silhouette drawn inline, so no image is fetched unless you supply one. |
 | **`title`**        | `string`         | `"Get AI assistance"`                                       | Title text shown in the chatbot header.                                                              |
 | **`description`**  | `string`         | `"DocsGPT's AI Chatbot is here to help"`                     | Sub-title or descriptive text displayed below the title in the chatbot header.                       |
 | **`heroTitle`**    | `string`         | `"Welcome to DocsGPT !"`                                    | Welcome message displayed when the chatbot is initially opened.                                     |
 | **`heroDescription`** | `string`     | `"This chatbot is built with DocsGPT and utilises GenAI, please review important information using sources."` | Introductory text providing context or disclaimers about the chatbot.                                 |
-| **`theme`**        | `"dark" \| "light"` | `"dark"`                                                  | Color theme of the widget interface. Options: `"dark"` or `"light"`. Defaults to `"dark"`.         |
-| **`buttonIcon`**   | `string`         | `"https://your-icon"`                                        | URL for the icon image used in the widget's launch button.                                          |
-| **`buttonBg`**     | `string`         | `"#222327"`                                                 | Background color of the widget's launch button.                                                      |
-| **`size`**         | `"small" \| "medium"` | `"medium"`                                              | Size of the widget. Options: `"small"` or `"medium"`. Defaults to `"medium"`.                         |
-| **`showSources`**         | `boolean` | `false`                                              | Enables displaying source URLs for data fetched within the widget. When set to `true`, the widget will show the original sources of the fetched data.                         |
+| **`theme`**        | `"dark" \| "light"` | `"dark"`                                                  | Color theme of the widget interface.                                                                 |
+| **`buttonIcon`**   | `string`         | `"https://d3dg1063dc54p9.cloudfront.net/widget/chat.svg"`   | URL for the icon image used in the widget's launch button.                                          |
+| **`buttonText`**   | `string`         | `"Ask a question"`                                          | Label of the widget's launch button.                                                                 |
+| **`buttonBg`**     | `string`         | `"linear-gradient(to bottom right, #8860DB, #6D42C5)"`      | Background of the widget's launch button. Accepts any CSS background value.                          |
+| **`size`**         | `"small" \| "medium" \| "large" \| { custom: { width, height, maxWidth?, maxHeight? } }` | `"medium"` | Size of the chat panel: `small` is 320px × 400px, `medium` is 400px × 80vh, and `large` opens a centered 666px × 75vh modal. `custom` takes CSS sizes. |
+| **`showSources`**  | `boolean`        | `true`                                                      | Shows the sources an answer was based on. Set `false` to hide them.                                  |
+| **`collectFeedback`** | `boolean`     | `true`                                                      | Shows like/dislike buttons on answers and sends the feedback to DocsGPT.                             |
+| **`defaultOpen`**  | `boolean`        | `false`                                                     | Opens the chat panel on page load instead of showing only the launch button.                         |
 | **`allowedFileExtensions`** | `string[]` | _unset_                                        | File extensions the composer accepts, e.g. `['.pdf', '.docx', '.md', '.png']`. Setting it turns on attachments: an Attach button, drag-and-drop onto the panel, and paste-to-attach. Leave it unset to keep attachments off. |
 | **`showMicButton`**       | `boolean` | `false`                                              | Adds a microphone that dictates a question into the input using the browser's Web Speech API. No backend STT provider needed; hides itself where the browser lacks the API.   |
 
@@ -185,7 +193,7 @@ Browser support is uneven, and the microphone hides itself where it cannot work.
 ## Notes on Widget Properties
 
 *   **Full Customization:**  Every property listed in the table can be customized.  Override the defaults to create a widget that perfectly matches your branding and application context.  From avatars and titles to color schemes, you have fine-grained control over the widget's presentation.
-*   **API Key Handling:** The `apiKey` prop is optional. Only include it if your DocsGPT backend API is configured to require API key authentication. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com/`
+*   **API Key Handling:** Set `apiKey` to the API key of a published agent; the widget answers with that agent's knowledge, prompt and tools. See [Getting API key](/Extensions/api-key-guide). If you leave `apiKey` out, the widget falls back to a built-in key for a public DocsGPT demo agent: on DocsGPT Cloud it silently answers from that demo agent instead of your documents, and on a self-hosted instance the key is invalid and requests fail. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com`.
 
 ## Explore and Customize Further
 

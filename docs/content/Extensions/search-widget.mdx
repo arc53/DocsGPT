@@ -38,7 +38,7 @@ Now, you can embed the widget within your React component's JSX:
 
 ```jsx
 <SearchBar
-    apiKey="your-api-key"
+    apiKey="your-agent-api-key"
     apiHost="https://gptcloud.arc53.com"
     theme="light"
     placeholder="Search or Ask AI..."
@@ -53,11 +53,10 @@ Now, you can embed the widget within your React component's JSX:
 To use the DocsGPT Search Bar Widget directly in HTML, include the widget script from a CDN in your HTML file:
 
 ```html filename="html"
-<script
-  src="https://unpkg.com/docsgpt/dist/legacy/main.js"
-  type="module"
-></script>
+<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
 ```
+
+The bundle defines `renderSearchBar` (and `renderDocsGPTWidget`) on `window`. `0.8.0` is the current release; check [npm](https://www.npmjs.com/package/docsgpt) for a newer version.
 
 ### Usage
 
@@ -67,15 +66,16 @@ In your HTML `<body>`, add a `<div>` element where you want to render the Search
 <div id="search-bar-container"></div>
 ```
 
-Then, in a `<script type="module">` block, use the `renderSearchBar` function to initialize the widget, passing the `id` of your `<div>` and a configuration object. To link the widget to your DocsGPT API and configure its behaviour, pass the relevant parameters within the configuration object of `renderSearchBar`.
+Then, in a `<script>` block after the widget script, use the `renderSearchBar` function to initialize the widget, passing the `id` of your `<div>` and a configuration object. To link the widget to your DocsGPT API and configure its behaviour, pass the relevant parameters within the configuration object of `renderSearchBar`.
 
 ```html filename="html"
 <!DOCTYPE html>
 <div id="search-bar-container"></div>
-<script type="module">
+<script src="https://unpkg.com/docsgpt@0.8.0/dist/legacy/browser.js"></script>
+<script>
   window.onload = function() {
     renderSearchBar('search-bar-container', {
-      apiKey: 'your-api-key-here',
+      apiKey: 'your-agent-api-key',
       apiHost: 'https://gptcloud.arc53.com',
       theme: 'light',
       placeholder: 'Search here...',
@@ -96,11 +96,12 @@ The DocsGPT Search Bar Widget offers a range of customizable properties that all
 
 | **Prop**       | **Type**  | **Default Value**                   | **Description**                                                                                  |
 |-----------------|-----------|-------------------------------------|--------------------------------------------------------------------------------------------------|
-| **`apiKey`**    | `string`  | `"your-api-key"`                  | API key for authentication with your DocsGPT API. Leave empty if no authentication is required.                         |
-| **`apiHost`**   | `string`  | `"https://gptcloud.arc53.com"`       | **Required.** The URL of your DocsGPT API backend. This endpoint handles vector similarity search queries.           |
+| **`apiKey`**    | `string`  | a DocsGPT demo agent's key        | **Required.** The API key of your published agent (see [Getting API key](/Extensions/api-key-guide)). Search runs over that agent's knowledge. An empty key gets `400 api_key is required`, and an omitted key searches a public DocsGPT demo agent. |
+| **`apiHost`**   | `string`  | `"https://gptcloud.arc53.com"`       | The URL of your DocsGPT API backend (DocsGPT Cloud by default). Self-hosted: your API URL, e.g. `http://localhost:7091`. |
 | **`theme`**     | `"dark" \| "light"` | `"dark"`                            | Color theme of the search bar and of the chat it opens. Options: `"dark"` or `"light"`. Defaults to `"dark"`.            |
 | **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field.                                           |
 | **`width`**     | `string`  | `"256px"`                          | Width of the search bar. Accepts any valid CSS width value (e.g., `"300px"`, `"100%"`, `"20rem"`). |
+| **`buttonText`** | `string` | `"Search here"`                     | Label of the button that opens the search panel.                                                 |
 | **`allowedFileExtensions`** | `string[]` | _unset_ | Passed to the chat opened from "Ask the AI". File extensions its composer accepts, e.g. `['.pdf', '.md']`; attachments stay off while unset. See the [chat widget page](/Extensions/chat-widget). |
 | **`showMicButton`** | `boolean` | `false` | Adds a microphone to the search field for dictating a query, and passes the same option to the chat opened from "Ask the AI". Uses the browser's Web Speech API. See the [chat widget page](/Extensions/chat-widget). |
 
@@ -109,7 +110,7 @@ The DocsGPT Search Bar Widget offers a range of customizable properties that all
 ## Notes on Widget Properties
 
 *   **Full Customization:** Every property listed in the table can be customized. Override the defaults to create a Search Bar Widget that perfectly matches your branding and application context.
-*   **API Key Handling:** The `apiKey` prop is optional. Only include it if your DocsGPT backend API is configured to require API key authentication. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com/`
+*   **API Key Handling:** The search bar needs the API key of a published agent; `/api/search` rejects requests without one. See [Getting API key](/Extensions/api-key-guide). If you leave `apiKey` out, the search bar falls back to a built-in key for a public DocsGPT demo agent: on DocsGPT Cloud it searches that demo agent's knowledge instead of yours, and on a self-hosted instance the key is invalid and searches fail. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com`.
 
 ## Explore and Customize Further
 
