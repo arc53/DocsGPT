@@ -1,0 +1,86 @@
+---
+title: Teams and Sharing
+description: Create a team, add members, give them roles, and share agents, sources, prompts and tools with a team or one teammate as a viewer or an editor.
+---
+
+import { Callout } from 'nextra/components'
+
+# Teams and Sharing
+
+A team is a group of people on the same DocsGPT instance who share agents, sources, prompts and tools. Any signed-in user can create a team. Sharing never changes who owns something: you stay the owner, and people you share with get **Viewer** or **Editor** access.
+
+Teams are useful on an instance where each person signs in with their own account, which in practice means [SSO with OIDC](/Deploying/OIDC-SSO). This page covers the web app. For the roles model, the team API and exactly what runs with whose access, see [Access Control & Teams](/Deploying/Access-Control#teams).
+
+## Create a team
+
+1. Open **Settings → Teams**, or open the team switcher at the top of the sidebar and choose **Create team**.
+2. Choose **New team**, enter a name and an optional description, then choose **Create**.
+
+You are the team's owner and one of its admins.
+
+## Add members
+
+1. In **Settings → Teams**, select the team and choose **Add member**.
+2. Enter the person's email under **Member email**, pick a **Role** (**member** or **admin**), and choose **Add**.
+
+The person must have signed in to DocsGPT at least once. Otherwise DocsGPT can't find them and shows "No user with that email — they must sign in once first." New members get an **Added to a team** notification.
+
+## Roles
+
+| Role | Can |
+| --- | --- |
+| **member** | See the team, its members and what is shared with it, and use what is shared with them. |
+| **admin** | Everything a member can, plus **Edit** the team's name and description, add and remove members, change roles, and unshare anything shared with the team. |
+| **owner** | The person who created the team. An admin who can also **Delete team**. |
+
+Admins change a member's role from the drop-down next to their name and remove them with **Remove**. A team always keeps at least one admin, and the owner can't be demoted or removed. The web app has no button to leave a team or to transfer ownership; use the [team API](/Deploying/Access-Control#managing-a-team) for those.
+
+## Switch teams
+
+The name at the top of the sidebar is the team switcher. It lists **Personal account** and your teams, with **Manage team** and **Create team**. Switching changes only the header and which team **Manage team** opens. It doesn't filter your agents, sources or chats: you always see everything you own plus everything shared with you.
+
+## Share with a team or a teammate
+
+1. Open the menu of the item and choose **Share with team**:
+   - an agent: on its card in **Agents**, or in the agent editor,
+   - a source: in **Settings → Knowledge**,
+   - a tool: in **Settings → Tools**,
+   - a prompt: in the prompt list under **Settings → General**.
+2. Under **Add people or teams…**, pick a whole team or one person from your teams.
+3. Choose **Viewer** or **Editor**, then **Done**.
+
+| Item | Viewers | Editors |
+| --- | --- | --- |
+| Agent | Chat with it and pin it | Edit it, publish it, see logs and manage schedules |
+| Source | Browse, search and use it in their agents | Edit chunks and files, sync, change settings |
+| Tool | Use it inside the owner's agents | Change actions and approvals |
+| Prompt | Read it and use it in their agents | Change the text |
+
+As the owner, you can widen this under **Access settings** in the same dialog, for example **Editors can share**, **Editors can delete**, **Viewers can see logs** or **Viewers can use it in their own agents**. By default, only the owner shares or deletes.
+
+Sharing an agent doesn't share the tools, sources and prompt it uses; people reach them only through the agent, with the access the dialog lists under **What this agent uses**. Shared tools run with the owner's saved credentials, and nobody you share with can read them. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
+
+## Where shared items appear
+
+- **Agents**: under the **Team** filter ("Agents your teammates shared with you"). The **Discovered** filter is different: it lists public agents you opened from a link.
+- **Sources**: in **Settings → Knowledge**, and under **Shared with team** when you pick sources for a chat or an agent.
+- **Tools**: in **Settings → Tools**, and in the chat's tool menu with a **Shared by** line naming the team.
+- **Prompts**: in the prompt list under **Settings → General**.
+
+Shared agents, sources and tools carry a **Viewer** or **Editor** badge. Each share also sends a **Shared with you** notification.
+
+## Stop sharing
+
+- To remove one grant, open **Share with team** on the item and choose **Remove access** next to the team or person.
+- In **Settings → Teams**, a team's **Shared resources** list shows everything shared with it. Open an item to see who has access in that team and choose **Remove access**, or choose **Manage sharing** to open its share dialog.
+
+Only the owner, an editor allowed to share, or a team admin can remove a share.
+
+<Callout type="info">
+  Team shares are only for signed-in users on your instance. To let anyone read a conversation, see [Sharing conversations](/Using/sharing). To publish an agent to the public, use its **Access Details** (API key, public link or widget).
+</Callout>
+
+## Related
+
+- [Access Control & Teams](/Deploying/Access-Control): roles, the team and sharing API, sponsors, and what happens when a resource stops working.
+- [Usage Quotas](/Deploying/Usage-Quotas#teams): per-member team allowances.
