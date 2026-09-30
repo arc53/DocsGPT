@@ -23,10 +23,45 @@ def client(app):
 class TestHomeRoute:
 
     @pytest.mark.unit
-    def test_root_returns_200(self, client):
-        """Root serves Swagger UI via Flask-RESTX."""
+    def test_root_redirects_to_the_swagger_ui(self, client):
+        """On the bare API, root sends the caller to the Swagger UI."""
         response = client.get("/")
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/api/docs")
+
+
+class TestSwaggerDocs:
+
+    @pytest.mark.unit
+    def test_swagger_ui_lives_under_the_api_prefix(self, client):
+        response = client.get("/api/docs")
         assert response.status_code == 200
+        assert "text/html" in response.headers["Content-Type"]
+        assert b"swagger.json" in response.data
+
+    @pytest.mark.unit
+    def test_spec_stays_at_swagger_json(self, client):
+        response = client.get("/swagger.json")
+        assert response.status_code == 200
+        assert json.loads(response.data)["info"]["title"] == "DocsGPT API"
+
+    @pytest.mark.unit
+    def test_swagger_ui_survives_the_bundled_web_ui(self, app, tmp_path):
+        """With the web UI served at /, the Swagger UI is still reachable."""
+        from a2wsgi import WSGIMiddleware
+        from starlette.testclient import TestClient
+
+        from docsgpt.ui import StaticUI
+
+        (tmp_path / "index.html").write_text("<html><body>web ui</body></html>")
+        wrapped = StaticUI.wrap(WSGIMiddleware(app), app.url_map, static_dir=tmp_path)
+        assert isinstance(wrapped, StaticUI)
+        with TestClient(wrapped) as ui_client:
+            assert "web ui" in ui_client.get("/").text
+            docs = ui_client.get("/api/docs")
+            assert docs.status_code == 200
+            assert "swagger.json" in docs.text and "web ui" not in docs.text
+            assert ui_client.get("/swagger.json").status_code == 200
 
 
 class TestHealthRoute:
