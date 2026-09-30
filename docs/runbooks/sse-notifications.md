@@ -13,6 +13,13 @@ the diagnostic that surfaces the cause.
 
 ## TL;DR — first 60 seconds
 
+Every `redis-cli -n 2` in this runbook assumes the default
+`CACHE_REDIS_URL` (`redis://…:6379/2`); the notification streams live in
+whatever database that URL names. With a different host, port or database,
+use `redis-cli -u "$CACHE_REDIS_URL" …` instead of `-n 2`. Under Docker
+Compose, run the commands inside the Redis container:
+`docker compose exec redis redis-cli -n 2 …`.
+
 Run these three commands in parallel before anything else:
 
 ```bash
@@ -95,9 +102,21 @@ include it). Idempotent / cached responses must also include
 
 There is no bell — the global notifications surface is per-event
 toasts, not an aggregated counter. If the user is on an old build,
-`Cmd-Shift-R` to bypass cache. The surfaces they're looking for are
-`UploadToast` for source uploads and `ToolApprovalToast` for
-tool-approval events.
+`Cmd-Shift-R` to bypass cache. All toasts share one `ToastViewport`
+mounted in `frontend/src/App.tsx`:
+
+| Toast                    | Fed by                                                            |
+| ------------------------ | ----------------------------------------------------------------- |
+| `UploadToast`            | `source.ingest.*` events, through `uploadSlice`                   |
+| `ToolApprovalToast`      | `tool.approval.required` (revoked by `tool.approval.cleared`)     |
+| `TeamNotificationToast`  | `team.member_added` and `resource.shared`                         |
+| `ConnectionHealthToast`  | `connection.reconnect_needed`                                     |
+| `ActionToast`            | Not SSE: the result of an action the current page just ran (`actionToastSlice`) |
+
+The SSE-driven toasts read the ring of recent events in
+`notificationsSlice`. `attachment.*` events update the message box's
+attachment chips, not a toast, and the `schedule.*` and
+`graph.extract.*` events update their own pages.
 
 ### C. "My chat answer froze mid-stream and never recovered"
 
@@ -195,8 +214,10 @@ permanently stranding the un-replayed window — so the route now
 current counter; TTL is the window size.
 
 `backlog.truncated` is emitted ONLY when the client's
-`Last-Event-ID` has slid off the MAXLEN'd window — i.e. the journal
-is genuinely gone past the cursor and the frontend should clear the
+`Last-Event-ID` has slid off the retained window — trimmed by MAXLEN,
+or older than the age floor (`EVENTS_REPLAY_MAX_AGE_HOURS`, default 48;
+replay never returns older entries) — i.e. the journal is genuinely gone
+past the cursor and the frontend should clear the
 slice cursor and refetch state. Treating cap-hit or
 budget-exhaustion the same way would lock the user into re-receiving
 the oldest 200 entries on every reconnect (the cursor would clear,
@@ -205,7 +226,10 @@ the snapshot would re-serve from the start, the cap would re-trip).
 ### H. "User says push notifications stopped after a deploy"
 
 - Pull `event.published topic=user:<id> type=...` from the worker
-  logs to confirm the publisher is still firing.
+  logs to confirm the publisher is still firing. This line is logged at
+  DEBUG, and DocsGPT logs at INFO, so it appears only in a build with
+  debug logging turned on; otherwise check `XREVRANGE` on the user's
+  stream instead.
 - Pull `event.connect user=<id>` from the API logs to confirm the
   client is reconnecting.
 - Check the async Redis pool. Every open `/api/events` stream holds
@@ -223,9 +247,10 @@ the snapshot would re-serve from the start, the cap would re-trip).
 ### Redis-down
 
 Symptoms: `/api/events` returns 200 but emits only `: connected`
-then the body closes. `XLEN` and `PUBLISH` both fail. The publisher's
-`record_event` swallows the failure and returns False; the live tail
-publish also drops on the floor. Frontend retries forever with
+then the body closes. `XLEN` and `PUBLISH` both fail. The publisher,
+`publish_user_event`, swallows the failure and returns `None` (it logs
+`Redis unavailable; skipping publish_user_event` at DEBUG only); the live
+tail publish also drops on the floor. Frontend retries forever with
 exponential backoff.
 
 Resolution: bring Redis back. The journal is gone (was in-memory
@@ -254,8 +279,10 @@ Symptoms: client reconnects with `last_event_id=X`, snapshot returns
 the entire MAXLEN'd backlog (because X is older than the oldest
 retained entry). Old events appear duplicated.
 
-Detection: the route's `_oldest_retained_id` check emits
-`backlog.truncated` when this case fires. Frontend's
+Detection: the route compares the cursor with the newer of the oldest
+retained entry (`_oldest_retained_id`) and the age floor
+(`EVENTS_REPLAY_MAX_AGE_HOURS`), and emits `backlog.truncated` when the
+cursor is older. Frontend's
 `dispatchSSEEvent` clears `lastEventId` so the next reconnect starts
 fresh.
 
@@ -289,12 +316,14 @@ no XADD and no PUBLISH. User sees no events.
 # Was the publisher import error suppressed?
 grep "publish_user_event" /var/log/celery.log | grep -i "warn\|error" | tail -20
 
-# Is push disabled?
-grep "ENABLE_SSE_PUSH" /var/log/docsgpt.log | tail -5
+# Is push disabled? (installer / `docsgpt up` installs; otherwise read .env)
+docsgpt env get ENABLE_SSE_PUSH
 ```
 
-`ENABLE_SSE_PUSH=False` in `.env` would silence the publisher
-globally. Useful for incident response if a runaway publisher is
+Nothing logs the setting itself. With push disabled, `/api/events`
+sends a `: push_disabled` comment and closes, which you can see in
+DevTools → Network → `/api/events`. `ENABLE_SSE_PUSH=False` in `.env`
+silences the publisher globally. Useful for incident response if a runaway publisher is
 DoS'ing Redis; toggle off, fix root cause, toggle on.
 
 ---
@@ -328,7 +357,8 @@ redis-cli -n 2 DEL user:<id>:stream
 
 ## Settings reference
 
-Everything in `docsgpt/core/settings/events.py`:
+Notification settings in `docsgpt/core/settings/events.py` (the file also
+holds the `REMOTE_DEVICE_*` settings; see the settings reference):
 
 | Setting                                       | Default | Purpose                                       |
 | --------------------------------------------- | ------- | --------------------------------------------- |
@@ -338,6 +368,7 @@ Everything in `docsgpt/core/settings/events.py`:
 | `SSE_MAX_CONCURRENT_PER_USER`                 | `8`     | Cap on simultaneous SSE connections per user. 0 = disabled. |
 | `ASYNC_REDIS_MAX_CONNECTIONS`                 | `2000`  | Async Redis pool per API worker; each open stream holds one connection. |
 | `EVENTS_REPLAY_MAX_PER_REQUEST`               | `200`   | Hard cap on snapshot rows per request. |
+| `EVENTS_REPLAY_MAX_AGE_HOURS`                 | `48`    | Oldest entry a replay returns; an older cursor gets `backlog.truncated`. 0 = no age floor. |
 | `EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW`    | `30`    | Per-user replays per window. 0 = disabled. |
 | `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS`         | `60`    | Window length. |
 | `MESSAGE_EVENTS_RETENTION_DAYS`               | `14`    | Retention for the `message_events` journal; `cleanup_message_events` beat task deletes older rows. |
