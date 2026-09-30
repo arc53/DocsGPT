@@ -57,8 +57,9 @@ For OAuth in production, `MCP_OAUTH_REDIRECT_URI` must be a publicly accessible 
 | `/api/mcp_server/test` | POST | Test a connection without saving |
 | `/api/mcp_server/save` | POST | Save or update a server configuration |
 | `/api/mcp_server/callback` | GET | OAuth callback handler |
-| `/api/mcp_server/oauth_status/<task_id>` | GET | Poll OAuth flow status |
 | `/api/mcp_server/auth_status` | GET | Batch check auth status for all MCP tools |
+
+For an OAuth server, `/api/mcp_server/test` answers with `requires_oauth: true` and a `task_id`, and the sign-in runs in the background. Its progress arrives on the user event stream, `GET /api/events`, as `mcp.oauth.in_progress`, `mcp.oauth.awaiting_redirect` (with the `authorization_url` to open), `mcp.oauth.completed` or `mcp.oauth.failed` events whose `scope.id` is that `task_id`. After `completed`, call `/api/mcp_server/save` with `oauth_task_id` set to the `task_id` in the config. See [Realtime events](/Agents/notifications); the event stream needs the API served through the ASGI app.
 
 ## Troubleshooting
 
