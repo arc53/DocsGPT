@@ -465,10 +465,13 @@ Pass `selected` (true or false) only in a
 single-select picker inside a `role="radiogroup"`; the tile is then a radio.
 Tiles that advance a step or navigate (Upload's source types, the agent-type
 modal) leave it out and stay plain buttons. Only layout classes on it.
-Glyph icons are lucide and take the square's colour; a service tile (Add
-knowledge's "From a service", three to a row from `md`) shows the brand logo
-in `text-foreground`, and its description is only its status ("Connected",
-"Reconnect"), never an account name.
+Icons take the square's colour, lucide glyphs and service logos alike: a
+service tile (Add knowledge's "From a service", three to a row from `md`)
+draws its logo in `text-current` so it matches the source-type tiles above
+it, and its description is only its status ("Connected", "Reconnect"), never
+an account name. "From a service" shows at most six tiles: every service with
+an account, then the rest up to the cap, and always a "Browse all
+connectors" link under them.
 
 ### Badge (`ui/badge.tsx`)
 
@@ -503,10 +506,12 @@ a 1px inset `primary` ring, so the chosen row never turns plain grey.
 
 A picker's footer (`MultiSelectPopover footer`) links to the page that manages
 the list, as a `link inline` Button with a 12px `ArrowRight` (Go to Sources, Go
-to Tools). A shortcut action (Upload new, an `outline-primary pill`) sits at the
-right end of the same row: `flex flex-wrap items-center justify-between gap-3`,
-so on a narrow sheet or in a long locale it wraps under the link rather than
-taking a row of its own everywhere (`SourcesPopoverFooter`).
+to Tools). A shortcut action (Upload new, Add tool; an `outline-primary pill`)
+sits at the right end of the same row: `flex flex-wrap items-center
+justify-between gap-3`, so on a narrow sheet or in a long locale it wraps under
+the link rather than taking a row of its own everywhere. Every picker uses
+`PickerFooter` for this row (`SourcesPopoverFooter` wraps it for sources); a
+notice (connections to sign in again) goes above it.
 
 ### Input (`ui/input.tsx`)
 

@@ -65,6 +65,8 @@ import useRetrievalAvailability from '../settings/components/useRetrievalAvailab
 
 /** Per-file limit for local uploads (25 MB), enforced by the dropzone. */
 const MAX_UPLOAD_BYTES = 25000000;
+/** Service tiles on the first step: two rows of three. */
+const SERVICE_TILE_LIMIT = 6;
 
 function Upload({
   receivedFile = [],
@@ -817,6 +819,22 @@ function Upload({
     }
   };
 
+  // Two rows at most. A service with an account (connected or needing
+  // sign-in) is always shown; the rest fill up to the cap, and "Browse all
+  // connectors" leads to everything else.
+  const serviceRoom = Math.max(
+    0,
+    SERVICE_TILE_LIMIT -
+      (githubListed ? 0 : 1) -
+      syncServices.filter(({ target }) => serviceStatus(target.key)).length,
+  );
+  let unlinkedShown = 0;
+  const visibleServices = syncServices.filter(({ target }) => {
+    if (serviceStatus(target.key)) return true;
+    unlinkedShown += 1;
+    return unlinkedShown <= serviceRoom;
+  });
+
   const renderServices = () => (
     <section className="flex flex-col gap-3">
       <SectionHeader
@@ -825,15 +843,10 @@ function Upload({
         title={t('modals.uploadDoc.fromService')}
       />
       <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-        {syncServices.map(({ card, target }) => (
+        {visibleServices.map(({ card, target }) => (
           <OptionCard
             key={card.key}
-            icon={
-              <ConnectorIcon
-                icon={card.icon}
-                className="text-foreground size-6"
-              />
-            }
+            icon={<ConnectorIcon icon={card.icon} className="text-current" />}
             title={connectorName(t, card)}
             description={serviceStatus(target.key)}
             onClick={() => openService(target)}
@@ -841,9 +854,7 @@ function Upload({
         ))}
         {!githubListed && (
           <OptionCard
-            icon={
-              <ConnectorIcon icon="github" className="text-foreground size-6" />
-            }
+            icon={<ConnectorIcon icon="github" className="text-current" />}
             title={t('modals.uploadDoc.ingestors.github.label')}
             onClick={() => handleIngestorTypeChange('github')}
           />

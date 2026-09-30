@@ -1972,6 +1972,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           close={() => setUploadModalState('INACTIVE')}
           onSuccessfulUpload={handleUploadedSource}
           selectUploadedDoc={false}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
         />
       )}
       <AddPromptModal

@@ -2,6 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Provider } from 'react-redux';
+import { MemoryRouter } from 'react-router-dom';
 
 import type { MultiSelectPopoverItem } from './MultiSelectPopover';
 
@@ -9,6 +10,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock('../upload/Upload', () => ({ default: () => null }));
+vi.mock('../modals/AddToolModal', () => ({ default: () => null }));
 vi.mock('../connectors/SignInAgainNotice', () => ({
   default: () => null,
   useSignInAgain: () => ({ reconnect: vi.fn(), modals: null }),
@@ -103,15 +105,17 @@ describe('MessageInput tools picker', () => {
   const openPicker = async () => {
     await act(async () => {
       root.render(
-        <Provider store={makeStore()}>
-          <MessageInput
-            onSubmit={() => undefined}
-            loading={false}
-            showSourceButton={false}
-            showToolButton
-            autoFocus={false}
-          />
-        </Provider>,
+        <MemoryRouter>
+          <Provider store={makeStore()}>
+            <MessageInput
+              onSubmit={() => undefined}
+              loading={false}
+              showSourceButton={false}
+              showToolButton
+              autoFocus={false}
+            />
+          </Provider>
+        </MemoryRouter>,
       );
     });
     await act(async () => {

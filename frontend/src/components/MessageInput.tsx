@@ -14,6 +14,7 @@ import { useDropzone } from 'react-dropzone';
 import i18n from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import endpoints from '../api/endpoints';
 import userService from '../api/services/userService';
@@ -26,6 +27,7 @@ import {
   reorderAttachments,
 } from '../upload/uploadSlice';
 
+import AddToolModal from '../modals/AddToolModal';
 import { ActiveState, Doc } from '../models/misc';
 import {
   selectSelectedDocs,
@@ -358,6 +360,9 @@ export default function MessageInput({
   const [toolsLoading, setToolsLoading] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
+  const [addToolModalState, setAddToolModalState] =
+    useState<ActiveState>('INACTIVE');
+  const navigate = useNavigate();
   const [handleDragActive, setHandleDragActive] = useState<boolean>(false);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -1914,6 +1919,7 @@ export default function MessageInput({
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
                 loading={toolsLoading}
+                onAddTool={() => setAddToolModalState('ACTIVE')}
                 notice={
                   <SignInAgainNotice
                     connections={brokenConnections.map(
@@ -1991,6 +1997,22 @@ export default function MessageInput({
           isOnboarding={false}
           renderTab={null}
           close={() => setUploadModalState('INACTIVE')}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
+        />
+      )}
+
+      {showToolButton && (
+        // A new tool is created on, so it is in the chat once the list
+        // refreshes.
+        <AddToolModal
+          message={t('settings.tools.selectToolSetup')}
+          modalState={addToolModalState}
+          setModalState={setAddToolModalState}
+          getUserTools={fetchUserTools}
+          onToolAdded={fetchUserTools}
+          onDevicePaired={fetchUserTools}
         />
       )}
 

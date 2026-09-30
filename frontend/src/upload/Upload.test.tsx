@@ -263,7 +263,7 @@ describe('Upload source-type tiles', () => {
     expect(close).not.toHaveBeenCalled();
   });
 
-  it('draws the services as compact cards, brand logos in the foreground', async () => {
+  it('draws the services as compact cards, logos in the tile colour', async () => {
     connectorsState.catalog = CATALOG;
     await render();
     const grid = serviceTile('Google Drive').parentElement!;
@@ -271,7 +271,9 @@ describe('Upload source-type tiles', () => {
     const logo = serviceTile('Google Drive').querySelector(
       '[data-slot="option-card-icon"] svg',
     );
-    expect(logo?.getAttribute('class')).toContain('text-foreground');
+    // Same colour as the source-type glyphs: the icon square's.
+    expect(logo?.getAttribute('class')).toContain('text-current');
+    expect(logo?.getAttribute('class')).not.toContain('text-foreground');
     // No status, no line.
     expect(statusLine('Google Drive')).toBeUndefined();
   });
@@ -372,6 +374,42 @@ describe('Upload source-type tiles', () => {
     await act(async () => serviceTile('Google Drive').click());
     await act(async () => launcherOpts.current.onConnected?.());
     expect(close).toHaveBeenCalled();
+  });
+
+  // Two rows at most: services with an account always, then the rest.
+  it('shows at most six services, keeping every one with an account', async () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      ...DRIVE,
+      key: `svc${i}`,
+      name: `Service ${i}`,
+    }));
+    connectorsState.catalog = [
+      ...many,
+      { ...DRIVE, key: 'github', name: 'GitHub', icon: 'github' },
+    ];
+    await render();
+    expect(serviceNames()).toEqual([
+      'Service 0',
+      'Service 1',
+      'Service 2',
+      'Service 3',
+      'Service 4',
+      'Service 5',
+    ]);
+
+    connectorsState.connections = [
+      { id: 'a', connector_key: 'svc7', status: 'connected' },
+      { id: 'b', connector_key: 'svc8', status: 'reconnect_needed' },
+    ];
+    await render();
+    expect(serviceNames()).toEqual([
+      'Service 0',
+      'Service 1',
+      'Service 2',
+      'Service 3',
+      'Service 7',
+      'Service 8',
+    ]);
   });
 
   const browseLink = () =>

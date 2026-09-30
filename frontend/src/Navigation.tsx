@@ -946,6 +946,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           isOnboarding={false}
           renderTab={null}
           close={() => setUploadModalState('INACTIVE')}
+          onBrowseConnectors={() =>
+            navigate('/settings/connectors?capability=sync')
+          }
         ></Upload>
       )}
       <JWTModal
