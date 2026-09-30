@@ -1,0 +1,76 @@
+---
+title: API Overview
+description: How to call the DocsGPT API — agent API keys, personal access tokens and session tokens, which page covers which endpoints, and where your instance serves its Swagger UI and OpenAPI document.
+---
+
+import { Callout } from 'nextra/components';
+
+# API Overview
+
+Everything the DocsGPT web app does goes through its HTTP API, so the same API lets you chat with agents from your own code, manage agents and sources from scripts and CI, and receive events.
+
+## Base URL
+
+- **Your instance:** the address the API listens on, `http://localhost:7091` by default. When the API also serves the web UI (the default for `docsgpt up`, the standalone Docker image and pip installs), the API is on the same origin as the web app. `API_URL` is the address DocsGPT puts in the links it generates, such as webhook URLs.
+- **DocsGPT Cloud:** `https://gptcloud.arc53.com`.
+
+## Choose a credential
+
+| Credential | Looks like | How to send it | What it can call | Where to get it |
+| --- | --- | --- | --- | --- |
+| **Agent API key** | a UUID | `api_key` in the request body of `/api/answer`, `/stream`, `/api/search` and `/api/store_attachment`; `Authorization: Bearer <key>` for `/v1/*` and `/mcp` | One published agent: ask it questions, search its sources, attach files | Publish the agent, then open **Access Details**. See [Agent API keys](/Extensions/api-key-guide) |
+| **Personal access token** | `dgpt_pat_...` | `Authorization: Bearer <token>` | The management API, limited by the token's scopes, plus chat for benchmarking | **Settings → Access Tokens**. See [Personal access tokens](/Extensions/personal-access-tokens) |
+| **Session token** | a JWT | `Authorization: Bearer <token>` | Everything the signed-in user can do in the web app | Depends on `AUTH_TYPE`; see below |
+| **Webhook URL** | a URL with a secret token in its path | Call the URL | Start one run of one agent | **Access Details → Webhook URL**. See [Agent webhooks](/Agents/webhooks) |
+
+An **agent API key** acts as the agent: its prompt, sources, tools and model come from the agent, and the conversation and its usage are recorded under the agent's owner. Nobody can approve a tool action through a key, so write actions on the owner's connected accounts and saved credentials are refused unless the owner allows them (see [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes)).
+
+A **personal access token** is for automation: create and update agents, upload sources, edit prompts and tools. Each token has scopes, and an endpoint that isn't mapped to a scope can't be called with a token at all. The [REST API reference](/API/reference) lists the scope every endpoint needs. Tokens work only when `AUTH_TYPE` is unset or `oidc`.
+
+A **session token** is what the web app sends. How you get one depends on `AUTH_TYPE` (see [Authentication settings](/Deploying/DocsGPT-Settings#authentication-settings)):
+
+- **unset** (the default): no token is needed. Every request acts as the one user `local`, so anyone who can reach the API can call all of it.
+- **`simple_jwt`**: the one shared token that the API prints at startup, or that `docsgpt token` prints for a `docsgpt up` install.
+- **`session_jwt`**: `GET /api/generate_token` returns a new token with a new, empty identity.
+- **`oidc`**: the token DocsGPT issues after a sign-in with your identity provider. For scripts, use a personal access token instead.
+
+## Which page covers what
+
+| To... | Use | Page |
+| --- | --- | --- |
+| Ask an agent a question, with or without streaming | `POST /api/answer`, `POST /stream` | [Agent API](/Agents/api) |
+| Search an agent's sources without calling a model | `POST /api/search` | [Agent API](/Agents/api#search-api) |
+| Connect an OpenAI SDK or an OpenAI-compatible tool | `/v1/chat/completions`, `/v1/models` | [OpenAI-compatible API](/Agents/openai-compatible) |
+| Start an agent run from another system | `/api/webhooks/agents/<token>` | [Agent webhooks](/Agents/webhooks) |
+| Follow ingestion, approvals and other live events | `GET /api/events` | [Realtime events](/Agents/notifications) |
+| Move agents between instances | `/api/export_agent`, `/api/import_agent` | [Agent API](/Agents/api#agent-portability-export--import) |
+| Manage agents, sources, prompts, tools, schedules and more | the management endpoints | [REST API reference](/API/reference) |
+
+## Swagger UI and the OpenAPI document
+
+Every instance describes its own management API, so what you read there matches the version you run:
+
+- `GET /swagger.json`: the Swagger 2.0 (OpenAPI 2) document, for code generators and API clients such as Postman.
+- `GET /api/docs`: the Swagger UI for that document.
+
+Releases up to 0.21 serve the Swagger UI at `/` instead. When the API also serves the web UI, the web UI takes `/`, so on those releases use `/swagger.json`. On an API without the web UI, `/` redirects to `/api/docs`.
+
+<Callout type="info">
+The Swagger UI has no way to sign in, so its **Try it out** requests carry no token. They work on an instance with `AUTH_TYPE` unset; otherwise call the endpoints with `curl` or a client and an `Authorization` header.
+</Callout>
+
+The DocsGPT Cloud Swagger UI is at [gptcloud.arc53.com](https://gptcloud.arc53.com/). It describes the version DocsGPT Cloud runs, which can differ from yours. The [REST API reference](/API/reference) in these docs is generated from the same document for the current code.
+
+### What the Swagger document leaves out
+
+These routes are not in `/swagger.json`. Each has its own page:
+
+- `/v1/chat/completions` and `/v1/models`: [OpenAI-compatible API](/Agents/openai-compatible).
+- `GET /api/events` and `GET /api/messages/<message_id>/events`: [Realtime events](/Agents/notifications).
+- `/mcp`: DocsGPT's own MCP server. Its `search_docs` tool searches an agent's sources; send the agent's API key as `Authorization: Bearer <key>`.
+- `/api/devices/*`, including the device command stream: [Remote device](/Tools/remote-device).
+- `GET /api/artifacts/<id>/download`: [Artifacts](/Tools/artifacts-and-code-execution#artifacts).
+- `/api/auth/oidc/*` and `/scim/v2/*`: [SSO with OIDC](/Deploying/OIDC-SSO).
+- `GET /api/health` (returns `{"status": "ok"}`, for health checks), `GET /api/config` (the authentication settings the web app reads) and `GET /api/generate_token`.
+
+`/mcp`, the two event streams, the device command stream and artifact downloads are served only by the ASGI app, as `docsgpt api`, `docsgpt dev` and the Docker images run it. Under `flask run` they return 404 (see [ASGI-only features](/Deploying/Development-Environment#asgi-only-features)).

@@ -1,0 +1,22 @@
+---
+title: REST API Reference
+description: Every endpoint in DocsGPT's Swagger document, with its parameters, request body fields and the personal access token scope it needs.
+---
+
+import { ApiReference, ApiReferenceIndex } from '../../components/ApiReference';
+
+# REST API Reference
+
+This page lists every endpoint in DocsGPT's Swagger document, generated from the current code. Your own instance serves the document for the version you run at `/swagger.json`, and a Swagger UI for it at `/api/docs` (see [Swagger UI and the OpenAPI document](/API#swagger-ui-and-the-openapi-document)). A few routes are not in the document; the [API overview](/API#what-the-swagger-document-leaves-out) lists them and where they are covered.
+
+How to read an entry:
+
+- **Authentication** is the same for every endpoint: a session token or a personal access token in `Authorization: Bearer <token>`, or none when `AUTH_TYPE` is unset. The chat and search endpoints also take an agent API key in the body. See [Choose a credential](/API#choose-a-credential).
+- **Token scope** is the [personal access token](/Extensions/personal-access-tokens) scope the endpoint needs; any one of the listed scopes is enough, and a `write` scope includes the matching `read` scope. *Not available to personal access tokens* means a token is refused whatever its scopes; call it from a signed-in session.
+- **Parameters** and **JSON body** show what the code declares. Some endpoints read more fields than they declare, and the document does not describe response bodies; the guides linked from the [API overview](/API#which-page-covers-what) cover the common ones in detail.
+
+{/* The entries below are rendered from docs/data/swagger.json. Regenerate it with `python -m docsgpt.api.reference --write`. */}
+
+<ApiReferenceIndex />
+
+<ApiReference />
