@@ -21,6 +21,7 @@ site:
 ```bash
 npm run build    # next build, then pagefind indexes the output for search
 npm run start    # serve the production build
+node scripts/check-links.mjs   # after a build: check internal links and #anchors, offline
 ```
 
 Run `npm run build` before opening a PR that touches the docs: it fails on broken MDX. The
