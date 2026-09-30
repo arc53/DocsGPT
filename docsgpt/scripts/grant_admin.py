@@ -81,6 +81,7 @@ def _grant(user_id: str, force: bool) -> int:
                 user_id,
                 "role_granted",
                 metadata={"role": "admin", "source": "manual", "granted_by": ACTOR},
+                actor_id=ACTOR,
             )
             print(f"Granted admin to {user_id!r}.")
         else:
@@ -104,6 +105,7 @@ def _revoke(user_id: str) -> int:
                 user_id,
                 "role_revoked",
                 metadata={"role": "admin", "source": "manual", "revoked_by": ACTOR},
+                actor_id=ACTOR,
             )
             print(f"Revoked the manual admin grant from {user_id!r}.")
         else:
