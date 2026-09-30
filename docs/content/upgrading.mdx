@@ -44,7 +44,7 @@ A `docsgpt up --native` install has nothing for `docsgpt backup` to archive: dum
 `docsgpt backup` and `docsgpt restore` are new after 0.21.0 (`docsgpt --help` shows whether yours has them). On 0.21.0, take the same backup by hand from the stack directory. It holds a dump of the database and a tar of each data volume (`docsgpt_indexes`, `docsgpt_inputs`, `docsgpt_vectors`). Keep a copy of `.env` too: it holds the install's secrets.
 
 ```bash
-cd ~/.docsgpt/server
+cd ~/.docsgpt/server               # /opt/docsgpt when installed as root on Linux
 IMAGE=arc53/docsgpt:0.21.0          # the image the stack runs
 mkdir -p backups/before-upgrade
 docker compose stop backend worker  # so the dump and the files match
@@ -57,8 +57,18 @@ docker compose start backend worker
 
 To restore it, with the stack on the version the backup came from. Load the dump into an empty database: loaded over a database a newer release migrated, the newer tables' foreign keys stop it.
 
+First check that every tar reads, since the restore empties each volume before unpacking into it. Go on only if all three print `ok`:
+
 ```bash
-cd ~/.docsgpt/server
+cd ~/.docsgpt/server               # /opt/docsgpt when installed as root on Linux
+for v in indexes inputs vectors; do
+  tar -tf backups/before-upgrade/$v.tar > /dev/null && echo "$v.tar ok"
+done
+```
+
+Then restore:
+
+```bash
 IMAGE=arc53/docsgpt:0.21.0
 docker compose down
 for v in indexes inputs vectors; do
@@ -72,7 +82,7 @@ docker compose exec -T postgres psql --set ON_ERROR_STOP=on -U docsgpt -d docsgp
 docker compose up -d
 ```
 
-Once DocsGPT works, drop the set-aside copy: `docker compose exec postgres psql -U docsgpt -d postgres -c 'DROP DATABASE docsgpt_before_restore'`. If the load fails, drop the new `docsgpt` database and rename `docsgpt_before_restore` back before starting DocsGPT. `docsgpt restore` does all of this itself.
+Once DocsGPT works, drop the set-aside copy: `docker compose exec postgres psql -U docsgpt -d postgres -c 'DROP DATABASE docsgpt_before_restore'`. If the load fails, drop the new `docsgpt` database and rename `docsgpt_before_restore` back before starting DocsGPT. If a restore stopped after the rename and DocsGPT has since started, the API will have created an empty `docsgpt`; drop that empty one (`DROP DATABASE docsgpt WITH (FORCE)`) before you rename `docsgpt_before_restore` back. `docsgpt restore` does all of this itself.
 
 ## pip install
 
