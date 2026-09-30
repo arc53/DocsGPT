@@ -78,6 +78,8 @@ Answers render math, and the chat widget is published at 0.8.0.
 - Chatwoot extension: verifies Chatwoot's timestamped webhook signature, sends a valid `history`,
   returns 502 when DocsGPT or Chatwoot fails, and reads optional `account_id`/`assignee_id` filters
   from `.env`.
+- Chatwoot extension: optional, insecure `chatwoot_allow_unsigned=true` for Chatwoot versions that
+  don't sign webhooks.
 - Reddit connector: comma-separated search queries and the post count from the connector form are
   now parsed correctly.
 - Widget docs: the CDN bundle is `dist/legacy/browser.js`.
