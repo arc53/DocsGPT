@@ -226,6 +226,20 @@ class TestIsPrivateIPExtended:
         # 240.0.0.0/4 is reserved (future use), Python's ipaddress marks it as such
         assert is_private_ip("240.0.0.1") is True
 
+    def test_carrier_grade_nat(self):
+        """100.64.0.0/10 is not ``is_private`` in Python, but it is an internal range (RFC 6598)."""
+        assert is_private_ip("100.64.0.1") is True
+        assert is_private_ip("100.127.255.254") is True
+        assert is_private_ip("100.128.0.1") is False
+
+    def test_validate_url_blocks_a_host_resolving_to_carrier_grade_nat(self):
+        with patch("docsgpt.core.url_validation.resolve_hostname") as mock_resolve:
+            mock_resolve.return_value = "100.100.1.1"
+            with pytest.raises(SSRFError):
+                validate_url("http://tailnet.example.com")
+        with pytest.raises(SSRFError):
+            validate_url("http://100.64.0.10")
+
 
 class TestValidateUrlExtended:
     """Additional URL validation tests."""

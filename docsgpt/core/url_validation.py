@@ -35,10 +35,15 @@ METADATA_IPS: Set[str] = {
 # Allowed schemes for external requests
 ALLOWED_SCHEMES: Set[str] = {"http", "https"}
 
+# Carrier-grade NAT (RFC 6598). Python's ``ipaddress`` does not count it as
+# ``is_private``, so it is checked on its own, as in docsgpt/security/safe_url.py.
+CGNAT_NETWORK_V4 = ipaddress.IPv4Network("100.64.0.0/10")
+
 
 def is_private_ip(ip_str: str) -> bool:
     """
-    Check if an IP address is private, loopback, or link-local.
+    Check if an IP address is private, loopback, link-local, reserved,
+    multicast, unspecified or carrier-grade NAT.
 
     Args:
         ip_str: IP address as a string
@@ -54,7 +59,8 @@ def is_private_ip(ip_str: str) -> bool:
             ip.is_link_local or
             ip.is_reserved or
             ip.is_multicast or
-            ip.is_unspecified
+            ip.is_unspecified or
+            (isinstance(ip, ipaddress.IPv4Address) and ip in CGNAT_NETWORK_V4)
         )
     except ValueError:
         # If we can't parse it as an IP, return False
