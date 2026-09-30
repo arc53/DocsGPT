@@ -35,6 +35,10 @@ export default {
     "title": "🐍 Install with pip",
     "href": "/Deploying/Pip-Install"
   },
+  "cli": {
+    "title": "⌨️ docsgpt CLI Reference",
+    "href": "/Deploying/cli"
+  },
   "Development-Environment": {
     "title": "🛠️Development Environment",
     "href": "/Deploying/Development-Environment"

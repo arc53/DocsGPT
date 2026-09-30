@@ -18,6 +18,7 @@ Prioritize Core, Deploying, and Agents for implementation tasks.
 - [Choose a Deployment](https://docs.docsgpt.cloud/Deploying): Compare the install methods and pick one.
 - [Docker Deployment](https://docs.docsgpt.cloud/Deploying/Docker-Deploying): Run DocsGPT with Docker and Docker Compose.
 - [Kubernetes Deployment](https://docs.docsgpt.cloud/Deploying/Kubernetes-Deploying): Deploy DocsGPT on Kubernetes clusters.
+- [docsgpt CLI Reference](https://docs.docsgpt.cloud/Deploying/cli): Every docsgpt subcommand and its options.
 
 ## Agents
 
