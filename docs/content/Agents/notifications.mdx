@@ -26,21 +26,47 @@ Accept: text/event-stream
 Authorization: Bearer <token>
 ```
 
-Each event is a JSON object with a `type` field, for example:
+Authenticate with the session token the web app uses; with `AUTH_TYPE` unset no token is needed. [Personal access tokens](/Extensions/personal-access-tokens) are refused on this route. Each record is one `id:` line and one `data:` line holding a JSON envelope:
 
 ```text
 id: 1718900000000-0
-data: {"type":"source.ingest.queued","scope":{"id":"<source_id>"}, ...}
+data: {"type":"source.ingest.completed","ts":"2026-06-20T16:13:20.000Z","user_id":"alice","topic":"user:alice","scope":{"kind":"source","id":"<source_id>"},"payload":{"source_id":"<source_id>","filename":"guide.pdf","tokens":48213,"operation":"upload","limited":false},"id":"1718900000000-0"}
 ```
 
-Common event types:
-
-| Type | Meaning |
+| Field | Meaning |
 | --- | --- |
-| `source.ingest.queued` | A source ingestion task was enqueued (drives the upload toast). |
-| `mcp.oauth.completed` | An MCP server's OAuth handshake finished. |
-| tool-approval events | An agent is requesting approval to run a tool. |
-| `backlog.truncated` | The client's cursor slid off the retained backlog window — clear your cursor and refetch state. |
+| `type` | The event type (table below). |
+| `ts` | When the event was published (UTC, ISO 8601). |
+| `user_id`, `topic` | The user the event is for, and its internal channel name. |
+| `scope` | What the event is about: `kind` (`source`, `attachment`, `conversation`, `schedule`, `connection`, `mcp_oauth`, `team`, `resource`) and `id`. Match on it to tell events for different items apart. |
+| `payload` | Event-specific fields. |
+| `id` | The same id as the `id:` line; your cursor for reconnecting. |
+
+Between events the stream sends keepalive comments (lines starting with `:`); SSE clients ignore them.
+
+Event types:
+
+| Type | Scope | Sent when | Main payload fields |
+| --- | --- | --- | --- |
+| `source.ingest.queued` | source | An upload, remote ingest or re-ingest was queued. | `source_id`, `filename` or `job_name`, `operation` |
+| `source.ingest.progress` | source | Parsing or embedding progressed. | `current`, `total`, `stage` (`parsing` or `embedding`) |
+| `source.ingest.completed` | source | The source is ready. | `source_id`, `filename`, `tokens`, `operation` |
+| `source.ingest.failed` | source | Ingestion failed. | `source_id`, `operation`, `error` |
+| `graph.extract.progress`, `graph.extract.completed`, `graph.extract.failed` | source | [GraphRAG](/Sources/GraphRAG) extraction progressed, finished or failed. | `source_id` |
+| `attachment.queued`, `attachment.progress`, `attachment.completed`, `attachment.failed` | attachment | A chat attachment is being processed. | `attachment_id`, `filename` |
+| `tool.approval.required` | conversation | A turn paused on tools that need approval. | `conversation_id`, `message_id`, `pending_tool_calls` |
+| `tool.approval.cleared` | conversation | A pending approval is gone: it expired, or the paused turn failed. | `conversation_id`, `reason` (`expired` or `failed`) |
+| `connection.reconnect_needed` | connection | A connected account needs signing in again. | `connection_id`, `connector_key`, `name`, `source_count`, `tool_count` |
+| `mcp.oauth.in_progress`, `mcp.oauth.awaiting_redirect`, `mcp.oauth.completed`, `mcp.oauth.failed` | mcp_oauth (`id` is the OAuth task id) | An MCP server's OAuth sign-in progressed. `awaiting_redirect` carries the `authorization_url` to open; `completed` carries `tools` and `tools_count`; `failed` carries `error`. | see the previous column |
+| `schedule.run.completed`, `schedule.run.failed` | schedule | A scheduled run finished. | `run_id`, `schedule_id`, `agent_id`, `status`, and `error_type`/`error` on failure |
+| `schedule.autopaused` | schedule | A schedule paused itself after repeated failures. | `run_id`, `schedule_id`, `consecutive_failure_count` |
+| `schedule.completed`, `schedule.resumed`, `schedule.cancelled` | schedule | A schedule's status changed. | `schedule_id`, `status` |
+| `schedule.message.appended` | conversation | A scheduled run added a message to a conversation. | `conversation_id`, `message_id`, `schedule_id`, `run_id` |
+| `team.member_added` | team | You were added to a team. | `team_id`, `team_name`, `role`, `added_by` |
+| `resource.shared` | resource | Something was shared with you through a team. | depends on the resource |
+| `backlog.truncated` | | Your cursor slid off the retained backlog window. Clear your cursor and refetch state. | `oldest_retained_id` |
+
+New event types can be added, so ignore types you don't handle.
 
 ### Reconnecting and backlog replay
 
@@ -56,6 +82,7 @@ Last-Event-ID: 1718900000000-0
 A few bounded behaviors to be aware of:
 
 - The backlog is capped at `EVENTS_STREAM_MAXLEN` entries (default 1000). If your `Last-Event-ID` is older than the oldest retained entry, you receive a `backlog.truncated` event — reset your cursor and refetch current state.
+- A replay returns only events from the last `EVENTS_REPLAY_MAX_AGE_HOURS` (default 48), however many the backlog holds.
 - Each snapshot is capped at `EVENTS_REPLAY_MAX_PER_REQUEST` entries per request (default 200); reconnect to continue.
 - There is a per-user cap on simultaneous connections (`SSE_MAX_CONCURRENT_PER_USER`, default 8) and a windowed replay budget. Exceeding either returns **HTTP 429** — back off and retry.
 
@@ -67,7 +94,9 @@ When an answer is streaming and the connection drops, resume it without losing t
 GET /api/messages/<message_id>/events
 ```
 
-This replays the message's events past your last-seen sequence number and tails the rest live. It is backed by the Postgres `message_events` journal (retained for `MESSAGE_EVENTS_RETENTION_DAYS`, default 14).
+Send the sequence number of the last event you processed (the `id:` line of each [`/stream` record](/Agents/api#sse-event-types)) as the `Last-Event-ID` header or the `last_event_id` query parameter; without one, the replay starts at the beginning of the message. The route replays the message's events past that number and tails the rest live, with keepalive comments in between. It is backed by the Postgres `message_events` journal (retained for `MESSAGE_EVENTS_RETENTION_DAYS`, default 14).
+
+It takes a session token, or a personal access token with `conversations:read` or `chat:run` and no resource restrictions. Only the owner of the message can read it (others get `404`), and the connection counts toward the same per-user cap: over `SSE_MAX_CONCURRENT_PER_USER` it returns **HTTP 429**.
 
 <Callout type="warning" emoji="⚠️">
 Both channels need the API served through the ASGI app (`docsgpt.asgi:asgi_app`), as `docsgpt api`, `docsgpt dev` and the Docker images do. Under `flask run`, `GET /api/events` and `GET /api/messages/<message_id>/events` return 404. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
@@ -83,6 +112,7 @@ Both channels need the API served through the ASGI app (`docsgpt.asgi:asgi_app`)
 | `SSE_MAX_CONCURRENT_PER_USER` | `8` | Max simultaneous SSE connections per user (`0` disables the cap). |
 | `ASYNC_REDIS_MAX_CONNECTIONS` | `2000` | Redis connection pool per API worker. Each open SSE connection holds one, so this caps concurrent streams per worker. |
 | `EVENTS_REPLAY_MAX_PER_REQUEST` | `200` | Max backlog entries per replay request. |
+| `EVENTS_REPLAY_MAX_AGE_HOURS` | `48` | Oldest backlog entry a replay returns. |
 | `EVENTS_REPLAY_BUDGET_REQUESTS_PER_WINDOW` | `30` | Per-user replay requests per window (`0` disables). |
 | `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS` | `60` | Replay budget window length. |
 | `MESSAGE_EVENTS_RETENTION_DAYS` | `14` | Retention for the chat-stream `message_events` journal. |
