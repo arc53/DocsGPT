@@ -9,6 +9,23 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// A plain input stands in for the time picker so a test can change the time.
+vi.mock('@/components/ui/time-picker', () => ({
+  TimePicker: ({
+    value,
+    onChange,
+  }: {
+    value: string;
+    onChange: (next: string) => void;
+  }) => (
+    <input
+      data-testid="time-picker"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  ),
+}));
+
 import ScheduleFormModal from './ScheduleFormModal';
 import type { Schedule } from '../types/schedule';
 
@@ -176,13 +193,50 @@ describe('ScheduleFormModal editing', () => {
       document.body.querySelectorAll<HTMLButtonElement>('button'),
     ).find((b) => b.textContent === text);
 
-  it('sends run_at when a one-time task is saved', async () => {
+  const setTime = async (value: string) => {
+    const input = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="time-picker"]',
+    )!;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!;
+    await act(async () => {
+      setter.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  };
+  const currentTime = () =>
+    document.body.querySelector<HTMLInputElement>(
+      '[data-testid="time-picker"]',
+    )!.value;
+
+  it('leaves run_at out when the time is unchanged, even if it is near or past', async () => {
+    const past = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const onSubmit = vi.fn();
+    await render(onSubmit, {
+      ...savedOnce,
+      status: 'paused',
+      run_at: past,
+      next_run_at: null,
+    } as unknown as Schedule);
+    await act(async () => button('agents.schedules.modal.save')!.click());
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('run_at');
+    expect(document.body.textContent).not.toContain(
+      'agents.schedules.modal.errors.runAtInPast',
+    );
+  });
+
+  it('sends run_at when the time changed', async () => {
     const onSubmit = vi.fn();
     await render(onSubmit, savedOnce);
+    await setTime(currentTime() === '11:30' ? '12:30' : '11:30');
     await act(async () => button('agents.schedules.modal.save')!.click());
     const payload = onSubmit.mock.calls[0][0];
     expect(payload.trigger_type).toBe('once');
     expect(typeof payload.run_at).toBe('string');
+    expect(payload.run_at).not.toBe(savedOnce.run_at);
   });
 
   it('keeps a one-time task one-time and a recurring schedule recurring', async () => {

@@ -107,6 +107,11 @@ const formatDateLabel = (value: string): string => {
   return formatDateOnly(value);
 };
 
+/** Whether two ISO timestamps fall in the same minute. */
+const sameMinute = (a: string, b: string): boolean =>
+  Math.floor(new Date(a).getTime() / 60000) ===
+  Math.floor(new Date(b).getTime() / 60000);
+
 /** Create/edit a Schedule via a modal dialog. */
 export default function ScheduleFormModal({
   open,
@@ -203,12 +208,21 @@ export default function ScheduleFormModal({
         setError('runAt', t('agents.schedules.modal.errors.runAtInPast'));
         return;
       }
-      if (new Date(runAt).getTime() <= Date.now()) {
-        setError('runAt', t('agents.schedules.modal.errors.runAtInPast'));
-        return;
-      }
       payload.trigger_type = 'once';
-      payload.run_at = runAt;
+      // An edit that keeps the saved time leaves run_at out, so renaming a
+      // task that is due soon (or a paused one whose time has passed) isn't
+      // refused as a time in the past. The form works in whole minutes.
+      const unchanged =
+        initial?.trigger_type === 'once' &&
+        Boolean(initial.run_at) &&
+        sameMinute(runAt, initial.run_at as string);
+      if (!unchanged) {
+        if (new Date(runAt).getTime() <= Date.now()) {
+          setError('runAt', t('agents.schedules.modal.errors.runAtInPast'));
+          return;
+        }
+        payload.run_at = runAt;
+      }
     } else {
       const cron = buildCron(values.frequency, values);
       if (!cron) {
