@@ -863,6 +863,59 @@ class TestPreFetchTools:
         assert got == {"memory_view": "Directory: /\n(empty)"}
         mock_tool.execute_action.assert_called_once_with("memory_view")
 
+    def test_custom_prompt_memory_view_renders_prefetched_listing(
+        self, pg_conn
+    ):
+        """The documented custom-prompt form ``tools.memory.memory_view``
+        prefetches the memory root and renders it; results are keyed by
+        action name, so a ``tools.memory.root`` lookup stays empty."""
+        from unittest.mock import MagicMock
+
+        from docsgpt.agents.default_tools import synthesize_default_tool
+        from docsgpt.api.answer.services.prompt_renderer import PromptRenderer
+        from docsgpt.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        template = (
+            "{% if tools.memory.memory_view %}Memory:\n"
+            "{{ tools.memory.memory_view }}{% endif %}"
+            "[{{ tools.memory.root }}]"
+        )
+        sp = StreamProcessor({}, {"sub": "u-mem-render"})
+        sp._prompt_content = template
+
+        mock_tool = MagicMock()
+        mock_tool.get_actions_metadata.return_value = synthesize_default_tool(
+            "memory"
+        )["actions"]
+        mock_tool.execute_action.return_value = "Directory: /\n- notes.md"
+        mock_manager = MagicMock()
+        mock_manager.load_tool.return_value = mock_tool
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.answer.services.stream_processor.settings.ENABLE_TOOL_PREFETCH",
+            True,
+        ), patch(
+            "docsgpt.agents.tools.tool_manager.ToolManager",
+            return_value=mock_manager,
+        ):
+            tools_data = sp.pre_fetch_tools()
+
+        assert tools_data["memory"] == {"memory_view": "Directory: /\n- notes.md"}
+        rendered = PromptRenderer().render_prompt(template, tools_data=tools_data)
+        assert "Memory:\nDirectory: /\n- notes.md" in rendered
+        assert rendered.endswith("[]")
+
+    def test_no_separate_memory_prefetch_helper(self):
+        """Memory is prefetched like any tool; the old ``root`` /
+        ``available`` builder is gone."""
+        from docsgpt.api.answer.services.stream_processor import (
+            StreamProcessor,
+        )
+
+        assert not hasattr(StreamProcessor, "_fetch_memory_tool_data")
+
     def test_agent_bound_invocation_omits_default_tool_prefetch(self, pg_conn):
         from docsgpt.api.answer.services.stream_processor import (
             StreamProcessor,

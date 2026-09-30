@@ -1721,28 +1721,6 @@ class StreamProcessor:
             self._required_tool_actions = {}
             return self._required_tool_actions
 
-    def _fetch_memory_tool_data(
-        self, tool_doc: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """Fetch memory tool data for pre-injection into prompt"""
-        try:
-            tool_config = tool_doc.get("config", {}).copy()
-            tool_config["tool_id"] = str(tool_doc["_id"])
-
-            from docsgpt.agents.tools.memory import MemoryTool
-
-            memory_tool = MemoryTool(tool_config, self.initial_user_id)
-
-            root_view = memory_tool.execute_action("memory_view", path="/")
-
-            if "Error:" in root_view or not root_view.strip():
-                return None
-
-            return {"root": root_view, "available": True}
-        except Exception as e:
-            logger.warning(f"Failed to fetch memory tool data: {str(e)}")
-            return None
-
     @_traced_setup
     def resume_from_tool_actions(
         self,

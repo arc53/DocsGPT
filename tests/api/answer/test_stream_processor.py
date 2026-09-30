@@ -2884,7 +2884,6 @@ class TestFetchToolDataFullPaths:
 # ---------------------------------------------------------------------------
 # Additional coverage: _get_prompt_content exception branch (lines 722-724),
 # _get_required_tool_actions extraction + error (lines 740-750),
-# _fetch_memory_tool_data (lines 754-755, 759-760, 764-765, 769-771, 775-776),
 # create_agent (lines 779-806, 811-822)
 # ---------------------------------------------------------------------------
 
@@ -2971,78 +2970,6 @@ class TestGetRequiredToolActionsExtract:
         ):
             result = sp._get_required_tool_actions()
         assert result == {}
-
-
-@pytest.mark.unit
-class TestFetchMemoryToolData:
-    """Cover lines 754-755, 759-760, 764-765, 769-771."""
-
-    def _make_sp(self):
-        mock_db = MagicMock()
-        with patch(
-            "docsgpt.api.answer.services.stream_processor.MongoDB"
-        ) as MockMongo, patch(
-            "docsgpt.api.answer.services.stream_processor.settings"
-        ) as mock_settings:
-            mock_settings.MONGO_DB_NAME = "docsgpt"
-            MockMongo.get_client.return_value = {"docsgpt": mock_db}
-
-            from docsgpt.api.answer.services.stream_processor import (
-                StreamProcessor,
-            )
-
-            sp = StreamProcessor(request_data={}, decoded_token={"sub": "u"})
-        return sp
-
-    def test_memory_tool_success(self):
-        """Cover lines 759-760, 764, 769: success path returning data."""
-        sp = self._make_sp()
-        tool_doc = {"_id": "t1", "config": {"key": "val"}}
-        mock_memory_tool = MagicMock()
-        mock_memory_tool.execute_action.return_value = "root content here"
-        with patch(
-            "docsgpt.agents.tools.memory.MemoryTool",
-            return_value=mock_memory_tool,
-        ):
-            result = sp._fetch_memory_tool_data(tool_doc)
-        assert result == {"root": "root content here", "available": True}
-
-    def test_memory_tool_error_in_view(self):
-        """Cover lines 764-766: view returns error string."""
-        sp = self._make_sp()
-        tool_doc = {"_id": "t1", "config": {}}
-        mock_memory_tool = MagicMock()
-        mock_memory_tool.execute_action.return_value = "Error: no data"
-        with patch(
-            "docsgpt.agents.tools.memory.MemoryTool",
-            return_value=mock_memory_tool,
-        ):
-            result = sp._fetch_memory_tool_data(tool_doc)
-        assert result is None
-
-    def test_memory_tool_empty_view(self):
-        """Cover line 766: empty root_view."""
-        sp = self._make_sp()
-        tool_doc = {"_id": "t1", "config": {}}
-        mock_memory_tool = MagicMock()
-        mock_memory_tool.execute_action.return_value = "   "
-        with patch(
-            "docsgpt.agents.tools.memory.MemoryTool",
-            return_value=mock_memory_tool,
-        ):
-            result = sp._fetch_memory_tool_data(tool_doc)
-        assert result is None
-
-    def test_memory_tool_exception(self):
-        """Cover lines 770-771: exception returns None."""
-        sp = self._make_sp()
-        tool_doc = {"_id": "t1", "config": {}}
-        with patch(
-            "docsgpt.agents.tools.memory.MemoryTool",
-            side_effect=RuntimeError("fail"),
-        ):
-            result = sp._fetch_memory_tool_data(tool_doc)
-        assert result is None
 
 
 @pytest.mark.unit
