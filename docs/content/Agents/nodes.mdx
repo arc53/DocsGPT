@@ -9,6 +9,23 @@ import { Callout } from 'nextra/components';
 
 DocsGPT workflows are composed of **Nodes** that are connected to form a processing graph. These nodes interact with a **Shared State**—a global dictionary of variables that persists throughout the execution of the workflow.
 
+<video
+  autoPlay
+  muted
+  loop
+  playsInline
+  controls
+  width={1440}
+  height={900}
+  poster="/workflow-builder-poster.png"
+  aria-label="Screen recording: building, publishing and running a workflow with an AI Agent and an If / Else node"
+  style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
+>
+  <source src="/workflow-builder.mp4" type="video/mp4" />
+</video>
+
+*The recording starts in a new workflow agent's builder and drags an **AI Agent** node, an **If / Else** node and two **End** nodes from the palette onto the canvas. It wires Start → AI Agent → If / Else, and the If / Else node's **If** and **Else** branches to one End node each. It gives the AI Agent node the "Espresso One handbook" knowledge source, then sets the If / Else node in **Simple** mode to a branch named "Refund" where `query` **contains** `refund`. It clicks **Publish**, opens **Preview** and asks for a refund: the run steps through Start, the AI Agent, If / Else and End, and the answer is quoted from the handbook.*
+
 | Node | Palette group | What it does |
 | --- | --- | --- |
 | [Start](#start-and-end-nodes) | Added automatically | Entry point of the run |
