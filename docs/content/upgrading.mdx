@@ -82,7 +82,7 @@ Swap `git pull` for `git checkout <tag>` if you want to pin a specific release. 
 
 ## Kubernetes
 
-The Kubernetes pods don't migrate the database when they start; the `postgres-init` Job does. Change every `arc53/docsgpt:<version>` image in `deployment/k8s/deployments/docsgpt-deploy.yaml` and `deployment/k8s/jobs/postgres-init-job.yaml` to the new release, then:
+The Kubernetes pods don't migrate the database when they start; the `postgres-init` Job does. Change every `arc53/docsgpt:<version>` image in `deployment/k8s/deployments/docsgpt-deploy.yaml` and `deployment/k8s/jobs/postgres-init-job.yaml` to the new release, and `arc53/docsgpt-sandbox:<version>` in `deployment/k8s/deployments/sandbox-deploy.yaml` if you run the opt-in sandbox. Then:
 
 ```bash
 kubectl delete job postgres-init --ignore-not-found
@@ -108,7 +108,16 @@ The image has no `docsgpt` console script, so containers run `python -m docsgpt`
 
 ## Rollback
 
-Set the image tag (or package version) to the previous release and start it again. If the newer release ran migrations, the older one may not work against the upgraded schema, so the safe way back is the backup you took before upgrading. Alembic can also undo migrations: before you switch back, run `alembic -c docsgpt/alembic.ini downgrade <revision>` in a container of the **newer** image (the older image doesn't know the newer revisions), with `<revision>` the last one the older release ships (`docsgpt/alembic/versions` at its tag). Some downgrades drop data; the upgrade notes say which.
+If the newer release ran no migrations, set the image tag (or package version) back and start it again. If it did, the older release may not work against the upgraded schema, and the realistic way back is the backup you took before upgrading: go back to the older version, then restore it (`docsgpt upgrade --version <old>` then `docsgpt restore <archive>` for a `docsgpt up` Docker install).
+
+Alembic can also undo migrations, but many downgrades drop the data the newer release added. Run the downgrade from the **newer** image, the one that knows the newer revisions, with the API and the worker stopped: with `AUTO_MIGRATE` on, a running or restarted container migrates straight back up. From the stack directory (from a checkout, add `--env-file .env -f deployment/docker-compose-hub.yaml` after `docker compose`):
+
+```bash
+docker compose stop backend worker
+docker compose run --rm backend alembic -c docsgpt/alembic.ini downgrade <revision>
+```
+
+`<revision>` is the newest file in `docsgpt/alembic/versions` at the older release's tag. Then set the older tag and start the stack. For example, 0.21.0 ends at `0031_token_usage_cache_tokens`; downgrading to it from the next release drops personal access tokens, usage quotas, request traces, team sharing settings, tool preferences and resource sponsors, so restore the backup instead.
 
 ## Upgrade notes
 
@@ -133,7 +142,7 @@ Other changes:
 - Register `CONNECTOR_REDIRECT_BASE_URI` exactly as set (no `?provider=` query) as the redirect URI of each OAuth app. Admin > Connectors shows it.
 - `VITE_GOOGLE_CLIENT_ID` is optional now; without it, members pick Drive files in DocsGPT's own picker.
 - Synced sources run as their connection, without a browser session. Keep Celery beat running for scheduled syncs.
-- To downgrade, go back to `0039_resource_sponsors`, the revision just before `0040_connections` (`alembic -c docsgpt/alembic.ini downgrade 0039_resource_sponsors`, after a backup). Alembic first undoes the migrations after `0040_connections`, then decrypts the tokens and gives each tool its key again. Don't target an older revision: the earlier downgrades drop team sharing settings, tool preferences and resource sponsors for good.
+- To undo only this change, for example on a `develop` build that already had the migrations before it, downgrade to `0039_resource_sponsors`, the revision just before `0040_connections`, the way [Rollback](#rollback) describes. Alembic undoes `0043` to `0041` first, then decrypts the tokens and gives each tool its key again. This does not take you back to 0.21.0, which ends at `0031_token_usage_cache_tokens`: going that far drops more data, so restore your pre-upgrade backup instead.
 
 #### Checkout Compose files: bound to this machine
 
@@ -173,7 +182,7 @@ The manifests in `deployment/k8s` did not work as shipped: the migration Job ran
 
    - Keep your `JWT_SECRET_KEY`. Replace `INTERNAL_KEY` if it is still the shipped `internal`.
    - The old secret had no `ENCRYPTION_SECRET_KEY`, so any stored credentials are sealed with the public default. Set a new key from `openssl rand -hex 32`, and add `ENCRYPTION_SECRET_KEY_PREVIOUS: default-docsgpt-encryption-key` so they stay readable.
-   - Set `POSTGRES_PASSWORD` to your existing database password (`docsgpt` with the old manifests) and put the same value in `POSTGRES_URI`. The bundled Postgres keeps the password it was created with, so a new value also needs `kubectl exec deploy/postgres -- psql -U docsgpt -c "ALTER USER docsgpt PASSWORD '<new>'"`.
+   - Choose a new database password: the old manifests used `docsgpt`. Put it in `POSTGRES_PASSWORD` and in `POSTGRES_URI`, and set it on the existing database before you apply, because the bundled Postgres keeps the password it was created with: `kubectl exec deploy/postgres -- psql -U docsgpt -c "ALTER USER docsgpt PASSWORD '<new>'"`. Keeping `docsgpt` also works, but anyone who reaches the database inside the cluster can then log in.
    - `CACHE_REDIS_URL` is new; `QDRANT_URL` and `QDRANT_PORT` are gone.
    - Fill in the S3 bucket and credentials: uploads now go to a bucket (`STORAGE_TYPE: s3`), and vectors to pgvector (`VECTOR_STORE: pgvector`).
 
@@ -206,22 +215,25 @@ The manifests in `deployment/k8s` did not work as shipped: the migration Job ran
 
 #### Azure and local Compose files removed
 
-`deployment/docker-compose-azure.yaml` and `deployment/docker-compose-local.yaml` are gone. Move to `docker-compose-hub.yaml` (pre-built images) or `docker-compose.yaml` (built from the checkout). Uploads and indexes under `application/` carry over, but the database does not: the removed files had no project name, so their Postgres volume is `deployment_postgres_data`, while the remaining files use `docsgpt-oss_postgres_data`. Before you pull, dump the database and stop the old stack:
+`deployment/docker-compose-azure.yaml` and `deployment/docker-compose-local.yaml` are gone. Their replacements:
+
+- **`-azure`** (the whole stack): `docker-compose-hub.yaml` for pre-built images, or `docker-compose.yaml` to build from the checkout.
+- **`-local`** (Postgres, Redis and a frontend, for a backend run on the host): `docker-compose-dev.yaml` for Postgres and Redis, with the frontend run as in [Development Environment](/Deploying/Development-Environment).
+
+Uploads and indexes under `application/` carry over, but the database does not: the removed files had no project name, so their Postgres volume is `deployment_postgres_data`, while the remaining files use `docsgpt-oss_postgres_data`. Before you pull, dump the database and stop the old stack (use `docker-compose-local.yaml` if that is the file you ran):
 
 ```bash
 docker compose --env-file .env -f deployment/docker-compose-azure.yaml exec -T postgres pg_dump -U docsgpt docsgpt > docsgpt.sql
 docker compose --env-file .env -f deployment/docker-compose-azure.yaml down
 ```
 
-Then, after pulling, load it into the new stack's database before starting the rest:
+Then, after pulling, load it into the new stack's database before starting the rest (with `docker-compose-dev.yaml` in place of the hub file for a former `-local` setup):
 
 ```bash
-docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d postgres
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d --wait postgres
 docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec -T postgres psql -U docsgpt docsgpt < docsgpt.sql
 docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d
 ```
-
-Use `docker-compose-local.yaml` in the first two commands if that is the file you ran.
 
 ### Upgrading to 0.21.0
 
@@ -231,7 +243,7 @@ An installed package (`pip install docsgpt`, pipx, `uv tool`) used to keep its d
 
 #### Standalone Compose file: one port
 
-The standalone Compose file (`docker-compose-standalone.yaml`) no longer runs a frontend container. The backend image serves the web UI on port 7091, and the port is published on `127.0.0.1` unless you set `DOCSGPT_BIND`. After downloading the new file, start it with `--remove-orphans` to remove the old frontend container, then open port 7091 instead of 5173. If you opened DocsGPT from other machines, see [Upgrading from an earlier standalone file](/Deploying/Docker-Deploying#upgrading-from-an-earlier-standalone-file). The checkout Compose files are unchanged. The Kubernetes manifests dropped their frontend too; see [Kubernetes manifests reworked](#kubernetes-manifests-reworked).
+The standalone Compose file (`docker-compose-standalone.yaml`) no longer runs a frontend container. The backend image serves the web UI on port 7091, and the port is published on `127.0.0.1` unless you set `DOCSGPT_BIND`. After downloading the new file, start it with `--remove-orphans` to remove the old frontend container, then open port 7091 instead of 5173. If you opened DocsGPT from other machines, see [Upgrading from an earlier standalone file](/Deploying/Docker-Deploying#upgrading-from-an-earlier-standalone-file). The checkout Compose files are unchanged.
 
 ### Upgrading to 0.20.0
 
@@ -367,9 +379,18 @@ The `docsgpt` command covers the routine tasks; the [CLI reference](/Deploying/c
 | `scripts/db/init_postgres.py` | Same as `docsgpt migrate`, from a checkout. |
 | `scripts/migrate_to_v1_vectorstore.py`, `scripts/migrate_conversation_id_dbref_to_objectid.py` | Never on current versions: they change MongoDB data from before the move to Postgres. |
 
-Run a script from a checkout of the release you run, with `POSTGRES_URI` in its `.env` (or the environment) pointing at the deployment's database. To run one inside the backend container instead, copy the `scripts` folder in and put the app on the path:
+Run a script from the repository root of a checkout of the release you run. Directly on the host, `POSTGRES_URI` in the checkout's `.env` (or the environment) must point at the deployment's database. Against a Docker stack, copy the `scripts` folder into the backend container and run it there with the app on the path. For the checkout Compose files:
 
 ```bash
-docker compose cp scripts backend:/tmp/scripts
-docker compose exec -e PYTHONPATH=/app backend python /tmp/scripts/db/migrate_model_ids.py
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml cp scripts backend:/tmp/scripts
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec -e PYTHONPATH=/app backend \
+  python /tmp/scripts/db/migrate_model_ids.py
+```
+
+For a `docsgpt up` stack, still from the checkout (the stack directory has no `scripts/`):
+
+```bash
+docker compose -f ~/.docsgpt/server/docker-compose.yaml cp scripts backend:/tmp/scripts
+docker compose -f ~/.docsgpt/server/docker-compose.yaml exec -e PYTHONPATH=/app backend \
+  python /tmp/scripts/db/migrate_model_ids.py
 ```
