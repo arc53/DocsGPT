@@ -63,7 +63,7 @@ The upload dialog accepts these types:
 - **Documents:** `.pdf`, `.docx`, `.doc`, `.docm`, `.odt`, `.rtf`, `.txt`, `.md`, `.rst`, `.html`, `.xhtml`, `.epub`, `.json`
 - **Spreadsheets:** `.xlsx`, `.xls`, `.xlsm`, `.xlsb`, `.ods`, `.csv`
 - **Presentations:** `.pptx`, `.ppt`, `.pptm`, `.pps`, `.ppsx`, `.ppsm`, `.pot`, `.odp`
-- **Images:** `.png`, `.jpg`, `.jpeg`. Their text is read with OCR when OCR is enabled (`OCR_ENABLED`, off by default) or sent to a remote parser with `PARSE_IMAGE_REMOTE`. With both off, an image adds no text. See [Document parsing and OCR](/Guides/ocr).
+- **Images:** `.png`, `.jpg`, `.jpeg`. Their text is read with OCR when OCR is enabled (`OCR_ENABLED`, off by default). `PARSE_IMAGE_REMOTE` instead uploads each image to the hosted `https://llm.arc53.com/doc2md` service, so if images must stay on your servers, use `OCR_ENABLED`. With both off, an image adds no text. See [Document parsing and OCR](/Guides/ocr).
 - **Audio:** `.wav`, `.mp3`, `.m4a`, `.ogg`, `.webm`. Audio is transcribed with speech-to-text, and the transcript is indexed.
 - **Archives:** `.zip`
 
