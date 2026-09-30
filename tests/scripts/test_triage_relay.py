@@ -308,3 +308,29 @@ class TestWriteJob:
         key, path = lines[1].split("\t")
         assert len(key) == 256
         assert path.endswith("01-pr_review-13.json")
+
+
+class TestShaEvents:
+    def test_workflow_run_uses_its_listed_pull_requests(self):
+        run = {"event": "pull_request", "head_sha": "def", "pull_requests": [{"number": 5}, {"number": 6}]}
+        event = {"action": "completed", "workflow_run": run, "sender": _sender()}
+        assert relay.route("workflow_run", event, BOT, SKIP) == {"kind": "pr_review", "sha": "def", "numbers": [5, 6]}
+
+    def test_only_prs_whose_head_is_the_event_sha_are_reviewed(self, monkeypatch):
+        heads = {5: "def", 6: "other"}
+
+        def facts(gh, number, bot):
+            return {
+                "number": number,
+                "head_sha": heads[number],
+                "draft": False,
+                "author": {"association": "NONE", "login": "dev"},
+                "ci": {"state": "success"},
+                "coderabbit": {"status": "success"},
+                "last_bot_review": None,
+            }
+
+        monkeypatch.setattr(relay, "pr_facts", facts)
+        monkeypatch.setattr(relay, "prs_for_sha", lambda gh, sha: [5, 6])
+        jobs = relay.jobs_for(None, {"kind": "pr_review", "sha": "def"}, {}, BOT, SKIP)
+        assert [job[1]["number"] for job in jobs] == [5]

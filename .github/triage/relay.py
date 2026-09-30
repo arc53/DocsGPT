@@ -334,7 +334,12 @@ def route(event_name: str, event: dict[str, Any], bot: str, skip_associations: s
         run = event["workflow_run"]
         if run.get("event") != "pull_request":
             return {"kind": None, "reason": "workflow run not from a pull request"}
-        return {"kind": "pr_review", "sha": run["head_sha"]}
+        decision = {"kind": "pr_review", "sha": run["head_sha"]}
+        # Listed for same-repository PRs only; fork PRs fall back to a search on the SHA.
+        numbers = [pr["number"] for pr in run.get("pull_requests") or [] if pr.get("number")]
+        if numbers:
+            decision["numbers"] = numbers
+        return decision
     return {"kind": None, "reason": f"unhandled event {event_name}.{action}"}
 
 
@@ -674,7 +679,7 @@ def pr_facts(gh: GitHub, number: int, bot: str) -> dict[str, Any]:
 
 
 def prs_for_sha(gh: GitHub, sha: str) -> list[int]:
-    """Open PR numbers whose head is ``sha`` (works for fork PRs too)."""
+    """Open PRs a search associates with ``sha``; callers check the head themselves."""
     items = gh.search(f"is:pr is:open {sha}", limit=5).get("items", [])
     return [item["number"] for item in items]
 
@@ -743,10 +748,16 @@ def jobs_for(
             }
             key += f"-{decision['comment_id']}"
         return [(kind, facts, key, trigger)]
-    numbers = [decision["number"]] if "number" in decision else prs_for_sha(gh, decision["sha"])
+    if "number" in decision:
+        numbers = [decision["number"]]
+    else:
+        numbers = decision.get("numbers") or prs_for_sha(gh, decision["sha"])
     jobs = []
     for number in numbers:
         facts = pr_facts(gh, number, bot)
+        if "sha" in decision and facts["head_sha"] != decision["sha"]:
+            print(f"PR #{number}: head is {facts['head_sha'][:7]}, not the event's {decision['sha'][:7]}")
+            continue
         reason = None if manual or kind != "pr_review" else review_is_due(facts, skip, bot)
         if reason:
             print(f"PR #{number}: {reason}")

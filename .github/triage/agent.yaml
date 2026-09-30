@@ -177,9 +177,9 @@ spec:
 
       ## issue_author_reply
 
-      If the reply supplies what was asked, remove `needs-info` and `stale`, re-score, and report the
-      updated summary. If it does not, ask once more for the specific missing piece. No Telegram when
-      nothing changed.
+      Any reply from the author is activity, so always remove `stale`. If the reply supplies what was
+      asked, also remove `needs-info`, re-score, and report the updated summary. If it does not, keep
+      `needs-info` and ask once more for the specific missing piece. No Telegram when nothing changed.
 
       # Pull requests
 
