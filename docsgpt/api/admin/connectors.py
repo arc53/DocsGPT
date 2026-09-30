@@ -46,6 +46,46 @@ def _connection_counts(conn) -> dict[str, int]:
     return counts
 
 
+def _policy_state(conn, keys) -> dict:
+    """The effective policy of each connector in ``keys``, plus the custom MCP switch.
+
+    Args:
+        conn: Database connection.
+        keys: Connector keys to read.
+
+    Returns:
+        ``{key: {"enabled", "credential_mode", "allow_writes"}, "allow_custom_mcp": bool}``.
+    """
+    policies = ConnectorPoliciesRepository(conn).all()
+    loaded = service.load_policies(conn)
+    state: dict = {}
+    for key in keys:
+        definition = catalog.get_definition(key)
+        policy = policies.get(key) or {}
+        state[key] = {
+            "enabled": service.connector_is_enabled(policies, key),
+            "credential_mode": policy.get("credential_mode", "choose"),
+            "allow_writes": service.writes_allowed(loaded, key) if definition.mcp_write_url else None,
+        }
+    state["allow_custom_mcp"] = service.custom_mcp_allowed(conn)
+    return state
+
+
+def _policy_changes(before: dict, after: dict) -> dict:
+    """What a PUT changed, as ``[old, new]`` pairs; empty when it changed nothing."""
+    changes: dict = {}
+    for key, old in before.items():
+        new = after[key]
+        if not isinstance(old, dict):
+            if old != new:
+                changes[key] = [old, new]
+            continue
+        fields = {field: [old[field], new[field]] for field in old if old[field] != new[field]}
+        if fields:
+            changes[key] = fields
+    return changes
+
+
 def _mcp_redirect_uri() -> str:
     from docsgpt.agents.tools.mcp_tool import MCPTool
 
@@ -141,6 +181,7 @@ class AdminConnectorsResource(Resource):
             return make_response(jsonify({"success": False, "message": "allow_custom_mcp must be a boolean"}), 400)
         actor = _actor()
         with db_session() as conn:
+            before = _policy_state(conn, updates)
             repo = ConnectorPoliciesRepository(conn)
             for key, change in updates.items():
                 if "allow_writes" in change:
@@ -156,18 +197,20 @@ class AdminConnectorsResource(Resource):
                 )
             if allow_custom is not None:
                 AppMetadataRepository(conn).set(ALLOW_CUSTOM_MCP_KEY, "true" if allow_custom else "false")
-            metadata = {"by": actor, "via": "admin_api", "policies": updates}
-            if allow_custom is not None:
-                metadata["allow_custom_mcp"] = allow_custom
-            AuthEventsRepository(conn).insert(
-                # Instance configuration, not an account: filed under the acting admin, with no target.
-                actor or "unknown",
-                "connector_policy_set",
-                ip=request.remote_addr,
-                user_agent=request.headers.get("User-Agent"),
-                metadata=metadata,
-                actor_id=actor or "unknown",
-                target_id=None,
-            )
+            changes = _policy_changes(before, _policy_state(conn, updates))
+            if changes:
+                metadata = {"by": actor, "via": "admin_api", "policies": updates, "changes": changes}
+                if allow_custom is not None:
+                    metadata["allow_custom_mcp"] = allow_custom
+                AuthEventsRepository(conn).insert(
+                    # Instance configuration, not an account: filed under the acting admin, with no target.
+                    actor or "unknown",
+                    "connector_policy_set",
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent"),
+                    metadata=metadata,
+                    actor_id=actor or "unknown",
+                    target_id=None,
+                )
         logger.info("connector_policies_updated", extra={"admin": actor, "connectors": sorted(updates)})
         return self.get()

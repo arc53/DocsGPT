@@ -174,6 +174,26 @@ class TestAdminPolicies:
         assert metadata["allow_custom_mcp"] is False
         assert metadata["by"] == "alice" and metadata["via"] == "admin_api"
 
+    def test_a_put_that_changes_nothing_is_not_audited(self, app, pg_conn):
+        from docsgpt.api.admin.connectors import AdminConnectorsResource
+
+        body = {"policies": {"telegram": {"enabled": False}}, "allow_custom_mcp": False}
+        with _db(pg_conn):
+            for _ in range(2):
+                resp = _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"], body=body)
+                assert resp.status_code == 200
+            resp = _call(app, AdminConnectorsResource, "put", "/api/admin/connectors", roles=["admin"],
+                         body={"policies": {}})
+            assert resp.status_code == 200
+        rows = pg_conn.execute(
+            text("SELECT metadata FROM auth_events WHERE event = 'connector_policy_set'")
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0][0]["changes"] == {
+            "telegram": {"enabled": [True, False]},
+            "allow_custom_mcp": [True, False],
+        }
+
     def test_a_rejected_policy_change_is_not_audited(self, app, pg_conn):
         from docsgpt.api.admin.connectors import AdminConnectorsResource
 
