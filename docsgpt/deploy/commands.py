@@ -473,9 +473,9 @@ def _native_up(args, context: Context, directory: Path) -> int:
     if generated_encryption_key:
         print(
             "Generated ENCRYPTION_SECRET_KEY. ENCRYPTION_SECRET_KEY_PREVIOUS keeps credentials this database "
-            "already stored under the public default readable; reseal its connections with "
-            f"`DOCSGPT_HOME={directory} docsgpt connectors reencrypt`, and keep the previous key while tools "
-            "or custom models saved before still use it."
+            "already stored under the public default readable; reseal them with "
+            f"`DOCSGPT_HOME={directory} docsgpt connectors reencrypt`, then remove ENCRYPTION_SECRET_KEY_PREVIOUS "
+            "once it reports nothing unreadable."
         )
     print(f"Services: {', '.join(names)} under {services.name}")
     print(f"Settings: {env_path}")
@@ -554,8 +554,8 @@ def up(args, context: Optional[Context] = None) -> int:
             "and tools, MCP servers and custom models store their secrets under the public default key. "
             "To set it on this existing database, put a new key in ENCRYPTION_SECRET_KEY and "
             "`default-docsgpt-encryption-key` in ENCRYPTION_SECRET_KEY_PREVIOUS, run `docsgpt up`, then "
-            f"`docker compose -f {compose_file} exec backend python -m docsgpt connectors reencrypt`. Keep the "
-            "previous key while tools or custom models saved before still use it: "
+            f"`docker compose -f {compose_file} exec backend python -m docsgpt connectors reencrypt`, "
+            "then remove ENCRYPTION_SECRET_KEY_PREVIOUS once it reports nothing unreadable: "
             "https://docs.docsgpt.cloud/Deploying/Security#secrets",
             file=sys.stderr,
         )

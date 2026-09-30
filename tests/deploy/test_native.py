@@ -164,7 +164,10 @@ class TestNativeUp:
         argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
         assert _run(argv, _native_context()) == 0
         out = capsys.readouterr()
-        assert "docsgpt connectors reencrypt" in out.out + out.err
+        text = " ".join((out.out + out.err).split())
+        assert "docsgpt connectors reencrypt" in text
+        # reencrypt covers every stored secret, so the previous key does not have to stay.
+        assert "then remove ENCRYPTION_SECRET_KEY_PREVIOUS" in text
 
     def test_a_previous_key_already_set_is_not_overwritten(self, tmp_path):
         envfile.update(tmp_path / ".env", {"ENCRYPTION_SECRET_KEY_PREVIOUS": "older"})

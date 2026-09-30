@@ -199,6 +199,7 @@ class TestUpFirstInstall:
         assert f"docker compose -f {tmp_path / 'docker-compose.yaml'} exec backend" in err
         # Only connections are refused; tool secrets are still stored, under the public key.
         assert "public default" in err
+        assert "then remove ENCRYPTION_SECRET_KEY_PREVIOUS" in err
 
     def test_an_unhealthy_start_points_at_the_logs(self, tmp_path, capsys):
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(healthy=False)) == 1
