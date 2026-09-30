@@ -313,6 +313,16 @@ class TestKeylessAgentsStillLoadConfig:
         monkeypatch.setattr(
             StreamProcessor, "_resolve_agent_id", lambda self: "abc"
         )
+        from contextlib import contextmanager
+        from unittest.mock import MagicMock
+
+        @contextmanager
+        def _no_db():
+            yield MagicMock()
+
+        monkeypatch.setattr(
+            "docsgpt.api.answer.services.stream_processor.db_readonly", _no_db
+        )
         monkeypatch.setattr(
             StreamProcessor,
             "_get_agent_key",

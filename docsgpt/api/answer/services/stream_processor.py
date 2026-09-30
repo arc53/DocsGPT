@@ -785,9 +785,8 @@ class StreamProcessor:
             if not (is_owner or is_shared_with_user or is_team_shared):
                 raise Exception("Unauthorized access to the agent")
             self.public_link_usage = not (is_owner or is_team_shared)
-            # Authorized. Keep the row so _configure_agent can read fields that
-            # do not depend on an API key — a draft agent has key = NULL, and
-            # the builder preview runs exactly that path.
+            # Authorized. Keep the row so _configure_agent can run a draft
+            # agent, which has key = NULL, from it.
             self._authorized_agent_row = agent
             if is_owner:
                 now = datetime.datetime.now(datetime.timezone.utc)
@@ -817,16 +816,25 @@ class StreamProcessor:
             agent = AgentsRepository(conn).find_by_key(api_key)
             if not agent:
                 raise Exception("Invalid API Key, please generate a new key", 401)
-            # The repo dict uses "user_id" — the streaming path expects
-            # a "user" key (legacy Mongo shape) for identity propagation.
-            data: Dict[str, Any] = dict(agent)
-            data["user"] = agent.get("user_id")
+            return self._agent_run_data(conn, agent)
 
-            # Active sources = primary ∪ extras, primary first, deduplicated.
-            # ``_configure_source`` ignores an empty ``data["sources"]``,
-            # so the primary must appear in the union too — not only in
-            # the legacy ``data["source"]`` slot.
-            primary, source_docs = authorized_agent_sources(conn, agent)
+    def _agent_run_data(self, conn: Any, agent: Dict[str, Any]) -> Dict[str, Any]:
+        """An agent row as the run reads it: owner identity plus the unioned source set.
+
+        Args:
+            conn: An open database connection.
+            agent: The authorized ``agents`` row, keyed or a keyless draft.
+        """
+        # The repo dict uses "user_id" — the streaming path expects
+        # a "user" key (legacy Mongo shape) for identity propagation.
+        data: Dict[str, Any] = dict(agent)
+        data["user"] = agent.get("user_id")
+
+        # Active sources = primary ∪ extras, primary first, deduplicated.
+        # ``_configure_source`` ignores an empty ``data["sources"]``,
+        # so the primary must appear in the union too — not only in
+        # the legacy ``data["source"]`` slot.
+        primary, source_docs = authorized_agent_sources(conn, agent)
         # ``sources`` row may have NULL ``retriever``/``chunks`` — fall back to
         # the agent's value (``dict.get`` returns None even when the key
         # exists with value None). The primary's own values win for the agent.
@@ -1041,9 +1049,17 @@ class StreamProcessor:
 
         # Determine the effective API key (explicit > agent-derived)
         effective_key = self.data.get("api_key") or self.agent_key
+        # A draft agent has no key yet but is still that agent: its prompt,
+        # model, type, sources and tools, read from the row _get_agent_key
+        # already authorized.
+        draft_row = None if effective_key else getattr(self, "_authorized_agent_row", None)
 
-        if effective_key:
-            self._agent_data = self._get_data_from_api_key(effective_key)
+        if effective_key or draft_row:
+            if effective_key:
+                self._agent_data = self._get_data_from_api_key(effective_key)
+            else:
+                with db_readonly() as conn:
+                    self._agent_data = self._agent_run_data(conn, draft_row)
             if self._agent_data.get("_id"):
                 self.agent_id = str(self._agent_data.get("_id"))
 
@@ -1103,13 +1119,7 @@ class StreamProcessor:
                 self.agent_config["workflow"] = str(wf_ref)
                 self.agent_config["workflow_owner"] = self._agent_data.get("user")
         else:
-            # No API key — default/workflow configuration. A draft agent still
-            # has a behavior contract, and the builder preview is the one place
-            # an operator would try a guardrail before publishing, so load it
-            # from the row _get_agent_key already authorized.
-            row = getattr(self, "_authorized_agent_row", None)
-            if row:
-                self.agent_config["config"] = row.get("config") or {}
+            # No agent — default/workflow configuration.
             agent_type = settings.AGENT_NAME
             if self.data.get("workflow") and isinstance(
                 self.data.get("workflow"), dict
@@ -1223,9 +1233,10 @@ class StreamProcessor:
             "doc_token_limit": doc_token_limit,
         }
 
-        # isNoneDoc without an API key forces no retrieval (agentless only)
-        api_key = self.data.get("api_key") or self.agent_key
-        if not api_key and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
+        # isNoneDoc forces no retrieval on an agentless chat only; an agent,
+        # keyed or draft, searches its own sources.
+        agent_bound = bool(self.data.get("api_key") or self.agent_key or self._agent_data is not None)
+        if not agent_bound and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
             self.retriever_config["chunks"] = 0
 
     def _build_per_source_list(self, exposure: Optional[str] = None) -> list:
