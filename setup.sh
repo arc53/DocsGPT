@@ -284,19 +284,18 @@ configure_auth() {
     echo -e "${YELLOW}1) None (default): no sign-in, every visitor shares one account${NC}"
     echo -e "${YELLOW}2) Simple JWT: one shared access token, everyone who has it is the same user${NC}"
     echo -e "${YELLOW}3) Session JWT: keeps browsers apart, but anyone who can reach DocsGPT gets in${NC}"
+    echo -e "${YELLOW}4) OIDC: separate accounts, sign-in through your identity provider (Authentik, Keycloak, Okta, ...)${NC}"
     echo -e "${YELLOW}b) Back${NC}"
-    echo -e "${DEFAULT_FG}For separate user accounts with real sign-in, set AUTH_TYPE=oidc in .env after setup and connect${NC}"
-    echo -e "${DEFAULT_FG}your identity provider: https://docs.docsgpt.cloud/Deploying/OIDC-SSO${NC}"
     echo
-    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-3, or b): ${NC}")" auth_choice
+    read -p "$(echo -e "${DEFAULT_FG}Choose option (1-4, or b): ${NC}")" auth_choice
 
     case "$auth_choice" in
         1)
-            remove_env_keys AUTH_TYPE
+            remove_env_keys AUTH_TYPE $OIDC_ENV_KEYS
             echo -e "${GREEN}Authentication disabled (default).${NC}"
             ;;
         2)
-            remove_env_keys AUTH_TYPE
+            remove_env_keys AUTH_TYPE $OIDC_ENV_KEYS
             echo "AUTH_TYPE=simple_jwt" >> "$ENV_FILE"
             write_jwt_secret_key
             echo -e "${GREEN}Authentication set to Simple JWT.${NC}"
@@ -304,14 +303,72 @@ configure_auth() {
             echo -e "${DEFAULT_FG}  docker compose -f \"${COMPOSE_FILE}\" logs backend | grep \"Simple JWT\"${NC}"
             ;;
         3)
-            remove_env_keys AUTH_TYPE
+            remove_env_keys AUTH_TYPE $OIDC_ENV_KEYS
             echo "AUTH_TYPE=session_jwt" >> "$ENV_FILE"
             write_jwt_secret_key
             echo -e "${GREEN}Authentication set to Session JWT.${NC}"
             ;;
+        4) configure_oidc ;;
         b|B) return ;;
         *) echo -e "\n${RED}Invalid choice.${NC}" ; sleep 1 ;;
     esac
+}
+
+# The OIDC settings configure_oidc writes; choosing another mode removes them
+OIDC_ENV_KEYS="OIDC_ISSUER OIDC_CLIENT_ID OIDC_CLIENT_SECRET OIDC_FRONTEND_URL OIDC_ADMIN_GROUPS"
+
+# Ask until the answer is not empty
+read_required() {
+    local prompt="$1" answer=""
+    while [ -z "$answer" ]; do
+        read -p "$(echo -e "${DEFAULT_FG}${prompt}: ${NC}")" answer
+    done
+    echo "$answer"
+}
+
+# AUTH_TYPE=oidc: sign-in through an OpenID Connect identity provider
+configure_oidc() {
+    local issuer client_id client_secret frontend_url default_frontend admin_groups api_origin
+    echo -e "\n${DEFAULT_FG}Register DocsGPT as an OAuth2/OpenID client (authorization code flow) at your identity provider${NC}"
+    echo -e "${DEFAULT_FG}first. Guide: https://docs.docsgpt.cloud/Deploying/OIDC-SSO${NC}"
+    issuer=$(read_required "Issuer URL (e.g. https://auth.example.com/application/o/docsgpt/)")
+    client_id=$(read_required "Client ID")
+    read -p "$(echo -e "${DEFAULT_FG}Client secret (leave empty for a public client; PKCE is always used): ${NC}")" client_secret
+    if grep -q "^DOCSGPT_BIND=0.0.0.0" "$ENV_FILE" 2>/dev/null; then
+        frontend_url=$(read_required "Address people open DocsGPT at (e.g. https://docs.example.com or http://192.168.1.10:7091)")
+    else
+        default_frontend="http://localhost:5173"
+        read -p "$(echo -e "${DEFAULT_FG}Address people open DocsGPT at (leave empty for ${default_frontend}): ${NC}")" frontend_url
+        frontend_url="${frontend_url:-$default_frontend}"
+    fi
+    frontend_url="${frontend_url%/}"
+    read -p "$(echo -e "${DEFAULT_FG}IdP groups whose members become DocsGPT admins, comma-separated (leave empty for none): ${NC}")" admin_groups
+
+    remove_env_keys AUTH_TYPE $OIDC_ENV_KEYS
+    {
+        echo "AUTH_TYPE=oidc"
+        echo "OIDC_ISSUER=$issuer"
+        echo "OIDC_CLIENT_ID=$client_id"
+        [ -n "$client_secret" ] && echo "OIDC_CLIENT_SECRET=$client_secret"
+        echo "OIDC_FRONTEND_URL=$frontend_url"
+        [ -n "$admin_groups" ] && echo "OIDC_ADMIN_GROUPS=$admin_groups"
+    } >> "$ENV_FILE"
+    ensure_jwt_secret_key
+
+    # The UI on 5173 calls the API on 7091; the backend image serves the UI on its own port.
+    if [ "$frontend_url" = "http://localhost:5173" ]; then
+        api_origin="http://localhost:7091"
+    else
+        api_origin="$frontend_url"
+    fi
+    echo -e "${GREEN}Authentication set to OIDC.${NC}"
+    echo -e "${DEFAULT_FG}Register this redirect URI at your identity provider:${NC}"
+    echo -e "${DEFAULT_FG}  ${api_origin}/api/auth/oidc/callback${NC}"
+    echo -e "${DEFAULT_FG}Behind a reverse proxy, set OIDC_REDIRECT_URI in .env to the public callback URL instead.${NC}"
+    if [ -z "$admin_groups" ]; then
+        echo -e "${YELLOW}No admin groups set: nobody is an admin until you grant the first one. See${NC}"
+        echo -e "${YELLOW}https://docs.docsgpt.cloud/Deploying/Access-Control#bootstrapping-the-first-admin${NC}"
+    fi
 }
 
 # Ask for a JWT signing key; empty keeps the one already in .env (generated, or carried over)

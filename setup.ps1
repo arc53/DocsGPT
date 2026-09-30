@@ -414,19 +414,18 @@ function Configure-Auth {
     Write-ColorText "1) None (default): no sign-in, every visitor shares one account" -ForegroundColor "Yellow"
     Write-ColorText "2) Simple JWT: one shared access token, everyone who has it is the same user" -ForegroundColor "Yellow"
     Write-ColorText "3) Session JWT: keeps browsers apart, but anyone who can reach DocsGPT gets in" -ForegroundColor "Yellow"
+    Write-ColorText "4) OIDC: separate accounts, sign-in through your identity provider (Authentik, Keycloak, Okta, ...)" -ForegroundColor "Yellow"
     Write-ColorText "b) Back" -ForegroundColor "Yellow"
-    Write-ColorText "For separate user accounts with real sign-in, set AUTH_TYPE=oidc in .env after setup and connect" -ForegroundColor "White"
-    Write-ColorText "your identity provider: https://docs.docsgpt.cloud/Deploying/OIDC-SSO" -ForegroundColor "White"
     Write-Host ""
-    $auth_choice = Read-Host "Choose option (1-3, or b)"
+    $auth_choice = Read-Host "Choose option (1-4, or b)"
 
     switch ($auth_choice) {
         "1" {
-            Remove-EnvKeys @("AUTH_TYPE")
+            Remove-EnvKeys (@("AUTH_TYPE") + $script:OIDC_ENV_KEYS)
             Write-ColorText "Authentication disabled (default)." -ForegroundColor "Green"
         }
         "2" {
-            Remove-EnvKeys @("AUTH_TYPE")
+            Remove-EnvKeys (@("AUTH_TYPE") + $script:OIDC_ENV_KEYS)
             "AUTH_TYPE=simple_jwt" | Add-Content -Path $ENV_FILE -Encoding utf8
             Write-JwtSecretKey
             Write-ColorText "Authentication set to Simple JWT." -ForegroundColor "Green"
@@ -434,17 +433,69 @@ function Configure-Auth {
             Write-ColorText "  docker compose -f `"$COMPOSE_FILE`" logs backend | Select-String `"Simple JWT`"" -ForegroundColor "White"
         }
         "3" {
-            Remove-EnvKeys @("AUTH_TYPE")
+            Remove-EnvKeys (@("AUTH_TYPE") + $script:OIDC_ENV_KEYS)
             "AUTH_TYPE=session_jwt" | Add-Content -Path $ENV_FILE -Encoding utf8
             Write-JwtSecretKey
             Write-ColorText "Authentication set to Session JWT." -ForegroundColor "Green"
         }
+        "4" { Configure-Oidc }
         {$_ -eq "b" -or $_ -eq "B"} { return }
         default {
             Write-Host ""
             Write-ColorText "Invalid choice." -ForegroundColor "Red"
             Start-Sleep -Seconds 1
         }
+    }
+}
+
+# The OIDC settings Configure-Oidc writes; choosing another mode removes them
+$script:OIDC_ENV_KEYS = @("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_FRONTEND_URL", "OIDC_ADMIN_GROUPS")
+
+# Ask until the answer is not empty
+function Read-Required {
+    param([string]$Prompt)
+    $answer = ""
+    while ([string]::IsNullOrWhiteSpace($answer)) {
+        $answer = Read-Host $Prompt
+    }
+    return $answer.Trim()
+}
+
+# AUTH_TYPE=oidc: sign-in through an OpenID Connect identity provider
+function Configure-Oidc {
+    Write-Host ""
+    Write-ColorText "Register DocsGPT as an OAuth2/OpenID client (authorization code flow) at your identity provider" -ForegroundColor "White"
+    Write-ColorText "first. Guide: https://docs.docsgpt.cloud/Deploying/OIDC-SSO" -ForegroundColor "White"
+    $issuer = Read-Required "Issuer URL (e.g. https://auth.example.com/application/o/docsgpt/)"
+    $client_id = Read-Required "Client ID"
+    $client_secret = Read-Host "Client secret (leave empty for a public client; PKCE is always used)"
+    $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
+    if ($content -match "(?m)^DOCSGPT_BIND=0\.0\.0\.0") {
+        $frontend_url = Read-Required "Address people open DocsGPT at (e.g. https://docs.example.com or http://192.168.1.10:7091)"
+    } else {
+        $frontend_url = Read-Host "Address people open DocsGPT at (leave empty for http://localhost:5173)"
+        if ([string]::IsNullOrWhiteSpace($frontend_url)) { $frontend_url = "http://localhost:5173" }
+    }
+    $frontend_url = $frontend_url.Trim().TrimEnd("/")
+    $admin_groups = Read-Host "IdP groups whose members become DocsGPT admins, comma-separated (leave empty for none)"
+
+    Remove-EnvKeys (@("AUTH_TYPE") + $script:OIDC_ENV_KEYS)
+    $lines = @("AUTH_TYPE=oidc", "OIDC_ISSUER=$issuer", "OIDC_CLIENT_ID=$client_id")
+    if (-not [string]::IsNullOrWhiteSpace($client_secret)) { $lines += "OIDC_CLIENT_SECRET=$client_secret" }
+    $lines += "OIDC_FRONTEND_URL=$frontend_url"
+    if (-not [string]::IsNullOrWhiteSpace($admin_groups)) { $lines += "OIDC_ADMIN_GROUPS=$admin_groups" }
+    $lines | Add-Content -Path $ENV_FILE -Encoding utf8
+    Ensure-JwtSecretKey
+
+    # The UI on 5173 calls the API on 7091; the backend image serves the UI on its own port.
+    $api_origin = if ($frontend_url -eq "http://localhost:5173") { "http://localhost:7091" } else { $frontend_url }
+    Write-ColorText "Authentication set to OIDC." -ForegroundColor "Green"
+    Write-ColorText "Register this redirect URI at your identity provider:" -ForegroundColor "White"
+    Write-ColorText "  $api_origin/api/auth/oidc/callback" -ForegroundColor "White"
+    Write-ColorText "Behind a reverse proxy, set OIDC_REDIRECT_URI in .env to the public callback URL instead." -ForegroundColor "White"
+    if ([string]::IsNullOrWhiteSpace($admin_groups)) {
+        Write-ColorText "No admin groups set: nobody is an admin until you grant the first one. See" -ForegroundColor "Yellow"
+        Write-ColorText "https://docs.docsgpt.cloud/Deploying/Access-Control#bootstrapping-the-first-admin" -ForegroundColor "Yellow"
     }
 }
 
