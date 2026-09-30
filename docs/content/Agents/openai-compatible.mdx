@@ -50,7 +50,7 @@ The `model` field is accepted but ignored — the agent bound to your API key de
 Authenticate with `Authorization: Bearer <agent_api_key>`. Every `/v1` request is an agent-key request, even from the agent's owner.
 
 <Callout type="warning">
-Nobody can approve a tool action through `/v1`. Write actions that use the agent owner's connected accounts or saved credentials are refused unless the owner allows them in the agent's **Access Details > Changes others can make as you**. See [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes).
+A `/v1` caller can't approve anything on the agent owner's behalf. Write actions that use the agent owner's connected accounts or saved credentials are refused unless the owner allows them in the agent's **Access Details > Changes others can make as you**. See [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes).
 </Callout>
 
 ## Endpoints

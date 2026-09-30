@@ -47,7 +47,7 @@ Authentication:
 See the [API overview](/API#choose-a-credential) for how each credential works.
 
 <Callout type="warning">
-Nobody can approve a tool action through an agent API key. When the agent is called with its `api_key` by anyone but its signed-in owner, a write action that uses the owner's connected accounts or saved credentials is refused unless the owner allows it: the agent gets a refusal instead of a result, and the `tool_call` event reports `"status": "denied"` with `"error_type": "tool_not_allowed"`. See [Letting API callers make changes](#letting-api-callers-make-changes).
+A key holder can't approve anything on the agent owner's behalf. When the agent is called with its `api_key` by anyone but its signed-in owner, a write action that uses the owner's connected accounts or saved credentials is refused unless the owner allows it: the agent gets a refusal instead of a result, and the `tool_call` event reports `"status": "denied"` with `"error_type": "tool_not_allowed"`. See [Letting API callers make changes](#letting-api-callers-make-changes).
 </Callout>
 
 ## Endpoints
