@@ -29,6 +29,9 @@ The machine connects outward to DocsGPT, so it works behind NAT or a firewall wi
     Docker images do. Under `flask run`, the device command stream `GET /api/devices/sessions/<id>/events`
     returns 404, so a device pairs but never receives commands. See
     [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
+  - Optionally, the `REMOTE_DEVICE_*` settings: the pairing code lifetime, the idle timeout for a device session,
+    how long queued commands and pending invocations are kept, and whether commands must be signed. See the
+    [Settings Reference](/Deploying/Settings-Reference#events-and-devices).
 
 <Callout type="info">
   The `host` commands require a docsgpt-cli build with remote-device support. If `docsgpt-cli host` is not recognized, update to the latest release or build from source.
@@ -44,7 +47,7 @@ Pairing uses a short one-time code (a device-code style flow).
    ```bash
    docsgpt-cli host pair --url https://your-docsgpt-instance
    ```
-   Enter the code when prompted. (Omit `--url` to use the default cloud instance.)
+   Enter the code when prompted. (Omit `--url` to use the default cloud instance.) The code is valid for 10 minutes by default (`REMOTE_DEVICE_PAIRING_TTL_SECONDS`). If it expires, start the pairing again.
 4. The UI switches to "Paired" once the code is redeemed. If you ran the command at a terminal, the CLI then offers to start the daemon or install it as a service.
 
 ## Run the daemon
