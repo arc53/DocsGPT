@@ -31,6 +31,7 @@ Full guide: <https://docs.docsgpt.cloud/Extensions/Chatwoot-extension>
 | `chatwoot_url` | Chatwoot base URL, e.g. `https://app.chatwoot.com`. |
 | `chatwoot_token` | Chatwoot profile Access Token, used to post replies. |
 | `chatwoot_webhook_secret` | Secret of the Chatwoot webhook. Requests without a valid signature get `401`. |
+| `chatwoot_allow_unsigned` | Optional, **insecure**. `true` accepts webhooks without a signature, for Chatwoot versions that do not sign them. See below. |
 | `account_id` | Optional. Answer only in this Chatwoot account. |
 | `assignee_id` | Optional. Answer only conversations assigned to this Chatwoot agent. |
 
@@ -39,3 +40,11 @@ Add the label `human-requested` to a conversation to stop the bot from replying 
 The bridge verifies the `X-Chatwoot-Signature` and `X-Chatwoot-Timestamp` headers and rejects deliveries signed more
 than five minutes ago, so keep the bridge host's clock in sync. If DocsGPT or Chatwoot returns an error, the bridge
 logs it and answers the webhook with `502`.
+
+### Older Chatwoot versions (unsigned webhooks)
+
+Chatwoot versions that do not sign webhooks send neither header, so every request gets `401`. Setting
+`chatwoot_allow_unsigned=true` accepts requests that carry neither header; a request that does carry them is still
+verified. This is **insecure**: anyone who can reach `/docsgpt` can make the bridge query your agent and post into
+your Chatwoot conversations. The bridge logs a warning at startup while it is on. Use it only when you cannot
+upgrade Chatwoot, and keep the bridge reachable only from Chatwoot (a private network or an IP allowlist).

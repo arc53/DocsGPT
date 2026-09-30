@@ -19,6 +19,10 @@ chatwoot_url = os.getenv("chatwoot_url", "").rstrip("/")
 docsgpt_key = os.getenv("docsgpt_key")
 chatwoot_token = os.getenv("chatwoot_token")
 chatwoot_webhook_secret = os.getenv("chatwoot_webhook_secret", "")
+# INSECURE opt-in for Chatwoot versions that do not sign webhooks: accept requests that carry
+# neither X-Chatwoot-Signature nor X-Chatwoot-Timestamp. Anyone who can reach /docsgpt can then
+# make the bridge answer and post into your conversations.
+chatwoot_allow_unsigned = os.getenv("chatwoot_allow_unsigned", "").strip().lower() in ("1", "true", "yes", "on")
 # Optional filters: when set, only answer conversations in this account / assigned to this agent.
 account_id = os.getenv("account_id") or None
 assignee_id = os.getenv("assignee_id") or None
@@ -28,6 +32,11 @@ SIGNATURE_MAX_AGE_SECONDS = 300
 REQUEST_TIMEOUT_SECONDS = 120
 
 logger = logging.getLogger(__name__)
+if chatwoot_allow_unsigned:
+    logger.warning(
+        "chatwoot_allow_unsigned is on: unsigned webhook requests are accepted. This is insecure; "
+        "use it only with a Chatwoot version that cannot sign webhooks, and keep /docsgpt off the public internet."
+    )
 
 
 def send_to_bot(sender: Any, message: str) -> str | None:
@@ -106,7 +115,8 @@ def is_valid_chatwoot_signature(
     """Validate a Chatwoot webhook signature.
 
     Chatwoot signs each delivery with ``sha256=HMAC-SHA256(secret, "{timestamp}.{raw_body}")`` and sends the
-    timestamp in ``X-Chatwoot-Timestamp``.
+    timestamp in ``X-Chatwoot-Timestamp``. When ``chatwoot_allow_unsigned`` is on, a request with neither header
+    is accepted; a request that carries either header is still verified.
 
     Args:
         raw_body: The unparsed request body.
@@ -114,8 +124,11 @@ def is_valid_chatwoot_signature(
         timestamp_header: The ``X-Chatwoot-Timestamp`` header value (Unix seconds).
 
     Returns:
-        True if the signature matches and the timestamp is recent.
+        True if the signature matches and the timestamp is recent, or the request is unsigned and unsigned
+        requests are allowed.
     """
+    if chatwoot_allow_unsigned and not signature_header and not timestamp_header:
+        return True
     if not chatwoot_webhook_secret or not signature_header or not timestamp_header:
         return False
     try:

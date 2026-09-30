@@ -39,6 +39,7 @@ def bridge(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.setattr(module, "docsgpt_key", "agent-key")
     monkeypatch.setattr(module, "chatwoot_token", "cw-token")
     monkeypatch.setattr(module, "chatwoot_webhook_secret", SECRET)
+    monkeypatch.setattr(module, "chatwoot_allow_unsigned", False)
     monkeypatch.setattr(module, "account_id", None)
     monkeypatch.setattr(module, "assignee_id", None)
     return module
@@ -189,3 +190,52 @@ class TestWebhook:
 
         assert resp.status_code == 200
         assert post.call_count == 2
+
+
+class TestAllowUnsigned:
+    def _post(self, bridge: ModuleType, headers: dict[str, str]):
+        body = json.dumps(_event()).encode()
+        return bridge.app.test_client().post("/docsgpt", data=body, headers=headers)
+
+    def test_flag_parsed_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("chatwoot_allow_unsigned", "true")
+        assert _load_app().chatwoot_allow_unsigned is True
+        monkeypatch.setenv("chatwoot_allow_unsigned", "false")
+        assert _load_app().chatwoot_allow_unsigned is False
+        monkeypatch.delenv("chatwoot_allow_unsigned")
+        assert _load_app().chatwoot_allow_unsigned is False
+
+    def test_startup_warning_when_enabled(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setenv("chatwoot_allow_unsigned", "true")
+        with caplog.at_level("WARNING"):
+            _load_app()
+        assert any("chatwoot_allow_unsigned" in r.getMessage() for r in caplog.records)
+
+    def test_unsigned_request_rejected_by_default(self, bridge: ModuleType) -> None:
+        assert self._post(bridge, {"Content-Type": "application/json"}).status_code == 401
+
+    def test_unsigned_request_accepted_when_allowed(
+        self, bridge: ModuleType, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(bridge, "chatwoot_allow_unsigned", True)
+        monkeypatch.setattr(bridge, "chatwoot_webhook_secret", "")
+        answer = _response(200, {"answer": "Use pip."})
+        created = _response(200, {"id": 99})
+        with patch.object(bridge.requests, "post", side_effect=[answer, created]) as post:
+            resp = self._post(bridge, {"Content-Type": "application/json"})
+
+        assert resp.status_code == 200
+        assert post.call_count == 2
+
+    def test_bad_signature_still_rejected_when_allowed(
+        self, bridge: ModuleType, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(bridge, "chatwoot_allow_unsigned", True)
+        headers = {
+            "Content-Type": "application/json",
+            "X-Chatwoot-Timestamp": str(int(time.time())),
+            "X-Chatwoot-Signature": "sha256=deadbeef",
+        }
+        assert self._post(bridge, headers).status_code == 401
