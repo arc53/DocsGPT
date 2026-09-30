@@ -302,10 +302,12 @@ Operators control guardrails deployment-wide with these settings:
 | `GUARDRAILS_STORE_SCANNED_TEXT` | `false` | Persist a sample of matched text with each journal row. |
 | `GUARDRAILS_EVENTS_RETENTION_DAYS` | `30` | Journal retention. Minimum 1. |
 
-List and dict settings are read from the environment as JSON, for example:
+`GUARDRAILS_CHECKS_ENABLED` takes a JSON list or comma-separated names, and an empty value means every check. `GUARDRAILS_FLOOR` must be JSON. For example:
 
 ```bash
 GUARDRAILS_CHECKS_ENABLED='["pii", "secrets", "denylist", "url", "injection", "groundedness"]'
+# or
+GUARDRAILS_CHECKS_ENABLED=pii,secrets,denylist,url,injection,groundedness
 ```
 
 <Callout type="info" emoji="ℹ️">

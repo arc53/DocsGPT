@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
-from typing import Annotated, Any, Optional
+from typing import Annotated, Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import NoDecode
 
-from docsgpt.core.settings._shared import SettingsGroup
+from docsgpt.core.settings._shared import EnvList, SettingsGroup
 
 
 class AgentSettings(SettingsGroup):
@@ -19,11 +18,11 @@ class AgentSettings(SettingsGroup):
         default={"token_limit": 50000, "request_limit": 500},
         description="Per-agent default quotas: tokens and requests.",
     )
-    DEFAULT_CHAT_TOOLS: Annotated[list[str], NoDecode] = Field(
+    DEFAULT_CHAT_TOOLS: Annotated[list[str], NoDecode, EnvList(none_is_empty=True)] = Field(
         default=["memory", "read_webpage", "scheduler"],
         description=(
-            'Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]); '
-            "comma-separated names are accepted too, and an empty value turns them all off. scheduler is "
+            'Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) '
+            "or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is "
             "dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add "
             "code_executor and artifact_generator once a sandbox runner is configured; both execute through "
             "it and would fail on every call without one."
@@ -92,27 +91,3 @@ class AgentSettings(SettingsGroup):
     ARTIFACT_MAX_TOTAL_BYTES_PER_USER: int = Field(
         default=5 * 1024 * 1024 * 1024, description="Cap on a user's total stored artifact bytes (0 disables)."
     )
-
-    @field_validator("DEFAULT_CHAT_TOOLS", mode="before")
-    @classmethod
-    def _parse_tool_names(cls, value: Any) -> Any:
-        """Read ``DEFAULT_CHAT_TOOLS`` from a JSON list or from comma-separated names.
-
-        Args:
-            value: The raw value; a string from the environment or ``.env``, or an already-built list.
-
-        Returns:
-            A list of stripped, non-empty names for string input; any other value unchanged.
-
-        Raises:
-            ValueError: If a value that starts with ``[`` is not valid JSON.
-        """
-        if not isinstance(value, str):
-            return value
-        text = value.strip()
-        if text.startswith("["):
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"DEFAULT_CHAT_TOOLS is not a valid JSON list: {exc}") from exc
-        return [name.strip() for name in text.split(",") if name.strip()]

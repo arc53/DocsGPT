@@ -1329,7 +1329,7 @@ Per-agent default quotas: tokens and requests.
 
 Type `list[str]`, default `["memory", "read_webpage", "scheduler"]`.
 
-Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]); comma-separated names are accepted too, and an empty value turns them all off. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
+Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
 
 ### `ENABLE_TOOL_PREFETCH`
 
@@ -1436,7 +1436,7 @@ Master switch; False disables every stage.
 
 Type `list[str]`, default `[]`.
 
-Allowlist of GuardrailCreator.checks keys; empty means every registered check.
+Allowlist of GuardrailCreator.checks keys, as a JSON list or comma-separated names; unset or empty means every registered check.
 
 ### `GUARDRAILS_FLOOR`
 
@@ -1518,7 +1518,7 @@ Window every usage quota is measured over. Windows are calendar-aligned in UTC: 
 
 Type `list[float]`, default unset.
 
-Fallback `[input, output]` USD rates per 1M tokens for models that declare no price, e.g. `[0.5, 1.5]`. Unset, such calls are recorded at $0 and only count toward token quotas.
+Fallback `[input, output]` USD rates per 1M tokens for models that declare no price, e.g. `[0.5, 1.5]` or `0.5,1.5`. Unset, such calls are recorded at $0 and only count toward token quotas.
 
 
 ## Scheduler

@@ -129,7 +129,7 @@ DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler"]
 - Each user can opt out of individual default tools from their settings; the disabled list is stored per user.
 - Some default tools are excluded from **headless runs** (scheduled tasks and webhook triggers). For example, `scheduler` is skipped in those runs to prevent a scheduled task from chaining new schedules on every fire.
 
-To change the defaults for the whole instance, set `DEFAULT_CHAT_TOOLS` to a JSON list of tool names, as above. Comma-separated names (`memory,read_webpage`) are accepted too, and an empty value (or `[]`) turns the default tools off. See the [Settings Reference](/Deploying/Settings-Reference#default_chat_tools) for the full entry.
+To change the defaults for the whole instance, set `DEFAULT_CHAT_TOOLS` to a JSON list of tool names, as above. Comma-separated names (`memory,read_webpage`) are accepted too. To turn the default tools off, set `DEFAULT_CHAT_TOOLS=none` (or `[]`); an empty value keeps the shipped defaults. See the [Settings Reference](/Deploying/Settings-Reference#default_chat_tools) for the full entry.
 
 ## Using Tools in DocsGPT (User Perspective)
 
