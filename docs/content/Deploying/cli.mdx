@@ -94,6 +94,7 @@ container from the stack directory, for example
 | `docsgpt reembed [--dry-run] [--sources IDS] [--batch-size N]` | Re-embed every index after changing `EMBEDDINGS_NAME`. See [Upgrading](/upgrading). |
 | `docsgpt prefetch-models [MODEL ...]` | Download the embedding models and their tokenizers ahead of time. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |
 | `docsgpt verify-offline [MODEL ...]` | Check that a prepared install serves its defaults with networking off. |
+| `docsgpt ocr-check [--engine tesseract\|deepseek] [--file PATH]` | Send one page to the configured OCR engine and report the endpoint, time, text and token usage. See [DeepSeek-OCR](/Sources/ocr#deepseek-ocr). |
 
 The scripts under `scripts/` in the repository are not part of this command and
 run only from a source checkout. See

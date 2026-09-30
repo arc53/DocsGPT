@@ -663,13 +663,13 @@ function Configure-DocProcessing {
         # Pre-built images: pull arc53/docsgpt:<tag>-docling instead of the
         # slim default (about 1.5 GB more to download).
         Write-EnvValue DOCSGPT_IMAGE_VARIANT "-docling"
-        Write-ColorText "OCR enabled. The -docling image variant will be pulled (tesseract, docling layout engine and its models included). For a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env." -ForegroundColor "Green"
+        Write-ColorText "OCR enabled. The -docling image variant will be pulled (tesseract, docling layout engine and its models included). For a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek in .env (local Ollama by default; OCR_DEEPSEEK_PROVIDER=novita or deepinfra plus OCR_DEEPSEEK_API_KEY for a hosted API)." -ForegroundColor "Green"
         return
     }
     # Bakes tesseract into the locally built images (docker compose
     # --env-file .env build).
     Write-EnvValue INSTALL_TESSERACT "true"
-    Write-ColorText "OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); for a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek and OCR_DEEPSEEK_URL=<endpoint> in .env." -ForegroundColor "Green"
+    Write-ColorText "OCR enabled. tesseract will be built into the images (INSTALL_TESSERACT=true); for a DeepSeek-OCR endpoint instead, set OCR_ENGINE=deepseek in .env (local Ollama by default; OCR_DEEPSEEK_PROVIDER=novita or deepinfra plus OCR_DEEPSEEK_API_KEY for a hosted API)." -ForegroundColor "Green"
     $docling_ocr = Read-Host "Also install the Docling layout engine for OCR (better tables/reading order, several GB heavier)? (y/N)"
     if ($docling_ocr -eq "y" -or $docling_ocr -eq "Y") {
         # Locally built images include docling via this build arg; it becomes
