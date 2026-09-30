@@ -136,13 +136,33 @@ OCR_BACKEND=auto
 OCR_ENGINE=tesseract
 ```
 
-- `OCR_ENABLED`: OCR behavior for Source Docs ingestion.
+- `OCR_ENABLED`: OCR behavior when you add knowledge (**Settings → Knowledge**).
 - `OCR_ATTACHMENTS_ENABLED`: OCR behavior for chat attachments uploaded from the message box.
 - `OCR_BACKEND`: which stack performs the OCR (next section).
 - `OCR_ENGINE`: which recognition engine it uses ([Choosing the OCR engine](#choosing-the-ocr-engine)).
 
 The older names `DOCLING_OCR_ENABLED` and `DOCLING_OCR_ATTACHMENTS_ENABLED`
 are still accepted as aliases.
+
+Two more settings tune OCR output:
+
+```env
+OCR_RENDER_DPI=200
+OCR_MIN_CHARS_PER_PAGE=20
+```
+
+- `OCR_RENDER_DPI` (default `200`, `native` backend only): the resolution at
+  which pages without a text layer are rendered before OCR. Values outside
+  72–600 are clamped to that range. 200 suits tesseract; raise it for small
+  print, at the cost of slower OCR.
+- `OCR_MIN_CHARS_PER_PAGE` (default `20`; alias
+  `DOCLING_OCR_MIN_CHARS_PER_PAGE`): the dropout guard. An OCR'd PDF or image
+  that yields fewer characters per page than this is treated as an OCR
+  failure, not as content. The `docling` backend retries once with a fresh
+  full-page OCR converter; if the result is still below the floor, both
+  backends fail the parse with an error instead of indexing an empty document.
+  Set `0` to turn the guard off, for example for scans that really are almost
+  blank.
 
 Under the default anydoc engine, a scanned PDF reaches OCR through anydoc's
 own detection: anydoc refuses it ("OCR is required") and the OCR backend
@@ -266,7 +286,7 @@ costs above are acceptable.
 
 ## Processing Flow
 
-### Source Docs flow (Upload and Train)
+### Knowledge flow (Add knowledge)
 
 1. Files are uploaded through `/api/upload`.
 2. Ingestion runs asynchronously in Celery (`ingest_worker`).
