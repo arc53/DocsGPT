@@ -10,7 +10,8 @@ OCR in DocsGPT has two backends, selected by ``OCR_BACKEND``:
 * ``native`` (this module) — page rendering with pypdfium2 and Pillow, both
   core dependencies, feeding one of two engines directly: the system
   ``tesseract`` binary, or a DeepSeek-OCR model behind an OpenAI-compatible
-  endpoint (Ollama / vLLM). No ML models load in the worker. Pages that
+  endpoint (a local Ollama / vLLM, or a hosted API such as Novita or
+  DeepInfra). No ML models load in the worker. Pages that
   carry a text layer are read through pypdfium2 and never OCR'd; pages
   without one are rendered and OCR'd. What it lacks against docling is the
   layout model: multi-column scans rely on tesseract's own page
@@ -26,9 +27,13 @@ import base64
 import functools
 import io
 import logging
+import random
 import re
 import shutil
 import subprocess
+import threading
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Protocol, Tuple, Union
 
@@ -77,6 +82,24 @@ _TESSERACT_LANG_RE = re.compile(r"^[A-Za-z0-9_/\-]+$")
 # ingestion pipeline stores, so ask for that directly.
 DEEPSEEK_PROMPT = "Convert the document to markdown."
 _DEEPSEEK_MAX_TOKENS = 4096
+# Where DeepSeek-OCR runs: provider -> (chat-completions URL, model, hosted).
+# Hosted presets need an API key and default to concurrent page requests; a
+# laptop-hosted Ollama only slows down under parallel requests.
+DEEPSEEK_PROVIDERS: Dict[str, Tuple[Optional[str], Optional[str], bool]] = {
+    "ollama": ("http://localhost:11434/v1/chat/completions", "deepseek-ocr:3b", False),
+    "vllm": ("http://localhost:8000/v1/chat/completions", "deepseek-ai/DeepSeek-OCR", False),
+    "novita": ("https://api.novita.ai/openai/chat/completions", "deepseek/deepseek-ocr-2", True),
+    "deepinfra": ("https://api.deepinfra.com/v1/openai/chat/completions", "deepseek-ai/DeepSeek-OCR", True),
+    "custom": (None, None, False),
+}
+# Providers whose default is several pages in flight: hosted APIs and vLLM,
+# which batches concurrent requests on the GPU.
+_CONCURRENT_PROVIDERS = frozenset({"vllm", "novita", "deepinfra"})
+_DEFAULT_HOSTED_CONCURRENCY = 4
+# Statuses worth another attempt: rate limits and transient server failures.
+_RETRY_STATUSES = (408, 409, 425, 429, 500, 502, 503, 504)
+_MAX_RETRY_WAIT_SECONDS = 60.0
+_BASE_RETRY_WAIT_SECONDS = 1.0
 # Defensive cleanup should a served model still emit grounding markup.
 _DEEPSEEK_DET_BLOCK_RE = re.compile(r"<\|det\|>.*?<\|/det\|>", re.DOTALL)
 _DEEPSEEK_TAG_RE = re.compile(r"<\|/?ref\|>|<\|grounding\|>|<\|end▁of▁sentence\|>")
@@ -358,19 +381,131 @@ def clean_deepseek_output(text: str) -> str:
     return _DEEPSEEK_TAG_RE.sub("", text).strip()
 
 
+def _sleep(seconds: float) -> None:
+    """Backoff wait; a module attribute so tests can skip it."""
+    time.sleep(seconds)
+
+
+@dataclass(frozen=True)
+class DeepseekEndpoint:
+    """The DeepSeek-OCR endpoint the settings resolve to.
+
+    Attributes:
+        provider: ``OCR_DEEPSEEK_PROVIDER``.
+        url: Chat-completions URL.
+        model: Model name at that URL.
+        api_key: Bearer token, or None for a keyless local server.
+        timeout: Seconds per page request.
+        concurrency: Page requests in flight per file.
+        max_retries: Retries per page after a 429, a 5xx or a refused connection.
+        hosted: Whether the preset is a third-party API.
+        problem: Why the endpoint cannot be used as configured, or None.
+    """
+
+    provider: str
+    url: str
+    model: str
+    api_key: Optional[str]
+    timeout: float
+    concurrency: int
+    max_retries: int
+    hosted: bool
+    problem: Optional[str] = None
+
+    def headers(self) -> Dict[str, str]:
+        """Request headers: the bearer token when one is configured."""
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+
+    def describe(self) -> str:
+        """One line for logs and ``docsgpt ocr-check``; never includes the key."""
+        key = "set" if self.api_key else "none"
+        return (
+            f"provider={self.provider} url={self.url or '(unset)'} model={self.model or '(unset)'} "
+            f"api_key={key} concurrency={self.concurrency} timeout={self.timeout:.0f}s retries={self.max_retries}"
+        )
+
+
+def resolve_deepseek_endpoint() -> DeepseekEndpoint:
+    """Resolve ``OCR_DEEPSEEK_*`` into an endpoint: the provider preset, overridden by explicit values.
+
+    Never raises: a configuration that cannot work (a hosted preset without a
+    key, ``custom`` without a URL or model) comes back with ``problem`` set,
+    and the engine raises it only when a page actually needs OCR — so
+    text-layer documents keep parsing, as with a missing tesseract binary.
+    """
+    from docsgpt.core.settings import settings
+
+    provider = str(settings.OCR_DEEPSEEK_PROVIDER or "ollama").strip().lower()
+    if provider not in DEEPSEEK_PROVIDERS:
+        logger.warning(f"Unknown OCR_DEEPSEEK_PROVIDER {provider!r}; using ollama")
+        provider = "ollama"
+    preset_url, preset_model, hosted = DEEPSEEK_PROVIDERS[provider]
+    url = settings.OCR_DEEPSEEK_URL or preset_url or ""
+    model = settings.OCR_DEEPSEEK_MODEL or preset_model or ""
+    api_key = settings.OCR_DEEPSEEK_API_KEY
+    if not api_key and provider == "novita":
+        api_key = settings.NOVITA_API_KEY
+    concurrency = settings.OCR_DEEPSEEK_CONCURRENCY or (
+        _DEFAULT_HOSTED_CONCURRENCY if provider in _CONCURRENT_PROVIDERS else 1
+    )
+    problem = None
+    if not url:
+        problem = f"OCR_DEEPSEEK_PROVIDER={provider} needs OCR_DEEPSEEK_URL (the chat-completions URL)"
+    elif not model:
+        problem = f"OCR_DEEPSEEK_PROVIDER={provider} needs OCR_DEEPSEEK_MODEL (the model name at {url})"
+    elif hosted and not api_key:
+        extra = " (or NOVITA_API_KEY)" if provider == "novita" else ""
+        problem = f"OCR_DEEPSEEK_PROVIDER={provider} needs an API key: set OCR_DEEPSEEK_API_KEY{extra}"
+    return DeepseekEndpoint(
+        provider=provider,
+        url=url,
+        model=model,
+        api_key=api_key,
+        timeout=float(settings.OCR_DEEPSEEK_TIMEOUT),
+        concurrency=max(1, int(concurrency)),
+        max_retries=max(0, int(settings.OCR_DEEPSEEK_MAX_RETRIES)),
+        hosted=hosted,
+        problem=problem,
+    )
+
+
+def _retry_after_seconds(response) -> Optional[float]:
+    """``Retry-After`` in seconds when the server sent a numeric one."""
+    value = (getattr(response, "headers", None) or {}).get("Retry-After")
+    try:
+        return max(0.0, float(value)) if value is not None else None
+    except (TypeError, ValueError):
+        return None  # an HTTP-date; fall back to exponential backoff
+
+
+def _backoff_seconds(attempt: int) -> float:
+    return min(_MAX_RETRY_WAIT_SECONDS, _BASE_RETRY_WAIT_SECONDS * 2**attempt + random.uniform(0, 0.5))
+
+
+def _error_body(response) -> str:
+    try:
+        return str(response.text or "").strip()[:300]
+    except Exception:  # noqa: BLE001 - only for the error message
+        return ""
+
+
 class DeepseekOcrEngine:
     """DeepSeek-OCR over an OpenAI-compatible chat-completions endpoint.
 
-    One request per page, sequentially. The image travels as a base64 data
-    URL, which both Ollama and vLLM accept. Pages are sent one at a time
-    because the model server, not the worker, is the bottleneck; docling's
-    default of four concurrent requests and a 90 s timeout is what broke on
-    a laptop-hosted Ollama in testing.
+    One request per page. The image travels as a base64 data URL, which
+    Ollama, vLLM and the hosted APIs all accept. Local presets send pages one
+    at a time because the model server, not the worker, is the bottleneck
+    (docling's four concurrent requests with a 90 s timeout broke a
+    laptop-hosted Ollama in testing); hosted presets default to several in
+    flight, which ``ocr_images`` schedules. Rate limits and 5xx responses are
+    retried with backoff; token usage is summed for the file's metadata.
 
     Attributes:
-        url: Chat-completions URL (``OCR_DEEPSEEK_URL``).
-        model: Model name at that endpoint (``OCR_DEEPSEEK_MODEL``).
-        timeout: Seconds per page (``OCR_DEEPSEEK_TIMEOUT``).
+        url: Chat-completions URL.
+        model: Model name at that endpoint.
+        timeout: Seconds per page.
+        concurrency: Page requests in flight per file.
+        max_retries: Retries per page after a transient failure.
         prompt: Instruction sent with every page image.
     """
 
@@ -383,14 +518,21 @@ class DeepseekOcrEngine:
         timeout: Optional[float] = None,
         prompt: str = DEEPSEEK_PROMPT,
         max_tokens: int = _DEEPSEEK_MAX_TOKENS,
+        endpoint: Optional[DeepseekEndpoint] = None,
     ) -> None:
-        from docsgpt.core.settings import settings
-
-        self.url = url or settings.OCR_DEEPSEEK_URL
-        self.model = model or settings.OCR_DEEPSEEK_MODEL
-        self.timeout = float(timeout if timeout is not None else settings.OCR_DEEPSEEK_TIMEOUT)
+        resolved = endpoint or resolve_deepseek_endpoint()
+        self.endpoint = resolved
+        self.url = url or resolved.url
+        self.model = model or resolved.model
+        self.timeout = float(timeout if timeout is not None else resolved.timeout)
+        self.concurrency = resolved.concurrency
+        self.max_retries = resolved.max_retries
         self.prompt = prompt
         self.max_tokens = max_tokens
+        # An explicit URL and model mean the caller configured the endpoint itself.
+        self._problem = None if (url and model) else resolved.problem
+        self._usage_lock = threading.Lock()
+        self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
 
     def payload(self, image) -> Dict:
         """The chat-completions request body for one page image."""
@@ -410,34 +552,113 @@ class DeepseekOcrEngine:
             "temperature": 0,
         }
 
+    def usage(self) -> Dict[str, int]:
+        """Requests and tokens since the last ``reset_usage``."""
+        with self._usage_lock:
+            return dict(self._usage)
+
+    def reset_usage(self) -> None:
+        """Start counting usage for a new file."""
+        with self._usage_lock:
+            self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+
+    def _record_usage(self, body: Dict) -> None:
+        usage = body.get("usage") if isinstance(body, dict) else None
+        usage = usage if isinstance(usage, dict) else {}
+        with self._usage_lock:
+            self._usage["requests"] += 1
+            for key in ("prompt_tokens", "completion_tokens"):
+                try:
+                    self._usage[key] += int(usage.get(key) or 0)
+                except (TypeError, ValueError):
+                    pass
+
+    def _post(self, body: Dict):
+        """POST one page, retrying rate limits, 5xx responses and refused connections.
+
+        Raises:
+            OcrUnavailableError: The endpoint rejected the key or does not serve the model.
+            DocumentParseError: Any other failure, after the retries.
+        """
+        import requests
+
+        headers = self.endpoint.headers()
+        attempt = 0
+        while True:
+            try:
+                response = requests.post(self.url, json=body, headers=headers, timeout=self.timeout)
+            except requests.exceptions.ConnectionError as exc:
+                # ConnectTimeout lands here too; a read timeout does not.
+                if attempt < self.max_retries:
+                    wait_s = _backoff_seconds(attempt)
+                    logger.warning(f"DeepSeek-OCR endpoint {self.url} unreachable ({exc}); retrying in {wait_s:.1f}s")
+                    _sleep(wait_s)
+                    attempt += 1
+                    continue
+                raise DocumentParseError(
+                    f"DeepSeek-OCR request to {self.url} failed: {exc}. Check OCR_DEEPSEEK_URL "
+                    f"and that model {self.model!r} is served (e.g. `ollama pull {self.model}`)."
+                ) from exc
+            except requests.exceptions.Timeout as exc:
+                raise DocumentParseError(
+                    f"DeepSeek-OCR request to {self.url} timed out after {self.timeout:.0f}s on a page; "
+                    "raise OCR_DEEPSEEK_TIMEOUT for a slow model server."
+                ) from exc
+            except requests.RequestException as exc:
+                raise DocumentParseError(f"DeepSeek-OCR request to {self.url} failed: {exc}") from exc
+
+            status = response.status_code
+            if status in _RETRY_STATUSES and attempt < self.max_retries:
+                retry_after = _retry_after_seconds(response)
+                wait_s = min(_MAX_RETRY_WAIT_SECONDS, retry_after) if retry_after is not None else _backoff_seconds(
+                    attempt
+                )
+                logger.warning(f"DeepSeek-OCR endpoint {self.url} returned {status}; retrying in {wait_s:.1f}s")
+                _sleep(wait_s)
+                attempt += 1
+                continue
+            if status in (401, 403):
+                raise OcrUnavailableError(
+                    f"DeepSeek-OCR endpoint {self.url} rejected the request ({status}): {_error_body(response)}. "
+                    "Check OCR_DEEPSEEK_API_KEY."
+                )
+            if status == 404:
+                raise OcrUnavailableError(
+                    f"DeepSeek-OCR endpoint {self.url} returned 404 for model {self.model!r}: "
+                    f"{_error_body(response)}. Check OCR_DEEPSEEK_URL and OCR_DEEPSEEK_MODEL "
+                    f"(for Ollama: `ollama pull {self.model}`)."
+                )
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                raise DocumentParseError(
+                    f"DeepSeek-OCR endpoint {self.url} returned {status}: {_error_body(response)}"
+                ) from exc
+            return response
+
     def ocr_image(self, image) -> str:
         """OCR one PIL image through the endpoint.
 
         Raises:
+            OcrUnavailableError: The endpoint is misconfigured, rejected the
+                key or does not serve the model.
             DocumentParseError: The request failed, timed out, or the
                 response was not a chat completion.
         """
-        import requests
-
+        if self._problem:
+            raise OcrUnavailableError(self._problem)
+        response = self._post(self.payload(image))
         try:
-            response = requests.post(self.url, json=self.payload(image), timeout=self.timeout)
-            response.raise_for_status()
             body = response.json()
-        except requests.exceptions.JSONDecodeError as exc:
-            # Subclasses RequestException too, so it must be caught first or a
-            # proxy's HTML error page is reported as a connection failure.
+        except ValueError as exc:  # requests' JSONDecodeError included: a proxy's HTML error page
             raise DocumentParseError(f"DeepSeek-OCR endpoint {self.url} returned a non-JSON body") from exc
-        except requests.RequestException as exc:
-            raise DocumentParseError(
-                f"DeepSeek-OCR request to {self.url} failed: {exc}. Check OCR_DEEPSEEK_URL "
-                f"and that model {self.model!r} is served (e.g. `ollama pull {self.model}`)."
-            ) from exc
         try:
             content = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise DocumentParseError(
                 f"DeepSeek-OCR endpoint {self.url} returned no chat completion: {str(body)[:200]}"
             ) from exc
+        self._record_usage(body)
         if isinstance(content, list):  # some servers return content parts
             content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
         return clean_deepseek_output(str(content or ""))
