@@ -71,6 +71,21 @@ describe('Card', () => {
     expect(html).toContain('focus-visible:ring-3');
   });
 
+  it('interactive="within" draws a stretched inner button\'s hover and focus ring', () => {
+    const html = renderToStaticMarkup(
+      <Card variant="filled" interactive="within">
+        <button type="button">Open</button>
+      </Card>,
+    );
+    expect(html).toContain('relative');
+    expect(html).toContain('hover:bg-accent');
+    expect(html).toContain('has-[&gt;button:focus-visible]:ring-3');
+    expect(html).toContain('has-[&gt;button:focus-visible]:ring-ring/50');
+    // The card itself is not the target: no pointer, no own focus ring.
+    expect(html).not.toContain('cursor-pointer');
+    expect(html).toContain('data-interactive="within"');
+  });
+
   it('header places the action in the trailing column', () => {
     const html = renderToStaticMarkup(
       <CardHeader>

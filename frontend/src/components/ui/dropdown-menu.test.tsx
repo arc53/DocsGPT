@@ -112,6 +112,30 @@ describe('ActionMenu', () => {
     expect(onCard).not.toHaveBeenCalled();
   });
 
+  it('draws a separator before an option that asks for one', async () => {
+    await render(
+      <ActionMenu
+        options={[
+          { label: 'Rename', onClick: vi.fn() },
+          { label: 'Disconnect', onClick: vi.fn() },
+          {
+            label: 'Remove',
+            onClick: vi.fn(),
+            variant: 'destructive',
+            separatorBefore: true,
+          },
+        ]}
+        triggerLabel="Menu"
+        open
+      />,
+    );
+    const separators = document.querySelectorAll(
+      '[data-slot="dropdown-menu-separator"]',
+    );
+    expect(separators).toHaveLength(1);
+    expect(separators[0].nextElementSibling?.textContent).toBe('Remove');
+  });
+
   it('marks a disabled option', async () => {
     await render(
       <ActionMenu

@@ -1,4 +1,4 @@
-import { Eye, Pencil, RefreshCw, Trash2, Users } from 'lucide-react';
+import { Eye, Pencil, Plug, RefreshCw, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -15,24 +15,19 @@ import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import {
-  Card,
-  CardDescription,
-  CardFooter,
-  CardTitle,
-} from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
+import { SectionHeader } from '../components/ui/section-header';
 import { Switch } from '../components/ui/switch';
 import { EmptyState } from '../components/ui/empty-state';
 import ConnectorIcon from '../connectors/ConnectorIcon';
+import ConnectorTile from '../connectors/ConnectorTile';
 import {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
-import { connectorDescription, isKeyHint } from '../connectors/i18n';
-import type { Connection } from '../connectors/types';
+import { accountLine, connectorDescription } from '../connectors/i18n';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import { toolServiceOf } from '../connectors/toolService';
 import { useLoaderState } from '../hooks';
@@ -55,6 +50,7 @@ import {
 } from '../utils/toolUtils';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
+import { groupTools, type ToolGroup } from './toolGroups';
 import { APIToolType, UserToolType } from './types';
 
 export default function Tools() {
@@ -183,13 +179,30 @@ export default function Tools() {
   const getMenuOptions = (tool: UserToolType): MenuOption[] => {
     const canEdit = can(tool, 'edit') || can(tool, 'edit_credentials');
     const options: MenuOption[] = [];
-    // The caller's own connection that needs signing in again (the badge
-    // says so) is signed in again from here, in place where it can be.
     const connection = connectionOf(tool);
+    // The owner's connected tool is managed with its connection: open the
+    // Connectors drawer on that account.
+    const connectorKey =
+      connection?.connector_key ??
+      toolServiceOf(tool, connections, catalog)?.connector?.key;
+    if (tool.connection_id && isOwner(tool) && connectorKey) {
+      const params = new URLSearchParams({
+        connector: connectorKey,
+        connection: tool.connection_id,
+      });
+      options.push({
+        icon: Plug,
+        label: t('settings.tools.manageInConnectors'),
+        onClick: () => navigate(`/settings/connectors?${params.toString()}`),
+        variant: 'default',
+      });
+    }
+    // The caller's own connection that needs reconnecting (the badge says
+    // so) is reconnected from here, in place where it can be.
     if (connection && connectionNeedsSignIn(connection))
       options.push({
         icon: RefreshCw,
-        label: t('settings.connectors.health.signInAgain'),
+        label: t('settings.connectors.status.reconnect'),
         onClick: () =>
           reconnect(connection, tool.name === 'mcp_tool' ? tool.id : undefined),
         variant: 'default',
@@ -213,8 +226,8 @@ export default function Tools() {
               variant: 'default',
             },
       );
-    // A connected server signs in again through its connection (Sign in
-    // again above, for the caller's own); only an MCP tool without one keeps
+    // A connected server signs in again through its connection (Reconnect
+    // above, for the caller's own); only an MCP tool without one keeps
     // the server form. The tool's own connection id decides, for everyone: a
     // teammate never sees the owner's connection, and the owner's loads
     // after the tools. A shared OAuth server's sign-in is the owner's to redo.
@@ -331,18 +344,6 @@ export default function Tools() {
     tool.connection_id
       ? connections.find((c) => c.id === tool.connection_id)
       : undefined;
-  // What tells two accounts of one service apart on their cards: the name
-  // the owner gave it, else what identifies it.
-  const accountLine = (connection: Connection) =>
-    connection.account_name
-      ? connection.account_name
-      : connection.auth_kind === 'api_key' &&
-          isKeyHint(connection.account_label)
-        ? t('settings.connectors.detail.keyEnding', {
-            hint: connection.account_label,
-            interpolation: { escapeValue: false },
-          })
-        : connection.account_label;
 
   const handleGoBack = () => {
     setSelectedTool(null);
@@ -433,11 +434,150 @@ export default function Tools() {
       .toLowerCase()
       .includes(searchTerm.toLowerCase()),
   );
+  // Grouped like the composer's picker. Paged in group order, so a group
+  // that runs past a page carries on (under its header) on the next one.
+  const orderedTools = groupTools(filteredTools, connections, catalog).flatMap(
+    (group) => group.tools,
+  );
   const {
     page: toolsPage,
     setPage: setToolsPage,
     pageItems: pageTools,
-  } = useClientPage(filteredTools, SHORT_LIST_PAGE_SIZE, searchTerm);
+  } = useClientPage(orderedTools, SHORT_LIST_PAGE_SIZE, searchTerm);
+  const pageGroups = groupTools(pageTools, connections, catalog);
+
+  const groupTitle = (group: ToolGroup<UserToolType>) =>
+    group.kind === 'builtIn' ? (
+      t('settings.tools.groupBuiltIn')
+    ) : group.kind === 'custom' ? (
+      t('agents.form.toolsPopup.groupCustom')
+    ) : (
+      <span className="flex items-center gap-2">
+        {group.service?.icon ? (
+          <ConnectorIcon
+            icon={group.service.icon}
+            className="size-4 shrink-0"
+          />
+        ) : null}
+        {group.service?.name}
+      </span>
+    );
+
+  // The state leads the badge row: the caller's own connection needing a
+  // sign-in, or a custom MCP server's sign-in. "Configured" is not a
+  // health check, so it gets none.
+  const stateBadge = (tool: UserToolType) => {
+    const connection = connectionOf(tool);
+    const mcpStatus =
+      tool.name === 'mcp_tool' && !connection
+        ? mcpStatuses[tool.id]
+        : undefined;
+    if (connectionNeedsSignIn(connection) || mcpStatus === 'needs_auth')
+      return (
+        <Badge variant="warning">
+          {t('settings.connectors.status.reconnect')}
+        </Badge>
+      );
+    if (mcpStatus === 'connected')
+      return (
+        <Badge variant="success">
+          {t('settings.connectors.status.connected')}
+        </Badge>
+      );
+    return null;
+  };
+
+  const renderTile = (tool: UserToolType) => {
+    const connection = connectionOf(tool);
+    const service = toolServiceOf(tool, connections, catalog);
+    const connector = service?.connector;
+    // A catalog service reads as the catalog describes it; a custom server
+    // keeps the description it came with. The account is on the tile's own
+    // line, so the title drops the " · account" the server adds to tell
+    // accounts apart in pickers.
+    const fullName = tool.customName || tool.displayName;
+    const title =
+      connection && fullName.startsWith(`${connection.name} · `)
+        ? connection.name
+        : fullName;
+    const description =
+      connector && connector.publisher !== 'custom'
+        ? connectorDescription(t, connector)
+        : tool.description;
+    const account = connection ? accountLine(t, connection) : null;
+    return (
+      <ConnectorTile
+        key={tool.id}
+        // A connected tool shows its service's logo, as the composer does.
+        icon={
+          service?.icon ? (
+            <ConnectorIcon icon={service.icon} className="size-6 shrink-0" />
+          ) : (
+            <ToolIcon
+              name={tool.name}
+              title={t('settings.tools.toolIconTitle', {
+                interpolation: { escapeValue: false },
+                name: tool.displayName,
+              })}
+              className="size-6 shrink-0"
+            />
+          )
+        }
+        title={title}
+        titleAs="h3"
+        description={description}
+        menu={
+          !tool.default ? (
+            <ActionMenu
+              options={getMenuOptions(tool)}
+              triggerLabel={t('settings.tools.settingsIconAlt')}
+            />
+          ) : undefined
+        }
+        badges={
+          <>
+            {stateBadge(tool)}
+            {/* The default copy of a built-in tool (it has no menu), told
+                apart from one the user added. */}
+            {tool.default && (
+              <Badge variant="neutral">
+                {t('settings.tools.defaultBadge')}
+              </Badge>
+            )}
+            <RoleBadge item={tool} />
+          </>
+        }
+        // Which account this is (each account of a service is its own
+        // tool) and the caller's own "In my chats" switch, named for screen
+        // readers only. A shared tool without use_in_own can't be in the
+        // caller's chats at all, so it has no switch.
+        footer={
+          account || canAddToolToOwn(tool) ? (
+            <>
+              {account && (
+                <span className="min-w-0 truncate" title={account}>
+                  {account}
+                </span>
+              )}
+              {canAddToolToOwn(tool) && (
+                <Switch
+                  className="ml-auto shrink-0"
+                  checked={toolInChat(tool)}
+                  onCheckedChange={(checked) =>
+                    updateToolStatus(tool.id, checked)
+                  }
+                  aria-label={t('settings.tools.useInMyChatsAria', {
+                    interpolation: { escapeValue: false },
+                    toolName: tool.customName || tool.displayName,
+                  })}
+                />
+              )}
+            </>
+          ) : undefined
+        }
+      />
+    );
+  };
 
   return (
     <div>
@@ -488,149 +628,47 @@ export default function Tools() {
                 <SkeletonLoader component="toolCards" count={6} />
               </div>
             ) : userTools.length === 0 ? (
-              <EmptyState title={t('settings.tools.noToolsFound')} />
+              <EmptyState
+                title={t('settings.tools.noToolsYet')}
+                action={
+                  <div className="flex flex-wrap justify-center gap-2">
+                    <Button
+                      type="button"
+                      shape="pill"
+                      onClick={() => setAddToolModalState('ACTIVE')}
+                    >
+                      {t('settings.tools.addTool')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      shape="pill"
+                      onClick={() =>
+                        navigate('/settings/connectors?capability=tools')
+                      }
+                    >
+                      {t('settings.tools.connectService')}
+                    </Button>
+                  </div>
+                }
+              />
             ) : filteredTools.length === 0 ? (
-              <EmptyState title={t('settings.tools.noToolsFound')} />
+              <EmptyState
+                size="xs"
+                illustration="none"
+                title={t('settings.tools.noToolsFound')}
+              />
             ) : (
               <>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {pageTools.map((tool) => {
-                    const connection = connectionOf(tool);
-                    const connector = connection
-                      ? catalog.find((c) => c.key === connection.connector_key)
-                      : undefined;
-                    // A catalog service reads as the catalog describes it;
-                    // a custom server keeps the description it came with.
-                    // The account is on the card's own line, so the title
-                    // drops the " · account" the server adds to tell
-                    // accounts apart in pickers.
-                    const fullName = tool.customName || tool.displayName;
-                    const title =
-                      connection && fullName.startsWith(`${connection.name} · `)
-                        ? connection.name
-                        : fullName;
-                    const description =
-                      connector && connector.publisher !== 'custom'
-                        ? connectorDescription(t, connector)
-                        : tool.description;
-                    return (
-                      <Card
-                        key={tool.id}
-                        variant="filled"
-                        padding="lg"
-                        className="relative h-52 justify-between overflow-hidden"
-                      >
-                        {!tool.default && (
-                          <ActionMenu
-                            options={getMenuOptions(tool)}
-                            triggerLabel={t('settings.tools.settingsIconAlt')}
-                            className="absolute top-3 right-3 z-10"
-                          />
-                        )}
-                        <div className="w-full">
-                          <div className="flex w-full items-center gap-2 px-1">
-                            <ToolIcon
-                              name={tool.name}
-                              title={t('settings.tools.toolIconTitle', {
-                                interpolation: { escapeValue: false },
-                                name: tool.displayName,
-                              })}
-                              className="size-6"
-                            />
-                            {tool.default && (
-                              <Badge variant="neutral">
-                                {t('settings.tools.builtIn')}
-                              </Badge>
-                            )}
-                            {connectionNeedsSignIn(connection) && (
-                              <Badge variant="warning">
-                                {t('settings.connectors.health.signInAgain')}
-                              </Badge>
-                            )}
-                            {tool.name === 'mcp_tool' &&
-                              !connection &&
-                              mcpStatuses[tool.id] && (
-                                <Badge
-                                  variant={
-                                    mcpStatuses[tool.id] === 'connected'
-                                      ? 'success'
-                                      : mcpStatuses[tool.id] === 'needs_auth'
-                                        ? 'warning'
-                                        : 'neutral'
-                                  }
-                                >
-                                  {mcpStatuses[tool.id] === 'connected'
-                                    ? t('settings.tools.authStatus.connected')
-                                    : mcpStatuses[tool.id] === 'needs_auth'
-                                      ? t('settings.tools.authStatus.needsAuth')
-                                      : t(
-                                          'settings.tools.authStatus.configured',
-                                        )}
-                                </Badge>
-                              )}
-                            <RoleBadge item={tool} />
-                          </div>
-                          <div className="mt-[9px] px-1">
-                            <CardTitle
-                              as="h2"
-                              title={title}
-                              className="truncate capitalize"
-                            >
-                              {title}
-                            </CardTitle>
-                            <CardDescription
-                              size="xs"
-                              className="mt-1 line-clamp-4 max-h-24 overflow-hidden break-words"
-                              title={description}
-                            >
-                              {description}
-                            </CardDescription>
-                          </div>
-                        </div>
-                        {/* Which account this is (each account of a
-                              service is its own tool) and the caller's own
-                              "In my chats" switch, named for screen readers
-                              only, share the meta row. A shared tool without
-                              use_in_own can't be in the caller's chats at
-                              all, so it has no switch. */}
-                        {(connection || canAddToolToOwn(tool)) && (
-                          <CardFooter>
-                            {connection && (
-                              <span className="flex min-w-0 items-center gap-2">
-                                <ConnectorIcon
-                                  icon={connection.icon}
-                                  className="size-3.5 shrink-0"
-                                />
-                                <span
-                                  className="truncate"
-                                  title={accountLine(connection)}
-                                >
-                                  {accountLine(connection)}
-                                </span>
-                              </span>
-                            )}
-                            {canAddToolToOwn(tool) && (
-                              <Switch
-                                className="ml-auto shrink-0"
-                                checked={toolInChat(tool)}
-                                onCheckedChange={(checked) =>
-                                  updateToolStatus(tool.id, checked)
-                                }
-                                aria-label={t(
-                                  'settings.tools.useInMyChatsAria',
-                                  {
-                                    interpolation: { escapeValue: false },
-                                    toolName:
-                                      tool.customName || tool.displayName,
-                                  },
-                                )}
-                              />
-                            )}
-                          </CardFooter>
-                        )}
-                      </Card>
-                    );
-                  })}
+                <div className="flex flex-col gap-8">
+                  {pageGroups.map((group) => (
+                    <section key={group.key} className="flex flex-col gap-3">
+                      <SectionHeader size="sm" title={groupTitle(group)} />
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {group.tools.map(renderTile)}
+                      </div>
+                    </section>
+                  ))}
                 </div>
                 <Pagination
                   page={toolsPage}

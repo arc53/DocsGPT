@@ -64,6 +64,45 @@ describe('Modal header', () => {
   });
 });
 
+describe('Modal leading', () => {
+  it('puts the leading node beside the title and description', async () => {
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="Connect GitHub"
+        description="Sync repositories into Knowledge."
+        leading={<span data-testid="tile">G</span>}
+      >
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    const tile = document.querySelector('[data-testid="tile"]')!;
+    const title = document.querySelector('[data-slot="dialog-title"]')!;
+    const description = document.querySelector(
+      '[data-slot="dialog-description"]',
+    )!;
+    expect(header.className).toContain('flex');
+    expect(header.className).toContain('gap-3');
+    expect(header.firstElementChild).toBe(tile);
+    // Title and description still share one column, 8px apart.
+    expect(title.parentElement).toBe(description.parentElement);
+    expect(title.parentElement).not.toBe(header);
+    expect(title.parentElement!.className).toContain('min-w-0');
+  });
+
+  it('keeps the plain header without it', async () => {
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Create a team">
+        Body
+      </Modal>,
+    );
+    const header = document.querySelector('[data-slot="modal-header"]')!;
+    expect(header.className).not.toContain('gap-3');
+  });
+});
+
 describe('Modal footer', () => {
   it('stacks on phones and sits in a right-aligned row from sm up', async () => {
     await render(

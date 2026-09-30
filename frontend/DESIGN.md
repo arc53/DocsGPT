@@ -271,8 +271,8 @@ aria-current="page">` with `data-active`. The
   `lg`) and carry no pill row; the agent tile's ⋯ also opens Logs. Tabs that switch a panel in place are
   `ui/tabs` with `variant="underline"` on `TabsList` and each `TabsTrigger`:
   the same pixels, plus `role="tablist"`/`"tab"`, `aria-selected` and
-  arrow-key focus; wrap the panel in `TabsContent` (FilePicker's My Files /
-  Shared with Me, Schedules' Recurring / One-time in
+  arrow-key focus; wrap the panel in `TabsContent` (FilePicker's My files /
+  Shared with me, Schedules' Recurring / One-time in
   `agents/schedules/SchedulesView.tsx`, the graph source view, the source
   edit drawer). Each trigger keeps its `px-4`, so the first label sits 16px
   in from the content edge and the underline runs past the label on both
@@ -325,7 +325,7 @@ justify-start` and `aria-expanded`: a lucide `ChevronRight` first
 | `variant`     | `outline` (border + card surface, the default), `filled` (muted fill, no border), `subtle` (border on the page background); which one is decided by role, below |
 | `tone`        | `default`, `destructive` (the status soft fill and border, `border-destructive/50 bg-destructive/10`, over any variant)                                         |
 | `padding`     | `none`, `sm` (p-3, row boxes and code blocks), `default` (p-4), `lg` (p-6, tiles, panels and stat tiles)                                                        |
-| `interactive` | whole card is the target: hover, focus ring and `selected` highlight; pair with `asChild` around a `<button>` or `<Link>`                                       |
+| `interactive` | `true`: whole card is the target: hover, focus ring and `selected` highlight; pair with `asChild` around a `<button>` or `<Link>`. `within`: a stretched child `<button>` is the target and the card draws its hover and focus ring (see A clickable card that holds a link) |
 | `selected`    | an `interactive` card that is the current choice: `border-primary` and the `/5` wash                                                                            |
 
 Parts: `CardHeader` (title left, `CardAction` top-right), `CardTitle`,
@@ -383,9 +383,11 @@ Recipes by role:
   no `mt-*`, so every section has 20px under its title. The destructive
   danger-zone Card follows them.
 - Row boxes inside a form or panel (a guardrail check, the schedule's
-  timezone box, the discovered MCP tools) are `padding="sm"`, in the panel
+  timezone box) are `padding="sm"`, in the panel
   variant of the surface they sit on (`subtle` in a page panel, `outline` in
-  a modal).
+  a modal). A list of named items in one (the custom MCP modal's discovered
+  tools) is a `SectionHeader size="xs"` over `Card padding="none"
+  overflow-hidden` holding `ListRows`.
 - A schedule is `agents/schedules/ScheduleRow`: `subtle`, `padding="none"`,
   with its run log flush under it; a chevron `IconButton ghost-muted
 icon-xs` toggles the runs.
@@ -438,7 +440,9 @@ eyebrow, `text-muted-foreground text-xs font-semibold uppercase
 tracking-wider`, a label set in caps above a group or a table head), `xs`
 (14px `text-sm font-semibold`, a sub-heading inside a panel, drawer or modal).
 `tone="destructive"` for a danger zone only. `as` is the level in the outline
-(`h2` default). The spacing below belongs to the parent's `gap-*`, never an
+(`h2` default, down to `h6`): nested panel sections keep the outline (the
+connection drawer: service `h3`, Knowledge / Tools `h4`, a tool `h5`, its
+action groups `h6`). The spacing below belongs to the parent's `gap-*`, never an
 `mb-*` on the heading. Not for dialog and sheet titles (their own title) or a
 page byline (a muted `text-sm` paragraph).
 
@@ -461,6 +465,10 @@ Pass `selected` (true or false) only in a
 single-select picker inside a `role="radiogroup"`; the tile is then a radio.
 Tiles that advance a step or navigate (Upload's source types, the agent-type
 modal) leave it out and stay plain buttons. Only layout classes on it.
+Glyph icons are lucide and take the square's colour; a service tile (Add
+knowledge's "From a service", three to a row from `md`) shows the brand logo
+in `text-foreground`, and its description is only its status ("Connected",
+"Reconnect"), never an account name.
 
 ### Badge (`ui/badge.tsx`)
 
@@ -482,7 +490,8 @@ stat chips `tabular-nums`, as approved exceptions. HTTP method pills take their 
 `default` Badges with a remove X, then "+N more", on a `Button
 variant="combobox" size="field"` trigger that grows past 38px when the chips
 wrap, with SelectTrigger's turning chevron; each row in its list shows a
-`Checkbox size="sm"`. Inside a Modal pass `modal`, or its popover can't
+`Checkbox size="sm"`. An option's `description` is a muted `text-xs` line
+under its label in the list only ("Added by Lena"); the chips show the label. Inside a Modal pass `modal`, or its popover can't
 scroll and doesn't close on an outside click.
 
 In a picker list, mark the item that is currently chosen with
@@ -841,8 +850,10 @@ type="button">` inside it covers the card with `after:absolute after:inset-0`
 (the card's radius on `after:`), and the link is a sibling after it with
 `relative z-10`, so both are real controls, one tab stop each, and neither
 sits inside the other. The container draws the focus ring for the button
-(`has-[>button:focus-visible]:ring-3 …ring-ring/50`). Never put a link inside
-a `role="button"` or a `<button>`.
+(`has-[>button:focus-visible]:ring-3 …ring-ring/50`); a `Card` does it with
+`interactive="within"` (Knowledge's source cards, whose ⋯ and Reconnect are
+the `relative z-10` siblings). Never put a link inside a `role="button"` or a
+`<button>`.
 
 ### Where a message lives: FormField, Alert or Toast
 
@@ -865,7 +876,12 @@ variant="destructive"` above the form, not text in or beside the button.
 - A list of errors the user must read on a canvas or page (the workflow's
   publish validation) is a destructive `Alert` floating at `z-20` on an opaque
   `bg-card rounded-xl shadow-md` wrapper that stays until closed; a toast
-  would truncate each error to one line and dismiss itself.
+  would truncate each error to one line and dismiss itself. The workflow's
+  stopped-resources warning is the same recipe (`FloatingResourceNotice`): it
+  floats only while something is stopped, its X sits inside the Alert, a long
+  list scrolls in an inner `scrollbar-overlay max-h-* overflow-y-auto` div,
+  and it steps aside while the publish errors show; once closed a chip
+  reopens it.
 - A switch moves at once and flips back when the server refuses, with a
   destructive toast (an Alert inside a modal). A delete removes its row only
   after the server confirms; a 403 shows `errors.forbidden`.
@@ -959,7 +975,14 @@ bordered list for one). Rows are `px-4 py-3`, the title `text-sm
 font-medium`. `interactive` (with `asChild` around a `<Link>` or `<button>`)
 hovers to `bg-accent` and draws an inset focus ring. `selected` marks the
 row whose detail is open in a drawer beside the list (a team's shared
-resources), exactly as a selected TableRow (see Table). An icon square in
+resources), exactly as a selected TableRow (see Table), and the chosen row in a
+single-pick list (a repository in the connect wizard). A row you select that
+also holds a ⋯ (a connection's accounts) can't be one `<button>`: it is
+`ListRow interactive selected asChild` around a `relative` box whose title is
+a stretched `<button data-account-select>` (`after:absolute after:inset-0`),
+the box drawing that button's inset focus ring
+(`has-[[data-account-select]:focus-visible]:ring-3 …ring-ring/50 ring-inset`),
+and the ⋯ in a `relative z-10` trailing group. An icon square in
 `leading` is a plain `bg-muted text-muted-foreground size-8 rounded-md` span.
 In a narrow side panel (the graph node panel's relationships) rows are
 `size="sm"`: `px-2 py-1.5`, `gap-2.5`, `rounded-md` and top-aligned so a small
@@ -1019,7 +1042,8 @@ gets its own cap: an inner `scrollbar-overlay max-h-[45svh] overflow-y-auto`
 div inside the frame (the run log's schedule card, the guardrail table's
 frame, the audit accordion), never on the Card. Under it, outside the
 scroller, `LoadMoreStatus` (`divider` under a flush table) says "Loading
-older…", "Nothing older" or offers Retry; it keeps one row's height and so
+older…", "Nothing older" or offers Retry (`loadingLabel` / `doneLabel` for a
+list that isn't newest-first: "Loading more…"); it keeps one row's height and so
 keeps the scrollbar clear of the rounded corner. A feed shorter than one page
 draws no strip. The end is a page shorter than requested, so no count is
 needed. A first load shows `LoadingState`, and a failed first load a
@@ -1051,7 +1075,7 @@ it draws the title and
 starts the content 32px below it, so pages carry no root `mt-*`. The block
 under the title is `components/PageToolbar`: `intro`, then the page `search`
 (left, `max-w-md`) and the page `action` (right, `Button size="field"
-shape="pill"`), then `children` (notices that belong to the action, such as
+shape="pill"`, text only: no `Plus`, a dropdown keeps its `ChevronDown`), then `children` (notices that belong to the action, such as
 a limit warning), then `divider` (a `Separator`). With no `search` the intro
 moves into the row's left slot (`max-w-2xl`) beside the action. A page search
 is `components/SearchInput`: the 38px pill (`size="sm"` for 32px) with a
@@ -1322,6 +1346,103 @@ text-xs` with a `CopyButton`; `actions` is an `ActionMenu size="toolbar"`
 size="xs" as="h4"`. In an If / Else case's Simple mode, the operator Select
   and Value each carry a floating label (Operator, Value).
 
+### Connectors (`connectors/`, `conversation/ToolCallCard`)
+
+One tile, `connectors/ConnectorTile`, draws a service everywhere: the
+Connectors catalog, the Tools page and Add a tool's picker. A header row (a
+24px icon, the `CardTitle` truncating, a ⋮ `ActionMenu` in `CardAction` only
+on a tile that isn't itself a button), a `CardDescription size="xs"
+line-clamp-2`, a badge row that hides when empty (the state first: `success`
+Connected, `warning` Reconnect, `neutral` Needs admin setup / Disabled by
+admin; then the capability badges, `neutral`), and `CardFooter` meta (the
+account line, the Tools switch). No fixed heights. An available service has
+no badge and no footer: the whole tile is its Connect, and an action drawn in
+the footer would read like the account line there. A custom entry has no
+state. On a page the tile is `filled lg`; in a modal it is
+`outline interactive lg`. A connected tool's header shows its service's icon.
+
+The Connectors page filters by state, not by category: All, Connected (a
+working account) and Disconnected (an account that needs signing in again or
+was disconnected), DESIGN's filter-by-kind `xs` track with counts, kept in the
+address (`?filter=`). A state with nothing in it isn't offered; with only All
+left there is no row. A narrowed list (`?capability=sync|tools`) is a `default`
+Badge beside the track whose X button clears it. Search finds a service by
+name.
+
+One broken connection has one word everywhere: **Reconnect**
+(`settings.connectors.status.reconnect`), the `warning` Badge for the state
+and the label of the action. "Needs sign-in" is one rule,
+`connectionNeedsSignIn` (`reconnect_needed` or `error`); a `disconnected`
+account is the user's own choice and isn't flagged.
+
+The Tools page groups its grid like the composer's picker
+(`settings/toolGroups.ts`): `SectionHeader size="sm"` for Built-in, one group
+per connected service with its icon, then Custom; a group may continue onto
+the next page under a repeated header. Add a tool lists "From a service", then
+a Custom section (MCP server, OpenAPI / REST) whose tiles launch in place, and
+its footer is Cancel only. Add knowledge is one view: the upload and web
+tiles, then "From a service" (see OptionCard) and "Browse all connectors"
+(`settings.connectors.browseAll`, 12px `ArrowRight`) under the tiles.
+
+The connection drawer (`ConnectionDrawer`, a `default` SidePanel) keeps the
+capability badges in `PanelHeader` children. Its accounts are one `Card subtle
+padding="none" overflow-hidden` of ListRows (name, account line, status Badge,
+⋯); with several, the row whose tools show below is `selected` (see ListRow).
+A part (Jira & Confluence inside Confluence) is a sibling section with the
+parent's header row and Connect size. It shows `LoadingState` until the
+connections list and this connector's details have loaded, never "No account"
+with a Connect meanwhile. The account ⋯ is Rename, Disconnect, then Remove
+after a separator (`separatorBefore`); both confirmations name the account,
+say what the account actually has, show `pending` on the submit and keep a
+failure as an inline destructive Alert. Disconnect's submit is primary; only
+Remove is destructive. "In my chats" stays as in Switch.
+
+Per-action permissions are `connectors/PermissionGroup` everywhere (the
+drawer's ToolPermissions, an agent's API write allowlist, the Tools page
+editor): a `SectionHeader size="xs"` "{group} · {n}" whose `actions` hold one
+`ToggleGroup xs` in a muted track, Allow / Ask first / Off / **Customize**
+(Allow / Off / Customize where nobody can approve: the API, the widget, a
+public link). Customize is pressed while the rows disagree and is the fold:
+rows (`PermissionRow`: the action title, a muted `line-clamp-2` description,
+a `PermissionSelect` `Select sm w-32`) show only under it. There is no
+"Customize each of N" or "Show all" link. Who fills a parameter is always
+"Let AI decide / Always use"; "Parameters" is `ActionParametersToggle` (the
+`link sm` disclosure, named "Parameters for {action}").
+
+The connect wizard (`ConnectWizard`) is a `size="lg"` Modal on every step,
+with the connector's icon tile in `leading` and a `description` (the
+service's description, then "Signed in as …"). Every step title names the
+service ("Choose what to sync from GitHub") and doesn't change with a switch.
+The setup step's footer is one submit named by what it does ("Add to
+Knowledge" while Sync is on, else "Finish setup"; Cancel + "Add to Knowledge"
+when syncing more), never Skip. Every path ends on the done step, whose
+summary is a `success` Alert. With several accounts and none chosen, the
+first setup field is an account Select. The pickers (repositories, Linear,
+SharePoint / Confluence / Drive files) are one recipe: a search on
+`labelSurface="card"`, then an `outline padding="none" overflow-hidden` Card
+of ListRows (a Checkbox and the icon square in `leading` for a multi-pick, a
+muted meta line "Updated 12/09/2026 · 2.29 MB", a trailing `ghost-muted
+icon-sm` chevron to open a folder), a muted `text-xs` "N selected" line under
+it, no scroll cap (the modal body scrolls) and `useLoadMore` +
+`LoadMoreStatus loadingLabel` for more pages. An expired sign-in in a picker
+offers Reconnect.
+
+Credential forms put every hint under its field (FormField `hint`); required
+fields carry the star, so no field says "Optional". A catalog hint may wrap one
+phrase in `<link>…</link>` with the field's `hint_url`: it renders as a `link
+inline` Button at the hint's `text-xs font-normal` with a trailing 12px
+`ExternalLink` (an approved exception).
+
+A paused tool call in chat, an approval or a Connect card, is
+`conversation/ToolCallCard`: a `bg-muted rounded-2xl border` frame, a header
+row (a 20px logo, "Service · Action" truncating, an optional muted meta, a
+state Badge: `info` Needs approval, `neutral` Not connected, `warning`
+Reconnect, `success` Connected), an optional body and a wrapping row of `xs`
+pill actions. The arguments stay behind the Details chevron. The card sits in
+a `w-full min-w-0` wrapper with its margins on an inner div, because the
+answer bubble is a wrapping flex column and would let a one-line preview widen
+the card past the column.
+
 ### Accordion (`ui/accordion.tsx`)
 
 `AccordionTrigger` carries its own inset and type (`px-4 py-3 text-sm
@@ -1353,6 +1474,8 @@ aren't clipped. Never `space-y-*` on a body.
 
 A modal's heading is its `title` (20px, `text-xl leading-tight
 font-semibold`) and `description` (muted `text-sm`, 8px under the title).
+`leading` puts a node before that pair, as `PanelHeader leading` does: the
+connect wizard's connector icon tile, on every step.
 Don't pass `hideTitle` to draw your own `<h2>`; `hideTitle` is only for
 dialogs whose top line is not a title (Upload's step headings,
 ScheduleFormModal's editable name, the search palette). A step heading
@@ -1493,7 +1616,8 @@ docked side panel (see Side panels). Don't add another pattern.
 
 The three-dots menu on a card, tile or row. Pass `options: MenuOption[]`
 (`label`, `onClick`, optional lucide `icon`, `variant: 'destructive'`,
-`disabled`) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
+`disabled`, `separatorBefore` for a rule above a row, which sets a
+destructive Remove apart from the reversible items) and a `triggerLabel`. It renders a `ghost-on-accent` `icon-xs`
 trigger with `EllipsisVertical`, and stops clicks and keys on the trigger and
 the menu from reaching the host, so it can sit inside a clickable card.
 In a page header or toolbar on a plain surface (the agent Overview's title
@@ -1752,13 +1876,15 @@ list stays reviewable.
 | `agents/workflow/WorkflowPreview.tsx`                             | `shadcn/no-restyle`             | A step's state changes (keys and values the app serialised) are `neutral` Badges set in mono (`font-mono`), like token scopes. One disable.                                                                                                                                                                                                                                                                                                                                                     |
 | `settings/traces/TraceChips.tsx`                                  | `shadcn/no-restyle`             | Trace stat chips (durations, counts) use tabular figures so they don't jitter between rows (`tabular-nums` on Badge). One disable.                                                                                                                                                                                                                                                                                                                                                              |
 | `connectors/ConnectorSetupNotice.tsx`                             | `shadcn/no-restyle`             | The setup-guide link inside the needs-setup warning Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                       |
-| `modals/MCPServerModal.tsx`                                       | `shadcn/no-restyle`             | The authorization link inside the test-result Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                             |
+| `modals/MCPServerModal.tsx`                                       | `shadcn/no-restyle`             | The authorization link inside the popup-blocked warning Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                             |
 | `components/MermaidRenderer.tsx`                                  | `shadcn/no-restyle`             | The zoom readout between − and + is a `link inline` Button on the `bg-black/70` overlay; it keeps the overlay's white 12px regular text (`text-xs font-normal text-current`). One disable, beside the two zoom-button ones above.                                                                                                                                                                                                                                                               |
 | `conversation/SharedConversation.tsx`                             | `shadcn/no-restyle`             | The "DocsGPT" link sits in the `/share/:id` page's regular-weight byline (`font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                                                                          |
 | `conversation/ConversationBubble.tsx`                             | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
 | `admin/Overview.tsx`                                              | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
 | `settings/PairDeviceModal.tsx`                                    | `shadcn/no-restyle`             | The install link in Pair a remote machine sits in a 12px hint (`text-xs font-normal`, `self-start` in its column). One disable.                                                                                                                                                                                                                                                                                                                                                                 |
+| `connectors/CredentialForm.tsx` | `shadcn/no-restyle` | A catalog hint's `<link>` phrase is a `link inline` Button inside the 12px hint, so it keeps the hint's size and weight (`text-xs font-normal`). One disable. |
 | `agents/workflow/WorkflowBuilder.tsx`                             | `shadcn/no-restyle`             | The publish-error Alert floats over the canvas with its close button in the top-right corner, so it pads `pr-10` to keep a long title clear of the button. One disable.                                                                                                                                                                                                                                                                                                                         |
+| `agents/components/ResourceStatusNotice.tsx` | `shadcn/no-restyle` | The stopped-resources warning floats over the workflow canvas (when `onClose` is set) with its close button in the top-right corner, the publish-error recipe, so it pads `pr-10`. One disable. |
 
 Note that a multi-line reason has to be a `/* ... */` block comment;
 consecutive `//` lines only disable the next comment line, not the code.

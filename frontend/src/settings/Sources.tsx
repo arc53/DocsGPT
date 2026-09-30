@@ -61,6 +61,7 @@ import ConnectorTree from '../components/ConnectorTree';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import {
+  connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
   selectConnectorsLoaded,
@@ -689,35 +690,28 @@ export default function Sources({
             </div>
           ) : !currentDocuments?.length ? (
             searchTerm ? (
-              <EmptyState title={t('settings.sources.noResults')} />
+              <EmptyState
+                size="xs"
+                illustration="none"
+                title={t('settings.sources.noResults')}
+              />
             ) : (
-              // Nothing yet: the two ways in, side by side.
+              // Add knowledge is the one way in: its "From a service"
+              // section connects a service too.
               <EmptyState
                 title={t('settings.sources.noData')}
                 description={t('settings.sources.emptyHint')}
                 action={
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <Button
-                      type="button"
-                      shape="pill"
-                      onClick={() => {
-                        setIsOnboarding(false);
-                        setModalState('ACTIVE');
-                      }}
-                    >
-                      {t('settings.sources.addSource')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      shape="pill"
-                      onClick={() =>
-                        navigate('/settings/connectors?capability=sync')
-                      }
-                    >
-                      {t('settings.sources.connectService')}
-                    </Button>
-                  </div>
+                  <Button
+                    type="button"
+                    shape="pill"
+                    onClick={() => {
+                      setIsOnboarding(false);
+                      setModalState('ACTIVE');
+                    }}
+                  >
+                    {t('settings.sources.addSource')}
+                  </Button>
                 }
               />
             )
@@ -728,156 +722,147 @@ export default function Sources({
                 const connection = document.connectionId
                   ? connections.find((c) => c.id === document.connectionId)
                   : undefined;
-                const paused =
-                  connection?.status === 'reconnect_needed' ||
-                  connection?.status === 'disconnected';
+                // Sync stops until the reader signs in again (the shared rule).
+                const paused = connectionNeedsSignIn(connection);
 
                 return (
-                  <div key={docId} className="relative">
-                    <Card
-                      variant="filled"
-                      interactive
-                      padding="lg"
-                      role="button"
-                      tabIndex={0}
+                  // DESIGN "A clickable card that holds a link": a stretched
+                  // button opens the source; the menu and Reconnect are
+                  // siblings above it, never nested in it.
+                  <Card
+                    key={docId}
+                    variant="filled"
+                    padding="lg"
+                    interactive="within"
+                    // Its own height, not the row's: the meta stays under the title.
+                    className="min-h-[130px] self-start"
+                  >
+                    <button
+                      type="button"
                       aria-label={document.name}
                       onClick={() => setDocumentToView(document)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setDocumentToView(document);
-                        }
-                      }}
-                      className="min-h-[130px]"
+                      className="flex w-full flex-1 cursor-pointer flex-col items-start pr-9 text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
                     >
-                      <div className="w-full flex-1">
-                        <div className="flex w-full items-center justify-between gap-2">
-                          <CardTitle
-                            className="line-clamp-2 min-w-0 flex-1 wrap-anywhere"
-                            title={document.name}
-                          >
-                            {document.name}
-                          </CardTitle>
-                          <div className="relative flex shrink-0 items-center justify-end">
-                            <ActionMenu
-                              options={getActionOptions(index, document)}
-                              triggerLabel={t('settings.sources.menuAlt')}
-                              triggerTestId={`menu-button-${docId}`}
-                              open={actionMenuDocId === docId}
-                              onOpenChange={(open) =>
-                                setActionMenuDocId(open ? docId : null)
-                              }
-                            />
-                          </div>
-                        </div>
-                      </div>
+                      <CardTitle
+                        className="line-clamp-2 w-full min-w-0 wrap-anywhere"
+                        title={document.name}
+                      >
+                        {document.name}
+                      </CardTitle>
+                    </button>
+                    <div className="absolute top-5 right-6 z-10">
+                      <ActionMenu
+                        options={getActionOptions(index, document)}
+                        triggerLabel={t('settings.sources.menuAlt')}
+                        triggerTestId={`menu-button-${docId}`}
+                        open={actionMenuDocId === docId}
+                        onOpenChange={(open) =>
+                          setActionMenuDocId(open ? docId : null)
+                        }
+                      />
+                    </div>
 
-                      <div className="flex flex-col items-start justify-start gap-1">
-                        <RoleBadge item={document} />
-                        {connection && paused && (
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Badge variant="warning" tabIndex={0}>
-                                  {t('settings.connectors.detail.paused')}
-                                </Badge>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {t('settings.sources.paused', {
-                                  name: connection.name,
-                                  interpolation: { escapeValue: false },
-                                })}
-                              </TooltipContent>
-                            </Tooltip>
-                            {/* The reader's own connection (only theirs are
-                                loaded): sign in again right here, without
-                                opening the source. */}
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="xs"
-                              shape="pill"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                reconnect(connection);
-                              }}
-                              onKeyDown={(e) => e.stopPropagation()}
-                            >
-                              {t('settings.connectors.status.reconnect')}
-                            </Button>
-                          </div>
-                        )}
-                        {document.ingestStatus === 'failed' && (
-                          <Badge variant="destructive">
-                            {t('settings.sources.ingestFailed')}
+                    <div className="flex flex-col items-start justify-start gap-1">
+                      <RoleBadge item={document} />
+                      {connection && paused && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="warning">
+                            {t('settings.connectors.status.reconnect')}
                           </Badge>
-                        )}
-                        {document.ingestStatus === 'processing' && (
-                          <Badge variant="neutral">
-                            {t('settings.sources.ingestProcessing')}
-                          </Badge>
-                        )}
-                        {document.config?.kind === 'graphrag' &&
-                          (() => {
-                            const build = document.id
-                              ? graphBuilds[document.id]
-                              : undefined;
-                            const isBuilding = build?.status === 'building';
-                            const pct =
-                              isBuilding && build.total > 0
-                                ? Math.min(
-                                    100,
-                                    Math.round(
-                                      (build.current / build.total) * 100,
-                                    ),
-                                  )
-                                : null;
-                            return (
-                              <Badge variant="neutral">
-                                <Network aria-hidden="true" />
-                                {isBuilding
-                                  ? pct !== null
-                                    ? t(
-                                        'settings.sources.graphrag.buildingPct',
-                                        { pct },
-                                      )
-                                    : t('settings.sources.graphrag.building')
-                                  : t('settings.sources.graphrag.badge')}
-                              </Badge>
-                            );
-                          })()}
-                        <CardFooter className="flex-col items-start gap-1">
-                          {connection && (
-                            <span className="flex max-w-full min-w-0 items-center gap-2">
-                              <ConnectorIcon
-                                icon={connection.icon}
-                                className="text-muted-foreground size-3.5 shrink-0"
-                              />
-                              <span
-                                className="truncate"
-                                title={connection.account_label}
+                          {/* The reader's own connection (only theirs are
+                              loaded): sign in again right here, without
+                              opening the source. */}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                shape="pill"
+                                className="relative z-10"
+                                onClick={() => reconnect(connection)}
                               >
-                                {t('settings.tools.viaConnection', {
-                                  name: connection.name,
-                                  interpolation: { escapeValue: false },
-                                })}
-                              </span>
+                                {t('settings.connectors.status.reconnect')}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {t('settings.sources.paused', {
+                                name: connection.name,
+                                interpolation: { escapeValue: false },
+                              })}
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      )}
+                      {document.ingestStatus === 'failed' && (
+                        <Badge variant="destructive">
+                          {t('settings.sources.ingestFailed')}
+                        </Badge>
+                      )}
+                      {document.ingestStatus === 'processing' && (
+                        <Badge variant="neutral">
+                          {t('settings.sources.ingestProcessing')}
+                        </Badge>
+                      )}
+                      {document.config?.kind === 'graphrag' &&
+                        (() => {
+                          const build = document.id
+                            ? graphBuilds[document.id]
+                            : undefined;
+                          const isBuilding = build?.status === 'building';
+                          const pct =
+                            isBuilding && build.total > 0
+                              ? Math.min(
+                                  100,
+                                  Math.round(
+                                    (build.current / build.total) * 100,
+                                  ),
+                                )
+                              : null;
+                          return (
+                            <Badge variant="neutral">
+                              <Network aria-hidden="true" />
+                              {isBuilding
+                                ? pct !== null
+                                  ? t('settings.sources.graphrag.buildingPct', {
+                                      pct,
+                                    })
+                                  : t('settings.sources.graphrag.building')
+                                : t('settings.sources.graphrag.badge')}
+                            </Badge>
+                          );
+                        })()}
+                      <CardFooter className="flex-col items-start gap-1">
+                        {connection && (
+                          <span className="flex max-w-full min-w-0 items-center gap-2">
+                            <ConnectorIcon
+                              icon={connection.icon}
+                              className="text-muted-foreground size-3.5 shrink-0"
+                            />
+                            <span
+                              className="truncate"
+                              title={connection.account_label}
+                            >
+                              {t('settings.sources.viaConnection', {
+                                name: connection.name,
+                                interpolation: { escapeValue: false },
+                              })}
                             </span>
-                          )}
-                          <span className="flex items-center gap-2">
-                            <CalendarIcon className="size-3.5" />
-                            {document.date ? formatDate(document.date) : ''}
                           </span>
-                          <span className="flex items-center gap-2">
-                            <HardDrive className="size-3.5" />
-                            {document.tokens
-                              ? formatTokens(+document.tokens)
-                              : ''}
-                          </span>
-                        </CardFooter>
-                      </div>
-                    </Card>
-                  </div>
+                        )}
+                        <span className="flex items-center gap-2">
+                          <CalendarIcon className="size-3.5" />
+                          {document.date ? formatDate(document.date) : ''}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <HardDrive className="size-3.5" />
+                          {document.tokens
+                            ? formatTokens(+document.tokens)
+                            : ''}
+                        </span>
+                      </CardFooter>
+                    </div>
+                  </Card>
                 );
               })}
             </div>

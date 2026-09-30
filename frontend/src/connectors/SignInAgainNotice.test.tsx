@@ -130,12 +130,12 @@ describe('SignInAgainNotice', () => {
     });
   });
 
-  it('opens the connector page when the sign-in needs its form', async () => {
+  it('opens the connector page on that account when the sign-in needs its form', async () => {
     await render('custom_mcp');
     await act(async () => reconnectButton().click());
     expect(launch).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
-      '/settings/connectors?connector=custom_mcp',
+      '/settings/connectors?connector=custom_mcp&connection=conn-2',
     );
   });
 

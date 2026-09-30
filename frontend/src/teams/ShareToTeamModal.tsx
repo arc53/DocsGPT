@@ -60,7 +60,11 @@ import { selectToken } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
 import { can } from '../utils/accessUtils';
 import { formatCount } from '../utils/dateTimeUtils';
-import { decodeJwtPayload } from '../utils/jwtUtils';
+import {
+  personLabel,
+  readerIdFromToken,
+  truncateSub,
+} from '../utils/personLabel';
 import {
   anyChanged,
   editorHint,
@@ -102,17 +106,9 @@ type Props = {
   onOpenAccessDetails?: () => void;
 };
 
-// Member subs (OIDC subs) can be long; there's no display-name endpoint, so we
-// truncate the middle for readability while keeping the ends identifiable.
-const truncateSub = (sub: string): string =>
-  sub.length > 24 ? `${sub.slice(0, 12)}…${sub.slice(-8)}` : sub;
-
-// Prefer the member's email for a human-readable label, falling back to the
-// truncated sub when no email is on record.
+// A member by email, else their truncated sub (the shared person label).
 const memberLabel = (member: TeamMember): string =>
-  member.email && member.email.trim() !== ''
-    ? member.email
-    : truncateSub(member.user_id);
+  personLabel(member) ?? truncateSub(member.user_id);
 
 const initialOf = (label: string): string => {
   const trimmed = label.trim();
@@ -155,10 +151,7 @@ export default function ShareToTeamModal({
   const teams = useSelector(selectTeams);
   // The caller's own OIDC sub — you're the owner, so you're excluded from the
   // "share with a specific person" suggestions (can't share with yourself).
-  const currentUserId = useMemo(() => {
-    const payload = token ? decodeJwtPayload(token) : null;
-    return typeof payload?.sub === 'string' ? payload.sub : undefined;
-  }, [token]);
+  const currentUserId = useMemo(() => readerIdFromToken(token), [token]);
 
   const [shares, setShares] = useState<ResourceShare[]>([]);
   const [loadError, setLoadError] = useState(false);
@@ -937,11 +930,16 @@ export default function ShareToTeamModal({
                           name: credentials.connectorName,
                           interpolation: { escapeValue: false },
                         })
-                      : t('settings.connectors.share.ownerWarning', {
-                          account: credentials.account,
-                          name: credentials.connectorName,
-                          interpolation: { escapeValue: false },
-                        })}
+                      : credentials.account
+                        ? t('settings.connectors.share.ownerWarning', {
+                            account: credentials.account,
+                            name: credentials.connectorName,
+                            interpolation: { escapeValue: false },
+                          })
+                        : t('settings.connectors.share.ownerWarningNoAccount', {
+                            name: credentials.connectorName,
+                            interpolation: { escapeValue: false },
+                          })}
                   </p>
                 )
               ) : (

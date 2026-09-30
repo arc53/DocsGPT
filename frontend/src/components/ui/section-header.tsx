@@ -30,7 +30,7 @@ type SectionHeaderProps = Omit<React.ComponentProps<'div'>, 'title'> &
     /** Buttons at the end of the title row. */
     actions?: React.ReactNode;
     /** The heading level in the page outline. */
-    as?: 'h2' | 'h3' | 'h4';
+    as?: 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
   };
 
 /** A section title with an optional description and trailing actions. */

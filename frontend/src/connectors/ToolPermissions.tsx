@@ -1,35 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
 import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
-import { SectionHeader } from '../components/ui/section-header';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
-import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
 import { formatCount } from '../utils/dateTimeUtils';
-import ActionParameters, { type ParameterValue } from './ActionParameters';
+import ActionParameters, {
+  ActionParametersToggle,
+  type ParameterValue,
+} from './ActionParameters';
 import { actionTitle } from './i18n';
+import PermissionGroup, {
+  PermissionRow,
+  PermissionSelect,
+} from './PermissionGroup';
 import type {
   ActionPermission,
   ConnectionTool,
   ConnectionToolAction,
 } from './types';
-
-const PERMISSIONS: ActionPermission[] = ['always', 'ask', 'off'];
-
-/** Longer groups start folded to their one group choice. */
-const FOLD_AFTER = 5;
 
 /**
  * One action under Customize: its name, what it does and its permission,
@@ -50,86 +42,58 @@ function ActionRow({
   const [showParameters, setShowParameters] = useState(false);
   const parameters = action.parameters ?? [];
   const fixedCount = parameters.filter((parameter) => parameter.fixed).length;
+  const title = actionTitle(action.name);
   return (
-    <li className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col items-start">
-          <div className="flex max-w-full items-center gap-2">
-            <p className="text-foreground truncate text-sm" title={action.name}>
-              {actionTitle(action.name)}
-            </p>
-            {fixedCount > 0 && (
-              <Badge variant="neutral">
-                {t('settings.connectors.parameters.fixedCount', {
-                  count: fixedCount,
-                  formatted: formatCount(fixedCount),
-                })}
-              </Badge>
-            )}
-          </div>
-          {action.description && (
-            <p
-              className="text-muted-foreground line-clamp-2 text-xs"
-              title={action.description}
-            >
-              {action.description}
-            </p>
-          )}
-          {parameters.length > 0 && (
-            <Button
-              type="button"
-              variant="link"
-              size="inline"
-              className="mt-1"
-              aria-expanded={showParameters}
-              onClick={() => setShowParameters(!showParameters)}
-            >
-              {showParameters
-                ? t('settings.connectors.parameters.hide')
-                : t('settings.connectors.parameters.show')}
-            </Button>
-          )}
-        </div>
-        <Select
+    <PermissionRow
+      title={title}
+      name={action.name}
+      description={action.description}
+      badge={
+        fixedCount > 0 && (
+          <Badge variant="neutral">
+            {t('settings.connectors.parameters.fixedCount', {
+              count: fixedCount,
+              formatted: formatCount(fixedCount),
+            })}
+          </Badge>
+        )
+      }
+      control={
+        <PermissionSelect
           value={action.permission}
           disabled={readOnly}
-          onValueChange={(value) => onPermission(value as ActionPermission)}
-        >
-          <SelectTrigger
-            size="sm"
-            className="w-32 shrink-0"
-            aria-label={t('settings.connectors.permission.label', {
-              action: actionTitle(action.name),
-            })}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PERMISSIONS.map((permission) => (
-              <SelectItem key={permission} value={permission}>
-                {t(`settings.connectors.permission.${permission}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      {showParameters && (
-        <ActionParameters
-          parameters={parameters}
-          readOnly={readOnly}
-          onSave={onParameters}
+          onChange={onPermission}
+          label={t('settings.connectors.permission.label', { action: title })}
+        />
+      }
+      after={
+        showParameters && (
+          <ActionParameters
+            parameters={parameters}
+            readOnly={readOnly}
+            onSave={onParameters}
+          />
+        )
+      }
+    >
+      {parameters.length > 0 && (
+        <ActionParametersToggle
+          action={title}
+          open={showParameters}
+          onToggle={() => setShowParameters(!showParameters)}
         />
       )}
-    </li>
+    </PermissionRow>
   );
 }
 
 /**
  * One tool's actions in two groups, what it looks up and what it does, each
- * set at once to Allow / Ask first / Off; single actions can differ under
- * Customize, where each action also opens its parameters to fix values the
+ * set at once to Allow / Ask first / Off, or to Customize, which lists the
+ * actions with their own choice and opens their parameters to fix values the
  * AI must always use. Changes save immediately; a failed save puts the
- * previous choices back and says so.
+ * previous choices back and says so. `children` sits in the same card above
+ * the groups (a tool-wide switch).
  */
 export default function ToolPermissions({
   connectionId,
@@ -137,6 +101,8 @@ export default function ToolPermissions({
   onChange,
   readOnly = false,
   variant = 'outline',
+  groupHeadingAs = 'h4',
+  children,
 }: {
   connectionId: string;
   tool: ConnectionTool;
@@ -144,12 +110,14 @@ export default function ToolPermissions({
   readOnly?: boolean;
   /** The panel surface: `outline` in a modal, `subtle` in the drawer. */
   variant?: 'outline' | 'subtle';
+  /** The groups' heading level, one below the surface's own headings. */
+  groupHeadingAs?: 'h4' | 'h5' | 'h6';
+  children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [actions, setActions] = useState<ConnectionToolAction[]>(tool.actions);
-  const [unfolded, setUnfolded] = useState<Record<string, boolean>>({});
   // A refreshed tool brings its new list of actions.
   useEffect(() => setActions(tool.actions), [tool.actions]);
 
@@ -215,111 +183,50 @@ export default function ToolPermissions({
 
   return (
     <Card variant={variant} padding="sm" className="gap-4">
+      {children}
       {groups.map((group) => {
-        const title = t(`settings.connectors.capabilityPlain.${group.access}`);
-        const first = group.actions[0].permission;
-        // One choice for the group when its actions agree; none when mixed.
-        const common = group.actions.every(
-          (action) => action.permission === first,
-        )
-          ? first
-          : '';
-        const foldable = group.actions.length > FOLD_AFTER;
-        const open = !foldable || unfolded[group.access];
+        const name = t(`settings.connectors.capabilityPlain.${group.access}`);
         return (
-          <div
+          <PermissionGroup
             key={group.access}
             data-access={group.access}
-            className="flex flex-col gap-2"
+            headingAs={groupHeadingAs}
+            title={`${name} · ${formatCount(group.actions.length)}`}
+            values={group.actions.map((action) => action.permission)}
+            disabled={readOnly}
+            groupLabel={t('settings.connectors.permission.groupLabel', {
+              group: name,
+            })}
+            onChoose={(permission) =>
+              setPermissions(
+                Object.fromEntries(
+                  group.actions.map((action) => [action.name, permission]),
+                ),
+              )
+            }
           >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <SectionHeader
-                as="h4"
-                size="sm"
-                title={title}
-                description={t('settings.connectors.permission.actionCount', {
-                  count: group.actions.length,
-                  formatted: formatCount(group.actions.length),
-                })}
-              />
-              <div className="bg-muted rounded-full p-1">
-                <ToggleGroup
-                  type="single"
-                  size="xs"
-                  value={common}
-                  disabled={readOnly}
-                  aria-label={t('settings.connectors.permission.groupLabel', {
-                    group: title,
-                  })}
-                  onValueChange={(value) =>
-                    value &&
-                    setPermissions(
-                      Object.fromEntries(
-                        group.actions.map((action) => [
-                          action.name,
-                          value as ActionPermission,
-                        ]),
-                      ),
-                    )
-                  }
-                >
-                  {PERMISSIONS.map((permission) => (
-                    <ToggleGroupItem
-                      key={permission}
-                      value={permission}
-                      data-permission={permission}
-                    >
-                      {t(`settings.connectors.permission.${permission}`)}
-                    </ToggleGroupItem>
+            {(customizing) =>
+              customizing && (
+                <ul className="flex flex-col gap-3">
+                  {group.actions.map((action) => (
+                    <ActionRow
+                      key={action.name}
+                      action={action}
+                      readOnly={readOnly}
+                      onPermission={(permission) =>
+                        setPermissions({ [action.name]: permission })
+                      }
+                      onParameters={(changes) =>
+                        setParameters(action.name, changes)
+                      }
+                    />
                   ))}
-                </ToggleGroup>
-              </div>
-            </div>
-            {foldable && (
-              <Button
-                type="button"
-                variant="link"
-                size="inline"
-                className="self-start"
-                aria-expanded={open}
-                onClick={() =>
-                  setUnfolded((state) => ({
-                    ...state,
-                    [group.access]: !open,
-                  }))
-                }
-              >
-                {open
-                  ? t('settings.connectors.permission.fold')
-                  : t('settings.connectors.permission.customize', {
-                      count: group.actions.length,
-                      formatted: formatCount(group.actions.length),
-                    })}
-              </Button>
-            )}
-            {open && (
-              <ul className="flex flex-col gap-3">
-                {group.actions.map((action) => (
-                  <ActionRow
-                    key={action.name}
-                    action={action}
-                    readOnly={readOnly}
-                    onPermission={(permission) =>
-                      setPermissions({ [action.name]: permission })
-                    }
-                    onParameters={(changes) =>
-                      setParameters(action.name, changes)
-                    }
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
+                </ul>
+              )
+            }
+          </PermissionGroup>
         );
       })}
-      <p className="text-muted-foreground text-xs">
-        {t('settings.connectors.permission.hint')}
-      </p>
     </Card>
   );
 }

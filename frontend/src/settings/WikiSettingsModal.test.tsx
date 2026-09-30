@@ -113,12 +113,39 @@ describe('WikiSettingsModal', () => {
     expect(document.body.textContent).toContain('common.viewOnlyNotice');
   });
 
-  it('says when the settings could not load', async () => {
-    service.getWikiSettings.mockReturnValue(reply(500, { success: false }));
+  it('says when the settings could not load, and retries', async () => {
+    service.getWikiSettings.mockReturnValueOnce(reply(500, { success: false }));
     await render();
     expect(theSwitch()).toBeNull();
-    expect(document.body.textContent).toContain(
+    const failed = document.body.querySelector<HTMLElement>(
+      '[data-slot="empty-state"]',
+    );
+    expect(failed?.dataset.tone).toBe('destructive');
+    expect(failed?.textContent).toContain(
       'settings.sources.wiki.settings.loadError',
     );
+    const retry = Array.from(
+      failed!.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === 'retry')!;
+    expect(retry).toBeDefined();
+
+    service.getWikiSettings.mockReturnValueOnce(
+      reply(200, { allow_outside_edits: true, allowed_actions: OWNER }),
+    );
+    await act(async () => retry.click());
+    expect(service.getWikiSettings).toHaveBeenCalledTimes(2);
+    expect(theSwitch()?.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('stacks the body at the modal gap', async () => {
+    service.getWikiSettings.mockReturnValue(
+      reply(200, { allow_outside_edits: false, allowed_actions: ['use'] }),
+    );
+    await render();
+    const stack = theSwitch()!.closest(
+      '[data-slot="setting-rows"]',
+    )?.parentElement;
+    expect(stack?.className).toContain('gap-5');
+    expect(stack?.className).not.toContain('gap-4');
   });
 });

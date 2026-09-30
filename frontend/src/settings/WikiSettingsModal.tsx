@@ -6,6 +6,8 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import ViewOnlyNotice from '../components/ViewOnlyNotice';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Button } from '../components/ui/button';
+import { EmptyState } from '../components/ui/empty-state';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal } from '../components/ui/modal';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
@@ -39,6 +41,8 @@ export default function WikiSettingsModal({
 
   const [settings, setSettings] = useState<WikiSettings | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  // Bumped by Retry to fetch the settings again.
+  const [reloadKey, setReloadKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
 
@@ -64,7 +68,7 @@ export default function WikiSettingsModal({
     return () => {
       cancelled = true;
     };
-  }, [sourceId]);
+  }, [sourceId, reloadKey]);
 
   const canManage = can(settings, 'manage_settings');
 
@@ -94,17 +98,27 @@ export default function WikiSettingsModal({
   const body = () => {
     if (loadFailed) {
       return (
-        <Alert variant="destructive">
-          <CircleAlert />
-          <AlertDescription>
-            {t('settings.sources.wiki.settings.loadError')}
-          </AlertDescription>
-        </Alert>
+        <EmptyState
+          tone="destructive"
+          size="sm"
+          illustration="none"
+          title={t('settings.sources.wiki.settings.loadError')}
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              shape="pill"
+              onClick={() => setReloadKey((key) => key + 1)}
+            >
+              {t('retry')}
+            </Button>
+          }
+        />
       );
     }
     if (!settings) return <LoadingState fill="block" />;
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         {!canManage && <ViewOnlyNotice />}
         {saveFailed && (
           <Alert variant="destructive">

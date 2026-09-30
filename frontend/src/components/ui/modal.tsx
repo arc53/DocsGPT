@@ -33,6 +33,8 @@ export type ModalProps = {
   onOpenChange: (open: boolean) => void;
   title?: React.ReactNode;
   description?: React.ReactNode;
+  /** Before the title and description: a connector icon tile. */
+  leading?: React.ReactNode;
   hideTitle?: boolean;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -50,6 +52,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
     onOpenChange,
     title,
     description,
+    leading,
     hideTitle = false,
     children,
     footer,
@@ -95,11 +98,22 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
 
   // A visible title and its description share one flex item, so the
   // description sits 8px under the title rather than the column's 16px.
+  // A `leading` tile sits beside that pair, as in PanelHeader.
   const headerNode = showTitle ? (
-    <div data-slot="modal-header" className="shrink-0">
-      <DialogTitle>{title}</DialogTitle>
-      {descriptionNode}
-    </div>
+    leading ? (
+      <div data-slot="modal-header" className="flex shrink-0 items-start gap-3">
+        {leading}
+        <div className="min-w-0 flex-1">
+          <DialogTitle>{title}</DialogTitle>
+          {descriptionNode}
+        </div>
+      </div>
+    ) : (
+      <div data-slot="modal-header" className="shrink-0">
+        <DialogTitle>{title}</DialogTitle>
+        {descriptionNode}
+      </div>
+    )
   ) : (
     <>
       <VisuallyHidden.Root>

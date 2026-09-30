@@ -66,6 +66,12 @@ def _owned(conn, connection_id: str, user_id: str):
     return ConnectorSessionsRepository(conn).get_for_user(connection_id, user_id)
 
 
+def _is_preset(row: dict) -> bool:
+    """Whether a connection belongs to an MCP preset (Notion, Linear…)."""
+    definition = catalog.get_definition(catalog.connector_key_for_row(row))
+    return definition is not None and definition.publisher == "preset"
+
+
 def _error(message: str, status: int, **extra):
     return make_response(jsonify({"success": False, "error": message, **extra}), status)
 
@@ -251,6 +257,9 @@ class ConnectionSetup(Resource):
                 forbidden = bool(row) and allow_writes and not service.writes_allowed(
                     service.load_policies(conn), catalog.connector_key_for_row(row),
                 )
+                # An MCP preset's tool is rebuilt only while an admin leaves
+                # the preset on, as its sign-in's save requires.
+                disabled = discover and _is_preset(row) and not service.connector_enabled(conn, row)
             if row is None:
                 return _not_found()
             if service.normalize_status(row) != service.STATUS_CONNECTED:
@@ -258,13 +267,16 @@ class ConnectionSetup(Resource):
             if forbidden:
                 return _error("Changes through this connector are turned off by an admin", 403,
                               code="writes_forbidden")
+            if disabled:
+                return _error("This connector is turned off by an admin", 403, code="disabled")
             if discover:
-                # GitHub's tool is its MCP server: read its actions before
-                # the write transaction, not while holding it open.
-                from docsgpt.connectors.mcp import discover_builtin_actions
+                # GitHub's tool is its MCP server, and so is an MCP preset's
+                # (rebuilt after it was deleted): read its actions before the
+                # write transaction, not while holding it open.
+                from docsgpt.connectors.mcp import discover_connection_actions
 
                 try:
-                    mcp_actions = discover_builtin_actions(user_id, row, writes=allow_writes)
+                    mcp_actions = discover_connection_actions(user_id, row, writes=allow_writes)
                 except service.ConnectionUnavailable:
                     return _error("Reconnect before setting up", 409, code="reconnect")
                 except Exception as err:

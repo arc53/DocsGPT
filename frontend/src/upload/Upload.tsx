@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronLeft, FileText, Lock, Plug } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FileText, Lock } from 'lucide-react';
 import { envVar } from '@/env';
 import { useCallback, useEffect, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
@@ -15,12 +15,13 @@ import { FormField as UiFormField } from '../components/ui/form-field';
 import { Textarea } from '../components/ui/textarea';
 import { Modal } from '../components/ui/modal';
 import { OptionCard } from '../components/ui/option-card';
+import { SectionHeader } from '../components/ui/section-header';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { syncTargets } from '../connectors/catalogCards';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { connectorName } from '../connectors/i18n';
-import { formatCount, intlLocale } from '../utils/dateTimeUtils';
 import {
+  connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
   selectConnectorCatalog,
@@ -28,6 +29,7 @@ import {
   selectConnectorsLoaded,
 } from '../connectors/connectorsSlice';
 import type { AppDispatch } from '../store';
+import type { ConnectorDefinition } from '../connectors/types';
 import { Card } from '../components/ui/card';
 import { Dropzone } from '../components/ui/dropzone';
 import { ListRow, ListRows } from '../components/ui/list-row';
@@ -100,14 +102,14 @@ function Upload({
   const connections = useSelector(selectConnections);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
-  // Connecting a service (Connect your data, GitHub's private-repository
-  // hand-over) goes to the connect wizard, the one flow every entry point
-  // uses; this modal steps aside and closes with it.
+  // Connecting a service (a "From a service" card, GitHub's private-
+  // repository hand-over) goes to the connect wizard, the one flow every
+  // entry point uses. This modal steps aside while it runs: a connect closes
+  // it too, a cancel brings it back where it was.
   const [handedOver, setHandedOver] = useState(false);
-  // Connect your data: the services that sync, in place of the tiles.
-  const [connecting, setConnecting] = useState(false);
   const { launch, modals: connectModals } = useConnectorLauncher({
     onConnected: () => close(),
+    onCancel: () => setHandedOver(false),
   });
 
   const [files, setfiles] = useState<File[]>(receivedFile);
@@ -236,7 +238,7 @@ function Upload({
   }));
   const [nameTouched, setNameTouched] = useState(false);
 
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const store = useStore<RootState>();
 
@@ -752,94 +754,100 @@ function Upload({
     }
   };
 
-  // Services that sync into Knowledge are connected here, through the
-  // connect wizard: one tile opens their list, named after the first few
-  // (GitHub has a tile of its own).
+  // "From a service": the services that sync into Knowledge, in the
+  // Connectors page's order, each opening the connect wizard in place.
   const syncServices = connectorsEnabled ? syncTargets(connectorCatalog) : [];
-  const namedServices = syncServices
-    .filter(({ card }) => card.key !== 'github')
-    .map(({ card }) => connectorName(t, card));
-  const SERVICES_NAMED = 3;
-  const connectDescription = t('modals.uploadDoc.connectData.description', {
-    services: new Intl.ListFormat(intlLocale(i18n.language), {
-      type: 'conjunction',
-    }).format(
-      namedServices.length > SERVICES_NAMED
-        ? [
-            ...namedServices.slice(0, SERVICES_NAMED),
-            t('modals.uploadDoc.connectData.more'),
-          ]
-        : namedServices,
-    ),
-    interpolation: { escapeValue: false },
-  });
+  // GitHub is listed once, here. Where it cannot be connected it still reads
+  // a public repository by URL, so it stays as that form.
+  const githubListed = syncServices.some(
+    ({ card, target }) => card.key === 'github' || target.key === 'github',
+  );
 
-  const connectedAccounts = (key: string) =>
-    connections.filter(
-      (c) => c.connector_key === key && c.status === 'connected',
-    );
+  /** The service's accounts that can sync, and those that need signing in. */
+  const accountsOf = (key: string) => {
+    const own = connections.filter((c) => c.connector_key === key);
+    return {
+      connected: own.filter((c) => c.status === 'connected'),
+      broken: own.filter(connectionNeedsSignIn),
+    };
+  };
 
-  /** Which account a service's tile syncs from, when it has any. */
-  const accountLine = (key: string) => {
-    const accounts = connectedAccounts(key);
-    if (accounts.length === 1)
-      return t('modals.uploadDoc.connectData.connectedAs', {
-        account: accounts[0].account_label,
-        interpolation: { escapeValue: false },
-      });
-    if (accounts.length > 1)
-      return t('settings.connectors.status.connectedCount', {
-        count: accounts.length,
-        formatted: formatCount(accounts.length),
-      });
+  /** The short state line under a service's name, when it has one. */
+  const serviceStatus = (key: string) => {
+    const { connected, broken } = accountsOf(key);
+    if (connected.length > 0) return t('settings.connectors.status.connected');
+    if (broken.length > 0) return t('settings.connectors.status.reconnect');
     return undefined;
   };
 
-  const renderConnectStep = () => (
-    <div className="flex flex-col gap-5">
-      <Button
-        type="button"
-        variant="ghost-muted"
+  const openService = (target: ConnectorDefinition) => {
+    const { connected, broken } = accountsOf(target.key);
+    if (
+      connected.length === 0 &&
+      broken.length === 0 &&
+      target.key === 'github'
+    ) {
+      // No account: the public repository form, which offers the connect.
+      handleIngestorTypeChange('github');
+      return;
+    }
+    setHandedOver(true);
+    if (connected.length > 0) {
+      // Opened to add knowledge: an account already connected goes straight
+      // to what to sync. With several, the wizard asks which one.
+      launch(
+        target,
+        connected.length === 1
+          ? {
+              mode: 'sync',
+              connectionId: connected[0].id,
+              purpose: 'knowledge',
+            }
+          : { mode: 'sync', purpose: 'knowledge' },
+      );
+    } else if (broken.length > 0) {
+      // Repair the account that stopped rather than add a second one.
+      launch(target, {
+        mode: 'reconnect',
+        connectionId: broken[0].id,
+        purpose: 'knowledge',
+      });
+    } else {
+      launch(target, { purpose: 'knowledge' });
+    }
+  };
+
+  const renderServices = () => (
+    <section className="flex flex-col gap-3">
+      <SectionHeader
+        as="h3"
         size="sm"
-        onClick={() => setConnecting(false)}
-        className="-ml-3 w-fit justify-start"
-      >
-        <ChevronLeft />
-        <span>{t('modals.uploadDoc.back')}</span>
-      </Button>
-      <div className="flex flex-col gap-2">
-        <h2 className="text-foreground text-xl leading-tight font-semibold">
-          {t('modals.uploadDoc.connectData.title')}
-        </h2>
-        <p className="text-muted-foreground text-sm">
-          {t('modals.uploadDoc.connectData.intro')}
-        </p>
-      </div>
+        title={t('modals.uploadDoc.fromService')}
+      />
       <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
         {syncServices.map(({ card, target }) => (
           <OptionCard
             key={card.key}
-            icon={<ConnectorIcon icon={card.icon} className="size-6" />}
+            icon={
+              <ConnectorIcon
+                icon={card.icon}
+                className="text-foreground size-6"
+              />
+            }
             title={connectorName(t, card)}
-            description={accountLine(target.key)}
-            onClick={() => {
-              const account = connectedAccounts(target.key)[0];
-              setHandedOver(true);
-              // Opened to add knowledge: syncing starts switched on, and an
-              // account already connected goes straight to what to sync.
-              launch(
-                target,
-                account
-                  ? {
-                      mode: 'sync',
-                      connectionId: account.id,
-                      purpose: 'knowledge',
-                    }
-                  : { purpose: 'knowledge' },
-              );
-            }}
+            description={serviceStatus(target.key)}
+            onClick={() => openService(target)}
           />
         ))}
+        {!githubListed && (
+          <OptionCard
+            icon={
+              <ConnectorIcon icon="github" className="text-foreground size-6" />
+            }
+            title={t('modals.uploadDoc.ingestors.github.label')}
+            onClick={() => handleIngestorTypeChange('github')}
+          />
+        )}
       </div>
       {onBrowseConnectors && (
         <Button
@@ -852,11 +860,11 @@ function Upload({
             onBrowseConnectors();
           }}
         >
-          {t('modals.uploadDoc.connectData.browseAll')}
+          {t('settings.connectors.browseAll')}
           <ArrowRight className="size-3" />
         </Button>
       )}
-    </div>
+    </section>
   );
 
   const renderIngestorSelection = () => {
@@ -865,51 +873,33 @@ function Upload({
     ).filter((option): option is IngestorOption => !!option);
     return (
       <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-        {options.map((option) => (
-          <OptionCard
-            key={option.value}
-            icon={
-              <img src={option.icon} alt="" className="size-6 dark:invert" />
-            }
-            title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
-            onClick={() => handleIngestorTypeChange(option.value)}
-          />
-        ))}
-        {syncServices.length > 0 && (
-          <OptionCard
-            className="sm:col-span-2 md:col-span-3"
-            icon={<Plug />}
-            title={t('modals.uploadDoc.connectData.title')}
-            description={connectDescription}
-            onClick={() => setConnecting(true)}
-          />
-        )}
+        {options.map((option) => {
+          const Icon = option.icon;
+          return (
+            <OptionCard
+              key={option.value}
+              icon={Icon ? <Icon /> : null}
+              title={t(`modals.uploadDoc.ingestors.${option.value}.label`)}
+              onClick={() => handleIngestorTypeChange(option.value)}
+            />
+          );
+        })}
       </div>
     );
   };
 
-  // The GitHub tile reads public repositories by URL with no account. A
-  // private one needs the user's own GitHub connection: hand over to the
-  // connect wizard, which picks from the account's repositories.
+  // The GitHub form reads public repositories by URL with no account (it
+  // opens only while no account is connected). A private one needs the
+  // user's own GitHub connection: hand over to the connect wizard.
   const githubConnector = connectorsEnabled
     ? connectorCatalog.find((c) => c.key === 'github' && c.available)
-    : undefined;
-  const githubAccount = githubConnector
-    ? connections.find(
-        (c) => c.connector_key === 'github' && c.status === 'connected',
-      )
     : undefined;
   const renderGitHubHandOver = () =>
     githubConnector ? (
       <Alert variant="info" role="note">
         <Lock />
         <AlertDescription>
-          {githubAccount
-            ? t('modals.uploadDoc.github.connectedHint', {
-                account: githubAccount.account_label,
-                interpolation: { escapeValue: false },
-              })
-            : t('modals.uploadDoc.github.privateHint')}
+          {t('modals.uploadDoc.github.privateHint')}
         </AlertDescription>
         <div className="mt-2">
           <Button
@@ -919,21 +909,10 @@ function Upload({
             variant="outline"
             onClick={() => {
               setHandedOver(true);
-              launch(
-                githubConnector,
-                githubAccount
-                  ? {
-                      mode: 'sync',
-                      connectionId: githubAccount.id,
-                      purpose: 'knowledge',
-                    }
-                  : { purpose: 'knowledge' },
-              );
+              launch(githubConnector, { purpose: 'knowledge' });
             }}
           >
-            {githubAccount
-              ? t('modals.uploadDoc.github.pickRepository')
-              : t('modals.uploadDoc.github.connect')}
+            {t('modals.uploadDoc.github.connect')}
           </Button>
         </div>
       </Alert>
@@ -966,27 +945,31 @@ function Upload({
       mobileVariant="sheet"
     >
       <div className="flex w-full flex-col gap-6">
-        {!ingestor.type && !connecting && (
-          <p className="text-foreground text-left text-xl leading-tight font-semibold">
+        {!ingestor.type && (
+          <h2 className="text-foreground text-xl leading-tight font-semibold">
             {t('modals.uploadDoc.selectSource')}
-          </p>
+          </h2>
         )}
 
         {activeTab && (
           <>
-            {!ingestor.type &&
-              (connecting ? renderConnectStep() : renderIngestorSelection())}
+            {!ingestor.type && (
+              <>
+                {renderIngestorSelection()}
+                {renderServices()}
+              </>
+            )}
             {ingestor.type && (
               <div className="flex flex-col gap-5">
                 <Button
                   type="button"
-                  variant="ghost-muted"
+                  variant="ghost"
                   size="sm"
                   onClick={() => handleIngestorTypeChange(null)}
                   className="-ml-3 w-fit justify-start"
                 >
-                  <ChevronLeft />
-                  <span>{t('modals.uploadDoc.back')}</span>
+                  <ArrowLeft aria-hidden />
+                  {t('modals.uploadDoc.back')}
                 </Button>
 
                 <h2 className="text-foreground text-xl leading-tight font-semibold">

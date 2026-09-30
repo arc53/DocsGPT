@@ -844,7 +844,6 @@ export default function Teams() {
         intro={t('settings.teams.subtitle')}
         action={
           <Button size="field" shape="pill" onClick={openCreateModal}>
-            <Plus aria-hidden />
             {t('settings.teams.newTeam')}
           </Button>
         }

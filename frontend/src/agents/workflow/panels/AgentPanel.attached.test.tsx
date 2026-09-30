@@ -9,12 +9,11 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-const pickers = vi.hoisted(
-  () => [] as { options: { value: string; label: string }[] }[],
-);
+type Option = { value: string; label: string; description?: string };
+const pickers = vi.hoisted(() => [] as { options: Option[] }[]);
 vi.mock('@/components/ui/multi-select', () => ({
   MultiSelect: (props: {
-    options: { value: string; label: string }[];
+    options: Option[];
     selected: string[];
     onChange: (next: string[]) => void;
   }) => {
@@ -98,15 +97,20 @@ describe('AgentPanel attached resources', () => {
 
   // An editor's pickers don't list the owner's private tools and sources;
   // those still need a row so they can be taken off the node.
+  // The chip reads the plain name; only the list row says who added it.
   it('adds remove-only options for attached tools and sources', async () => {
     const onUpdate = await render();
-    const labels = pickers.flatMap((p) => p.options.map((o) => o.label));
-    expect(labels).toContain(
-      'agents.workflow.builder.attachedOption:Owner Jira',
-    );
-    expect(labels).toContain(
-      'agents.workflow.builder.attachedOption:Owner docs',
-    );
+    const options = pickers.flatMap((p) => p.options);
+    for (const name of ['Owner Jira', 'Owner docs'])
+      expect(options).toContainEqual(
+        expect.objectContaining({
+          label: name,
+          description: 'agents.form.sponsors.addedByOther',
+        }),
+      );
+    expect(
+      options.find((o) => o.value === 'mine')?.description,
+    ).toBeUndefined();
     await act(async () =>
       container
         .querySelector<HTMLButtonElement>('[data-option="owners"]')!

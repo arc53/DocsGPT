@@ -79,6 +79,7 @@ import PromptsModal from '../preferences/PromptsModal';
 import Prompts from '../settings/Prompts';
 import { UserToolType } from '../settings/types';
 import { can } from '../utils/accessUtils';
+import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import Upload from '../upload/Upload';
 import {
   selectedSourceIdsFromAgent,
@@ -111,7 +112,7 @@ import {
   withAttachedToolRows,
 } from './sponsorConsent';
 import { useSponsorPrompt } from './useSponsorPrompt';
-import { Agent, ResourceState, ToolSummary } from './types';
+import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 import WorkflowBuilder from './workflow/WorkflowBuilder';
 
 import type { Model } from '../models/types';
@@ -149,6 +150,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const folderIdFromUrl = searchParams.get('folder_id');
 
   const token = useSelector(selectToken);
+  const readerId = useMemo(() => readerIdFromToken(token), [token]);
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
   const prompts = useSelector(selectPrompts);
@@ -344,6 +346,62 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     [agent.prompt_name, prompts, resolveSourceLabel, selectedTools, t],
   );
 
+  // "Added by …" for a tool, source or prompt that runs with an editor's
+  // access (`resource_sponsors`), shown where it is picked; null otherwise.
+  const addedByLabel = useCallback(
+    (type: ResourceSponsor['type'], id: string): string | null => {
+      const sponsor = (agent.resource_sponsors ?? []).find(
+        (item) =>
+          item.active &&
+          item.type === type &&
+          item.id.toLowerCase() === id.toLowerCase(),
+      );
+      if (!sponsor) return null;
+      if (isReader(sponsor, readerId))
+        return t('agents.form.sponsors.addedByYou');
+      const person = sponsor.user_id ? personLabel(sponsor) : null;
+      return person
+        ? t('agents.form.sponsors.addedBy', {
+            person,
+            interpolation: { escapeValue: false },
+          })
+        : t('agents.form.sponsors.addedByOther');
+    },
+    [agent.resource_sponsors, readerId, t],
+  );
+
+  const promptAddedBy = agent.prompt_id
+    ? addedByLabel('prompt', agent.prompt_id)
+    : null;
+
+  /** Picker rows with their "Added by" line in the row's description. */
+  const withAddedBy = useCallback(
+    (
+      items: MultiSelectPopoverItem[],
+      type: ResourceSponsor['type'],
+    ): MultiSelectPopoverItem[] =>
+      items.map((item) => {
+        const addedBy = addedByLabel(type, item.id);
+        if (!addedBy) return item;
+        // A rich description (a status badge) wins over a plain one, so the
+        // line goes above it.
+        return item.descriptionNode
+          ? {
+              ...item,
+              descriptionNode: (
+                <>
+                  <p className="text-muted-foreground truncate text-xs">
+                    {addedBy}
+                  </p>
+                  {item.descriptionNode}
+                </>
+              ),
+            }
+          : { ...item, description: addedBy };
+      }),
+    [addedByLabel],
+  );
+
   const sourceItems = useMemo(() => {
     const items = toSourcePickerItems(
       sourceDocs,
@@ -360,18 +418,21 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     const unlisted = Array.from(selectedSourceIds)
       .filter((id) => !listed.has(id))
       .map((id) => ({ id, label: resolveSourceLabel(id), icon: <Database /> }));
-    return [...items, ...unlisted];
-  }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t]);
+    return withAddedBy([...items, ...unlisted], 'source');
+  }, [resolveSourceLabel, selectedSourceIds, sourceDocs, t, withAddedBy]);
 
   // The caller's tools, plus a remove-only row for each tool on the agent
   // they can't list (the owner's private tools on a shared agent).
   const toolItems = useMemo(
     () =>
-      withAttachedToolRows(userTools, attachedTools, {
-        group: t('agents.form.toolsPopup.groupAttached'),
-        description: t('agents.form.toolsPopup.attachedHint'),
-      }),
-    [attachedTools, t, userTools],
+      withAddedBy(
+        withAttachedToolRows(userTools, attachedTools, {
+          group: t('agents.form.toolsPopup.groupAttached'),
+          description: t('agents.form.toolsPopup.attachedHint'),
+        }),
+        'tool',
+      ),
+    [attachedTools, t, userTools, withAddedBy],
   );
 
   const selectedSourceNames = useMemo(
@@ -899,9 +960,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           };
           if (connectionNeedsSignIn(connection)) {
             base.descriptionNode = (
-              <p className="text-warning text-xs">
-                {t('settings.connectors.health.signInAgain')}
-              </p>
+              <Badge variant="warning" className="mt-0.5">
+                {t('settings.connectors.status.reconnect')}
+              </Badge>
             );
           }
           if (tool.name === 'remote_device') {
@@ -1443,50 +1504,62 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 }
               />
             </FormField>
-            <div className="flex items-center gap-2 sm:col-span-2">
-              <div className="min-w-0 flex-1">
-                <Prompts
-                  prompts={prompts}
-                  selectedPrompt={
-                    prompts.find((prompt) => prompt.id === agent.prompt_id) ||
-                    // Owner-resolved name from the agent payload: lets a team
-                    // member see the owner's prompt name (which isn't in their
-                    // own prompts list). 'public' hides owner-only edit/share
-                    // affordances on a prompt the viewer doesn't own.
-                    (agent.prompt_name
-                      ? {
-                          name: agent.prompt_name,
-                          id: agent.prompt_id || 'default',
-                          type: 'public',
-                        }
-                      : prompts[0]) || {
-                      name: 'default',
-                      id: 'default',
-                      type: 'public',
+            <div className="flex flex-col sm:col-span-2">
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <Prompts
+                    prompts={prompts}
+                    selectedPrompt={
+                      prompts.find((prompt) => prompt.id === agent.prompt_id) ||
+                      // Owner-resolved name from the agent payload: lets a team
+                      // member see the owner's prompt name (which isn't in their
+                      // own prompts list). 'public' hides owner-only edit/share
+                      // affordances on a prompt the viewer doesn't own.
+                      (agent.prompt_name
+                        ? {
+                            name: agent.prompt_name,
+                            id: agent.prompt_id || 'default',
+                            type: 'public',
+                          }
+                        : prompts[0]) || {
+                        name: 'default',
+                        id: 'default',
+                        type: 'public',
+                      }
                     }
-                  }
-                  onSelectPrompt={(name, id, type) =>
-                    setAgent({ ...agent, prompt_id: id })
-                  }
-                  setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-                  title={t('agents.form.sections.prompt')}
-                  titleAs="field"
-                  labelSurface="background"
-                  showAddButton={false}
-                />
+                    onSelectPrompt={(name, id, type) =>
+                      setAgent({ ...agent, prompt_id: id })
+                    }
+                    setPrompts={(newPrompts) =>
+                      dispatch(setPrompts(newPrompts))
+                    }
+                    title={t('agents.form.sections.prompt')}
+                    titleAs="field"
+                    labelSurface="background"
+                    showAddButton={false}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="outline-primary"
+                  size="field"
+                  shape="pill"
+                  onClick={() => setAddPromptModal('ACTIVE')}
+                >
+                  {t('agents.form.buttons.add')}
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline-primary"
-                size="field"
-                shape="pill"
-                onClick={() => setAddPromptModal('ACTIVE')}
-              >
-                {t('agents.form.buttons.add')}
-              </Button>
+              {/* The prompt Select has no description slot, so the mark of a
+                  prompt that runs with an editor's access is a hint under it. */}
+              {promptAddedBy && (
+                <p className="text-muted-foreground mt-1.5 text-xs">
+                  {promptAddedBy}
+                </p>
+              )}
             </div>
             <ResourceStatusNotice
               agent={agent}
+              readerId={readerId}
               stopped={stoppedResources}
               resolveName={resolveSponsoredName}
               takeovers={takeovers}

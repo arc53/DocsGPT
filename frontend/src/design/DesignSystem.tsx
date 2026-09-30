@@ -335,7 +335,7 @@ const AVATAR_SIZES = ['xs', 'sm', 'default', 'lg'] as const;
 
 const MULTI_OPTIONS = [
   { value: 'pdf', label: 'PDF' },
-  { value: 'docx', label: 'Word' },
+  { value: 'docx', label: 'Word', description: 'Added by Lena' },
   { value: 'md', label: 'Markdown' },
   { value: 'html', label: 'HTML' },
   { value: 'csv', label: 'CSV' },
@@ -466,6 +466,7 @@ export default function DesignSystem() {
   const [time, setTime] = useState('09:30');
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [modalOpen, setModalOpen] = useState(false);
+  const [leadingOpen, setLeadingOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(true);
   const [dropped, setDropped] = useState<string[]>([]);
   const [agentType, setAgentType] = useState<'classic' | 'workflow'>('classic');
@@ -1155,7 +1156,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Action menu"
-            code='<ActionMenu options triggerLabel /> on a tile · size="toolbar" in a page header'
+            code='<ActionMenu options triggerLabel /> on a tile (separatorBefore on Delete) · size="toolbar" in a page header'
           >
             <div className="flex flex-wrap items-center gap-6">
               <div className="bg-muted hover:bg-accent relative h-24 w-48 rounded-2xl p-4 text-sm">
@@ -1171,6 +1172,7 @@ export default function DesignSystem() {
                       icon: Trash2,
                       label: 'Delete',
                       variant: 'destructive',
+                      separatorBefore: true,
                       onClick: () => {},
                     },
                   ]}
@@ -1529,7 +1531,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Bordered surfaces"
-            code='<Card> (outline) · <Card interactive asChild><Link/></Card> · <Card padding="sm">'
+            code='<Card> (outline) · <Card interactive asChild><Link/></Card> · <Card padding="sm"> · <Card variant="filled" interactive="within"> + stretched <button>'
           >
             <div className="grid gap-4 md:grid-cols-2">
               <Card interactive asChild>
@@ -1553,6 +1555,24 @@ export default function DesignSystem() {
                     <Users className="size-3" /> 3 members · 3 shared
                   </CardFooter>
                 </a>
+              </Card>
+              <Card variant="filled" padding="lg" interactive="within">
+                <button
+                  type="button"
+                  className="text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
+                >
+                  <CardTitle>Q3 carrier tenders</CardTitle>
+                </button>
+                <CardDescription size="xs">
+                  A stretched button opens the source; the badge and menu are
+                  siblings above it.
+                </CardDescription>
+                <div className="relative z-10 flex items-center gap-2">
+                  <Badge variant="warning">Reconnect</Badge>
+                  <Button variant="outline" size="sm" shape="pill">
+                    Reconnect
+                  </Button>
+                </div>
               </Card>
               <Card>
                 <CardHeader>
@@ -2719,7 +2739,7 @@ export default function DesignSystem() {
         >
           <Example
             title="Modal and sheet"
-            code='<Modal size="md" title description footer={<ModalActions …/>}> · <SidePanel size="default | wide"><PanelHeader/><PanelBody/><PanelFooter/></SidePanel> · <SheetContent side="left | top"> · <SheetContent side="bottom" handle>'
+            code='<Modal size="md" title description leading footer={<ModalActions …/>}> · <SidePanel size="default | wide"><PanelHeader/><PanelBody/><PanelFooter/></SidePanel> · <SheetContent side="left | top"> · <SheetContent side="bottom" handle>'
           >
             <div className="flex flex-wrap items-center gap-3">
               <Button variant="outline" onClick={() => setModalOpen(true)}>
@@ -2751,6 +2771,31 @@ export default function DesignSystem() {
                     </SelectContent>
                   </Select>
                 </div>
+              </Modal>
+              <Button variant="outline" onClick={() => setLeadingOpen(true)}>
+                Modal with leading
+              </Button>
+              <Modal
+                open={leadingOpen}
+                onOpenChange={setLeadingOpen}
+                size="lg"
+                title="Connect GitHub"
+                description="Sync repositories into Knowledge and let agents read code, issues and pull requests."
+                leading={
+                  <span className="bg-muted flex size-12 shrink-0 items-center justify-center rounded-xl">
+                    <GitBranch className="size-6" />
+                  </span>
+                }
+                footer={
+                  <ModalActions
+                    cancelLabel="Cancel"
+                    onCancel={() => setLeadingOpen(false)}
+                    submitLabel="Connect"
+                    onSubmit={() => setLeadingOpen(false)}
+                  />
+                }
+              >
+                <Input label="Personal access token" />
               </Modal>
               {(['default', 'wide'] as const).map((size) => (
                 <Button

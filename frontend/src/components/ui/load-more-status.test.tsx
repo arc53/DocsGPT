@@ -61,4 +61,11 @@ describe('LoadMoreStatus', () => {
     await act(async () => retry.click());
     expect(onRetry).toHaveBeenCalled();
   });
+
+  it('takes list wording for a list that is not a feed', async () => {
+    await render({ loading: true, loadingLabel: 'pagination.loadingMore' });
+    expect(strip().textContent).toBe('pagination.loadingMore');
+    await render({ done: true, doneLabel: 'Everything is here' });
+    expect(strip().textContent).toBe('Everything is here');
+  });
 });

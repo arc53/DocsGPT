@@ -26,12 +26,15 @@ export default function RepoPicker({
   token,
   value,
   onChange,
+  onReconnect,
 }: {
   connectionId: string;
   token: string | null;
   /** The picked repository's `owner/name`. */
   value: string | null;
   onChange: (fullName: string) => void;
+  /** Signs the connection in again when its sign-in expired. */
+  onReconnect?: () => void;
 }) {
   const { t } = useTranslation();
   const [repositories, setRepositories] = useState<GitHubRepository[]>([]);
@@ -95,8 +98,8 @@ export default function RepoPicker({
       className="w-fit"
       onClick={chooseRepositories}
     >
-      <ExternalLink />
       {t('settings.connectors.github.chooseRepositories')}
+      <ExternalLink />
     </Button>
   ) : null;
 
@@ -117,6 +120,15 @@ export default function RepoPicker({
           error === 'failed' ? (
             <Button variant="outline" size="sm" shape="pill" onClick={load}>
               {t('retry')}
+            </Button>
+          ) : onReconnect ? (
+            <Button
+              variant="outline"
+              size="sm"
+              shape="pill"
+              onClick={onReconnect}
+            >
+              {t('settings.connectors.status.reconnect')}
             </Button>
           ) : undefined
         }
@@ -142,6 +154,7 @@ export default function RepoPicker({
     <div className="flex flex-col gap-3">
       <SearchInput
         label={t('settings.connectors.github.searchRepositories')}
+        labelSurface="card"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
@@ -152,11 +165,7 @@ export default function RepoPicker({
           title={t('settings.connectors.noMatches')}
         />
       ) : (
-        <Card
-          variant="subtle"
-          padding="none"
-          className="max-h-80 overflow-y-auto"
-        >
+        <Card variant="outline" padding="none" className="overflow-hidden">
           <div
             role="radiogroup"
             aria-label={t('settings.connectors.github.repositories')}
@@ -168,6 +177,7 @@ export default function RepoPicker({
                   <ListRow
                     key={repo.full_name}
                     interactive
+                    selected={picked}
                     asChild
                     leading={
                       <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md">

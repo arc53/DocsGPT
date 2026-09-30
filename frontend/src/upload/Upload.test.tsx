@@ -49,8 +49,15 @@ vi.mock('../api/services/userService', () => ({
 }));
 
 const launch = vi.hoisted(() => vi.fn());
+// What Upload asked the launcher to report back (B5).
+const launcherOpts = vi.hoisted(() => ({
+  current: {} as { onConnected?: () => void; onCancel?: () => void },
+}));
 vi.mock('../connectors/useConnectorLauncher', () => ({
-  default: () => ({ launch, modals: null }),
+  default: (opts: { onConnected?: () => void; onCancel?: () => void }) => {
+    launcherOpts.current = opts ?? {};
+    return { launch, modals: null };
+  },
 }));
 
 import Upload from './Upload';
@@ -95,7 +102,7 @@ describe('Upload source-type tiles', () => {
       ),
     );
 
-  it('renders each source type as a button tile', async () => {
+  it('renders each source type as a button tile with a lucide icon', async () => {
     await render();
     const found = tiles();
     expect(found.length).toBeGreaterThan(0);
@@ -107,7 +114,20 @@ describe('Upload source-type tiles', () => {
       tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
     );
     expect(crawler).toBeDefined();
-    expect(crawler!.querySelector('img')?.className).toContain('size-6');
+    expect(crawler!.querySelector('img')).toBeNull();
+    expect(crawler!.querySelector('svg')?.getAttribute('class')).toContain(
+      'lucide-globe',
+    );
+  });
+
+  it('titles the first step with a heading, like the later steps', async () => {
+    await render();
+    // Beside the dialog's hidden title, as on the later steps.
+    const heading = Array.from(document.body.querySelectorAll('h2')).find(
+      (h) => h.textContent === 'modals.uploadDoc.selectSource',
+    );
+    expect(heading).toBeDefined();
+    expect(heading?.className).toContain('text-xl');
   });
 
   it('selects the clicked source type', async () => {
@@ -122,6 +142,27 @@ describe('Upload source-type tiles', () => {
     );
   });
 
+  const backButton = () =>
+    Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'modals.uploadDoc.back',
+    );
+
+  it('goes back with the ghost Back and its arrow', async () => {
+    await render();
+    const crawler = tiles().find((tile) =>
+      tile.textContent?.includes('modals.uploadDoc.ingestors.crawler.label'),
+    )!;
+    await act(async () => crawler.click());
+    const back = backButton()!;
+    expect(back.getAttribute('data-variant')).toBe('ghost');
+    expect(back.getAttribute('data-size')).toBe('sm');
+    expect(back.querySelector('svg')?.getAttribute('class')).toContain(
+      'lucide-arrow-left',
+    );
+    await act(async () => back.click());
+    expect(tiles().length).toBeGreaterThan(0);
+  });
+
   const DRIVE = {
     key: 'google_drive',
     name: 'Google Drive',
@@ -132,46 +173,19 @@ describe('Upload source-type tiles', () => {
     available: true,
     missing_settings: [],
   };
-  const connectTile = () =>
-    tiles().find((tile) =>
-      tile.textContent?.includes('modals.uploadDoc.connectData.title'),
-    );
-
-  // One list of what needs no account, then one tile that sends the user to
-  // connect a service; connected services sync from the Connectors page.
-  it('lists the no-account types and one Connect your data tile', async () => {
-    connectorsState.catalog = [DRIVE];
-    await render();
-    const labels = tiles().map((tile) => tile.textContent ?? '');
-    for (const type of ['local_file', 'url', 'crawler', 'github', 'wiki'])
-      expect(labels.some((l) => l.includes(`ingestors.${type}.label`))).toBe(
-        true,
-      );
-    for (const type of [
-      'google_drive',
-      'share_point',
-      'confluence',
-      's3',
-      'reddit',
-    ])
-      expect(labels.some((l) => l.includes(`ingestors.${type}.label`))).toBe(
-        false,
-      );
-    expect(labels.at(-1)).toContain('modals.uploadDoc.connectData.title');
-    // Named after what this instance can sync.
-    expect(labels.at(-1)).toContain(
-      'modals.uploadDoc.connectData.description(Google Drive)',
-    );
-    expect(document.body.querySelector('h3')).toBeNull();
-    connectorsState.catalog = [];
-  });
 
   // Like the Connectors page: connected services first, and a part (a
-  // service's sync half) listed under its parent. GitHub has its own tile.
+  // service's sync half) listed under its parent.
   const CATALOG = [
     DRIVE,
     { ...DRIVE, key: 'share_point', name: 'SharePoint' },
-    { ...DRIVE, key: 'github', name: 'GitHub', state: 'connected' },
+    {
+      ...DRIVE,
+      key: 'github',
+      name: 'GitHub',
+      icon: 'github',
+      state: 'connected',
+    },
     { ...DRIVE, key: 's3', name: 'Amazon S3', state: 'connected' },
     {
       key: 'mcp:atlassian',
@@ -190,42 +204,79 @@ describe('Upload source-type tiles', () => {
     { key: 'telegram', name: 'Telegram', capabilities: ['write'] },
   ];
 
-  it('names three syncing services, then the rest as more', async () => {
-    connectorsState.catalog = CATALOG;
-    await render();
-    expect(connectTile()!.textContent).toContain(
-      'modals.uploadDoc.connectData.description(Amazon S3, Google Drive, SharePoint, and modals.uploadDoc.connectData.more)',
+  const section = () =>
+    Array.from(document.body.querySelectorAll('section')).find((el) =>
+      el
+        .querySelector('h3')
+        ?.textContent?.includes('modals.uploadDoc.fromService'),
     );
-    connectorsState.catalog = [];
-  });
-
   const serviceTiles = () =>
-    tiles().map(
+    Array.from(
+      section()?.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="option-card"]',
+      ) ?? [],
+    );
+  const serviceNames = () =>
+    serviceTiles().map(
       (tile) => tile.querySelector('[data-slot="card-title"]')?.textContent,
     );
+  const serviceTile = (name: string) =>
+    serviceTiles().find(
+      (t) => t.querySelector('[data-slot="card-title"]')?.textContent === name,
+    )!;
+  const statusLine = (name: string) =>
+    serviceTile(name).querySelector('[data-slot="card-description"]')
+      ?.textContent;
 
-  it('lists the services that sync in place of the tiles, with a way back', async () => {
+  afterEach(() => {
+    connectorsState.catalog = [];
+    connectorsState.connections = [];
+    connectorsState.enabled = true;
+  });
+
+  // One view: what needs no account, then the services that sync, listed
+  // directly (no "Connect your data" step).
+  it('lists the no-account types, then the syncing services in one view', async () => {
     connectorsState.catalog = CATALOG;
     close.mockClear();
     await render();
-    await act(async () => connectTile()!.click());
-    expect(close).not.toHaveBeenCalled();
-    expect(serviceTiles()).toEqual([
+    const noAccount = tiles()
+      .filter((tile) => !section()?.contains(tile))
+      .map((tile) => tile.textContent ?? '');
+    expect(noAccount).toEqual([
+      'modals.uploadDoc.ingestors.local_file.label',
+      'modals.uploadDoc.ingestors.url.label',
+      'modals.uploadDoc.ingestors.crawler.label',
+      'modals.uploadDoc.ingestors.wiki.label',
+    ]);
+    expect(document.body.textContent).not.toContain('connectData');
+    const header = section()!.querySelector('[data-slot="section-header"]');
+    expect(header).not.toBeNull();
+    // GitHub once, in the service section.
+    expect(serviceNames()).toEqual([
       'GitHub',
       'Amazon S3',
       'Google Drive',
       'SharePoint',
       'Atlassian',
     ]);
-    const back = Array.from(document.body.querySelectorAll('button')).find(
-      (b) => b.textContent === 'modals.uploadDoc.back',
-    )!;
-    await act(async () => back.click());
-    expect(connectTile()).toBeDefined();
-    connectorsState.catalog = [];
+    expect(close).not.toHaveBeenCalled();
   });
 
-  it('connects a service in place, for Knowledge', async () => {
+  it('draws the services as compact cards, brand logos in the foreground', async () => {
+    connectorsState.catalog = CATALOG;
+    await render();
+    const grid = serviceTile('Google Drive').parentElement!;
+    expect(grid.className).toContain('md:grid-cols-3');
+    const logo = serviceTile('Google Drive').querySelector(
+      '[data-slot="option-card-icon"] svg',
+    );
+    expect(logo?.getAttribute('class')).toContain('text-foreground');
+    // No status, no line.
+    expect(statusLine('Google Drive')).toBeUndefined();
+  });
+
+  it('says Connected, without the account, and syncs from the one account', async () => {
     connectorsState.catalog = CATALOG;
     connectorsState.connections = [
       {
@@ -237,117 +288,157 @@ describe('Upload source-type tiles', () => {
     ];
     launch.mockClear();
     await render();
-    await act(async () => connectTile()!.click());
-    const tile = (name: string) =>
-      tiles().find(
-        (t) =>
-          t.querySelector('[data-slot="card-title"]')?.textContent === name,
-      )!;
-    expect(tile('Amazon S3').textContent).toContain(
-      'modals.uploadDoc.connectData.connectedAs(bucket-reader)',
+    expect(statusLine('Amazon S3')).toBe(
+      'settings.connectors.status.connected',
     );
-    // An account already connected goes straight to choosing what to sync.
-    await act(async () => tile('Amazon S3').click());
+    expect(serviceTile('Amazon S3').textContent).not.toContain('bucket-reader');
+    await act(async () => serviceTile('Amazon S3').click());
     expect(launch).toHaveBeenLastCalledWith(
       expect.objectContaining({ key: 's3' }),
       { mode: 'sync', connectionId: 'k1', purpose: 'knowledge' },
     );
-    connectorsState.connections = [];
-    connectorsState.catalog = [];
+  });
+
+  // B9: with two accounts the wizard asks which one; none is picked here.
+  it('leaves the account to the wizard when there are several', async () => {
+    connectorsState.catalog = CATALOG;
+    connectorsState.connections = [
+      { id: 'k1', connector_key: 's3', status: 'connected' },
+      { id: 'k2', connector_key: 's3', status: 'connected' },
+    ];
+    launch.mockClear();
+    await render();
+    expect(statusLine('Amazon S3')).toBe(
+      'settings.connectors.status.connected',
+    );
+    await act(async () => serviceTile('Amazon S3').click());
+    expect(launch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: 's3' }),
+      { mode: 'sync', purpose: 'knowledge' },
+    );
+  });
+
+  // B10: an account that needs signing in again is repaired, not duplicated.
+  it('reconnects a service whose only account needs signing in again', async () => {
+    connectorsState.catalog = CATALOG;
+    connectorsState.connections = [
+      { id: 'd1', connector_key: 'google_drive', status: 'reconnect_needed' },
+    ];
+    launch.mockClear();
+    await render();
+    expect(statusLine('Google Drive')).toBe(
+      'settings.connectors.status.reconnect',
+    );
+    await act(async () => serviceTile('Google Drive').click());
+    expect(launch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: 'google_drive' }),
+      { mode: 'reconnect', connectionId: 'd1', purpose: 'knowledge' },
+    );
+  });
+
+  it('connects a service with no account, for Knowledge', async () => {
+    connectorsState.catalog = CATALOG;
+    launch.mockClear();
+    await render();
+    await act(async () => serviceTile('Google Drive').click());
+    expect(launch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: 'google_drive' }),
+      { purpose: 'knowledge' },
+    );
   });
 
   it('connects the sync part of a service listed under its parent', async () => {
     connectorsState.catalog = CATALOG;
     launch.mockClear();
     await render();
-    await act(async () => connectTile()!.click());
-    const atlassian = tiles().find(
-      (t) =>
-        t.querySelector('[data-slot="card-title"]')?.textContent ===
-        'Atlassian',
-    )!;
-    await act(async () => atlassian.click());
+    await act(async () => serviceTile('Atlassian').click());
     expect(launch).toHaveBeenLastCalledWith(
       expect.objectContaining({ key: 'confluence' }),
       { purpose: 'knowledge' },
     );
-    connectorsState.catalog = [];
   });
 
-  it('browses all connectors only when the opener offers it', async () => {
+  // B5: the wizard steps in for this modal; cancelling it brings the modal
+  // back where it was, and only a connect closes both.
+  it('comes back when the wizard is cancelled, and closes on a connect', async () => {
     connectorsState.catalog = CATALOG;
-    const browseLink = () =>
-      Array.from(document.body.querySelectorAll('button')).find(
-        (b) => b.textContent === 'modals.uploadDoc.connectData.browseAll',
-      );
+    close.mockClear();
     await render();
-    await act(async () => connectTile()!.click());
+    await act(async () => serviceTile('Google Drive').click());
+    expect(section()).toBeUndefined();
+    await act(async () => launcherOpts.current.onCancel?.());
+    expect(close).not.toHaveBeenCalled();
+    expect(serviceNames()).toContain('Google Drive');
+    await act(async () => serviceTile('Google Drive').click());
+    await act(async () => launcherOpts.current.onConnected?.());
+    expect(close).toHaveBeenCalled();
+  });
+
+  const browseLink = () =>
+    Array.from(document.body.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.connectors.browseAll',
+    );
+
+  it('browses all connectors under the services, only when the opener offers it', async () => {
+    connectorsState.catalog = CATALOG;
+    await render();
     expect(browseLink()).toBeUndefined();
 
     const browse = vi.fn();
     close.mockClear();
     await render(browse);
-    expect(browseLink()).toBeDefined();
-    await act(async () => browseLink()!.click());
+    const link = browseLink()!;
+    expect(section()!.contains(link)).toBe(true);
+    expect(link.querySelector('svg')?.getAttribute('class')).toContain(
+      'size-3',
+    );
+    await act(async () => link.click());
     expect(close).toHaveBeenCalled();
     expect(browse).toHaveBeenCalled();
-    connectorsState.catalog = [];
   });
 
-  it('offers no Connect tile when no service can sync', async () => {
+  // GitHub reads a public repository by URL with no account, so it stays
+  // even where no connector can sync.
+  it('keeps only GitHub, by URL, when no connector can sync', async () => {
     connectorsState.catalog = [
       { key: 'telegram', capabilities: ['write'], available: true },
       { ...DRIVE, available: false },
     ];
     await render();
-    expect(connectTile()).toBeUndefined();
-    connectorsState.catalog = [];
+    expect(serviceNames()).toEqual(['modals.uploadDoc.ingestors.github.label']);
   });
 
-  it('offers no Connect tile when connectors are off', async () => {
+  it('keeps only GitHub, by URL, when connectors are off', async () => {
     connectorsState.catalog = [DRIVE];
     connectorsState.enabled = false;
     await render();
-    expect(connectTile()).toBeUndefined();
-    connectorsState.enabled = true;
-    connectorsState.catalog = [];
+    expect(serviceNames()).toEqual(['modals.uploadDoc.ingestors.github.label']);
   });
 
   describe('GitHub', () => {
     const githubConnector = {
       key: 'github',
+      name: 'GitHub',
       icon: 'github',
       sync_ingestor: 'github',
       auth_kind: 'api_key',
+      capabilities: ['sync'],
+      state: 'available',
       available: true,
       missing_settings: [],
-    };
-    const openGitHub = async () => {
-      await render();
-      const tile = tiles().find((t) =>
-        t.textContent?.includes('modals.uploadDoc.ingestors.github.label'),
-      )!;
-      await act(async () => tile.click());
     };
     const handOver = () =>
       Array.from(document.body.querySelectorAll('button')).find((b) =>
         b.textContent?.includes('modals.uploadDoc.github.'),
       );
 
-    afterEach(() => {
-      connectorsState.catalog = [];
-      connectorsState.connections = [];
-    });
-
-    it('stays one public-repository tile, with a way to private ones', async () => {
+    it('opens the repository URL form, with a way to private ones', async () => {
       launch.mockClear();
       connectorsState.catalog = [githubConnector];
       await render();
-      const githubTiles = tiles().filter((t) =>
-        t.textContent?.includes('modals.uploadDoc.ingestors.github.label'),
-      );
-      expect(githubTiles).toHaveLength(1);
-      await openGitHub();
+      expect(serviceNames()).toEqual(['GitHub']);
+      await act(async () => serviceTile('GitHub').click());
+      expect(launch).not.toHaveBeenCalled();
       // The repository URL form still works without an account.
       expect(document.body.textContent).toContain(
         'modals.uploadDoc.ingestors.github.heading',
@@ -361,6 +452,19 @@ describe('Upload source-type tiles', () => {
       });
     });
 
+    it('comes back to the form when Connect GitHub is cancelled', async () => {
+      connectorsState.catalog = [githubConnector];
+      close.mockClear();
+      await render();
+      await act(async () => serviceTile('GitHub').click());
+      await act(async () => handOver()!.click());
+      await act(async () => launcherOpts.current.onCancel?.());
+      expect(close).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain(
+        'modals.uploadDoc.ingestors.github.heading',
+      );
+    });
+
     it('goes straight to picking a repository with a connected account', async () => {
       launch.mockClear();
       connectorsState.catalog = [githubConnector];
@@ -372,11 +476,9 @@ describe('Upload source-type tiles', () => {
           account_label: 'octocat',
         },
       ];
-      await openGitHub();
-      expect(document.body.textContent).toContain(
-        'modals.uploadDoc.github.connectedHint',
-      );
-      await act(async () => handOver()!.click());
+      await render();
+      expect(statusLine('GitHub')).toBe('settings.connectors.status.connected');
+      await act(async () => serviceTile('GitHub').click());
       expect(launch).toHaveBeenCalledWith(githubConnector, {
         mode: 'sync',
         connectionId: 'gh-1',
@@ -386,7 +488,13 @@ describe('Upload source-type tiles', () => {
 
     it('offers no hand-over when GitHub connections are off', async () => {
       connectorsState.catalog = [];
-      await openGitHub();
+      await render();
+      await act(async () =>
+        serviceTile('modals.uploadDoc.ingestors.github.label').click(),
+      );
+      expect(document.body.textContent).toContain(
+        'modals.uploadDoc.ingestors.github.heading',
+      );
       expect(handOver()).toBeUndefined();
     });
   });

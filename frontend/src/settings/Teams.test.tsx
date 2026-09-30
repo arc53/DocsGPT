@@ -42,7 +42,12 @@ vi.mock('../navigation/SectionShell', () => ({
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock('../navigation/DetailBreadcrumb', () => ({ default: () => null }));
-vi.mock('../components/PageToolbar', () => ({ default: () => null }));
+// Only the page action matters here (it carries no plus).
+vi.mock('../components/PageToolbar', () => ({
+  default: ({ action }: { action?: React.ReactNode }) => (
+    <div data-slot="page-toolbar">{action}</div>
+  ),
+}));
 vi.mock('../modals/ConfirmationModal', () => ({ default: () => null }));
 vi.mock('../teams/ShareToTeamModal', () => ({
   default: () => <div data-testid="share-modal" />,
@@ -314,6 +319,15 @@ describe('Teams page', () => {
     expect(pager?.textContent).toContain('settings.teams.pageRange');
     expect(body().textContent).toContain('Team 47');
     expect(body().textContent).not.toContain('Team 48');
+  });
+
+  // The verb says "add": page actions carry no plus.
+  it('puts no plus on the New team page action', async () => {
+    await render();
+    const action = Array.from(
+      body().querySelectorAll('[data-slot="page-toolbar"] button'),
+    ).find((b) => b.textContent === 'settings.teams.newTeam')!;
+    expect(action.querySelector('svg')).toBeNull();
   });
 
   it('groups duplicate grants into one row per resource', async () => {

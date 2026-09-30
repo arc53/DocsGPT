@@ -30,6 +30,7 @@ import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
 import CopyButton from '../components/CopyButton';
 
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { IconButton } from '../components/ui/icon-button';
@@ -37,6 +38,7 @@ import { Input } from '../components/ui/input';
 import { SidePanel } from '../components/ui/side-panel';
 import { Textarea } from '../components/ui/textarea';
 import SpeakButton from '../components/TextToSpeechButton';
+import ToolIcon from '../components/ToolIcon';
 import { useOutsideAlerter } from '../hooks';
 import {
   selectChunks,
@@ -44,7 +46,10 @@ import {
   selectToken,
   selectTtsAvailable,
 } from '../preferences/preferenceSlice';
-import { isToolCallRunning } from '../utils/streamingStatusUtils';
+import {
+  isToolCallRunning,
+  toolCallTitle,
+} from '../utils/streamingStatusUtils';
 import AnswerFlow from './AnswerFlow';
 import ConnectToolCallBar from './ConnectToolCallBar';
 import ConnectorIcon from '../connectors/ConnectorIcon';
@@ -55,6 +60,7 @@ import { useChatCompanion } from './chatCompanion';
 import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
 import ResearchProgress from './ResearchProgress';
 import SourcesPanel from './SourcesPanel';
+import ToolCallCard from './ToolCallCard';
 import { shownArguments, ToolCallsType } from './types';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
@@ -374,7 +380,16 @@ const ConversationBubble = forwardRef<
                                 target="_blank"
                                 rel="noopener noreferrer"
                               >
-                                <FileText className="text-muted-foreground shrink-0" />
+                                {source.connector_key ? (
+                                  <ConnectorIcon
+                                    icon={connectorIconKey(
+                                      source.connector_key,
+                                    )}
+                                    className="text-muted-foreground size-4 shrink-0"
+                                  />
+                                ) : (
+                                  <FileText className="text-muted-foreground shrink-0" />
+                                )}
                                 <p
                                   className="mt-0.5 truncate text-xs"
                                   title={source.link}
@@ -504,18 +519,23 @@ const ConversationBubble = forwardRef<
             turnArtifacts={completedArtifacts}
             onOpenArtifact={onOpenArtifact}
             renderApproval={(toolCall: ToolCallsType) => (
-              <div className="animate-in fade-in mt-4 mr-5 ml-6 duration-160 ease-out motion-reduce:animate-none">
-                {toolCall.connection_required ? (
-                  <ConnectToolCallBar
-                    toolCall={toolCall}
-                    onToolAction={onToolAction}
-                  />
-                ) : (
-                  <ToolCallApprovalBar
-                    toolCall={toolCall}
-                    onToolAction={onToolAction}
-                  />
-                )}
+              // Stretched to the column (see Chat answer column): in the
+              // bubble's wrapping flex column a shrink-to-fit card would size
+              // to its one-line arguments preview and spill past the column.
+              <div className="w-full min-w-0">
+                <div className="animate-in fade-in mt-4 mr-5 ml-6 duration-160 ease-out motion-reduce:animate-none">
+                  {toolCall.connection_required ? (
+                    <ConnectToolCallBar
+                      toolCall={toolCall}
+                      onToolAction={onToolAction}
+                    />
+                  ) : (
+                    <ToolCallApprovalBar
+                      toolCall={toolCall}
+                      onToolAction={onToolAction}
+                    />
+                  )}
+                </div>
               </div>
             )}
             renderWikiWrite={(toolCall: ToolCallsType, isLive: boolean) => (
@@ -692,13 +712,12 @@ function ToolCallApprovalBar({
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
   const token = useSelector(selectToken);
-  const actionLabel = toolCall.action_name.substring(
-    0,
-    toolCall.action_name.lastIndexOf('_'),
-  );
   const argPreview = JSON.stringify(shownArguments(toolCall));
   const truncated =
-    argPreview.length > 60 ? argPreview.slice(0, 57) + '...' : argPreview;
+    argPreview.length > 60 ? argPreview.slice(0, 57) + '…' : argPreview;
+  const iconKey = connectorIconKey(
+    toolCall.connector_key ?? toolCall.tool_name,
+  );
 
   const isRemoteDevice =
     toolCall.tool_name === 'remote_device' && toolCall.device_id;
@@ -723,21 +742,32 @@ function ToolCallApprovalBar({
   };
 
   return (
-    <div className="border-border bg-muted mb-2 w-full overflow-hidden rounded-2xl border">
-      <div className="flex items-center gap-3 px-4 py-2.5">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="text-sm font-medium whitespace-nowrap">
-            {toolCall.tool_name}
-          </span>
-          <span className="text-muted-foreground text-xs">{actionLabel}</span>
-          <span
-            className="text-muted-foreground hidden min-w-0 truncate font-mono text-xs md:block"
-            title={argPreview}
-          >
-            {truncated}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
+    <ToolCallCard
+      icon={
+        // A pause from before the connector fields still gets a built-in
+        // service's logo from its tool name.
+        iconKey !== 'plug' ? (
+          <ConnectorIcon icon={iconKey} className="size-5" />
+        ) : (
+          <ToolIcon name={toolCall.tool_name} className="size-5" />
+        )
+      }
+      title={toolCallTitle(toolCall, t)}
+      meta={
+        <span
+          className="text-muted-foreground hidden truncate font-mono text-xs md:block"
+          title={argPreview}
+        >
+          {truncated}
+        </span>
+      }
+      state={
+        <Badge variant="info">
+          {t('conversation.toolApproval.state.approval')}
+        </Badge>
+      }
+      actions={
+        <>
           <Button
             type="button"
             size="xs"
@@ -795,14 +825,15 @@ function ToolCallApprovalBar({
               )}
             />
           </IconButton>
-        </div>
-      </div>
+        </>
+      }
+    >
       {expanded && (
-        <div className="border-border border-t px-4 py-3">
-          <p className="text-muted-foreground mb-1 text-xs font-medium">
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground text-xs font-medium">
             {t('conversation.inlineSteps.arguments')}
           </p>
-          <Card variant="subtle" padding="sm" className="mb-2">
+          <Card variant="subtle" padding="sm">
             <div className="scrollbar-overlay max-h-40 overflow-y-auto">
               <pre className="font-mono text-xs wrap-break-word whitespace-pre-wrap">
                 {JSON.stringify(shownArguments(toolCall), null, 2)}
@@ -825,7 +856,7 @@ function ToolCallApprovalBar({
           />
         </div>
       )}
-    </div>
+    </ToolCallCard>
   );
 }
 

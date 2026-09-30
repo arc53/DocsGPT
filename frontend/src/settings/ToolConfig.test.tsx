@@ -581,7 +581,7 @@ describe('ToolConfig', () => {
         ).click();
       });
       const filled = container.querySelector(
-        '[aria-label="settings.tools.filledByLLM"]',
+        '[aria-label="settings.connectors.parameters.choiceLabel"]',
       );
       expect(filled?.hasAttribute('disabled')).toBe(true);
       const tableInputs = Array.from(
@@ -715,5 +715,153 @@ describe('ToolConfig', () => {
       container.querySelector<HTMLElement>('[role="alert"]')?.textContent,
     ).toBe('settings.tools.saveFailed');
     expect(goBack).not.toHaveBeenCalled();
+  });
+
+  describe('permissions', () => {
+    const P = 'settings.connectors.permission';
+    const memory = {
+      ...userTool,
+      name: 'memory',
+      actions: [
+        { ...userTool.actions[0], name: 'memory_view', access: 'read' },
+        {
+          ...userTool.actions[0],
+          name: 'memory_create',
+          access: 'write',
+          require_approval: true,
+        },
+        {
+          ...userTool.actions[0],
+          name: 'memory_delete',
+          access: 'write',
+          require_approval: true,
+        },
+      ],
+    } as unknown as UserToolType;
+    let current: UserToolType | APIToolType;
+    // ToolConfig is controlled: keep the tool it hands back.
+    const renderLive = async (tool: UserToolType | APIToolType) => {
+      current = tool;
+      const setTool = (next: UserToolType | APIToolType) => {
+        current = next;
+        root.render(
+          <ToolConfig tool={next} setTool={setTool} handleGoBack={() => {}} />,
+        );
+      };
+      await act(async () => {
+        root.render(
+          <ToolConfig tool={tool} setTool={setTool} handleGoBack={() => {}} />,
+        );
+      });
+    };
+    const group = (access: 'read' | 'write') =>
+      container.querySelector<HTMLElement>(`[data-access="${access}"]`)!;
+    const choice = (access: 'read' | 'write', permission: string) =>
+      group(access).querySelector<HTMLButtonElement>(
+        `[data-permission="${permission}"]`,
+      )!;
+    const rowSelects = (access: 'read' | 'write') =>
+      group(access).querySelectorAll(
+        `[data-slot="select-trigger"][aria-label="${P}.label"]`,
+      );
+
+    it('groups the actions as the drawer does, named in words', async () => {
+      await renderLive(memory);
+      expect(
+        Array.from(container.querySelectorAll('h4')).map((h) => h.textContent),
+      ).toEqual([
+        'settings.connectors.capabilityPlain.read · 1',
+        'settings.connectors.capabilityPlain.write · 2',
+      ]);
+      expect(group('read').textContent).toContain('Memory view');
+      expect(group('read').textContent).not.toContain('memory_view');
+      expect(group('write').textContent).toContain('Memory create');
+      // One vocabulary: no Approval or on/off switches.
+      expect(container.querySelector('[role="switch"]')).toBeNull();
+      expect(container.textContent).not.toContain('Approval');
+      expect(choice('read', 'always').getAttribute('data-state')).toBe('on');
+      expect(choice('write', 'ask').getAttribute('data-state')).toBe('on');
+    });
+
+    it('sets a whole group, stored as active and require_approval', async () => {
+      await renderLive(memory);
+      await act(async () => choice('write', 'off').click());
+      const actions = (current as UserToolType).actions;
+      expect(
+        actions.map((a) => [a.name, a.active, a.require_approval]),
+      ).toEqual([
+        ['memory_view', true, undefined],
+        ['memory_create', false, false],
+        ['memory_delete', false, false],
+      ]);
+      await act(async () => choice('read', 'ask').click());
+      expect((current as UserToolType).actions[0]).toMatchObject({
+        active: true,
+        require_approval: true,
+      });
+    });
+
+    it('shows each action its own choice only under Customize', async () => {
+      await renderLive(memory);
+      expect(rowSelects('write')).toHaveLength(0);
+      await act(async () => choice('write', 'customize').click());
+      expect(rowSelects('write')).toHaveLength(2);
+      expect(rowSelects('read')).toHaveLength(0);
+    });
+
+    it('opens on Customize when a group disagrees', async () => {
+      await renderLive({
+        ...memory,
+        actions: [
+          memory.actions[1],
+          { ...memory.actions[2], require_approval: false },
+        ],
+      } as UserToolType);
+      expect(choice('write', 'customize').getAttribute('data-state')).toBe(
+        'on',
+      );
+      expect(rowSelects('write')).toHaveLength(2);
+    });
+
+    it("classes an API tool's actions by method", async () => {
+      await renderLive(apiTool);
+      expect(container.querySelector('[data-access="read"]')).toBeNull();
+      expect(group('write').textContent).toContain('List');
+      await act(async () => choice('write', 'ask').click());
+      expect(
+        (current as APIToolType).config.actions.list.require_approval,
+      ).toBe(true);
+    });
+
+    it('says who fills a parameter in: Let AI decide or Always use', async () => {
+      await renderLive(userTool);
+      await act(async () => {
+        (
+          container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        ).click();
+      });
+      expect(container.textContent).toContain('settings.tools.filledBy');
+      expect(container.textContent).not.toContain('settings.tools.filledByLLM');
+      const trigger = container.querySelector<HTMLElement>(
+        '[aria-label="settings.connectors.parameters.choiceLabel"]',
+      )!;
+      expect(trigger.textContent).toBe('settings.connectors.parameters.ai');
+      await act(async () => {
+        trigger.dispatchEvent(
+          new PointerEvent('pointerdown', {
+            bubbles: true,
+            button: 0,
+            pointerType: 'mouse',
+          }),
+        );
+      });
+      const fixed = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+      ).find((o) => o.textContent === 'settings.connectors.parameters.fixed')!;
+      await act(async () => fixed.click());
+      expect(
+        (current as UserToolType).actions[0].parameters.properties.q,
+      ).toMatchObject({ filled_by_llm: false, required: false });
+    });
   });
 });

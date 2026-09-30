@@ -57,6 +57,9 @@ vi.mock('./message-input', async (importOriginal) => ({
       {items.map((item) => (
         <div key={item.id} data-testid="tool-item" data-group={item.group}>
           {item.label}
+          {item.descriptionNode && (
+            <div data-testid="tool-note">{item.descriptionNode}</div>
+          )}
         </div>
       ))}
     </div>
@@ -127,7 +130,7 @@ describe('MessageInput tools picker', () => {
     Object.fromEntries(
       Array.from(
         container.querySelectorAll<HTMLElement>('[data-testid="tool-item"]'),
-      ).map((item) => [item.textContent, item.dataset.group]),
+      ).map((item) => [item.firstChild?.textContent, item.dataset.group]),
     );
 
   // A teammate's connection is never in the caller's list; the tool still
@@ -170,5 +173,33 @@ describe('MessageInput tools picker', () => {
       Memory: 'settings.tools.groupBuiltIn',
       'Team Linear': 'Linear',
     });
+  });
+
+  it('marks a tool whose connection needs signing in with the Reconnect badge', async () => {
+    mocks.catalog = [];
+    mocks.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'telegram',
+        name: 'Telegram',
+        icon: 'tool_telegram',
+        status: 'reconnect_needed',
+      },
+    ];
+    mocks.tools = [
+      {
+        id: 'tg',
+        name: 'telegram',
+        displayName: 'Telegram',
+        connection_id: 'conn-1',
+        status: true,
+        config: {},
+      },
+    ];
+    await openPicker();
+    const note = container.querySelector('[data-testid="tool-note"]')!;
+    const badge = note.querySelector('[data-slot="badge"]')!;
+    expect(badge.textContent).toBe('settings.connectors.status.reconnect');
+    expect(badge.getAttribute('data-variant')).toBe('warning');
   });
 });

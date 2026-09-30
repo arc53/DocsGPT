@@ -45,6 +45,10 @@ const cardVariants = cva(
         false: '',
         // Whole card is a target: picker tiles, navigable list items.
         true: `${focusRing} hover:border-primary/40 hover:bg-accent focus-visible:border-ring cursor-pointer text-left outline-none data-[selected=true]:border-primary data-[selected=true]:bg-primary/5`,
+        // DESIGN "A clickable card that holds a link": a stretched child
+        // <button> is the target; the card draws its hover and focus ring.
+        within:
+          'hover:bg-accent has-[>button:focus-visible]:ring-ring/50 relative has-[>button:focus-visible]:ring-3',
       },
     },
     defaultVariants: {
@@ -81,7 +85,9 @@ function Card({
       data-variant={variant}
       data-tone={tone === 'default' ? undefined : tone}
       data-padding={padding}
-      data-interactive={interactive || undefined}
+      data-interactive={
+        interactive === 'within' ? 'within' : interactive || undefined
+      }
       data-selected={selected || undefined}
       className={cn(
         cardVariants({ variant, tone, padding, interactive }),

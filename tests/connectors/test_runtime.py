@@ -21,7 +21,8 @@ def _service_db(conn):
         yield conn
 
     with patch.multiple("docsgpt.connectors.service", db_session=_yield, db_readonly=_yield), \
-            patch.multiple("docsgpt.connectors.resolve", db_readonly=_yield):
+            patch.multiple("docsgpt.connectors.resolve", db_readonly=_yield), \
+            patch.multiple("docsgpt.agents.tool_executor", db_readonly=_yield):
         yield
 
 
@@ -187,6 +188,34 @@ class TestExecutor:
         required = pause["connection_required"]
         assert required["owner_account"] is True
         assert "connection_id" not in required
+        # No email on record: the card falls back to generic owner copy.
+        assert "owner_name" not in required
+
+    def test_owners_broken_account_names_the_owner(self, pg_conn):
+        pg_conn.execute(text("INSERT INTO users (user_id, email) VALUES ('alice', 'lena@example.com')"))
+        cid = _connection(pg_conn, status="reconnect_needed")
+        with _service_db(pg_conn):
+            pause = _pause(_executor(user="bob"), _tool(cid))
+        assert pause["connection_required"]["owner_name"] == "lena@example.com"
+
+    def test_own_broken_account_names_no_owner(self, pg_conn):
+        pg_conn.execute(text("INSERT INTO users (user_id, email) VALUES ('alice', 'lena@example.com')"))
+        cid = _connection(pg_conn, status="reconnect_needed")
+        with _service_db(pg_conn):
+            pause = _pause(_executor(), _tool(cid))
+        assert "owner_name" not in pause["connection_required"]
+
+    def test_approval_pause_names_the_connector(self, pg_conn):
+        cid = _connection(pg_conn)
+        tool = _tool(cid)
+        tool["actions"] = [{"name": "telegram_send_message", "active": True, "require_approval": True}]
+        with _service_db(pg_conn):
+            pause = _pause(_executor(), tool)
+        assert pause["pause_type"] == "awaiting_approval"
+        assert "connection_required" not in pause
+        assert pause["connector_key"] == "telegram"
+        assert pause["connector_name"] == "Telegram"
+        assert pause["access"] == "write"
 
     def test_member_without_connection_pauses(self, pg_conn):
         cid = _connection(pg_conn)

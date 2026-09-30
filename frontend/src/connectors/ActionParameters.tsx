@@ -1,5 +1,8 @@
+import { ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { cn } from '@/lib/utils';
 
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -132,7 +135,49 @@ function ParameterRow({
           </Button>
         </form>
       )}
+      {mode === 'fixed' && (
+        <p className="text-muted-foreground text-xs">
+          {t('settings.connectors.parameters.fixedHint')}
+        </p>
+      )}
     </li>
+  );
+}
+
+/**
+ * The "Parameters" disclosure under an action: DESIGN's inline `link sm`
+ * toggle with a chevron that turns while open. Its accessible name carries
+ * the action, so a list of them reads apart ("Parameters for Send message").
+ */
+export function ActionParametersToggle({
+  action,
+  open,
+  onToggle,
+}: {
+  /** The action's name in words (`actionTitle`). */
+  action: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Button
+      type="button"
+      variant="link"
+      size="sm"
+      className="-ml-3 w-fit justify-start"
+      aria-expanded={open}
+      aria-label={t('settings.connectors.parameters.showFor', {
+        action,
+        interpolation: { escapeValue: false },
+      })}
+      onClick={onToggle}
+    >
+      <ChevronRight
+        className={cn('transition-transform duration-200', open && 'rotate-90')}
+      />
+      {t('settings.connectors.parameters.show')}
+    </Button>
   );
 }
 
@@ -151,22 +196,16 @@ export default function ActionParameters({
   /** Saves `{name: value}`; resolves false when the save failed. */
   onSave: (changes: Record<string, ParameterValue>) => Promise<boolean>;
 }) {
-  const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-3">
-      <ul className="flex flex-col gap-4">
-        {parameters.map((parameter) => (
-          <ParameterRow
-            key={parameter.name}
-            parameter={parameter}
-            readOnly={readOnly}
-            onSave={(value) => onSave({ [parameter.name]: value })}
-          />
-        ))}
-      </ul>
-      <p className="text-muted-foreground text-xs">
-        {t('settings.connectors.parameters.hint')}
-      </p>
-    </div>
+    <ul className="flex flex-col gap-4">
+      {parameters.map((parameter) => (
+        <ParameterRow
+          key={parameter.name}
+          parameter={parameter}
+          readOnly={readOnly}
+          onSave={(value) => onSave({ [parameter.name]: value })}
+        />
+      ))}
+    </ul>
   );
 }

@@ -130,8 +130,8 @@ export default function AgentPanel({
   const builtinModels = availableModels.filter((m) => m.source !== 'user');
   const userModels = availableModels.filter((m) => m.source === 'user');
   const schemaInvalid = jsonSchemaText.trim() !== '' && jsonSchemaError;
-  const attachedLabel = (name: string) =>
-    t('agents.workflow.builder.attachedOption', { ...NO_ESCAPE, name });
+  // Marks an option only in the list; its chip keeps the plain name.
+  const attachedDescription = t('agents.form.sponsors.addedByOther');
   const toolOptions = withAttachedOptions(
     availableTools.map((tool) => ({
       value: tool.id,
@@ -139,13 +139,13 @@ export default function AgentPanel({
     })),
     attachedTools,
     config.tools || [],
-    attachedLabel,
+    attachedDescription,
   );
   const nodeSourceOptions = withAttachedOptions(
     sourceOptions,
     attachedSources,
     config.sources || [],
-    attachedLabel,
+    attachedDescription,
   );
 
   return (

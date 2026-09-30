@@ -113,6 +113,26 @@ class TestAdminPolicies:
         assert "secret-client-id" not in json.dumps(payload)
         assert payload["allow_custom_mcp"] is True
 
+    @pytest.mark.parametrize(
+        ("auth_type", "default_key", "blocked"),
+        [("session_jwt", True, True), (None, True, False), ("session_jwt", False, False)],
+    )
+    def test_says_when_connections_are_blocked(self, app, pg_conn, monkeypatch, auth_type, default_key, blocked):
+        """Connects are refused only on a multi-user install still on the public default key."""
+        from docsgpt.api.admin import connectors as admin_connectors
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "AUTH_TYPE", auth_type)
+        monkeypatch.setattr(admin_connectors, "is_default_encryption_key", lambda: default_key)
+        monkeypatch.setattr("docsgpt.security.encryption.is_default_encryption_key", lambda: default_key)
+        with _db(pg_conn):
+            resp = _call(
+                app, admin_connectors.AdminConnectorsResource, "get", "/api/admin/connectors", roles=["admin"],
+            )
+        payload = resp.get_json()
+        assert payload["default_encryption_key"] is default_key
+        assert payload["connections_blocked"] is blocked
+
     def test_github_is_ready_and_lists_its_optional_app_settings(self, app, pg_conn, monkeypatch):
         """Tokens need no setup; the GitHub App settings only add Sign in with GitHub."""
         from docsgpt.api.admin.connectors import AdminConnectorsResource

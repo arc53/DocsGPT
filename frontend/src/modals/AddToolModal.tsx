@@ -2,18 +2,12 @@ import { ArrowRight } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import userService from '../api/services/userService';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Button } from '../components/ui/button';
-import {
-  Card,
-  CardDescription,
-  CardFooter,
-  CardTitle,
-} from '../components/ui/card';
 import { Modal, ModalActions } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
 import { useLoaderState } from '../hooks';
@@ -21,8 +15,11 @@ import {
   loadConnectors,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
-import { ConnectorStateBadge } from '../connectors/ConnectorCard';
+import ConnectionDrawer from '../connectors/ConnectionDrawer';
+import ConnectorCard from '../connectors/ConnectorCard';
 import ConnectorIcon from '../connectors/ConnectorIcon';
+import ConnectorTile from '../connectors/ConnectorTile';
+import { partsOf } from '../connectors/catalogCards';
 import { connectorDescription, connectorName } from '../connectors/i18n';
 import type { ConnectorDefinition } from '../connectors/types';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
@@ -49,7 +46,6 @@ export default function AddToolModal({
   onDevicePaired?: (deviceId: string) => void;
 }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const token = useSelector(selectToken);
   const dispatch = useDispatch<AppDispatch>();
   const catalog = useSelector(selectConnectorCatalog);
@@ -66,6 +62,8 @@ export default function AddToolModal({
   const [pairModalState, setPairModalState] =
     React.useState<ActiveState>('INACTIVE');
   const [loading, setLoading] = useLoaderState(false);
+  // A connected service's drawer, opened over the Tools page.
+  const [drawerKey, setDrawerKey] = React.useState<string | null>(null);
 
   const getAvailableTools = () => {
     setLoading(true);
@@ -95,18 +93,31 @@ export default function AddToolModal({
   const builtIn = availableTools.filter(
     (tool) => (tool.group ?? 'built_in') === 'built_in',
   );
+  // An MCP server or an OpenAPI spec: each click makes a new tool, in place
+  // (the MCP form over Tools, the API tool editor on Tools).
+  const custom = catalog.filter(
+    (connector) => connector.publisher === 'custom',
+  );
+
+  // A part (Jira & Confluence's actions) is managed on its parent's drawer.
+  const drawerTarget = catalog.find((c) => c.key === drawerKey);
+  const drawerConnector =
+    (drawerTarget?.part_of &&
+      catalog.find((c) => c.key === drawerTarget.part_of)) ||
+    drawerTarget ||
+    null;
 
   const openService = (connector: ConnectorDefinition) => {
     setModalState('INACTIVE');
     // Already connected: its tools exist; open its drawer to manage them.
     if (connector.connection_count > 0) {
-      navigate(
-        `/settings/connectors?connector=${encodeURIComponent(connector.key)}`,
-      );
+      setDrawerKey(connector.key);
       return;
     }
     launch(connector);
   };
+
+  const close = () => setModalState('INACTIVE');
 
   const handleAddTool = (tool: AvailableToolType) => {
     // ``remote_device`` is created server-side via the pairing redeem
@@ -172,31 +183,11 @@ export default function AddToolModal({
     <>
       <Modal
         open={modalState === 'ACTIVE'}
-        onOpenChange={(o) => !o && setModalState('INACTIVE')}
+        onOpenChange={(o) => !o && close()}
         title={t('settings.tools.selectToolSetup')}
         size="xl"
-        footer={
-          <ModalActions
-            footerStart={
-              <Button variant="link" size="inline" asChild>
-                <Link
-                  to="/settings/connectors"
-                  onClick={() => setModalState('INACTIVE')}
-                >
-                  {t('settings.tools.browseConnectors')}
-                  <ArrowRight />
-                </Link>
-              </Button>
-            }
-            cancelLabel={t('cancel')}
-            onCancel={() => setModalState('INACTIVE')}
-            submitLabel={t('settings.connectors.addCustom')}
-            onSubmit={() => {
-              setModalState('INACTIVE');
-              navigate('/settings/connectors?filter=custom');
-            }}
-          />
-        }
+        mobileVariant="sheet"
+        footer={<ModalActions cancelLabel={t('cancel')} onCancel={close} />}
       >
         <div className="flex flex-col gap-6">
           {loading ? (
@@ -214,37 +205,13 @@ export default function AddToolModal({
                   />
                   <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {services.map((connector) => (
-                      <Card
-                        asChild
+                      <ConnectorCard
                         key={connector.key}
+                        connector={connector}
                         variant="outline"
-                        padding="lg"
-                        interactive
-                        className="h-44 w-full"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => openService(connector)}
-                          data-testid={`add-tool-service-${connector.key}`}
-                        >
-                          <ConnectorIcon
-                            icon={connector.icon}
-                            className="size-6"
-                          />
-                          <CardTitle
-                            title={connectorName(t, connector)}
-                            className="truncate"
-                          >
-                            {connectorName(t, connector)}
-                          </CardTitle>
-                          <CardDescription size="xs" className="line-clamp-2">
-                            {connectorDescription(t, connector)}
-                          </CardDescription>
-                          <CardFooter>
-                            <ConnectorStateBadge connector={connector} />
-                          </CardFooter>
-                        </button>
-                      </Card>
+                        onOpen={openService}
+                        testId={`add-tool-service-${connector.key}`}
+                      />
                     ))}
                   </div>
                 </section>
@@ -258,47 +225,81 @@ export default function AddToolModal({
                   />
                   <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     {builtIn.map((tool) => (
-                      <Card
-                        asChild
+                      <ConnectorTile
                         key={tool.name}
                         variant="outline"
-                        padding="lg"
-                        interactive
-                        className="h-44 w-full"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedTool(tool);
-                            handleAddTool(tool);
-                          }}
-                        >
+                        icon={
                           <ToolIcon
                             name={tool.name}
-                            className="size-6"
+                            className="size-6 shrink-0"
                             title={t('settings.tools.toolIconTitle', {
                               name: tool.displayName,
                             })}
                           />
-                          <CardTitle
-                            title={tool.displayName}
-                            className="truncate capitalize"
-                          >
-                            {tool.displayName}
-                          </CardTitle>
-                          <CardDescription size="xs" className="line-clamp-3">
-                            {tool.description}
-                          </CardDescription>
-                        </button>
-                      </Card>
+                        }
+                        title={tool.displayName}
+                        description={tool.description}
+                        onClick={() => {
+                          setSelectedTool(tool);
+                          handleAddTool(tool);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+              {custom.length > 0 && (
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    as="h3"
+                    size="sm"
+                    title={t('agents.form.toolsPopup.groupCustom')}
+                  />
+                  <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {custom.map((connector) => (
+                      <ConnectorTile
+                        key={connector.key}
+                        variant="outline"
+                        icon={
+                          <ConnectorIcon
+                            icon={connector.icon}
+                            className="size-6 shrink-0"
+                          />
+                        }
+                        title={connectorName(t, connector)}
+                        description={connectorDescription(t, connector)}
+                        onClick={() => {
+                          close();
+                          launch(connector);
+                        }}
+                        testId={`add-tool-custom-${connector.key}`}
+                      />
                     ))}
                   </div>
                 </section>
               )}
             </>
           )}
+          <Button variant="link" size="inline" className="self-start" asChild>
+            <Link to="/settings/connectors" onClick={close}>
+              {t('settings.connectors.browseAll')}
+              <ArrowRight className="size-3" />
+            </Link>
+          </Button>
         </div>
       </Modal>
+      <ConnectionDrawer
+        connector={drawerConnector}
+        parts={drawerConnector ? partsOf(catalog, drawerConnector.key) : []}
+        onClose={() => {
+          setDrawerKey(null);
+          getUserTools();
+        }}
+        onConnect={(connector, options) => {
+          setDrawerKey(null);
+          launch(connector, options);
+        }}
+      />
       <ConfigToolModal
         modalState={configModalState}
         setModalState={setConfigModalState}

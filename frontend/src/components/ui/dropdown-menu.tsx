@@ -251,6 +251,8 @@ type MenuOption = {
   icon?: LucideIcon;
   variant?: 'default' | 'destructive';
   disabled?: boolean;
+  /** A rule above this row, to set a destructive action apart. */
+  separatorBefore?: boolean;
 };
 
 const stopPropagation = (event: React.SyntheticEvent) =>
@@ -327,15 +329,17 @@ function ActionMenu({
         onKeyDown={stopPropagation}
       >
         {options.map((option) => (
-          <DropdownMenuItem
-            key={option.label}
-            variant={option.variant}
-            disabled={option.disabled}
-            onSelect={(event) => option.onClick(event)}
-          >
-            {option.icon && <option.icon aria-hidden="true" />}
-            <span>{option.label}</span>
-          </DropdownMenuItem>
+          <React.Fragment key={option.label}>
+            {option.separatorBefore ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem
+              variant={option.variant}
+              disabled={option.disabled}
+              onSelect={(event) => option.onClick(event)}
+            >
+              {option.icon && <option.icon aria-hidden="true" />}
+              <span>{option.label}</span>
+            </DropdownMenuItem>
+          </React.Fragment>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>

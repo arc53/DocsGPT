@@ -85,3 +85,41 @@ describe('MultiSelect trigger chevron', () => {
     expect(icon.getAttribute('class')).toContain('lucide-chevron-down');
   });
 });
+
+describe('MultiSelect option description', () => {
+  it('shows the description in the list only, never in the chips', async () => {
+    const { act } = await import('react');
+    const { createRoot } = await import('react-dom/client');
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () =>
+      root.render(
+        <MultiSelect
+          options={[
+            { value: 'memory', label: 'Memory', description: 'Added by Lena' },
+            { value: 'notes', label: 'Notes' },
+          ]}
+          selected={['memory']}
+          onChange={() => undefined}
+        />,
+      ),
+    );
+    const trigger = host.querySelector<HTMLElement>('[role="combobox"]')!;
+    expect(trigger.textContent).toContain('Memory');
+    expect(trigger.textContent).not.toContain('Added by Lena');
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+      trigger.click();
+    });
+    const item = Array.from(
+      document.querySelectorAll('[data-slot="command-item"]'),
+    ).find((el) => el.textContent?.includes('Memory'))!;
+    expect(item.textContent).toContain('Added by Lena');
+    await act(async () => root.unmount());
+    host.remove();
+  });
+});

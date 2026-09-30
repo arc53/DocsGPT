@@ -40,6 +40,17 @@ describe('SectionHeader', () => {
     expect(danger).not.toContain('text-foreground');
   });
 
+  it('renders deeper heading levels for nested panel sections', () => {
+    expect(
+      renderToStaticMarkup(<SectionHeader as="h5" size="xs" title="Tester" />),
+    ).toContain('<h5');
+    expect(
+      renderToStaticMarkup(
+        <SectionHeader as="h6" size="xs" title="Takes actions · 2" />,
+      ),
+    ).toContain('<h6');
+  });
+
   it('puts actions at the end of the row', () => {
     const html = renderToStaticMarkup(
       <SectionHeader

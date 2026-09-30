@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
+    i18n: { language: 'en' },
     t: (key: string, opts?: Record<string, unknown>) => {
       if (key === 'demo')
         return [1, 2, 3, 4].map((n) => ({
@@ -30,10 +31,18 @@ import Hero from './Hero';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const connector = (key: string, name: string, publisher = 'built_in') => ({
+const connector = (
+  key: string,
+  name: string,
+  capabilities: string[],
+  category: string,
+  publisher = 'built_in',
+) => ({
   key,
   name,
   publisher,
+  capabilities,
+  category,
   available: true,
 });
 
@@ -72,9 +81,24 @@ describe('Hero connect card', () => {
           loaded: true,
           failed: false,
           catalog: [
-            connector('google_drive', 'Google Drive'),
-            connector('mcp:notion', 'Notion', 'preset'),
-            connector('custom_mcp', 'MCP server', 'custom'),
+            connector('brave', 'Brave Search', ['read'], 'search'),
+            connector('telegram', 'Telegram', ['write'], 'messaging'),
+            connector('google_drive', 'Google Drive', ['sync'], 'files'),
+            connector(
+              'mcp:notion',
+              'Notion',
+              ['read', 'write'],
+              'knowledge',
+              'preset',
+            ),
+            connector(
+              'mcp:linear',
+              'Linear',
+              ['read', 'write'],
+              'projects',
+              'preset',
+            ),
+            connector('custom_mcp', 'MCP server', ['read'], 'custom', 'custom'),
           ],
           connections,
         },
@@ -102,11 +126,15 @@ describe('Hero connect card', () => {
       '[data-testid="hero-connect-card"]',
     );
 
-  it('offers connecting the services this install has', async () => {
+  it('names services whose data you can chat with, as a list', async () => {
     await render([]);
-    expect(card()?.textContent).toContain(
-      'connectHero.body:Google Drive, Notion',
-    );
+    // Not a web search or a messaging bot: the card is "Connect your data".
+    const expected = new Intl.ListFormat('en', { type: 'conjunction' }).format([
+      'Google Drive',
+      'Notion',
+      'connectHero.more',
+    ]);
+    expect(card()?.textContent).toContain(`connectHero.body:${expected}`);
     // It replaces the last demo card.
     expect(container.textContent).not.toContain('demo4');
     await act(async () => card()!.click());

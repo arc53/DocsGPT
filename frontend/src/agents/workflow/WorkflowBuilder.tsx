@@ -114,6 +114,7 @@ import {
   validateJsonSchemaConfig,
 } from './workflowHelpers';
 import { selectWorkflowPreviewStatus } from './workflowPreviewSlice';
+import { readerIdFromToken } from '../../utils/personLabel';
 import { canAddToolToOwn, getToolDisplayName } from '../../utils/toolUtils';
 
 import type { Model } from '../../models/types';
@@ -217,6 +218,7 @@ function WorkflowBuilderInner() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
+  const readerId = useMemo(() => readerIdFromToken(token), [token]);
   const sourceDocs = useSelector(selectSourceDocs);
   const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
@@ -1752,10 +1754,8 @@ function WorkflowBuilderInner() {
     () => ({ ...currentAgent, resource_sponsors: workflowResources.sponsors }),
     [currentAgent, workflowResources.sponsors],
   );
-  const showResourceNotice =
-    canManageAgent &&
-    (stoppedResources.length > 0 ||
-      workflowResources.sponsors.some((sponsor) => sponsor.active));
+  // Only stopped items float; who added what is in the node pickers.
+  const showResourceNotice = canManageAgent && stoppedResources.length > 0;
 
   const agentForDetails = useMemo<Agent>(
     () => ({
@@ -2011,20 +2011,27 @@ function WorkflowBuilderInner() {
             className="bg-muted relative min-w-0 flex-1"
           >
             {showResourceNotice && (
-              <FloatingResourceNotice stoppedCount={stoppedResources.length}>
-                <ResourceStatusNotice
-                  agent={resourceNoticeAgent}
-                  stopped={stoppedResources}
-                  resolveName={resolveResourceName}
-                  takeovers={takeovers}
-                  showAttachNote={false}
-                  onTakeOver={(item) => void takeOverResource(item)}
-                  onUndoTakeover={(key) =>
-                    setTakeovers((prev) => prev.filter((k) => k !== key))
-                  }
-                  onRemove={removeResource}
-                  onReconnect={reconnectResource}
-                />
+              <FloatingResourceNotice
+                stoppedCount={stoppedResources.length}
+                // The publish errors float over the same corner; they win.
+                hidden={publishErrors.length > 0 && !showDetails}
+              >
+                {(close) => (
+                  <ResourceStatusNotice
+                    agent={resourceNoticeAgent}
+                    stopped={stoppedResources}
+                    resolveName={resolveResourceName}
+                    readerId={readerId}
+                    takeovers={takeovers}
+                    onTakeOver={(item) => void takeOverResource(item)}
+                    onUndoTakeover={(key) =>
+                      setTakeovers((prev) => prev.filter((k) => k !== key))
+                    }
+                    onRemove={removeResource}
+                    onReconnect={reconnectResource}
+                    onClose={close}
+                  />
+                )}
               </FloatingResourceNotice>
             )}
             <WorkflowModelsContext.Provider value={modelNames}>

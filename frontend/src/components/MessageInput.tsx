@@ -38,6 +38,7 @@ import {
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
+import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
@@ -50,6 +51,7 @@ import {
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import { toolServiceOf } from '../connectors/toolService';
+import { groupTools } from '../settings/toolGroups';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
@@ -1593,16 +1595,16 @@ export default function MessageInput({
   const toolService = (tool: UserToolType) =>
     toolServiceOf(tool, connections, catalog);
   const anyConnectedTool = userTools.some((tool) => !!tool.connection_id);
-  // Same groups as the agent builder: built in, one per service, then custom
-  // tools (an API tool, an MCP server with no connection).
-  const isCustomTool = (tool: UserToolType) =>
-    !tool.connection_id &&
-    (tool.name === 'api_tool' || tool.name === 'mcp_tool');
-  const toolRank = (tool: UserToolType) =>
-    tool.connection_id ? 1 : isCustomTool(tool) ? 2 : 0;
-  const toolItems: MultiSelectPopoverItem[] = [...userTools]
-    .sort((a, b) => toolRank(a) - toolRank(b))
-    .map((tool) => {
+  // Same groups as the Tools page and the agent builder: built in, one per
+  // service, then custom tools (an API tool, an MCP server with no
+  // connection).
+  const toolItems: MultiSelectPopoverItem[] = groupTools(
+    userTools,
+    connections,
+    catalog,
+  )
+    .flatMap((group) => group.tools.map((tool) => ({ tool, group })))
+    .map(({ tool, group }) => {
       const service = toolService(tool);
       const connection = service?.connection;
       return {
@@ -1614,10 +1616,11 @@ export default function MessageInput({
           <ToolIcon name={tool.name} className="size-5" />
         ),
         group: anyConnectedTool
-          ? (service?.name ??
-            (isCustomTool(tool)
+          ? group.kind === 'service'
+            ? group.service?.name
+            : group.kind === 'custom'
               ? t('agents.form.toolsPopup.groupCustom')
-              : t('settings.tools.groupBuiltIn')))
+              : t('settings.tools.groupBuiltIn')
           : undefined,
         // Shared-by line; the sign-in warning below wins when both apply.
         description:
@@ -1628,9 +1631,9 @@ export default function MessageInput({
               })
             : undefined,
         descriptionNode: connectionNeedsSignIn(connection) ? (
-          <p className="text-warning text-xs">
-            {t('settings.connectors.health.signInAgain')}
-          </p>
+          <Badge variant="warning">
+            {t('settings.connectors.status.reconnect')}
+          </Badge>
         ) : undefined,
       };
     });

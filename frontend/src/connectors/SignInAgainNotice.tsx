@@ -36,8 +36,9 @@ export function useSignInAgain({
         });
         return;
       }
+      // The drawer opens on this account (`connection`), not the first one.
       navigate(
-        `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}`,
+        `/settings/connectors?connector=${encodeURIComponent(connection.connector_key)}&connection=${encodeURIComponent(connection.id)}`,
       );
     },
     [catalog, launch, navigate],

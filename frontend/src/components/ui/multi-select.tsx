@@ -24,6 +24,8 @@ import { cn } from '@/lib/utils';
 export interface MultiSelectOption {
   value: string;
   label: string;
+  /** A muted line under the label in the list; chips show the label only. */
+  description?: string;
 }
 
 interface MultiSelectProps {
@@ -187,7 +189,16 @@ export function MultiSelect({
                       aria-hidden
                       className="pointer-events-none"
                     />
-                    {option.label}
+                    {option.description ? (
+                      <span className="flex min-w-0 flex-col">
+                        <span>{option.label}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {option.description}
+                        </span>
+                      </span>
+                    ) : (
+                      option.label
+                    )}
                   </CommandItem>
                 );
               })}

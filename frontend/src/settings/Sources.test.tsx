@@ -232,16 +232,86 @@ describe('Sources access', () => {
     reconnect.mockClear();
     await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
     connectors.connections = [];
+    // The state is the warning Badge, the action an outline sm pill.
+    const badge = Array.from(
+      container.querySelectorAll('[data-slot="badge"]'),
+    ).find((b) => b.textContent === 'settings.connectors.status.reconnect')!;
+    expect(badge.getAttribute('data-variant')).toBe('warning');
+    expect(badge.hasAttribute('tabindex')).toBe(false);
+    expect(container.textContent).not.toContain(
+      'settings.connectors.detail.paused',
+    );
     const button = Array.from(container.querySelectorAll('button')).find(
       (b) => b.textContent === 'settings.connectors.status.reconnect',
     )!;
     expect(button).toBeDefined();
+    expect(button.getAttribute('data-variant')).toBe('outline');
+    expect(button.getAttribute('data-size')).toBe('sm');
+    expect(button.getAttribute('data-shape')).toBe('pill');
+    // A sibling of the card's own button, never inside it.
+    expect(button.closest('[role="button"]')).toBeNull();
+    expect(button.parentElement!.closest('button')).toBeNull();
     await act(async () => button.click());
     expect(reconnect).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'conn-1', connector_key: 'google_drive' }),
     );
     // Only the reconnect: the source view stays closed.
     expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
+  });
+
+  // The same rule as Tools and the nav dot: an expired or failing sign-in.
+  it.each([
+    ['error', true],
+    ['disconnected', false],
+  ])('status %s offers Reconnect: %s', async (status, shown) => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        status,
+      },
+    ];
+    await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
+    connectors.connections = [];
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (b) => b.textContent === 'settings.connectors.status.reconnect',
+      ),
+    ).toBe(shown);
+  });
+
+  // DESIGN "A clickable card that holds a link": the card opens through a
+  // stretched button; the menu and Reconnect are its siblings.
+  it('opens the source through a stretched button, controls beside it', async () => {
+    connectors.connections = [
+      {
+        id: 'conn-1',
+        connector_key: 'google_drive',
+        name: 'Google Drive',
+        icon: 'drive',
+        status: 'reconnect_needed',
+      },
+    ];
+    await render(doc({ connectionId: 'conn-1' } as Partial<Doc>));
+    connectors.connections = [];
+    expect(container.querySelector('[role="button"]')).toBeNull();
+    const open = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Contracts"]',
+    )!;
+    expect(open).not.toBeNull();
+    expect(open.className).toContain('after:inset-0');
+    expect(open.querySelector('button, a, [tabindex]')).toBeNull();
+    const menu = container.querySelector<HTMLElement>(
+      '[data-testid="menu-button-src-1"]',
+    )!;
+    expect(open.contains(menu)).toBe(false);
+    expect(menu.closest('.z-10')).not.toBeNull();
+    const card = open.closest('[data-slot="card"]')!;
+    expect(card.className).toContain('has-[>button:focus-visible]:ring-3');
+    // Names the connection from the Knowledge namespace.
+    expect(card.textContent).toContain('settings.sources.viaConnection');
+    expect(card.textContent).not.toContain('settings.tools.viaConnection');
   });
 
   it('offers no Reconnect on a synced source that is running', async () => {
@@ -599,5 +669,46 @@ describe('Sources paging', () => {
     expect(page).toBe(1);
     expect(search).toBe('tender');
     expect(where()).toBe('');
+  });
+
+  const renderEmpty = async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <Sources paginatedDocuments={[]} handleDeleteDocument={vi.fn()} />
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  // "Connect a service" would open the same Add knowledge modal.
+  it('offers one way in when there is no knowledge yet', async () => {
+    fetchPage.mockResolvedValue(response(1, 0));
+    await renderEmpty();
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.getAttribute('data-size')).toBe('default');
+    expect(
+      Array.from(empty.querySelectorAll('button')).map((b) => b.textContent),
+    ).toEqual(['settings.sources.addSource']);
+  });
+
+  it('says no match in the small, unillustrated empty state', async () => {
+    fetchPage.mockResolvedValue(response(1, 0));
+    await renderEmpty();
+    const input = container.querySelector<HTMLInputElement>(
+      '#document-search-input',
+    )!;
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      setValue.call(input, 'nothing');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('settings.sources.noResults');
+    expect(empty.getAttribute('data-size')).toBe('xs');
+    expect(empty.querySelector('svg')).toBeNull();
   });
 });

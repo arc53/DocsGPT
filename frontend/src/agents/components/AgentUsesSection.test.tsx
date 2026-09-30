@@ -130,16 +130,27 @@ describe('AgentUsesSection', () => {
       li.textContent?.includes(name),
     );
 
+  const T = 'agents.form.sponsorConfirm.types';
+
   it('starts collapsed and lists what the agent uses when opened', async () => {
     await render(agentWith([item({ name: 'Docs', type: 'source', id: 's1' })]));
     expect(toggle()?.getAttribute('aria-expanded')).toBe('false');
     expect(rowOf('Docs')).toBeUndefined();
     await open();
     expect(toggle()?.getAttribute('aria-expanded')).toBe('true');
-    expect(rowOf('Docs')?.textContent).toContain(`${K}.access.you`);
+    // What runs as the owner reads as its type.
+    expect(rowOf('Docs')?.textContent).toContain(`${T}.source`);
   });
 
-  it('names whose access each item runs with, for the owner', async () => {
+  // Unboxed rows, like People with access above it.
+  it('lists the rows without a card around them', async () => {
+    await render(agentWith([item({ name: 'Docs', type: 'source', id: 's1' })]));
+    await open();
+    expect(rowOf('Docs')).toBeDefined();
+    expect(container.querySelector('[data-slot="card"]')).toBeNull();
+  });
+
+  it("says whose access only where it isn't the owner's own", async () => {
     await render(
       agentWith([
         item({ id: 't1', name: 'Mine' }),
@@ -173,24 +184,21 @@ describe('AgentUsesSection', () => {
       ]),
     );
     await open();
-    expect(rowOf('Mine')?.textContent).toContain(`${K}.access.you`);
+    expect(rowOf('Mine')?.textContent).toContain(`${T}.tool`);
     expect(rowOf('Bobs')?.textContent).toContain(
-      `${K}.access.person(person=bob@example.com)`,
+      `${K}.access.runsAs(person=bob@example.com)`,
     );
-    // API and widget callers run it as the owner: the owner's account.
     expect(rowOf('Slack tool')?.textContent).toContain(
       `${K}.access.member(service=Slack)`,
     );
-    expect(rowOf('Notion tool')?.textContent).toContain(
-      `${K}.access.yourAccount(service=Notion)`,
-    );
+    expect(rowOf('Notion tool')?.textContent).toContain(`${T}.tool`);
     expect(rowOf('Jira tool')?.textContent).toContain(
-      `${K}.access.personAccount(service=Jira,person=carol@example.com)`,
+      `${K}.access.runsAs(person=carol@example.com)`,
     );
-    expect(rowOf('Tone')?.textContent).toContain(`${K}.access.you`);
+    expect(rowOf('Tone')?.textContent).toContain(`${T}.prompt`);
   });
 
-  it("says the owner's access to an editor, and theirs where they sponsor", async () => {
+  it('names what runs as the editor reading it as theirs', async () => {
     await render(
       agentWith(
         [
@@ -212,10 +220,10 @@ describe('AgentUsesSection', () => {
       ),
     );
     await open();
-    expect(rowOf('Owners')?.textContent).toContain(`${K}.access.owner`);
-    expect(rowOf('Editors')?.textContent).toContain(`${K}.access.you`);
+    expect(rowOf('Owners')?.textContent).toContain(`${T}.tool`);
+    expect(rowOf('Editors')?.textContent).toContain(`${K}.access.runsAsYou`);
     expect(rowOf('Slack tool')?.textContent).toContain(
-      `${K}.access.memberShared(service=Slack)`,
+      `${K}.access.member(service=Slack)`,
     );
   });
 
@@ -231,7 +239,7 @@ describe('AgentUsesSection', () => {
       ]),
     );
     await open();
-    expect(rowOf('Once sponsored')?.textContent).toContain(`${K}.access.you`);
+    expect(rowOf('Once sponsored')?.textContent).toContain(`${T}.tool`);
     expect(rowOf('Once sponsored')?.textContent).not.toContain('bob');
   });
 
@@ -258,10 +266,23 @@ describe('AgentUsesSection', () => {
     );
     await open();
     expect(rowOf('Runs as a stranger')?.textContent).toContain(
-      `${K}.access.other`,
+      `${K}.access.runsAsOther`,
     );
     expect(rowOf('Stopped')?.textContent).toContain(
-      'agents.form.resourceStates.reason.sponsorCannotEditAgentOther',
+      `${K}.reasonShort.sponsorCannotEditAgentOther`,
+    );
+  });
+
+  it('names a person by email, else a short id, never the full sub', async () => {
+    const sub = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
+    await render(
+      agentWith([
+        item({ id: 't1', name: 'Subs', runs_as: { user_id: sub, label: sub } }),
+      ]),
+    );
+    await open();
+    expect(rowOf('Subs')?.textContent).toContain(
+      `${K}.access.runsAs(person=0f1e2d3c-4b5…c3d2e1f0)`,
     );
   });
 
@@ -275,15 +296,24 @@ describe('AgentUsesSection', () => {
           note: 'per_user_account',
           connection: { id: 'c1', connector_key: 'slack', name: 'Slack' },
         }),
+        item({
+          id: 't2',
+          name: 'Own MCP',
+          credential_mode: 'member',
+          note: 'per_user_account',
+        }),
       ]),
     );
     await open();
     expect(rowOf('Slack tool')?.textContent).toContain(
       `${K}.access.member(service=Slack)`,
     );
+    expect(rowOf('Own MCP')?.textContent).toContain(
+      `${K}.access.memberNoService`,
+    );
   });
 
-  it('names whose saved credentials a tool without a connection uses', async () => {
+  it("names whose saved credentials a tool uses when they are not the owner's", async () => {
     await render(
       agentWith([
         item({
@@ -311,34 +341,78 @@ describe('AgentUsesSection', () => {
       ]),
     );
     await open();
-    expect(rowOf('My API')?.textContent).toContain(
-      `${K}.access.yourCredentials`,
-    );
+    expect(rowOf('My API')?.textContent).toContain(`${T}.tool`);
     expect(rowOf('Carols API')?.textContent).toContain(
-      `${K}.access.personCredentials(person=carol@example.com)`,
+      `${K}.access.runsAs(person=carol@example.com)`,
     );
     expect(rowOf('Hidden API')?.textContent).toContain(
-      `${K}.access.otherCredentials`,
+      `${K}.access.runsAsOther`,
     );
     expect(rowOf('Hidden Jira')?.textContent).toContain(
-      `${K}.access.otherAccount(service=Jira)`,
+      `${K}.access.runsAsOther`,
     );
   });
 
-  it('opens by itself and marks a stopped item with why it stopped', async () => {
+  it('shows the service logo for a connected tool, the kind icon otherwise', async () => {
+    await render(
+      agentWith([
+        item({
+          id: 't1',
+          name: 'Alerts bot',
+          connection: { id: 'c1', connector_key: 'telegram', name: 'Telegram' },
+        }),
+        item({ id: 't2', name: 'Plain tool' }),
+      ]),
+    );
+    await open();
+    expect(rowOf('Alerts bot')?.querySelector('.lucide-wrench')).toBeNull();
+    expect(rowOf('Alerts bot')?.querySelector('svg')).not.toBeNull();
+    expect(rowOf('Plain tool')?.querySelector('.lucide-wrench')).not.toBeNull();
+  });
+
+  it('opens by itself and marks a stopped item with a short reason', async () => {
     await render(
       agentWith([
         item({ id: 't1', name: 'Gone', state: 'stopped', reason: 'deleted' }),
-        item({ id: 't2', name: 'Fine' }),
+        item({
+          id: 't2',
+          name: 'Linear',
+          state: 'stopped',
+          reason: 'connection_needs_reconnect',
+          connection: { id: 'c1', connector_key: 'mcp:linear', name: 'Linear' },
+        }),
+        item({
+          id: 't3',
+          name: 'Ops',
+          state: 'stopped',
+          reason: 'connection_removed',
+        }),
+        item({
+          id: 't4',
+          name: 'Search',
+          state: 'stopped',
+          reason: 'sponsor_cannot_edit_agent',
+          sponsor: { user_id: 'lena', label: 'lena@example.com' },
+        }),
+        item({ id: 't5', name: 'Fine' }),
       ]),
     );
     expect(toggle()?.getAttribute('aria-expanded')).toBe('true');
     const gone = rowOf('Gone');
     expect(gone?.textContent).toContain(`${K}.stopped`);
-    expect(gone?.textContent).toContain(
-      'agents.form.resourceStates.reason.deleted(name=Gone',
+    expect(gone?.textContent).toContain(`${K}.reasonShort.deleted`);
+    // The row already shows the name; the reason doesn't repeat it.
+    expect(gone?.textContent).not.toContain('name=Gone');
+    expect(gone?.textContent).not.toContain(`${T}.tool`);
+    expect(rowOf('Linear')?.textContent).toContain(
+      `${K}.reasonShort.connectionNeedsReconnect(service=Linear`,
     );
-    expect(gone?.textContent).not.toContain(`${K}.access.you`);
+    expect(rowOf('Ops')?.textContent).toContain(
+      `${K}.reasonShort.connectionRemovedNoService`,
+    );
+    expect(rowOf('Search')?.textContent).toContain(
+      `${K}.reasonShort.sponsorCannotEditAgent(service=,person=lena@example.com)`,
+    );
     expect(rowOf('Fine')?.textContent).not.toContain(`${K}.stopped`);
   });
 
@@ -367,8 +441,8 @@ describe('AgentUsesSection', () => {
     expect(rowOf('Allowed')?.textContent).not.toContain(`${K}.writes`);
     expect(rowOf('Reads')?.textContent).not.toContain(`${K}.writes`);
     const alert = container.querySelector('[data-slot="alert"]');
-    expect(alert?.textContent).toContain(`${K}.writesNote`);
-    expect(alert?.textContent).not.toContain(`${K}.writesNoteMemberTail`);
+    expect(alert?.getAttribute('data-variant')).toBe('warning');
+    expect(alert?.textContent).toBe(`${K}.writesNote`);
   });
 
   it('marks a tool with every write blocked', async () => {
@@ -378,31 +452,28 @@ describe('AgentUsesSection', () => {
       ]),
     );
     await open();
-    expect(rowOf('Blocked')?.textContent).toContain(`${K}.writesOff`);
-    expect(rowOf('Blocked')?.textContent).not.toContain(`${K}.writesSomeOff`);
+    const badge = rowOf('Blocked')?.querySelector('[data-slot="badge"]');
+    expect(badge?.textContent).toBe(`${K}.writesOff`);
+    expect(badge?.getAttribute('data-variant')).toBe('warning');
   });
 
-  it('names only API and widget users for tools each person connects', async () => {
-    await render(
-      agentWith([
+  // One line whatever mix of tools is blocked: the badges say which.
+  it.each([
+    [
+      'tools each person connects',
+      [
         item({
           id: 't1',
           name: 'Slack tool',
           credential_mode: 'member',
           note: 'per_user_account',
-          connection: { id: null, connector_key: 'slack', name: 'Slack' },
           owner_credential_writes: ['send'],
         }),
-      ]),
-    );
-    await open();
-    const alert = container.querySelector('[data-slot="alert"]');
-    expect(alert?.textContent).toBe(`${K}.writesNoteApi`);
-  });
-
-  it('says public-link users use their own account on mixed tools', async () => {
-    await render(
-      agentWith([
+      ],
+    ],
+    [
+      'a mix',
+      [
         item({ id: 't1', name: 'Mine', owner_credential_writes: ['a'] }),
         item({
           id: 't2',
@@ -411,13 +482,14 @@ describe('AgentUsesSection', () => {
           note: 'per_user_account',
           owner_credential_writes: ['send'],
         }),
-      ]),
-    );
+      ],
+    ],
+  ])('says it in one line for %s', async (_, items) => {
+    await render(agentWith(items));
     await open();
-    const alert = container.querySelector('[data-slot="alert"]');
-    expect(alert?.textContent).toBe(
-      `${K}.writesNote ${K}.writesNoteMemberTail`,
-    );
+    const alerts = container.querySelectorAll('[data-slot="alert"]');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].textContent).toBe(`${K}.writesNote`);
   });
 
   it('says when an admin turned changes off', async () => {
@@ -436,7 +508,7 @@ describe('AgentUsesSection', () => {
     expect(container.querySelector('[data-slot="alert"]')).toBeNull();
   });
 
-  it('tells an editor the owner allows the writes', async () => {
+  it('tells an editor to ask the owner', async () => {
     await render(
       agentWith(
         [item({ id: 't1', name: 'Blocked', owner_credential_writes: ['x'] })],
@@ -444,9 +516,9 @@ describe('AgentUsesSection', () => {
       ),
     );
     await open();
-    expect(
-      container.querySelector('[data-slot="alert"]')?.textContent,
-    ).toContain(`${K}.writesNoteEditor`);
+    expect(container.querySelector('[data-slot="alert"]')?.textContent).toBe(
+      `${K}.writesNoteEditor`,
+    );
   });
 
   it('shows no writes note when every write is allowed', async () => {

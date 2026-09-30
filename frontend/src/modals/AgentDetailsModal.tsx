@@ -278,16 +278,6 @@ export default function AgentDetailsModal({
                   {t('modals.agentDetails.generate')}
                 </Button>
               )}
-              {/* The allowlist acts on the owner's connected accounts, so
-                  only the owner changes it (the server keeps it otherwise). */}
-              {apiKey && isOwner(agent) && (
-                <ApiWriteAllowlist
-                  agent={agent}
-                  onConfigChange={onConfigChange}
-                  getSavedConfig={getSavedConfig}
-                  defaultOpen={openApiWrites}
-                />
-              )}
             </div>
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
@@ -337,6 +327,19 @@ export default function AgentDetailsModal({
                 </Button>
               )}
             </div>
+            {/* Changes others can make as the owner, through the API, the
+                widget and the public link alike: the modal's last group. It
+                acts on the owner's connected accounts, so only the owner
+                changes it (the server keeps it otherwise), and it lists the
+                writes once the agent has a key. */}
+            {apiKey && isOwner(agent) && (
+              <ApiWriteAllowlist
+                agent={agent}
+                onConfigChange={onConfigChange}
+                getSavedConfig={getSavedConfig}
+                defaultOpen={openApiWrites}
+              />
+            )}
           </div>
         </div>
       </Modal>

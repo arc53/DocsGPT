@@ -1,9 +1,9 @@
-import { Plug } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
+import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
@@ -12,16 +12,20 @@ import {
   selectConnectorCatalog,
   selectConnectorsLoaded,
 } from '../connectors/connectorsSlice';
+import { connectorIconKey } from '../connectors/i18n';
 import { reconnectsInPlace } from '../connectors/launchRules';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
+import { toolCallTitle } from '../utils/streamingStatusUtils';
+import ToolCallCard from './ToolCallCard';
 import type { ToolCallsType } from './types';
 
 /**
  * The approval card's "Connect to continue" variant: a paused call to a tool
  * whose account needs signing in. Connecting keeps the call pending; Continue
- * resumes it with the new connection, Skip denies it.
+ * resumes it with the new connection, Skip denies it. A tool that runs on its
+ * owner's account can only be fixed by the owner, so it offers Skip alone.
  */
 export default function ConnectToolCallBar({
   toolCall,
@@ -53,11 +57,10 @@ export default function ConnectToolCallBar({
           c.connector_key === required?.connector_key &&
           c.status === 'connected',
       );
-  const name =
-    required?.connector_name ||
-    connector?.name ||
-    t('conversation.toolApproval.thisService');
-
+  const name = required?.connector_name || connector?.name || null;
+  const ownerAccount = !!required?.owner_account;
+  const missing = required?.status === 'missing';
+  const noEscape = { interpolation: { escapeValue: false } } as const;
   useEffect(() => {
     if (!loaded) dispatch(loadConnectors({ token }));
   }, [loaded, dispatch, token]);
@@ -84,50 +87,106 @@ export default function ConnectToolCallBar({
     );
   };
 
-  return (
-    <div className="border-border bg-muted mb-2 flex w-full flex-wrap items-center gap-3 overflow-hidden rounded-2xl border px-4 py-2.5">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        {connector ? (
-          <ConnectorIcon icon={connector.icon} className="size-5 shrink-0" />
-        ) : (
-          <Plug className="text-muted-foreground size-5 shrink-0" aria-hidden />
-        )}
-        <span className="text-sm">
-          {t('conversation.toolApproval.connectTitle', {
+  // The owner's account is theirs to reconnect; Continue would resume on it
+  // while it is still broken.
+  let message: string;
+  let state: ReactNode;
+  let primary: ReactNode = null;
+  if (ownerAccount) {
+    message =
+      required?.owner_name && name
+        ? t('conversation.toolApproval.ownerReconnect', {
             name,
-            interpolation: { escapeValue: false },
-          })}
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        {ready ? (
+            owner: required.owner_name,
+            ...noEscape,
+          })
+        : t('conversation.toolApproval.ownerReconnectGeneric');
+    state = (
+      <Badge variant="warning">
+        {t('settings.connectors.status.reconnect')}
+      </Badge>
+    );
+  } else if (ready) {
+    message = name
+      ? t('conversation.toolApproval.connectedTitle', { name, ...noEscape })
+      : t('conversation.toolApproval.connectedGeneric');
+    state = (
+      <Badge variant="success">
+        {t('settings.connectors.status.connected')}
+      </Badge>
+    );
+    primary = (
+      <Button
+        type="button"
+        size="xs"
+        shape="pill"
+        onClick={() => onToolAction?.(toolCall.call_id, 'approved')}
+      >
+        {t('conversation.toolApproval.continue')}
+      </Button>
+    );
+  } else if (missing) {
+    message = name
+      ? t('conversation.toolApproval.connectTitle', { name, ...noEscape })
+      : t('conversation.toolApproval.connectTitleGeneric');
+    state = (
+      <Badge variant="neutral">
+        {t('conversation.toolApproval.state.notConnected')}
+      </Badge>
+    );
+    primary = (
+      <Button type="button" size="xs" shape="pill" onClick={connect}>
+        {name
+          ? t('conversation.toolApproval.connect', { name, ...noEscape })
+          : t('settings.connectors.status.connect')}
+      </Button>
+    );
+  } else {
+    message = name
+      ? t('settings.connectors.health.pickerNotice', { name, ...noEscape })
+      : t('conversation.toolApproval.reconnectGeneric');
+    state = (
+      <Badge variant="warning">
+        {t('settings.connectors.status.reconnect')}
+      </Badge>
+    );
+    primary = (
+      <Button type="button" size="xs" shape="pill" onClick={connect}>
+        {t('settings.connectors.status.reconnect')}
+      </Button>
+    );
+  }
+
+  return (
+    <ToolCallCard
+      icon={
+        <ConnectorIcon
+          icon={connector?.icon ?? connectorIconKey(required?.connector_key)}
+          className="size-5"
+        />
+      }
+      title={toolCallTitle(
+        { ...toolCall, connector_name: toolCall.connector_name ?? name },
+        t,
+      )}
+      state={state}
+      actions={
+        <>
+          {primary}
           <Button
             type="button"
+            variant="outline"
             size="xs"
             shape="pill"
-            onClick={() => onToolAction?.(toolCall.call_id, 'approved')}
+            onClick={() => onToolAction?.(toolCall.call_id, 'denied')}
           >
-            {t('conversation.toolApproval.continue')}
+            {t('conversation.toolApproval.skip')}
           </Button>
-        ) : (
-          <Button type="button" size="xs" shape="pill" onClick={connect}>
-            {t('conversation.toolApproval.connect', {
-              name,
-              interpolation: { escapeValue: false },
-            })}
-          </Button>
-        )}
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          shape="pill"
-          onClick={() => onToolAction?.(toolCall.call_id, 'denied')}
-        >
-          {t('conversation.toolApproval.skip')}
-        </Button>
-      </div>
+        </>
+      }
+    >
+      <p>{message}</p>
       {modals}
-    </div>
+    </ToolCallCard>
   );
 }

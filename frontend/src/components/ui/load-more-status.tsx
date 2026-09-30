@@ -13,6 +13,9 @@ type LoadMoreStatusProps = {
   onRetry: () => void;
   /** A rule above: under a flush table that runs to the card's edges. */
   divider?: boolean;
+  /** Wording for a list that isn't a newest-first feed ("Loading more…"). */
+  loadingLabel?: string;
+  doneLabel?: string;
   className?: string;
 };
 
@@ -28,6 +31,8 @@ function LoadMoreStatus({
   done,
   onRetry,
   divider = false,
+  loadingLabel,
+  doneLabel,
   className,
 }: LoadMoreStatusProps) {
   const { t } = useTranslation();
@@ -44,7 +49,7 @@ function LoadMoreStatus({
       {loading ? (
         <>
           <Spinner size="xs" />
-          {t('pagination.loadingOlder')}
+          {loadingLabel ?? t('pagination.loadingOlder')}
         </>
       ) : error ? (
         <>
@@ -54,7 +59,7 @@ function LoadMoreStatus({
           </Button>
         </>
       ) : done ? (
-        t('pagination.noOlder')
+        (doneLabel ?? t('pagination.noOlder'))
       ) : null}
     </div>
   );

@@ -115,7 +115,12 @@ vi.mock('../components/MultiSelectPopover', () => ({
     <div data-testid="picker">
       {trigger}
       {items.map((item) => (
-        <div key={item.id} data-group={item.group} data-item={item.id}>
+        <div
+          key={item.id}
+          data-group={item.group}
+          data-item={item.id}
+          data-description={item.description}
+        >
           {item.descriptionNode}
           <button
             type="button"
@@ -447,6 +452,93 @@ describe('NewAgent form', () => {
       'agents.form.toolsPopup.groupCustom',
       'agents.form.toolsPopup.groupAttached',
     ]);
+  });
+
+  // The sponsor confirmation asks before anything runs with an editor's
+  // access, so the form keeps no attach note; who added what is on the
+  // picker rows.
+  it('marks who added a sponsored tool and source in the pickers, with no note', async () => {
+    mocks.tools = [{ id: 'mine', name: 'api_tool', display_name: 'My API' }];
+    await renderEdit({
+      tools: ['mine'],
+      sources: ['s1'],
+      shared: true,
+      resource_sponsors: [
+        {
+          type: 'tool',
+          id: 'mine',
+          user_id: 'bob',
+          label: 'bob@example.com',
+          active: true,
+        },
+        { type: 'source', id: 's1', user_id: null, label: null, active: true },
+      ],
+    });
+    expect(
+      container
+        .querySelector('[data-item="mine"]')
+        ?.getAttribute('data-description'),
+    ).toBe('agents.form.sponsors.addedBy');
+    expect(
+      container
+        .querySelector('[data-item="s1"]')
+        ?.getAttribute('data-description'),
+    ).toBe('agents.form.sponsors.addedByOther');
+    expect(container.textContent).not.toContain('agents.form.sponsors.attach');
+    expect(container.textContent).not.toContain('publicLinkNote');
+    expect(container.querySelector('[data-slot="alert"]')).toBeNull();
+  });
+
+  // The prompt Select has no description slot: the mark is a hint under it.
+  it('marks a sponsored prompt under its picker', async () => {
+    await renderEdit({
+      prompt_id: 'p1',
+      prompt_name: 'Tone',
+      resource_sponsors: [
+        {
+          type: 'prompt',
+          id: 'p1',
+          user_id: 'bob',
+          label: 'bob@example.com',
+          active: true,
+        },
+      ],
+    });
+    const hint = Array.from(container.querySelectorAll('p')).find(
+      (p) => p.textContent === 'agents.form.sponsors.addedBy',
+    );
+    expect(hint?.className).toContain('text-muted-foreground');
+    expect(hint?.className).toContain('text-xs');
+  });
+
+  // F4: one word for the state, as a warning Badge like the device pill.
+  it('marks a tool whose account needs signing in with a Reconnect badge', async () => {
+    mocks.tools = [
+      {
+        id: 'linear',
+        name: 'mcp_tool',
+        display_name: 'Linear',
+        connection_id: 'c-lin',
+      },
+    ];
+    mocks.connections = [
+      {
+        id: 'c-lin',
+        name: 'Linear',
+        account_label: 'a@x',
+        icon: 'linear',
+        status: 'reconnect_needed',
+      },
+    ];
+    await render();
+    const badge = container.querySelector(
+      '[data-item="linear"] [data-slot="badge"]',
+    );
+    expect(badge?.getAttribute('data-variant')).toBe('warning');
+    expect(badge?.textContent).toBe('settings.connectors.status.reconnect');
+    expect(
+      container.querySelector('[data-item="linear"] p.text-warning'),
+    ).toBeNull();
   });
 
   it('asks before sponsoring and retries the save with the confirmation', async () => {

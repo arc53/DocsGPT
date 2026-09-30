@@ -245,19 +245,19 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
   });
 
   return (
-    <>
+    <div className="flex flex-col gap-4">
       {errorMessage && (
-        <Alert variant="destructive" className="mb-4">
+        <Alert variant="destructive">
           <TriangleAlert aria-hidden="true" />
           <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
       )}
 
       {isConnected ? (
-        <Alert variant="success" className="mb-4">
+        <Alert variant="success">
           <CircleCheck aria-hidden="true" />
           <AlertDescription className="flex items-center justify-between">
-            <span className="max-w-[500px]">
+            <span className="min-w-0">
               {t('modals.uploadDoc.connectors.auth.connectedAs', {
                 email: userEmail,
               })}
@@ -281,7 +281,7 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
           {label}
         </Button>
       )}
-    </>
+    </div>
   );
 };
 

@@ -116,6 +116,26 @@ describe('AgentDetailsModal', () => {
       expect(allowlist()).not.toBeNull();
     });
 
+    // It covers the widget and the public link too, not just the key, so
+    // it is the modal's last group rather than part of API key.
+    it('is its own last group, after the webhook', async () => {
+      await render({ status: 'published', key: 'k-1', access: 'owner' });
+      const headings = Array.from(document.querySelectorAll('h3'));
+      const apiKey = headings.find(
+        (h) => h.textContent === 'modals.agentDetails.apiKey',
+      )!;
+      const webhook = headings.find(
+        (h) => h.textContent === 'modals.agentDetails.webhookUrl',
+      )!;
+      const list = allowlist()!;
+      expect(apiKey.closest('div.flex-col')!.contains(list)).toBe(false);
+      expect(
+        webhook.compareDocumentPosition(list) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(list.parentElement!.lastElementChild).toBe(list);
+    });
+
     it('starts it folded, or open when sent to allow changes', async () => {
       await render({ status: 'published', key: 'k-1', access: 'owner' });
       expect(allowlist()?.getAttribute('data-open')).toBe('false');

@@ -1,5 +1,5 @@
 import { ChevronRight } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -7,10 +7,13 @@ import userService from '../api/services/userService';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { SectionHeader } from '../components/ui/section-header';
-import { SettingRow, SettingRows } from '../components/ui/setting-row';
-import { Switch } from '../components/ui/switch';
-import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { actionTitle } from '../connectors/i18n';
+import PermissionGroup, {
+  ALLOW_OR_OFF,
+  PermissionRow,
+  PermissionSelect,
+} from '../connectors/PermissionGroup';
+import type { ActionPermission } from '../connectors/types';
 import { cn } from '../lib/utils';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
@@ -36,14 +39,11 @@ type UserTool = {
   actions?: { name: string; description?: string }[];
 };
 
-/** The tool-wide choice: every write off, every write on, or mixed (''). */
-type ToolChoice = 'off' | 'all' | '';
-
 const K = 'modals.agentDetails.apiWrites';
 
 /**
- * One tool's writes: an Off / All choice for all of them at once, and each
- * write on its own switch under Customize, like a connector's permissions.
+ * One tool's writes on the connectors' skeleton: Allow / Off for all of
+ * them at once, or Customize, which lists each write with its own choice.
  */
 function ToolAllowlist({
   tool,
@@ -58,97 +58,62 @@ function ToolAllowlist({
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
-  const [unfolded, setUnfolded] = useState(false);
-  // Names the tool for its Customize link, which reads the same in each.
-  const titleId = useId();
   const allowedCount = tool.actions.filter((item) =>
     allowed.has(item.entry),
   ).length;
-  const choice: ToolChoice =
-    allowedCount === 0
-      ? 'off'
-      : allowedCount === tool.actions.length
-        ? 'all'
-        : '';
   const plain = { interpolation: { escapeValue: false } };
+  const permissionOf = (item: WriteAction): ActionPermission =>
+    allowed.has(item.entry) ? 'always' : 'off';
   return (
-    <div data-tool={tool.id} className="flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-3">
-        <SectionHeader
-          as="h4"
-          size="xs"
-          className="min-w-0 flex-1"
-          title={<span id={titleId}>{tool.name}</span>}
-          description={t(`${K}.toolCount`, {
-            allowed: formatCount(allowedCount),
-            formatted: formatCount(tool.actions.length),
-          })}
-        />
-        <div className="bg-muted shrink-0 rounded-full p-1">
-          <ToggleGroup
-            type="single"
-            size="xs"
-            value={choice}
-            disabled={disabled}
-            aria-label={t(`${K}.toolLabel`, { ...plain, tool: tool.name })}
-            onValueChange={(value) =>
-              value &&
-              onChange(
-                tool.actions.map((item) => item.entry),
-                value === 'all',
-              )
-            }
-          >
-            {(['off', 'all'] as const).map((value) => (
-              <ToggleGroupItem key={value} value={value} data-choice={value}>
-                {t(`${K}.choice.${value}`)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
-      </div>
-      <Button
-        type="button"
-        variant="link"
-        size="inline"
-        className="self-start"
-        aria-expanded={unfolded}
-        aria-describedby={titleId}
-        onClick={() => setUnfolded(!unfolded)}
-      >
-        {unfolded
-          ? t(`${K}.fold`)
-          : t(`${K}.customize`, {
-              count: tool.actions.length,
-              formatted: formatCount(tool.actions.length),
-            })}
-      </Button>
-      {unfolded && (
-        <SettingRows>
-          {tool.actions.map((item) => {
-            const id = `api-write-${item.entry}`;
-            return (
-              <SettingRow
-                key={item.entry}
-                htmlFor={id}
-                alignStart
-                label={
-                  <span title={item.action}>{actionTitle(item.action)}</span>
-                }
-                description={item.description || undefined}
-              >
-                <Switch
-                  id={id}
-                  checked={allowed.has(item.entry)}
-                  disabled={disabled}
-                  onCheckedChange={(checked) => onChange([item.entry], checked)}
+    <PermissionGroup
+      data-tool={tool.id}
+      title={`${tool.name} · ${t(`${K}.summaryCount`, {
+        allowed: formatCount(allowedCount),
+        formatted: formatCount(tool.actions.length),
+      })}`}
+      values={tool.actions.map(permissionOf)}
+      options={ALLOW_OR_OFF}
+      disabled={disabled}
+      groupLabel={t(`${K}.toolLabel`, { ...plain, tool: tool.name })}
+      onChoose={(permission) =>
+        onChange(
+          tool.actions.map((item) => item.entry),
+          permission === 'always',
+        )
+      }
+    >
+      {(customizing) =>
+        customizing && (
+          <ul className="flex flex-col gap-3">
+            {tool.actions.map((item) => {
+              const title = actionTitle(item.action);
+              return (
+                <PermissionRow
+                  key={item.entry}
+                  title={title}
+                  name={item.action}
+                  description={item.description || undefined}
+                  control={
+                    <PermissionSelect
+                      value={permissionOf(item)}
+                      options={ALLOW_OR_OFF}
+                      disabled={disabled}
+                      label={t('settings.connectors.permission.label', {
+                        ...plain,
+                        action: title,
+                      })}
+                      onChange={(permission) =>
+                        onChange([item.entry], permission === 'always')
+                      }
+                    />
+                  }
                 />
-              </SettingRow>
-            );
-          })}
-        </SettingRows>
-      )}
-    </div>
+              );
+            })}
+          </ul>
+        )
+      }
+    </PermissionGroup>
   );
 }
 
@@ -163,8 +128,8 @@ function ToolAllowlist({
  *
  * The section starts folded to a one-line summary (which tools can make
  * changes, and how many of all the writes are allowed). Open, each tool has
- * one Off / All choice with its writes one by one under Customize. Entries
- * are `tool_id:action`.
+ * one Allow / Off / Customize choice, the connectors' permission skeleton,
+ * with its writes one by one under Customize. Entries are `tool_id:action`.
  *
  * A change saves at once, on top of the agent's last saved config
  * (`getSavedConfig`), so edits still pending in the form are not saved with
@@ -305,32 +270,30 @@ export default function ApiWriteAllowlist({
 
   return (
     <section className="flex flex-col gap-3">
+      <SectionHeader
+        as="h3"
+        size="xs"
+        title={t(`${K}.title`)}
+        description={<span data-testid="api-writes-summary">{summary}</span>}
+      />
       {/* A collapsible group in a modal: the inline disclosure toggle. */}
-      <div className="flex flex-col gap-0.5">
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          aria-expanded={open}
-          className="-ml-3 w-fit justify-start"
-          onClick={() => setOpen(!open)}
-        >
-          <ChevronRight
-            aria-hidden="true"
-            className={cn(
-              'transition-transform duration-200',
-              open && 'rotate-90',
-            )}
-          />
-          {t(`${K}.title`)}
-        </Button>
-        <p
-          data-testid="api-writes-summary"
-          className="text-muted-foreground text-xs"
-        >
-          {summary}
-        </p>
-      </div>
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        aria-expanded={open}
+        className="-ml-3 w-fit justify-start"
+        onClick={() => setOpen(!open)}
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className={cn(
+            'transition-transform duration-200',
+            open && 'rotate-90',
+          )}
+        />
+        {t(`${K}.choose`)}
+      </Button>
       {open && (
         <>
           <p className="text-muted-foreground text-xs">

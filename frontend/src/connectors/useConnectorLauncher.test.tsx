@@ -10,18 +10,33 @@ vi.mock('./ConnectWizard', () => ({
     mode,
     connectionId,
     purpose,
+    onClose,
   }: {
     mode: string;
     connectionId?: string;
     purpose?: string;
+    onClose: (connected?: boolean) => void;
   }) => (
     <div data-testid="wizard" data-purpose={purpose ?? ''}>
-      {`${mode}:${connectionId ?? ''}`}
+      <span data-testid="wizard-state">{`${mode}:${connectionId ?? ''}`}</span>
+      <button
+        type="button"
+        data-close="connected"
+        onClick={() => onClose(true)}
+      />
+      <button
+        type="button"
+        data-close="cancel"
+        onClick={() => onClose(false)}
+      />
+      {/* A wizard from before the `connected` argument. */}
+      <button type="button" data-close="bare" onClick={() => onClose()} />
     </div>
   ),
 }));
 vi.mock('../modals/MCPServerModal', () => ({ default: () => null }));
 
+import connectorsService from '../api/services/connectorsService';
 import connectorsReducer from './connectorsSlice';
 import type { ConnectorDefinition } from './types';
 import useConnectorLauncher, {
@@ -49,8 +64,11 @@ const DRIVE = {
 let launchRef: ((c: ConnectorDefinition, o?: LaunchOptions) => void) | null =
   null;
 
+const onConnected = vi.fn();
+const onCancel = vi.fn();
+
 function Harness() {
-  const { launch, modals } = useConnectorLauncher();
+  const { launch, modals } = useConnectorLauncher({ onConnected, onCancel });
   launchRef = launch;
   return <>{modals}</>;
 }
@@ -60,6 +78,16 @@ describe('useConnectorLauncher', () => {
   let root: Root;
 
   beforeEach(async () => {
+    onConnected.mockReset();
+    onCancel.mockReset();
+    vi.spyOn(connectorsService, 'getCatalog').mockResolvedValue({
+      success: true,
+      connectors: [],
+    });
+    vi.spyOn(connectorsService, 'listConnections').mockResolvedValue({
+      success: true,
+      connections: [],
+    });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -83,10 +111,11 @@ describe('useConnectorLauncher', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
   });
 
   const wizard = () =>
-    container.querySelector('[data-testid="wizard"]')?.textContent;
+    container.querySelector('[data-testid="wizard-state"]')?.textContent;
 
   it('opens an MCP preset that syncs straight at picking what to sync', async () => {
     await act(async () =>
@@ -120,5 +149,38 @@ describe('useConnectorLauncher', () => {
   it('leaves a plain connect without a purpose', async () => {
     await act(async () => launchRef!(DRIVE));
     expect(purpose()).toBe('');
+  });
+
+  const closeWith = async (how: 'connected' | 'cancel' | 'bare') =>
+    act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(`[data-close="${how}"]`)!
+        .click(),
+    );
+
+  it('reports a connect when the wizard closes having connected', async () => {
+    await act(async () => launchRef!(DRIVE, { purpose: 'knowledge' }));
+    await closeWith('connected');
+    expect(wizard()).toBeUndefined();
+    expect(onConnected).toHaveBeenCalledTimes(1);
+    expect(onCancel).not.toHaveBeenCalled();
+    // The connections list is read again either way.
+    expect(connectorsService.listConnections).toHaveBeenCalled();
+  });
+
+  it('reports a cancel, not a connect, when nothing was connected', async () => {
+    await act(async () => launchRef!(DRIVE, { purpose: 'knowledge' }));
+    await closeWith('cancel');
+    expect(wizard()).toBeUndefined();
+    expect(onConnected).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(connectorsService.listConnections).toHaveBeenCalled();
+  });
+
+  it('treats a close without the argument as a cancel', async () => {
+    await act(async () => launchRef!(DRIVE));
+    await closeWith('bare');
+    expect(onConnected).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

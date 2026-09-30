@@ -16,7 +16,7 @@ type ToolsTriggerProps = {
   selectedIds: string[];
   onToggle: (id: string) => void;
   loading: boolean;
-  /** Shown above the links, e.g. connections that need signing in again. */
+  /** Shown above the link, e.g. connections that need signing in again. */
   notice?: ReactNode;
 };
 
@@ -45,20 +45,12 @@ export default function ToolsTrigger({
       footer={
         <div className="flex flex-col gap-3">
           {notice}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <Button variant="link" size="inline" asChild>
-              <Link to="/settings/tools">
-                {t('settings.tools.manageTools')}
-                <ArrowRight aria-hidden="true" className="size-3" />
-              </Link>
-            </Button>
-            <Button variant="link" size="inline" asChild>
-              <Link to="/settings/connectors?capability=tools">
-                {t('conversation.sources.connectMore')}
-                <ArrowRight aria-hidden="true" className="size-3" />
-              </Link>
-            </Button>
-          </div>
+          <Button variant="link" size="inline" asChild>
+            <Link to="/settings/tools">
+              {t('settings.tools.manageTools')}
+              <ArrowRight aria-hidden="true" className="size-3" />
+            </Link>
+          </Button>
         </div>
       }
       trigger={

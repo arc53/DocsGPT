@@ -41,6 +41,9 @@ class CredentialField:
             default chat).
         hint: English help shown under the field; the frontend shows the
             translated ``settings.connectors.fieldHints.<connector>_<key>``.
+            Short, and never "Optional" (the form stars required fields).
+            Words wrapped in ``<link>…</link>`` link to ``hint_url``.
+        hint_url: Where the hint's ``<link>`` words go; set only with one.
     """
 
     key: str
@@ -49,6 +52,7 @@ class CredentialField:
     required: bool = True
     parameter: Optional[str] = None
     hint: Optional[str] = None
+    hint_url: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -58,6 +62,7 @@ class CredentialField:
             "required": self.required,
             "parameter": self.parameter,
             "hint": self.hint,
+            "hint_url": self.hint_url,
         }
 
 
@@ -188,6 +193,9 @@ def base_url(url: Optional[str]) -> str:
 _DOCS = "https://docs.docsgpt.cloud/Guides/Connectors"
 GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/readonly"
 GITHUB_MCP_WRITE_URL = "https://api.githubcopilot.com/mcp/"
+# Where a GitHub user makes a fine-grained token (Contents and Metadata: read;
+# Issues and Pull requests: read and write when agents may make changes).
+GITHUB_TOKEN_URL = "https://github.com/settings/personal-access-tokens/new"
 
 # Tool templates any connector's server can use (an MCP server, an OpenAPI
 # spec): a tool made from one belongs to its connection, not to a connector.
@@ -242,7 +250,17 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
         # A token works with no admin setup; a GitHub App adds Sign in with GitHub.
         auth_kind="api_key",
         capabilities=("sync", "read"),
-        credential_fields=(CredentialField("access_token", "Personal access token"),),
+        credential_fields=(
+            CredentialField(
+                "access_token",
+                "Personal access token",
+                hint=(
+                    "Fine-grained, with read access to Contents and Metadata. For agent changes, also read "
+                    "and write on Issues and Pull requests. <link>Create a token on GitHub</link>"
+                ),
+                hint_url=GITHUB_TOKEN_URL,
+            ),
+        ),
         oauth_settings=("GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_APP_SLUG"),
         sync_ingestor="github",
         setup_fields=(CredentialField("repo_url", "Repository", secret=False),),
@@ -325,10 +343,10 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
                 required=False,
                 parameter="chat_id",
                 hint=(
-                    "Optional. Messages go to this chat, and the AI cannot pick another. Add the bot to the "
-                    "chat, send it a message, then find the chat's id in "
-                    "https://api.telegram.org/bot<token>/getUpdates."
+                    "Messages go only to this chat. Add the bot, send it a message, then find the chat ID "
+                    "with <link>getUpdates</link>."
                 ),
+                hint_url="https://core.telegram.org/bots/api#getupdates",
             ),
         ),
         tool_templates=("telegram",),

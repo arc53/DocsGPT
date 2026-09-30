@@ -464,6 +464,15 @@ describe('ShareToTeamModal credentials', () => {
     );
   });
 
+  // "…as your Linear account ()" would read broken.
+  it('leaves the account out of the line when it has no name', async () => {
+    await render(credentials({ account: '' }));
+    expect(text()).toContain(
+      'settings.connectors.share.ownerWarningNoAccount(name=Linear)',
+    );
+    expect(text()).not.toContain('settings.connectors.share.ownerWarning(');
+  });
+
   it('asks only for the confirmation on a tool that can act, with no warning box', async () => {
     await render(credentials({ hasWrites: true }));
     expect(body().querySelector('[role="note"]')).toBeNull();
