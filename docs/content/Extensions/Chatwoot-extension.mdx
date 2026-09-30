@@ -5,23 +5,23 @@ description: Answer incoming Chatwoot messages with a DocsGPT agent. Set up the 
 
 import { Callout } from 'nextra/components'
 
-## Chatwoot Extension Setup Guide
+# Chatwoot Extension
 
 The Chatwoot extension is a small Flask app in [`extensions/chatwoot`](https://github.com/arc53/DocsGPT/tree/main/extensions/chatwoot). Chatwoot sends a signed webhook to its `POST /docsgpt` endpoint for every new message. The extension asks your DocsGPT agent through `/api/answer` and posts the answer back into the Chatwoot conversation.
 
 The extension must be reachable from Chatwoot, and it must be able to reach both the DocsGPT API and Chatwoot.
 
-### Step 1: Prepare DocsGPT and get an agent API key
+## Step 1: Prepare DocsGPT and get an agent API key
 
 - **Launch DocsGPT**: Follow the [Quickstart](/quickstart) to start DocsGPT, and [add your documentation](/Sources/adding-knowledge) as knowledge.
 - **Create an agent**: Create an agent that uses that knowledge, publish it, and copy its API key from the agent's **Access Details**. See [Agent API keys](/API/agent-keys). The extension sends this key as `api_key` to `/api/answer`, so it must be an agent key, not an OpenAI or other LLM provider key.
 
-### Step 2: Get an access token from Chatwoot
+## Step 2: Get an access token from Chatwoot
 
 - Go to Chatwoot.
 - In your profile settings (bottom left), scroll down and copy the **Access Token**. The extension uses it to post replies.
 
-### Step 3: Add a webhook in Chatwoot
+## Step 3: Add a webhook in Chatwoot
 
 - In Chatwoot, go to **Settings → Integrations → Webhooks**, click **Configure**, then **Add new webhook**.
 - Set the URL to the extension's endpoint, for example `http://<extension-host>:5000/docsgpt`.
@@ -34,7 +34,7 @@ The extension verifies Chatwoot's `X-Chatwoot-Signature` and `X-Chatwoot-Timesta
 **Older Chatwoot versions that do not sign webhooks.** Every request from them gets `401`. As a last resort, add `chatwoot_allow_unsigned=true` to the extension's `.env`: it then accepts requests that carry neither signature header (a request that carries them is still verified), and logs a warning at startup. This is insecure: anyone who can reach `/docsgpt` can make the extension query your agent and post into your Chatwoot conversations. Upgrade Chatwoot if you can; otherwise make the extension reachable only from Chatwoot, for example on a private network or behind an IP allowlist.
 </Callout>
 
-### Step 4: Configure the extension
+## Step 4: Configure the extension
 
 - Go to `extensions/chatwoot` and install its dependencies:
 
@@ -53,7 +53,7 @@ chatwoot_token=<Access Token from Step 2>
 chatwoot_webhook_secret=<Webhook secret from Step 3>
 ```
 
-### Step 5: Start the extension
+## Step 5: Start the extension
 
 Run the extension so Chatwoot can reach it. Plain `flask run` listens only on `127.0.0.1`, so bind to all interfaces:
 
@@ -65,7 +65,7 @@ The webhook URL from Step 3 is then `http://<extension-host>:5000/docsgpt`. For 
 
 If DocsGPT or Chatwoot returns an error, the extension logs it and answers the webhook with `502` instead of posting a reply.
 
-### Step 6 (optional): Limit which conversations get answers
+## Step 6 (optional): Limit which conversations get answers
 
 Add these lines to `.env` to answer only in one Chatwoot account, or only conversations assigned to one Chatwoot agent. Leave them out to answer every incoming message.
 
@@ -74,6 +74,6 @@ account_id=1
 assignee_id=1
 ```
 
-### Stopping Bot Responses for Specific User or Session
+## Stopping Bot Responses for Specific User or Session
 
 - If you want the bot to stop responding to questions for a specific user or session, add a label `human-requested` in your conversation.

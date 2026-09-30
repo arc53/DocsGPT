@@ -3,7 +3,7 @@ export default {
   "nodes": "🧩 Workflow Nodes",
   "schedules": "⏰ Schedules",
   "guardrails": "🛡️ Guardrails",
-  "prompts": "💻 Prompts",
+  "prompts": "💻 Customizing Prompts",
   "context-compression": "🗜️ Context Compression",
   "benchmarking": "📊 Benchmarking Agents"
 }
