@@ -1,0 +1,41 @@
+# DocsGPT Chatwoot bridge
+
+A small Flask app that answers incoming [Chatwoot](https://www.chatwoot.com/) messages with a DocsGPT agent.
+Chatwoot sends a signed `message_created` webhook to `POST /docsgpt`; the bridge asks the agent through
+`/api/answer` and posts the answer back into the conversation.
+
+Full guide: <https://docs.docsgpt.cloud/Extensions/Chatwoot-extension>
+
+## Setup
+
+1. Create and publish an agent in DocsGPT, then copy its API key from the agent's **Access Details**
+   ([how](https://docs.docsgpt.cloud/Extensions/api-key-guide)).
+2. In Chatwoot, copy the **Access Token** from your profile settings.
+3. In Chatwoot, go to **Settings → Integrations → Webhooks → Configure → Add new webhook**. Set the URL to
+   `http://<bridge-host>:5000/docsgpt`, subscribe to **Message created**, save, and copy the webhook's secret.
+4. Configure and run the bridge:
+
+   ```bash
+   cd extensions/chatwoot
+   pip install flask requests python-dotenv
+   cp .env_sample .env   # then fill in the values
+   flask --app app run --host 0.0.0.0 --port 5000
+   ```
+
+## Configuration (`.env`)
+
+| Variable | Description |
+| --- | --- |
+| `docsgpt_url` | DocsGPT API base URL, e.g. `http://localhost:7091` or `https://gptcloud.arc53.com`. |
+| `docsgpt_key` | API key of a published DocsGPT agent. Not an LLM provider key. |
+| `chatwoot_url` | Chatwoot base URL, e.g. `https://app.chatwoot.com`. |
+| `chatwoot_token` | Chatwoot profile Access Token, used to post replies. |
+| `chatwoot_webhook_secret` | Secret of the Chatwoot webhook. Requests without a valid signature get `401`. |
+| `account_id` | Optional. Answer only in this Chatwoot account. |
+| `assignee_id` | Optional. Answer only conversations assigned to this Chatwoot agent. |
+
+Add the label `human-requested` to a conversation to stop the bot from replying in it.
+
+The bridge verifies the `X-Chatwoot-Signature` and `X-Chatwoot-Timestamp` headers and rejects deliveries signed more
+than five minutes ago, so keep the bridge host's clock in sync. If DocsGPT or Chatwoot returns an error, the bridge
+logs it and answers the webhook with `502`.
