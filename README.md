@@ -31,37 +31,67 @@
   <br>
 <img src="https://d3dg1063dc54p9.cloudfront.net/videos/demo-26.gif" alt="video-example-of-docs-gpt" width="800" height="480">
 </div>
-<h3 align="left">
-  <strong>Key Features:</strong>
-</h3>
-<ul align="left">
-    <li><strong>🗂️ Wide Format Support:</strong> Reads PDF, DOCX, CSV, XLSX, EPUB, MD, RST, HTML, MDX, JSON, PPTX, images, and audio files such as MP3, WAV, M4A, OGG, and WebM.</li>
-    <li><strong>🎙️ Speech Workflows:</strong> Record voice input into chat, transcribe audio on the backend, and ingest meeting recordings or voice notes as searchable knowledge.</li>
-    <li><strong>🌐 Web & Data Integration:</strong> Ingests from URLs, sitemaps, Reddit, GitHub and web crawlers.</li>
-    <li><strong>✅ Reliable Answers:</strong> Get accurate, hallucination-free responses with source citations viewable in a clean UI.</li>
-    <li><strong>🔑 Streamlined API Keys:</strong>  Generate keys linked to your settings, documents, and models, simplifying chatbot and integration setup.</li>
-    <li><strong>🔗 Actionable Tooling:</strong> Connect to APIs, tools, and other services to enable LLM actions.</li>
-    <li><strong>🧩 Pre-built Integrations:</strong> Use readily available HTML/React chat widgets, search tools, Discord/Telegram bots, and more.</li>
-    <li><strong>🔌 Flexible Deployment:</strong> Works with major LLMs (OpenAI, Google, Anthropic) and local models (Ollama, llama_cpp).</li>
-    <li><strong>🏢 Secure & Scalable:</strong> Run privately and securely with Kubernetes support, designed for enterprise-grade reliability.</li>
-</ul>
+## 🎃 Hacktoberfest 2026
+
+DocsGPT takes part in [Hacktoberfest](https://hacktoberfest.com/) from October 1 to 31, 2026. We give away T-shirts
+for meaningful contributions; the T-shirt design will be revealed later. See [HACKTOBERFEST.md](HACKTOBERFEST.md) for
+how to take part.
+
+## Key Features
+
+**Agents and workflows**
+- [Agents](https://docs.docsgpt.cloud/Agents/basics) with their own prompt, sources, tools and model, including a research mode for
+  multi-step deep research.
+- A visual [workflow builder](https://docs.docsgpt.cloud/Agents/nodes) with agent, condition, state and sandboxed code nodes.
+- [Schedules](https://docs.docsgpt.cloud/Agents/schedules) that run an agent on a cron expression or once at a set time.
+- [Guardrails](https://docs.docsgpt.cloud/Agents/guardrails) that flag, redact or block PII, secrets, prompt injection and ungrounded answers.
+
+**Knowledge**
+- Documents: PDF, DOCX, XLSX, PPTX, legacy Office and OpenDocument files, RTF, CSV, EPUB, Markdown, MDX, RST, HTML,
+  JSON, TXT, images, and audio (MP3, WAV, M4A, OGG, WebM), which is transcribed. Voice input works in the chat too.
+- Remote sources: URLs, sitemaps, a web crawler, GitHub, Reddit, S3 and Linear.
+- [Connectors](https://docs.docsgpt.cloud/Sources/Connectors) for Google Drive, SharePoint and Confluence that keep a source in sync.
+- [GraphRAG](https://docs.docsgpt.cloud/Sources/GraphRAG) knowledge-graph retrieval and [wiki sources](https://docs.docsgpt.cloud/Sources/Wiki-sources) that an agent
+  reads and keeps up to date.
+- Grounded answers with source citations.
+
+**Tools**
+- Built-in tools (web search, webpage reading, Postgres, notes, memory, notifications and more), an
+  [API tool](https://docs.docsgpt.cloud/Tools/api-tool) for any REST API, and an [MCP client](https://docs.docsgpt.cloud/Tools/mcp-tools) for remote MCP servers.
+- [Artifacts and code execution](https://docs.docsgpt.cloud/Tools/artifacts-and-code-execution) in a sandbox: documents, slides, spreadsheets
+  and files made by code.
+- [Remote devices](https://docs.docsgpt.cloud/Tools/remote-device): an agent runs shell commands on a machine paired through `docsgpt-cli`.
+
+**Models**
+- [Cloud providers](https://docs.docsgpt.cloud/Models/cloud-providers): OpenAI, Anthropic, Google, Groq, OpenRouter and Novita.
+- [Local models](https://docs.docsgpt.cloud/Models/local-inference) through any OpenAI-compatible server, such as Ollama, vLLM, llama.cpp,
+  SGLang or TGI, plus [custom models](https://docs.docsgpt.cloud/Models/custom-models) and [fallback models](https://docs.docsgpt.cloud/Models/fallback).
+- Vector stores: FAISS, pgvector, Elasticsearch, Qdrant, Milvus and MongoDB.
+
+**APIs and integrations**
+- An [Agent API](https://docs.docsgpt.cloud/API/agent-api) with agent keys, an [OpenAI-compatible `/v1` API](https://docs.docsgpt.cloud/API/openai-compatible),
+  [webhooks](https://docs.docsgpt.cloud/API/webhooks), [personal access tokens](https://docs.docsgpt.cloud/API/personal-access-tokens), and an
+  [MCP server](https://docs.docsgpt.cloud/API/mcp-server) that exposes your agents to MCP clients.
+- HTML and React [chat](https://docs.docsgpt.cloud/Extensions/chat-widget) and [search](https://docs.docsgpt.cloud/Extensions/search-widget) widgets, and a
+  [Chatwoot](https://docs.docsgpt.cloud/Extensions/Chatwoot-extension) bridge.
+- Community integrations in separate repos: [DocsGPT CLI](https://github.com/arc53/DocsGPT-cli),
+  [Backstage plugin](https://github.com/arc53/docsgpt-backstage-plugin), and bots for
+  [Discord](https://github.com/arc53/discord-docsgpt-extension),
+  [Slack](https://github.com/arc53/slack-bot-docsgpt-extenstion) and
+  [Telegram](https://github.com/arc53/tg-bot-docsgpt-extenstion).
+
+**Enterprise and operations**
+- [OIDC single sign-on and SCIM](https://docs.docsgpt.cloud/Deploying/OIDC-SSO) provisioning, [roles, teams and sharing](https://docs.docsgpt.cloud/Deploying/Access-Control),
+  and [usage quotas](https://docs.docsgpt.cloud/Deploying/Usage-Quotas).
+- An admin dashboard, analytics and logs, and [OpenTelemetry observability](https://docs.docsgpt.cloud/Deploying/Observability).
+- Runs with the installer, [Docker Compose](https://docs.docsgpt.cloud/Deploying/Docker-Deploying), [pip](https://docs.docsgpt.cloud/Deploying/Pip-Install),
+  [Kubernetes](https://docs.docsgpt.cloud/Deploying/Kubernetes-Deploying), or [air-gapped](https://docs.docsgpt.cloud/Deploying/Air-Gapped).
 
 ## Roadmap
-- [x] Agent Workflow Builder with conditional nodes ( February 2026 )
-- [x] Research mode ( March 2026 )
-- [x] SharePoint & Confluence connectors ( March – April 2026 )
-- [x] Postgres migration for user data ( April 2026 )
-- [x] OpenTelemetry observability ( April 2026 )
-- [x] Bring Your Own Model (BYOM) ( April 2026 )
-- [x] Agent scheduling (RedBeat-backed) ( April 2026 )
-- [x] Notifications & conversation search ( May 2026 )
-- [x] Analytics & logs revamp with per-agent attribution ( June 2026 )
-- [x] OIDC / SSO login with SCIM provisioning & groups ( June 2026 )
-- [x] Admin dashboard & role-based access control (RBAC) ( June 2026 )
-- [x] Agent import / export ( June 2026 )
-- [x] Teams with team-scoped sharing & roles ( June 2026 )
 
-You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
+What we are working on next lives on the [DocsGPT roadmap](https://github.com/orgs/arc53/projects/2), and what each
+release shipped is in the [changelog](https://docs.docsgpt.cloud/changelog). Please don't hesitate to contribute or create issues, it helps
+us improve DocsGPT!
 
 ### Production Support / Help for Companies:
 
@@ -70,12 +100,6 @@ We're eager to provide personalized assistance when deploying your DocsGPT to a 
 [Get a Demo :wave:](https://www.docsgpt.cloud/contact)⁠
 
 [Send Email :email:](mailto:support@docsgpt.cloud?subject=DocsGPT%20support%2Fsolutions)
-
-## Join the Lighthouse Program 🌟
-
-Calling all developers and GenAI innovators! The **DocsGPT Lighthouse Program** connects technical leaders actively deploying or extending DocsGPT in real-world scenarios. Collaborate directly with our team to shape the roadmap, access priority support, and build enterprise-ready solutions with exclusive community insights.
-
-[Learn More & Apply →](https://docs.google.com/forms/d/1KAADiJinUJ8EMQyfTXUIGyFbqINNClNR3jBNWq7DgTE)
 
 ## QuickStart
 
@@ -157,17 +181,21 @@ Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information abou
 
 ## Architecture
 
-![Architecture chart](https://github.com/user-attachments/assets/fc6a7841-ddfc-45e6-b5a0-d05fe648cbe2)
+DocsGPT runs as an API, a Celery worker, Postgres for user data, Redis, and a vector store. The
+[architecture guide](https://docs.docsgpt.cloud/Concepts/Architecture) shows how they fit together, how an answer and a document upload flow through them,
+and how each deployment option lays them out.
 
 ## Project Structure
 
-- **docsgpt** - Backend Flask application (the `docsgpt` Python package).
-
-- **Extensions** - Integrations and widgets (e.g., Chatwoot, React widget).
-
-- **Frontend** - Web UI built with [Vite](https://vitejs.dev/) and [React](https://react.dev/).
-
-- **Scripts** - Miscellaneous utility scripts.
+- `docsgpt/`: the backend (the `docsgpt` Python package): the Flask API and its ASGI entrypoint, agents, tools,
+  retrieval, parsers, the Celery worker, and the `docsgpt` command.
+- `application/`: a deprecated import alias for `docsgpt`, kept for one release.
+- `frontend/`: the web UI, built with [Vite](https://vitejs.dev/) and [React](https://react.dev/).
+- `extensions/`: the Chatwoot bridge and the React widget (published to npm as `docsgpt`).
+- `deployment/`: Docker Compose files, Kubernetes manifests, the installer scripts and the sandbox image.
+- `docs/`: the documentation site at [docs.docsgpt.cloud](https://docs.docsgpt.cloud).
+- `tests/`: backend unit and integration tests, and the end-to-end suite.
+- `scripts/`: maintenance and migration scripts.
 
 ## Code Of Conduct
 
