@@ -63,12 +63,22 @@ Where to run the command depends on how DocsGPT is installed. The Docker image h
 
 | Install | Command |
 | --- | --- |
-| Installer, `docsgpt up` or pip | `docsgpt grant-admin <user_id>` |
-| `docsgpt up` Docker stack or standalone Compose (from the stack directory) | `docker compose exec backend python -m docsgpt grant-admin <user_id>` |
+| `docsgpt up --native` or pip | `docsgpt grant-admin <user_id>` |
+| Installer or `docsgpt up` on Docker (the default), or standalone Compose, from the stack directory (`~/.docsgpt/server` by default) | `docker compose exec backend python -m docsgpt grant-admin <user_id>` |
 | Checkout Compose (from the repository root) | `docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec backend python -m docsgpt grant-admin <user_id>` |
 | Kubernetes | `kubectl exec deploy/docsgpt-api -- python -m docsgpt grant-admin <user_id>` |
 
-`grant-admin` is new after 0.21.0. On 0.21.0 and earlier, run `python scripts/grant_admin.py <user_id>` from a source checkout whose `.env` points at the same database, or use `OIDC_ADMIN_GROUPS`.
+On a Docker install, run it inside the backend container as above: the host's `docsgpt` command can't reach the stack's database, which is not published, and its `.env` has no `POSTGRES_URI`.
+
+`grant-admin` is new after 0.21.0; the 0.21.0 image has neither it nor `python -m docsgpt`. On 0.21.0, use `OIDC_ADMIN_GROUPS`, or copy the old script from a checkout of that release (`git checkout 0.21.0`) into the backend container and run it there. From the repository root of that checkout:
+
+```bash
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml cp scripts backend:/tmp/scripts
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec -e PYTHONPATH=/app backend \
+  python /tmp/scripts/grant_admin.py <user_id>
+```
+
+For a `docsgpt up` stack, replace `--env-file .env -f deployment/docker-compose-hub.yaml` with `-f ~/.docsgpt/server/docker-compose.yaml`.
 
 ### Admin via OIDC groups
 

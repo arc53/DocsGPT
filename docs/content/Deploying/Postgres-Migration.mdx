@@ -101,9 +101,9 @@ DocsGPT, so a typo in `POSTGRES_URI` fails instead of creating a new one.
 
 | Install | Command |
 | --- | --- |
-| Installer, `docsgpt up --native` or pip | `docsgpt migrate --no-create` |
+| `docsgpt up --native` or pip | `docsgpt migrate --no-create` |
 | Checkout Compose (from the repository root) | `docker compose --env-file .env -f deployment/<file>.yaml run --rm backend python -m docsgpt migrate --no-create` |
-| `docsgpt up` Docker stack (from its directory, `~/.docsgpt/server` by default) | `docker compose run --rm backend python -m docsgpt migrate --no-create` |
+| Installer or `docsgpt up` on Docker (the default), from the stack directory (`~/.docsgpt/server` by default) | `docker compose run --rm backend python -m docsgpt migrate --no-create`. The host's `docsgpt migrate` can't reach this stack's database. |
 | Kubernetes | The bundled `postgres-init` Job runs `python -m docsgpt.cli migrate --no-create`; see [Kubernetes](/Deploying/Kubernetes-Deploying). |
 | Source checkout | `python scripts/db/init_postgres.py` or `alembic -c docsgpt/alembic.ini upgrade head` |
 
@@ -149,8 +149,10 @@ One-shot, offline, app stopped. The copy runs from a source checkout:
   `indexes/<mongo_id>` directories through the storage layer, rooted at the
   data home. Run the script with the same `DOCSGPT_HOME` (or S3 settings)
   as the app. For the checkout Compose files, which keep indexes in
-  `application/indexes`, that is `DOCSGPT_HOME=$PWD/application`. If the
-  rename misses them, retrieval returns nothing, without an error.
+  `application/indexes`, that is `DOCSGPT_HOME=$PWD/application`, together
+  with `DOCSGPT_ENV_FILE=$PWD/.env` so the checkout's `.env` is still read
+  (`DOCSGPT_HOME` also moves where `.env` is looked up). If the rename misses
+  them, retrieval returns nothing, without an error.
 
 ### Run the copy
 

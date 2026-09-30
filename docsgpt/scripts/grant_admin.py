@@ -18,8 +18,8 @@ installed, run ``python -m docsgpt grant-admin ...``.
 
 Exit codes:
     0 — success
-    1 — bad usage / user not found (without --force)
-    2 — database error
+    1 — user not found (without --force)
+    2 — bad usage (argparse) or database error
 """
 
 from __future__ import annotations
@@ -121,7 +121,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         argv: The arguments after the command name; ``sys.argv[1:]`` when omitted.
 
     Returns:
-        The process exit code: 0 success, 1 bad usage or unknown user, 2 database error.
+        The process exit code: 0 success, 1 unknown user, 2 database error. Bad usage exits 2 through argparse.
     """
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(
