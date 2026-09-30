@@ -7,9 +7,9 @@ maintainer on Telegram.
 ## How it works
 
 ```
-GitHub event ──► .github/workflows/triage.yml ──► relay.py ──► agent webhook ──► DocsGPT Triage
-                  (filters, skips bots and          collects facts,             labels, assigns,
-                   maintainers)                     posts compact JSON          comments, Telegram
+GitHub event ──► triage.yml ──► relay.py ──► docsgpt-cli agents trigger ──► DocsGPT Triage
+                 (filters,       collects facts,  posts each payload to        labels, assigns,
+                  skips bots)    writes payloads  the agent webhook, --wait    comments, Telegram
 DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ──────────────────────┘
 ```
 
@@ -18,7 +18,14 @@ DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ───�
   an issue and when, CI state (including fork runs waiting for approval),
   unresolved CodeRabbit threads, new dependencies and settings, missing
   locales, whether a UI change has a screenshot, and the bot's last review of
-  the PR. Standard library only; tests in `tests/scripts/test_triage_relay.py`.
+  the PR. It writes one payload file per job with its idempotency key; it
+  never sees the webhook secret. Standard library only; tests in
+  `tests/scripts/test_triage_relay.py`.
+- **`docsgpt-cli agents trigger`** (pinned in both workflows as `CLI_VERSION`,
+  checksum-verified) posts each payload with its `Idempotency-Key`, so a
+  redelivered event returns the earlier run instead of running the agent again,
+  and waits for the run: a failed agent run fails the workflow. The agent's
+  answer is not printed, since Actions logs are public.
 - **`agent.yaml`** is the agent: its prompt (the triage rules), model, tools
   and sources. `.github/workflows/triage-agent.yml` applies it with
   `docsgpt-cli agents apply` on every push to `main` that changes it, and
@@ -80,7 +87,13 @@ Maintainers' own issues, comments and PRs, and bots, are skipped.
 - Actions → *Triage* → *Run workflow* with an issue or PR number. A manual run
   always reports to Telegram.
 - Locally, to see the facts without sending anything:
-  `GITHUB_TOKEN=$(gh auth token) python .github/triage/relay.py --pr 2838 --print`
+  `GITHUB_TOKEN=$(gh auth token) python .github/triage/relay.py --pr 2838`
+- To send one by hand (`--out` writes `jobs.tsv` and the payload files):
+
+  ```bash
+  GITHUB_TOKEN=$(gh auth token) python .github/triage/relay.py --pr 2838 --out /tmp/triage
+  cut -f2 /tmp/triage/jobs.tsv | xargs -I{} docsgpt-cli agents trigger -f {} --webhook-url "$URL" --wait
+  ```
 
 ## Correcting it
 

@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CLI_VERSION: v1.6.0
+  CLI_VERSION: v1.6.1
 
 jobs:
   deploy:

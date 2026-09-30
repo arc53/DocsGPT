@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Relay GitHub events to the DocsGPT triage agent.
 
-Collects facts about an issue or pull request from the GitHub API and posts a
-compact JSON payload to the agent's webhook, so the agent spends its tokens on
-judgement instead of on raw event payloads. Standard library only.
+Collects facts about an issue or pull request from the GitHub API and writes a
+compact JSON payload for the agent, so it spends its tokens on judgement instead
+of on raw event payloads. ``docsgpt-cli agents trigger`` then posts each payload
+to the agent's webhook (see .github/workflows/triage.yml). Standard library only.
 
-    python .github/triage/relay.py                 # from a GitHub Actions event
-    python .github/triage/relay.py --issue 2836    # one issue, by hand
-    python .github/triage/relay.py --pr 2838 --print   # print, don't send
+    python .github/triage/relay.py --out DIR       # from a GitHub Actions event
+    python .github/triage/relay.py --issue 2836    # one issue, printed
+    python .github/triage/relay.py --pr 2838 --out DIR
 """
 
 from __future__ import annotations
@@ -700,15 +701,15 @@ def build_payload(
     }
 
 
-def post(url: str, payload: dict[str, Any], key: str) -> dict[str, Any]:
-    """POST the payload to the agent webhook with an idempotency key."""
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "Idempotency-Key": key[:256], "User-Agent": "docsgpt-triage"},
-    )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return json.loads(response.read().decode() or "{}")
+def write_job(out_dir: str, index: int, kind: str, number: int, payload: dict[str, Any], key: str) -> str:
+    """Write one payload file and append its ``key<TAB>path`` line to ``jobs.tsv``."""
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"{index:02d}-{kind}-{number}.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+    with open(os.path.join(out_dir, "jobs.tsv"), "a", encoding="utf-8") as handle:
+        handle.write(f"{key[:256]}\t{path}\n")
+    return path
 
 
 def review_is_due(facts: dict[str, Any], skip: set[str], bot: str) -> Optional[str]:
@@ -761,7 +762,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     target = parser.add_mutually_exclusive_group()
     target.add_argument("--issue", type=int, help="triage this issue")
     target.add_argument("--pr", type=int, help="review this pull request")
-    parser.add_argument("--print", action="store_true", help="print the payload instead of sending it")
+    parser.add_argument("--out", help="write payloads and jobs.tsv here instead of printing them")
     args = parser.parse_args(argv)
 
     repo = os.environ.get("GITHUB_REPOSITORY") or DEFAULT_REPO
@@ -790,19 +791,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 0
 
     manual = bool(args.issue or args.pr or event.get("inputs"))
-    url = os.environ.get("TRIAGE_WEBHOOK_URL")
-    for kind, facts, key, trigger in jobs_for(gh, decision, event, bot, skip, manual):
+    jobs = jobs_for(gh, decision, event, bot, skip, manual)
+    for index, (kind, facts, key, trigger) in enumerate(jobs):
         if manual:
             trigger = {**trigger, "manual": True}
             key += f"-manual-{now_utc():%Y%m%d%H%M%S}"
         payload = build_payload(kind, facts, gh, mode, bot, trigger)
         size = len(json.dumps(payload))
-        if args.print or not url:
+        if args.out:
+            write_job(args.out, index, kind, facts["number"], payload, key)
+            print(f"{kind} #{facts['number']} ({mode}, {size} chars) ready, key {key}")
+        else:
             print(json.dumps(payload, indent=2, ensure_ascii=False))
-            print(f"[{kind} #{facts['number']}: {size} chars, key {key}, not sent]", file=sys.stderr)
-            continue
-        result = post(url, payload, key)
-        print(f"{kind} #{facts['number']} ({mode}, {size} chars) -> task {result.get('task_id')}")
+            print(f"[{kind} #{facts['number']}: {size} chars, key {key}]", file=sys.stderr)
+    if not jobs:
+        print("Nothing to send")
     return 0
 
 

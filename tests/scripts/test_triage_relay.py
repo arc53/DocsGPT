@@ -1,6 +1,7 @@
 """Tests for the triage relay (.github/triage/relay.py): event routing and fact extraction."""
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -294,3 +295,16 @@ class TestReviewIsDue:
     def test_maintainer_pr_is_skipped(self):
         facts = self._facts(author={"association": "MEMBER", "login": "dartpain"})
         assert relay.review_is_due(facts, SKIP, BOT) is not None
+
+
+class TestWriteJob:
+    def test_writes_payload_and_job_line(self, tmp_path):
+        out = tmp_path / "triage"
+        first = relay.write_job(str(out), 0, "pr_review", 12, {"kind": "pr_review", "title": "Ünïcode"}, "pr-12-abc")
+        relay.write_job(str(out), 1, "pr_review", 13, {"kind": "pr_review"}, "k" * 300)
+        assert json.loads(Path(first).read_text(encoding="utf-8")) == {"kind": "pr_review", "title": "Ünïcode"}
+        lines = (out / "jobs.tsv").read_text(encoding="utf-8").splitlines()
+        assert lines[0] == f"pr-12-abc\t{first}"
+        key, path = lines[1].split("\t")
+        assert len(key) == 256
+        assert path.endswith("01-pr_review-13.json")
