@@ -36,7 +36,7 @@ An agent with no sources returns an empty list. Each search is recorded as a tra
 
 - **An agent API key.** Publish an agent with the sources you want to search and copy its key from **Access Details**. See [Agent API keys](/Extensions/api-key-guide). Anyone holding the key can search those sources.
 - **The ASGI server.** `/mcp` is served by the ASGI app (`uvicorn` or `gunicorn` with `docsgpt.asgi:asgi_app`, which every install uses by default). Under `flask run` it returns `404`. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
-- **A running worker.** The API embeds each query through the Celery worker, so without one every search fails after `EMBEDDINGS_DELEGATE_TIMEOUT`. To search without a worker, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` or point `EMBEDDINGS_BASE_URL` at an embeddings service.
+- **A running worker.** The API embeds each query through the Celery worker. Without one, every search waits `EMBEDDINGS_DELEGATE_TIMEOUT` and then returns an empty list, with no error; the failure is only in the API log. To search without a worker, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` or point `EMBEDDINGS_BASE_URL` at an embeddings service.
 
 The server doesn't check the key when a client connects: the connection and the tool list work without one. A missing or wrong key shows up when the tool runs, as a tool error that reads `Missing Bearer token` or `Invalid API key`.
 

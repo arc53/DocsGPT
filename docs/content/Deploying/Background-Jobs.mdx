@@ -34,7 +34,7 @@ Beat schedules these tasks. Each runs on the worker, so the worker must also be 
 | `schedule-syncs-weekly` | week | The same for **Weekly** sources. | The source's **Sync** setting. |
 | `schedule-syncs-monthly` | 30 days | The same for **Monthly** sources. | The source's **Sync** setting. |
 | `dispatch-scheduled-runs` | 30 s | Queues [scheduled agent runs](/Agents/schedules) that are due. | `SCHEDULE_DISPATCHER_INTERVAL` (`30`, minimum 15 s). |
-| `cleanup-schedule-runs` | day | Deletes scheduled-run records and their output older than the retention window. | `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS` (`90`). |
+| `cleanup-schedule-runs` | day | Deletes scheduled-run records and their output older than the retention window, keeping the 50 most recent runs of each schedule. | `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS` (`90`). |
 | `reconciliation` | 30 s | Marks stuck work as failed and logs an alert: answers that stopped streaming, tool calls left mid-way, stalled ingests, stuck idempotency claims and scheduled runs. | None. |
 | `cleanup-pending-tool-state` | 60 s | Deletes paused conversations waiting for a tool approval or a client-side tool result once they expire (30 minutes), and clears their approval prompts. | None. |
 | `cleanup-idempotency-dedup` | hour | Deletes idempotency keys for uploads, tasks and webhooks older than 24 hours. | None. |

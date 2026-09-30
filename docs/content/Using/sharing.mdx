@@ -26,9 +26,9 @@ A promptable link doesn't reuse the agent you chatted with. DocsGPT creates a pu
 
 - the source you chose in the dialog,
 - your active prompt, from **Settings → General**, and
-- your chunks-per-query setting.
+- 6 chunks per query (the default; the web app has no setting to change it).
 
-If you already own an agent with an API key and exactly the same prompt, source and chunk settings, DocsGPT uses that agent's key instead of creating a new one. Later links with the same settings share that agent too.
+If you already own an agent with an API key, exactly the same prompt, source and chunk settings, and no retriever set, DocsGPT uses that agent's key instead of creating a new one. Later links with the same settings share that agent too.
 
 Questions asked on the page go through that agent's key. They are not saved as conversations, but their tokens are recorded against the agent, count toward your [usage quota](/Deploying/Usage-Quotas), and are subject to the agent's own **Token limiting** and **Request limiting**. The `(shared)` agent appears in your agent list, where you can edit it like any other agent.
 

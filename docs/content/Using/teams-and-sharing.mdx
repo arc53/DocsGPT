@@ -14,7 +14,7 @@ Teams are useful on an instance where each person signs in with their own accoun
 ## Create a team
 
 1. Open **Settings → Teams**, or open the team switcher at the top of the sidebar and choose **Create team**.
-2. Choose **New team**, enter a name and an optional description, then choose **Create**.
+2. Choose **New team**, enter a **Team name**, then choose **Create**. To add a description, open the team and choose **Edit**.
 
 You are the team's owner and one of its admins.
 
@@ -37,7 +37,7 @@ Admins change a member's role from the drop-down next to their name and remove t
 
 ## Switch teams
 
-The name at the top of the sidebar is the team switcher. It lists **Personal account** and your teams, with **Manage team** and **Create team**. Switching changes only the header and which team **Manage team** opens. It doesn't filter your agents, sources or chats: you always see everything you own plus everything shared with you.
+The name at the top of the sidebar is the team switcher. It lists your teams and **Create team**; while a team is selected it also shows **Manage team** and **Personal account**, to switch back. Switching changes only the header and which team **Manage team** opens. It doesn't filter your agents, sources or chats: you always see everything you own plus everything shared with you.
 
 ## Share with a team or a teammate
 
@@ -53,10 +53,15 @@ The name at the top of the sidebar is the team switcher. It lists **Personal acc
 | --- | --- | --- |
 | Agent | Chat with it and pin it | Edit it, publish it, see logs and manage schedules |
 | Source | Browse, search and use it in their agents | Edit chunks and files, sync, change settings |
-| Tool | Use it inside the owner's agents | Change actions and approvals |
-| Prompt | Read it and use it in their agents | Change the text |
+| Tool | Use it inside the owner's agents and, by default, in their own agents | Change actions and approvals, and by default its credentials |
+| Prompt | Read it, use it in their agents and, by default, duplicate it | Change the text |
 
-As the owner, you can widen this under **Access settings** in the same dialog, for example **Editors can share**, **Editors can delete**, **Viewers can see logs** or **Viewers can use it in their own agents**. By default, only the owner shares or deletes.
+As the owner, you can change this under **Access settings** in the same dialog. Some switches are off by default and widen access, such as **Editors can share**, **Editors can delete** and **Viewers can see logs**; by default, only the owner shares or deletes. Others are on by default and narrow access when you turn them off:
+
+- agents: **Editors can manage access details**,
+- sources: **Viewers can see settings**,
+- tools: **Editors can change credentials and connection** and **Viewers can use it in their own agents**,
+- prompts: **Viewers can duplicate**.
 
 Sharing an agent doesn't share the tools, sources and prompt it uses; people reach them only through the agent, with the access the dialog lists under **What this agent uses**. Shared tools run with the owner's saved credentials, and nobody you share with can read them. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
 

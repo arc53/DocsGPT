@@ -37,14 +37,14 @@ Operators who want a model available to everyone configure it on the server inst
 
 4. Click **Test connection**, then **Save**.
 
-**Test connection** sends a one-token request (`hi`) to the endpoint with the values currently in the form, before anything is saved, and shows **Connection successful.** or the provider's error. It times out after 5 seconds and doesn't follow redirects. When you edit a saved model, leave **API key** blank to test (and keep) the stored key.
+**Test connection** sends a tiny request (`hi`, with a 1-token limit, or 16 for the Responses protocol) to the endpoint with the values currently in the form, before anything is saved, and shows **Connection successful.** or the provider's error. It times out after 5 seconds and doesn't follow redirects. When you edit a saved model, leave **API key** blank to test (and keep) the stored key.
 
 ## Where the model appears
 
-Enabled custom models are listed under **My Models** in:
+Enabled custom models are listed next to the operator's models in:
 
 - the model picker when you start a chat without an agent,
-- the model selector in the agent builder and in workflow **AI Agent** nodes,
+- the model selector in the agent builder and in workflow **AI Agent** nodes, where they are grouped under **My Models**,
 - the model lists in a source's settings (the GraphRAG extraction model, for example).
 
 An agent that uses your custom model keeps using it for everyone who can run the agent: team members you share it with and [agent API key](/Extensions/api-key-guide) callers. Their requests go to your endpoint with your key. If you delete the model, or its key can no longer be decrypted, the agent falls back to the instance's default model.
@@ -69,7 +69,7 @@ The same operations are available over the API. With a [personal access token](/
 
 | Method and path | Does |
 | --- | --- |
-| `GET /api/models` | Lists every model available to the caller, including their custom models (`"source": "user"`). |
+| `GET /api/models` | Lists every model available to the caller, including their custom models (`"source": "user"`). A token with `chat:run` can call it too. |
 | `GET /api/user/models` | Lists the caller's custom models. |
 | `POST /api/user/models` | Adds a model. |
 | `GET`, `PATCH`, `DELETE /api/user/models/<id>` | Reads, updates or deletes one model. In a `PATCH`, a missing or empty `api_key` keeps the stored key. |
@@ -95,7 +95,7 @@ curl -X POST https://your-docsgpt/api/user/models \
   }'
 ```
 
-The response is the saved model without its key. Its `id` is what an agent's `default_model_id` stores. The test endpoints answer `200` with `{"ok": true}` or `{"ok": false, "error": "..."}`, and `400` when the base URL is refused.
+The response is the saved model without its key. Its `id` is what an agent's `default_model_id` stores. The test endpoints answer `200` with `{"ok": true}` or `{"ok": false, "error": "..."}`, and `400` when the base URL is refused, the capabilities are invalid, or a saved model's stored key can't be decrypted.
 
 <Callout type="info">
 There is no setting that turns Custom Models off: every signed-in user can add models.
