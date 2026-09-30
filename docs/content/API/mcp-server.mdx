@@ -1,6 +1,6 @@
 ---
 title: MCP Server
-description: Connect Claude Code, Claude Desktop, Cursor or any MCP client to DocsGPT's own MCP server at /mcp/ and search an agent's sources with the search_docs tool, authenticated with the agent's API key.
+description: Connect Claude Code, Claude Desktop, Cursor or any MCP client to DocsGPT's own MCP server at /mcp and search an agent's sources with the search_docs tool, authenticated with the agent's API key.
 ---
 
 import { Callout } from 'nextra/components'
@@ -15,7 +15,7 @@ This is the opposite direction from [MCP tools](/Guides/Integrations/mcp-tool-in
 
 | | |
 | --- | --- |
-| **URL** | `<API address>/mcp/`, for example `http://localhost:7091/mcp/`. Keep the trailing slash. |
+| **URL** | `<API address>/mcp`, for example `http://localhost:7091/mcp`. `/mcp/` works too. |
 | **Transport** | Streamable HTTP |
 | **Authentication** | `Authorization: Bearer <agent API key>` |
 | **Tool** | `search_docs(query: string, chunks: integer = 5)` |
@@ -29,13 +29,13 @@ This is the opposite direction from [MCP tools](/Guides/Integrations/mcp-tool-in
 An agent with no sources returns an empty list. Each search is recorded as a trace for the agent's owner, like a call to the [Search API](/Agents/api#search-api).
 
 <Callout type="warning">
-  Use the API's address, port `7091` by default, not the address of a separate frontend container. `/mcp` without the trailing slash is not the MCP server: a `POST` returns `404` and a `GET` returns the web app.
+  Use the API's address, port `7091` by default, not the address of a separate frontend container. Releases up to 0.21 answer only at `/mcp/`, with the trailing slash: on those, a request to `/mcp` never reaches the MCP server (a `POST` returns `404`).
 </Callout>
 
 ## Before you start
 
 - **An agent API key.** Publish an agent with the sources you want to search and copy its key from **Access Details**. See [Agent API keys](/Extensions/api-key-guide). Anyone holding the key can search those sources.
-- **The ASGI server.** `/mcp/` is served by the ASGI app (`uvicorn` or `gunicorn` with `docsgpt.asgi:asgi_app`, which every install uses by default). Under `flask run` it returns `404`. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
+- **The ASGI server.** `/mcp` is served by the ASGI app (`uvicorn` or `gunicorn` with `docsgpt.asgi:asgi_app`, which every install uses by default). Under `flask run` it returns `404`. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
 - **A running worker.** The API embeds each query through the Celery worker, so without one every search fails after `EMBEDDINGS_DELEGATE_TIMEOUT`. To search without a worker, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` or point `EMBEDDINGS_BASE_URL` at an embeddings service.
 
 The server doesn't check the key when a client connects: the connection and the tool list work without one. A missing or wrong key shows up when the tool runs, as a tool error that reads `Missing Bearer token` or `Invalid API key`.
@@ -47,7 +47,7 @@ In the examples, replace `http://localhost:7091` with your API address and `YOUR
 ### Claude Code
 
 ```bash
-claude mcp add --transport http docsgpt http://localhost:7091/mcp/ \
+claude mcp add --transport http docsgpt http://localhost:7091/mcp \
   --header "Authorization: Bearer YOUR_AGENT_API_KEY"
 ```
 
@@ -59,7 +59,7 @@ Add the server to `~/.cursor/mcp.json`, or to `.cursor/mcp.json` in a project:
 {
   "mcpServers": {
     "docsgpt": {
-      "url": "http://localhost:7091/mcp/",
+      "url": "http://localhost:7091/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_AGENT_API_KEY"
       }
@@ -80,7 +80,7 @@ Claude Desktop's configuration file starts local (stdio) servers, so bridge to t
       "args": [
         "-y",
         "mcp-remote",
-        "http://localhost:7091/mcp/",
+        "http://localhost:7091/mcp",
         "--header",
         "Authorization:${DOCSGPT_AUTH}"
       ],
@@ -105,7 +105,7 @@ from fastmcp import Client
 
 
 async def main():
-    async with Client("http://localhost:7091/mcp/", auth="YOUR_AGENT_API_KEY") as client:
+    async with Client("http://localhost:7091/mcp", auth="YOUR_AGENT_API_KEY") as client:
         result = await client.call_tool("search_docs", {"query": "How do I install DocsGPT?", "chunks": 3})
         for hit in result.data:
             print(hit["title"], hit["source"])
@@ -117,7 +117,7 @@ asyncio.run(main())
 To check the endpoint with `curl`, send an `initialize` request. A working server answers with an event stream and an `mcp-session-id` header:
 
 ```bash
-curl -i http://localhost:7091/mcp/ \
+curl -i http://localhost:7091/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
