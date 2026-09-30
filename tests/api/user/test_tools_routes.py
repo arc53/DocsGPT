@@ -516,6 +516,24 @@ class TestCreateTool:
 
         assert response.status_code == 401
 
+    def test_an_mcp_tool_on_a_blocked_address_says_why(self, app):
+        from docsgpt.api.user.tools.routes import CreateTool
+        from docsgpt.core.url_validation import SSRFError
+
+        body = {
+            "name": "mcp_tool", "displayName": "MCP", "description": "d", "status": True,
+            "config": {"server_url": "http://10.0.0.5"},
+        }
+        with patch("docsgpt.api.user.tools.routes.validate_url", side_effect=SSRFError("private range")):
+            with app.test_request_context("/api/create_tool", method="POST", json=body):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreateTool().post()
+
+        assert response.status_code == 400
+        assert response.json["message"] == "Invalid server URL: private range"
+
     def test_returns_400_missing_fields(self, app):
         from docsgpt.api.user.tools.routes import CreateTool
 
