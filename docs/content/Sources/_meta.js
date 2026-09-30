@@ -1,4 +1,8 @@
 export default {
+  "adding-knowledge": {
+    "title": "📥 Add Knowledge",
+    "href": "/Sources/adding-knowledge"
+  },
   "Connectors": {
     "title": "🔌 Synced Sources (Connectors)",
     "href": "/Guides/Connectors"
