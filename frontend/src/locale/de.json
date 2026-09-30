@@ -2486,6 +2486,11 @@
         "timezoneEmpty": "Keine Zeitzone gefunden.",
         "instructionsLabel": "Anweisungen",
         "instructionsPlaceholder": "Prompt hier eingeben.",
+        "approvalTools": {
+          "label": "Tools, die eine Freigabe brauchen",
+          "hint": "Während einer geplanten Ausführung kann niemand freigeben. Aktionen, die eine Freigabe brauchen, werden deshalb abgelehnt, außer du hakst ihr Tool hier an. Andere Aktionen laufen in jedem Fall.",
+          "warning": "Bei einem angehakten Tool laufen Aktionen, die eine Freigabe brauchen, bei jeder Ausführung dieses Zeitplans ohne Nachfrage."
+        },
         "create": "Aufgabe erstellen",
         "save": "Änderungen speichern",
         "errors": {
