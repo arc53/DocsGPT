@@ -3746,7 +3746,7 @@
     },
     "/api/import_agent": {
       "post": {
-        "description": "Import an agent from YAML (created as a draft)",
+        "description": "Import an agent from YAML: create a draft, or update the agent matched by id or slug",
         "operationId": "post_import_agent",
         "responses": {
           "200": {
