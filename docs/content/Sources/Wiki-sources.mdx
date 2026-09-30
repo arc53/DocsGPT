@@ -47,7 +47,7 @@ Each wiki page is capped at 1 MB (1,000,000 bytes). Pages are addressed by path 
 
 ## Creating a wiki
 
-In the UI, choose **New wiki source** when adding a source. From the API:
+In the UI, open **Settings → Knowledge**, choose **Add knowledge**, then **New wiki**. From the API:
 
 ```bash
 curl -X POST https://your-docsgpt/api/sources/wiki \
@@ -94,7 +94,7 @@ Human edits are stamped with `human` provenance and trigger the same re-embed as
 
 An agent called with its API key (the website widget, the API) runs as its owner, so it could change any wiki the owner can edit. By default it can't: API and widget users can still read the wiki through the agent, but the agent isn't offered the create, edit, delete or rename actions in those chats, and the Wiki tool refuses them if it's asked anyway.
 
-The wiki's owner can allow such edits. On the **Sources** page, open the wiki's menu, choose **Wiki settings**, and turn on **Let API and widget users edit this wiki**. The change applies from the next message, including in chats that are already open. Only the owner sees it; team editors can't change it. You and the wiki's editors can always edit it in DocsGPT, and so can agents you or they use there.
+The wiki's owner can allow such edits. On **Settings → Knowledge**, open the wiki's menu, choose **Wiki settings**, and turn on **Let API and widget users edit this wiki**. The change applies from the next message, including in chats that are already open. Only the owner sees it; team editors can't change it. You and the wiki's editors can always edit it in DocsGPT, and so can agents you or they use there.
 
 The switch doesn't cover public links. People who open an agent from its public link run it as themselves, so they can only edit wikis they could edit anyway (their own, or ones shared with them as an editor). Because the agent's prompt and sources belong to someone else, each of their wiki edits waits for their approval in the chat before it runs. A research agent can't stop to ask, so in a public-link chat it reads the wiki but doesn't edit it.
 
