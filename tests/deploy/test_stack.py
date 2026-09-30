@@ -210,3 +210,9 @@ class TestLocations:
         packaged.write_text("name: docsgpt\n")
         monkeypatch.setattr(paths, "package_dir", lambda: tmp_path / "docsgpt")
         assert stack.compose_source() == packaged
+
+
+def test_the_default_encryption_key_matches_the_one_credentials_fall_back_to():
+    from docsgpt.security.encryption import DEFAULT_ENCRYPTION_KEY
+
+    assert stack.DEFAULT_ENCRYPTION_KEY == DEFAULT_ENCRYPTION_KEY

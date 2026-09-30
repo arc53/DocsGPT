@@ -25,6 +25,10 @@ PROVIDERS = {
     "openai-compatible": "OpenAI-compatible server (Ollama, vLLM, LM Studio, ...)",
 }
 
+# The public key credentials are sealed with when ENCRYPTION_SECRET_KEY is unset. Kept here
+# rather than imported: docsgpt.security.encryption loads the settings of whatever runs this.
+DEFAULT_ENCRYPTION_KEY = "default-docsgpt-encryption-key"
+
 _LOCAL_BINDS = ("", "127.0.0.1", "localhost", "::1")
 _ALL_INTERFACES = ("0.0.0.0", "::")
 

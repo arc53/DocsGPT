@@ -420,8 +420,13 @@ def _native_up(args, context: Context, directory: Path) -> int:
             updates[key] = secrets.token_hex(32)
     # Only a first install gets its own encryption key: credentials a configured one already
     # stored are sealed with the key it ran with, and a new key would make them unreadable.
-    if not configured and not existing.get("ENCRYPTION_SECRET_KEY"):
+    # The database is not ours, though, and may hold credentials sealed with the public
+    # default, so that stays readable as the previous key.
+    generated_encryption_key = not configured and not existing.get("ENCRYPTION_SECRET_KEY")
+    if generated_encryption_key:
         updates["ENCRYPTION_SECRET_KEY"] = secrets.token_hex(32)
+        if not existing.get("ENCRYPTION_SECRET_KEY_PREVIOUS"):
+            updates["ENCRYPTION_SECRET_KEY_PREVIOUS"] = stack.DEFAULT_ENCRYPTION_KEY
     if "VITE_API_STREAMING" not in existing:
         updates["VITE_API_STREAMING"] = "true"
     provider = _choose_provider(args, context, existing, ask)
@@ -465,6 +470,13 @@ def _native_up(args, context: Context, directory: Path) -> int:
         return 1
 
     print(f"\nDocsGPT is running at http://localhost:{port}")
+    if generated_encryption_key:
+        print(
+            "Generated ENCRYPTION_SECRET_KEY. ENCRYPTION_SECRET_KEY_PREVIOUS keeps credentials this database "
+            "already stored under the public default readable; reseal its connections with "
+            f"`DOCSGPT_HOME={directory} docsgpt connectors reencrypt`, and keep the previous key while tools "
+            "or custom models saved before still use it."
+        )
     print(f"Services: {', '.join(names)} under {services.name}")
     print(f"Settings: {env_path}")
     print("Manage it with: docsgpt status | logs | down | uninstall")

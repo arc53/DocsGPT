@@ -73,6 +73,8 @@ class TestNativeUp:
         assert env["CACHE_REDIS_URL"] == "redis://localhost:6379/2"
         assert env["INTERNAL_KEY"], "the worker needs it to hand indexes to the API"
         assert env["ENCRYPTION_SECRET_KEY"], "a first install seals credentials with its own key"
+        # The database may already hold credentials sealed with the public default.
+        assert env["ENCRYPTION_SECRET_KEY_PREVIOUS"] == "default-docsgpt-encryption-key"
         assert env["API_URL"] == "http://127.0.0.1:7091"
         assert "DOCSGPT_IMAGE_TAG" not in env, "nothing here runs an image"
 
@@ -154,7 +156,21 @@ class TestNativeUp:
         envfile.update(tmp_path / ".env", {"ENCRYPTION_SECRET_KEY": "mine"})
         argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
         assert _run(argv, _native_context()) == 0
-        assert envfile.read(tmp_path / ".env")["ENCRYPTION_SECRET_KEY"] == "mine"
+        env = envfile.read(tmp_path / ".env")
+        assert env["ENCRYPTION_SECRET_KEY"] == "mine"
+        assert "ENCRYPTION_SECRET_KEY_PREVIOUS" not in env
+
+    def test_a_generated_key_says_how_to_reseal_existing_credentials(self, tmp_path, capsys):
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        out = capsys.readouterr()
+        assert "docsgpt connectors reencrypt" in out.out + out.err
+
+    def test_a_previous_key_already_set_is_not_overwritten(self, tmp_path):
+        envfile.update(tmp_path / ".env", {"ENCRYPTION_SECRET_KEY_PREVIOUS": "older"})
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        assert envfile.read(tmp_path / ".env")["ENCRYPTION_SECRET_KEY_PREVIOUS"] == "older"
 
     def test_it_refuses_to_run_beside_a_docker_install(self, tmp_path):
         """Native services on the same port would orphan the containers from down/status/uninstall."""
