@@ -45,7 +45,7 @@ docker save -o docsgpt-images.tar \
   arc53/docsgpt:$TAG redis:6-alpine postgres:16-alpine
 ```
 
-The backend image serves the web UI too, so the standalone stack needs no frontend image. Add `arc53/docsgpt-fe:$TAG` only if you run the checkout Compose files or Kubernetes, which use it.
+The backend image serves the web UI too, so the standalone stack needs no frontend image. Add `arc53/docsgpt-fe:$TAG` only if you run the checkout Compose files, which use it.
 
 Copy `docsgpt-images.tar` and the [standalone Compose file](/Deploying/Docker-Deploying#quickest-setup-pre-built-images-no-checkout) into the air-gapped network, then load the images (or push them to your internal registry):
 
@@ -56,6 +56,26 @@ docker load -i docsgpt-images.tar
 Set `DOCSGPT_IMAGE_TAG` to the same tag when you start the stack. Bring your model server's image and weights in the same way, following its own documentation.
 
 To use an embedding model other than the two defaults, build your own backend image with it baked in: `docker build -f docsgpt/Dockerfile --build-arg EMBEDDINGS_PREFETCH=<model> .`
+
+### Kubernetes
+
+The [Kubernetes manifests](/Deploying/Kubernetes-Deploying) pin every image. The default stack uses:
+
+```text
+arc53/docsgpt:0.21.0
+pgvector/pgvector:0.8.6-pg16
+redis:7.4-alpine
+```
+
+The opt-in manifests add `arc53/docsgpt-sandbox:0.21.0` (code-execution sandbox), `qdrant/qdrant:v1.19.1` and `mongo:8.0`. Check the `image:` lines in `deployment/k8s` for the release you deploy, since they change with it. Push the images to your internal registry and point the manifests at it, either by editing the `image:` lines or with an `images:` entry in `kustomization.yaml`:
+
+```yaml
+images:
+  - name: arc53/docsgpt
+    newName: registry.internal/arc53/docsgpt
+```
+
+The default stack stores uploads in an S3-compatible bucket, so run one inside the network (MinIO, Ceph RGW, or similar) or use the [shared-volume option](/Deploying/Kubernetes-Deploying#alternative-a-shared-volume).
 
 ### pip
 
