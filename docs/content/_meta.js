@@ -3,13 +3,17 @@ export default {
   "quickstart": "Quickstart",
   "Concepts": "Concepts",
   "Using": "Using DocsGPT",
-  "upgrading": "Upgrading",
-  "Deploying": "Deploying",
-  "Models": "Models",
-  "Sources": "Sources",
-  "Tools": "Tools",
   "Agents": "Agents",
-  "Extensions": "Extensions",
+  "Sources": "Knowledge",
+  "Tools": "Tools",
+  "Models": "Models",
   "API": "API",
+  "Extensions": "Widgets & Integrations",
+  "Deploying": "Deploy & Operate",
+  "-- releases": {
+    "type": "separator",
+    "title": "Releases"
+  },
+  "upgrading": "Upgrading",
   "changelog": "Changelog"
 }
