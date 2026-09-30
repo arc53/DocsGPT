@@ -106,6 +106,24 @@ class TestCreateWikiSource:
         mock_ingest.assert_not_called()
         mock_reingest.assert_not_called()
 
+    def test_new_wiki_gets_the_same_config_as_a_converted_one(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import CreateWikiSource
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.source_config import SourceConfig
+
+        user = "u-wiki-exposure"
+        with _patch_db(pg_conn), app.test_request_context(
+            "/api/sources/wiki", method="POST", json={"name": "Handbook"}
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = CreateWikiSource().post()
+
+        assert response.status_code == 200
+        row = SourcesRepository(pg_conn).get_any(response.json["source_id"], user)
+        assert row["config"]["retrieval"]["exposure"] == "agentic_tool"
+        assert row["config"] == SourceConfig().wiki_enabled()
+
     def test_seed_page_roundtrips_and_only_seed_reembeds(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import (
             CreateWikiSource,
