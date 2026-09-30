@@ -76,6 +76,7 @@ class TestNativeUp:
         # The database may already hold credentials sealed with the public default.
         assert env["ENCRYPTION_SECRET_KEY_PREVIOUS"] == "default-docsgpt-encryption-key"
         assert env["API_URL"] == "http://127.0.0.1:7091"
+        assert env["WORKER_API_URL"] == "http://127.0.0.1:7091", "the worker's internal calls stay on loopback"
         assert "DOCSGPT_IMAGE_TAG" not in env, "nothing here runs an image"
 
     def test_records_the_mode_so_the_other_commands_can_tell(self, tmp_path):
@@ -149,7 +150,16 @@ class TestNativeUp:
         assert _run(argv, _native_context()) == 0
         envfile.update(tmp_path / ".env", {"API_URL": "https://docs.example.com"})
         assert _run(["up", "--dir", str(tmp_path), "--yes", "--port", "7099"], _native_context()) == 0
-        assert envfile.read(tmp_path / ".env")["API_URL"] == "https://docs.example.com"
+        env = envfile.read(tmp_path / ".env")
+        assert env["API_URL"] == "https://docs.example.com"
+        assert env["WORKER_API_URL"] == "http://127.0.0.1:7099", "the worker must not go out through the proxy"
+
+    def test_a_worker_api_url_the_operator_set_is_kept(self, tmp_path):
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        envfile.update(tmp_path / ".env", {"WORKER_API_URL": "http://10.0.0.2:7091"})
+        assert _run(["up", "--dir", str(tmp_path), "--yes"], _native_context()) == 0
+        assert envfile.read(tmp_path / ".env")["WORKER_API_URL"] == "http://10.0.0.2:7091"
 
     def test_a_configured_install_gets_no_new_encryption_key(self, tmp_path):
         """Credentials it already stored are sealed with the key it ran with, so a new one would lock them out."""

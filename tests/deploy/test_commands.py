@@ -225,6 +225,25 @@ class TestUpAgain:
             assert after[key] == before[key]
         assert context.prompter.questions == [], "a configured install is not asked again"
 
+    def test_the_api_url_it_wrote_is_recorded_and_follows_the_lan_address(self, tmp_path):
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "network"], _context()) == 0
+        record = json.loads((tmp_path / "install.json").read_text())
+        assert record["api_url"] == "http://192.168.1.10:7091"
+
+        context = _context(docker=FakeDocker(volumes={"docsgpt_postgres_data"}))
+        context.lan_ip = lambda: "192.168.1.77"
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], context) == 0
+        assert envfile.read(tmp_path / ".env")["API_URL"] == "http://192.168.1.77:7091"
+        assert json.loads((tmp_path / "install.json").read_text())["api_url"] == "http://192.168.1.77:7091"
+
+    def test_an_operator_api_url_is_not_recorded_as_its_own(self, tmp_path):
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "network"], _context()) == 0
+        envfile.update(tmp_path / ".env", {"API_URL": "https://proxy.example.com"})
+        context = _context(docker=FakeDocker(volumes={"docsgpt_postgres_data"}))
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], context) == 0
+        assert envfile.read(tmp_path / ".env")["API_URL"] == "https://proxy.example.com"
+        assert json.loads((tmp_path / "install.json").read_text())["api_url"] == "http://192.168.1.10:7091"
+
     def test_leaving_the_domain_removes_caddy_before_starting(self, tmp_path):
         """With the https profile off, `up --remove-orphans` alone would leave Caddy on ports 80 and 443."""
         assert _run(["up", "--yes", "--dir", str(tmp_path), "--domain", "docs.example.com"], _context()) == 0

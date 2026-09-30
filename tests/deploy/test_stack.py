@@ -177,6 +177,35 @@ class TestPublicApiUrl:
         updates = stack.plan({"DOCSGPT_BIND": "0.0.0.0"}, image_tag="x", fresh_database=False, lan_ip="10.0.0.5")
         assert updates["API_URL"] == "http://10.0.0.5:7091"
 
+    @pytest.mark.parametrize("expose, domain", [("network", None), ("domain", "docs.example.com")])
+    def test_the_default_value_is_replaced(self, expose, domain):
+        """http://localhost:7091 in .env is what the app uses anyway, so it is no operator choice."""
+        existing = {"API_URL": "http://localhost:7091"}
+        updates = stack.plan(
+            existing, image_tag="x", fresh_database=False, expose=expose, domain=domain, lan_ip="10.0.0.5"
+        )
+        assert updates["API_URL"] == stack.url({**existing, **updates}, "10.0.0.5")
+
+    def test_a_value_it_wrote_follows_a_new_lan_address(self):
+        """The machine moved from 10.0.0.5 to 10.0.0.9: the recorded value is still its own."""
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        updates = stack.plan(
+            existing, image_tag="x", fresh_database=False, lan_ip="10.0.0.9", written_api_url="http://10.0.0.5:7091"
+        )
+        assert updates["API_URL"] == "http://10.0.0.9:7091"
+
+    def test_without_a_record_a_stale_address_is_left_alone(self):
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        assert "API_URL" not in stack.plan(existing, image_tag="x", fresh_database=False, lan_ip="10.0.0.9")
+
+    def test_owns_api_url(self):
+        env = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://10.0.0.5:7091"}
+        assert stack.owns_api_url(env, None, "10.0.0.5")
+        assert stack.owns_api_url(env, "http://10.0.0.5:7091", "10.0.0.9")
+        assert not stack.owns_api_url(env, None, "10.0.0.9")
+        assert not stack.owns_api_url({"API_URL": "https://proxy.example.com"}, "http://10.0.0.5:7091", "10.0.0.5")
+        assert stack.owns_api_url({}, None, "10.0.0.5")
+
     def test_the_worker_keeps_its_in_stack_url(self):
         """Compose's `environment:` wins over env_file, so the worker still reaches the backend directly."""
         compose = yaml.safe_load(stack.compose_source().read_text())

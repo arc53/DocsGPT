@@ -111,6 +111,7 @@ def plan(
     docling: Optional[bool] = None,
     secret: Optional[Callable[[], str]] = None,
     lan_ip: Optional[str] = None,
+    written_api_url: Optional[str] = None,
 ) -> dict[str, Optional[str]]:
     """The ``.env`` changes for an ``up``: only keys that change, ``None`` for a key to remove.
 
@@ -121,8 +122,9 @@ def plan(
     sealed with the key it ran with.
 
     Given ``lan_ip``, ``API_URL`` follows the address DocsGPT is opened at (see
-    :func:`public_api_url`); the worker keeps its own in-stack value from the
-    Compose file.
+    :func:`public_api_url`; ``written_api_url`` is the value the last ``up``
+    recorded writing); the worker keeps its own in-stack value from the Compose
+    file.
     """
     secret = secret or (lambda: secrets.token_hex(32))
     wanted: dict[str, Optional[str]] = {"DOCSGPT_IMAGE_TAG": image_tag}
@@ -163,7 +165,7 @@ def plan(
         wanted.update(provider)
     if lan_ip is not None:
         after = {key: value for key, value in {**existing, **wanted}.items() if value is not None}
-        api_url = public_api_url(existing, after, lan_ip)
+        api_url = public_api_url(existing, after, lan_ip, written_api_url)
         if api_url != "":
             wanted["API_URL"] = api_url
 
@@ -190,25 +192,46 @@ def url(env: Mapping[str, str], lan_ip: str) -> str:
     return f"http://localhost:{_port(env)}"
 
 
-def public_api_url(existing: Mapping[str, str], after: Mapping[str, str], lan_ip: str) -> Optional[str]:
+def owns_api_url(existing: Mapping[str, str], written: Optional[str], lan_ip: str) -> bool:
+    """Whether ``API_URL`` in ``existing`` is ``up``'s to change rather than the operator's.
+
+    It is when it is unset, the app's default, the value the last ``up`` recorded
+    writing, or the address ``up`` would write for these settings (installs from
+    before the record kept it).
+
+    Args:
+        existing: The settings before this ``up``.
+        written: The ``API_URL`` the last ``up`` recorded writing, if any.
+        lan_ip: This machine's network address.
+
+    Returns:
+        True when ``up`` may replace or remove it.
+    """
+    current = existing.get("API_URL")
+    return not current or current in (DEFAULT_API_URL, written, url(existing, lan_ip))
+
+
+def public_api_url(
+    existing: Mapping[str, str], after: Mapping[str, str], lan_ip: str, written: Optional[str] = None
+) -> Optional[str]:
     """The ``API_URL`` for the settings in ``after``: a URL, ``None`` to remove it, ``""`` to leave it.
 
     The API builds agent image, webhook, device pairing and MCP OAuth callback
     URLs from ``API_URL``, and without it they point at ``http://localhost:7091``.
     It is set to the address :func:`url` prints, and dropped when that is the
-    default anyway. A value the operator wrote (anything other than what this
-    function would have written for the previous settings) is never touched.
+    default anyway. A value the operator wrote (see :func:`owns_api_url`) is
+    never touched.
 
     Args:
         existing: The settings before this ``up``.
         after: The settings this ``up`` writes.
         lan_ip: This machine's network address.
+        written: The ``API_URL`` the last ``up`` recorded writing, if any.
 
     Returns:
         The new value, ``None`` to remove the key, or ``""`` to leave it as it is.
     """
-    current = existing.get("API_URL")
-    if current and current != url(existing, lan_ip):
+    if not owns_api_url(existing, written, lan_ip):
         return ""
     wanted = url(after, lan_ip)
     return None if wanted == DEFAULT_API_URL else wanted
