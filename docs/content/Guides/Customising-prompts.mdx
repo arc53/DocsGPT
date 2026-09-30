@@ -22,7 +22,8 @@ Customizing prompts for DocsGPT gives you powerful control over the AI's behavio
 
 ## Template-Based Prompt System
 
-DocsGPT now uses **Jinja2 templating** with four organized namespaces for dynamic variable injection:
+DocsGPT uses **Jinja2 templating** with six namespaces for dynamic variable injection: `system`, `source`,
+`passthrough`, `tools`, `artifacts` and `attachments`.
 
 ### Available Namespaces
 
@@ -35,6 +36,9 @@ Access system-level information:
 {{ system.timestamp }}    # ISO 8601 timestamp
 {{ system.request_id }}   # Unique request identifier
 {{ system.user_id }}      # Current user ID
+{{ system.api_base_url }} # PUBLIC_API_BASE_URL, or empty when it isn't set
+{{ system.platform }}     # The platform-capabilities block the built-in prompts include
+{{ system.persona }}      # A plain-text custom prompt, when DocsGPT wraps it (empty in your own templates)
 ```
 
 #### 2. **`source`** - Retrieved Documents
@@ -45,6 +49,7 @@ Access RAG (Retrieval-Augmented Generation) document context:
 {{ source.summaries }}    # Alias for content (backward compatible)
 {{ source.documents }}    # List of document objects
 {{ source.count }}        # Number of retrieved documents
+{{ source.docs_together }} # Same text as source.content
 ```
 
 #### 3. **`passthrough`** - Request Parameters
@@ -69,12 +74,48 @@ To use passthrough data, send it in your API request:
 ```
 
 #### 4. **`tools`** - Pre-fetched Tool Data
-Access results from tools that run before the agent (like memory tool):
+Access results of tool actions that run before the agent. Results are keyed by
+tool name (or tool id) and then by **action name**, so you reference the action
+you want run:
 
 ```jinja
-{{ tools.memory.root }}       # Memory tool directory listing
-{{ tools.memory.available }}  # Boolean: is memory available
+{{ tools.memory.memory_view }}   # Memory tool: listing of the memory root directory
+{{ tools.<tool>.<action> }}      # Result of any other tool action
+{{ tools.enabled }}              # Names of the tools enabled for this turn
 ```
+
+Only the actions your template names are run; see [Tool Pre-Fetching](#tool-pre-fetching).
+`tools.enabled` lets you gate a section on a tool being available:
+
+```jinja
+{% if "memory" in tools.enabled %}You can save durable notes with the memory tool.{% endif %}
+```
+
+#### 5. **`artifacts`** - Artifact Metadata
+Access metadata (never file contents) for artifacts, such as files produced by a Code node or the Artifact tool:
+
+```jinja
+{{ artifacts.report.id }}         # Named reference: a workflow state variable holding an artifact
+{{ artifacts.report.filename }}   # Also: artifact_id, version, mime_type, size, kind, title
+{{ artifacts.artifact("<id>").mime_type }}  # Look up an artifact by id in this conversation or workflow run
+```
+
+Named references exist only in workflows, where each state variable that holds
+an artifact reference is available under its variable name. The
+`artifact(id)` lookup is scoped to the current conversation or workflow run and
+returns an empty value for anything else.
+
+#### 6. **`attachments`** - Attached Files
+Access metadata for the files attached to the current message:
+
+```jinja
+{% for file in attachments.files %}
+- {{ file.filename }} ({{ file.mime_type }}, {{ file.size }} bytes)
+{% endfor %}
+```
+
+Only the filename, MIME type and size are exposed. File contents reach the
+model separately, not through this namespace.
 
 ---
 
@@ -109,8 +150,8 @@ You are an AI assistant for {{ passthrough.company }}.
 {{ source.content }}
 
 **Memory Context:**
-{% if tools.memory.available %}
-{{ tools.memory.root }}
+{% if tools.memory.memory_view %}
+{{ tools.memory.memory_view }}
 {% else %}
 No saved context available.
 {% endif %}
@@ -248,9 +289,9 @@ Hello {{ passthrough.user_name }}!
 
 ### 3. **Leverage Memory for Continuity**
 ```jinja
-{% if tools.memory.available %}
+{% if tools.memory.memory_view %}
 **Previous Context:**
-{{ tools.memory.root }}
+{{ tools.memory.memory_view }}
 {% endif %}
 
 **Current Question:**
@@ -304,18 +345,25 @@ Note: This is information from 2025 or later.
 
 ## Tool Pre-Fetching
 
-### Memory Tool Configuration
-Enable memory tool pre-fetching to inject saved context into prompts:
+Before the agent runs, DocsGPT runs the tool actions your template references
+and puts their results in the `tools` namespace. How it decides what to run:
 
-```python
-# In your tool configuration
-{
-  "name": "memory",
-  "config": {
-    "pre_fetch_enabled": true  # Default: true
-  }
-}
-```
+- **Only named actions run.** `{{ tools.memory.memory_view }}` runs the memory
+  tool's `memory_view` action. A bare `{{ tools.<tool> }}` runs every action of
+  that tool.
+- **Default tools run only when named.** Tools every user gets by default, such
+  as memory, are never pre-fetched unless the template references them.
+- **Parameters come from saved values.** Each parameter is filled from the
+  value saved on the tool's action, then the tool's configuration, then the
+  parameter's default. `memory_view` with no saved path lists the root
+  directory (`/`). An action that fails is skipped and its variable renders
+  empty.
+- **Someone else's tools stay read-only.** When the tools belong to another
+  user (a shared agent, or an API key or widget caller), only actions that
+  would run without asking anyone are pre-fetched.
+- **Results are keyed by action name.** There is no `tools.memory.root` or
+  `tools.memory.available`; test the action's own result instead:
+  `{% if tools.memory.memory_view %}`.
 
 Control pre-fetching globally:
 ```bash
@@ -335,26 +383,13 @@ Or per-request:
 
 ## Debugging Prompts
 
-### View Rendered Prompts in Logs
-Set log level to `INFO` to see the final rendered prompt sent to the LLM:
-
-```bash
-export LOG_LEVEL=INFO
-```
-
-You'll see output like:
-```
-INFO - Rendered system prompt for agent (length: 1234 chars):
-================================================================================
-You are a helpful assistant for Acme Corp.
-
-Current date: 2025-10-30
-Request ID: req_abc123
-
-Documents:
-Technical documentation about...
-================================================================================
-```
+### Inspecting a Rendered Prompt
+DocsGPT doesn't log or store the rendered system prompt. To check what a
+template produces, render it yourself with sample data using `PromptRenderer`
+(see [API Reference](#api-reference)). To see what happened during a real
+request — which tools ran, how many tokens each model call used — open the
+request's trace under **Settings → Logs**; see
+[Observability](/Deploying/Observability#execution-traces).
 
 ### Template Validation
 Test your template syntax before saving:
@@ -381,7 +416,7 @@ You are a customer support assistant for {{ passthrough.company }}.
 {{ source.content }}
 
 **Previous Interactions:**
-{{ tools.memory.root }}
+{{ tools.memory.memory_view }}
 
 Please provide helpful, friendly support based on the knowledge base above.
 ```
@@ -468,7 +503,9 @@ Provide detailed answers appropriate for {{ passthrough.access_level }} access l
 ```
 
 ### Problem: Empty Output for Tool Data
-**Solution:** Check that tool pre-fetching is enabled and the tool is configured correctly.
+**Solution:** Check that tool pre-fetching is enabled (`ENABLE_TOOL_PREFETCH`), that the tool is enabled for
+the agent, and that you reference an action by its name (`tools.memory.memory_view`, not `tools.memory.root`).
+An action that needs a parameter with no saved value or default can't run and renders empty.
 
 ### Problem: Syntax Errors
 **Solution:** Validate template syntax. Common issues:
@@ -497,7 +534,7 @@ rendered = renderer.render_prompt(
     request_id="req_456",
     passthrough_data={"name": "Alice"},
     docs_together="Document content here",
-    tools_data={"memory": {"root": "Files: notes.txt"}}
+    tools_data={"memory": {"memory_view": "Directory: /\n- notes.txt"}}
 )
 ```
 
