@@ -603,6 +603,9 @@ class ToolExecutor:
             tools = self._get_tools_by_ids(self.allowed_tool_ids)
         elif self.user_api_key:
             tools = self._get_tools_by_api_key(self.user_api_key)
+        elif self.agent_id:
+            # A draft agent has no key yet; it still runs with only its own tools.
+            tools = self._get_tools_by_agent_id(self.agent_id)
         else:
             tools = self._get_user_tools(self.user or "local")
         if self.client_tools:
@@ -668,34 +671,48 @@ class ToolExecutor:
         # generator; wrapping it in a single connection would pin a PG
         # conn for the whole stream. Open, fetch, close.
         with db_readonly() as conn:
-            agent_data = AgentsRepository(conn).find_by_key(api_key)
-            tool_ids = agent_data.get("tools", []) if agent_data else []
-            tools_repo = UserToolsRepository(conn)
-            owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
-            tools: List[Dict] = []
-            for tid in tool_ids:
-                row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
-                if row is None:
-                    # A tool the owner can't use runs as the editor who
-                    # attached it, while they still qualify: the same check
-                    # the agent page's run state uses.
-                    # Lazy: docsgpt.api's package import pulls in every route module.
-                    from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+            return self._agent_tools(conn, AgentsRepository(conn).find_by_key(api_key))
 
-                    row, access = resolve_holder_tool(conn, "agent", agent_data, tid, tools_repo=tools_repo)
-                    if row is None:
-                        log_stopped("agent", agent_data, "tool", tid, access.reason)
+    def _get_tools_by_agent_id(self, agent_id: str) -> Dict[str, Dict]:
+        """Resolve a keyless (draft) agent's toolset the same way as by key.
+
+        The run was authorized upstream, so the row is read unscoped. An
+        agent that no longer exists gets no tools.
+        """
+        with db_readonly() as conn:
+            repo = AgentsRepository(conn)
+            agent_data = repo.get_by_id(str(agent_id)) or repo.get_by_legacy_id(str(agent_id))
+            return self._agent_tools(conn, agent_data)
+
+    def _agent_tools(self, conn, agent_data: Optional[Dict]) -> Dict[str, Dict]:
+        """Exactly the tools in ``agent_data["tools"]``, resolved as the agent's owner."""
+        tool_ids = (agent_data.get("tools") or []) if agent_data else []
+        tools_repo = UserToolsRepository(conn)
+        owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
+        tools: List[Dict] = []
+        for tid in tool_ids:
+            row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
+            if row is None:
+                # A tool the owner can't use runs as the editor who
+                # attached it, while they still qualify: the same check
+                # the agent page's run state uses.
+                # Lazy: docsgpt.api's package import pulls in every route module.
+                from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+
+                row, access = resolve_holder_tool(conn, "agent", agent_data, tid, tools_repo=tools_repo)
                 if row is None:
-                    continue
-                # Workflow-only builtins (read_document) never resolve for a
-                # chat/scheduled agent — nodes get them via the scoped-id path.
-                if row.get("workflow_only"):
-                    continue
-                # Headless runs (scheduled / webhook) drop chat-only tools
-                # like ``scheduler`` so a fire-time LLM can't chain schedules.
-                if self.headless and is_headless_excluded_tool(row.get("name")):
-                    continue
-                tools.append(row)
+                    log_stopped("agent", agent_data, "tool", tid, access.reason)
+            if row is None:
+                continue
+            # Workflow-only builtins (read_document) never resolve for a
+            # chat/scheduled agent — nodes get them via the scoped-id path.
+            if row.get("workflow_only"):
+                continue
+            # Headless runs (scheduled / webhook) drop chat-only tools
+            # like ``scheduler`` so a fire-time LLM can't chain schedules.
+            if self.headless and is_headless_excluded_tool(row.get("name")):
+                continue
+            tools.append(row)
         return {str(tool["id"]): tool for tool in tools}
 
     def _get_user_tools(self, user: str = "local") -> Dict[str, Dict]:
