@@ -264,12 +264,7 @@ export default function SourceNavigator({
         <span className="truncate">{current?.label ?? title}</span>
         <ChevronDown className="opacity-50" />
       </Button>
-      <Modal
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-        title={title}
-        mobileVariant="sheet"
-      >
+      <Modal open={sheetOpen} onOpenChange={setSheetOpen} title={title}>
         <div className="flex flex-col gap-2">{list}</div>
       </Modal>
     </>

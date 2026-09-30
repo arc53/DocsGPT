@@ -276,6 +276,7 @@ export default function Activity() {
           selected={categories}
           onChange={withPageReset(setCategories)}
           placeholder="All categories"
+          shape="pill"
           className="w-48"
         />
         <MultiSelect
@@ -284,6 +285,7 @@ export default function Activity() {
           onChange={withPageReset(setEvents)}
           placeholder="All events"
           searchPlaceholder="Find an event"
+          shape="pill"
           className="w-56"
         />
         <ToggleGroup
@@ -319,7 +321,8 @@ export default function Activity() {
         <div className="ml-auto flex items-center gap-2">
           <Button
             variant="outline"
-            size="sm"
+            size="field"
+            shape="pill"
             disabled={exporting}
             onClick={() => exportAs('csv')}
           >
@@ -328,7 +331,8 @@ export default function Activity() {
           </Button>
           <Button
             variant="outline"
-            size="sm"
+            size="field"
+            shape="pill"
             disabled={exporting}
             onClick={() => exportAs('ndjson')}
           >

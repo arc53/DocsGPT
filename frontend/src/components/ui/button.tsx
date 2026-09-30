@@ -6,11 +6,35 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn, destructiveRing, focusRing, invalidState } from '@/lib/utils';
 
 const buttonVariants = cva(
-  `${focusRing} ${invalidState} inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring`,
+  `${focusRing} ${invalidState} inline-flex items-center justify-center gap-2 whitespace-nowrap transition disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring`,
   // Icon padding (has-[>svg]) also matches an svg inside the invisible label
   // wrapper that `loading` adds, so a busy icon button keeps its width.
   {
     variants: {
+      // Size comes before variant so a variant's own weight (combobox's
+      // font-normal) wins over the size's font-medium. Type lives on the
+      // size, not the base, so size="text" can inherit it.
+      size: {
+        default:
+          'h-9 px-4 py-2 text-sm font-medium has-[>svg,>[data-slot=button-label]>svg]:px-3',
+        xs: "h-7 gap-1 px-2 text-xs font-medium has-[>svg,>[data-slot=button-label]>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        sm: 'h-8 gap-1.5 px-3 text-sm font-medium has-[>svg,>[data-slot=button-label]>svg]:px-2.5',
+        lg: 'h-10 px-6 text-sm font-medium has-[>svg,>[data-slot=button-label]>svg]:px-4',
+        // The form-row height (38px), shared with Input default/field and
+        // SelectTrigger field, for pickers and buttons that sit among fields.
+        field:
+          'h-9.5 px-4 text-sm font-medium has-[>svg,>[data-slot=button-label]>svg]:px-3',
+        icon: "size-9 text-sm font-medium [&_svg:not([class*='size-'])]:size-5",
+        'icon-xs': 'size-7 text-sm font-medium',
+        'icon-sm': 'size-8 text-sm font-medium',
+        // A standalone link (Show all, a picker footer): no height or
+        // padding, but 14px medium, so it still reads as a control.
+        inline: 'h-auto p-0 text-sm font-medium',
+        // A link in running text: no height or padding and no type of its
+        // own, so it takes the sentence's size, weight and line-height and
+        // wraps with the text. The variant's colour stays (primary for link).
+        text: 'h-auto p-0',
+      },
       variant: {
         default: 'bg-primary text-primary-foreground hover:bg-primary/90',
         destructive: `bg-destructive text-destructive-foreground hover:bg-destructive/90 ${destructiveRing} dark:bg-destructive/60`,
@@ -46,10 +70,6 @@ const buttonVariants = cva(
         // (the base is shrink-0), keeping a neighbour's edit button in view.
         combobox:
           'min-w-0 shrink border border-input bg-card font-normal shadow-xs hover:bg-accent data-placeholder:text-muted-foreground',
-        // Underline route tabs (the workflow builder's sub-nav). Mark the
-        // current tab with data-active; the 2px border is always there so the
-        // row height doesn't move. The compound variant squares the corners.
-        tab: 'border-b-2 border-transparent text-muted-foreground hover:text-foreground hover:border-border data-[active=true]:border-primary data-[active=true]:text-foreground',
         // A section panel's disclosure header (NewAgent's Advanced,
         // Guardrails): a foreground title with a primary chevron and a primary
         // underline on hover. It draws no ring of its own; the panel around it
@@ -57,24 +77,15 @@ const buttonVariants = cva(
         'section-toggle':
           'text-foreground underline-offset-4 decoration-primary hover:underline focus-visible:ring-0 [&>svg]:text-primary',
       },
-      size: {
-        default: 'h-9 px-4 py-2 has-[>svg,>[data-slot=button-label]>svg]:px-3',
-        xs: "h-7 gap-1 px-2 text-xs has-[>svg,>[data-slot=button-label]>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        sm: 'h-8 gap-1.5 px-3 has-[>svg,>[data-slot=button-label]>svg]:px-2.5',
-        lg: 'h-10 px-6 has-[>svg,>[data-slot=button-label]>svg]:px-4',
-        // The form-row height (38px), shared with Input default/field and
-        // SelectTrigger field, for pickers and buttons that sit among fields.
-        field: 'h-9.5 px-4 has-[>svg,>[data-slot=button-label]>svg]:px-3',
-        icon: "size-9 [&_svg:not([class*='size-'])]:size-5",
-        'icon-xs': 'size-7',
-        'icon-sm': 'size-8',
-        'icon-lg': 'size-10',
-        // A link mid-sentence: no height or padding, so it wraps with the text.
-        inline: 'h-auto p-0',
-      },
       shape: {
         default: 'rounded-md',
         pill: 'rounded-full',
+      },
+      // current: the text colour comes from the context, hover included (a
+      // link in a status Alert, on a dark overlay). Unset keeps the
+      // variant's colour.
+      tone: {
+        current: 'text-current hover:text-current',
       },
     },
     compoundVariants: [
@@ -102,10 +113,6 @@ const buttonVariants = cva(
         size: ['default', 'field', 'lg'],
         class: 'text-base md:text-sm',
       },
-      // Tabs sit on a baseline rule, so they never round off.
-      { variant: 'tab', class: 'rounded-none' },
-      // A padding-free tab (the agent sub-nav) keeps 4px above its underline.
-      { variant: 'tab', size: 'inline', class: 'pb-1' },
       // Nav rows line their icons up on the left edge at every size/shape.
       {
         variant: 'sidebar-item',
@@ -126,6 +133,7 @@ function Button({
   variant = 'default',
   size = 'default',
   shape = 'default',
+  tone,
   asChild = false,
   loading = false,
   disabled,
@@ -148,11 +156,12 @@ function Button({
       data-variant={variant}
       data-size={size}
       data-shape={shape}
+      data-tone={tone ?? undefined}
       data-loading={loading ? '' : undefined}
       aria-busy={loading || undefined}
       disabled={disabled || loading}
       className={cn(
-        buttonVariants({ variant, size, shape }),
+        buttonVariants({ variant, size, shape, tone }),
         loading && 'relative',
         className,
       )}

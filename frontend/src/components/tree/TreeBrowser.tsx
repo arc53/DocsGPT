@@ -14,7 +14,6 @@ import { formatCount } from '../../utils/dateTimeUtils';
 import { formatBytes } from '../../utils/stringUtils';
 import userService from '../../api/services/userService';
 import { Eye, File, Folder } from 'lucide-react';
-import { Button } from '../ui/button';
 import { EmptyState } from '../ui/empty-state';
 import { useLoaderState } from '../../hooks';
 import Chunks, {
@@ -749,17 +748,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
           tone="destructive"
           illustration="none"
           title={t('settings.sources.filesLoadError')}
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => setReloadKey((key) => key + 1)}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => setReloadKey((key) => key + 1)}
         />
       );
     }

@@ -208,7 +208,6 @@ export default function CreateAccessTokenModal({
       title={t('settings.accessTokens.create.title')}
       description={t('settings.accessTokens.create.subtitle')}
       size="lg"
-      mobileVariant="sheet"
       isPerformingTask={submitting}
       footer={
         <ModalActions

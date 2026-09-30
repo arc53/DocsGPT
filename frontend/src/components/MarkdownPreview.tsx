@@ -21,7 +21,7 @@ export default function MarkdownPreview({ content }: { content: string }) {
             ...markdownTables,
             a({ children, href }) {
               return (
-                <Button variant="link" size="inline" asChild>
+                <Button variant="link" size="text" asChild>
                   <a href={href} target="_blank" rel="noopener noreferrer">
                     {children}
                   </a>

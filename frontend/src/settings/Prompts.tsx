@@ -312,7 +312,8 @@ export default function Prompts({
           type="button"
           variant="combobox"
           size="field"
-          shape="pill"
+          // A form field in NewAgent (square); a settings-row control elsewhere.
+          shape={titleAs === 'field' ? 'default' : 'pill'}
           id={pickerId}
           role="combobox"
           aria-expanded={open}

@@ -4,7 +4,6 @@ import { useSelector } from 'react-redux';
 
 import userService from '../../api/services/userService';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
 import {
@@ -96,15 +95,7 @@ export default function TraceSheet({
             size="sm"
             illustration="none"
             title={t('settings.logs.trace.failed')}
-            action={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setReloadKey((key) => key + 1)}
-              >
-                {t('retry')}
-              </Button>
-            }
+            onRetry={() => setReloadKey((key) => key + 1)}
           />
         )}
         {!loading && !failed && traces.length === 0 && (

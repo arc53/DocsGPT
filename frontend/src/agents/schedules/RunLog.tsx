@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import { Button } from '../../components/ui/button';
 import { EmptyState } from '../../components/ui/empty-state';
 import { LoadMoreStatus } from '../../components/ui/load-more-status';
 import { LoadingState } from '../../components/ui/loading-state';
@@ -99,11 +98,7 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
         illustration="none"
         tone="destructive"
         title={t('agents.schedules.runLog.loadFailed')}
-        action={
-          <Button variant="outline" size="sm" onClick={() => load(0)}>
-            {t('retry')}
-          </Button>
-        }
+        onRetry={() => load(0)}
       />
     );
   }

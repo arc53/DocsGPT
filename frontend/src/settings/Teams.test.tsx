@@ -557,4 +557,89 @@ describe('Teams page', () => {
     const menu = body().querySelector('[data-testid="team-menu"]');
     expect(menu?.textContent).not.toContain('settings.teams.deleteTeam');
   });
+
+  it('keeps the members row at the 38px field height', async () => {
+    listMembers.mockResolvedValue({
+      members: Array.from({ length: 25 }, (_, i) => ({
+        user_id: `u${i}`,
+        email: `m${i}@x.io`,
+        role: 'team_member',
+        source: 'manual',
+      })),
+      total: 48,
+    });
+    await render();
+    const add = Array.from(body().querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('settings.teams.addMember'),
+    )!;
+    expect(add.className).toContain('h-9.5');
+  });
+
+  it('a failed teams load offers the pill Retry', async () => {
+    mockState.teams.error = 'down' as unknown as null;
+    try {
+      act(() => {
+        root.render(
+          <MemoryRouter initialEntries={['/teams']}>
+            <Teams />
+          </MemoryRouter>,
+        );
+      });
+      await flush();
+      const retry = Array.from(body().querySelectorAll('button')).find(
+        (b) => b.textContent === 'retry',
+      );
+      expect(retry?.className).toContain('rounded-full');
+    } finally {
+      mockState.teams.error = null;
+    }
+  });
+
+  it('an empty team list offers a text-only pill New team', async () => {
+    mockState.teams.teams = [];
+    act(() => {
+      root.render(
+        <MemoryRouter initialEntries={['/teams']}>
+          <Teams />
+        </MemoryRouter>,
+      );
+    });
+    await flush();
+    const cta = body().querySelector<HTMLButtonElement>(
+      '[data-slot="empty-state"] button',
+    )!;
+    expect(cta.textContent).toBe('settings.teams.newTeam');
+    expect(cta.className).toContain('rounded-full');
+    expect(cta.className).toContain('bg-primary');
+    expect(cta.querySelector('svg')).toBeNull();
+  });
+
+  it('opens the New team sheet on a phone without focusing the field', async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      onchange: null,
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    try {
+      await render();
+      const action = Array.from(
+        body().querySelectorAll('[data-slot="page-toolbar"] button'),
+      ).find((b) => b.textContent === 'settings.teams.newTeam')!;
+      act(() => (action as HTMLButtonElement).click());
+      await flush();
+      const input = body().querySelector<HTMLInputElement>(
+        '[data-slot="modal-content"] input',
+      )!;
+      expect(input).not.toBeNull();
+      expect(document.activeElement).not.toBe(input);
+    } finally {
+      window.matchMedia = original;
+    }
+  });
 });

@@ -211,21 +211,18 @@ export default function PairDeviceModal({
           </pre>
           <CopyButton textToCopy={installCommand} />
         </Card>
-        <Button
-          variant="link"
-          size="inline"
-          asChild
-          // eslint-disable-next-line shadcn/no-restyle -- a link in a 12px hint keeps the sentence's size and weight
-          className="self-start text-xs font-normal"
-        >
-          <a
-            href="https://github.com/arc53/DocsGPT-cli#installation"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t('settings.devices.pairing.installLink')}
-          </a>
-        </Button>
+        {/* A 12px hint line, so the link takes the hint's size and weight. */}
+        <p className="text-xs">
+          <Button variant="link" size="text" asChild>
+            <a
+              href="https://github.com/arc53/DocsGPT-cli#installation"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('settings.devices.pairing.installLink')}
+            </a>
+          </Button>
+        </p>
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-muted-foreground text-xs">

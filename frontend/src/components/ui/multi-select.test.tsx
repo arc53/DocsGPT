@@ -16,7 +16,7 @@ const options = [
   { value: 'safety', label: 'Safety' },
 ];
 
-function render(selected: string[]): HTMLElement {
+function render(selected: string[], shape?: 'default' | 'pill'): HTMLElement {
   const host = document.createElement('div');
   host.innerHTML = renderToStaticMarkup(
     <MultiSelect
@@ -24,6 +24,7 @@ function render(selected: string[]): HTMLElement {
       selected={selected}
       onChange={() => undefined}
       placeholder="All categories"
+      shape={shape}
     />,
   );
   return host;
@@ -43,6 +44,20 @@ describe('MultiSelect', () => {
     expect(classes).not.toContain('min-h-10');
     expect(classes).not.toContain('bg-background');
     expect(trigger.className).not.toContain('dark:bg-input/30');
+  });
+
+  it('is square by default and takes shape="pill" for page toolbars', () => {
+    const square = render([]).querySelector<HTMLElement>('[role="combobox"]')!;
+    expect(square.dataset.shape).toBe('default');
+    expect(square.className.split(' ')).toContain('rounded-md');
+    const pill = render([], 'pill').querySelector<HTMLElement>(
+      '[role="combobox"]',
+    )!;
+    expect(pill.dataset.shape).toBe('pill');
+    const classes = pill.className.split(' ');
+    expect(classes).toContain('rounded-full');
+    expect(classes).toContain('px-5');
+    expect(classes).not.toContain('rounded-md');
   });
 
   it('marks the empty trigger as a placeholder', () => {

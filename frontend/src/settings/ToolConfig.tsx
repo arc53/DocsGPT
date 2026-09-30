@@ -17,6 +17,7 @@ import {
 } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Collapsible } from '../components/ui/collapsible';
 import { EmptyState } from '../components/ui/empty-state';
 import { FormField } from '../components/ui/form-field';
 import { IconButton } from '../components/ui/icon-button';
@@ -252,6 +253,7 @@ export default function ToolConfig({
     [canEdit, canEditCredentials, canFixValues],
   );
 
+  const actionIdBase = React.useId();
   const toggleUserActionExpand = (index: number) => {
     setExpandedUserActions((prev) => {
       const newSet = new Set(prev);
@@ -681,57 +683,52 @@ export default function ToolConfig({
                           {shown.map(({ action, originalIndex }) => {
                             const isExpanded =
                               expandedUserActions.has(originalIndex);
+                            const bodyId = `${actionIdBase}-${originalIndex}`;
                             return (
-                              <fieldset
+                              <div
                                 key={originalIndex}
-                                disabled={!canEdit}
                                 className="border-border w-full min-w-0 rounded-xl border"
                               >
                                 <div
                                   className={cn(
-                                    'border-border bg-muted flex cursor-pointer flex-wrap items-center justify-between px-4 py-3 outline-none',
+                                    'border-border bg-muted flex flex-wrap items-center justify-between gap-3 px-4 py-3',
                                     isExpanded
                                       ? 'rounded-t-xl border-b'
                                       : 'rounded-xl',
-                                    focusRing,
                                   )}
-                                  onClick={() =>
-                                    toggleUserActionExpand(originalIndex)
-                                  }
-                                  role="button"
-                                  tabIndex={0}
-                                  aria-expanded={isExpanded}
-                                  onKeyDown={(e) => {
-                                    if (e.target !== e.currentTarget) return;
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.preventDefault();
-                                      toggleUserActionExpand(originalIndex);
-                                    }
-                                  }}
                                 >
-                                  <div className="flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    aria-expanded={isExpanded}
+                                    aria-controls={bodyId}
+                                    onClick={() =>
+                                      toggleUserActionExpand(originalIndex)
+                                    }
+                                    className={cn(
+                                      'flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-sm text-left outline-none',
+                                      focusRing,
+                                    )}
+                                  >
                                     <ChevronRight
+                                      aria-hidden
                                       className={cn(
-                                        'text-muted-foreground size-4 transition-transform duration-200',
+                                        'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
                                         isExpanded && 'rotate-90',
                                       )}
                                     />
-                                    <p
+                                    <span
                                       className="text-foreground font-semibold"
                                       title={action.name}
                                     >
                                       {actionTitle(action.name)}
-                                    </p>
+                                    </span>
                                     {action.description && (
-                                      <p className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md">
+                                      <span className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md">
                                         {action.description}
-                                      </p>
+                                      </span>
                                     )}
-                                  </div>
-                                  <div
-                                    className="flex items-center gap-3"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
+                                  </button>
+                                  <div className="flex items-center gap-3">
                                     {customizing && (
                                       <PermissionSelect
                                         value={permissionOf(action)}
@@ -752,8 +749,11 @@ export default function ToolConfig({
                                     )}
                                   </div>
                                 </div>
-                                {isExpanded && (
-                                  <>
+                                <Collapsible open={isExpanded} id={bodyId}>
+                                  <fieldset
+                                    disabled={!canEdit}
+                                    className="min-w-0"
+                                  >
                                     <div className="relative mt-5 w-full px-5">
                                       <Input
                                         type="text"
@@ -944,9 +944,9 @@ export default function ToolConfig({
                                         </Table>
                                       </TableContainer>
                                     </div>
-                                  </>
-                                )}
-                              </fieldset>
+                                  </fieldset>
+                                </Collapsible>
+                              </div>
                             );
                           })}
                         </div>
@@ -1031,6 +1031,7 @@ function APIToolConfig({
     new Set(),
   );
 
+  const actionIdBase = React.useId();
   const toggleActionExpand = (actionName: string) => {
     setExpandedActions((prev) => {
       const newSet = new Set(prev);
@@ -1150,64 +1151,60 @@ function APIToolConfig({
           >
             {(customizing) => (
               <div className="flex flex-col gap-4">
-                {shown.map(([actionName, action]) => {
+                {shown.map(([actionName, action], index) => {
                   const isExpanded = expandedActions.has(actionName);
+                  const bodyId = `${actionIdBase}-${index}`;
                   return (
-                    <fieldset
+                    <div
                       key={actionName}
-                      disabled={!canEdit}
                       className="border-border w-full min-w-0 rounded-xl border"
                     >
                       <div
                         className={cn(
-                          'border-border bg-muted flex cursor-pointer flex-wrap items-center justify-between px-4 py-3 outline-none',
+                          'border-border bg-muted flex flex-wrap items-center justify-between gap-3 px-4 py-3',
                           isExpanded ? 'rounded-t-xl border-b' : 'rounded-xl',
-                          focusRing,
                         )}
-                        onClick={() => toggleActionExpand(actionName)}
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={isExpanded}
-                        onKeyDown={(e) => {
-                          if (e.target !== e.currentTarget) return;
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            toggleActionExpand(actionName);
-                          }
-                        }}
                       >
-                        <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          aria-expanded={isExpanded}
+                          aria-controls={bodyId}
+                          onClick={() => toggleActionExpand(actionName)}
+                          className={cn(
+                            'flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-sm text-left outline-none',
+                            focusRing,
+                          )}
+                        >
                           <ChevronRight
+                            aria-hidden
                             className={cn(
-                              'text-muted-foreground size-4 transition-transform duration-200',
+                              'text-muted-foreground size-4 shrink-0 transition-transform duration-200',
                               isExpanded && 'rotate-90',
                             )}
                           />
                           <Badge variant={getMethodBadgeVariant(action.method)}>
                             {action.method}
                           </Badge>
-                          <p
+                          <span
                             className="text-foreground font-semibold"
                             title={action.name}
                           >
                             {actionTitle(action.name)}
-                          </p>
+                          </span>
                           {action.description && (
-                            <p className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md">
+                            <span className="text-muted-foreground hidden truncate text-sm md:block md:max-w-xs lg:max-w-md">
                               {action.description}
-                            </p>
+                            </span>
                           )}
-                        </div>
-                        <div
-                          className="flex items-center gap-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        </button>
+                        <div className="flex items-center gap-2">
                           <IconButton
                             label={t('convTile.delete')}
                             icon={Trash2}
                             variant="ghost-destructive"
                             size="icon-xs"
                             shape="pill"
+                            disabled={!canEdit}
                             onClick={() => handleDeleteActionClick(actionName)}
                             className="mr-2"
                           />
@@ -1225,8 +1222,8 @@ function APIToolConfig({
                           )}
                         </div>
                       </div>
-                      {isExpanded && (
-                        <>
+                      <Collapsible open={isExpanded} id={bodyId}>
+                        <fieldset disabled={!canEdit} className="min-w-0">
                           <div className="mt-8 px-5">
                             <Input
                               type="text"
@@ -1253,7 +1250,6 @@ function APIToolConfig({
                               }}
                               label={t('settings.tools.urlPlaceholder')}
                               labelSurface="background"
-                              shape="pill"
                             />
                           </div>
                           <div className="mt-4 px-5 py-2">
@@ -1291,11 +1287,7 @@ function APIToolConfig({
                                   });
                                 }}
                               >
-                                <SelectTrigger
-                                  className="w-full"
-                                  size="field"
-                                  shape="pill"
-                                >
+                                <SelectTrigger className="w-full" size="field">
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -1341,7 +1333,6 @@ function APIToolConfig({
                               }}
                               label={t('settings.tools.descriptionPlaceholder')}
                               labelSurface="background"
-                              shape="pill"
                             />
                           </div>
                           {(action.method === 'POST' ||
@@ -1396,7 +1387,6 @@ function APIToolConfig({
                                   <SelectTrigger
                                     className="w-full"
                                     size="field"
-                                    shape="pill"
                                   >
                                     <SelectValue />
                                   </SelectTrigger>
@@ -1424,9 +1414,9 @@ function APIToolConfig({
                               handleActionChange={handleActionChange}
                             />
                           </div>
-                        </>
-                      )}
-                    </fieldset>
+                        </fieldset>
+                      </Collapsible>
+                    </div>
                   );
                 })}
               </div>

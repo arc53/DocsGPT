@@ -150,7 +150,9 @@ describe('ToolConfig', () => {
     await render(userTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     const tableInputs = Array.from(
@@ -300,7 +302,7 @@ describe('ToolConfig', () => {
     expect(buttonByText('settings.tools.importSpec')).toBeUndefined();
   });
 
-  it('renders the API action form as 42px pills with remove icons', async () => {
+  it('renders the API action form as square 42px fields with remove icons', async () => {
     await render(apiTool);
     const deleteAction = container.querySelector<HTMLElement>(
       'button[aria-label="convTile.delete"]',
@@ -311,13 +313,15 @@ describe('ToolConfig', () => {
 
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     const urlField = container.querySelector<HTMLInputElement>(
       'input[value="https://example.com"]',
     );
-    expect(urlField?.dataset.shape).toBe('pill');
+    expect(urlField?.dataset.shape).not.toBe('pill');
     expect(urlField?.dataset.size).toBe('default');
     const triggers = Array.from(
       container.querySelectorAll<HTMLElement>('[data-slot="select-trigger"]'),
@@ -325,6 +329,7 @@ describe('ToolConfig', () => {
     expect(triggers).toHaveLength(2);
     triggers.forEach((trigger) => {
       expect(trigger.dataset.size).toBe('field');
+      expect(trigger.dataset.shape).not.toBe('pill');
       expect(trigger.className).not.toContain('rounded-3xl');
     });
     const addNew = buttonByText('settings.tools.addNew');
@@ -340,7 +345,9 @@ describe('ToolConfig', () => {
     await render(apiTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     const hint = Array.from(container.querySelectorAll('p')).find(
@@ -383,7 +390,9 @@ describe('ToolConfig', () => {
     } as unknown as APIToolType);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     expect(container.querySelector('select:not([aria-hidden])')).toBeNull();
@@ -395,29 +404,56 @@ describe('ToolConfig', () => {
     expect(typeTrigger?.textContent).toContain('integer');
   });
 
-  it('opens an action header from the keyboard', async () => {
+  it('opens an action with a real button whose body is a Collapsible', async () => {
     await render(apiTool);
-    const header = container.querySelector<HTMLElement>(
-      '[role="button"][aria-expanded]',
-    );
-    expect(header?.tabIndex).toBe(0);
-    expect(header?.getAttribute('aria-expanded')).toBe('false');
-    await act(async () => {
-      header?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
-      );
-    });
-    expect(header?.getAttribute('aria-expanded')).toBe('true');
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-expanded][aria-controls]',
+    )!;
+    expect(toggle).not.toBeNull();
+    expect(container.querySelector('[role="button"]')).toBeNull();
+    expect(toggle.textContent).toContain('POST');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // The row's other controls sit beside the toggle, not inside it.
+    expect(toggle.querySelector('button')).toBeNull();
+    const body = container.querySelector<HTMLElement>(
+      `#${CSS.escape(toggle.getAttribute('aria-controls')!)}`,
+    )!;
+    expect(body.dataset.slot).toBe('collapsible');
+    expect(body.dataset.state).toBe('closed');
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
     expect(
-      container.querySelector('input[value="https://example.com"]'),
+      body.querySelector('input[value="https://example.com"]'),
     ).not.toBeNull();
+  });
+
+  it('draws the API action form fields square', async () => {
+    await render(apiTool);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-expanded][aria-controls]',
+        )!
+        .click(),
+    );
+    const body = container.querySelector('[data-slot="collapsible"]')!;
+    // Form fields are square; the row buttons keep their pill.
+    expect(
+      body.querySelector(
+        'input[data-shape="pill"], [data-slot="select-trigger"][data-shape="pill"]',
+      ),
+    ).toBeNull();
+    expect(body.querySelectorAll('input').length).toBeGreaterThan(1);
   });
 
   it('renders the parameter table from the ui/table parts', async () => {
     await render(userTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     expect(container.querySelector('.table-default')).toBeNull();
@@ -436,7 +472,9 @@ describe('ToolConfig', () => {
     await render(apiTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     expect(container.querySelector('.table-default')).toBeNull();
@@ -463,7 +501,9 @@ describe('ToolConfig', () => {
     await render(apiTool);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     await act(async () => {
@@ -509,7 +549,9 @@ describe('ToolConfig', () => {
     const expandFirstAction = async () => {
       await act(async () => {
         (
-          container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+          container.querySelector(
+            'button[aria-expanded][aria-controls]',
+          ) as HTMLElement
         ).click();
       });
     };
@@ -577,7 +619,9 @@ describe('ToolConfig', () => {
       } as UserToolType);
       await act(async () => {
         (
-          container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+          container.querySelector(
+            'button[aria-expanded][aria-controls]',
+          ) as HTMLElement
         ).click();
       });
       const filled = container.querySelector(
@@ -671,7 +715,9 @@ describe('ToolConfig', () => {
     await render(saved);
     await act(async () => {
       (
-        container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+        container.querySelector(
+          'button[aria-expanded][aria-controls]',
+        ) as HTMLElement
       ).click();
     });
     const masked = container.querySelector<HTMLInputElement>(
@@ -837,7 +883,9 @@ describe('ToolConfig', () => {
       await renderLive(userTool);
       await act(async () => {
         (
-          container.querySelector('[class*="cursor-pointer"]') as HTMLElement
+          container.querySelector(
+            'button[aria-expanded][aria-controls]',
+          ) as HTMLElement
         ).click();
       });
       expect(container.textContent).toContain('settings.tools.filledBy');

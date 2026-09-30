@@ -47,6 +47,8 @@ interface MultiSelectProps {
   modal?: boolean;
   /** The trigger's id; inside a FormField it defaults to the field's. */
   id?: string;
+  /** `pill` in a page toolbar beside pill searches and filters. */
+  shape?: 'default' | 'pill';
 }
 
 export function MultiSelect({
@@ -59,6 +61,7 @@ export function MultiSelect({
   className,
   modal = false,
   id,
+  shape = 'default',
 }: MultiSelectProps) {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
@@ -93,6 +96,7 @@ export function MultiSelect({
         <Button
           variant="combobox"
           size="field"
+          shape={shape}
           role="combobox"
           aria-expanded={open}
           data-slot="multi-select-trigger"

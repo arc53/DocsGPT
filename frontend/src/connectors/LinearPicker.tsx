@@ -156,12 +156,9 @@ export default function LinearPicker({
             ? t('settings.connectors.detail.expired')
             : t('settings.connectors.linear.loadFailed')
         }
+        onRetry={error === 'failed' ? load : undefined}
         action={
-          error === 'failed' ? (
-            <Button variant="outline" size="sm" shape="pill" onClick={load}>
-              {t('retry')}
-            </Button>
-          ) : onReconnect ? (
+          error !== 'failed' && onReconnect ? (
             <Button
               variant="outline"
               size="sm"

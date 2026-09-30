@@ -93,8 +93,11 @@ describe('CredentialForm', () => {
     );
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.textContent).toBe('Create a token on GitHub');
-    // A 12px link in a 12px hint, its icon trailing.
-    expect(link.className).toContain('text-xs');
+    // A link in running text: it takes the 12px hint's size and weight
+    // from the sentence (no type of its own) and keeps primary.
+    expect(link.dataset.size).toBe('text');
+    expect(link.className).toContain('text-primary');
+    expect(link.className).not.toMatch(/\btext-(xs|sm)\b|font-(normal|medium)/);
     expect(link.lastElementChild?.tagName.toLowerCase()).toBe('svg');
   });
 

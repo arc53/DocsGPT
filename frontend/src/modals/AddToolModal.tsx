@@ -186,7 +186,6 @@ export default function AddToolModal({
         onOpenChange={(o) => !o && close()}
         title={t('settings.tools.selectToolSetup')}
         size="xl"
-        mobileVariant="sheet"
         footer={<ModalActions cancelLabel={t('cancel')} onCancel={close} />}
       >
         <div className="flex flex-col gap-6">

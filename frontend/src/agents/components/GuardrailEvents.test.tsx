@@ -180,6 +180,7 @@ describe('GuardrailEvents load error', () => {
       (b) => b.textContent === 'retry',
     );
     expect(retry).toBeDefined();
+    expect(retry!.className).toContain('rounded-full');
 
     await act(async () => retry!.click());
 

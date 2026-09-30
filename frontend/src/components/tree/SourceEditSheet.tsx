@@ -113,11 +113,11 @@ export default function SourceEditSheet({
           onValueChange={setTab}
           className="flex min-h-0 flex-1 flex-col"
         >
-          <TabsList variant="underline" className="mx-6">
-            <TabsTrigger variant="underline" value="write">
+          <TabsList className="mx-6">
+            <TabsTrigger value="write">
               {t('settings.sources.editor.write')}
             </TabsTrigger>
-            <TabsTrigger variant="underline" value="preview">
+            <TabsTrigger value="preview">
               {t('settings.sources.editor.preview')}
             </TabsTrigger>
           </TabsList>

@@ -1186,7 +1186,9 @@
         "cancel": "Cancel"
       },
       "auditDurationValue": "{{value}} ms",
-      "fallbackName": "device"
+      "fallbackName": "device",
+      "auditShow": "Show recent commands",
+      "auditHide": "Hide recent commands"
     },
     "customModels": {
       "label": "Custom Models",

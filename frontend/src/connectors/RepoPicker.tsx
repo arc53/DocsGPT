@@ -116,12 +116,9 @@ export default function RepoPicker({
             ? t('settings.connectors.detail.expired')
             : t('settings.connectors.github.loadFailed')
         }
+        onRetry={error === 'failed' ? load : undefined}
         action={
-          error === 'failed' ? (
-            <Button variant="outline" size="sm" shape="pill" onClick={load}>
-              {t('retry')}
-            </Button>
-          ) : onReconnect ? (
+          error !== 'failed' && onReconnect ? (
             <Button
               variant="outline"
               size="sm"

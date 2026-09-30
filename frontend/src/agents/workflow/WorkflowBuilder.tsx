@@ -1870,7 +1870,6 @@ function WorkflowBuilderInner() {
             agentName={workflowName || t('agents.workflow.builder.newWorkflow')}
             agentEditPath={agentEditPath(effectiveAgentId, true)}
             agentImage={currentAgentImage}
-            currentPage="overview"
             access={canManageAgent ? currentAgent : undefined}
             onNameClick={openDetails}
             status={

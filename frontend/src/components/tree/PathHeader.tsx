@@ -60,7 +60,7 @@ export default function PathHeader({
       <div className="flex min-h-9.5 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto">
           <Breadcrumb className="min-w-0">
-            <BreadcrumbList className="flex-nowrap">
+            <BreadcrumbList>
               {crumbs.map((crumb, index) => {
                 const isLast = index === crumbs.length - 1;
                 return (
@@ -68,14 +68,9 @@ export default function PathHeader({
                     {index > 0 ? (
                       <BreadcrumbSeparator className="shrink-0" />
                     ) : null}
-                    <BreadcrumbItem className="min-w-0">
+                    <BreadcrumbItem>
                       {isLast ? (
-                        <BreadcrumbPage
-                          ref={currentRef}
-                          tabIndex={-1}
-                          className="max-w-[32ch]"
-                          title={crumb.label}
-                        >
+                        <BreadcrumbPage ref={currentRef} tabIndex={-1}>
                           {crumb.label}
                         </BreadcrumbPage>
                       ) : crumb.onSelect ? (
@@ -83,13 +78,13 @@ export default function PathHeader({
                           <button
                             type="button"
                             title={crumb.label}
-                            className="max-w-[16ch] truncate"
                             onClick={() => select(crumb)}
                           >
                             {crumb.label}
                           </button>
                         </BreadcrumbLink>
                       ) : (
+                        // Not a link, so BreadcrumbLink's parent cap is set by hand.
                         <span
                           title={crumb.label}
                           className="max-w-[16ch] truncate"

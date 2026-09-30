@@ -16,7 +16,7 @@ type DeviceAuditListProps = {
 
 /**
  * A paired device's command history, newest first. It mounts when the
- * "Recent activity" accordion opens (so the first fetch stays lazy), and
+ * "Recent activity" disclosure opens (so the first fetch stays lazy), and
  * scrolls inside a capped inner box so the page keeps its length.
  */
 export default function DeviceAuditList({
@@ -57,7 +57,7 @@ export default function DeviceAuditList({
           <p className="text-destructive text-sm">
             {t('pagination.olderFailed')}
           </p>
-          <Button variant="outline" size="sm" onClick={feed.retry}>
+          <Button variant="outline" size="sm" shape="pill" onClick={feed.retry}>
             {t('retry')}
           </Button>
         </div>

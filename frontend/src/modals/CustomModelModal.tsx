@@ -323,7 +323,6 @@ export default function CustomModelModal({
       }
       description={t('settings.customModels.modalSubtitle')}
       size="lg"
-      mobileVariant="sheet"
       footer={
         <ModalActions
           footerStart={

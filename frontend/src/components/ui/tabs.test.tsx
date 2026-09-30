@@ -1,7 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { Tabs, TabsList, TabsTrigger } from './tabs';
+import {
+  NavTab,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  tabsTriggerVariants,
+} from './tabs';
 
 describe('TabsTrigger', () => {
   it('uses the DESIGN.md 3px keyboard ring', () => {
@@ -18,42 +24,22 @@ describe('TabsTrigger', () => {
   });
 });
 
-describe('Tabs variants', () => {
-  const render = (variant?: 'default' | 'underline') =>
-    renderToStaticMarkup(
-      <Tabs defaultValue="a">
-        <TabsList variant={variant}>
-          <TabsTrigger variant={variant} value="a">
-            My Files
-          </TabsTrigger>
-          <TabsTrigger variant={variant} value="b">
-            Shared with Me
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>,
-    );
-  const tag = (html: string, slot: string) =>
+describe('Tabs look', () => {
+  const html = renderToStaticMarkup(
+    <Tabs defaultValue="a">
+      <TabsList>
+        <TabsTrigger value="a">My Files</TabsTrigger>
+        <TabsTrigger value="b">Shared with Me</TabsTrigger>
+      </TabsList>
+    </Tabs>,
+  );
+  const tag = (slot: string) =>
     /class="([^"]*)"/
       .exec(new RegExp(`<[^>]*data-slot="${slot}"[^>]*>`).exec(html)![0])![1]
       .split(' ');
 
-  it('keeps the pill trigger as the default', () => {
-    const html = render();
-    const trigger = tag(html, 'tabs-trigger');
-    expect(trigger).toEqual(
-      expect.arrayContaining([
-        'rounded-3xl',
-        'font-bold',
-        'data-[state=active]:bg-muted',
-      ]),
-    );
-    expect(html).toContain('data-variant="default"');
-    expect(tag(html, 'tabs-list')).toContain('overflow-x-auto');
-  });
-
-  it('draws underline tabs with the Button tab look, keyed on the active state', () => {
-    const html = render('underline');
-    const trigger = tag(html, 'tabs-trigger');
+  it('draws underline tabs by default, keyed on the active state', () => {
+    const trigger = tag('tabs-trigger');
     expect(trigger).toEqual(
       expect.arrayContaining([
         'border-b-2',
@@ -72,12 +58,71 @@ describe('Tabs variants', () => {
     );
     expect(trigger).not.toContain('rounded-3xl');
     expect(trigger).not.toContain('font-bold');
-    const list = tag(html, 'tabs-list');
+    const list = tag('tabs-list');
     expect(list).toEqual(expect.arrayContaining(['border-border', 'border-b']));
     // No scroll container: it would clip the focus ring.
     expect(list).not.toContain('overflow-x-auto');
-    expect(html).toContain('data-variant="underline"');
+    expect(html).not.toContain('data-variant');
     expect(html).toContain('role="tablist"');
     expect(html).toContain('aria-selected="true"');
+  });
+
+  it('has no variant prop', () => {
+    renderToStaticMarkup(
+      <Tabs defaultValue="a">
+        {/* @ts-expect-error the pill variant and the prop are gone */}
+        <TabsList variant="underline">
+          {/* @ts-expect-error the pill variant and the prop are gone */}
+          <TabsTrigger variant="underline" value="a">
+            a
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    );
+  });
+
+  it('exports the trigger recipe for route tabs', () => {
+    const classes = tabsTriggerVariants().split(' ');
+    expect(classes).toContain('border-b-2');
+    expect(classes).toContain('aria-[current=page]:border-primary');
+    expect(classes).toContain('aria-[current=page]:text-foreground');
+  });
+});
+
+describe('NavTab', () => {
+  const render = (current?: boolean) => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(
+      <nav>
+        <NavTab current={current}>
+          <a href="/agents/1/logs">Logs</a>
+        </NavTab>
+      </nav>,
+    );
+    return host.querySelector('a')!;
+  };
+
+  it('renders its child (a router Link) with the tab recipe', () => {
+    const link = render();
+    expect(link.dataset.slot).toBe('nav-tab');
+    expect(link.getAttribute('href')).toBe('/agents/1/logs');
+    const classes = link.className.split(' ');
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'h-9',
+        'px-4',
+        'border-b-2',
+        'text-muted-foreground',
+        'focus-visible:ring-3',
+      ]),
+    );
+    expect(link.hasAttribute('aria-current')).toBe(false);
+    expect(link.getAttribute('role')).toBeNull();
+  });
+
+  it('current marks the page and draws the underline via aria-current', () => {
+    const link = render(true);
+    expect(link.getAttribute('aria-current')).toBe('page');
+    expect(link.className).toContain('aria-[current=page]:border-primary');
   });
 });

@@ -186,7 +186,6 @@ export default function TestRetrievalModal({
       }
       // xl, like PromptsModal, so the two large modals read as one family.
       size="xl"
-      mobileVariant="sheet"
     >
       <div className="flex flex-col">
         <div className="flex flex-col gap-4">
@@ -194,9 +193,7 @@ export default function TestRetrievalModal({
             <Input
               type="text"
               value={query}
-              autoFocus
               placeholder={tr('queryPlaceholder')}
-              shape="pill"
               className="flex-1"
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -208,7 +205,6 @@ export default function TestRetrievalModal({
               disabled={!canRun}
               onClick={handleRun}
               size="field"
-              shape="pill"
               loading={running}
               className="shrink-0"
             >

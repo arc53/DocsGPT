@@ -280,7 +280,6 @@ describe('FilePicker', () => {
     await renderSharePoint();
     const list = container.querySelector('[data-slot="tabs-list"]')!;
     expect(list.getAttribute('role')).toBe('tablist');
-    expect(list.getAttribute('data-variant')).toBe('underline');
     const tabs = Array.from(
       list.querySelectorAll('[data-slot="tabs-trigger"][role="tab"]'),
     );

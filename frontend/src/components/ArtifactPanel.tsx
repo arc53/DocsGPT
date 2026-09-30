@@ -253,7 +253,7 @@ function NoteView({ data }: { data: NoteArtifactData }) {
                 },
                 a({ children, href }) {
                   return (
-                    <Button variant="link" size="inline" asChild>
+                    <Button variant="link" size="text" asChild>
                       <a href={href} target="_blank" rel="noopener noreferrer">
                         {children}
                       </a>
@@ -452,15 +452,7 @@ export default function ArtifactPanel({
           illustration="none"
           title={error}
           className="h-full"
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRefreshNonce((n) => n + 1)}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => setRefreshNonce((n) => n + 1)}
         />
       );
     }

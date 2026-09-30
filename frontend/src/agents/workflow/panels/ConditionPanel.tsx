@@ -241,13 +241,7 @@ export default function ConditionPanel({
                       components={{ code: <code /> }}
                       values={{ braced: '{{query}}' }}
                     />{' '}
-                    <Button
-                      variant="link"
-                      size="inline"
-                      asChild
-                      // eslint-disable-next-line shadcn/no-restyle -- a link in a 12px hint keeps the sentence's size and weight
-                      className="text-xs font-normal"
-                    >
+                    <Button variant="link" size="text" asChild>
                       <a
                         href="https://cel.dev/"
                         target="_blank"

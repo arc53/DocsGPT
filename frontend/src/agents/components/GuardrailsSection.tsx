@@ -276,16 +276,7 @@ export default function GuardrailsSection({
               size="sm"
               illustration="none"
               title={loadError}
-              action={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setReloadKey((k) => k + 1)}
-                >
-                  {t('retry')}
-                </Button>
-              }
+              onRetry={() => setReloadKey((k) => k + 1)}
             />
           )}
 
@@ -347,7 +338,6 @@ export default function GuardrailsSection({
                   <SelectTrigger
                     className="w-full"
                     size="field"
-                    shape="pill"
                     data-testid="guardrails-mode"
                   >
                     <SelectValue />
@@ -424,7 +414,6 @@ export default function GuardrailsSection({
                   maxLength={500}
                   data-testid="guardrails-block-message"
                   onChange={(e) => patch({ block_message: e.target.value })}
-                  shape="pill"
                 />
               </FormField>
 
@@ -512,7 +501,6 @@ function NumberField({
         onCommit(next);
       }}
       variant="filled"
-      shape="pill"
     />
   );
 }
@@ -696,7 +684,6 @@ function CheckCard({
                 >
                   <SelectTrigger
                     size="sm"
-                    shape="pill"
                     data-testid={`guardrail-action-${control.check}-${control.stage}`}
                   >
                     <SelectValue />

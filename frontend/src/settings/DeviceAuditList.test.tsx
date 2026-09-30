@@ -75,6 +75,7 @@ describe('DeviceAuditList', () => {
     const retry = Array.from(container.querySelectorAll('button')).find(
       (b) => b.textContent === 'retry',
     )!;
+    expect(retry.className).toContain('rounded-full');
     await act(async () => retry.click());
     for (let i = 0; i < 4; i += 1) await act(async () => Promise.resolve());
     expect(container.querySelectorAll('li')).toHaveLength(1);

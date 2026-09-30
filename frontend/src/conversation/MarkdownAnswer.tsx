@@ -152,7 +152,7 @@ export default function MarkdownAnswer({
         <Button
           type="button"
           variant="link"
-          size="inline"
+          size="text"
           onClick={() =>
             onOpenArtifact({
               id: artifact.id,
@@ -258,7 +258,7 @@ export default function MarkdownAnswer({
 
         return match ? (
           <div className="group border-border relative overflow-hidden rounded-xl border">
-            <div className="bg-muted flex items-center justify-between px-2 py-1">
+            <div className="bg-answer-surface flex items-center justify-between px-2 py-1">
               <span className="text-foreground text-xs font-medium">
                 {language}
               </span>

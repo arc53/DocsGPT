@@ -33,7 +33,9 @@ describe('LoadError', () => {
     expect(block?.textContent).toContain('Failed to load users.');
 
     const retry = container.querySelector('button');
-    expect(retry?.textContent).toBe('Retry');
+    expect(retry?.textContent?.toLowerCase()).toBe('retry');
+    // EmptyState's own Retry: the outline sm pill.
+    expect(retry?.className).toContain('rounded-full');
     act(() => retry?.click());
     expect(onRetry).toHaveBeenCalledTimes(1);
   });

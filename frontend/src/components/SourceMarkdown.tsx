@@ -32,7 +32,7 @@ const components: Components = {
     <ol className="mb-3 list-outside list-decimal pl-5">{children}</ol>
   ),
   a: ({ children, href }) => (
-    <Button variant="link" size="inline" asChild>
+    <Button variant="link" size="text" asChild>
       <a href={href} target="_blank" rel="noreferrer">
         {children}
       </a>

@@ -64,7 +64,7 @@ describe('TestRetrievalModal notices', () => {
       document.body.querySelectorAll<HTMLButtonElement>('[data-slot="button"]'),
     ).find((b) => b.textContent === 'settings.sources.testRetrieval.run');
     expect(run?.getAttribute('data-size')).toBe('field');
-    expect(run?.getAttribute('data-shape')).toBe('pill');
+    expect(run?.getAttribute('data-shape')).toBe('default');
     // 38px, the height of the Input beside it.
     expect(run?.className).toContain('h-9.5');
   });

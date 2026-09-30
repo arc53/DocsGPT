@@ -372,7 +372,7 @@ export function ToolCallPanel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-answer-bubble overflow-hidden rounded-xl">
+    <div className="bg-answer-surface overflow-hidden rounded-xl">
       <div className="flex items-center justify-between px-3 py-1.5">
         <span className="text-muted-foreground text-xs font-medium">
           {title}

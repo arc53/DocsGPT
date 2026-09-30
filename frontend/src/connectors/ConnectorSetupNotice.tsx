@@ -35,10 +35,10 @@ export default function ConnectorSetupNotice({
           {connector.docs_url && (
             <Button
               variant="link"
-              size="inline"
+              size="text"
+              tone="current"
               asChild
-              // eslint-disable-next-line shadcn/no-restyle -- the link inherits its Alert's status colour
-              className="w-fit text-current"
+              className="w-fit"
             >
               <a
                 href={connector.docs_url}

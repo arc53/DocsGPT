@@ -40,12 +40,6 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -65,6 +59,7 @@ import {
   DescriptionList,
 } from '@/components/ui/description-list';
 import { Dropzone } from '@/components/ui/dropzone';
+import { Collapsible } from '@/components/ui/collapsible';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -180,7 +175,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  NavTab,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
 import { TimePicker } from '@/components/ui/time-picker';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import AgentPreviewSheet from '../agents/components/AgentPreviewSheet';
@@ -252,28 +253,9 @@ const SURFACE_TOKENS = [
   { name: 'popover', bg: 'bg-popover', fg: 'text-popover-foreground' },
   { name: 'muted', bg: 'bg-muted', fg: 'text-muted-foreground' },
   { name: 'accent', bg: 'bg-accent', fg: 'text-accent-foreground' },
-  { name: 'sidebar', bg: 'bg-sidebar', fg: 'text-sidebar-foreground' },
-  {
-    name: 'sidebar-accent',
-    bg: 'bg-sidebar-accent',
-    fg: 'text-sidebar-accent-foreground',
-  },
-  {
-    name: 'sidebar-primary',
-    bg: 'bg-sidebar-primary',
-    fg: 'text-sidebar-primary-foreground',
-  },
-  {
-    name: 'sidebar-border',
-    bg: 'bg-sidebar-border',
-    fg: 'text-sidebar-foreground',
-  },
-  {
-    name: 'sidebar-ring',
-    bg: 'bg-sidebar-ring',
-    fg: 'text-sidebar-primary-foreground',
-  },
-  { name: 'answer-bubble', bg: 'bg-answer-bubble', fg: 'text-foreground' },
+  { name: 'sidebar', bg: 'bg-sidebar', fg: 'text-foreground' },
+  { name: 'sidebar-accent', bg: 'bg-sidebar-accent', fg: 'text-foreground' },
+  { name: 'answer-surface', bg: 'bg-answer-surface', fg: 'text-foreground' },
 ] as const;
 
 const BRAND_TOKENS = [
@@ -319,7 +301,7 @@ const BUTTON_VARIANTS = [
 ] as const;
 
 const BUTTON_SIZES = ['xs', 'sm', 'default', 'lg'] as const;
-const ICON_SIZES = ['icon-xs', 'icon-sm', 'icon', 'icon-lg'] as const;
+const ICON_SIZES = ['icon-xs', 'icon-sm', 'icon'] as const;
 
 const BADGE_VARIANTS = [
   'default',
@@ -479,6 +461,7 @@ export default function DesignSystem() {
   const [scopes, setScopes] = useState<string[]>(['agents:read']);
   const [tokenLimit, setTokenLimit] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [collapsibleOpen, setCollapsibleOpen] = useState(false);
   const [sourceType, setSourceType] = useState<string>('Upload file');
   const [range, setRange] = useState('30d');
   const [trackRange, setTrackRange] = useState('7d');
@@ -782,11 +765,12 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Combobox trigger"
-            code='<Button variant="combobox" role="combobox" data-placeholder={value ? undefined : ""}>'
+            code='<Button variant="combobox" size="field" role="combobox" data-placeholder={value ? undefined : ""}>'
           >
             <div className="flex max-w-md flex-col gap-3">
               <Button
                 variant="combobox"
+                size="field"
                 role="combobox"
                 aria-expanded={false}
                 data-placeholder=""
@@ -797,6 +781,7 @@ export default function DesignSystem() {
               </Button>
               <Button
                 variant="combobox"
+                size="field"
                 role="combobox"
                 aria-expanded={false}
                 className="w-full justify-between"
@@ -843,45 +828,54 @@ export default function DesignSystem() {
             </div>
           </Example>
           <Example
-            title="Link inside running text"
-            code='<Button variant="link" size="inline" asChild><a href>'
+            title="Links: in running text, standalone, in a status Alert"
+            code='size="text" (inherits size, weight, line-height; keeps primary) · size="inline" (14px medium) · tone="current" (context colour)'
           >
-            <p className="text-foreground max-w-md text-base">
-              The quarterly review for Halvorsen Logistics is ready. Open{' '}
-              <Button variant="link" size="inline" asChild>
-                <a href="#buttons">QBR report.html</a>
-              </Button>{' '}
-              to see lane costs and the renewal summary.
-            </p>
+            <div className="flex max-w-md flex-col gap-4">
+              <p className="text-foreground text-base">
+                The quarterly review for Halvorsen Logistics is ready. Open{' '}
+                <Button variant="link" size="text" asChild>
+                  <a href="#buttons">QBR report.html</a>
+                </Button>{' '}
+                to see lane costs and the renewal summary.
+              </p>
+              <p className="text-muted-foreground text-xs">
+                Fine-grained, with read access to Contents.{' '}
+                <Button variant="link" size="text" asChild>
+                  <a href="#buttons">Create a token on GitHub</a>
+                </Button>
+              </p>
+              <div>
+                <Button variant="link" size="inline">
+                  Browse all connectors
+                </Button>
+              </div>
+              <Alert variant="warning">
+                <TriangleAlert />
+                <AlertDescription>
+                  This connector needs setup before agents can use it.{' '}
+                  <Button variant="link" size="text" tone="current" asChild>
+                    <a href="#buttons">Setup guide</a>
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            </div>
           </Example>
           <Example
-            title="Underline tabs"
-            code='<Button variant="tab" data-active={active}>  ·  size="inline" for padding-free tabs'
+            title="Route tabs"
+            code='<nav><NavTab current={active}><Link to>…</Link></NavTab></nav> (aria-current="page"; not Radix Tabs)'
           >
-            <div className="flex flex-col gap-6">
-              <div className="border-border flex border-b">
-                <Button variant="tab" data-active>
-                  My Files
-                </Button>
-                <Button variant="tab">Shared with Me</Button>
-              </div>
-              <div className="border-border flex items-center gap-6 border-b">
-                <Button
-                  variant="tab"
-                  size="inline"
-                  data-active
-                  className="-mb-px"
-                >
-                  Overview
-                </Button>
-                <Button variant="tab" size="inline" className="-mb-px">
-                  Logs
-                </Button>
-                <Button variant="tab" size="inline" className="-mb-px">
-                  Schedules
-                </Button>
-              </div>
-            </div>
+            <nav aria-label="Agent pages" className="flex items-center">
+              <NavTab current>
+                <a href="#buttons">Overview</a>
+              </NavTab>
+              <NavTab>
+                <a href="#buttons">Logs</a>
+              </NavTab>
+              <NavTab>
+                <a href="#buttons">Schedules</a>
+              </NavTab>
+            </nav>
           </Example>
           <Example title="Loading" code="<Button loading={saving}>">
             <div className="flex flex-wrap items-center gap-3">
@@ -1074,7 +1068,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Icon buttons"
-            code='<IconButton label="Edit" icon={Pencil} size="icon-xs" … "icon-lg">'
+            code='<IconButton label="Edit" icon={Pencil} size="icon-xs" | "icon-sm" | "icon">'
           >
             <div className="flex flex-wrap items-center gap-6">
               {ICON_SIZES.map((size) => (
@@ -1826,7 +1820,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Empty, loading and failed"
-            code="<EmptyState size tone illustration> · <LoadingState fill label>"
+            code="<EmptyState size tone illustration action onRetry> · <LoadingState fill label>"
           >
             <div className="grid items-center gap-6 md:grid-cols-3">
               <EmptyState size="sm" title="No existing Sources" />
@@ -1835,11 +1829,7 @@ export default function DesignSystem() {
                 size="sm"
                 illustration="none"
                 title="Failed to load usage."
-                action={
-                  <Button variant="outline" size="sm">
-                    Retry
-                  </Button>
-                }
+                onRetry={() => undefined}
               />
               <LoadingState fill="block" label="Converting..." />
             </div>
@@ -1968,7 +1958,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Select"
-            code='<SelectTrigger size="…" variant="…" shape="…">'
+            code='<SelectTrigger size="sm | field (default)" shape="pill">'
           >
             <div className="flex flex-wrap items-center gap-4">
               <Select defaultValue="finance">
@@ -1985,34 +1975,16 @@ export default function DesignSystem() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="finance">Default</SelectItem>
+                  <SelectItem value="finance">Field (default)</SelectItem>
                   <SelectItem value="legal">Legal</SelectItem>
                 </SelectContent>
               </Select>
               <Select defaultValue="finance">
-                <SelectTrigger size="field">
+                <SelectTrigger shape="pill">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="finance">Large</SelectItem>
-                  <SelectItem value="legal">Legal</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select defaultValue="finance">
-                <SelectTrigger size="field" shape="pill">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="finance">Large pill</SelectItem>
-                  <SelectItem value="legal">Legal</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select defaultValue="finance">
-                <SelectTrigger variant="ghost">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="finance">Ghost</SelectItem>
+                  <SelectItem value="finance">Field pill</SelectItem>
                   <SelectItem value="legal">Legal</SelectItem>
                 </SelectContent>
               </Select>
@@ -2098,7 +2070,6 @@ export default function DesignSystem() {
                 htmlFor="ds-token-limiting"
                 after={
                   <Input
-                    shape="pill"
                     placeholder="Enter token limit"
                     disabled={!tokenLimit}
                   />
@@ -2169,7 +2140,7 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Switch and multi-select"
-            code="<Switch> · <MultiSelect>"
+            code='<Switch> · <MultiSelect shape="default | pill">'
           >
             <div className="grid items-start gap-6 md:grid-cols-2">
               <div className="flex flex-col gap-4">
@@ -2191,12 +2162,21 @@ export default function DesignSystem() {
                   <Label htmlFor="sw-2">Disabled</Label>
                 </div>
               </div>
-              <MultiSelect
-                options={MULTI_OPTIONS}
-                selected={formats}
-                onChange={setFormats}
-                placeholder="Allowed formats"
-              />
+              <div className="flex flex-col gap-4">
+                <MultiSelect
+                  options={MULTI_OPTIONS}
+                  selected={formats}
+                  onChange={setFormats}
+                  placeholder="Allowed formats"
+                />
+                <MultiSelect
+                  options={MULTI_OPTIONS}
+                  selected={formats}
+                  onChange={setFormats}
+                  placeholder="Allowed formats"
+                  shape="pill"
+                />
+              </div>
             </div>
           </Example>
         </Section>
@@ -2464,7 +2444,7 @@ export default function DesignSystem() {
                           <p
                             className={
                               index % 2 === 0
-                                ? 'bg-answer-bubble ml-auto w-fit max-w-[80%] rounded-2xl px-3 py-2 text-sm'
+                                ? 'bg-answer-surface ml-auto w-fit max-w-[80%] rounded-2xl px-3 py-2 text-sm'
                                 : 'text-foreground text-sm'
                             }
                           >
@@ -2530,7 +2510,10 @@ export default function DesignSystem() {
           title="Navigation"
           intro="Tabs, accordions and breadcrumbs as shipped."
         >
-          <Example title="Tabs" code="<Tabs>">
+          <Example
+            title="Tabs"
+            code="<Tabs> · <TabsList> · <TabsTrigger> (underline is the only look)"
+          >
             <Tabs defaultValue="sources">
               <TabsList>
                 <TabsTrigger value="sources">Sources</TabsTrigger>
@@ -2555,51 +2538,38 @@ export default function DesignSystem() {
             </Tabs>
           </Example>
           <Example
-            title="Underline tabs"
-            code='<TabsList variant="underline"> · <TabsTrigger variant="underline">'
+            title="Collapsible"
+            code='<Button variant="link" size="sm" aria-expanded aria-controls> · <Collapsible open id>'
           >
-            <Tabs defaultValue="my_files">
-              <TabsList variant="underline">
-                <TabsTrigger variant="underline" value="my_files">
-                  My Files
-                </TabsTrigger>
-                <TabsTrigger variant="underline" value="shared">
-                  Shared with Me
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="my_files">
-                <p className="text-muted-foreground pt-4 text-sm">
-                  Files in your own drive.
+            <div className="max-w-md">
+              <Button
+                variant="link"
+                size="sm"
+                aria-expanded={collapsibleOpen}
+                aria-controls="ds-collapsible"
+                onClick={() => setCollapsibleOpen((open) => !open)}
+              >
+                {collapsibleOpen
+                  ? 'Hide recent commands'
+                  : 'Show recent commands'}
+                <ChevronRight
+                  aria-hidden
+                  className={`transition-transform duration-200 ${collapsibleOpen ? 'rotate-90' : ''}`}
+                />
+              </Button>
+              <Collapsible id="ds-collapsible" open={collapsibleOpen}>
+                <p className="text-muted-foreground pt-2 text-sm">
+                  ls -la ~/Downloads/rate-sheets · python3 clean_rates.py
+                  Q3.xlsx
                 </p>
-              </TabsContent>
-              <TabsContent value="shared">
-                <p className="text-muted-foreground pt-4 text-sm">
-                  Files other people shared with you.
-                </p>
-              </TabsContent>
-            </Tabs>
+              </Collapsible>
+            </div>
           </Example>
           <Example
-            title="Accordion and breadcrumb"
-            code="<Accordion> · <Breadcrumb> · <BreadcrumbEllipsis />"
+            title="Breadcrumb"
+            code="<Breadcrumb> · <BreadcrumbEllipsis />"
           >
             <div className="grid gap-8 md:grid-cols-2">
-              <Accordion type="single" collapsible defaultValue="a">
-                <AccordionItem value="a">
-                  <AccordionTrigger>
-                    What does re-embedding do?
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    Recomputes vectors for every chunk with the current model.
-                  </AccordionContent>
-                </AccordionItem>
-                <AccordionItem value="b">
-                  <AccordionTrigger>Can I pause a schedule?</AccordionTrigger>
-                  <AccordionContent>
-                    Yes, paused schedules keep their history.
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
               <Breadcrumb>
                 <BreadcrumbList>
                   <BreadcrumbItem>
@@ -2624,10 +2594,7 @@ export default function DesignSystem() {
                   </BreadcrumbItem>
                   <BreadcrumbSeparator />
                   <BreadcrumbItem>
-                    <BreadcrumbPage
-                      title="Quarterly renewal desk for key logistics accounts"
-                      className="max-w-[16ch]"
-                    >
+                    <BreadcrumbPage>
                       Quarterly renewal desk for key logistics accounts
                     </BreadcrumbPage>
                   </BreadcrumbItem>
@@ -2953,16 +2920,16 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Modal sizes and footers"
-            code='size="sm | lg | xl | full" · mobileVariant="sheet" · hideTitle · <ModalActions destructive | pending | footerStart> · no submitLabel = Cancel only'
+            code='size="sm | lg | xl | full" · phones: a sheet by default, mobileVariant="dialog" for a yes/no · hideTitle · <ModalActions destructive | pending | footerStart> · no submitLabel = Cancel only'
           >
             <div className="flex flex-wrap items-center gap-3">
               {(
                 [
-                  ['sm', 'sm, destructive'],
+                  ['sm', 'sm, destructive, dialog on phones'],
                   ['lg', 'lg, footerStart'],
                   ['xl', 'xl, cancel only'],
                   ['full', 'full, pending'],
-                  ['sheet', 'Sheet on phones'],
+                  ['sheet', 'Sheet on phones (default)'],
                   ['hidden', 'hideTitle'],
                 ] as const
               ).map(([id, label]) => (
@@ -2977,6 +2944,7 @@ export default function DesignSystem() {
               ))}
               <Modal
                 size="sm"
+                mobileVariant="dialog"
                 open={modalDemo === 'sm'}
                 onOpenChange={(open) => !open && setModalDemo(null)}
                 title="Delete source?"
@@ -3058,7 +3026,6 @@ export default function DesignSystem() {
                 </p>
               </Modal>
               <Modal
-                mobileVariant="sheet"
                 open={modalDemo === 'sheet'}
                 onOpenChange={(open) => !open && setModalDemo(null)}
                 title="Share to team"

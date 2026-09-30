@@ -172,7 +172,7 @@ export default function ConvertToWikiModal({
       }
       footer={footer}
       size="md"
-      mobileVariant="sheet"
+      mobileVariant="dialog"
       isPerformingTask={phase === 'converting'}
     >
       <div className="flex flex-col gap-5">

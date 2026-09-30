@@ -273,16 +273,7 @@ export default function Connectors() {
           tone="destructive"
           illustration="none"
           title={t('settings.connectors.loadFailed')}
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => dispatch(loadConnectors({ token }))}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => dispatch(loadConnectors({ token }))}
         />
       ) : visible.length === 0 ? (
         filter === 'connected' && !search ? (

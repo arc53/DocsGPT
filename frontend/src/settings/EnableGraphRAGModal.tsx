@@ -245,7 +245,7 @@ export default function EnableGraphRAGModal({
       }
       footer={footer}
       size="md"
-      mobileVariant="sheet"
+      mobileVariant="dialog"
       isPerformingTask={phase === 'building'}
     >
       <div className="flex flex-col gap-5">

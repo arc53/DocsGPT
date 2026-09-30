@@ -145,7 +145,6 @@ describe('SchedulesView', () => {
       'agents.schedules.recurring2',
       'agents.schedules.oneTime0',
     ]);
-    expect(tabs[0].getAttribute('data-variant')).toBe('underline');
     expect(container.querySelector('[data-testid="row-s1"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="row-s2"]')).not.toBeNull();
   });

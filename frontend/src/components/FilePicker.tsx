@@ -339,28 +339,18 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
                 ? t('settings.connectors.detail.expired')
                 : t('filePicker.loadFailed')
             }
+            onRetry={needsReconnect ? undefined : feed.retry}
             action={
-              needsReconnect ? (
-                onReconnect ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    shape="pill"
-                    onClick={onReconnect}
-                  >
-                    {t('settings.connectors.status.reconnect')}
-                  </Button>
-                ) : undefined
-              ) : (
+              needsReconnect && onReconnect ? (
                 <Button
                   variant="outline"
                   size="sm"
                   shape="pill"
-                  onClick={feed.retry}
+                  onClick={onReconnect}
                 >
-                  {t('retry')}
+                  {t('settings.connectors.status.reconnect')}
                 </Button>
-              )
+              ) : undefined
             }
           />
         );
@@ -454,20 +444,22 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           appears once a folder is open, its first crumb the way back. */}
       {folderPath.length > 1 && (
         <Breadcrumb className="min-w-0">
-          <BreadcrumbList className="flex-nowrap">
+          <BreadcrumbList>
             {folderPath.map((crumb, index) => (
               <Fragment key={crumb.id || 'root'}>
                 {index > 0 && <BreadcrumbSeparator />}
                 {index === folderPath.length - 1 ? (
-                  <BreadcrumbItem className="min-w-0">
-                    <BreadcrumbPage title={crumb.name} className="max-w-[32ch]">
-                      {crumb.name}
-                    </BreadcrumbPage>
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
                   </BreadcrumbItem>
                 ) : (
                   <BreadcrumbItem>
                     <BreadcrumbLink asChild>
-                      <button type="button" onClick={() => goUp(index)}>
+                      <button
+                        type="button"
+                        title={crumb.name}
+                        onClick={() => goUp(index)}
+                      >
                         {crumb.name}
                       </button>
                     </BreadcrumbLink>
@@ -534,11 +526,11 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           onValueChange={(value) => changeTab(value as DriveTab)}
         >
           {showDriveTabs && (
-            <TabsList variant="underline">
-              <TabsTrigger variant="underline" value="my_files">
+            <TabsList>
+              <TabsTrigger value="my_files">
                 {t('filePicker.myFiles')}
               </TabsTrigger>
-              <TabsTrigger variant="underline" value="shared">
+              <TabsTrigger value="shared">
                 {t('filePicker.sharedWithMe')}
               </TabsTrigger>
             </TabsList>

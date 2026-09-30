@@ -1858,11 +1858,8 @@ export default function MessageInput({
             <Button
               type="button"
               variant="link"
-              size="inline"
+              size="text"
               onClick={cancelArmedSend}
-              /* eslint-disable-next-line shadcn/no-restyle --
-                 The queued-send Cancel sits inline in the composer's 12px status line; link inline keeps the base text-sm, so it takes the line's size. */
-              className="text-xs"
             >
               {t('conversation.attachments.cancelQueuedSend')}
             </Button>

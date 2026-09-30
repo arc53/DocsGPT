@@ -1,7 +1,9 @@
-import { ShieldAlert } from 'lucide-react';
+import { ChevronRight, ShieldAlert } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
+
+import { cn } from '@/lib/utils';
 
 import devicesService, {
   ApprovalMode,
@@ -11,16 +13,11 @@ import CopyButton from '../components/CopyButton';
 import ToolIcon from '../components/ToolIcon';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
 import DeviceAuditList from './DeviceAuditList';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../components/ui/accordion';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
+import { Collapsible } from '../components/ui/collapsible';
 import {
   DescriptionItem,
   DescriptionList,
@@ -94,6 +91,9 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
   const [error, setError] = React.useState<string | null>(null);
 
   const [revokeState, setRevokeState] = React.useState<ActiveState>('INACTIVE');
+  const [auditOpen, setAuditOpen] = React.useState(false);
+  const [auditLoaded, setAuditLoaded] = React.useState(false);
+  const auditId = React.useId();
 
   const applyDevice = React.useCallback((d: Device) => {
     setDevice(d);
@@ -336,18 +336,33 @@ export default function RemoteDeviceConfig({ tool, handleGoBack }: Props) {
           size="xs"
           title={t('settings.devices.auditTitle')}
         />
-        <div className="border-border w-full rounded-xl border">
-          <Accordion type="single" collapsible>
-            <AccordionItem value="audit">
-              <AccordionTrigger>
-                {t('settings.devices.auditTitle')}
-              </AccordionTrigger>
-              <AccordionContent>
-                <DeviceAuditList deviceId={deviceId} token={token} />
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        </div>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          aria-expanded={auditOpen}
+          aria-controls={auditId}
+          className="-ml-3 w-fit justify-start"
+          onClick={() => {
+            setAuditOpen(!auditOpen);
+            setAuditLoaded(true);
+          }}
+        >
+          <ChevronRight
+            aria-hidden
+            className={cn(
+              'transition-transform duration-200',
+              auditOpen && 'rotate-90',
+            )}
+          />
+          {auditOpen
+            ? t('settings.devices.auditHide')
+            : t('settings.devices.auditShow')}
+        </Button>
+        <Collapsible open={auditOpen} id={auditId}>
+          {/* Fetched on first open, then kept so closing can animate. */}
+          {auditLoaded && <DeviceAuditList deviceId={deviceId} token={token} />}
+        </Collapsible>
       </section>
 
       {/* Danger zone */}

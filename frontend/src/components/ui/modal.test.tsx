@@ -227,12 +227,7 @@ describe('Modal mobile sheet', () => {
   it('takes the bottom-sheet shape and handle from ui/sheet on phones', async () => {
     media.isMobile = true;
     await render(
-      <Modal
-        open
-        onOpenChange={() => undefined}
-        title="Test retrieval"
-        mobileVariant="sheet"
-      >
+      <Modal open onOpenChange={() => undefined} title="Test retrieval">
         Body
       </Modal>,
     );
@@ -256,6 +251,36 @@ describe('Modal mobile sheet', () => {
     expect(sheet.firstElementChild!.getAttribute('data-slot')).toBe(
       'sheet-handle',
     );
+  });
+
+  it('is a sheet on phones by default', async () => {
+    media.isMobile = true;
+    await render(
+      <Modal open onOpenChange={() => undefined} title="Rename">
+        Body
+      </Modal>,
+    );
+    expect(content().hasAttribute('data-mobile-sheet')).toBe(true);
+    expect(
+      content().querySelector('[data-slot="sheet-handle"]'),
+    ).not.toBeNull();
+  });
+
+  it('stays a centred dialog on phones with mobileVariant="dialog"', async () => {
+    media.isMobile = true;
+    await render(
+      <Modal
+        open
+        onOpenChange={() => undefined}
+        title="Delete?"
+        mobileVariant="dialog"
+      >
+        Body
+      </Modal>,
+    );
+    expect(content().hasAttribute('data-mobile-sheet')).toBe(false);
+    expect(content().className).toContain('rounded-2xl');
+    expect(content().querySelector('[data-slot="sheet-handle"]')).toBeNull();
   });
 
   it('caps the desktop dialog at 85dvh and scrolls only its body', async () => {
@@ -284,12 +309,7 @@ describe('Modal mobile sheet', () => {
 
   it('keeps the centred dialog on desktop', async () => {
     await render(
-      <Modal
-        open
-        onOpenChange={() => undefined}
-        title="Test retrieval"
-        mobileVariant="sheet"
-      >
+      <Modal open onOpenChange={() => undefined} title="Test retrieval">
         Body
       </Modal>,
     );
@@ -350,12 +370,7 @@ describe('Modal bottom-bar reset', () => {
 
   const renderModal = (open: boolean) =>
     render(
-      <Modal
-        open={open}
-        onOpenChange={() => undefined}
-        title="Upload"
-        mobileVariant="sheet"
-      >
+      <Modal open={open} onOpenChange={() => undefined} title="Upload">
         Body
       </Modal>,
     );

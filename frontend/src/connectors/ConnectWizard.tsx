@@ -1,25 +1,21 @@
-import { CircleAlert, CircleCheck } from 'lucide-react';
+import { ChevronRight, CircleAlert, CircleCheck } from 'lucide-react';
 import { nanoid } from '@reduxjs/toolkit';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import { envVar } from '@/env';
+import { cn } from '@/lib/utils';
 import { baseURL } from '../api/client';
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
 import { useConnectorAuth } from '../components/ConnectorAuth';
 import { FilePicker } from '../components/FilePicker';
 import GoogleDrivePicker from '../components/GoogleDrivePicker';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../components/ui/accordion';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
+import { Collapsible } from '../components/ui/collapsible';
 import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
@@ -164,6 +160,8 @@ export default function ConnectWizard({
   );
   // A connector that asks about its tools (GitHub) offers them switched on.
   const [toolsOn, setToolsOn] = useState(true);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsId = useId();
   // Changes (GitHub's issues, comments, pull requests) are an opt-in on top.
   const [writesOn, setWritesOn] = useState(false);
   const [chosenMethod, setChosenMethod] = useState<ConnectorAuthKind | null>(
@@ -880,28 +878,39 @@ export default function ConnectWizard({
         </Alert>
       )}
       {toolCount > 0 && activeConnectionId && (
-        <div className="border-border overflow-hidden rounded-xl border">
-          <Accordion type="single" collapsible>
-            <AccordionItem value="tools">
-              <AccordionTrigger>
-                {t('settings.connectors.wizard.toolsHeading', {
-                  count: toolCount,
-                  formatted: formatCount(toolCount),
-                })}
-              </AccordionTrigger>
-              <AccordionContent>
-                <div className="flex flex-col gap-3 px-4 pb-4">
-                  {tools.map((tool) => (
-                    <ToolPermissions
-                      key={tool.id}
-                      connectionId={activeConnectionId}
-                      tool={tool}
-                    />
-                  ))}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+        <div className="flex flex-col gap-3">
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            aria-expanded={toolsOpen}
+            aria-controls={toolsId}
+            className="-ml-3 w-fit justify-start"
+            onClick={() => setToolsOpen(!toolsOpen)}
+          >
+            <ChevronRight
+              aria-hidden
+              className={cn(
+                'transition-transform duration-200',
+                toolsOpen && 'rotate-90',
+              )}
+            />
+            {t('settings.connectors.wizard.toolsHeading', {
+              count: toolCount,
+              formatted: formatCount(toolCount),
+            })}
+          </Button>
+          <Collapsible open={toolsOpen} id={toolsId}>
+            <div className="flex flex-col gap-3">
+              {tools.map((tool) => (
+                <ToolPermissions
+                  key={tool.id}
+                  connectionId={activeConnectionId}
+                  tool={tool}
+                />
+              ))}
+            </div>
+          </Collapsible>
         </div>
       )}
     </div>
@@ -1022,7 +1031,6 @@ export default function ConnectWizard({
         </span>
       }
       size="lg"
-      mobileVariant="sheet"
       footer={footer}
     >
       {step === 'signin' && renderSignIn()}

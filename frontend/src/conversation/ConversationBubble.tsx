@@ -186,7 +186,7 @@ const ConversationBubble = forwardRef<
                 <div
                   key={index}
                   title={file.fileName}
-                  className="bg-muted text-foreground flex items-center rounded-xl p-2 text-sm"
+                  className="bg-answer-surface text-foreground flex items-center rounded-xl p-2 text-sm"
                 >
                   <div className="bg-primary mr-2 items-center justify-center rounded-lg p-1.5">
                     <Paperclip
@@ -225,13 +225,13 @@ const ConversationBubble = forwardRef<
                             : t('conversation.question.collapse')
                         }
                         variant="ghost"
-                        size="icon-lg"
+                        size="icon"
                         shape="pill"
                         onClick={(e) => {
                           e.stopPropagation();
                           setIsQuestionCollapsed(!isQuestionCollapsed);
                         }}
-                        className="ml-1"
+                        className="ml-1 size-10"
                       >
                         <ChevronDown
                           aria-hidden
@@ -357,7 +357,7 @@ const ConversationBubble = forwardRef<
                         {/* Stretched button: its ::after covers the card, so the
                             whole card opens the sheet; the URL link is a sibling
                             above it (z-10), never nested inside a button. */}
-                        <div className="bg-answer-bubble hover:bg-accent has-[>button:focus-visible]:ring-ring/50 relative h-28 rounded-4xl p-4 has-[>button:focus-visible]:ring-3">
+                        <div className="bg-answer-surface hover:bg-accent has-[>button:focus-visible]:ring-ring/50 relative h-28 rounded-4xl p-4 has-[>button:focus-visible]:ring-3">
                           <button
                             type="button"
                             className="block w-full cursor-pointer text-left outline-none after:absolute after:inset-0 after:rounded-4xl"
@@ -433,7 +433,7 @@ const ConversationBubble = forwardRef<
                       <button
                         type="button"
                         className={cn(
-                          'bg-answer-bubble text-primary hover:bg-accent hover:text-primary flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 text-left outline-none',
+                          'bg-answer-surface text-primary hover:bg-accent hover:text-primary flex h-28 cursor-pointer flex-col-reverse rounded-4xl p-4 text-left outline-none',
                           focusRing,
                         )}
                         onClick={openSources}
@@ -898,7 +898,7 @@ export function WikiWriteToolCallCard({
       </span>
       {path && (
         <code
-          className="text-muted-foreground bg-answer-bubble min-w-0 truncate rounded-md px-1.5 py-0.5 font-mono text-xs"
+          className="text-muted-foreground bg-answer-surface min-w-0 truncate rounded-md px-1.5 py-0.5 font-mono text-xs"
           title={path}
         >
           {path}

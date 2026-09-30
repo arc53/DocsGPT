@@ -31,9 +31,10 @@ const cardVariants = cva(
         default: '',
         // Danger zones and a red stat tile: the status soft fill and border.
         // Listed after `variant` so twMerge lets it win on any surface. Muted
-        // text fails AA on the red fill, so it reads as foreground inside.
+        // text fails AA on the red fill, so it reads as foreground inside,
+        // except a hovered Button, which keeps its own hover colour.
         destructive:
-          'border-destructive/50 bg-destructive/10 border [&_.text-muted-foreground]:text-foreground',
+          'border-destructive/50 bg-destructive/10 border [&_.text-muted-foreground:not([data-slot=button]:hover)]:text-foreground',
       },
       padding: {
         none: 'p-0',

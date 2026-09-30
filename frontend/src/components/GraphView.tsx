@@ -34,7 +34,6 @@ import {
   type LabelBox,
 } from './graph/graphCanvasUtils';
 import { useGraphNodeDetail } from './graph/useGraphNodeDetail';
-import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { EmptyState } from './ui/empty-state';
 import { LoadingState } from './ui/loading-state';
@@ -548,17 +547,7 @@ const GraphView: React.FC<GraphViewProps> = ({
         tone="destructive"
         illustration="none"
         title={t('settings.sources.graphrag.view.loadFailed')}
-        action={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            shape="pill"
-            onClick={onRetry}
-          >
-            {t('retry')}
-          </Button>
-        }
+        onRetry={onRetry}
       />
     );
   }

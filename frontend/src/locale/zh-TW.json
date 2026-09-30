@@ -1179,7 +1179,9 @@
         "cancel": "取消"
       },
       "auditDurationValue": "{{value}} 毫秒",
-      "fallbackName": "裝置"
+      "fallbackName": "裝置",
+      "auditShow": "顯示最近的指令",
+      "auditHide": "隱藏最近的指令"
     },
     "customModels": {
       "label": "自訂模型",

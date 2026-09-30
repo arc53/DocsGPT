@@ -39,6 +39,7 @@ export default function ConfirmationModal({
 
   return (
     <Modal
+      mobileVariant="dialog"
       open={modalState === 'ACTIVE'}
       onOpenChange={(open) => {
         if (!open) setModalState('INACTIVE');

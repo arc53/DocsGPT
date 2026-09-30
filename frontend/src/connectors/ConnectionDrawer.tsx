@@ -203,6 +203,7 @@ function DisconnectConnectionModal({
 
   return (
     <Modal
+      mobileVariant="dialog"
       open
       onOpenChange={(open) => !open && onClose()}
       title={t('settings.connectors.disconnect.title', {
@@ -269,6 +270,7 @@ function RemoveConnectionModal({
 
   return (
     <Modal
+      mobileVariant="dialog"
       open
       onOpenChange={(open) => !open && onClose()}
       title={t('settings.connectors.remove.title', {
@@ -1295,16 +1297,7 @@ export default function ConnectionDrawer({
               size="sm"
               illustration="none"
               title={t('settings.connectors.detail.failed')}
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  shape="pill"
-                  onClick={refresh}
-                >
-                  {t('retry')}
-                </Button>
-              }
+              onRetry={refresh}
             />
           ) : !ready ? (
             <LoadingState fill="block" />

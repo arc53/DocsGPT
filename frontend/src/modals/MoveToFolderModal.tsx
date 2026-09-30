@@ -223,7 +223,6 @@ export default function MoveToFolderModal({
                   }
                 }}
                 placeholder={t('agents.folders.newFolder')}
-                shape="pill"
                 autoFocus
               />
             ) : (
@@ -249,16 +248,11 @@ export default function MoveToFolderModal({
           padding plus the content area's 4px). */}
       <div className="-mx-9">
         <div className="bg-muted px-8 py-2">
-          <Breadcrumb className="min-w-0">
-            <BreadcrumbList className="flex-nowrap">
+          <Breadcrumb>
+            <BreadcrumbList>
               {folderPath.length === 0 ? (
-                <BreadcrumbItem className="min-w-0">
-                  <BreadcrumbPage
-                    title={t('agents.filters.byMe')}
-                    className="max-w-[32ch]"
-                  >
-                    {t('agents.filters.byMe')}
-                  </BreadcrumbPage>
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{t('agents.filters.byMe')}</BreadcrumbPage>
                 </BreadcrumbItem>
               ) : (
                 <BreadcrumbItem>
@@ -276,13 +270,8 @@ export default function MoveToFolderModal({
                 <Fragment key={item.id}>
                   <BreadcrumbSeparator />
                   {index === breadcrumbItems.length - 1 ? (
-                    <BreadcrumbItem className="min-w-0">
-                      <BreadcrumbPage
-                        title={item.name}
-                        className="max-w-[32ch]"
-                      >
-                        {item.name}
-                      </BreadcrumbPage>
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{item.name}</BreadcrumbPage>
                     </BreadcrumbItem>
                   ) : (
                     <BreadcrumbItem>

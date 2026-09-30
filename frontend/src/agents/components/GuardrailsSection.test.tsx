@@ -320,20 +320,23 @@ describe('GuardrailsSection', () => {
     expect(row?.dataset.padding).toBe('sm');
   });
 
-  // Decision 63 (3): the form's fields and selects are all 42px.
+  // S8: form fields and selects are square; only page chrome is pill.
   it('sizes the fields through Input and Textarea props', async () => {
     await render();
     const block = q('guardrails-block-message');
     expect(block?.dataset.size).toBe('default');
-    expect(block?.dataset.shape).toBe('pill');
+    expect(block?.dataset.shape).toBe('default');
     expect(block?.className).not.toContain('bg-card');
     const timeout = q('guardrails-timeout');
     expect(timeout?.dataset.variant).toBe('filled');
     expect(timeout?.dataset.size).toBe('default');
-    expect(timeout?.dataset.shape).toBe('pill');
+    expect(timeout?.dataset.shape).toBe('default');
     const mode = q('guardrails-mode');
     expect(mode?.dataset.size).toBe('field');
-    expect(mode?.dataset.shape).toBe('pill');
+    expect(mode?.dataset.shape).toBe('default');
+    const action = q('guardrail-action-pii-input');
+    expect(action?.dataset.size).toBe('sm');
+    expect(action?.dataset.shape).toBe('default');
 
     await act(async () => {
       q('guardrail-configure-policy-input')?.click();
@@ -402,6 +405,9 @@ describe('GuardrailsSection', () => {
     const retry = Array.from(errorState()!.querySelectorAll('button')).find(
       (b) => b.textContent === 'retry',
     );
+    // S7: EmptyState's own Retry, an outline sm pill.
+    expect(retry?.dataset.variant).toBe('outline');
+    expect(retry?.dataset.shape).toBe('pill');
 
     await act(async () => retry!.click());
 

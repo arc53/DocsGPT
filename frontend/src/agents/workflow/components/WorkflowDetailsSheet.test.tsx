@@ -79,6 +79,18 @@ describe('WorkflowDetailsSheet', () => {
     expect(document.querySelector('[role="switch"]')).not.toBeNull();
   });
 
+  // S8: square form controls; the footer actions stay pill chrome.
+  it('draws the name and description as square default-size fields', () => {
+    render();
+    expect(nameInput().getAttribute('data-shape')).toBe('default');
+    const description = document.querySelector('textarea');
+    expect(description?.getAttribute('data-size')).toBe('default');
+    expect(description?.className).toContain('h-32');
+    expect(button('agents.form.buttons.save').getAttribute('data-shape')).toBe(
+      'pill',
+    );
+  });
+
   it('keeps Save disabled until something changes, then saves the edits', () => {
     const { onSave } = render();
     const save = button('agents.form.buttons.save');

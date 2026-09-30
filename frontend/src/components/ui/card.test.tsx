@@ -44,7 +44,17 @@ describe('Card', () => {
 
   it('destructive tone turns muted text inside it to foreground', () => {
     const classes = cardVariants({ tone: 'destructive' });
-    expect(classes).toContain('[&_.text-muted-foreground]:text-foreground');
+    expect(classes).toContain(
+      '[&_.text-muted-foreground:not([data-slot=button]:hover)]:text-foreground',
+    );
+  });
+
+  it('destructive tone leaves a hovered button its own hover colour', () => {
+    // The muted-to-foreground rule used to beat a ghost-destructive button's
+    // hover:text-destructive on source order (the orphan guardrail Remove).
+    const classes = cardVariants({ tone: 'destructive' });
+    // A regex, so Tailwind's scanner doesn't emit the old rule from this file.
+    expect(classes).not.toMatch(/\[&_\.text-muted-foreground\]:/);
   });
 
   it('CardTitle renders the heading level passed in as', () => {

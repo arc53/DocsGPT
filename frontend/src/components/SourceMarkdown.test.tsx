@@ -52,4 +52,12 @@ describe('SourceMarkdown', () => {
     expect(pre.textContent).toContain('npm run build');
     expect(host.querySelector('p code')!.className).toContain('bg-muted');
   });
+
+  it('renders links as text-size links that keep the paragraph type', () => {
+    const host = document.createElement('div');
+    host.innerHTML = render('See [the guide](https://example.com) now.');
+    const link = host.querySelector('a')!;
+    expect(link.dataset.size).toBe('text');
+    expect(link.className).not.toMatch(/\btext-sm\b|font-medium/);
+  });
 });

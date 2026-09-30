@@ -18,7 +18,7 @@ import { useMediaQuery } from '@/hooks';
 import { cn } from '@/lib/utils';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
-type ModalMobileVariant = 'modal' | 'sheet';
+type ModalMobileVariant = 'dialog' | 'sheet';
 
 const SIZE_CLASSES: Record<ModalSize, string> = {
   sm: 'sm:max-w-sm',
@@ -43,6 +43,11 @@ export type ModalProps = {
   showCloseButton?: boolean;
   isPerformingTask?: boolean;
   size?: ModalSize;
+  /**
+   * The surface on phones (below lg): a bottom `sheet` (the default, for
+   * every form, picker and viewer) or a centred `dialog`, only for a yes/no
+   * confirmation. Desktop is always the centred dialog.
+   */
   mobileVariant?: ModalMobileVariant;
 };
 
@@ -61,7 +66,7 @@ const Modal = React.forwardRef<HTMLDivElement, ModalProps>(function Modal(
     showCloseButton = true,
     isPerformingTask = false,
     size = 'md',
-    mobileVariant = 'modal',
+    mobileVariant = 'sheet',
   },
   ref,
 ) {

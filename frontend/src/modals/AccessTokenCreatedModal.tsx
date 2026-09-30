@@ -46,7 +46,6 @@ export default function AccessTokenCreatedModal({
         </span>
       }
       size="lg"
-      mobileVariant="sheet"
       // The secret cannot be shown again, so a stray click outside must not
       // dismiss it; closing takes the explicit button (or Esc).
       isPerformingTask

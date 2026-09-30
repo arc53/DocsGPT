@@ -213,7 +213,6 @@ export default function ScheduleFormModal({
           : t('agents.schedules.modal.create')
       }
       size="md"
-      mobileVariant="sheet"
       footer={
         <Button
           type="button"
@@ -488,6 +487,7 @@ function DatePicker({ value, onChange, placeholder }: DatePickerProps) {
         <Button
           type="button"
           variant="combobox"
+          size="field"
           aria-label={placeholder}
           data-placeholder={value ? undefined : ''}
           className="justify-start"

@@ -15,7 +15,14 @@ import {
   StickyNote,
   Workflow,
 } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
@@ -23,6 +30,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Collapsible } from '@/components/ui/collapsible';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SectionHeader } from '@/components/ui/section-header';
 import { Spinner } from '@/components/ui/spinner';
@@ -114,6 +122,7 @@ function StepDisclosure({
   onToggle: () => void;
   children: React.ReactNode;
 }) {
+  const bodyId = useId();
   return (
     <div className="my-2 flex w-full flex-col">
       <Button
@@ -122,6 +131,7 @@ function StepDisclosure({
         size="sm"
         onClick={onToggle}
         aria-expanded={isOpen}
+        aria-controls={bodyId}
         // ml-3.5 plus size sm's own has-[>svg]:px-2.5 puts the icon on the
         // answer's ml-6 text column.
         className="ml-3.5 w-fit max-w-full justify-start"
@@ -139,14 +149,9 @@ function StepDisclosure({
           )}
         />
       </Button>
-      <div
-        className={cn(
-          'mr-5 ml-6 grid transition-[grid-template-rows,opacity] duration-300 ease-out',
-          isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
-        )}
-      >
-        <div className="min-h-0 overflow-hidden">{children}</div>
-      </div>
+      <Collapsible open={isOpen} id={bodyId} className="mr-5 ml-6">
+        {children}
+      </Collapsible>
     </div>
   );
 }

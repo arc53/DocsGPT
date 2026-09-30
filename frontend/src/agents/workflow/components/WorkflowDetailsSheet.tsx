@@ -130,7 +130,6 @@ export default function WorkflowDetailsSheet({
               label={t('agents.form.labels.name')}
             >
               <Input
-                shape="pill"
                 type="text"
                 value={draft.name}
                 placeholder={t(
@@ -145,7 +144,6 @@ export default function WorkflowDetailsSheet({
               className="col-span-2"
             >
               <Textarea
-                size="lg"
                 className="h-32"
                 placeholder={t(
                   'agents.workflow.builder.workflowDescriptionPlaceholder',

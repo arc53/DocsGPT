@@ -80,7 +80,6 @@ export default function FolderNameModal({
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={t('agents.folders.folderName')}
-        autoFocus
       />
     </Modal>
   );

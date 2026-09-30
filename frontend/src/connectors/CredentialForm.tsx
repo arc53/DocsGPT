@@ -104,13 +104,7 @@ function renderHint(text: string, url?: string | null): ReactNode {
   return (
     <>
       {before}
-      <Button
-        variant="link"
-        size="inline"
-        asChild
-        // eslint-disable-next-line shadcn/no-restyle -- a link in a 12px hint keeps the sentence's size and weight
-        className="text-xs font-normal"
-      >
+      <Button variant="link" size="text" asChild>
         <a href={url} target="_blank" rel="noopener noreferrer">
           {match[1]}
           <ExternalLink className="size-3" />

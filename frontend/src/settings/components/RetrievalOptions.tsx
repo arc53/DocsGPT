@@ -1,10 +1,11 @@
 import { ChevronRight } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
 
 import { Button } from '../../components/ui/button';
+import { Collapsible } from '../../components/ui/collapsible';
 import { Input } from '../../components/ui/input';
 import {
   Select,
@@ -343,6 +344,7 @@ export default function RetrievalOptions({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const expanded = alwaysOpen || open;
+  const bodyId = useId();
 
   const strategyOptions = useMemo(
     () =>
@@ -864,6 +866,7 @@ export default function RetrievalOptions({
         size="sm"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={expanded}
+        aria-controls={bodyId}
         className="-ml-3 w-fit justify-start"
       >
         <ChevronRight
@@ -875,16 +878,9 @@ export default function RetrievalOptions({
         />
         <span>{title ?? tr('title')}</span>
       </Button>
-      <div
-        className={cn(
-          'grid transition-[grid-template-rows,opacity] duration-300 ease-out',
-          expanded
-            ? 'grid-rows-[1fr] opacity-100'
-            : 'grid-rows-[0fr] opacity-0',
-        )}
-      >
-        <div className="overflow-hidden">{body}</div>
-      </div>
+      <Collapsible open={expanded} id={bodyId}>
+        {body}
+      </Collapsible>
     </div>
   );
 }

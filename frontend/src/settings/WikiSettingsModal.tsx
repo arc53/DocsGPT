@@ -6,7 +6,6 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import ViewOnlyNotice from '../components/ViewOnlyNotice';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Button } from '../components/ui/button';
 import { EmptyState } from '../components/ui/empty-state';
 import { LoadingState } from '../components/ui/loading-state';
 import { Modal } from '../components/ui/modal';
@@ -103,16 +102,7 @@ export default function WikiSettingsModal({
           size="sm"
           illustration="none"
           title={t('settings.sources.wiki.settings.loadError')}
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => setReloadKey((key) => key + 1)}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => setReloadKey((key) => key + 1)}
         />
       );
     }

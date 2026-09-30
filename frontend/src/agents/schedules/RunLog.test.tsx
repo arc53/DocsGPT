@@ -162,5 +162,9 @@ describe('RunLog', () => {
     expect(container.textContent).not.toContain(
       'agents.schedules.runLog.empty',
     );
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    );
+    expect(retry?.className).toContain('rounded-full');
   });
 });

@@ -10,7 +10,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Progress } from '@/components/ui/progress';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -283,15 +282,7 @@ export default function GuardrailEvents({ agentId }: Props) {
               size="sm"
               illustration="none"
               title={error}
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setReloadKey((key) => key + 1)}
-                >
-                  {t('retry')}
-                </Button>
-              }
+              onRetry={() => setReloadKey((key) => key + 1)}
             />
           ) : events.length === 0 ? (
             <p

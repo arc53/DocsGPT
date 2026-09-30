@@ -859,22 +859,13 @@ export default function Teams() {
               size="sm"
               illustration="none"
               title={t('settings.teams.loadError')}
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => dispatch(loadTeams({ token }))}
-                >
-                  {t('retry')}
-                </Button>
-              }
+              onRetry={() => dispatch(loadTeams({ token }))}
             />
           ) : teams.length === 0 ? (
             <EmptyState
               title={t('settings.teams.noTeams')}
               action={
-                <Button variant="ghost" onClick={openCreateModal}>
-                  <Plus aria-hidden />
+                <Button type="button" shape="pill" onClick={openCreateModal}>
                   {t('settings.teams.newTeam')}
                 </Button>
               }
@@ -1022,7 +1013,6 @@ export default function Teams() {
                   <div className="flex flex-wrap items-center gap-2">
                     {membersAll > MEMBERS_PAGE_SIZE && (
                       <SearchInput
-                        size="sm"
                         className="w-full sm:w-56"
                         placeholder={t('settings.teams.searchMembers')}
                         value={memberQuery}
@@ -1035,7 +1025,7 @@ export default function Teams() {
                     {isAdmin && (
                       <Button
                         variant="outline"
-                        size="sm"
+                        size="field"
                         className="shrink-0"
                         onClick={openAddMemberModal}
                       >
@@ -1157,7 +1147,6 @@ export default function Teams() {
                     </ToggleGroup>
                   </div>
                   <SearchInput
-                    size="sm"
                     className="w-full sm:w-56"
                     placeholder={t('settings.teams.sharedList.search')}
                     value={resourceQuery}
@@ -1475,7 +1464,6 @@ export default function Teams() {
           open ? setCreateOpen(true) : closeCreateModal()
         }
         size="sm"
-        mobileVariant="sheet"
         title={t('settings.teams.createTeam')}
         description={t('settings.teams.createTeamDescription')}
         footer={
@@ -1491,7 +1479,6 @@ export default function Teams() {
         <FormField label={t('settings.teams.teamNamePlaceholder')}>
           <Input
             type="text"
-            autoFocus
             value={newTeamName}
             onChange={(e) => setNewTeamName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
@@ -1509,7 +1496,6 @@ export default function Teams() {
         open={editOpen}
         onOpenChange={(open) => (open ? setEditOpen(true) : closeEditModal())}
         size="sm"
-        mobileVariant="sheet"
         title={t('settings.teams.editTeam')}
         footer={
           <ModalActions
@@ -1525,7 +1511,6 @@ export default function Teams() {
           <FormField label={t('settings.teams.teamNamePlaceholder')}>
             <Input
               type="text"
-              autoFocus
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
             />
@@ -1554,7 +1539,6 @@ export default function Teams() {
           open ? setAddMemberOpen(true) : closeAddMemberModal()
         }
         size="sm"
-        mobileVariant="sheet"
         title={t('settings.teams.addMemberTitle')}
         description={t('settings.teams.addMemberDescription')}
         footer={
@@ -1571,7 +1555,6 @@ export default function Teams() {
           <FormField label={t('settings.teams.memberEmailLabel')}>
             <Input
               type="email"
-              autoFocus
               placeholder={t('settings.teams.memberEmailPlaceholder')}
               value={newMemberEmail}
               onChange={(e) => setNewMemberEmail(e.target.value)}

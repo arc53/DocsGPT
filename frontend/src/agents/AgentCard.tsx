@@ -377,6 +377,7 @@ export default function AgentCard({
         variant="destructive"
       />
       <Modal
+        mobileVariant="dialog"
         open={exportError !== null}
         onOpenChange={(open) => {
           if (!open) setExportError(null);

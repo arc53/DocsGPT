@@ -1246,7 +1246,9 @@
         "cancel": "Отмена"
       },
       "auditDurationValue": "{{value}} мс",
-      "fallbackName": "устройство"
+      "fallbackName": "устройство",
+      "auditShow": "Показать последние команды",
+      "auditHide": "Скрыть последние команды"
     },
     "customModels": {
       "label": "Свои модели",

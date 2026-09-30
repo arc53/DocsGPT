@@ -99,7 +99,6 @@ export default function RegenerateAccessTokenModal({
         </span>
       }
       size="md"
-      mobileVariant="sheet"
       isPerformingTask={submitting}
       footer={
         <ModalActions

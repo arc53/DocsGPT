@@ -298,9 +298,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
                 <Button
                   type="button"
                   variant="link"
-                  size="inline"
-                  // eslint-disable-next-line shadcn/no-restyle -- a link in a status Alert keeps the Alert's colour
-                  className="text-current"
+                  size="text"
+                  tone="current"
                   onClick={onReconnect}
                 >
                   {t('settings.connectors.status.reconnect')}

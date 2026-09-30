@@ -356,6 +356,21 @@ describe('ConnectWizard', () => {
     expect(document.body.textContent).toContain(
       'settings.connectors.wizard.toolsHeading:1',
     );
+    // The tools open under a link toggle with the count, no frame: the cards
+    // line up with the success Alert above.
+    const toggle = button('settings.connectors.wizard.toolsHeading:1')!;
+    expect(toggle.dataset.variant).toBe('link');
+    expect(toggle.dataset.size).toBe('sm');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const body = document.getElementById(
+      toggle.getAttribute('aria-controls')!,
+    )!;
+    expect(body.dataset.slot).toBe('collapsible');
+    expect(body.dataset.state).toBe('closed');
+    expect(toggle.closest('.rounded-xl')).toBeNull();
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
   });
 
   it('names the account when the user gives it a name', async () => {

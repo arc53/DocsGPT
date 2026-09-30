@@ -98,7 +98,7 @@ describe('PromptsModal', () => {
     ]);
     const [system] = triggers;
     expect(system.dataset.size).toBe('field');
-    expect(system.dataset.shape).toBe('pill');
+    expect(system.dataset.shape).toBe('default');
     expect(system.hasAttribute('data-placeholder')).toBe(true);
 
     const textarea = document.body.querySelector<HTMLTextAreaElement>(

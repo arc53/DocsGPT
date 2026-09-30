@@ -642,7 +642,6 @@ export default function MCPServerModal({
           : undefined
       }
       size="lg"
-      mobileVariant="sheet"
       footer={
         <ModalActions
           footerStart={
@@ -841,10 +840,10 @@ export default function MCPServerModal({
               {testResult.authorization_url && (
                 <Button
                   variant="link"
-                  size="inline"
+                  size="text"
+                  tone="current"
                   asChild
-                  // eslint-disable-next-line shadcn/no-restyle -- the link inherits its Alert's status colour
-                  className="mt-1.5 text-current"
+                  className="mt-1.5"
                 >
                   <a
                     href={testResult.authorization_url}

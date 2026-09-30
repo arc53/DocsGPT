@@ -134,9 +134,11 @@ describe('GoogleDrivePicker', () => {
     expect(drive.openPicker).not.toHaveBeenCalled();
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toContain('settings.connectors.detail.expired');
-    await act(async () =>
-      button('settings.connectors.status.reconnect')!.click(),
-    );
+    const reconnect = button('settings.connectors.status.reconnect')!;
+    // A link in the Alert's sentence: its size and the Alert's colour.
+    expect(reconnect.dataset.size).toBe('text');
+    expect(reconnect.dataset.tone).toBe('current');
+    await act(async () => reconnect.click());
     expect(onReconnect).toHaveBeenCalled();
   });
 });

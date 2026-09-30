@@ -177,7 +177,6 @@ export default function SourceConfigModal({
       }
       footer={footer}
       size="lg"
-      mobileVariant="sheet"
       isPerformingTask={saving}
     >
       <div>

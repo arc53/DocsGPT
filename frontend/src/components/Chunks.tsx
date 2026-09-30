@@ -594,17 +594,7 @@ const Chunks: React.FC<ChunksProps> = ({
           tone="destructive"
           illustration="none"
           title={t('settings.sources.chunkErrors.load')}
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => fetchChunks()}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => fetchChunks()}
         />
       );
     }

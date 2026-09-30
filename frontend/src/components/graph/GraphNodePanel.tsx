@@ -122,17 +122,7 @@ export default function GraphNodePanel({
             tone="destructive"
             illustration="none"
             title={t('settings.sources.graphrag.view.nodeLoadFailed')}
-            action={
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                shape="pill"
-                onClick={onRetry}
-              >
-                {t('retry')}
-              </Button>
-            }
+            onRetry={onRetry}
           />
         ) : detail && status === 'ready' ? (
           <NodeDetailBody

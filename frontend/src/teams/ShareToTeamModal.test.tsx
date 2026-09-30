@@ -152,6 +152,16 @@ describe('ShareToTeamModal', () => {
     ).toBe('a1');
   });
 
+  it('keeps the add row picker and its access select at the field height', async () => {
+    await render();
+    const picker = body().querySelector('button[role="combobox"]');
+    expect(picker?.getAttribute('data-size')).toBe('field');
+    const access = Array.from(
+      body().querySelectorAll('[data-slot="select-trigger"]'),
+    ).at(-1);
+    expect(access?.getAttribute('data-size')).toBe('field');
+  });
+
   describe('access settings', () => {
     it('shows a collapsed Access settings toggle to the owner', async () => {
       await render();

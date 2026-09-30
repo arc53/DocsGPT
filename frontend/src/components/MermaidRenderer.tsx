@@ -302,6 +302,8 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
               type="button"
               variant={showCode ? 'secondary' : 'ghost-muted'}
               size="xs"
+              shape="pill"
+              aria-pressed={showCode}
               onClick={() => setShowCode(!showCode)}
             >
               {t('mermaid.code')}
@@ -363,11 +365,9 @@ const MermaidRenderer: React.FC<MermaidRendererProps> = ({
                       <Button
                         type="button"
                         variant="link"
-                        size="inline"
+                        size="text"
+                        tone="current"
                         onClick={() => setZoomFactor(2)}
-                        /* eslint-disable-next-line shadcn/no-restyle --
-                           on the bg-black/70 zoom overlay, like its − / + siblings: keeps the overlay's white 12px regular */
-                        className="text-xs font-normal text-current"
                       >
                         {zoomFactor.toFixed(1)}x
                       </Button>

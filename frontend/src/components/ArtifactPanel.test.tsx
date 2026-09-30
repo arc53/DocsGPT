@@ -95,6 +95,8 @@ describe('ArtifactPanel', () => {
     const retry = Array.from(container.querySelectorAll('button')).find(
       (b) => b.textContent === 'retry',
     );
+    // The shared EmptyState Retry: an outline sm pill.
+    expect(retry!.dataset.shape).toBe('pill');
     await act(async () => retry!.click());
     expect(documentMock).toHaveBeenCalledTimes(2);
   });

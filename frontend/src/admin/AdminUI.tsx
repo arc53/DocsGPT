@@ -1,6 +1,5 @@
 import type { VariantProps } from 'class-variance-authority';
 
-import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import type { badgeVariants } from '../components/ui/badge';
 import {
@@ -23,11 +22,7 @@ export function LoadError({
       size="sm"
       illustration="none"
       title={message}
-      action={
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Retry
-        </Button>
-      }
+      onRetry={onRetry}
     />
   );
 }

@@ -194,7 +194,7 @@ export default function ResourceStatusNotice({
                 <Button
                   type="button"
                   variant="link"
-                  size="inline"
+                  size="text"
                   onClick={() => onUndoTakeover?.(item.key)}
                 >
                   {t('agents.form.sponsors.undoTakeOver')}

@@ -146,4 +146,14 @@ describe('Quotas paging', () => {
       limit: 20,
     });
   });
+
+  it('keeps the Team allowances row at the 38px field height', async () => {
+    getQuotas.mockResolvedValue(quotas(57, 1));
+    await render();
+    const add = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Add allowance',
+    )!;
+    expect(add.className).toContain('h-9.5');
+    expect(add.className).not.toContain('h-8');
+  });
 });

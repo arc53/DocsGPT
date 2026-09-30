@@ -120,4 +120,29 @@ describe('RemoteDeviceConfig', () => {
     expect(box?.dataset.tone).toBe('destructive');
     expect(box?.dataset.padding).toBe('default');
   });
+
+  it('opens Recent activity with a link toggle under its header, no frame', async () => {
+    await render(device({}));
+    const toggle = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((el) => el.textContent === 'settings.devices.auditShow')!;
+    expect(toggle).toBeDefined();
+    expect(toggle.dataset.variant).toBe('link');
+    expect(toggle.dataset.size).toBe('sm');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    const body = container.querySelector<HTMLElement>(
+      `#${CSS.escape(toggle.getAttribute('aria-controls')!)}`,
+    )!;
+    expect(body.dataset.slot).toBe('collapsible');
+    expect(body.dataset.state).toBe('closed');
+    const section = toggle.closest('section')!;
+    expect(section.querySelector('.rounded-xl.border')).toBeNull();
+    expect(section.querySelector('h3')?.textContent).toBe(
+      'settings.devices.auditTitle',
+    );
+    await act(async () => toggle.click());
+    expect(toggle.textContent).toBe('settings.devices.auditHide');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(body.dataset.state).toBe('open');
+  });
 });

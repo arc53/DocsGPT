@@ -152,8 +152,6 @@ function VariableMenu({
   return (
     <Select value="" onValueChange={handleSelect}>
       <SelectTrigger
-        size="field"
-        shape="pill"
         className={
           kind === 'system'
             ? 'w-[140px] sm:w-[185px]'
@@ -653,7 +651,6 @@ export default function PromptsModal({
       description={description}
       footer={footer}
       size="xl"
-      mobileVariant="sheet"
       contentClassName="!overflow-visible"
     >
       {view}

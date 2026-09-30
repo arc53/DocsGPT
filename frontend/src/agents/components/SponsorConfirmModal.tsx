@@ -104,6 +104,7 @@ export default function SponsorConfirmModal({
 
   return (
     <Modal
+      mobileVariant="dialog"
       open
       onOpenChange={(open) => {
         if (!open) onCancel();

@@ -417,9 +417,9 @@ describe('ResourceStatusNotice', () => {
     expect(container.textContent).toContain(
       'agents.form.sponsors.takeOverPending',
     );
-    await act(async () =>
-      buttonWith('agents.form.sponsors.undoTakeOver')[0].click(),
-    );
+    const undo = buttonWith('agents.form.sponsors.undoTakeOver')[0];
+    expect(undo.dataset.size).toBe('text');
+    await act(async () => undo.click());
     expect(spies.onUndoTakeover).toHaveBeenCalledWith('tool:t1');
   });
 

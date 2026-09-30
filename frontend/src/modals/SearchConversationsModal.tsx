@@ -208,7 +208,6 @@ export default function SearchConversationsModal({
         hideTitle
         title={title}
         showCloseButton={false}
-        mobileVariant="sheet"
         contentClassName="-mx-3 -mt-3 flex flex-col"
       >
         <Command variant="palette" {...commandProps} className="min-h-0">

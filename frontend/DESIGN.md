@@ -45,9 +45,9 @@ through `@theme inline`, so `bg-`, `text-`, `border-`, `ring-`, `fill-` and
 | `success`, `success-foreground`         | completed, active, healthy                                                        | `text-green-*`, `text-emerald-*`, `bg-green-50/100`                 |
 | `warning`, `warning-foreground`         | paused, pending review, degraded                                                  | `text-amber-*`, `text-yellow-*`, `text-orange-*`, `bg-amber-50/100` |
 | `info`, `info-foreground`               | running, informational                                                            | `text-blue-*`, `bg-blue-50/100`                                     |
-| `sidebar-*`                             | the navigation rail                                                               |                                                                     |
+| `sidebar`, `sidebar-accent`             | the navigation rail and its hover / current-row fill                              |                                                                     |
 | `chart-1` to `chart-5`                  | data series only, never UI chrome (see below)                                     |                                                                     |
-| `answer-bubble`                         | the source cards under an answer and the answer-side panels (AnswerFlow)          |                                                                     |
+| `answer-surface`                        | every panel under an answer: source cards, View more, the wiki path chip, the code-block header, the attachment chip, ToolCallPanel |                    |
 
 Status colours are tuned to stay vivid rather than turning brown or olive,
 so their contrast is low. Against white in light mode, `destructive` and
@@ -59,8 +59,8 @@ fills.
 The dark `primary` (#8855f1) is set so white text on it reaches 4.55:1 on
 every default Button. As text on the dark surfaces it is below 4.5:1 (3.45:1
 on background, 3.06:1 on card), so links and `text-primary` in dark pass only
-as large or UI text; a fix for that needs its own link token. `ring`,
-`secondary` and `sidebar-primary` keep the lighter #976af3.
+as large or UI text; a fix for that needs its own link token. `ring`
+and `secondary` keep the lighter #976af3.
 
 Chart colours are not a separate palette. `chart-1` to `chart-5` alias
 `primary`, `info`, `success`, `warning` and `destructive`, in that order,
@@ -145,11 +145,12 @@ Patterns:
 
 ### Button (`ui/button.tsx`)
 
-| Prop      | Values                                                                                                                                                                                                                                                 |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `variant` | `default`, `secondary`, `outline`, `outline-primary`, `ghost`, `ghost-muted`, `ghost-destructive`, `ghost-on-accent`, `ghost-destructive-on-accent`, `link`, `destructive`, `destructive-outline`, `combobox`, `sidebar-item`, `tab`, `section-toggle` |
-| `size`    | `xs`, `sm`, `default`, `lg`, `field`, `icon-xs`, `icon-sm`, `icon`, `icon-lg`, `inline`                                                                                                                                                                |
-| `shape`   | `default` (rounded-md), `pill` (rounded-full, wider padding at `default`, `lg` and `field`)                                                                                                                                                            |
+| Prop      | Values                                                                                                                                                                                                                                          |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `variant` | `default`, `secondary`, `outline`, `outline-primary`, `ghost`, `ghost-muted`, `ghost-destructive`, `ghost-on-accent`, `ghost-destructive-on-accent`, `link`, `destructive`, `destructive-outline`, `combobox`, `sidebar-item`, `section-toggle` |
+| `size`    | `default`, `xs`, `sm`, `lg`, `field`, `icon`, `icon-xs`, `icon-sm`, `inline`, `text`; the type (size and weight) lives on the size, and `text` has none, so it inherits                                                                         |
+| `shape`   | `default` (rounded-md), `pill` (rounded-full, wider padding at `default`, `lg` and `field`)                                                                                                                                                     |
+| `tone`    | unset (the variant's colour) or `current` (the text colour of what it sits in, hover included)                                                                                                                                                  |
 
 - Round brand buttons (`rounded-3xl px-5`, `rounded-full px-6`): `shape="pill"`,
   plus `size="lg"` if they were `px-6`.
@@ -181,15 +182,16 @@ Patterns:
   `variant="outline-primary"`.
 - Tiny inline actions (`h-auto px-2 py-1 text-xs`): `size="xs"`.
 - A link inside running text (an artifact link in an answer, a link in
-  markdown, a hint's "Learn more") is `variant="link" size="inline"`, with
-  `asChild` around the `<a>`: no height or padding, underlined on hover, the
-  shared focus ring. Standalone links ("Learn more" with `ExternalLink`, "Go to
-  Tools" with `ArrowRight`) are the same, the icon a child. Toggles and crumbs
-  keep a normal size. The base is `text-sm font-medium`, so a link in a 12px
-  hint passes `text-xs font-normal` (an approved exception), and a link that
-  must keep the colour of what it sits in (a status Alert, a dark overlay, a
-  source card's URL row) passes `text-current`. Never style a raw `<a>` as a
-  link (enforced).
+  markdown, a hint's "Learn more", a Cancel in a status line) is
+  `variant="link" size="text"`, with `asChild` around the `<a>`: no height or
+  padding and no type of its own, so it takes the sentence's size, weight and
+  line-height and keeps `primary`; underlined on hover, the shared focus ring.
+  A standalone link ("Learn more" with `ExternalLink`, "Go to Tools" with
+  `ArrowRight`, the icon a child) is `size="inline"`: the same, but 14px
+  medium, so it reads as a control. A link that takes the colour of what it
+  sits in (a status Alert, the Mermaid dark overlay) adds `tone="current"`.
+  Toggles and crumbs keep a normal size. Never style a raw `<a>` as a link
+  (enforced).
 - Icon-only buttons: see IconButton below. A `title` on a `Button` is
   rejected (enforced).
 - An action whose label doesn't fit beside a name on a phone (the shared
@@ -202,7 +204,7 @@ Patterns:
   `ConfirmationModal variant="destructive"`); Cancel is `ghost` at the size and
   shape of the button beside it, in a modal footer, a form header or an inline
   editor. A Cancel inside a line of text (the composer's queued send) is
-  `link inline`.
+  `link text`.
 - The composer controls under the chat field (Attach, Voice, Tools,
   Sources) are `outline sm pill`. Their icons are `size-3.5 sm:size-4`
   with no margin; the size's `gap-1.5` spaces them, and the label span keeps
@@ -213,16 +215,23 @@ Patterns:
   Pass only layout (`w-full justify-between`) and keep the chevron as the
   last child.
 - A button or picker that sits in a row of fields is `size="field"`: 38px.
-  `Input` and `SelectTrigger` take `size="field"` too (the same 38px as
-  Input `default`), so a form column has one name for one height. Page
-  actions beside a page's search field (Add Source, Add Tool, Test
-  retrieval, Sync) are `size="field" shape="pill"` too, with no min-width
-  or hand height. With `shape="pill"` its text starts 21px in, like the
-  Input and Select pills beside it. The agent form's pickers are
-  `combobox field pill`, each labelled by a `FormField` (the Prompt picker
-  through `Prompts titleAs="field"`), its Add button `outline-primary field
-pill`, the only `outline-primary` on the agent pages themselves (the Access
-  details modal they open has its own).
+  `Input` and `SelectTrigger` are 38px too (Input `default` / `field`,
+  SelectTrigger's default `field`), so a form column has one height; a
+  combobox Button in a form passes `size="field"`. Page actions beside a
+  page's search field (Add Source, Add Tool, Test retrieval, Sync) are
+  `size="field" shape="pill"`, with no min-width or hand height. With
+  `shape="pill"` its text starts 21px in, like the Input and Select pills
+  beside it. The agent form's pickers are `combobox field`, each labelled by
+  a `FormField` (the Prompt picker through `Prompts titleAs="field"`), its Add
+  button `outline-primary field`, the only `outline-primary` on the agent
+  pages themselves (the Access details modal they open has its own).
+- **Shape by place.** Form controls (Input, SelectTrigger, a combobox Button,
+  Textarea, and a button inline with a field such as Add or Run) are square
+  in forms, modals and sheets. Pill is for page chrome: header and toolbar
+  actions, `SearchInput`, page filters (Logs, Analytics, GuardrailEvents,
+  the admin Activity toolbar, whose CSV / NDJSON exports are `outline field
+pill`), and a field that takes a pill header button's place (AgentsList's
+  new-folder field). Modal footers (`ModalActions`) stay `lg pill`.
 - One variant and size per role on the agent pages (Overview, Logs,
   Schedules, the workflow builder's toolbar): the page's primary action is
   `default field pill` (Publish, Save, New schedule), a secondary action
@@ -253,37 +262,35 @@ rounded-3xl`) are `variant="sidebar-item"`: left-aligned, full-radius, normal
   the link keeps its fill while the pointer is on a sibling with
   `group-hover:bg-sidebar-accent`. The section sidebar's "Back to app" row is
   the same variant.
-- Inline disclosure toggles ("Advanced settings", "Show advanced options")
-  are `variant="link" size="sm"` with only `-ml-3 w-fit justify-start`;
-  a chevron, when the toggle has one, is a lucide `ChevronRight` (so it
-  takes the link colour) as the first child.
-- Underline route tabs are `variant="tab"`: muted text on a transparent 2px
-  bottom border, square corners, no hover fill. Mark the current tab with
-  `data-active`, which gives it `foreground` text and a `primary` underline.
-  Padding-free tabs (a sub-nav with `gap-6`) add `size="inline"`, which keeps
-  4px above the line; the row draws the 1px baseline, and `-mb-px` lays the
-  underline over it. Its one use is `agents/AgentPageHeader.tsx`, the workflow
-  builder's fixed toolbar: a breadcrumb, the status Badge and the Overview /
-  Logs / Schedules tabs in a `<nav>` (no tabs until the workflow has an
-  id), the others `<Link>`s and the current one a `<span
-aria-current="page">` with `data-active`. The
-  agent section pages switch with the section sidebar (the phone menu below
-  `lg`) and carry no pill row; the agent tile's ⋯ also opens Logs. Tabs that switch a panel in place are
-  `ui/tabs` with `variant="underline"` on `TabsList` and each `TabsTrigger`:
-  the same pixels, plus `role="tablist"`/`"tab"`, `aria-selected` and
-  arrow-key focus; wrap the panel in `TabsContent` (FilePicker's My files /
-  Shared with me, Schedules' Recurring / One-time in
+- Inline disclosure toggles ("Advanced settings", "Show advanced options",
+  a device's audit log, the connect wizard's tool count) are `variant="link"
+size="sm"` with only `-ml-3 w-fit justify-start`, `aria-expanded` and
+  `aria-controls`; a chevron, when the toggle has one, is a lucide
+  `ChevronRight` (so it takes the link colour) as the first child. The body
+  is `<Collapsible open id>` (`ui/collapsible`, see Disclosure).
+- Tabs are `ui/tabs`, and the underline is their only look (no `variant`
+  prop): muted text on a transparent 2px bottom border, square corners, no
+  hover fill; the active tab gets `foreground` text and a `primary`
+  underline, on a 1px baseline the list draws. Tabs that switch a panel in
+  place are `TabsList` + `TabsTrigger`, with `role="tablist"`/`"tab"`,
+  `aria-selected` and arrow-key focus; wrap the panel in `TabsContent`
+  (FilePicker's My files / Shared with me, Schedules' Recurring / One-time in
   `agents/schedules/SchedulesView.tsx`, the graph source view, the source
-  edit drawer). Each trigger keeps its `px-4`, so the first label sits 16px
-  in from the content edge and the underline runs past the label on both
-  sides. That inset is deliberate (decided 2026-09-28): the tab row reads as
-  its own strip, with a wider target per tab, so don't pull it flush with
-  `-ml-4` or strip the padding. Only the workflow builder's toolbar, where
-  the tabs share a row with a breadcrumb, uses the padding-free `Button
-variant="tab" size="inline"`. The `default` variant is a pill tab, unused
-  in the app. Panels unmount when hidden, except one whose state is costly to
-  rebuild (the graph source view's laid-out canvas and zoom): that
-  `TabsContent` takes `forceMount` plus `data-[state=inactive]:hidden`.
+  edit drawer). Each trigger is 36px with `px-4`, so the first label sits
+  16px in from the content edge and the underline runs past the label on
+  both sides. That inset is deliberate (decided 2026-09-28): the tab row reads
+  as its own strip, with a wider target per tab, so don't pull it flush with
+  `-ml-4` or strip the padding. Tabs that navigate are `NavTab` (`asChild`
+  around a router `<Link>`, or a `<span>` for the page on screen, `current`
+  setting `aria-current="page"`), in a `<nav>`: the same recipe and 36px,
+  edge to edge, `-mb-px` laying the underline over the row's baseline. Never
+  Radix Tabs for routes. Its one use is `agents/AgentPageHeader.tsx`, the
+  workflow builder's fixed toolbar (Overview / Logs / Schedules, no tabs until
+  the workflow has an id); the agent section pages switch with the section
+  sidebar (the phone menu below `lg`) and the agent tile's ⋯ also opens Logs.
+  Panels unmount when hidden, except one whose state is costly to rebuild
+  (the graph source view's laid-out canvas and zoom): that `TabsContent`
+  takes `forceMount` plus `data-[state=inactive]:hidden`.
 - A section panel's disclosure header (NewAgent's Advanced and Guardrails
   panels) is `variant="section-toggle" size="sm"` with `-ml-3 w-fit
 justify-start` and `aria-expanded`: a lucide `ChevronRight` first
@@ -394,8 +401,9 @@ icon-xs` toggles the runs.
 - A danger zone (Delete agent, Revoke a device) and a failing stat are
   `tone="destructive"`; the title beside it is `SectionHeader
 tone="destructive"`. Muted text fails AA on the red fill, so the tone turns
-  every `text-muted-foreground` inside it to `foreground`; don't pass a
-  lighter colour back. Icon buttons inside a destructive-tone row are
+  every `text-muted-foreground` inside it to `foreground`, except a hovered
+  Button, which keeps its hover colour (a `ghost-destructive` Remove still
+  turns red); don't pass a lighter colour back. Icon buttons inside a destructive-tone row are
   `ghost-destructive-on-accent`, whose red tint shows on the fill where
   ghost's grey square would not.
 - The shared agent card (its page and a new agent chat) is a thing:
@@ -491,8 +499,8 @@ stat chips `tabular-nums`, as approved exceptions. HTTP method pills take their 
 `info`, PUT `warning`, DELETE `destructive`, PATCH `default`, anything else
 `neutral`. `MultiSelect` (`ui/multi-select.tsx`) shows its first two picks as
 `default` Badges with a remove X, then "+N more", on a `Button
-variant="combobox" size="field"` trigger that grows past 38px when the chips
-wrap, with SelectTrigger's turning chevron; each row in its list shows a
+variant="combobox" size="field"` trigger (`shape` passes through: `pill` in a
+page toolbar) that grows past 38px when the chips wrap, with SelectTrigger's turning chevron; each row in its list shows a
 `Checkbox size="sm"`. An option's `description` is a muted `text-xs` line
 under its label in the list only ("Added by Lena"); the chips show the label. Inside a Modal pass `modal`, or its popover can't
 scroll and doesn't close on an outside click.
@@ -504,6 +512,9 @@ follows the pointer and arrow keys, so an accent fill would look like hover.
 While a checked item is also highlighted it keeps its tint and text and gains
 a 1px inset `primary` ring, so the chosen row never turns plain grey.
 
+`MultiSelectPopover` searches with the stock `CommandInput` strip, full
+bleed, over an unframed `CommandList`, and caps itself at the height Radix
+says is free (`--radix-popover-content-available-height`, at most 600px).
 A picker's footer (`MultiSelectPopover footer`) links to the page that manages
 the list, as a `link inline` Button with a 12px `ArrowRight` (Go to Sources, Go
 to Tools). A shortcut action (Upload new, Add tool; an `outline-primary pill`)
@@ -542,15 +553,15 @@ labelled search and a placeholder-only one read the same, and with a
 
 ### SelectTrigger (`ui/select.tsx`)
 
-`size`: `sm` (32px), `default` (36px), `field` (38px, the form-row
-height); `variant`: `default`, `ghost`; `shape`: `default`, `pill`. Pills
-pad `px-5` at every size but `sm` (`px-3`), so their text starts 21px in
-like the Input and Button field pills. A select in a form is
-`size="field"`, labelled by `FormField`. SelectTrigger is `w-fit`; pass
-`w-full` in a form column. Fields that take typing or sit beside one are 16px
+`size`: `sm` (32px) or `field` (38px, the form-row height, the default);
+`shape`: `default`, `pill` (page filters: Logs, Analytics, GuardrailEvents).
+There is no ghost trigger. A `field` pill pads `px-5` (an `sm` one `px-3`), so
+its text starts 21px in like the Input and Button field pills. A select in a
+form is labelled by `FormField`. SelectTrigger is `w-fit`; pass `w-full` in a
+form column. Fields that take typing or sit beside one are 16px
 below `md` (iOS zooms on focus under 16px) and 14px from `md`: Input,
-Textarea, SelectTrigger `default | field`, Button `combobox` `default | field |
-lg` and CommandInput. The `sm` sizes stay 14px. A highlighted list row is
+Textarea, SelectTrigger `field`, Button `combobox` `default | field | lg` and
+CommandInput. The `sm` sizes stay 14px. A highlighted list row is
 `bg-accent` in Select, Command and DropdownMenu alike.
 
 ### Textarea (`ui/textarea.tsx`)
@@ -573,7 +584,7 @@ at the top of a popover or palette list, or `field`, the 38px pill of a
 list that sits on the page (a source view's navigator filter, see Page
 chrome and Source views); nothing else hand-frames it. `CommandList` caps
 itself at `max-h-75` and scrolls; a list that already scrolls inside its
-host (a `Modal mobileVariant="sheet"` body) passes `max-h-none` so there is
+host (a Modal's phone sheet body) passes `max-h-none` so there is
 one scroller. `CommandItem` rows are `cursor-default` like Select and menu
 items, highlight `bg-accent` and mark the open item `checked`
 (`bg-secondary`); don't add `cursor-pointer`. cmdk highlights the first row
@@ -716,7 +727,7 @@ each `Link`, with `aria-current="page"` on the current one.
 
 Filtering a list by kind (a team's shared resources, Share's People) is this
 `xs` group in its muted track, each item `{label} {formatCount(n)}`, beside a
-`SearchInput size="sm"` (`w-full sm:w-56`); no match is `EmptyState size="xs"
+`SearchInput` (`w-full sm:w-56`); no match is `EmptyState size="xs"
 illustration="none"`.
 
 ### Separator (`ui/separator.tsx`)
@@ -765,10 +776,12 @@ Nothing to show is `EmptyState`: `size` `default | sm | xs` (128 / 96 / 64px
 art, page / panel / popover), `illustration` `no-files | none` (a "no
 results" line is `size="xs" illustration="none"`), `title`, `description`
 (plain `muted-foreground`), `action`. A page or panel whose fetch failed is
-`EmptyState tone="destructive" illustration="none"` with a `Retry` action
-(`t('retry')`, an `outline sm pill` Button at every EmptyState size): a red
-`CircleAlert`, a red title, `role="alert"`. Never a bare
-`text-destructive` paragraph.
+`EmptyState tone="destructive" illustration="none" onRetry`: a red
+`CircleAlert`, a red title, `role="alert"`, and `onRetry` draws the Retry
+(`t('retry')`, an `outline sm pill` Button at every size, after `action` when
+both are set). Hand-set that Button only for a Retry outside an EmptyState
+(DeviceAuditList's inline one). Admin's `LoadError` is the same EmptyState, so
+its Retry follows the locale too. Never a bare `text-destructive` paragraph.
 
 ### Progress (`ui/progress.tsx`)
 
@@ -957,19 +970,22 @@ the chat's side panel (see Side panels).
 
 ### Breadcrumb (`ui/breadcrumb.tsx`)
 
-`BreadcrumbPage`, the current crumb, is always one line and truncates with
-an ellipsis. Pages pass only its width (`w-[16ch]`, `max-w-[32ch]`) and a
-`title` with the full text; never `truncate` or typography. Give every
-current crumb a width cap so a long name cannot push the row past the
-screen. It carries the link's focus ring: after a crumb step, PathHeader
-moves focus to the new current crumb (`tabIndex={-1}`) so keyboard focus
-never drops to the page. A crumb that runs a handler instead of navigating is
-`BreadcrumbLink asChild` around a `<button type="button">`; the link carries
-the focus ring. Parent crumbs cap at `max-w-[16ch]` with `truncate` on the
-button itself (a parent with no handler is a plain truncating `<span>`, never
-a disabled button). The current crumb is never a disabled button. The header of
-every source view is `components/tree/PathHeader` (see Source views); don't
-hand-roll a `/`-separated path.
+Pages pass nothing to the breadcrumb parts; the primitive does the layout.
+`BreadcrumbList` stays on one line (`flex-nowrap`), every crumb gives way
+(`min-w-0`) except the first, which stays whole (`shrink-0`), a
+`BreadcrumbLink` truncates at `16ch`, and `BreadcrumbPage`, the current crumb,
+at `32ch`, with a `title` set from string children. The one trail that wraps
+is AgentsList's folder trail (see Approved exceptions). `BreadcrumbPage`
+carries the link's focus ring: after a crumb step, PathHeader moves focus to
+the new current crumb (`tabIndex={-1}`) so keyboard focus never drops to the
+page. A crumb that runs a handler instead of navigating is `BreadcrumbLink
+asChild` around a `<button type="button">`; the link carries the focus ring
+and the cap. A parent with no handler is a plain `<span>` with `max-w-[16ch]
+truncate` and a `title` (PathHeader's; it isn't a BreadcrumbLink, so it sets
+the cap by hand), never a disabled button, and the current crumb is never a
+disabled button either. The header of every source view is
+`components/tree/PathHeader` (see Source views); don't hand-roll a
+`/`-separated path.
 
 ### ListRow and DescriptionList (`ui/list-row.tsx`, `ui/description-list.tsx`)
 
@@ -1045,7 +1061,7 @@ scroller: in a Modal, Sheet or SidePanel the body is still the one scroller,
 and the sidebar's chats load inside the sidebar column. Only a feed on a page
 gets its own cap: an inner `scrollbar-overlay max-h-[45svh] overflow-y-auto`
 div inside the frame (the run log's schedule card, the guardrail table's
-frame, the audit accordion), never on the Card. Under it, outside the
+frame, a device's audit list), never on the Card. Under it, outside the
 scroller, `LoadMoreStatus` (`divider` under a flush table) says "Loading
 older…", "Nothing older" or offers Retry (`loadingLabel` / `doneLabel` for a
 list that isn't newest-first: "Loading more…"); it keeps one row's height and so
@@ -1083,7 +1099,7 @@ under the title is `components/PageToolbar`: `intro`, then the page `search`
 shape="pill"`, text only: no `Plus`, a dropdown keeps its `ChevronDown`), then `children` (notices that belong to the action, such as
 a limit warning), then `divider` (a `Separator`). With no `search` the intro
 moves into the row's left slot (`max-w-2xl`) beside the action. A page search
-is `components/SearchInput`: the 38px pill (`size="sm"` for 32px) with a
+is `components/SearchInput`: the 38px pill (one size everywhere) with a
 search icon and a floating `label` on `labelSurface="background"` (its
 default); a placeholder-only search is named by its placeholder. A source
 view's navigator filter is a `CommandInput variant="field"` (the same 38px
@@ -1110,7 +1126,7 @@ three tabs are `SectionShell` pages at the default width; the agent preview
 is a drawer (see Modal, not Dialog). Overview groups its fields into three
 `subtle lg` panels (Basics, Knowledge and behaviour, Model) with the two-up
 field grid, then Advanced, Guardrails and the danger zone. Schedules shows a
-`StatCard` row, Recurring / One-time as `ui/tabs variant="underline"`, and
+`StatCard` row, Recurring / One-time as `ui/tabs`, and
 each schedule as a `ScheduleRow` (see Card surfaces).
 
 ### App chrome: the phone top bar and New Chat
@@ -1163,8 +1179,7 @@ wiki, a knowledge graph) is one shell:
   a crumb, as on the Tools and Teams detail pages (`DetailBreadcrumb`); the
   phone's `SectionBackLink` above the title is the only arrow, and it leaves
   the section. Crumbs never take `text-primary`; parents are muted like any
-  crumb, truncate at `max-w-[16ch]` with a `title`, and the row stays on one
-  line (`flex-nowrap`). A tree embedded in another source view (a graph
+  crumb, and the Breadcrumb primitive keeps the row on one line. A tree embedded in another source view (a graph
   source's Files tab) draws no Sources crumb and reports its crumbs to the
   host (`onCrumbsChange`), whose header shows them while that tab is open. The
   file table has no `..` row. `badge` is the source kind as a `neutral` Badge with a 12px lucide
@@ -1209,7 +1224,7 @@ variant="field"` over a `CommandList` of `CommandItem`s, so the arrow keys
   `labelSurface="background"` and the hint "The name answers cite this
   chunk by."; Add prefills it with the title the file's chunks already use,
   else the file's name), Write · Preview
-  (`ui/tabs variant="underline"`; Preview renders the draft with
+  (`ui/tabs`; Preview renders the draft with
   `SourceMarkdown`), one filling `font-mono` Textarea, then Cancel (`ghost lg
 pill`) and Save (`default lg pill`, off until the draft or a field changes, and while the draft is blank). The drawer
   edits a copy: closing with changes asks "Discard your unsaved changes?". A
@@ -1221,7 +1236,7 @@ pill`) and Save (`default lg pill`, off until the draft or a field changes, and 
   whose byline is the tree's totals, repeats it as muted meta beside the
   search; tiles show `chunkPreviewText` (heading markers and dot
   leaders removed, display only) and `#n · tokens` in `CardFooter`.
-- **Graph**: under the header, `ui/tabs variant="underline"` Graph · Entities
+- **Graph**: under the header, `ui/tabs` Graph · Entities
   · Files (Files is the embedded file tree; a source with no folder structure
   shows its embedded chunk list there instead, as the plain view does). A tab's own action goes in the
   header's action row after Test retrieval, only while that tab is open (the
@@ -1290,7 +1305,7 @@ Skeleton mirrors follow the grid they stand in for.
 
 The toolbar is `AgentPageHeader` on `bg-background` with a `border-b`. Its
 current crumb is the agent's `Avatar` (circle, 20px image, the robot when
-there is none), the name (`truncate`, `max-w-[24ch]`) and a muted
+there is none), the name (`truncate`, `max-w-[32ch]`, the current crumb's cap) and a muted
 `ChevronDown` in a `ghost sm` Button, the phone top bar's title recipe; it
 opens the workflow details. The status Badge follows (`success` Published,
 `neutral` Draft until the first save), then the tabs. On the right: "Unsaved
@@ -1435,8 +1450,8 @@ offers Reconnect.
 Credential forms put every hint under its field (FormField `hint`); required
 fields carry the star, so no field says "Optional". A catalog hint may wrap one
 phrase in `<link>…</link>` with the field's `hint_url`: it renders as a `link
-inline` Button at the hint's `text-xs font-normal` with a trailing 12px
-`ExternalLink` (an approved exception).
+text` Button, so it takes the hint's size and weight, with a trailing 12px
+`ExternalLink`.
 
 A paused tool call in chat, an approval or a Connect card, is
 `conversation/ToolCallCard`: a `bg-muted rounded-2xl border` frame, a header
@@ -1448,18 +1463,40 @@ a `w-full min-w-0` wrapper with its margins on an inner div, because the
 answer bubble is a wrapping flex column and would let a one-line preview widen
 the card past the column.
 
-### Accordion (`ui/accordion.tsx`)
+### Disclosure (`ui/collapsible.tsx`)
 
-`AccordionTrigger` carries its own inset and type (`px-4 py-3 text-sm
-font-medium`) and an inset focus ring, since `AccordionItem` clips anything
-outside it. Pages pass nothing to the trigger; put the frame (a bordered,
-rounded box) on a wrapper around `Accordion`.
+A body that opens and closes in place is `<Collapsible open id>`: a grid that
+goes from `0fr` to `1fr` rows and fades over 300ms (`motion-reduce` turns the
+transition off), its content clipped in one track and kept mounted while
+closed but `inert`, so its fields leave the tab order. The trigger is the caller's, with `aria-expanded` and `aria-controls`
+set to the Collapsible's `id`. There is no Accordion.
+
+- Inline: the `link sm` toggle (see Button) over the Collapsible
+  (RetrievalOptions' Advanced, a device's audit log, the connect wizard's
+  tools).
+- Framed rows (ToolConfig's actions, Logs' rows): the header is a real
+  `<button type="button">` holding the chevron and the title, with any control
+  (a `PermissionSelect`) as its sibling, never inside it, and never a
+  `div role="button"` with hand-written key handlers.
+- The three hand-rolled grid-rows wrappers (RetrievalOptions,
+  WorkflowPreview's step rows, UploadToast's rows) moved onto it; don't
+  hand-roll another.
 
 ### Modal, not Dialog
 
 `ui/dialog.tsx` is the Radix primitive and is private to `ui/`; ESLint
 rejects imports of it elsewhere. App code uses `Modal` (sizes `sm` to
-`full`, `mobileVariant="sheet"`) or `CommandDialog`.
+`full`) or `CommandDialog`.
+
+On phones (below `lg`) a Modal is a bottom sheet by default (see Side panels
+for the shape). `mobileVariant="dialog"` keeps the centred dialog, and only
+for a yes/no confirmation: `ConfirmationModal` passes it, and so do the few
+named opt-outs (sponsor confirm, Disconnect and Remove connection, Export
+failed, Convert to wiki, Enable GraphRAG). A sheet never autofocuses a field
+on a phone, where it would pop the keyboard up: the phone sheet skips Radix's
+open autofocus, and a field's own `autoFocus` would bypass that, so a field
+shown when a Modal opens doesn't take it (one that appears on a tap inside
+it, Move to folder's new-folder field, may).
 
 The width comes from `size` only: `sm` 384, `md` 512 (the default), `lg` 672
 (a form or a one-column list: Move to folder), `xl` 896 (a grid of
@@ -1506,7 +1543,7 @@ the submit's `loading` spinner. A left-hand extra (Test connection) is
 A search palette is `CommandDialog` on desktop. Pass cmdk options to its
 inner `Command` through `commandProps` (`shouldFilter={false}` when results
 come from a server search, a controlled `value`). On phones the same palette
-goes in `Modal mobileVariant="sheet"` as `<Command variant="palette">`, which
+goes in a `Modal` (its phone sheet) as `<Command variant="palette">`, which
 gives it the dialog's 48px input row and row spacing, so both widths look
 the same (`modals/SearchConversationsModal.tsx`). `CommandDialog` sits on
 `DialogContent`, which has Modal's surface (`bg-card rounded-2xl
@@ -1593,7 +1630,7 @@ scrim. `SheetContent side="bottom"` gives the
 shape with `pb-safe-0` (the bare inset); pass `handle` for the grab bar, which
 also hides the X (the overlay dismisses it; the handle is only a cue and doesn't
 drag; pass `showCloseButton` to keep an X).
-`Modal mobileVariant="sheet"` shares the shape and the `SheetHandle` (and,
+Modal's phone sheet shares the shape and the `SheetHandle` (and,
 like a handled sheet, has no X), with `pb-safe` (the inset, at least 1rem)
 under its footer. `pb-safe`, `pb-safe-0`
 and `max-h-sheet` are the `index.css` utilities for the safe-area insets; never
@@ -1767,7 +1804,7 @@ squares) and the canvas nodes' icon circles.
 Transition only the property that changes: `transition-colors` by default,
 `transition-transform duration-200` for chevrons,
 `transition-[grid-template-rows,opacity] duration-300 ease-out` for
-collapsibles, `duration-300 ease-in-out` on the named property for the shell
+collapsibles (`ui/collapsible` carries it), `duration-300 ease-in-out` on the named property for the shell
 (sidebar, main column, top buttons); a shadow or ring change is
 `transition-shadow`, several at once a bare `transition`. No `transition-all`
 (the floating labels in `form-field.tsx` and `input.tsx`, which move and
@@ -1815,7 +1852,7 @@ shows.
   `size="icon-sm"` Button (32px, accent square on hover) at `top-2 right-2`;
   a side panel's is the same Button in `PanelHeader`'s title row. Never
   hand-place another X.
-- **Disabled**: buttons (Button, Accordion, Tabs) use
+- **Disabled**: buttons (Button, Tabs) use
   `disabled:pointer-events-none disabled:opacity-50`, so the pointer passes
   through. Fields (Input, SelectTrigger, Switch, Textarea, CommandInput,
   Label) use `disabled:cursor-not-allowed disabled:opacity-50` and never
@@ -1826,8 +1863,7 @@ shows.
   `shadow-toast`. The one exception in `ui/` is the Switch thumb, `bg-white
 shadow-lg` in both themes: the knob is white on any track, and a white knob
   on a white card needs the lift to read as raised. The off track is
-  `bg-input`. Accordions are
-  panels and have none. Outside `ui/` the only shadows are: the workflow
+  `bg-input`. Outside `ui/` the only shadows are: the workflow
   canvas nodes (`shadow-md`, `hover:shadow-lg`: a node lifts off the canvas
   while you drag it); the workflow builder's publish-error panel, which
   floats over the canvas at popover elevation (`shadow-md`, `z-20`); the sliding panel in `navigation/SidebarLevel.tsx`,
@@ -1867,27 +1903,19 @@ list stays reviewable.
 | `navigation/SidebarLevel.tsx`                                     | `shadcn/no-arbitrary-values`    | The incoming sidebar panel casts a strong shadow off its left edge while it slides (`shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]`); no scale shadow is horizontal, and the container clips it once the panel comes to rest.                                                                                                                                                                                                                                                                     |
 | `components/MessageInput.tsx`                                     | `shadcn/no-restyle`             | The empty composer's send button is a grey circle (`bg-muted`, `dark:bg-accent`), not a faded brand one; no variant is neutral while disabled, and `secondary` is the brand-tinted pressed state.                                                                                                                                                                                                                                                                                               |
 | `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's model picker keeps its hero look: a borderless muted pill at 16px (`rounded-4xl px-6 py-4 text-base`) whose menu hangs from it as one shape. Three disables: `SelectTrigger`, `SelectContent`, `SelectItem`.                                                                                                                                                                                                                                                                 |
-| `agents/AgentsList.tsx`                                           | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`). It's the only breadcrumb that does.                                                                                                                                                                                                                                                                                        |
+| `agents/AgentsList.tsx`                                           | `shadcn/no-restyle`             | Inside a folder, the breadcrumb trail replaces the section `<h2>`, so its `BreadcrumbList` keeps heading typography (`text-foreground text-lg font-semibold gap-2`) and passes `flex-wrap` (the primitive is `flex-nowrap`). It's the only breadcrumb that does either.                                                                                                                                                                                                                                                                                        |
 | `conversation/MarkdownAnswer.tsx`, `components/ArtifactPanel.tsx` | `shadcn/no-inline-styles`       | SyntaxHighlighter's `style` prop is its Prism theme object (`oneLight` / `vscDarkPlus`), picked by theme at runtime. It is not CSS, so no class or custom property can replace it. One disable per file.                                                                                                                                                                                                                                                                                        |
 | `agents/workflow/WorkflowPreview.tsx`                             | `shadcn/no-restyle`             | The Preview minimap's node rows are status tiles: the fill, border and ring follow the step (success, primary running + pulse, destructive, muted pending; a ring on the active row) and stay pinned on hover, pending and running rows stay unfaded while disabled, and clickable rows dim to 80% on hover. No Button variant is status-tinted. The rule reports each string inside `cn(...)`, so it's a `/* eslint-disable */` … `/* eslint-enable */` pair around the `className` attribute. |
 | `agents/schedules/ScheduleFormModal.tsx`                          | `shadcn/no-restyle`             | The schedule's name is the dialog's editable title: a `bare` Input with title type (`text-xl font-semibold`), so the dialog passes `hideTitle`. One disable.                                                                                                                                                                                                                                                                                                                                    |
 | `components/MermaidRenderer.tsx`                                  | `shadcn/no-restyle`             | The zoom − / + buttons sit on the diagram's `bg-black/70` overlay, where ghost's accent hover paints a light square with dark text; they hover to `white/20` with white text instead, in both themes. Two disables.                                                                                                                                                                                                                                                                             |
-| `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. One disable.                                                                                                                                                                            |
+| `Hero.tsx`                                                        | `shadcn/no-restyle`             | The landing page's demo cards are `Button outline lg pill`, but each is a two-line pill (a title over a clamped 12px query), so it undoes lg's height, the base's one-row layout, weight and nowrap: `h-auto w-full flex-col items-start gap-0 py-3.5 text-left text-xs font-normal whitespace-normal`. Two disables: the demo cards and the connect card.                                                                                                                                                                            |
 | `Navigation.tsx`, `conversation/ConversationTile.tsx`             | `shadcn/no-restyle`             | A sidebar row whose link has sibling buttons (an agent's pin, a conversation's menu and rename Save / Cancel) keeps its fill while the pointer is on a sibling or the menu is open (`group-hover:bg-sidebar-accent`, `bg-sidebar-accent`), and `pr-10` keeps the label clear of the buttons. ConversationTile's `cn(...)` needs a `/* eslint-disable */` … `/* eslint-enable */` pair.                                                                                                          |
 | `admin/Usage.tsx`                                                 | `shadcn/no-restyle`             | The Top users id is a `link inline` Button inside a mono table cell; it keeps the cell's type and wraps (`font-mono text-xs font-normal whitespace-normal text-left`). One disable.                                                                                                                                                                                                                                                                                                             |
-| `agents/workflow/panels/ConditionPanel.tsx`                       | `shadcn/no-restyle`             | The "Learn more" link in the Condition node's Advanced-mode 12px hint keeps the sentence's size and weight (`text-xs font-normal` on `link inline`). One disable; the Set state node's link sits in its `text-sm` intro and needs none.                                                                                                                                                                                                                                                         |
-| `components/MessageInput.tsx`                                     | `shadcn/no-restyle`             | The queued-send Cancel is a `link inline` inside the composer's 12px status line, so it takes the line's size (`text-xs`). One disable, beside the send button's.                                                                                                                                                                                                                                                                                                                               |
 | `settings/PersonalAccessTokens.tsx`                               | `shadcn/no-restyle`             | Token scope chips are identifiers, so the `neutral` Badge is set in mono (`font-mono`). One disable.                                                                                                                                                                                                                                                                                                                                                                                            |
 | `agents/workflow/WorkflowPreview.tsx`                             | `shadcn/no-restyle`             | A step's state changes (keys and values the app serialised) are `neutral` Badges set in mono (`font-mono`), like token scopes. One disable.                                                                                                                                                                                                                                                                                                                                                     |
 | `settings/traces/TraceChips.tsx`                                  | `shadcn/no-restyle`             | Trace stat chips (durations, counts) use tabular figures so they don't jitter between rows (`tabular-nums` on Badge). One disable.                                                                                                                                                                                                                                                                                                                                                              |
-| `connectors/ConnectorSetupNotice.tsx`                             | `shadcn/no-restyle`             | The setup-guide link inside the needs-setup warning Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                       |
-| `modals/MCPServerModal.tsx`                                       | `shadcn/no-restyle`             | The authorization link inside the popup-blocked warning Alert keeps the Alert's status colour (`text-current` on `link inline`). One disable.                                                                                                                                                                                                                                                                                                                                                             |
-| `components/MermaidRenderer.tsx`                                  | `shadcn/no-restyle`             | The zoom readout between − and + is a `link inline` Button on the `bg-black/70` overlay; it keeps the overlay's white 12px regular text (`text-xs font-normal text-current`). One disable, beside the two zoom-button ones above.                                                                                                                                                                                                                                                               |
-| `conversation/SharedConversation.tsx`                             | `shadcn/no-restyle`             | The "DocsGPT" link sits in the `/share/:id` page's regular-weight byline (`font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                                                                          |
 | `conversation/ConversationBubble.tsx`                             | `shadcn/no-restyle`             | A source card's URL row is a `link inline` around an `<a>`: foreground at rest, primary on hover, regular weight, truncating (`text-current font-normal hover:text-primary underline-offset-2 max-w-full justify-start`). One disable.                                                                                                                                                                                                                                                          |
 | `admin/Overview.tsx`                                              | `shadcn/no-restyle`             | "View in Audit" under the denied-sign-ins tile keeps the tile's destructive tone at hint size (`text-destructive text-xs font-normal`). One disable.                                                                                                                                                                                                                                                                                                                                            |
-| `settings/PairDeviceModal.tsx`                                    | `shadcn/no-restyle`             | The install link in Pair a remote machine sits in a 12px hint (`text-xs font-normal`, `self-start` in its column). One disable.                                                                                                                                                                                                                                                                                                                                                                 |
-| `connectors/CredentialForm.tsx` | `shadcn/no-restyle` | A catalog hint's `<link>` phrase is a `link inline` Button inside the 12px hint, so it keeps the hint's size and weight (`text-xs font-normal`). One disable. |
 | `agents/workflow/WorkflowBuilder.tsx`                             | `shadcn/no-restyle`             | The publish-error Alert floats over the canvas with its close button in the top-right corner, so it pads `pr-10` to keep a long title clear of the button. One disable.                                                                                                                                                                                                                                                                                                                         |
 | `agents/components/ResourceStatusNotice.tsx` | `shadcn/no-restyle` | The stopped-resources warning floats over the workflow canvas (when `onClose` is set) with its close button in the top-right corner, the publish-error recipe, so it pads `pr-10`. One disable. |
 

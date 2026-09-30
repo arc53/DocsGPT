@@ -340,17 +340,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
           tone="destructive"
           illustration="none"
           title={t('settings.sources.wiki.pageLoadFailed')}
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => setContentAttempt((n) => n + 1)}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => setContentAttempt((n) => n + 1)}
         />
       );
     }
@@ -386,17 +376,7 @@ const WikiViewer: React.FC<WikiViewerProps> = ({
           tone="destructive"
           illustration="none"
           title={t('settings.sources.wiki.loadFailed')}
-          action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() => setPagesAttempt((n) => n + 1)}
-            >
-              {t('retry')}
-            </Button>
-          }
+          onRetry={() => setPagesAttempt((n) => n + 1)}
         />
       );
     }

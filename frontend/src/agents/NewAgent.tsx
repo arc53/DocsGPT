@@ -1347,7 +1347,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               label={t('agents.form.labels.name')}
             >
               <Input
-                shape="pill"
                 type="text"
                 value={agent.name}
                 placeholder={t('agents.form.placeholders.agentName')}
@@ -1360,7 +1359,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
               className="col-span-2 sm:col-span-1 sm:col-start-2"
             >
               <Textarea
-                size="lg"
                 className="h-32 sm:h-24"
                 placeholder={t('agents.form.placeholders.describeAgent')}
                 value={agent.description}
@@ -1411,7 +1409,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     type="button"
                     variant="combobox"
                     size="field"
-                    shape="pill"
                     id={sourcesPickerId}
                     ref={sourceAnchorButtonRef}
                     data-placeholder={
@@ -1486,7 +1483,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     type="button"
                     variant="combobox"
                     size="field"
-                    shape="pill"
                     id={toolsPickerId}
                     ref={toolAnchorButtonRef}
                     data-placeholder={selectedTools.length > 0 ? undefined : ''}
@@ -1543,7 +1539,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   type="button"
                   variant="outline-primary"
                   size="field"
-                  shape="pill"
                   onClick={() => setAddPromptModal('ACTIVE')}
                 >
                   {t('agents.form.buttons.add')}
@@ -1583,7 +1578,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   setAgent({ ...agent, agent_type: value })
                 }
               >
-                <SelectTrigger className="w-full" shape="pill" size="field">
+                <SelectTrigger className="w-full" size="field">
                   <SelectValue
                     placeholder={t('agents.form.placeholders.selectType')}
                   />
@@ -1640,7 +1635,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     type="button"
                     variant="combobox"
                     size="field"
-                    shape="pill"
                     id={modelsPickerId}
                     ref={modelAnchorButtonRef}
                     data-placeholder={
@@ -1671,7 +1665,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     setAgent({ ...agent, default_model_id: value })
                   }
                 >
-                  <SelectTrigger className="w-full" shape="pill" size="field">
+                  <SelectTrigger className="w-full" size="field">
                     <SelectValue
                       placeholder={t(
                         'agents.form.placeholders.selectDefaultModel',
@@ -1726,7 +1720,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                 hint={t('agents.form.advanced.jsonSchemaDescription')}
               >
                 <Textarea
-                  size="lg"
                   value={jsonSchemaText}
                   onChange={(e) => validateAndSetJsonSchema(e.target.value)}
                   placeholder={`{
@@ -1785,7 +1778,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         'agents.form.placeholders.enterTokenLimit',
                       )}
                       aria-label={t('agents.form.advanced.tokenLimit')}
-                      shape="pill"
                     />
                   }
                 >
@@ -1828,7 +1820,6 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                         'agents.form.placeholders.enterRequestLimit',
                       )}
                       aria-label={t('agents.form.advanced.requestLimit')}
-                      shape="pill"
                     />
                   }
                 >

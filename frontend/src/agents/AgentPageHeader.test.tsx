@@ -25,14 +25,14 @@ describe('AgentPageHeader sub-nav', () => {
     container.remove();
   });
 
-  it('renders the tabs as underline tab buttons, marking the current page', () => {
+  it('renders the tabs as NavTabs at full size, the overview marked current', () => {
     act(() => {
       root.render(
         <MemoryRouter>
           <AgentPageHeader
             agentId="a1"
             agentName="Renewals"
-            currentPage="logs"
+            onNameClick={vi.fn()}
           />
         </MemoryRouter>,
       );
@@ -43,15 +43,17 @@ describe('AgentPageHeader sub-nav', () => {
     const tabs = Array.from(nav?.children ?? []);
     expect(tabs).toHaveLength(3);
     for (const tab of tabs) {
-      expect(tab.getAttribute('data-variant')).toBe('tab');
-      expect(tab.getAttribute('data-size')).toBe('inline');
+      expect(tab.getAttribute('data-slot')).toBe('nav-tab');
+      expect(tab.className).toContain('h-9');
+      expect(tab.className).toContain('px-4');
     }
-    const current = tabs[1];
+    // Tabs sit edge to edge: the nav has no gap.
+    expect(nav?.className).not.toMatch(/\bgap-/);
+    const current = tabs[0];
     expect(current.tagName).toBe('SPAN');
     expect(current.getAttribute('aria-current')).toBe('page');
-    expect(current.getAttribute('data-active')).toBe('true');
-    expect(tabs[0].tagName).toBe('A');
-    expect(tabs[0].getAttribute('data-active')).not.toBe('true');
+    expect(tabs[1].tagName).toBe('A');
+    expect(tabs[1].getAttribute('aria-current')).toBeNull();
   });
 
   it('shows only the tabs the role allows', () => {
@@ -61,7 +63,7 @@ describe('AgentPageHeader sub-nav', () => {
           <AgentPageHeader
             agentId="a1"
             agentName="Renewals"
-            currentPage="overview"
+            onNameClick={vi.fn()}
             access={{
               access: 'editor',
               allowed_actions: ['view', 'view_logs'],
@@ -87,7 +89,6 @@ describe('AgentPageHeader sub-nav', () => {
           <AgentPageHeader
             agentId="a1"
             agentName="Helpdesk Triage"
-            currentPage="overview"
             onNameClick={onNameClick}
             status={<span data-testid="status">Published</span>}
           />
@@ -103,6 +104,10 @@ describe('AgentPageHeader sub-nav', () => {
     expect(crumb.querySelector('img')).not.toBeNull();
     expect(crumb.querySelector('.lucide-chevron-down')).not.toBeNull();
     expect(crumb.textContent).toContain('Helpdesk Triage');
+    // The name is the current crumb, so it takes BreadcrumbPage's 32ch cap.
+    expect(
+      crumb.querySelector('span[title="Helpdesk Triage"]')?.className,
+    ).toContain('max-w-[32ch]');
     expect(container.querySelector('[data-testid="status"]')).not.toBeNull();
     act(() => crumb.click());
     expect(onNameClick).toHaveBeenCalledTimes(1);
@@ -112,11 +117,7 @@ describe('AgentPageHeader sub-nav', () => {
     act(() => {
       root.render(
         <MemoryRouter>
-          <AgentPageHeader
-            agentName="New workflow"
-            currentPage="overview"
-            onNameClick={vi.fn()}
-          />
+          <AgentPageHeader agentName="New workflow" onNameClick={vi.fn()} />
         </MemoryRouter>,
       );
     });

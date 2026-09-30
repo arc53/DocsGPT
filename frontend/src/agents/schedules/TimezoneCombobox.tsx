@@ -126,6 +126,7 @@ export default function TimezoneCombobox({
         <Button
           type="button"
           variant="combobox"
+          size="field"
           role="combobox"
           aria-expanded={open}
           aria-label={ariaLabel}

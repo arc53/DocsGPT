@@ -577,4 +577,18 @@ describe('ConversationBubble', () => {
     expect(openSources).toHaveBeenCalledWith(sources);
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
+
+  // S1: every panel under an answer shares the answer surface.
+  it('puts the question attachment chip on the answer surface', async () => {
+    await render(
+      <ConversationBubble
+        type="QUESTION"
+        message="What changed?"
+        filesAttached={[{ id: 'f1', fileName: 'rates.pdf' }]}
+      />,
+    );
+    const chip = container.querySelector('[title="rates.pdf"]')!;
+    expect(chip.className).toContain('bg-answer-surface');
+    expect(chip.className).not.toContain('bg-muted');
+  });
 });

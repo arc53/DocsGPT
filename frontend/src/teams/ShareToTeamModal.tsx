@@ -983,6 +983,7 @@ export default function ShareToTeamModal({
                   <Button
                     type="button"
                     variant="combobox"
+                    size="field"
                     role="combobox"
                     aria-expanded={pickerOpen}
                     disabled={

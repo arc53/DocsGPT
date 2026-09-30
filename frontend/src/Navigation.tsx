@@ -575,7 +575,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               className={({ isActive }) =>
                 cn(
-                  'group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent',
+                  'group border-border hover:border-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent',
                   isActive && 'bg-transparent',
                 )
               }

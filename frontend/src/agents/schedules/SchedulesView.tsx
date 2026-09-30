@@ -326,12 +326,12 @@ export default function SchedulesView() {
               />
             </div>
             <Tabs defaultValue="recurring">
-              <TabsList variant="underline">
-                <TabsTrigger value="recurring" variant="underline">
+              <TabsList>
+                <TabsTrigger value="recurring">
                   {t('agents.schedules.recurring')}
                   <Badge variant="neutral">{recurring.length}</Badge>
                 </TabsTrigger>
-                <TabsTrigger value="once" variant="underline">
+                <TabsTrigger value="once">
                   {t('agents.schedules.oneTime')}
                   <Badge variant="neutral">{oneTime.length}</Badge>
                 </TabsTrigger>

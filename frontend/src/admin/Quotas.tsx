@@ -206,7 +206,6 @@ export default function Quotas() {
             <div className="flex flex-wrap items-center gap-2">
               {teamsAll > QUOTA_PAGE_SIZE && (
                 <SearchInput
-                  size="sm"
                   className="w-full sm:w-56"
                   placeholder="Search teams"
                   value={teamsQuery}
@@ -223,7 +222,7 @@ export default function Quotas() {
               />
               <Button
                 variant="outline"
-                size="sm"
+                size="field"
                 disabled={!teamPick}
                 onClick={() => {
                   if (!teamPick) return;
@@ -312,7 +311,6 @@ export default function Quotas() {
           actions={
             usersAll > QUOTA_PAGE_SIZE ? (
               <SearchInput
-                size="sm"
                 className="w-full sm:w-56"
                 placeholder="Search users"
                 value={usersQuery}

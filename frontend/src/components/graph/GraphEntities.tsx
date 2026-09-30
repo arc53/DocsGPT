@@ -176,17 +176,7 @@ export default function GraphEntities({
         tone="destructive"
         illustration="none"
         title={t('settings.sources.graphrag.view.entitiesLoadFailed')}
-        action={
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            shape="pill"
-            onClick={() => setAttempt((n) => n + 1)}
-          >
-            {t('retry')}
-          </Button>
-        }
+        onRetry={() => setAttempt((n) => n + 1)}
       />
     ) : status === 'ready' && nodes.length === 0 ? (
       <EmptyState

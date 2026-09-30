@@ -1,5 +1,5 @@
 import { Activity, ChevronRight } from 'lucide-react';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
@@ -10,6 +10,7 @@ import SkeletonLoader from '../components/SkeletonLoader';
 import { useScrollSentinel } from '../hooks/useLoadMore';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
+import { Collapsible } from '../components/ui/collapsible';
 import {
   DescriptionItem,
   DescriptionList,
@@ -286,6 +287,11 @@ function Log({
   onViewTrace: (ref: TraceRef) => void;
 }) {
   const { t } = useTranslation();
+  const bodyId = useId();
+  // The details mount on first open (a long list stays light), then stay so
+  // closing can animate.
+  const [opened, setOpened] = useState(isOpen);
+  if (isOpen && !opened) setOpened(true);
   const logLevelColor = {
     info: 'text-success',
     error: 'text-destructive',
@@ -406,42 +412,37 @@ function Log({
 
   return (
     <div className="group hover:bg-accent w-full rounded-xl bg-transparent">
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         aria-expanded={isOpen}
+        aria-controls={bodyId}
         onClick={() => onToggle(log.id)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onToggle(log.id);
-          }
-        }}
         className={cn(
-          'text-foreground focus-visible:ring-ring/50 flex cursor-pointer flex-row items-start gap-2 p-2 px-4 py-3 outline-none focus-visible:ring-3 focus-visible:ring-inset',
-          isOpen && 'bg-muted rounded-t-xl',
+          'text-foreground focus-visible:ring-ring/50 flex w-full cursor-pointer flex-row items-start gap-2 rounded-xl p-2 px-4 py-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-inset',
+          isOpen && 'bg-muted rounded-b-none',
         )}
       >
         <ChevronRight
+          aria-hidden
           className={cn(
             'text-muted-foreground mt-[3px] size-3 transition-transform duration-200',
             isOpen && 'rotate-90',
           )}
         />
         <span className="flex flex-row flex-wrap gap-2">
-          <h2 className="text-muted-foreground text-xs">{`${log.timestamp}`}</h2>
+          <span className="text-muted-foreground text-xs">{`${log.timestamp}`}</span>
           {log.event_type && (
-            <h2 className="text-muted-foreground text-xs">
+            <span className="text-muted-foreground text-xs">
               {t(`settings.logs.types.${log.event_type}`)}
-            </h2>
+            </span>
           )}
-          <h2 className="text-warning text-xs">{`[${log.action}]`}</h2>
+          <span className="text-warning text-xs">{`[${log.action}]`}</span>
           {log.trace && (
-            <h2 className="text-muted-foreground text-xs tabular-nums">
+            <span className="text-muted-foreground text-xs tabular-nums">
               {formatDurationMs(log.trace.duration_ms)}
-            </h2>
+            </span>
           )}
-          <h2
+          <span
             className={cn(
               'max-w-72 text-xs wrap-break-word',
               logLevelColor[log.level],
@@ -450,75 +451,77 @@ function Log({
             {`${log.question}`.length > 250
               ? `${log.question.substring(0, 250)}...`
               : log.question}
-          </h2>
+          </span>
         </span>
-      </div>
-      {isOpen && (
-        <div className="bg-muted rounded-b-xl px-4 py-3">
-          {log.trace && (
-            <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => log.trace && onViewTrace(log.trace.ref)}
-              >
-                <Activity />
-                {log.trace.count > 1
-                  ? t('settings.logs.trace.viewRounds', {
-                      count: log.trace.count,
-                    })
-                  : t('settings.logs.trace.view')}
-              </Button>
-              <TraceChips
-                durationMs={log.trace.duration_ms}
-                counts={log.trace.summary}
+      </button>
+      <Collapsible open={isOpen} id={bodyId}>
+        {opened && (
+          <div className="bg-muted rounded-b-xl px-4 py-3">
+            {log.trace && (
+              <div className="flex flex-wrap items-center gap-2 px-2 pb-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => log.trace && onViewTrace(log.trace.ref)}
+                >
+                  <Activity />
+                  {log.trace.count > 1
+                    ? t('settings.logs.trace.viewRounds', {
+                        count: log.trace.count,
+                      })
+                    : t('settings.logs.trace.view')}
+                </Button>
+                <TraceChips
+                  durationMs={log.trace.duration_ms}
+                  counts={log.trace.summary}
+                />
+              </div>
+            )}
+            {detailRows.length > 0 && (
+              <DescriptionList size="xs" className="mx-2 mb-2">
+                {detailRows.map(([label, value]) => (
+                  <DescriptionItem key={label} label={label}>
+                    {value}
+                  </DescriptionItem>
+                ))}
+              </DescriptionList>
+            )}
+            {textBlocks.map((block) => (
+              <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
+                <p className="text-muted-foreground text-xs">{block.label}</p>
+                <Card variant="subtle" padding="sm">
+                  <pre
+                    className={cn(
+                      'font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap',
+                      block.isError ? 'text-destructive' : 'text-foreground',
+                    )}
+                  >
+                    {block.text}
+                  </pre>
+                </Card>
+              </div>
+            ))}
+            {jsonBlocks.map((block) => (
+              <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
+                <p className="text-muted-foreground text-xs">{block.label}</p>
+                <Card variant="subtle" padding="sm">
+                  <div className="scrollbar-overlay max-h-60 overflow-y-auto">
+                    <pre className="text-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
+                      {JSON.stringify(block.value, null, 2)}
+                    </pre>
+                  </div>
+                </Card>
+              </div>
+            ))}
+            <div className="my-px w-fit">
+              <CopyButton
+                textToCopy={JSON.stringify(filteredLog)}
+                showText={true}
               />
             </div>
-          )}
-          {detailRows.length > 0 && (
-            <DescriptionList size="xs" className="mx-2 mb-2">
-              {detailRows.map(([label, value]) => (
-                <DescriptionItem key={label} label={label}>
-                  {value}
-                </DescriptionItem>
-              ))}
-            </DescriptionList>
-          )}
-          {textBlocks.map((block) => (
-            <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
-              <p className="text-muted-foreground text-xs">{block.label}</p>
-              <Card variant="subtle" padding="sm">
-                <pre
-                  className={cn(
-                    'font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap',
-                    block.isError ? 'text-destructive' : 'text-foreground',
-                  )}
-                >
-                  {block.text}
-                </pre>
-              </Card>
-            </div>
-          ))}
-          {jsonBlocks.map((block) => (
-            <div key={block.label} className="flex flex-col gap-1 px-2 pb-2">
-              <p className="text-muted-foreground text-xs">{block.label}</p>
-              <Card variant="subtle" padding="sm">
-                <div className="scrollbar-overlay max-h-60 overflow-y-auto">
-                  <pre className="text-foreground font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
-                    {JSON.stringify(block.value, null, 2)}
-                  </pre>
-                </div>
-              </Card>
-            </div>
-          ))}
-          <div className="my-px w-fit">
-            <CopyButton
-              textToCopy={JSON.stringify(filteredLog)}
-              showText={true}
-            />
           </div>
-        </div>
-      )}
+        )}
+      </Collapsible>
     </div>
   );
 }

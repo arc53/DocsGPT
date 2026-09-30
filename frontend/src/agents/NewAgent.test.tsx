@@ -265,14 +265,27 @@ describe('NewAgent form', () => {
     )!;
 
   // Decision 63 (3): every field, picker and button in the form is 42px.
-  it('renders the name field as a default-size (42px) pill Input', async () => {
+  it('renders the name field as a default-size square Input', async () => {
     await render();
     const name = container.querySelector<HTMLInputElement>(
       'input[placeholder="agents.form.placeholders.agentName"]',
     )!;
     expect(name.getAttribute('data-slot')).toBe('input');
     expect(name.getAttribute('data-size')).toBe('default');
-    expect(name.getAttribute('data-shape')).toBe('pill');
+    // S8: form controls are square; only the page chrome is pill.
+    expect(name.getAttribute('data-shape')).toBe('default');
+  });
+
+  it('renders the model Select triggers as square field controls', async () => {
+    await render();
+    const triggers = Array.from(
+      container.querySelectorAll('[data-slot="select-trigger"]'),
+    );
+    expect(triggers.length).toBeGreaterThan(0);
+    for (const trigger of triggers) {
+      expect(trigger.getAttribute('data-size')).toBe('field');
+      expect(trigger.getAttribute('data-shape')).toBe('default');
+    }
   });
 
   it('renders the Add prompt button at the field height', async () => {
@@ -280,10 +293,10 @@ describe('NewAgent form', () => {
     const add = buttonByText('agents.form.buttons.add');
     expect(add.getAttribute('data-variant')).toBe('outline-primary');
     expect(add.getAttribute('data-size')).toBe('field');
-    expect(add.getAttribute('data-shape')).toBe('pill');
+    expect(add.getAttribute('data-shape')).toBe('default');
   });
 
-  it('renders the token and request limits as default-size pill Inputs', async () => {
+  it('renders the token and request limits as default-size square Inputs', async () => {
     await render();
     await act(async () =>
       buttonByText('agents.form.sections.advanced').click(),
@@ -293,7 +306,7 @@ describe('NewAgent form', () => {
         `input[placeholder="agents.form.placeholders.${key}"]`,
       )!;
       expect(field.getAttribute('data-size')).toBe('default');
-      expect(field.getAttribute('data-shape')).toBe('pill');
+      expect(field.getAttribute('data-shape')).toBe('default');
     }
   });
 
@@ -882,16 +895,18 @@ describe('NewAgent form', () => {
     expect(chevron.getAttribute('class')).toContain('rotate-90');
   });
 
-  it('renders the description as a large ui Textarea', async () => {
+  it('renders the description as a default-size ui Textarea at its own height', async () => {
     await render();
     const description = container.querySelector(
       'textarea[placeholder="agents.form.placeholders.describeAgent"]',
     )!;
     expect(description.getAttribute('data-slot')).toBe('textarea');
-    expect(description.getAttribute('data-size')).toBe('lg');
+    expect(description.getAttribute('data-size')).toBe('default');
+    expect(description.className).toContain('h-32');
+    expect(description.className).toContain('sm:h-24');
   });
 
-  it('renders the pickers as pill comboboxes, muted while empty', async () => {
+  it('renders the pickers as square comboboxes, muted while empty', async () => {
     await render();
     const triggers = Array.from(
       container.querySelectorAll('[data-testid="picker"] > button'),
@@ -901,7 +916,8 @@ describe('NewAgent form', () => {
     for (const trigger of triggers) {
       expect(trigger.getAttribute('data-variant')).toBe('combobox');
       expect(trigger.getAttribute('data-size')).toBe('field');
-      expect(trigger.getAttribute('data-shape')).toBe('pill');
+      expect(trigger.getAttribute('data-shape')).toBe('default');
+      expect(trigger.className).toContain('rounded-md');
       expect(trigger.hasAttribute('data-placeholder')).toBe(true);
       expect(trigger.querySelector('span.truncate')).not.toBeNull();
     }
@@ -965,7 +981,7 @@ describe('NewAgent form', () => {
       (el) => el.className.includes('font-mono'),
     )!;
     expect(schema.getAttribute('data-slot')).toBe('textarea');
-    expect(schema.getAttribute('data-size')).toBe('lg');
+    expect(schema.getAttribute('data-size')).toBe('default');
 
     await act(async () => setNativeValue(schema, '{ not json'));
     const invalid = Array.from(container.querySelectorAll('div')).find(

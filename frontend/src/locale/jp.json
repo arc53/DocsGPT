@@ -1179,7 +1179,9 @@
         "cancel": "キャンセル"
       },
       "auditDurationValue": "{{value}} ミリ秒",
-      "fallbackName": "デバイス"
+      "fallbackName": "デバイス",
+      "auditShow": "最近のコマンドを表示",
+      "auditHide": "最近のコマンドを非表示"
     },
     "customModels": {
       "label": "カスタムモデル",

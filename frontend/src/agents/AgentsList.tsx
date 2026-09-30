@@ -467,8 +467,8 @@ function AgentSection({
             <Breadcrumb>
               {/* eslint-disable-next-line shadcn/no-restyle -- the folder
                   trail stands in for the section <h2>, so it keeps heading
-                  typography (DESIGN.md Approved exceptions). */}
-              <BreadcrumbList className="text-foreground gap-2 text-lg font-semibold sm:gap-2">
+                  typography and wraps (DESIGN.md Approved exceptions). */}
+              <BreadcrumbList className="text-foreground flex-wrap gap-2 text-lg font-semibold sm:gap-2">
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
                     <button
@@ -484,9 +484,7 @@ function AgentSection({
                     <BreadcrumbSeparator />
                     <BreadcrumbItem>
                       {index === breadcrumbItems.length - 1 ? (
-                        <BreadcrumbPage className="max-w-[32ch]">
-                          {item.name}
-                        </BreadcrumbPage>
+                        <BreadcrumbPage>{item.name}</BreadcrumbPage>
                       ) : (
                         <BreadcrumbLink asChild>
                           <button
@@ -551,6 +549,7 @@ function AgentSection({
                   }
                 }}
                 placeholder={t('agents.folders.newFolder')}
+                shape="pill"
                 className="w-28 sm:w-auto"
                 autoFocus
               />
