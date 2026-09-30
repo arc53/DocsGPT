@@ -24,6 +24,8 @@ from mcp.shared.inbound import (
     mcp_param_headers,
     x_mcp_header_map,
 )
+from mcp.shared.exceptions import MCPError
+from mcp.types import HEADER_MISMATCH
 from mcp.shared.auth import (
     AuthorizationCodeResult,
     OAuthClientInformationFull,
@@ -130,10 +132,24 @@ def _param_header_hook(header_maps: Dict[str, Dict[tuple, str]]) -> Callable:
     return add_param_headers
 
 
-def _is_header_mismatch(error_msg: str) -> bool:
-    """Whether a server refused a call over its ``Mcp-Param-*`` headers."""
-    lower = error_msg.lower()
-    return "header mismatch" in lower or "mcp-param-" in lower
+def _is_header_mismatch(error: BaseException) -> bool:
+    """Whether a server refused a call over its ``Mcp-Param-*`` headers.
+
+    Only the protocol's ``HEADER_MISMATCH`` error counts: the request was
+    rejected before the tool ran. A tool's own failure (``ToolError``) may
+    come after a write took effect, so it is never retried, whatever its text.
+    """
+    seen: set = set()
+    pending: List[Optional[BaseException]] = [error]
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, MCPError) and current.code == HEADER_MISMATCH:
+            return True
+        pending.extend([current.__cause__, current.__context__, *getattr(current, "exceptions", ())])
+    return False
 
 
 def _annotation_hints(annotations: Any) -> Dict[str, bool]:
@@ -418,6 +434,12 @@ class MCPTool(Tool):
                     tools_dict.append({"name": str(tool), "description": ""})
         return tools_dict
 
+    def _refresh_param_headers(self, tools: List[Dict]) -> None:
+        """Rebuild the ``Mcp-Param-*`` map from a complete tool listing, in the dict the client's hook reads."""
+        header_maps = self.__dict__.setdefault("_param_headers", {})
+        header_maps.clear()
+        header_maps.update(param_header_maps({t.get("name"): t.get("inputSchema") for t in tools}))
+
     async def _execute_with_client(self, operation: str, *args, **kwargs):
         """Execute operation with FastMCP client."""
         if not self._client:
@@ -428,9 +450,7 @@ class MCPTool(Tool):
             elif operation == "list_tools":
                 tools_response = await self._client.list_tools()
                 self.available_tools = self._format_tools(tools_response)
-                self.__dict__.setdefault("_param_headers", {}).update(
-                    param_header_maps({t.get("name"): t.get("inputSchema") for t in self.available_tools})
-                )
+                self._refresh_param_headers(self.available_tools)
                 return self.available_tools
             elif operation == "call_tool":
                 tool_name = args[0]
@@ -529,7 +549,7 @@ class MCPTool(Tool):
             return self._format_result(result)
         except Exception as e:
             error_msg = str(e)
-            if _is_header_mismatch(error_msg):
+            if _is_header_mismatch(e):
                 return self._retry_with_listed_schemas(action_name, cleaned_kwargs, e)
             lower_msg = error_msg.lower()
             is_auth_error = (

@@ -154,9 +154,9 @@ def stub_server():
 
 
 def _tool(url: str, **config):
-    from docsgpt.agents.tools.mcp_tool import MCPTool
+    import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-    return MCPTool({
+    return mcp_mod.MCPTool({
         "server_url": url,
         "transport_type": "http",
         "auth_type": "bearer",
@@ -174,16 +174,69 @@ def _text(result: dict) -> str:
 @pytest.mark.unit
 class TestParamHeaderMaps:
     def test_reads_the_stored_schema(self):
-        from docsgpt.agents.tools.mcp_tool import param_header_maps
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        maps = param_header_maps({"issue_read": _stored_parameters(OWNER_REPO_SCHEMA), "plain": {}})
+        maps = mcp_mod.param_header_maps({"issue_read": _stored_parameters(OWNER_REPO_SCHEMA), "plain": {}})
         assert maps == {"issue_read": {("owner",): "owner", ("repo",): "repo"}}
 
     def test_invalid_annotations_are_ignored(self):
-        from docsgpt.agents.tools.mcp_tool import param_header_maps
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
 
         schema = {"type": "object", "properties": {"n": {"type": "number", "x-mcp-header": "n"}}}
-        assert param_header_maps({"bad": schema}) == {}
+        assert mcp_mod.param_header_maps({"bad": schema}) == {}
+
+    def test_a_listing_replaces_mappings_it_no_longer_declares(self):
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+
+        tool = _tool("http://127.0.0.1:1/mcp", action_schemas={"issue_read": _stored_parameters(OWNER_REPO_SCHEMA)})
+        shared = tool._param_headers
+        assert shared == {"issue_read": {("owner",): "owner", ("repo",): "repo"}}
+
+        plain = {"type": "object", "properties": {"owner": {"type": "string"}, "repo": {"type": "string"}}}
+        tool._refresh_param_headers([{"name": "issue_read", "inputSchema": plain}])
+
+        assert tool._param_headers is shared
+        assert shared == {}
+        assert mcp_mod.param_header_maps({"issue_read": plain}) == {}
+
+
+@pytest.mark.unit
+class TestHeaderMismatchRetry:
+    def test_protocol_header_mismatch_is_retried(self):
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+        from mcp.shared.exceptions import MCPError
+        from mcp.types import HEADER_MISMATCH
+
+        error = MCPError(HEADER_MISMATCH, 'header mismatch: missing Mcp-Param-repo header for parameter "repo"')
+        assert mcp_mod._is_header_mismatch(error)
+        try:
+            raise RuntimeError("call_tool failed") from error
+        except RuntimeError as wrapped:
+            assert mcp_mod._is_header_mismatch(wrapped)
+
+    def test_a_tool_failure_that_mentions_the_header_is_not_retried(self):
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+        from fastmcp.exceptions import ToolError
+        from mcp.shared.exceptions import MCPError
+
+        assert not mcp_mod._is_header_mismatch(ToolError("could not update: header mismatch on Mcp-Param-repo"))
+        assert not mcp_mod._is_header_mismatch(MCPError(-32602, "header mismatch: Mcp-Param-repo"))
+
+    def test_a_tool_failure_is_called_once(self, monkeypatch):
+        from fastmcp.exceptions import ToolError
+
+        tool = _tool("http://127.0.0.1:1/mcp", action_schemas={"issue_write": _stored_parameters(OWNER_REPO_SCHEMA)})
+        tool._client = object()
+        calls = []
+
+        def run(operation, *args, **kwargs):
+            calls.append(operation)
+            raise ToolError("write applied, then failed: Mcp-Param-repo header mismatch")
+
+        monkeypatch.setattr(tool, "_run_async_operation", run)
+        with pytest.raises(Exception, match="Failed to execute action 'issue_write'"):
+            tool.execute_action("issue_write", owner="arc53", repo="DocsGPT")
+        assert calls == ["call_tool"]
 
 
 @pytest.mark.integration
