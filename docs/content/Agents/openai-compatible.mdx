@@ -50,7 +50,9 @@ The `model` field is accepted but ignored — the agent bound to your API key de
 Authenticate with `Authorization: Bearer <agent_api_key>`. Every `/v1` request is an agent-key request, even from the agent's owner.
 
 <Callout type="warning">
-A `/v1` caller can't approve anything on the agent owner's behalf. Write actions that use the agent owner's connected accounts or saved credentials are refused unless the owner allows them in the agent's **Access Details > Changes others can make as you**. See [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes).
+Nobody can approve a tool action through `/v1`. A tool that needs approval comes back to you as an ordinary entry in `tool_calls`, as if it were one of your own client-side tools: whatever you post back as its `role: "tool"` message is used as its result, and the server-side tool never runs. To approve server-side tools, use the native [`/api/answer` or `/stream` with `tool_actions`](/Agents/api#tools-that-need-approval).
+
+Write actions that use the agent owner's connected accounts or saved credentials are refused unless the owner allows them in the agent's **Access Details > Changes others can make as you**. See [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes).
 </Callout>
 
 ## Endpoints
@@ -74,7 +76,7 @@ for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="", flush=True)
 ```
 
-Set `"stream_options": {"include_usage": true}` to get a final chunk with `usage` (prompt, completion and total tokens, summed over every model call of the turn). Non-streaming responses always include `usage`.
+Set `"stream_options": {"include_usage": true}` to get a chunk with `usage` (prompt, completion and total tokens, summed over every model call of the turn). It arrives just **before** the chunk that carries `finish_reason`, not after it as in OpenAI's API, so read it wherever it appears rather than only from the last chunk. Non-streaming responses always include `usage`.
 
 ## Sampling Parameters
 
@@ -219,6 +221,8 @@ When an override is active, the agent's prompt template is replaced wholesale �
 
 Conversations are **always persisted** server-side, and the response includes `docsgpt.conversation_id`. They never appear in the agent owner's sidebar — `/v1` traffic is stored hidden, so external clients can't clutter the owner's conversation list.
 
+A tool-result round that carries no conversation (no `conversation_id` and no linked session, as with a client that resends the whole transcript) is not stored, so it doesn't leave orphan rows. `docsgpt.persist` and the legacy `docsgpt.save_conversation` flag from older releases have no effect.
+
 ### Continuing a conversation
 
 By default each request is a new conversation built from the `messages` you send. To continue a stored one, pass its id in any of these, in order of precedence:
@@ -236,9 +240,8 @@ Chat-completions requests have no conversation field, so coding clients such as 
 - the `X-DocsGPT-Session-ID` header, or `docsgpt.session_id` in the body;
 - the `X-Session-ID` or `X-Session-Affinity` header.
 
-Requests with the same session value, the same agent and the same system messages continue the same conversation. The link is kept in Redis for `V1_SESSION_TTL_SECONDS` (24 hours by default) and only as a hash of the value. If the linked conversation is gone, a new one starts. Without Redis, session headers have no effect.
+Requests with the same session value, the same agent and the same `system` and `developer` messages continue the same conversation. The link is kept in Redis, only as a hash of the value, for `V1_SESSION_TTL_SECONDS` (24 hours by default) after the last request that used it: each request restarts the time limit. If the linked conversation is gone, a new one starts. Without Redis, session headers have no effect.
 
-Stateless tool continuations (no `conversation_id`, e.g. opencode) skip persistence by default to avoid writing orphan rows; set `docsgpt.persist` to override. The legacy `docsgpt.save_conversation` flag from older releases is deprecated and ignored.
 
 ## DocsGPT Extension Fields
 
@@ -249,7 +252,6 @@ DocsGPT adds an optional `docsgpt` object to both requests and responses for fea
 | Field | Description |
 | --- | --- |
 | `attachments` | List of attachment IDs to include as context for this turn. Upload them with the native [`/api/store_attachment`](/Agents/api#attachments-api-including-images). |
-| `persist` | Force-enable/disable conversation persistence (mainly for stateless tool continuations). |
 | `conversation_id` | Continue a stored conversation (see [Continuing a conversation](#continuing-a-conversation)). A top-level `conversation_id` works too. |
 | `session_id` | Link requests into one conversation (see [Session headers](#session-headers)). |
 
