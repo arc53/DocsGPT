@@ -508,6 +508,14 @@ def _backoff_seconds(attempt: int) -> float:
     return min(_MAX_RETRY_WAIT_SECONDS, _BASE_RETRY_WAIT_SECONDS * 2**attempt + random.uniform(0, 0.5))
 
 
+def _token_count(value) -> int:
+    """A usage count from a response; a server that omits or garbles it counts as 0."""
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _error_body(response) -> str:
     try:
         return str(response.text or "").strip()[:300]
@@ -594,10 +602,7 @@ class DeepseekOcrEngine:
         with self._usage_lock:
             self._usage["requests"] += 1
             for key in ("prompt_tokens", "completion_tokens"):
-                try:
-                    self._usage[key] += int(usage.get(key) or 0)
-                except (TypeError, ValueError):
-                    pass
+                self._usage[key] += _token_count(usage.get(key))
 
     def _post(self, body: Dict):
         """POST one page, retrying rate limits, 5xx responses and refused connections.
