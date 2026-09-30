@@ -41,6 +41,7 @@ A **session token** is what the web app sends. How you get one depends on `AUTH_
 | Ask an agent a question, with or without streaming | `POST /api/answer`, `POST /stream` | [Agent API](/Agents/api) |
 | Search an agent's sources without calling a model | `POST /api/search` | [Agent API](/Agents/api#search-api) |
 | Connect an OpenAI SDK or an OpenAI-compatible tool | `/v1/chat/completions`, `/v1/models` | [OpenAI-compatible API](/Agents/openai-compatible) |
+| Search an agent's sources from an MCP client (Claude, Cursor, ...) | `/mcp` | [MCP server](/API/mcp-server) |
 | Start an agent run from another system | `/api/webhooks/agents/<token>` | [Agent webhooks](/Agents/webhooks) |
 | Follow ingestion, approvals and other live events | `GET /api/events` | [Realtime events](/Agents/notifications) |
 | Move agents between instances | `/api/export_agent`, `/api/import_agent` | [Agent API](/Agents/api#agent-portability-export--import) |
@@ -67,7 +68,7 @@ These routes are not in `/swagger.json`. Each has its own page:
 
 - `/v1/chat/completions` and `/v1/models`: [OpenAI-compatible API](/Agents/openai-compatible).
 - `GET /api/events` and `GET /api/messages/<message_id>/events`: [Realtime events](/Agents/notifications).
-- `/mcp`: DocsGPT's own MCP server. Its `search_docs` tool searches an agent's sources; send the agent's API key as `Authorization: Bearer <key>`.
+- `/mcp`: DocsGPT's own [MCP server](/API/mcp-server). Its `search_docs` tool searches an agent's sources; send the agent's API key as `Authorization: Bearer <key>`.
 - `/api/devices/*`, including the device command stream: [Remote device](/Tools/remote-device).
 - `GET /api/artifacts/<id>/download`: [Artifacts](/Tools/artifacts-and-code-execution#artifacts).
 - `/api/auth/oidc/*` and `/scim/v2/*`: [SSO with OIDC](/Deploying/OIDC-SSO).
