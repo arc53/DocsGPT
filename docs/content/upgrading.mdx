@@ -258,6 +258,10 @@ The manifests in `deployment/k8s` did not work as shipped: the migration Job ran
 
 `docsgpt-api-service` is now `ClusterIP`, so the old external address stops answering. Use `kubectl port-forward service/docsgpt-api-service 7091:80`, or set `AUTH_TYPE` and `API_URL` (the public `https://` address) and publish DocsGPT through an Ingress as described in [Publish DocsGPT](/Deploying/Kubernetes-Deploying#publish-docsgpt).
 
+#### Swagger UI moved to /api/docs
+
+Bookmarks or scripts that opened the Swagger UI at `/` should use `/api/docs`; `/swagger.json` is unchanged.
+
 #### Azure and local Compose files removed
 
 `deployment/docker-compose-azure.yaml` and `deployment/docker-compose-local.yaml` are gone. Their replacements:
