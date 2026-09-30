@@ -173,6 +173,7 @@ The manifests in `deployment/k8s` did not work as shipped: the migration Job ran
 
    - Keep your `JWT_SECRET_KEY`. Replace `INTERNAL_KEY` if it is still the shipped `internal`.
    - The old secret had no `ENCRYPTION_SECRET_KEY`, so any stored credentials are sealed with the public default. Set a new key from `openssl rand -hex 32`, and add `ENCRYPTION_SECRET_KEY_PREVIOUS: default-docsgpt-encryption-key` so they stay readable.
+   - Set `POSTGRES_PASSWORD` to your existing database password (`docsgpt` with the old manifests) and put the same value in `POSTGRES_URI`. The bundled Postgres keeps the password it was created with, so a new value also needs `kubectl exec deploy/postgres -- psql -U docsgpt -c "ALTER USER docsgpt PASSWORD '<new>'"`.
    - `CACHE_REDIS_URL` is new; `QDRANT_URL` and `QDRANT_PORT` are gone.
    - Fill in the S3 bucket and credentials: uploads now go to a bucket (`STORAGE_TYPE: s3`), and vectors to pgvector (`VECTOR_STORE: pgvector`).
 
@@ -201,7 +202,7 @@ The manifests in `deployment/k8s` did not work as shipped: the migration Job ran
 
 6. **Upload your documents again.** The old stack kept uploads and FAISS indexes on the API pod's disk, which the new stack does not read.
 
-`docsgpt-api-service` is now `ClusterIP`, so the old external address stops answering. Use `kubectl port-forward service/docsgpt-api-service 7091:80`, or set `AUTH_TYPE` and publish DocsGPT through an Ingress as described in [Publish DocsGPT](/Deploying/Kubernetes-Deploying#publish-docsgpt).
+`docsgpt-api-service` is now `ClusterIP`, so the old external address stops answering. Use `kubectl port-forward service/docsgpt-api-service 7091:80`, or set `AUTH_TYPE` and `API_URL` (the public `https://` address) and publish DocsGPT through an Ingress as described in [Publish DocsGPT](/Deploying/Kubernetes-Deploying#publish-docsgpt).
 
 #### Azure and local Compose files removed
 

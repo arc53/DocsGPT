@@ -60,6 +60,18 @@ Admin > Connectors, and synced sources run as their connection without a browser
 
 Answers render math, and the chat widget is published at 0.8.0.
 
+### Tools and list settings
+
+- `DEFAULT_CHAT_TOOLS`, `GUARDRAILS_CHECKS_ENABLED` and `QUOTA_UNPRICED_RATE_PER_MILLION` accept a JSON
+  list or comma-separated values; a comma-separated value used to stop the API and the worker from
+  starting. An empty value keeps the default, and `DEFAULT_CHAT_TOOLS=none` turns the default chat
+  tools off.
+- One custom tool without a class docstring no longer empties the Add Tool list for every user; a
+  tool that can't describe itself is skipped and logged.
+- A new [Code Execution Sandbox](/Deploying/Sandbox) page covers running the sandbox the Artifact and
+  Code Executor tools need, and `scripts/build_daytona_snapshot.py` pins the runner image's render
+  library versions.
+
 ### Deployment files
 
 - `deployment/docker-compose-azure.yaml` and `deployment/docker-compose-local.yaml` are removed.
@@ -116,8 +128,8 @@ and the API and worker wait for it. Uploads go to an S3-compatible bucket and ve
 the bundled Postgres, so every pod sees the same files. The worker runs the beat scheduler, and
 `CACHE_REDIS_URL` points at the in-cluster Redis. The Services are `ClusterIP`, with an Ingress
 example for publishing over TLS, and the API serves the web UI, so the frontend Deployment is gone.
-`docsgpt-secrets.yaml` holds plain-text placeholders, including `ENCRYPTION_SECRET_KEY`, and the pods
-refuse to start until they are replaced. Images are pinned to the release. An existing cluster has to
+`docsgpt-secrets.yaml` holds plain-text placeholders, including `ENCRYPTION_SECRET_KEY` and
+`POSTGRES_PASSWORD` (which was a shared `docsgpt`), and the pods refuse to start until they are replaced. Images are pinned to the release. An existing cluster has to
 carry its keys over, re-encrypt stored secrets and upload its documents again: see
 [Upgrading](/upgrading#kubernetes-manifests-reworked) and the
 [Kubernetes guide](/Deploying/Kubernetes-Deploying).
