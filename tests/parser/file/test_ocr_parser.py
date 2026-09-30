@@ -155,6 +155,13 @@ class TestResolution:
             assert op.resolve_ocr_backend() == "native"
         assert "OCR_BACKEND=docling" in caplog.text
 
+    @pytest.mark.parametrize("backend", ["auto", "docling", "native"])
+    def test_deepseek_always_runs_on_the_native_backend(self, backend, monkeypatch, settings):
+        monkeypatch.setattr(settings, "OCR_BACKEND", backend)
+        monkeypatch.setattr(settings, "OCR_ENGINE", "deepseek")
+        monkeypatch.setitem(sys.modules, "docling", MagicMock())
+        assert op.resolve_ocr_backend() == "native"
+
     def test_unknown_backend_is_auto(self, monkeypatch, settings):
         monkeypatch.setattr(settings, "OCR_BACKEND", "paddle")
         monkeypatch.setitem(sys.modules, "docling", None)

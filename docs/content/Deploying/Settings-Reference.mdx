@@ -944,13 +944,13 @@ OCR scanned PDFs and images attached to a chat.
 
 Type `"auto" | "docling" | "native"`, default `auto`.
 
-Which stack runs OCR when it is on. auto: docling when installed, otherwise native. docling: the layout-model pipeline (hybrid region OCR, reading order, table structure); needs the optional docling extra. native: pypdfium2/Pillow page rendering straight into tesseract or a DeepSeek-OCR endpoint (docsgpt/parser/file/ocr_parser.py); no ML models in the worker, tables come out as text lines under tesseract.
+Which stack runs OCR when it is on (OCR_ENGINE=deepseek always uses native). auto: docling when installed, otherwise native. docling: the layout-model pipeline (hybrid region OCR, reading order, table structure); needs the optional docling extra. native: pypdfium2/Pillow page rendering straight into tesseract or a DeepSeek-OCR endpoint (docsgpt/parser/file/ocr_parser.py); no ML models in the worker, tables come out as text lines under tesseract.
 
 ### `OCR_ENGINE`
 
 Type `"tesseract" | "deepseek" | "auto" | "ocrmac" | "rapidocr"`, default `tesseract`.
 
-OCR engine used when OCR is on. Benched 2026-08 on EN/ZH/table/degraded scans (docs page Sources/ocr has the menu). tesseract (recommended): best classic-engine accuracy (perfect EN word recall, 0.000 bilingual CER, 100% table cells), ~35 MB, CPU-only; needs the system binary and language packs, an optional install like every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew install tesseract-ocr for a local run); both backends. deepseek: DeepSeek-OCR on a local Ollama/vLLM server or a hosted API (OCR_DEEPSEEK_*); best table/CJK quality, the worker stays light (no layout models) but each page costs seconds on the model server; both backends. auto: docling's pick, ocrmac on macOS (excellent), rapidocr on Linux (silently shreds some long text lines; avoid as a server default). ocrmac | rapidocr: force one of those. auto/ocrmac/rapidocr exist only inside docling; the native backend runs tesseract for them. An engine that is not installed degrades (docling: to auto) with a warning instead of failing the parse.
+OCR engine used when OCR is on. Benched 2026-08 on EN/ZH/table/degraded scans (docs page Sources/ocr has the menu). tesseract (recommended): best classic-engine accuracy (perfect EN word recall, 0.000 bilingual CER, 100% table cells), ~35 MB, CPU-only; needs the system binary and language packs, an optional install like every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew install tesseract-ocr for a local run); both backends. deepseek: DeepSeek-OCR on a local Ollama/vLLM server or a hosted API (OCR_DEEPSEEK_*); best table/CJK quality, the worker stays light (no layout models) but each page costs seconds on the model server; always runs on the native backend, whatever OCR_BACKEND says; docling never OCRs with it. auto: docling's pick, ocrmac on macOS (excellent), rapidocr on Linux (silently shreds some long text lines; avoid as a server default). ocrmac | rapidocr: force one of those. auto/ocrmac/rapidocr exist only inside docling; the native backend runs tesseract for them. An engine that is not installed degrades (docling: to auto) with a warning instead of failing the parse.
 
 ### `OCR_LANGS`
 
@@ -986,19 +986,19 @@ Bearer token sent to the DeepSeek-OCR endpoint. Required by the novita and deepi
 
 Type `int`, default unset, must be `>= 1` and `<= 32`.
 
-Page requests in flight per file. Unset: 4 for the novita, deepinfra and vllm presets, 1 for ollama and custom, since a laptop-hosted model only slows down under parallel requests. The docling backend uses the same value for its VLM pipeline.
+Page requests in flight per file. Unset: 4 for the novita, deepinfra and vllm presets, 1 for ollama and custom, since a laptop-hosted model only slows down under parallel requests.
 
 ### `OCR_DEEPSEEK_MAX_RETRIES`
 
 Type `int`, default `3`, must be `>= 0` and `<= 10`.
 
-Native backend: retries per page after a rate limit (429), a 5xx or a refused connection, with exponential backoff that honours Retry-After. Read timeouts are not retried.
+Retries per page after a rate limit (429), a 5xx or a refused connection, with exponential backoff that honours Retry-After. Read timeouts are not retried.
 
 ### `OCR_DEEPSEEK_TIMEOUT`
 
 Type `float`, default `300.0`.
 
-Seconds allowed per page request to the DeepSeek endpoint, on both backends. A 3B model on a laptop needs minutes; a vLLM GPU deployment or a hosted API, seconds.
+Seconds allowed per page request to the DeepSeek endpoint. A 3B model on a laptop needs minutes; a vLLM GPU deployment or a hosted API, seconds.
 
 ### `OCR_RENDER_DPI`
 

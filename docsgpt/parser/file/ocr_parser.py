@@ -4,24 +4,24 @@ OCR in DocsGPT has two backends, selected by ``OCR_BACKEND``:
 
 * ``docling`` — the layout-model pipeline in ``docling_parser.py``. Hybrid
   OCR (only the bitmap regions of a page), reading-order and table
-  structure recovery, and five engines (tesseract / auto / ocrmac /
-  rapidocr / deepseek). Costs the optional docling install (torch, ONNX
-  models, gigabytes of image) and seconds to minutes per file.
+  structure recovery, and four engines (tesseract / auto / ocrmac /
+  rapidocr). Costs the optional docling install (torch, ONNX models,
+  gigabytes of image) and seconds to minutes per file.
 * ``native`` (this module) — page rendering with pypdfium2 and Pillow, both
   core dependencies, feeding one of two engines directly: the system
   ``tesseract`` binary, or a DeepSeek-OCR model behind an OpenAI-compatible
   endpoint (a local Ollama / vLLM, or a hosted API such as Novita or
-  DeepInfra). No ML models load in the worker. Pages that
-  carry a text layer are read through pypdfium2 and never OCR'd; pages
-  without one are rendered and OCR'd. What it lacks against docling is the
-  layout model: multi-column scans rely on tesseract's own page
-  segmentation, and tesseract yields tables as plain lines (DeepSeek-OCR
-  emits Markdown tables itself).
+  DeepInfra). DeepSeek-OCR always runs here, never through docling. No ML
+  models load in the worker. Pages that carry a text layer are read through
+  pypdfium2 and never OCR'd; pages without one are rendered and OCR'd. What
+  it lacks against docling is the layout model: multi-column scans rely on
+  tesseract's own page segmentation, and tesseract yields tables as plain
+  lines (DeepSeek-OCR emits Markdown tables itself).
 
-``auto`` picks docling when it is installed and native otherwise, so a
-deployment that never installs the docling extra gets working OCR from the
-tesseract binary alone, and one that does install it keeps today's
-behaviour unchanged.
+``auto`` picks docling when it is installed and native otherwise (always
+native under ``OCR_ENGINE=deepseek``), so a deployment that never installs
+the docling extra gets working OCR from the tesseract binary alone, and one
+that does install it keeps today's behaviour unchanged.
 """
 import base64
 import functools
@@ -142,9 +142,10 @@ def resolve_ocr_backend(requested: Optional[str] = None) -> str:
         requested: ``auto`` | ``docling`` | ``native``, or None to read the setting.
 
     Returns:
-        ``"docling"`` or ``"native"``. ``auto`` prefers docling when it is
-        installed; ``docling`` without the install degrades to native with a
-        warning rather than leaving OCR off.
+        ``"docling"`` or ``"native"``. ``OCR_ENGINE=deepseek`` is always
+        native. Otherwise ``auto`` prefers docling when it is installed;
+        ``docling`` without the install degrades to native with a warning
+        rather than leaving OCR off.
     """
     from docsgpt.core.settings import settings
 
@@ -152,6 +153,12 @@ def resolve_ocr_backend(requested: Optional[str] = None) -> str:
     if backend not in VALID_OCR_BACKENDS:
         logger.warning(f"Unknown OCR_BACKEND {backend!r}; using auto")
         backend = "auto"
+    if str(settings.OCR_ENGINE or "").strip().lower() == "deepseek":
+        # DeepSeek-OCR is an HTTP call per page; the native parsers make it
+        # directly, so it never needs (or loads) docling.
+        if backend == "docling":
+            logger.info("OCR_ENGINE=deepseek runs on the native OCR backend; ignoring OCR_BACKEND=docling")
+        return "native"
     docling_installed = module_available("docling")
     if backend == "docling" and not docling_installed:
         logger.warning(

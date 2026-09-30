@@ -30,7 +30,8 @@ class OCRSettings(SettingsGroup):
     OCR_BACKEND: Literal["auto", "docling", "native"] = Field(
         default="auto",
         description=(
-            "Which stack runs OCR when it is on. auto: docling when installed, otherwise native. docling: the "
+            "Which stack runs OCR when it is on (OCR_ENGINE=deepseek always uses native). auto: docling when "
+            "installed, otherwise native. docling: the "
             "layout-model pipeline (hybrid region OCR, reading order, table structure); needs the optional "
             "docling extra. native: pypdfium2/Pillow page rendering straight into tesseract or a DeepSeek-OCR "
             "endpoint (docsgpt/parser/file/ocr_parser.py); no ML models in the worker, tables come out as text "
@@ -46,7 +47,8 @@ class OCRSettings(SettingsGroup):
             "optional install like every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew install "
             "tesseract-ocr for a local run); both backends. deepseek: DeepSeek-OCR on a local Ollama/vLLM server "
             "or a hosted API (OCR_DEEPSEEK_*); best table/CJK quality, the worker stays light (no layout models) "
-            "but each page costs seconds on the model server; both backends. auto: docling's pick, ocrmac on macOS "
+            "but each page costs seconds on the model server; always runs on the native backend, whatever "
+            "OCR_BACKEND says; docling never OCRs with it. auto: docling's pick, ocrmac on macOS "
             "(excellent), rapidocr on Linux (silently shreds some long text lines; avoid as a server default). "
             "ocrmac | rapidocr: force one of those. auto/ocrmac/rapidocr exist only inside docling; the native "
             "backend runs tesseract for them. An engine that is not installed degrades (docling: to auto) with "
@@ -94,8 +96,7 @@ class OCRSettings(SettingsGroup):
         le=32,
         description=(
             "Page requests in flight per file. Unset: 4 for the novita, deepinfra and vllm presets, 1 for ollama "
-            "and custom, since a laptop-hosted model only slows down under parallel requests. The docling backend "
-            "uses the same value for its VLM pipeline."
+            "and custom, since a laptop-hosted model only slows down under parallel requests."
         ),
     )
     OCR_DEEPSEEK_MAX_RETRIES: int = Field(
@@ -103,14 +104,14 @@ class OCRSettings(SettingsGroup):
         ge=0,
         le=10,
         description=(
-            "Native backend: retries per page after a rate limit (429), a 5xx or a refused connection, with "
+            "Retries per page after a rate limit (429), a 5xx or a refused connection, with "
             "exponential backoff that honours Retry-After. Read timeouts are not retried."
         ),
     )
     OCR_DEEPSEEK_TIMEOUT: float = Field(
         default=300.0,
         description=(
-            "Seconds allowed per page request to the DeepSeek endpoint, on both backends. A 3B model on a laptop "
+            "Seconds allowed per page request to the DeepSeek endpoint. A 3B model on a laptop "
             "needs minutes; a vLLM GPU deployment or a hosted API, seconds."
         ),
     )
