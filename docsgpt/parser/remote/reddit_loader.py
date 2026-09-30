@@ -49,6 +49,9 @@ class RedditPostsLoaderRemote(BaseRemote):
             number_posts = int(data.get("number_posts") or 10)
         except (TypeError, ValueError):
             raise ValueError("number_posts must be a whole number")
+        if number_posts < 1:
+            # Zero or a negative count means "not set", as an empty field does.
+            number_posts = 10
 
         import praw
 

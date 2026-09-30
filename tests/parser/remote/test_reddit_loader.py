@@ -117,3 +117,11 @@ class TestRedditPostsLoaderRemote:
         with patch.dict(sys.modules, {"praw": praw}):
             with pytest.raises(ValueError, match="number_posts"):
                 RedditPostsLoaderRemote().load_data(json.dumps(payload))
+
+    @pytest.mark.parametrize("value", ["0", "-3", 0, ""])
+    def test_non_positive_number_posts_uses_default(self, value):
+        payload = {**BASE_PAYLOAD, "number_posts": value, "categories": ["new"]}
+        praw, _, listing = _fake_praw([])
+        with patch.dict(sys.modules, {"praw": praw}):
+            RedditPostsLoaderRemote().load_data(json.dumps(payload))
+        listing.new.assert_called_once_with(limit=10)
