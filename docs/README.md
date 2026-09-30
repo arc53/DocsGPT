@@ -35,6 +35,10 @@ Run `npm run build` before opening a PR that touches the docs: it fails on broke
   `app/[[...mdxPath]]/page.jsx` renders every page.
 - `theme.config.jsx`: the Nextra theme options that `app/layout.jsx` passes on (edit links,
   sidebar, table of contents).
+- `content/API/`: the API section: an overview, DocsGPT's MCP server, and the REST API reference
+  (`reference.mdx`), which renders every endpoint from the snapshot below.
+- `data/swagger.json`: a generated snapshot of the REST API's flask-restx Swagger document, rendered by
+  `components/ApiReference.jsx`. Don't edit it by hand; see [Generated pages](#generated-pages).
 - `mdx-components.jsx` and `components/`: React components available to the pages.
 - `public/`: images and other static files, served from the site root. `public/llms.txt`
   lists the pages for LLM readers; update it when you add, move or remove a page.
@@ -50,6 +54,13 @@ environment active:
 
 ```bash
 python -m docsgpt.core.settings.reference --write
+```
+
+`data/swagger.json` is generated from the backend's routes. After adding or changing a route,
+regenerate it from the repository root (CI fails while it is stale):
+
+```bash
+python -m docsgpt.api.reference --write
 ```
 
 ## Style

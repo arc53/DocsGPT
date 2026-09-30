@@ -233,6 +233,7 @@ vale .
 - Agents and tools are in `docsgpt/agents/` and `docsgpt/agents/tools/`.
 - Celery setup/config lives in `docsgpt/celery_init.py` and `docsgpt/celeryconfig.py`.
 - Settings and env vars are managed via Pydantic in `docsgpt/core/settings/` (one module per domain, composed into `Settings`). Every field needs a `description`; regenerate the docs reference with `python -m docsgpt.core.settings.reference --write`.
+- REST routes are documented from the flask-restx Swagger document; after adding or changing a route, regenerate the docs snapshot with `python -m docsgpt.api.reference --write` (CI fails if `docs/data/swagger.json` is stale).
 
 ### Frontend
 
