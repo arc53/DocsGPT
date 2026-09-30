@@ -133,6 +133,14 @@ Once an API action is configured and enabled, DocsGPT's LLM can decide to use it
     * The LLM, guided by the tool's description and the user's original query, extracts relevant information and formulates a user-friendly answer.
     * **DocsGPT Chat Response:** "Yes, +14155555555 appears to be a valid landline phone number in California, United States."
 
+## Permissions and approval
+
+DocsGPT treats an action by its HTTP method: `GET`, `HEAD` and `OPTIONS` are reads, and every other method is a write.
+
+- **Approval.** Each action has an **Approval** switch in the tool's settings, off by default. When it is on, the agent pauses and asks before running the action (in chat, the approval card; through the API, a [pause you resume](/Agents/api#tools-that-need-approval)). Turn it on for actions that change data, such as `POST`, `PUT`, `PATCH` and `DELETE`.
+- **API keys, widgets and public links.** Someone who uses the agent through its API key, the chat widget or its public link can't approve on your behalf. So a write action that sends a header or query value you saved (a key or token) is refused for them unless you allow it in the agent's **Access Details > Changes others can make as you**. An allowed action then runs without asking. Reads, and actions that send no saved value, are not limited. See [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes) and [Agents used through an API key](/Guides/Connectors#agents-used-through-an-api-key).
+- **Webhooks and schedules.** Nobody can approve during a [webhook](/Agents/webhooks#how-a-webhook-run-behaves) or scheduled run, so an action with **Approval** on is skipped there, unless the schedule lists the tool in its `tool_allowlist`.
+
 ## Advanced Tips and Best Practices
 
 **Clear Description is the Key:** The LLM relies heavily on the `Description` field of the API action and its parameters. Make them unambiguous and action-oriented. Clearly state what the tool does and what kind of input it expects (even if implicitly through parameter descriptions). 
