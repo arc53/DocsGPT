@@ -27,7 +27,7 @@ Members connect this service from **Settings > Connectors**, and one sign-in ser
 
 ### Step 2: Configure API Permissions
 
-In your App Registration, go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions** and add: `Files.Read`, `Files.Read.All`, `Sites.Read.All`. Grant admin consent if possible.
+In your App Registration, go to **API permissions** > **Add a permission** > **Microsoft Graph** > **Delegated permissions** and add the permissions DocsGPT requests: `Files.Read`, `Sites.Read.All` and `User.Read` (new registrations usually have `User.Read` already). Grant admin consent if possible.
 
 ### Step 3: Create a Client Secret
 
