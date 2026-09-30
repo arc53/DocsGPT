@@ -54,7 +54,12 @@ const isMcp = (connector: ConnectorDefinition) =>
  */
 export default function useConnectorLauncher({
   onConnected,
-}: { onConnected?: () => void } = {}) {
+  onSynced,
+}: {
+  onConnected?: () => void;
+  /** Sources a sync started from the wizard, still ingesting. */
+  onSynced?: (sourceIds: string[]) => void;
+} = {}) {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
@@ -154,6 +159,7 @@ export default function useConnectorLauncher({
           connectionId={active.connectionId}
           mcpToolId={active.mcpToolId}
           purpose={active.purpose}
+          onSynced={onSynced}
           onClose={() => {
             setActive(null);
             refresh();

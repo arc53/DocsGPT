@@ -5,20 +5,28 @@ import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 
 // The wizard is tested on its own; here only what it is opened with matters.
+const wizardProps = vi.hoisted(() => ({
+  onSynced: undefined as ((ids: string[]) => void) | undefined,
+}));
 vi.mock('./ConnectWizard', () => ({
   default: ({
     mode,
     connectionId,
     purpose,
+    onSynced,
   }: {
     mode: string;
     connectionId?: string;
     purpose?: string;
-  }) => (
-    <div data-testid="wizard" data-purpose={purpose ?? ''}>
-      {`${mode}:${connectionId ?? ''}`}
-    </div>
-  ),
+    onSynced?: (ids: string[]) => void;
+  }) => {
+    wizardProps.onSynced = onSynced;
+    return (
+      <div data-testid="wizard" data-purpose={purpose ?? ''}>
+        {`${mode}:${connectionId ?? ''}`}
+      </div>
+    );
+  },
 }));
 vi.mock('../modals/MCPServerModal', () => ({ default: () => null }));
 
@@ -49,8 +57,10 @@ const DRIVE = {
 let launchRef: ((c: ConnectorDefinition, o?: LaunchOptions) => void) | null =
   null;
 
+const onSynced = vi.fn();
+
 function Harness() {
-  const { launch, modals } = useConnectorLauncher();
+  const { launch, modals } = useConnectorLauncher({ onSynced });
   launchRef = launch;
   return <>{modals}</>;
 }
@@ -115,6 +125,12 @@ describe('useConnectorLauncher', () => {
     await act(async () => launchRef!(DRIVE, { purpose: 'knowledge' }));
     expect(wizard()).toBe('connect:');
     expect(purpose()).toBe('knowledge');
+  });
+
+  it('passes the sources a sync started on to its opener', async () => {
+    await act(async () => launchRef!(DRIVE, { purpose: 'knowledge' }));
+    wizardProps.onSynced!(['src-1']);
+    expect(onSynced).toHaveBeenCalledWith(['src-1']);
   });
 
   it('leaves a plain connect without a purpose', async () => {

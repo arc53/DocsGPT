@@ -106,9 +106,6 @@ function Upload({
   const [handedOver, setHandedOver] = useState(false);
   // Connect your data: the services that sync, in place of the tiles.
   const [connecting, setConnecting] = useState(false);
-  const { launch, modals: connectModals } = useConnectorLauncher({
-    onConnected: () => close(),
-  });
 
   const [files, setfiles] = useState<File[]>(receivedFile);
   // Names of the files the last drop turned away (over the size limit or of
@@ -311,7 +308,7 @@ function Upload({
    * subscribe so the side effects can fire after the modal has closed.
    */
   const trackTraining = useCallback(
-    (clientTaskId: string) => {
+    (clientTaskId: string, knownSourceId?: string) => {
       let handled = false;
 
       const handleTerminal = (
@@ -351,20 +348,22 @@ function Upload({
       const check = () => {
         const state = store.getState();
         const task = state.upload.tasks.find((t) => t.id === clientTaskId);
-        if (!task) return false;
-        if (task.status === 'completed' || task.status === 'failed') {
+        if (task?.status === 'completed' || task?.status === 'failed') {
           handleTerminal(task.status, task.sourceId);
           return true;
         }
         // Recover from the race where the terminal SSE landed before
         // ``xhr.onload`` populated ``task.sourceId`` — the slice
         // silently drops such events (no task to match by sourceId).
-        // Mirrors ConnectorTree/FileTree's ``recentEvents`` walk.
-        if (task.sourceId) {
+        // A synced source's task only exists once its ingest reports, so
+        // its id is known up front. Mirrors ConnectorTree/FileTree's
+        // ``recentEvents`` walk.
+        const sourceId = task?.sourceId ?? knownSourceId;
+        if (sourceId) {
           for (const event of state.notifications.recentEvents) {
-            if (event.scope?.id !== task.sourceId) continue;
+            if (event.scope?.id !== sourceId) continue;
             if (event.type === 'source.ingest.completed') {
-              handleTerminal('completed', task.sourceId);
+              handleTerminal('completed', sourceId);
               return true;
             }
             if (event.type === 'source.ingest.failed') {
@@ -415,6 +414,15 @@ function Upload({
       store,
     ],
   );
+
+  // A service connected from Connect your data syncs like an upload ingests:
+  // its sources are tracked the same way, so the list refreshes once each
+  // is ingested. Their ingest tasks are keyed by source id.
+  const { launch, modals: connectModals } = useConnectorLauncher({
+    onConnected: () => close(),
+    onSynced: (sourceIds) =>
+      sourceIds.forEach((sourceId) => trackTraining(sourceId, sourceId)),
+  });
 
   const onDrop = useCallback(
     (acceptedFiles: File[], rejections: FileRejection[] = []) => {

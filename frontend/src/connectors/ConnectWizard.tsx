@@ -110,6 +110,7 @@ export default function ConnectWizard({
   purpose,
   onClose,
   onFinished,
+  onSynced,
 }: {
   connector: ConnectorDefinition;
   mode?: WizardMode;
@@ -119,6 +120,8 @@ export default function ConnectWizard({
   purpose?: LaunchPurpose;
   onClose: () => void;
   onFinished?: () => void;
+  /** The ids of the sources a sync just started, still ingesting. */
+  onSynced?: (sourceIds: string[]) => void;
 }) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -432,6 +435,10 @@ export default function ConnectWizard({
       }
       if (wantsTools) setTools(data.tools ?? []);
       setSources(data.sources ?? []);
+      const syncedIds = (data.sources ?? []).map(
+        (source: CreatedSource) => source.id,
+      );
+      if (syncedIds.length) onSynced?.(syncedIds);
       refresh();
       if (toolsFirst) {
         const count = (data.sources ?? []).length;
