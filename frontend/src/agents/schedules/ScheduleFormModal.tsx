@@ -167,6 +167,8 @@ export default function ScheduleFormModal({
   // the past spans the date, time and timezone, so it is an Alert.
   const [instructionError, setInstructionError] = useState<string | null>(null);
   const [runAtError, setRunAtError] = useState<string | null>(null);
+  // Why the server refused the save; its message is shown as the detail.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const setError = (field: 'instruction' | 'runAt', message: string) => {
     setInstructionError(field === 'instruction' ? message : null);
     setRunAtError(field === 'runAt' ? message : null);
@@ -221,7 +223,15 @@ export default function ScheduleFormModal({
     }
     setInstructionError(null);
     setRunAtError(null);
-    await onSubmit(payload);
+    setSaveError(null);
+    try {
+      await onSubmit(payload);
+    } catch (err) {
+      // A thunk's unwrap() rejects with a serialized error: a plain object
+      // with the message, not an Error instance.
+      const message = (err as { message?: unknown } | null)?.message;
+      setSaveError(typeof message === 'string' ? message : '');
+    }
   };
 
   const isEdit = Boolean(initial?.id);
@@ -271,6 +281,13 @@ export default function ScheduleFormModal({
         <FrequencyTabs
           frequency={values.frequency}
           onChange={setFrequency}
+          lockedKind={
+            isEdit
+              ? initial?.trigger_type === 'once'
+                ? 'once'
+                : 'recurring'
+              : undefined
+          }
           labels={{
             once: t('agents.schedules.modal.frequency.once'),
             daily: t('agents.schedules.modal.frequency.daily'),
@@ -347,6 +364,16 @@ export default function ScheduleFormModal({
             <AlertDescription>{runAtError}</AlertDescription>
           </Alert>
         )}
+
+        {saveError !== null && (
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" className="size-4" />
+            <AlertDescription>
+              <p>{t('agents.schedules.modal.errors.saveFailed')}</p>
+              {saveError && <p>{saveError}</p>}
+            </AlertDescription>
+          </Alert>
+        )}
       </div>
     </Modal>
   );
@@ -414,6 +441,8 @@ type FrequencyTabsProps = {
   onChange: (f: ScheduleFrequency) => void;
   labels: Record<ScheduleFrequency, string>;
   ariaLabel: string;
+  /** When editing, the saved kind; tabs of the other kind are disabled. */
+  lockedKind?: 'once' | 'recurring';
 };
 
 function FrequencyTabs({
@@ -421,7 +450,12 @@ function FrequencyTabs({
   onChange,
   labels,
   ariaLabel,
+  lockedKind,
 }: FrequencyTabsProps) {
+  // A saved schedule can't change between one-time and recurring: the API
+  // keeps its trigger type, so the other kind's tabs are disabled.
+  const isDisabled = (f: ScheduleFrequency) =>
+    lockedKind !== undefined && (f === 'once') !== (lockedKind === 'once');
   return (
     // The muted track is a plain wrapper: ToggleGroup takes layout only.
     <div className="bg-muted w-full rounded-full p-1">
@@ -434,7 +468,12 @@ function FrequencyTabs({
         className="flex-nowrap"
       >
         {FREQUENCIES.map((f) => (
-          <ToggleGroupItem key={f} value={f} className="flex-1">
+          <ToggleGroupItem
+            key={f}
+            value={f}
+            disabled={isDisabled(f)}
+            className="flex-1"
+          >
             {labels[f]}
           </ToggleGroupItem>
         ))}

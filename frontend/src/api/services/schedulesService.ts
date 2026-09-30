@@ -16,6 +16,19 @@ const json = async (response: Response | unknown) => {
   return r.json();
 };
 
+/**
+ * The body of a create or update, or an Error carrying the server's
+ * `message` when it refused the change (a bad run time, a finished task).
+ */
+const savedOrThrow = async (response: Response | unknown) => {
+  const r = response as Response;
+  const body = (await json(r)) as { message?: string } | undefined;
+  if (r && r.ok === false) {
+    throw new Error(body?.message || `Schedule save failed: ${r.status}`);
+  }
+  return body;
+};
+
 const schedulesService = {
   listForAgent: async (
     agentId: string,
@@ -55,7 +68,7 @@ const schedulesService = {
       payload,
       token,
     );
-    return (await json(r)) as ScheduleResponse;
+    return (await savedOrThrow(r)) as ScheduleResponse;
   },
 
   get: async (id: string, token: string | null): Promise<ScheduleResponse> => {
@@ -69,7 +82,7 @@ const schedulesService = {
     token: string | null,
   ): Promise<ScheduleResponse> => {
     const r = await apiClient.put(endpoints.USER.SCHEDULE(id), payload, token);
-    return (await json(r)) as ScheduleResponse;
+    return (await savedOrThrow(r)) as ScheduleResponse;
   },
 
   setPaused: async (

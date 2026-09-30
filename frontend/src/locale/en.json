@@ -2513,7 +2513,8 @@
         "save": "Save changes",
         "errors": {
           "instructionRequired": "Instructions are required.",
-          "runAtInPast": "Pick a date/time in the future."
+          "runAtInPast": "Pick a date/time in the future.",
+          "saveFailed": "Couldn't save the schedule."
         },
         "days": {
           "mon": "Mon",

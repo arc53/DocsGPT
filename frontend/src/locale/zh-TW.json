@@ -2480,7 +2480,8 @@
         "save": "儲存變更",
         "errors": {
           "instructionRequired": "指令為必填。",
-          "runAtInPast": "請選擇未來的日期／時間。"
+          "runAtInPast": "請選擇未來的日期／時間。",
+          "saveFailed": "無法儲存排程。"
         },
         "days": {
           "mon": "週一",

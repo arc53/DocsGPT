@@ -202,11 +202,10 @@ export default function SchedulesView() {
       }
       setModalOpen(false);
       setEditing(null);
-    } catch (err) {
-      console.error(err);
     } finally {
       setSubmitting(false);
     }
+    // A refused save rejects to the modal, which keeps it open and shows why.
   };
 
   const activeCount = schedules.filter((s) => s.status === 'active').length;

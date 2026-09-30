@@ -2480,7 +2480,8 @@
         "save": "変更を保存",
         "errors": {
           "instructionRequired": "指示は必須です。",
-          "runAtInPast": "未来の日時を選択してください。"
+          "runAtInPast": "未来の日時を選択してください。",
+          "saveFailed": "スケジュールを保存できませんでした。"
         },
         "days": {
           "mon": "月",

@@ -130,3 +130,100 @@ describe('ScheduleFormModal tool approvals', () => {
     );
   });
 });
+
+describe('ScheduleFormModal editing', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  const inTwoDays = new Date(Date.now() + 2 * 24 * 3600 * 1000);
+  const savedOnce = {
+    ...saved,
+    trigger_type: 'once',
+    cron: null,
+    run_at: inTwoDays.toISOString(),
+    next_run_at: inTwoDays.toISOString(),
+  } as unknown as Schedule;
+
+  const render = async (
+    onSubmit: (payload: unknown) => void | Promise<void>,
+    initial: Schedule,
+  ) => {
+    await act(async () => {
+      root.render(
+        <ScheduleFormModal
+          open
+          initial={initial}
+          approvalTools={[]}
+          onClose={() => undefined}
+          onSubmit={onSubmit}
+        />,
+      );
+    });
+  };
+  const button = (text: string) =>
+    Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((b) => b.textContent === text);
+
+  it('sends run_at when a one-time task is saved', async () => {
+    const onSubmit = vi.fn();
+    await render(onSubmit, savedOnce);
+    await act(async () => button('agents.schedules.modal.save')!.click());
+    const payload = onSubmit.mock.calls[0][0];
+    expect(payload.trigger_type).toBe('once');
+    expect(typeof payload.run_at).toBe('string');
+  });
+
+  it('keeps a one-time task one-time and a recurring schedule recurring', async () => {
+    await render(vi.fn(), savedOnce);
+    expect(
+      button('agents.schedules.modal.frequency.daily')!.hasAttribute(
+        'disabled',
+      ),
+    ).toBe(true);
+    expect(
+      button('agents.schedules.modal.frequency.once')!.hasAttribute('disabled'),
+    ).toBe(false);
+
+    await render(vi.fn(), saved);
+    expect(
+      button('agents.schedules.modal.frequency.once')!.hasAttribute('disabled'),
+    ).toBe(true);
+    expect(
+      button('agents.schedules.modal.frequency.weekly')!.hasAttribute(
+        'disabled',
+      ),
+    ).toBe(false);
+  });
+
+  it('shows why the server refused the change', async () => {
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValue(new Error("a completed task can't be rescheduled"));
+    await render(onSubmit, savedOnce);
+    await act(async () => button('agents.schedules.modal.save')!.click());
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('agents.schedules.modal.errors.saveFailed');
+    expect(text).toContain("a completed task can't be rescheduled");
+  });
+
+  it('reads the message of a serialized thunk error', async () => {
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValue({ name: 'Error', message: 'run_at is in the past.' });
+    await render(onSubmit, savedOnce);
+    await act(async () => button('agents.schedules.modal.save')!.click());
+    expect(document.body.textContent).toContain('run_at is in the past.');
+  });
+});

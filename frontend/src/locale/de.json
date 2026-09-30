@@ -2495,7 +2495,8 @@
         "save": "Änderungen speichern",
         "errors": {
           "instructionRequired": "Anweisungen sind erforderlich.",
-          "runAtInPast": "Wähle ein Datum/eine Uhrzeit in der Zukunft."
+          "runAtInPast": "Wähle ein Datum/eine Uhrzeit in der Zukunft.",
+          "saveFailed": "Der Zeitplan konnte nicht gespeichert werden."
         },
         "days": {
           "mon": "Mo",

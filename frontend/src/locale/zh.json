@@ -2478,7 +2478,8 @@
         "save": "保存更改",
         "errors": {
           "instructionRequired": "指令为必填项。",
-          "runAtInPast": "请选择未来的日期/时间。"
+          "runAtInPast": "请选择未来的日期/时间。",
+          "saveFailed": "无法保存计划。"
         },
         "days": {
           "mon": "周一",
