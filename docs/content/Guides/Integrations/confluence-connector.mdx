@@ -27,10 +27,15 @@ Members connect this service from **Settings > Connectors**, and one sign-in ser
 
 ### Step 2: Configure Permissions
 
-In your app settings, go to **Permissions** and add the **Confluence API**. Enable these scopes:
-- `read:page:confluence`
-- `read:space:confluence`
-- `read:attachment:confluence`
+In your app settings, go to **Permissions**:
+
+1. Add the **Confluence API** and enable these scopes:
+   - `read:page:confluence`
+   - `read:space:confluence`
+   - `read:attachment:confluence`
+2. Add the **User identity API** and enable `read:me`. DocsGPT reads the signed-in account's name and email with it, and Atlassian rejects the sign-in if the app lacks a scope DocsGPT requests.
+
+DocsGPT also requests `offline_access` to get a refresh token; you don't add it in the console.
 
 ### Step 3: Get Your Credentials
 
@@ -45,17 +50,10 @@ CONFLUENCE_CLIENT_ID=your-atlassian-client-id
 CONFLUENCE_CLIENT_SECRET=your-atlassian-client-secret
 ```
 
-Add to your frontend `.env` file:
-
-```env
-VITE_CONFLUENCE_CLIENT_ID=your-atlassian-client-id
-```
-
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `CONFLUENCE_CLIENT_ID` | Client ID from your Atlassian OAuth app | Yes |
 | `CONFLUENCE_CLIENT_SECRET` | Client secret from your Atlassian OAuth app | Yes |
-| `VITE_CONFLUENCE_CLIENT_ID` | Same Client ID, used by the frontend to show the Confluence option | Yes |
 | `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
 
 ### Step 5: Restart and Use
@@ -66,8 +64,8 @@ Restart your application, then go to **Settings > Connectors** and pick **Conflu
 
 ## Troubleshooting
 
-- **Option not appearing** — Verify `VITE_CONFLUENCE_CLIENT_ID` is set in the frontend `.env`, then restart.
+- **Option not appearing** — Check that `CONFLUENCE_CLIENT_ID` and `CONFLUENCE_CLIENT_SECRET` are set in the backend `.env` and the API was restarted, then check in **Admin > Connectors** that Confluence is enabled and its setup guide lists no missing settings.
 - **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
 - **Authentication failed** — Check that the callback URL matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters.
 - **No accessible sites** — Ensure the authenticating user has access to at least one Confluence Cloud site.
-- **Permission denied** — Verify that the Confluence API scopes are enabled in your Atlassian app settings.
+- **Permission denied, or Atlassian refuses the sign-in** — Verify that the three Confluence API scopes and the User identity API `read:me` scope are enabled in your Atlassian app settings.
