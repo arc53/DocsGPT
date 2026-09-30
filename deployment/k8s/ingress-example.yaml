@@ -8,7 +8,11 @@
 # - Replace docsgpt.example.com with your hostname, and point its DNS at your
 #   ingress controller.
 # - ingressClassName must name an installed controller (`kubectl get
-#   ingressclass`). The annotations below are for ingress-nginx.
+#   ingressclass`). The annotations below are for ingress-nginx, which is
+#   retired; other controllers (Traefik, HAProxy, cloud load balancers) and
+#   the Gateway API (an HTTPRoute to docsgpt-api-service port 80) work the
+#   same way with their own settings for body size, timeouts and buffering.
+# - Set API_URL in docsgpt-secrets.yaml to https://<your host>.
 # - TLS: the certificate lives in the `docsgpt-tls` Secret. With cert-manager,
 #   uncomment the cluster-issuer annotation and it creates that Secret for you;
 #   otherwise create it yourself:

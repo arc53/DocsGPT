@@ -29,6 +29,33 @@ spec:
       labels:
         app: postgres
     spec:
+      initContainers:
+      # The password is set only when the volume is first initialized, so never
+      # initialize it with the placeholder from docsgpt-secrets.yaml.
+      - name: check-password
+        image: pgvector/pgvector:0.8.6-pg16
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: docsgpt-secrets
+              key: POSTGRES_PASSWORD
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+        command:
+          - sh
+          - -c
+          - |
+            case "${POSTGRES_PASSWORD:-}" in
+              ""|*REPLACE_ME*)
+                echo "docsgpt-secrets: set POSTGRES_PASSWORD (openssl rand -hex 24) and apply it (see the Kubernetes guide)." >&2
+                exit 1 ;;
+            esac
       containers:
       - name: postgres
         # Postgres 16 with the pgvector extension, which VECTOR_STORE=pgvector needs.
@@ -42,7 +69,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: docsgpt-secrets
-              key: postgres-password
+              key: POSTGRES_PASSWORD
         - name: POSTGRES_DB
           value: "docsgpt"
         - name: PGDATA

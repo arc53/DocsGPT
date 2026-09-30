@@ -8,6 +8,7 @@ stack public, unmigrated or unable to share uploads fails here first.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -107,8 +108,39 @@ def test_opt_in_manifests_stay_out_of_the_default_stack() -> None:
 
 def test_secret_ships_no_usable_credentials() -> None:
     data = _secret_data()
-    for key in ("INTERNAL_KEY", "JWT_SECRET_KEY", "ENCRYPTION_SECRET_KEY", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"):
+    for key in (
+        "INTERNAL_KEY",
+        "JWT_SECRET_KEY",
+        "ENCRYPTION_SECRET_KEY",
+        "S3_ACCESS_KEY_ID",
+        "S3_SECRET_ACCESS_KEY",
+        "POSTGRES_PASSWORD",
+    ):
         assert data.get(key, "").startswith("REPLACE_ME"), key
+    assert "REPLACE_ME" in data["POSTGRES_URI"]
+
+
+@pytest.mark.parametrize("password,code", [("REPLACE_ME", 1), ("", 1), (None, 1), ("f" * 48, 0)])
+def test_postgres_never_initializes_with_the_placeholder_password(password: str | None, code: int) -> None:
+    init = {c["name"]: c for c in _pod_spec(_named("Deployment", "postgres"))["initContainers"]}
+    check = init["check-password"]
+    assert check["env"][0]["valueFrom"]["secretKeyRef"] == {"name": "docsgpt-secrets", "key": "POSTGRES_PASSWORD"}
+    env = {"PATH": "/usr/bin:/bin"}
+    if password is not None:
+        env["POSTGRES_PASSWORD"] = password
+    result = subprocess.run(check["command"], env=env, capture_output=True, text=True, check=False)
+    assert result.returncode == code, result.stderr
+
+
+def test_postgres_reads_its_password_from_the_secret() -> None:
+    env = {e["name"]: e for e in _main_container("postgres")["env"]}
+    ref = env["POSTGRES_PASSWORD"]["valueFrom"]["secretKeyRef"]
+    assert ref == {"name": "docsgpt-secrets", "key": "POSTGRES_PASSWORD"}
+
+
+def test_secret_documents_the_public_url() -> None:
+    text = (K8S / "docsgpt-secrets.yaml").read_text()
+    assert re.search(r"^\s*# API_URL: https://", text, re.MULTILINE)
 
 
 def test_secret_points_every_redis_client_at_the_redis_service() -> None:
@@ -134,12 +166,95 @@ def test_postgres_never_runs_two_servers_on_one_volume() -> None:
     assert _named("Deployment", "postgres")["spec"]["strategy"] == {"type": "Recreate"}
 
 
-def test_placeholder_secrets_stop_the_pods() -> None:
-    for kind, name in (("Job", "postgres-init"), ("Deployment", "docsgpt-api"), ("Deployment", "docsgpt-worker")):
-        init = {c["name"]: c for c in _pod_spec(_named(kind, name)).get("initContainers", [])}
-        assert "check-secrets" in init, name
-        script = " ".join(init["check-secrets"]["command"])
-        assert "REPLACE_ME" in script and "exit 1" in script, name
+_APP_PODS = (("Job", "postgres-init"), ("Deployment", "docsgpt-api"), ("Deployment", "docsgpt-worker"))
+
+_GOOD_ENV = {
+    "PATH": "/usr/bin:/bin",
+    "INTERNAL_KEY": "a" * 64,
+    "JWT_SECRET_KEY": "b" * 64,
+    "ENCRYPTION_SECRET_KEY": "c" * 64,
+    "POSTGRES_PASSWORD": "d" * 48,
+    "POSTGRES_URI": "postgresql://docsgpt:" + "d" * 48 + "@postgres:5432/docsgpt",
+    "STORAGE_TYPE": "s3",
+    "S3_BUCKET_NAME": "bucket",
+    "S3_ACCESS_KEY_ID": "key",
+    "S3_SECRET_ACCESS_KEY": "secret",
+}
+
+
+def _check_secrets_command(kind: str, name: str) -> list[str]:
+    """The ``check-secrets`` init container command of one DocsGPT pod."""
+    init = {c["name"]: c for c in _pod_spec(_named(kind, name)).get("initContainers", [])}
+    assert "check-secrets" in init, name
+    return init["check-secrets"]["command"]
+
+
+def _run_check(env: dict[str, str]) -> subprocess.CompletedProcess:
+    """Run the check-secrets script under ``env``."""
+    return subprocess.run(
+        _check_secrets_command("Job", "postgres-init"), env=env, capture_output=True, text=True, check=False
+    )
+
+
+def test_every_app_pod_runs_the_same_secret_check() -> None:
+    commands = [_check_secrets_command(kind, name) for kind, name in _APP_PODS]
+    assert all(command == commands[0] for command in commands)
+
+
+def test_secret_check_passes_a_filled_in_secret() -> None:
+    result = _run_check(_GOOD_ENV)
+    assert result.returncode == 0, result.stderr
+
+
+def test_secret_check_passes_without_static_s3_keys() -> None:
+    env = {k: v for k, v in _GOOD_ENV.items() if not k.startswith("S3_ACCESS") and not k.startswith("S3_SECRET")}
+    assert _run_check(env).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"INTERNAL_KEY": "REPLACE_ME"},
+        {"LLM_NAME": "REPLACE_ME"},
+        {"API_KEY": "sk-REPLACE_ME"},
+        {"POSTGRES_URI": "postgresql://docsgpt:REPLACE_ME@postgres:5432/docsgpt"},
+        {"JWT_SECRET_KEY": ""},
+        {"ENCRYPTION_SECRET_KEY": None},
+        {"S3_BUCKET_NAME": ""},
+        {"S3_BUCKET_NAME": None},
+        {"STORAGE_TYPE": "S3", "S3_BUCKET_NAME": None},
+        {"POSTGRES_PASSWORD": "e" * 48},
+    ],
+)
+def test_secret_check_refuses(changes: dict[str, str | None]) -> None:
+    env = dict(_GOOD_ENV)
+    for key, value in changes.items():
+        if value is None:
+            env.pop(key, None)
+        else:
+            env[key] = value
+    result = _run_check(env)
+    assert result.returncode == 1
+    assert "docsgpt-secrets" in result.stderr
+
+
+def test_secret_check_allows_an_external_database() -> None:
+    env = dict(_GOOD_ENV, POSTGRES_URI="postgresql://app:other@db.example.com:5432/docsgpt")
+    env.pop("POSTGRES_PASSWORD")
+    assert _run_check(env).returncode == 0
+
+
+def test_secret_check_skips_the_bucket_for_local_storage() -> None:
+    env = dict(_GOOD_ENV, STORAGE_TYPE="local")
+    env.pop("S3_BUCKET_NAME")
+    assert _run_check(env).returncode == 0
+
+
+def test_init_containers_have_resources() -> None:
+    for obj in _by_kind("Deployment") + _by_kind("Job"):
+        for container in _pod_spec(obj).get("initContainers", []):
+            resources = container.get("resources", {})
+            assert resources.get("requests") and resources.get("limits"), container["name"]
 
 
 def test_migration_job_runs_the_packaged_migrate_command() -> None:

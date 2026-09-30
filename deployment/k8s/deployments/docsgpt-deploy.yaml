@@ -3,7 +3,10 @@
 # Both pods skip the in-app schema bootstrap (AUTO_MIGRATE / AUTO_CREATE_DB =
 # false): the `postgres-init` Job under deployment/k8s/jobs/ migrates the
 # database, so replicas never race each other on a rollout. A
-# `wait-for-migrations` init container holds each pod until that Job is done.
+# `wait-for-migrations` init container holds each pod until the schema is at
+# exactly the revision its image ships. Rolling back to an older image
+# therefore waits until the database is restored or downgraded to that
+# revision (see "Rolling back" in the Kubernetes guide).
 #
 # Uploads are stored in the bucket named in docsgpt-secrets (STORAGE_TYPE=s3)
 # and vectors in pgvector, so any number of API and worker replicas share them.
@@ -22,29 +25,47 @@ spec:
         app: docsgpt-api
     spec:
       initContainers:
-      # Refuse to start while docsgpt-secrets still holds a REPLACE_ME value.
+      # Refuse to start while docsgpt-secrets is not filled in.
       - name: check-secrets
         image: arc53/docsgpt:0.21.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
         command:
           - sh
           - -c
           - |
-            missing=""
-            for key in INTERNAL_KEY JWT_SECRET_KEY ENCRYPTION_SECRET_KEY; do
-              eval "value=\${$key:-}"
-              case "$value" in ""|REPLACE_ME*) missing="$missing $key" ;; esac
+            problems=""
+            fail() { problems="$problems
+              - $1"; }
+            for key in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*REPLACE_ME.*/\1/p' | sort -u); do
+              fail "$key still contains REPLACE_ME"
             done
-            if [ "${STORAGE_TYPE:-}" = "s3" ]; then
-              for key in S3_BUCKET_NAME S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
-                eval "value=\${$key-unset}"
-                case "$value" in ""|REPLACE_ME*) missing="$missing $key" ;; esac
-              done
+            for key in INTERNAL_KEY JWT_SECRET_KEY ENCRYPTION_SECRET_KEY POSTGRES_URI; do
+              eval "value=\${$key:-}"
+              [ -n "$value" ] || fail "$key is empty or missing"
+            done
+            storage=$(printf '%s' "${STORAGE_TYPE:-local}" | tr '[:upper:]' '[:lower:]')
+            if [ "$storage" = "s3" ] && [ -z "${S3_BUCKET_NAME:-}" ]; then
+              fail "S3_BUCKET_NAME is empty or missing while STORAGE_TYPE is s3"
             fi
-            if [ -n "$missing" ]; then
-              echo "docsgpt-secrets: replace the placeholder values of:$missing (see the Kubernetes guide)" >&2
+            case "${POSTGRES_URI:-}" in
+              *@postgres:*|*@postgres/*)
+                case "$POSTGRES_URI" in
+                  *":${POSTGRES_PASSWORD:-}@postgres"[:/]*) ;;
+                  *) fail "the password in POSTGRES_URI does not match POSTGRES_PASSWORD" ;;
+                esac ;;
+            esac
+            if [ -n "$problems" ]; then
+              echo "docsgpt-secrets is not filled in:$problems" >&2
+              echo "Fix deployment/k8s/docsgpt-secrets.yaml and apply it (see the Kubernetes guide)." >&2
               exit 1
             fi
       # Block pod start until the postgres-init Job has migrated the database
@@ -55,6 +76,13 @@ spec:
         envFrom:
         - secretRef:
             name: docsgpt-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
         command:
           - python
           - -c
@@ -126,29 +154,47 @@ spec:
         app: docsgpt-worker
     spec:
       initContainers:
-      # Refuse to start while docsgpt-secrets still holds a REPLACE_ME value.
+      # Refuse to start while docsgpt-secrets is not filled in.
       - name: check-secrets
         image: arc53/docsgpt:0.21.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
         command:
           - sh
           - -c
           - |
-            missing=""
-            for key in INTERNAL_KEY JWT_SECRET_KEY ENCRYPTION_SECRET_KEY; do
-              eval "value=\${$key:-}"
-              case "$value" in ""|REPLACE_ME*) missing="$missing $key" ;; esac
+            problems=""
+            fail() { problems="$problems
+              - $1"; }
+            for key in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*REPLACE_ME.*/\1/p' | sort -u); do
+              fail "$key still contains REPLACE_ME"
             done
-            if [ "${STORAGE_TYPE:-}" = "s3" ]; then
-              for key in S3_BUCKET_NAME S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
-                eval "value=\${$key-unset}"
-                case "$value" in ""|REPLACE_ME*) missing="$missing $key" ;; esac
-              done
+            for key in INTERNAL_KEY JWT_SECRET_KEY ENCRYPTION_SECRET_KEY POSTGRES_URI; do
+              eval "value=\${$key:-}"
+              [ -n "$value" ] || fail "$key is empty or missing"
+            done
+            storage=$(printf '%s' "${STORAGE_TYPE:-local}" | tr '[:upper:]' '[:lower:]')
+            if [ "$storage" = "s3" ] && [ -z "${S3_BUCKET_NAME:-}" ]; then
+              fail "S3_BUCKET_NAME is empty or missing while STORAGE_TYPE is s3"
             fi
-            if [ -n "$missing" ]; then
-              echo "docsgpt-secrets: replace the placeholder values of:$missing (see the Kubernetes guide)" >&2
+            case "${POSTGRES_URI:-}" in
+              *@postgres:*|*@postgres/*)
+                case "$POSTGRES_URI" in
+                  *":${POSTGRES_PASSWORD:-}@postgres"[:/]*) ;;
+                  *) fail "the password in POSTGRES_URI does not match POSTGRES_PASSWORD" ;;
+                esac ;;
+            esac
+            if [ -n "$problems" ]; then
+              echo "docsgpt-secrets is not filled in:$problems" >&2
+              echo "Fix deployment/k8s/docsgpt-secrets.yaml and apply it (see the Kubernetes guide)." >&2
               exit 1
             fi
       # Block pod start until the postgres-init Job has migrated the database
@@ -159,6 +205,13 @@ spec:
         envFrom:
         - secretRef:
             name: docsgpt-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
         command:
           - python
           - -c
