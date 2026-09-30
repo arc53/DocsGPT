@@ -266,7 +266,7 @@ The Artifact and Code Executor tools run code in a separate runner, `deployments
    kubectl apply -k deployment/k8s/
    ```
 
-The NetworkPolicy blocks the runner from private addresses and cloud metadata. It takes effect only with a network plugin that enforces NetworkPolicy, such as Calico or Cilium. All sessions share one runner pod and are separated only by working directory, so read the trust notes at the top of `sandbox-deploy.yaml` before offering the tools to users you don't trust. See [Artifacts and code execution](/Tools/artifacts-and-code-execution) for the tools themselves.
+The NetworkPolicy blocks the runner from private addresses and cloud metadata. It takes effect only with a network plugin that enforces NetworkPolicy, such as Calico or Cilium. All sessions share one runner pod and are separated only by working directory, so read the trust notes at the top of `sandbox-deploy.yaml` before offering the tools to users you don't trust. See [Code Execution Sandbox](/Deploying/Sandbox) for the settings and the other ways to run a sandbox, and [Artifacts and code execution](/Tools/artifacts-and-code-execution) for the tools themselves.
 
 ## Troubleshooting
 

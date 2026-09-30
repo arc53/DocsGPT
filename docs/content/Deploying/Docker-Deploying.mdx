@@ -438,6 +438,10 @@ There are two Ollama optional files:
 *   **NVIDIA Container Toolkit (for NVIDIA GPUs):** If you are using NVIDIA GPUs, you need to have the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed and configured on your system for Docker to access your GPU.
 *   **Docker GPU Configuration:** Ensure Docker is configured to utilize your GPU. Refer to the [Ollama Docker Hub page](https://hub.docker.com/r/ollama/ollama) and Docker documentation for GPU setup instructions specific to your GPU type (NVIDIA, AMD, Intel).
 
+## Optional Code Execution Sandbox
+
+The Artifact and Code Executor tools need a sandbox runner, which the checkout Compose files add as another overlay (`deployment/optional/docker-compose.optional.sandbox.yaml`, plus an optional egress overlay). It needs a `SANDBOX_GATEWAY_AUTH_TOKEN` in `.env`. The `docsgpt up` install has no sandbox option. See [Code Execution Sandbox](/Deploying/Sandbox) for the commands and the isolation caveats.
+
 ## Restarting After Configuration Changes
 
 Whenever you modify the `.env` file or any Docker Compose files, recreate the containers for the changes to be applied: run the same `docker compose ... up -d` command you used to launch DocsGPT, with `--env-file .env` and every `-f` file (including optional overlays) for a checkout. Compose recreates the containers whose settings changed. With `docsgpt up`, run `docsgpt up` again.
