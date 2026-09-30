@@ -117,6 +117,12 @@ macOS and systemd user units on Linux, against a PostgreSQL and Redis you alread
 the same way they do on a Docker one, and never touch the database or Redis. See
 [Run it as services, without Docker](/Deploying/Pip-Install#run-it-as-services-without-docker).
 
+New `WORKER_API_URL` sets where the worker sends its own calls into the API, and falls back to
+`API_URL`. `docsgpt up --native` sets it to `http://127.0.0.1:<port>`, so an `API_URL` pointed at a
+public reverse proxy no longer routes the worker's calls out and back. `docsgpt up` also records the
+`API_URL` it wrote and updates it when the machine's network address changes, still keeping any
+value you set yourself.
+
 ### Back up and restore an install
 
 `docsgpt backup` writes a dump of the database and a tar of each data volume into one archive, and
