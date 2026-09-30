@@ -199,15 +199,19 @@ def _warn_default_encryption_key() -> None:
 
     if not is_default_encryption_key():
         return
+    rotate = (
+        "Set your own value, put `default-docsgpt-encryption-key` in ENCRYPTION_SECRET_KEY_PREVIOUS, restart, "
+        "then run `docsgpt connectors reencrypt`."
+    )
     if settings.AUTH_TYPE:
         logging.getLogger(__name__).warning(
-            "ENCRYPTION_SECRET_KEY is the public default: connecting services is refused until you set your "
-            "own value (then run `docsgpt connectors reencrypt`)."
+            "ENCRYPTION_SECRET_KEY is the public default: new connections are refused, and tool, MCP and "
+            "custom-model secrets are sealed with the public key. " + rotate
         )
     else:
         logging.getLogger(__name__).warning(
-            "ENCRYPTION_SECRET_KEY is the public default. Stored connector credentials are only as safe as "
-            "that key; set your own value before exposing this install."
+            "ENCRYPTION_SECRET_KEY is the public default. Stored credentials are only as safe as that key; "
+            "change it before exposing this install. " + rotate
         )
 
 

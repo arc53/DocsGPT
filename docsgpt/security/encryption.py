@@ -127,6 +127,42 @@ def decrypt_credentials(encrypted_data: str, user_id: str) -> dict:
     return {}
 
 
+def reseal_credentials(encrypted_data: str, user_id: str) -> tuple[str, Optional[str]]:
+    """Re-encrypt a v1 blob with ``ENCRYPTION_SECRET_KEY`` when it was written with the previous key.
+
+    Used by ``docsgpt connectors reencrypt`` so ``ENCRYPTION_SECRET_KEY_PREVIOUS``
+    can be removed afterwards. A blob no key opens is never replaced.
+
+    Args:
+        encrypted_data: The base64 blob from :func:`encrypt_credentials`.
+        user_id: The owner the blob was written for.
+
+    Returns:
+        ``("current", None)`` when the current key already opens it,
+        ``("rewritten", new_blob)`` when only the previous key does, and
+        ``("failed", None)`` when neither does.
+    """
+    try:
+        data = base64.b64decode(encrypted_data.encode(), validate=True)
+    except Exception:
+        return "failed", None
+    current = settings.ENCRYPTION_SECRET_KEY
+    try:
+        _decrypt_v1(data, user_id, current)
+        return "current", None
+    except Exception:
+        pass
+    previous = settings.ENCRYPTION_SECRET_KEY_PREVIOUS
+    if not previous or previous == current:
+        return "failed", None
+    try:
+        credentials = _decrypt_v1(data, user_id, previous)
+    except Exception:
+        return "failed", None
+    resealed = encrypt_credentials(credentials, user_id)
+    return ("rewritten", resealed) if resealed else ("failed", None)
+
+
 def _pad_data(data: bytes) -> bytes:
     block_size = 16
     padding_len = block_size - (len(data) % block_size)

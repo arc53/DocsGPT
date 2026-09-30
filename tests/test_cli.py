@@ -226,6 +226,40 @@ class TestMigrate:
         assert "POSTGRES_URI" in capsys.readouterr().err
 
 
+class TestConnectorsReencrypt:
+    def _counts(self, monkeypatch, connections, saved):
+        monkeypatch.setattr("docsgpt.connectors.service.reencrypt_all", lambda: connections)
+        monkeypatch.setattr("docsgpt.connectors.service.reencrypt_saved_secrets", lambda: saved)
+
+    def test_rewrites_connections_and_saved_secrets(self, monkeypatch, capsys):
+        self._counts(
+            monkeypatch,
+            {"rewritten": 2, "current": 1, "failed": 0},
+            {"rewritten": 3, "current": 4, "failed": 0},
+        )
+        assert cli.main(["connectors", "reencrypt"]) == 0
+        err = capsys.readouterr().err
+        assert "re-encrypted 2 connection(s), 1 already current, 0 unreadable" in err
+        assert "re-encrypted 3 tool and custom-model secret(s), 4 already current, 0 unreadable" in err
+        assert "ENCRYPTION_SECRET_KEY_PREVIOUS can be removed" in err
+
+    def test_unreadable_saved_secrets_fail_the_run_and_keep_the_previous_key(self, monkeypatch, capsys):
+        self._counts(
+            monkeypatch,
+            {"rewritten": 0, "current": 0, "failed": 0},
+            {"rewritten": 0, "current": 0, "failed": 2},
+        )
+        assert cli.main(["connectors", "reencrypt"]) == 1
+        err = capsys.readouterr().err
+        assert "left unchanged" in err
+        assert "can be removed" not in err
+
+    def test_help_names_what_it_rewrites(self):
+        # argparse wraps long help at hyphens; undo that before matching.
+        help_text = " ".join(cli.build_parser().format_help().split()).replace("- ", "-")
+        assert "tool and custom-model secrets" in help_text
+
+
 class TestScripts:
     def test_arguments_pass_through_untouched(self, monkeypatch):
         main = MagicMock(return_value=0)

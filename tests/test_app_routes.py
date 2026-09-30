@@ -285,3 +285,29 @@ class TestFlaskCors:
             "Content-Type, Authorization, Idempotency-Key"
         )
         assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+
+
+class TestDefaultEncryptionKeyWarning:
+    """The startup warning must say what the public default key actually blocks."""
+
+    def _warning(self, monkeypatch, caplog, auth_type):
+        import logging
+
+        from docsgpt import app as app_module
+        from docsgpt.security import encryption
+
+        monkeypatch.setattr(app_module.settings, "AUTH_TYPE", auth_type)
+        monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", encryption.DEFAULT_ENCRYPTION_KEY)
+        with caplog.at_level(logging.WARNING):
+            app_module._warn_default_encryption_key()
+        return " ".join(r.getMessage() for r in caplog.records)
+
+    def test_with_auth_it_names_the_refused_connections_and_the_rotation(self, monkeypatch, caplog):
+        message = self._warning(monkeypatch, caplog, "oidc")
+        assert "new connections are refused" in message
+        assert "ENCRYPTION_SECRET_KEY_PREVIOUS" in message
+        assert "docsgpt connectors reencrypt" in message
+
+    def test_without_auth_it_names_the_rotation(self, monkeypatch, caplog):
+        message = self._warning(monkeypatch, caplog, None)
+        assert "ENCRYPTION_SECRET_KEY_PREVIOUS" in message

@@ -37,8 +37,9 @@ class AuthSettings(SettingsGroup):
     ENCRYPTION_SECRET_KEY_PREVIOUS: Optional[str] = Field(
         default=None,
         description=(
-            "Previous ENCRYPTION_SECRET_KEY, tried when a stored credential was encrypted with it. Set it while "
-            "rotating the key, run `docsgpt connectors reencrypt`, then remove it."
+            "Previous ENCRYPTION_SECRET_KEY, tried when a stored credential (a connection, a tool or custom-model "
+            "secret) was encrypted with it. Set it while rotating the key, run `docsgpt connectors reencrypt`, and "
+            "remove it once the command reports nothing unreadable."
         ),
     )
     INTERNAL_KEY: Optional[str] = Field(
