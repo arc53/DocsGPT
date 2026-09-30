@@ -110,8 +110,13 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     * unspecified (``0.0.0.0``, ``::``)
     * reserved (``240.0.0.0/4``, etc.)
     * carrier-grade NAT (``100.64.0.0/10``) — not covered by ``is_private``
+
+    An IPv4-mapped IPv6 address (``::ffff:a.b.c.d``) reaches the IPv4 host on a
+    dual-stack socket, so it is judged by the IPv4 address it carries.
     """
 
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
     if (
         ip.is_loopback
         or ip.is_private

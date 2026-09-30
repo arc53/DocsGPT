@@ -43,6 +43,25 @@ class TestIsPrivateIP:
         assert is_private_ip("not-an-ip") is False
         assert is_private_ip("") is False
 
+    @pytest.mark.parametrize(
+        "address",
+        [
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "::ffff:192.168.1.1",
+            "::ffff:169.254.0.1",
+            "::ffff:169.254.169.254",
+            "::ffff:100.64.0.1",
+            "::ffff:100.127.255.254",
+            "::ffff:0.0.0.0",
+        ],
+    )
+    def test_ipv4_mapped_ipv6_is_judged_by_its_ipv4_address(self, address):
+        assert is_private_ip(address) is True
+
+    def test_ipv4_mapped_public_address_is_allowed(self):
+        assert is_private_ip("::ffff:8.8.8.8") is False
+
 
 class TestIsMetadataIP:
     """Tests for is_metadata_ip function."""
@@ -56,6 +75,10 @@ class TestIsMetadataIP:
     def test_non_metadata_ip(self):
         assert is_metadata_ip("8.8.8.8") is False
         assert is_metadata_ip("10.0.0.1") is False
+
+    @pytest.mark.parametrize("address", ["::ffff:169.254.169.254", "::ffff:169.254.170.2", "fd00:ec2:0::254"])
+    def test_other_spellings_of_a_metadata_ip(self, address):
+        assert is_metadata_ip(address) is True
 
 
 class TestValidateUrl:
