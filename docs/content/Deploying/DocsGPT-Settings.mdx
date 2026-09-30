@@ -17,7 +17,21 @@ There are two primary ways to configure DocsGPT settings:
 
 ### 1. Configuration via `.env` file (Recommended)
 
-The easiest and recommended way to configure basic settings is by using a `.env` file. This file should be located in the **root directory** of your DocsGPT project (the same directory where `setup.sh` is located).
+The easiest and recommended way to configure basic settings is by using a `.env` file. Where that file lives depends on how you installed DocsGPT:
+
+| Install | `.env` location | How to change a setting |
+| --- | --- | --- |
+| Installer, `docsgpt up` (Docker or `--native`) | `~/.docsgpt/server/.env` (`/opt/docsgpt/.env` when installed as root on Linux) | `docsgpt env set KEY=VALUE`, then `docsgpt up` to apply (a running `--native` install restarts by itself). `docsgpt env` prints the file's path and `docsgpt env get KEY` one value. |
+| pip install (`docsgpt api` / `docsgpt worker`) | `~/.docsgpt/server/.env`, whatever directory you run the commands from | Edit the file, then restart `docsgpt api` and `docsgpt worker`. |
+| Source checkout (`setup.sh`, checkout Compose files, development) | `.env` in the repository root, next to `setup.sh` | Edit the file, then restart the services. Compose commands need `--env-file .env`; see [Docker Deployment](/Deploying/Docker-Deploying). |
+| Kubernetes | No file: the `docsgpt-secrets` Secret and the Deployment `env` | Edit `deployment/k8s/docsgpt-secrets.yaml` and re-apply; see [Kubernetes](/Deploying/Kubernetes-Deploying). |
+
+DocsGPT resolves the file in this order:
+
+1. `DOCSGPT_ENV_FILE`, when set, names the `.env` file directly.
+2. Otherwise it reads `<DOCSGPT_HOME>/.env`. The **data home** `DOCSGPT_HOME` is also where `inputs/`, `indexes/` and downloaded models live. When `DOCSGPT_HOME` is unset, the data home is the source checkout the code runs from, else `~/.docsgpt/server` (`/opt/docsgpt` for root on Linux).
+
+`DOCSGPT_HOME` and `DOCSGPT_ENV_FILE` must be set in the process environment (your shell, the service unit), not in `.env`, because they decide which `.env` is read. The Docker image sets `DOCSGPT_HOME=/app`; containers get their settings from Compose's `env_file`, not from a file inside the image. `docsgpt api`, `docsgpt worker` and `docsgpt migrate` print the data home and env file they use when they start. Process environment variables override `.env`.
 
 **Example `.env` file structure:**
 
@@ -459,6 +473,7 @@ DocsGPT stores user data — conversations, agents, prompts, sources, attachment
 | `POSTGRES_URI` | SQLAlchemy-compatible Postgres URI. Any standard `postgresql://` form works — DocsGPT normalizes it internally to the `psycopg` v3 dialect. | — |
 | `AUTO_CREATE_DB` | On startup, connect to the server's `postgres` maintenance DB and issue `CREATE DATABASE` if the target is missing. Requires `CREATEDB` or superuser. No-op when the database already exists. Disable in production. | `true` |
 | `AUTO_MIGRATE` | On startup, run `alembic upgrade head` against the target database. Idempotent and serialized across workers via `alembic_version`. Disable in production in favor of an explicit migration step. | `true` |
+| `AUTO_VECTOR_SCHEMA` | On startup, with `VECTOR_STORE=pgvector`, create the vector `documents` table (and the GraphRAG tables) and check its embedding width. No Alembic migration covers the vector database. Disable it too when the runtime role must not run DDL. | `true` |
 
 Example:
 
