@@ -113,7 +113,18 @@ A `write` scope includes the matching `read` scope.
 
 `agents:keys` is separate from `agents:write` on purpose. Creating, publishing or adopting an agent mints its API key; a token without `agents:keys` gets the key back masked (`1234...90ab`), because an agent key keeps working after the token that saw it is revoked. Put differently: a deployment token that updates agents does not need to be able to read or rotate the secrets other systems use to call them.
 
-Some parts of the API are never available to a token, whatever its scopes: token management, the admin API, team management, sign-in flows, device pairing, and the interactive OAuth handshakes used by connectors and MCP servers. A token also never carries the `admin` role, even when its owner is an admin.
+Some parts of the API are never available to a token, whatever its scopes:
+
+- token management, the admin API and sign-in flows;
+- changing teams, their members and grants (reading them needs `teams:read`), and who may edit a shared resource or wiki;
+- connectors and connections, including their OAuth handshakes, and the MCP server OAuth handshake;
+- all remote device routes, not only pairing;
+- artifacts, speech-to-text and text-to-speech;
+- conversation sharing and shared links, and file download;
+- the OpenAI-compatible `/v1` API (use an [agent API key](/Extensions/api-key-guide)) and the live event stream `/api/events`;
+- the agent webhook trigger, whose URL is its own credential.
+
+The [REST API reference](/API/reference) shows, for each endpoint, the scope a token needs or that tokens can't call it. A token also never carries the `admin` role, even when its owner is an admin.
 
 Authorization is deny by default. An endpoint that is not explicitly mapped to a scope cannot be called with a token, and answers `403` with `"error": "not_available_to_tokens"`. A mapped endpoint called without the scope answers `403` with `"error": "insufficient_scope"` and names the `required_scope`.
 
