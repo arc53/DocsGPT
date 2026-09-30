@@ -976,17 +976,38 @@ right-aligns the values (a phone card; `columns={2}` for a stats dialog).
 
 ### Pagination (`ui/pagination.tsx`)
 
-The pager under a table, tile grid or list: "Page N of M" and four chevron
-`IconButton`s. `pageSize` adds the Rows per page select (`pageSizeLabel`
-renames it when the items aren't rows: the chunk grid's "Chunks per page",
-with `pageSizeOptions={[12, 24, 48]}` so a full page fills 2, 3 or 4
-columns); `summary` puts a
-count on the left ("1,024 users"). `labels="text"` swaps the chevrons for
-Previous / Next buttons. Don't hand-roll a Previous / Next row. With a page
-size select, keep the pager while the total exceeds the smallest option, not
-the current page size, so picking a bigger size never hides the way back
-("Page 1 of 1", chevrons off). Counts and numbers in the UI format on the app
-language: `formatCount` (`utils/dateTimeUtils`, `Intl` on `intlLocale()`), never
+The pager under a table, tile grid or list. It takes `page`, `pageSize` and
+`total` and derives the rest: a range summary on the left ("1–12 of 86
+sources": pass `rangeLabel` with the list's plural key and `pageRangeParams`,
+else the noun-free `pagination.range`), then Previous, five numbered slots
+(`pageSlots`: first, last and current page, an ellipsis always hiding two
+pages or more: `1 2 3 … 8`, `1 … 4 … 8`, `1 … 6 7 8`) and Next. The current
+page is the `outline` button, the others `ghost`. `onPageSizeChange` adds the
+"Per page" select (`pageSizeLabel` renames it, e.g. "Rows per page" on a real
+table); tile grids keep multiples of 12 (`[12, 24, 48]`, the default) so a
+full page fills 1, 2, 3 or 4 columns. The pager is an `@container`: under
+36rem of its own width (a phone, a side panel) it shows the short range and
+`‹ 2 / 8 ›` instead, without the size select. Render it unconditionally once
+the list has loaded; it draws nothing while every item fits on the smallest
+page. With a size select it stays while the total exceeds the smallest
+option, not the current page size, so picking a bigger size never hides the
+way back (page buttons off). Keep a routed list's page in the URL
+(`usePageParam`, replaces the history entry) and a chosen size on the device
+(`usePageSize`, `DocsGPTPageSize:<list>`); a new search or filter starts on
+page 1, and a page the server clamped is followed. Don't hand-roll a
+Previous / Next row.
+
+Pick the pattern by the list: a grid or table you browse or search pages;
+a newest-first feed (logs, run history, audit trails, the conversations
+sidebar) loads older items as it scrolls, never page numbers; a usually short
+list that is loaded in full (tools, custom models, teams, a team's shared
+resources) pages client-side at `SHORT_LIST_PAGE_SIZE` (48, no size select,
+`useClientPage`), a safety net that never splits a normal list; a fixed
+catalog (connectors) and a table of a few rows (access tokens) have no pager;
+a sectioned gallery caps each section and links "Show all". Sources opens at
+24 per page on desktop and 12 below it.
+
+Counts and numbers in the UI format on the app language: `formatCount` (`utils/dateTimeUtils`, `Intl` on `intlLocale()`), never
 `toLocaleString()` or a raw `{{count}}`; plural keys get the number as `count`
 and the formatted text as `formatted` (`{{formatted}} members`), a key with no
 plural passes only `formatted`, and a count is never baked into the key name

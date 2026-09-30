@@ -263,6 +263,8 @@
           "chunkCount_other": "{{formatted}} fragmentos",
           "entityCount_one": "{{formatted}} entidad",
           "entityCount_other": "{{formatted}} entidades",
+          "entityRange_one": "{{from}}–{{to}} de {{formatted}} entidad",
+          "entityRange_other": "{{from}}–{{to}} de {{formatted}} entidades",
           "relationshipCount_one": "{{formatted}} relación",
           "relationshipCount_other": "{{formatted}} relaciones",
           "chunk": "Fragmento",
@@ -436,6 +438,10 @@
       "searchChunks": "Buscar fragmentos",
       "chunkCount_one": "{{formatted}} fragmento",
       "chunkCount_other": "{{formatted}} fragmentos",
+      "chunkRange_one": "{{from}}–{{to}} de {{formatted}} fragmento",
+      "chunkRange_other": "{{from}}–{{to}} de {{formatted}} fragmentos",
+      "pageRange_one": "{{from}}–{{to}} de {{formatted}} fuente",
+      "pageRange_other": "{{from}}–{{to}} de {{formatted}} fuentes",
       "editor": {
         "write": "Escribir",
         "preview": "Vista previa",
@@ -941,7 +947,9 @@
           "prompt": "Prompts"
         },
         "search": "Buscar compartidos…",
-        "noMatches": "No hay coincidencias."
+        "noMatches": "No hay coincidencias.",
+        "pageRange_one": "{{from}}–{{to}} de {{formatted}} recurso",
+        "pageRange_other": "{{from}}–{{to}} de {{formatted}} recursos"
       },
       "drawer": {
         "subtitle": "{{type}} · propiedad de {{owner}}",
@@ -965,7 +973,9 @@
         "otherTeamsHint": "¿También compartido con otros equipos? Esos accesos se gestionan en «Gestionar uso compartido».",
         "whatPeopleCanDo": "Qué pueden hacer aquí",
         "capabilitiesHint": "Según los ajustes de acceso del propietario. Solo lectura aquí."
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} de {{formatted}} equipo",
+      "pageRange_other": "{{from}}–{{to}} de {{formatted}} equipos"
     },
     "tools": {
       "label": "Herramientas",
@@ -1113,7 +1123,9 @@
       "statusUpdateFailed": "No se pudo cambiar si esta herramienta está en tus chats.",
       "deleteFailed": "No se pudo eliminar esta herramienta.",
       "sharedBy": "Compartido por {{team}}",
-      "savedSecretPlaceholder": "Guardado · introduce un valor nuevo para reemplazarlo"
+      "savedSecretPlaceholder": "Guardado · introduce un valor nuevo para reemplazarlo",
+      "pageRange_one": "{{from}}–{{to}} de {{formatted}} herramienta",
+      "pageRange_other": "{{from}}–{{to}} de {{formatted}} herramientas"
     },
     "devices": {
       "label": "Dispositivos",
@@ -1240,7 +1252,9 @@
         "contextWindowRange": "La ventana de contexto debe estar entre 1.000 y 10.000.000",
         "saveFailed": "No se pudo guardar el modelo personalizado",
         "testFailed": "La prueba de conexión falló"
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} de {{formatted}} modelo",
+      "pageRange_other": "{{from}}–{{to}} de {{formatted}} modelos"
     },
     "accessTokens": {
       "label": "Tokens de acceso",
@@ -1987,13 +2001,13 @@
     "deleteWarning": "¿Está seguro de que desea eliminar esta conversación?"
   },
   "pagination": {
-    "rowsPerPage": "Filas por página",
+    "label": "Paginación",
+    "perPage": "Por página",
+    "range": "{{from}}–{{to}} de {{total}}",
     "pageOf": "Página {{currentPage}} de {{totalPages}}",
-    "firstPage": "Primera página",
+    "goToPage": "Página {{page}}",
     "previousPage": "Página anterior",
-    "nextPage": "Página siguiente",
-    "lastPage": "Última página",
-    "chunksPerPage": "Fragmentos por página"
+    "nextPage": "Página siguiente"
   },
   "conversation": {
     "copy": "Copiar",

@@ -270,6 +270,8 @@
           "relationshipsCapped_one": "顯示 {{total}} 個關係中最強的 {{shown}} 個。",
           "chunkCount_one": "{{formatted}} 個區塊",
           "entityCount_one": "{{formatted}} 個實體",
+          "entityRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個實體",
+          "entityRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個實體",
           "relationshipCount_one": "{{formatted}} 個關係"
         }
       },
@@ -450,6 +452,10 @@
       "connectService": "連接服務",
       "filesByline_one": "{{files}} 個檔案 · {{tokens}} Token",
       "chunkCount_one": "{{formatted}} 個文本塊",
+      "chunkRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個文本塊",
+      "chunkRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個文本塊",
+      "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個來源",
+      "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個來源",
       "viewConfig": "檢視來源設定",
       "errors": {
         "forbidden": "你沒有權限對此來源執行該操作。",
@@ -940,7 +946,9 @@
           "prompt": "提示"
         },
         "search": "搜尋共用…",
-        "noMatches": "沒有相符項目。"
+        "noMatches": "沒有相符項目。",
+        "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個資源",
+        "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個資源"
       },
       "drawer": {
         "subtitle": "{{type}} · 擁有者：{{owner}}",
@@ -964,7 +972,9 @@
         "otherTeamsHint": "也與其他團隊共用了嗎？這些授權在「管理共用」中管理。",
         "whatPeopleCanDo": "這裡的人員可以做什麼",
         "capabilitiesHint": "來自擁有者的存取設定。此處為唯讀。"
-      }
+      },
+      "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊",
+      "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個團隊"
     },
     "tools": {
       "label": "工具",
@@ -1112,7 +1122,9 @@
       "statusUpdateFailed": "無法變更此工具是否用於你的聊天。",
       "deleteFailed": "無法刪除此工具。",
       "sharedBy": "由 {{team}} 分享",
-      "savedSecretPlaceholder": "已儲存 · 輸入新值以取代"
+      "savedSecretPlaceholder": "已儲存 · 輸入新值以取代",
+      "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個工具",
+      "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個工具"
     },
     "devices": {
       "label": "裝置",
@@ -1239,7 +1251,9 @@
         "contextWindowRange": "脈絡視窗須介於 1,000 至 10,000,000 之間",
         "saveFailed": "儲存自訂模型失敗",
         "testFailed": "連線測試失敗"
-      }
+      },
+      "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個模型",
+      "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個模型"
     },
     "accessTokens": {
       "label": "存取權杖",
@@ -1975,13 +1989,13 @@
     "deleteWarning": "您確定要刪除這個對話嗎？"
   },
   "pagination": {
-    "rowsPerPage": "每頁行數",
+    "label": "分頁",
+    "perPage": "每頁",
+    "range": "第 {{from}}–{{to}} 筆，共 {{total}} 筆",
     "pageOf": "第 {{currentPage}} 頁，共 {{totalPages}} 頁",
-    "firstPage": "第一頁",
+    "goToPage": "第 {{page}} 頁",
     "previousPage": "上一頁",
-    "nextPage": "下一頁",
-    "lastPage": "最後一頁",
-    "chunksPerPage": "每頁文本塊數"
+    "nextPage": "下一頁"
   },
   "conversation": {
     "copy": "複製",

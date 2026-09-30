@@ -255,7 +255,6 @@ export default function Users() {
     return acts;
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const applySearch = () => {
     setPage(1);
     setQuery(search.trim());
@@ -388,9 +387,12 @@ export default function Users() {
           </TableContainer>
           <Pagination
             page={page}
-            pageCount={totalPages}
+            pageSize={PAGE_SIZE}
+            total={total}
             onPageChange={setPage}
-            summary={`${fmtNumber(total)} users`}
+            rangeLabel={({ from, to }) =>
+              `${fmtNumber(from)}–${fmtNumber(to)} of ${fmtNumber(total)} users`
+            }
           />
         </>
       )}

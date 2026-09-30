@@ -84,6 +84,7 @@ vi.mock('../upload/Upload', () => ({
 }));
 
 import type { Doc } from '../models/misc';
+import { getDocsWithPagination } from '../preferences/preferenceApi';
 import Sources from './Sources';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -476,5 +477,127 @@ describe('Sources access', () => {
       doc({ isNested: true, access: 'editor', allowed_actions: EDITOR }),
     );
     expect(canEditOf('file-tree')).toBe('true');
+  });
+});
+
+describe('Sources paging', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchPage.mockReset();
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  });
+
+  function Where() {
+    const location = useLocation();
+    return <div data-testid="where">{location.search}</div>;
+  }
+
+  const render = async (entry = '/settings/sources') => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={[entry]}>
+          <Sources
+            paginatedDocuments={[doc()]}
+            handleDeleteDocument={vi.fn()}
+          />
+          <Where />
+        </MemoryRouter>,
+      );
+    });
+  };
+
+  const response = (currentPage: number, total = 86) => ({
+    docs: [doc()],
+    totalDocuments: total,
+    totalPages: Math.ceil(total / 12),
+    currentPage,
+    nextCursor: '',
+  });
+
+  const where = () =>
+    container.querySelector('[data-testid="where"]')!.textContent;
+
+  const stubWidth = (desktop: boolean) =>
+    vi.stubGlobal('matchMedia', () => ({ matches: desktop }));
+
+  it('asks for 24 per page on desktop', async () => {
+    stubWidth(true);
+    fetchPage.mockResolvedValue(response(1));
+    await render();
+    expect(fetchPage.mock.calls[0][3]).toBe(24);
+  });
+
+  it('asks for 12 per page below desktop, starting on the page in the URL', async () => {
+    stubWidth(false);
+    fetchPage.mockResolvedValue(response(3));
+    await render('/settings/sources?page=3');
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    const [, , page, rows] = fetchPage.mock.calls[0];
+    expect(page).toBe(3);
+    expect(rows).toBe(12);
+    expect(where()).toBe('?page=3');
+  });
+
+  it('pages with the numbered pager and keeps the page in the URL', async () => {
+    fetchPage.mockResolvedValue(response(1));
+    await render();
+    const pager = container.querySelector('[data-slot="pagination-full"]')!;
+    expect(pager.textContent).toContain('settings.sources.pageRange');
+    const page2 = pager.querySelector<HTMLButtonElement>(
+      '[aria-label="pagination.goToPage"]:not([aria-current])',
+    )!;
+    fetchPage.mockResolvedValue(response(2));
+    await act(async () => page2.click());
+    expect(fetchPage.mock.lastCall![2]).toBe(2);
+    expect(where()).toBe('?page=2');
+  });
+
+  // Deleting the last card on the last page: the server clamps the page.
+  it('follows the page the server clamped to', async () => {
+    fetchPage.mockResolvedValue(response(7, 84));
+    await render('/settings/sources?page=8');
+    expect(where()).toBe('?page=7');
+  });
+
+  it('uses the remembered page size', async () => {
+    localStorage.setItem('DocsGPTPageSize:sources', '48');
+    fetchPage.mockResolvedValue(response(1));
+    await render();
+    expect(fetchPage.mock.calls[0][3]).toBe(48);
+  });
+
+  it('a new search starts on page 1', async () => {
+    fetchPage.mockResolvedValue(response(3));
+    await render('/settings/sources?page=3');
+    const input = container.querySelector<HTMLInputElement>(
+      '#document-search-input',
+    )!;
+    fetchPage.mockResolvedValue(response(1, 5));
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!;
+      setValue.call(input, 'tender');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const [, , page, , search] = fetchPage.mock.lastCall!;
+    expect(page).toBe(1);
+    expect(search).toBe('tender');
+    expect(where()).toBe('');
   });
 });

@@ -263,6 +263,8 @@
           "chunkCount_other": "{{formatted}} Chunks",
           "entityCount_one": "{{formatted}} Entität",
           "entityCount_other": "{{formatted}} Entitäten",
+          "entityRange_one": "{{from}}–{{to}} von {{formatted}} Entität",
+          "entityRange_other": "{{from}}–{{to}} von {{formatted}} Entitäten",
           "relationshipCount_one": "{{formatted}} Beziehung",
           "relationshipCount_other": "{{formatted}} Beziehungen",
           "chunk": "Chunk",
@@ -436,6 +438,10 @@
       "searchChunks": "Chunks durchsuchen",
       "chunkCount_one": "{{formatted}} Chunk",
       "chunkCount_other": "{{formatted}} Chunks",
+      "chunkRange_one": "{{from}}–{{to}} von {{formatted}} Chunk",
+      "chunkRange_other": "{{from}}–{{to}} von {{formatted}} Chunks",
+      "pageRange_one": "{{from}}–{{to}} von {{formatted}} Quelle",
+      "pageRange_other": "{{from}}–{{to}} von {{formatted}} Quellen",
       "editor": {
         "write": "Schreiben",
         "preview": "Vorschau",
@@ -941,7 +947,9 @@
           "prompt": "Prompts"
         },
         "search": "Geteilte suchen…",
-        "noMatches": "Keine Treffer."
+        "noMatches": "Keine Treffer.",
+        "pageRange_one": "{{from}}–{{to}} von {{formatted}} Ressource",
+        "pageRange_other": "{{from}}–{{to}} von {{formatted}} Ressourcen"
       },
       "drawer": {
         "subtitle": "{{type}} · Eigentümer: {{owner}}",
@@ -965,7 +973,9 @@
         "otherTeamsHint": "Auch mit anderen Teams geteilt? Diese Freigaben verwaltest du unter „Freigabe verwalten“.",
         "whatPeopleCanDo": "Was Personen hier dürfen",
         "capabilitiesHint": "Aus den Zugriffseinstellungen des Eigentümers. Hier nur lesend."
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} von {{formatted}} Team",
+      "pageRange_other": "{{from}}–{{to}} von {{formatted}} Teams"
     },
     "tools": {
       "label": "Werkzeuge",
@@ -1113,7 +1123,9 @@
       "statusUpdateFailed": "Konnte nicht ändern, ob dieses Tool in deinen Chats ist.",
       "deleteFailed": "Dieses Tool konnte nicht gelöscht werden.",
       "sharedBy": "Geteilt von {{team}}",
-      "savedSecretPlaceholder": "Gespeichert · neuen Wert eingeben zum Ersetzen"
+      "savedSecretPlaceholder": "Gespeichert · neuen Wert eingeben zum Ersetzen",
+      "pageRange_one": "{{from}}–{{to}} von {{formatted}} Werkzeug",
+      "pageRange_other": "{{from}}–{{to}} von {{formatted}} Werkzeugen"
     },
     "devices": {
       "label": "Geräte",
@@ -1240,7 +1252,9 @@
         "contextWindowRange": "Kontextfenster muss zwischen 1.000 und 10.000.000 liegen",
         "saveFailed": "Eigenes Modell konnte nicht gespeichert werden",
         "testFailed": "Verbindungstest fehlgeschlagen"
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} von {{formatted}} Modell",
+      "pageRange_other": "{{from}}–{{to}} von {{formatted}} Modellen"
     },
     "accessTokens": {
       "label": "Zugriffstoken",
@@ -1987,13 +2001,13 @@
     "deleteWarning": "Bist du sicher, dass du diese Konversation löschen möchtest?"
   },
   "pagination": {
-    "rowsPerPage": "Zeilen pro Seite",
+    "label": "Seitennavigation",
+    "perPage": "Pro Seite",
+    "range": "{{from}}–{{to}} von {{total}}",
     "pageOf": "Seite {{currentPage}} von {{totalPages}}",
-    "firstPage": "Erste Seite",
+    "goToPage": "Seite {{page}}",
     "previousPage": "Vorherige Seite",
-    "nextPage": "Nächste Seite",
-    "lastPage": "Letzte Seite",
-    "chunksPerPage": "Chunks pro Seite"
+    "nextPage": "Nächste Seite"
   },
   "conversation": {
     "copy": "Kopieren",

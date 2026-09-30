@@ -11,7 +11,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
@@ -28,13 +28,14 @@ import { Button } from '../components/ui/button';
 import { Card, CardFooter, CardTitle } from '../components/ui/card';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
-import { Pagination } from '../components/ui/pagination';
+import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '../components/ui/tooltip';
 import { useDebouncedValue, useLoaderState } from '../hooks';
+import { usePageParam, usePageSize } from '../hooks/usePageState';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState, Doc, DocumentsProps } from '../models/misc';
 import type { Model } from '../models/types';
@@ -74,6 +75,16 @@ import { clearGraphBuild, selectGraphBuilds } from './graphBuildSlice';
 import SourceConfigModal from './SourceConfigModal';
 import TestRetrievalModal from './TestRetrievalModal';
 import WikiSettingsModal from './WikiSettingsModal';
+
+/** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
+const SOURCE_PAGE_SIZES = [12, 24, 48];
+
+/** Six rows of the 4-column desktop grid; 12 on narrower screens. */
+const defaultSourcePageSize = (): number =>
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(min-width: 1024px)').matches
+    ? 24
+    : 12;
 
 const formatTokens = (tokens: number): string => {
   const roundToTwoDecimals = (num: number): string => {
@@ -116,10 +127,14 @@ export default function Sources({
   const [loading, setLoading] = useLoaderState(false);
   const [sortField, setSortField] = useState<'date' | 'tokens'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  // Pagination
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [rowsPerPage, setRowsPerPage] = useState<number>(10);
-  const [totalPages, setTotalPages] = useState<number>(1);
+  // Pagination: the page lives in the URL, the size on this device.
+  const [currentPage, setCurrentPage] = usePageParam('page');
+  const [rowsPerPage, setRowsPerPage] = usePageSize(
+    'DocsGPTPageSize:sources',
+    SOURCE_PAGE_SIZES,
+    defaultSourcePageSize(),
+  );
+  const [totalDocuments, setTotalDocuments] = useState<number>(0);
 
   const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
@@ -207,14 +222,25 @@ export default function Sources({
       )
         .then((data) => {
           dispatch(setPaginatedDocuments(data ? data.docs : []));
-          setTotalPages(data ? data.totalPages : 0);
+          setTotalDocuments(data ? data.totalDocuments : 0);
+          // The server clamps a page past the end (the last card on the
+          // last page was deleted); follow it.
+          if (data && data.currentPage !== page)
+            setCurrentPage(data.currentPage);
         })
         .catch((error) => console.error(error))
         .finally(() => {
           setLoading(false);
         });
     },
-    [currentPage, rowsPerPage, sortField, sortOrder, debouncedSearchTerm],
+    [
+      currentPage,
+      rowsPerPage,
+      sortField,
+      sortOrder,
+      debouncedSearchTerm,
+      setCurrentPage,
+    ],
   );
 
   const handleManageSync = (doc: Doc, sync_frequency: string) => {
@@ -248,7 +274,7 @@ export default function Sources({
         dispatch(
           setPaginatedDocuments(paginatedData ? paginatedData.docs : []),
         );
-        setTotalPages(paginatedData ? paginatedData.totalPages : 0);
+        setTotalDocuments(paginatedData ? paginatedData.totalDocuments : 0);
       })
       .catch((error) => {
         console.error('Error in handleManageSync:', error);
@@ -493,8 +519,13 @@ export default function Sources({
 
     return actions;
   };
+  // The first load opens on the URL's page; a new search starts on page 1.
+  const searchedTerm = useRef(debouncedSearchTerm);
   useEffect(() => {
-    refreshDocs(undefined, 1, rowsPerPage);
+    const newSearch = searchedTerm.current !== debouncedSearchTerm;
+    searchedTerm.current = debouncedSearchTerm;
+    if (newSearch) setCurrentPage(1);
+    refreshDocs(undefined, newSearch ? 1 : currentPage, rowsPerPage);
   }, [debouncedSearchTerm]);
 
   // When a graph build reaches a terminal state via SSE, refresh the list so
@@ -633,10 +664,7 @@ export default function Sources({
               name="Document-search-input"
               id="document-search-input"
               value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
           }
           action={
@@ -857,12 +885,16 @@ export default function Sources({
         </div>
       </div>
 
-      {currentDocuments.length > 0 && totalPages > 1 && (
+      {currentDocuments.length > 0 && (
         <div className="mt-auto pt-4">
           <Pagination
             page={currentPage}
-            pageCount={totalPages}
             pageSize={rowsPerPage}
+            total={totalDocuments}
+            pageSizeOptions={SOURCE_PAGE_SIZES}
+            rangeLabel={(range) =>
+              t('settings.sources.pageRange', pageRangeParams(range))
+            }
             onPageChange={(page) => {
               setCurrentPage(page);
               refreshDocs(undefined, page, rowsPerPage);

@@ -254,7 +254,6 @@ export default function Activity() {
     [catalogue],
   );
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasFilters =
     categories.length > 0 || events.length > 0 || search !== '';
 
@@ -447,9 +446,12 @@ export default function Activity() {
           </TableContainer>
           <Pagination
             page={page}
-            pageCount={totalPages}
+            pageSize={PAGE_SIZE}
+            total={total}
             onPageChange={setPage}
-            summary={`${fmtNumber(total)} events`}
+            rangeLabel={({ from, to }) =>
+              `${fmtNumber(from)}–${fmtNumber(to)} of ${fmtNumber(total)} events`
+            }
           />
         </>
       )}

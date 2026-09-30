@@ -89,6 +89,8 @@ describe('Chunks', () => {
   let root: Root;
 
   beforeEach(() => {
+    // The chosen page size is remembered across mounts.
+    localStorage.clear();
     dispatch.mockReset();
     service.getDocumentChunks.mockReset();
     service.getDocumentChunks.mockImplementation(async () => chunksResponse());
@@ -217,14 +219,15 @@ describe('Chunks', () => {
     ).toBe(count);
   });
 
-  it('asks for 12 chunks per page and labels the page-size select', async () => {
+  it('asks for 12 chunks per page and names the range', async () => {
     service.getDocumentChunks.mockImplementation(async () =>
       chunksResponse({ total: 30 }),
     );
     await render();
     expect(service.getDocumentChunks.mock.calls[0][2]).toBe(12);
     const pager = container.querySelector('[data-slot="pagination"]')!;
-    expect(pager.textContent).toContain('pagination.chunksPerPage');
+    expect(pager.textContent).toContain('pagination.perPage');
+    expect(pager.textContent).toContain('settings.sources.chunkRange');
   });
 
   // Bugs row 1: at 48 per page a 30-chunk source still keeps its pager, so a
@@ -239,7 +242,7 @@ describe('Chunks', () => {
     expect(service.getDocumentChunks.mock.lastCall![2]).toBe(48);
     const pager = container.querySelector('[data-slot="pagination"]');
     expect(pager).not.toBeNull();
-    expect(pager!.textContent).toContain('pagination.chunksPerPage');
+    expect(pager!.textContent).toContain('pagination.perPage');
   });
 
   it('draws no pager for 12 chunks or fewer', async () => {

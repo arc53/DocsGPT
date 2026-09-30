@@ -42,6 +42,7 @@ export async function getDocsWithPagination(
       docs: docs,
       totalDocuments: data.total,
       totalPages: data.totalPages,
+      currentPage: data.currentPage ?? pageNumber,
       nextCursor: data.nextCursor,
     };
   } catch (error) {

@@ -268,6 +268,8 @@
           "chunkCount_other": "{{formatted}} chunks",
           "entityCount_one": "{{formatted}} entity",
           "entityCount_other": "{{formatted}} entities",
+          "entityRange_one": "{{from}}–{{to}} of {{formatted}} entity",
+          "entityRange_other": "{{from}}–{{to}} of {{formatted}} entities",
           "relationshipCount_one": "{{formatted}} relationship",
           "relationshipCount_other": "{{formatted}} relationships",
           "chunk": "Chunk",
@@ -441,6 +443,10 @@
       "searchChunks": "Search chunks",
       "chunkCount_one": "{{formatted}} chunk",
       "chunkCount_other": "{{formatted}} chunks",
+      "chunkRange_one": "{{from}}–{{to}} of {{formatted}} chunk",
+      "chunkRange_other": "{{from}}–{{to}} of {{formatted}} chunks",
+      "pageRange_one": "{{from}}–{{to}} of {{formatted}} source",
+      "pageRange_other": "{{from}}–{{to}} of {{formatted}} sources",
       "editor": {
         "write": "Write",
         "preview": "Preview",
@@ -947,7 +953,9 @@
           "prompt": "Prompts"
         },
         "search": "Search shared…",
-        "noMatches": "Nothing matches."
+        "noMatches": "Nothing matches.",
+        "pageRange_one": "{{from}}–{{to}} of {{formatted}} resource",
+        "pageRange_other": "{{from}}–{{to}} of {{formatted}} resources"
       },
       "drawer": {
         "subtitle": "{{type}} · owned by {{owner}}",
@@ -971,7 +979,9 @@
         "otherTeamsHint": "Shared with other teams too? Those grants are managed in “Manage sharing”.",
         "whatPeopleCanDo": "What people here can do",
         "capabilitiesHint": "From the owner’s access settings. Read-only here."
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} of {{formatted}} team",
+      "pageRange_other": "{{from}}–{{to}} of {{formatted}} teams"
     },
     "tools": {
       "label": "Tools",
@@ -1119,7 +1129,9 @@
       "statusUpdateFailed": "Couldn't change whether this tool is in your chats.",
       "deleteFailed": "Couldn't delete this tool.",
       "sharedBy": "Shared by {{team}}",
-      "savedSecretPlaceholder": "Saved · enter a new value to replace"
+      "savedSecretPlaceholder": "Saved · enter a new value to replace",
+      "pageRange_one": "{{from}}–{{to}} of {{formatted}} tool",
+      "pageRange_other": "{{from}}–{{to}} of {{formatted}} tools"
     },
     "devices": {
       "label": "Devices",
@@ -1246,7 +1258,9 @@
         "contextWindowRange": "Context window must be between 1,000 and 10,000,000",
         "saveFailed": "Failed to save custom model",
         "testFailed": "Connection test failed"
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} of {{formatted}} model",
+      "pageRange_other": "{{from}}–{{to}} of {{formatted}} models"
     },
     "accessTokens": {
       "label": "Access Tokens",
@@ -1993,13 +2007,13 @@
     "deleteWarning": "Are you sure you want to delete this conversation?"
   },
   "pagination": {
-    "rowsPerPage": "Rows per page",
+    "label": "Pagination",
+    "perPage": "Per page",
+    "range": "{{from}}–{{to}} of {{total}}",
     "pageOf": "Page {{currentPage}} of {{totalPages}}",
-    "firstPage": "First page",
+    "goToPage": "Page {{page}}",
     "previousPage": "Previous page",
-    "nextPage": "Next page",
-    "lastPage": "Last page",
-    "chunksPerPage": "Chunks per page"
+    "nextPage": "Next page"
   },
   "conversation": {
     "copy": "Copy",

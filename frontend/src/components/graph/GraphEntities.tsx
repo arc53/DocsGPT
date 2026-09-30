@@ -11,7 +11,7 @@ import SearchInput from '../SearchInput';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { EmptyState } from '../ui/empty-state';
-import { Pagination } from '../ui/pagination';
+import { Pagination, pageRangeParams } from '../ui/pagination';
 import {
   Select,
   SelectContent,
@@ -137,7 +137,6 @@ export default function GraphEntities({
     };
   }, [docId, filterKey, page, token, attempt]);
 
-  const pageCount = Math.max(1, Math.ceil(total / ENTITIES_PER_PAGE));
   const untypedLabel = t('settings.sources.graphrag.view.untyped');
   const filtered = debouncedQuery !== '' || typeFilter !== ALL_TYPES;
 
@@ -324,12 +323,15 @@ export default function GraphEntities({
       {showPager ? (
         <Pagination
           page={page}
-          pageCount={pageCount}
+          pageSize={ENTITIES_PER_PAGE}
+          total={total}
           onPageChange={setPage}
-          summary={t('settings.sources.graphrag.view.entityCount', {
-            count: total,
-            formatted: formatCount(total),
-          })}
+          rangeLabel={(range) =>
+            t(
+              'settings.sources.graphrag.view.entityRange',
+              pageRangeParams(range),
+            )
+          }
         />
       ) : null}
     </div>

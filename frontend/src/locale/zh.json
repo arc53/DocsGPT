@@ -270,6 +270,8 @@
           "relationshipsCapped_one": "显示 {{total}} 个关系中最强的 {{shown}} 个。",
           "chunkCount_one": "{{formatted}} 个分块",
           "entityCount_one": "{{formatted}} 个实体",
+          "entityRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个实体",
+          "entityRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个实体",
           "relationshipCount_one": "{{formatted}} 个关系"
         }
       },
@@ -450,6 +452,10 @@
       "connectService": "连接服务",
       "filesByline_one": "{{files}} 个文件 · {{tokens}} 个令牌",
       "chunkCount_one": "{{formatted}} 个文本块",
+      "chunkRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个文本块",
+      "chunkRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个文本块",
+      "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个来源",
+      "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个来源",
       "viewConfig": "查看来源设置",
       "errors": {
         "forbidden": "你无权对此来源执行该操作。",
@@ -940,7 +946,9 @@
           "prompt": "提示词"
         },
         "search": "搜索共享…",
-        "noMatches": "没有匹配项。"
+        "noMatches": "没有匹配项。",
+        "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个资源",
+        "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个资源"
       },
       "drawer": {
         "subtitle": "{{type}} · 所有者：{{owner}}",
@@ -964,7 +972,9 @@
         "otherTeamsHint": "也与其他团队共享了？这些授权在“管理共享”中管理。",
         "whatPeopleCanDo": "这里的人员可以做什么",
         "capabilitiesHint": "来自所有者的访问设置。此处只读。"
-      }
+      },
+      "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
+      "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队"
     },
     "tools": {
       "label": "工具",
@@ -1112,7 +1122,9 @@
       "statusUpdateFailed": "无法更改此工具是否用于你的聊天。",
       "deleteFailed": "无法删除此工具。",
       "sharedBy": "由 {{team}} 共享",
-      "savedSecretPlaceholder": "已保存 · 输入新值以替换"
+      "savedSecretPlaceholder": "已保存 · 输入新值以替换",
+      "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个工具",
+      "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个工具"
     },
     "devices": {
       "label": "设备",
@@ -1239,7 +1251,9 @@
         "contextWindowRange": "上下文窗口必须在 1,000 至 10,000,000 之间",
         "saveFailed": "保存自定义模型失败",
         "testFailed": "连接测试失败"
-      }
+      },
+      "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个模型",
+      "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个模型"
     },
     "accessTokens": {
       "label": "访问令牌",
@@ -1973,13 +1987,13 @@
     "deleteWarning": "您确定要删除此对话吗？"
   },
   "pagination": {
-    "rowsPerPage": "每页行数",
+    "label": "分页",
+    "perPage": "每页",
+    "range": "第 {{from}}–{{to}} 条，共 {{total}} 条",
     "pageOf": "第 {{currentPage}} 页，共 {{totalPages}} 页",
-    "firstPage": "第一页",
+    "goToPage": "第 {{page}} 页",
     "previousPage": "上一页",
-    "nextPage": "下一页",
-    "lastPage": "最后一页",
-    "chunksPerPage": "每页文本块数"
+    "nextPage": "下一页"
   },
   "conversation": {
     "copy": "复制",

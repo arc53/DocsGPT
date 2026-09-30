@@ -283,6 +283,10 @@
           "entityCount_few": "{{formatted}} сущности",
           "entityCount_many": "{{formatted}} сущностей",
           "entityCount_other": "{{formatted}} сущности",
+          "entityRange_one": "{{from}}–{{to}} из {{formatted}} сущности",
+          "entityRange_few": "{{from}}–{{to}} из {{formatted}} сущностей",
+          "entityRange_many": "{{from}}–{{to}} из {{formatted}} сущностей",
+          "entityRange_other": "{{from}}–{{to}} из {{formatted}} сущности",
           "relationshipCount_one": "{{formatted}} связь",
           "relationshipCount_few": "{{formatted}} связи",
           "relationshipCount_many": "{{formatted}} связей",
@@ -464,6 +468,14 @@
       "chunkCount_few": "{{formatted}} фрагмента",
       "chunkCount_many": "{{formatted}} фрагментов",
       "chunkCount_other": "{{formatted}} фрагмента",
+      "chunkRange_one": "{{from}}–{{to}} из {{formatted}} фрагмента",
+      "chunkRange_few": "{{from}}–{{to}} из {{formatted}} фрагментов",
+      "chunkRange_many": "{{from}}–{{to}} из {{formatted}} фрагментов",
+      "chunkRange_other": "{{from}}–{{to}} из {{formatted}} фрагмента",
+      "pageRange_one": "{{from}}–{{to}} из {{formatted}} источника",
+      "pageRange_few": "{{from}}–{{to}} из {{formatted}} источников",
+      "pageRange_many": "{{from}}–{{to}} из {{formatted}} источников",
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} источника",
       "editor": {
         "write": "Редактор",
         "preview": "Предпросмотр",
@@ -991,7 +1003,11 @@
           "prompt": "Промпты"
         },
         "search": "Поиск в общих…",
-        "noMatches": "Ничего не найдено."
+        "noMatches": "Ничего не найдено.",
+        "pageRange_one": "{{from}}–{{to}} из {{formatted}} ресурса",
+        "pageRange_few": "{{from}}–{{to}} из {{formatted}} ресурсов",
+        "pageRange_many": "{{from}}–{{to}} из {{formatted}} ресурсов",
+        "pageRange_other": "{{from}}–{{to}} из {{formatted}} ресурса"
       },
       "drawer": {
         "subtitle": "{{type}} · владелец: {{owner}}",
@@ -1015,7 +1031,11 @@
         "otherTeamsHint": "Доступ есть и у других команд? Им управляют в «Управлять доступом».",
         "whatPeopleCanDo": "Что здесь можно делать",
         "capabilitiesHint": "Из настроек доступа владельца. Здесь только для чтения."
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} из {{formatted}} команды",
+      "pageRange_few": "{{from}}–{{to}} из {{formatted}} команд",
+      "pageRange_many": "{{from}}–{{to}} из {{formatted}} команд",
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} команды"
     },
     "tools": {
       "label": "Инструменты",
@@ -1163,7 +1183,11 @@
       "statusUpdateFailed": "Не удалось изменить, используется ли этот инструмент в ваших чатах.",
       "deleteFailed": "Не удалось удалить этот инструмент.",
       "sharedBy": "Предоставлено: {{team}}",
-      "savedSecretPlaceholder": "Сохранено · введите новое значение для замены"
+      "savedSecretPlaceholder": "Сохранено · введите новое значение для замены",
+      "pageRange_one": "{{from}}–{{to}} из {{formatted}} инструмента",
+      "pageRange_few": "{{from}}–{{to}} из {{formatted}} инструментов",
+      "pageRange_many": "{{from}}–{{to}} из {{formatted}} инструментов",
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} инструмента"
     },
     "devices": {
       "label": "Устройства",
@@ -1290,7 +1314,11 @@
         "contextWindowRange": "Контекстное окно должно быть от 1 000 до 10 000 000",
         "saveFailed": "Не удалось сохранить свою модель",
         "testFailed": "Проверка соединения не удалась"
-      }
+      },
+      "pageRange_one": "{{from}}–{{to}} из {{formatted}} модели",
+      "pageRange_few": "{{from}}–{{to}} из {{formatted}} моделей",
+      "pageRange_many": "{{from}}–{{to}} из {{formatted}} моделей",
+      "pageRange_other": "{{from}}–{{to}} из {{formatted}} модели"
     },
     "accessTokens": {
       "label": "Токены доступа",
@@ -2077,13 +2105,13 @@
     "deleteWarning": "Вы уверены, что хотите удалить этот разговор?"
   },
   "pagination": {
-    "rowsPerPage": "Строк на странице",
+    "label": "Постраничная навигация",
+    "perPage": "На странице",
+    "range": "{{from}}–{{to}} из {{total}}",
     "pageOf": "Страница {{currentPage}} из {{totalPages}}",
-    "firstPage": "Первая страница",
+    "goToPage": "Страница {{page}}",
     "previousPage": "Предыдущая страница",
-    "nextPage": "Следующая страница",
-    "lastPage": "Последняя страница",
-    "chunksPerPage": "Фрагментов на странице"
+    "nextPage": "Следующая страница"
   },
   "conversation": {
     "copy": "Копировать",

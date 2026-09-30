@@ -31,6 +31,8 @@ import {
   agentEditPath,
   agentEditPathFor,
 } from '../agents/paths';
+import { Pagination, pageRangeParams } from '../components/ui/pagination';
+import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import DetailBreadcrumb from '../navigation/DetailBreadcrumb';
@@ -678,6 +680,20 @@ export default function Teams() {
     if (!needle) return true;
     return `${resourceName(r)} ${ownerLabel(r)}`.toLowerCase().includes(needle);
   });
+  const {
+    page: resourcesPage,
+    setPage: setResourcesPage,
+    pageItems: pageResources,
+  } = useClientPage(
+    visibleResources,
+    SHORT_LIST_PAGE_SIZE,
+    `${resourceFilter}|${resourceQuery}`,
+  );
+  const {
+    page: teamsPage,
+    setPage: setTeamsPage,
+    pageItems: pageTeams,
+  } = useClientPage(teams, SHORT_LIST_PAGE_SIZE, '');
 
   // The strongest access this team has, plus "+N Editor" when per-member
   // editor grants sit on top of a viewer team grant.
@@ -815,66 +831,77 @@ export default function Teams() {
               }
             />
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {teams.map((team) => (
-                <Card
-                  key={team.id}
-                  asChild
-                  variant="filled"
-                  padding="lg"
-                  interactive
-                  className="group h-full"
-                >
-                  <button onClick={() => openTeam(team)}>
-                    <div className="flex items-center gap-3">
-                      <span aria-hidden="true" className="contents">
-                        <Avatar
-                          alt=""
-                          size="default"
-                          shape="square"
-                          variant="muted"
-                        >
-                          {initialOf(team.name)}
-                        </Avatar>
-                      </span>
-                      <CardTitle className="min-w-0 flex-1 truncate">
-                        {team.name}
-                      </CardTitle>
-                      {roleBadge(team.member_role ?? 'team_member')}
-                      <ChevronRight
-                        className="text-muted-foreground size-4.5 shrink-0 transition-transform group-hover:translate-x-0.5"
-                        aria-hidden
-                      />
-                    </div>
-                    {team.description ? (
-                      <CardDescription size="xs" className="line-clamp-2">
-                        {team.description}
-                      </CardDescription>
-                    ) : (
-                      <p className="text-muted-foreground/50 text-xs italic">
-                        {t('settings.teams.noDescription')}
-                      </p>
-                    )}
-                    <CardFooter className="gap-1.5">
-                      <Users className="size-3.5" aria-hidden />
-                      <span>
-                        {t('settings.teams.memberCount', {
-                          count: team.member_count ?? 0,
-                          formatted: formatCount(team.member_count ?? 0),
-                        })}
-                      </span>
-                      <span aria-hidden>·</span>
-                      <span>
-                        {t('settings.teams.sharedCount', {
-                          count: team.shared_count ?? 0,
-                          formatted: formatCount(team.shared_count ?? 0),
-                        })}
-                      </span>
-                    </CardFooter>
-                  </button>
-                </Card>
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {pageTeams.map((team) => (
+                  <Card
+                    key={team.id}
+                    asChild
+                    variant="filled"
+                    padding="lg"
+                    interactive
+                    className="group h-full"
+                  >
+                    <button onClick={() => openTeam(team)}>
+                      <div className="flex items-center gap-3">
+                        <span aria-hidden="true" className="contents">
+                          <Avatar
+                            alt=""
+                            size="default"
+                            shape="square"
+                            variant="muted"
+                          >
+                            {initialOf(team.name)}
+                          </Avatar>
+                        </span>
+                        <CardTitle className="min-w-0 flex-1 truncate">
+                          {team.name}
+                        </CardTitle>
+                        {roleBadge(team.member_role ?? 'team_member')}
+                        <ChevronRight
+                          className="text-muted-foreground size-4.5 shrink-0 transition-transform group-hover:translate-x-0.5"
+                          aria-hidden
+                        />
+                      </div>
+                      {team.description ? (
+                        <CardDescription size="xs" className="line-clamp-2">
+                          {team.description}
+                        </CardDescription>
+                      ) : (
+                        <p className="text-muted-foreground/50 text-xs italic">
+                          {t('settings.teams.noDescription')}
+                        </p>
+                      )}
+                      <CardFooter className="gap-1.5">
+                        <Users className="size-3.5" aria-hidden />
+                        <span>
+                          {t('settings.teams.memberCount', {
+                            count: team.member_count ?? 0,
+                            formatted: formatCount(team.member_count ?? 0),
+                          })}
+                        </span>
+                        <span aria-hidden>·</span>
+                        <span>
+                          {t('settings.teams.sharedCount', {
+                            count: team.shared_count ?? 0,
+                            formatted: formatCount(team.shared_count ?? 0),
+                          })}
+                        </span>
+                      </CardFooter>
+                    </button>
+                  </Card>
+                ))}
+              </div>
+              <Pagination
+                page={teamsPage}
+                pageSize={SHORT_LIST_PAGE_SIZE}
+                total={teams.length}
+                onPageChange={setTeamsPage}
+                rangeLabel={(range) =>
+                  t('settings.teams.pageRange', pageRangeParams(range))
+                }
+              />
+            </>
           )}
         </div>
       ) : (
@@ -1063,54 +1090,68 @@ export default function Teams() {
                     title={t('settings.teams.sharedList.noMatches')}
                   />
                 ) : (
-                  <ListRows>
-                    {visibleResources.map((r) => {
-                      const isOpen = drawerOpen && openResourceKey === r.key;
-                      return (
-                        <ListRow
-                          key={r.key}
-                          interactive
-                          selected={isOpen}
-                          asChild
-                          leading={
-                            <span
-                              aria-hidden="true"
-                              className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
-                            >
-                              {resourceTypeIcon(r.type)}
-                            </span>
-                          }
-                          title={
-                            <span title={resourceName(r)}>
-                              {resourceName(r)}
-                            </span>
-                          }
-                          description={t('settings.teams.sharedList.meta', {
-                            interpolation: { escapeValue: false },
-                            type: resourceTypeLabel(r.type),
-                            owner: ownerLabel(r),
-                          })}
-                          trailing={
-                            <>
-                              <Badge variant="neutral" className="shrink-0">
-                                {resourceBadge(r)}
-                              </Badge>
-                              <ChevronRight
-                                className="text-muted-foreground size-4 shrink-0"
-                                aria-hidden
-                              />
-                            </>
-                          }
-                        >
-                          <button
-                            type="button"
-                            data-testid="shared-resource-row"
-                            onClick={() => openDrawerFor(r)}
-                          />
-                        </ListRow>
-                      );
-                    })}
-                  </ListRows>
+                  <>
+                    <ListRows>
+                      {pageResources.map((r) => {
+                        const isOpen = drawerOpen && openResourceKey === r.key;
+                        return (
+                          <ListRow
+                            key={r.key}
+                            interactive
+                            selected={isOpen}
+                            asChild
+                            leading={
+                              <span
+                                aria-hidden="true"
+                                className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                              >
+                                {resourceTypeIcon(r.type)}
+                              </span>
+                            }
+                            title={
+                              <span title={resourceName(r)}>
+                                {resourceName(r)}
+                              </span>
+                            }
+                            description={t('settings.teams.sharedList.meta', {
+                              interpolation: { escapeValue: false },
+                              type: resourceTypeLabel(r.type),
+                              owner: ownerLabel(r),
+                            })}
+                            trailing={
+                              <>
+                                <Badge variant="neutral" className="shrink-0">
+                                  {resourceBadge(r)}
+                                </Badge>
+                                <ChevronRight
+                                  className="text-muted-foreground size-4 shrink-0"
+                                  aria-hidden
+                                />
+                              </>
+                            }
+                          >
+                            <button
+                              type="button"
+                              data-testid="shared-resource-row"
+                              onClick={() => openDrawerFor(r)}
+                            />
+                          </ListRow>
+                        );
+                      })}
+                    </ListRows>
+                    <Pagination
+                      page={resourcesPage}
+                      pageSize={SHORT_LIST_PAGE_SIZE}
+                      total={visibleResources.length}
+                      onPageChange={setResourcesPage}
+                      rangeLabel={(range) =>
+                        t(
+                          'settings.teams.sharedList.pageRange',
+                          pageRangeParams(range),
+                        )
+                      }
+                    />
+                  </>
                 )}
               </>
             )}

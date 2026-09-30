@@ -97,6 +97,8 @@ export type GetDocsResponse = {
   docs: Doc[];
   totalDocuments: number;
   totalPages: number;
+  /** The page served: the one asked for, clamped to the last. */
+  currentPage: number;
   nextCursor: string;
 };
 

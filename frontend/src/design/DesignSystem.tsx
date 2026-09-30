@@ -120,6 +120,7 @@ import { Modal, ModalActions } from '@/components/ui/modal';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { OptionCard } from '@/components/ui/option-card';
 import { Pagination } from '@/components/ui/pagination';
+import { formatCount } from '../utils/dateTimeUtils';
 import { Progress } from '@/components/ui/progress';
 import { SectionHeader } from '@/components/ui/section-header';
 import { Separator } from '@/components/ui/separator';
@@ -460,6 +461,7 @@ export default function DesignSystem() {
   };
   const [switchOn, setSwitchOn] = useState(true);
   const [pagerPage, setPagerPage] = useState(2);
+  const [pagerSize, setPagerSize] = useState(12);
   const [formats, setFormats] = useState<string[]>(['pdf', 'md']);
   const [time, setTime] = useState('09:30');
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -1766,31 +1768,40 @@ export default function DesignSystem() {
           </Example>
           <Example
             title="Pager"
-            code='<Pagination page pageCount onPageChange pageSize? pageSizeLabel? summary? labels="icons | text">'
+            code="<Pagination page pageSize total onPageChange onPageSizeChange? pageSizeOptions? pageSizeLabel? rangeLabel?>"
           >
             <div className="flex flex-col gap-4">
               <Pagination
                 page={pagerPage}
-                pageCount={5}
+                pageSize={pagerSize}
+                total={86}
                 onPageChange={setPagerPage}
-                pageSize={10}
-                onPageSizeChange={() => undefined}
+                onPageSizeChange={(size) => {
+                  setPagerSize(size);
+                  setPagerPage(1);
+                }}
+                rangeLabel={({ from, to, total }) =>
+                  `${from}–${to} of ${total} sources`
+                }
               />
               <Pagination
                 page={pagerPage}
-                pageCount={5}
+                pageSize={25}
+                total={1024}
                 onPageChange={setPagerPage}
-                summary="1,024 users"
+                rangeLabel={({ from, to, total }) =>
+                  `${from}–${to} of ${formatCount(total)} users`
+                }
               />
-              <Pagination
-                page={pagerPage}
-                pageCount={9}
-                onPageChange={setPagerPage}
-                pageSize={12}
-                pageSizeOptions={[12, 24, 48]}
-                pageSizeLabel="Chunks per page"
-                onPageSizeChange={() => undefined}
-              />
+              {/* Under 36rem of its own width the pager goes compact. */}
+              <div className="max-w-sm">
+                <Pagination
+                  page={pagerPage}
+                  pageSize={25}
+                  total={342}
+                  onPageChange={setPagerPage}
+                />
+              </div>
             </div>
           </Example>
           <Example

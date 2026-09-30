@@ -6,6 +6,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import customModelsService from '../api/services/customModelsService';
 import modelService from '../api/services/modelService';
 import PageToolbar from '../components/PageToolbar';
+import { Pagination, pageRangeParams } from '../components/ui/pagination';
+import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
 import { Badge } from '../components/ui/badge';
@@ -150,6 +152,12 @@ export default function CustomModels() {
     );
   });
 
+  const {
+    page: modelsPage,
+    setPage: setModelsPage,
+    pageItems: pageModels,
+  } = useClientPage(filteredModels, SHORT_LIST_PAGE_SIZE, searchTerm);
+
   const renderEmptyState = () => (
     <EmptyState title={t('settings.customModels.empty')} />
   );
@@ -188,58 +196,71 @@ export default function CustomModels() {
         ) : filteredModels.length === 0 ? (
           renderEmptyState()
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredModels.map((model) => (
-              <Card
-                key={model.id}
-                variant="filled"
-                padding="lg"
-                className="relative overflow-hidden"
-              >
-                <ActionMenu
-                  options={getMenuOptions(model)}
-                  triggerLabel={t('settings.customModels.actionsMenuAria', {
-                    modelName: model.display_name,
-                  })}
-                  className="absolute top-3 right-3 z-10"
-                />
-                <div className="w-full pr-7">
-                  <div className="flex items-center gap-2">
-                    <CardTitle
-                      as="h2"
-                      title={model.display_name}
-                      className="min-w-0 truncate"
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {pageModels.map((model) => (
+                <Card
+                  key={model.id}
+                  variant="filled"
+                  padding="lg"
+                  className="relative overflow-hidden"
+                >
+                  <ActionMenu
+                    options={getMenuOptions(model)}
+                    triggerLabel={t('settings.customModels.actionsMenuAria', {
+                      modelName: model.display_name,
+                    })}
+                    className="absolute top-3 right-3 z-10"
+                  />
+                  <div className="w-full pr-7">
+                    <div className="flex items-center gap-2">
+                      <CardTitle
+                        as="h2"
+                        title={model.display_name}
+                        className="min-w-0 truncate"
+                      >
+                        {model.display_name}
+                      </CardTitle>
+                      {!model.enabled && (
+                        <Badge variant="neutral">
+                          {t('settings.customModels.disabledBadge')}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <CardFooter className="flex-col items-stretch gap-1.5 pr-7">
+                    <div
+                      className="flex items-center gap-1.5 leading-relaxed"
+                      title={model.upstream_model_id}
                     >
-                      {model.display_name}
-                    </CardTitle>
-                    {!model.enabled && (
-                      <Badge variant="neutral">
-                        {t('settings.customModels.disabledBadge')}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                <CardFooter className="flex-col items-stretch gap-1.5 pr-7">
-                  <div
-                    className="flex items-center gap-1.5 leading-relaxed"
-                    title={model.upstream_model_id}
-                  >
-                    <Tag className="size-3.5 shrink-0 opacity-70" />
-                    <span className="truncate">{model.upstream_model_id}</span>
-                  </div>
-                  <div
-                    className="flex items-center gap-1.5 leading-relaxed"
-                    title={model.base_url}
-                  >
-                    <Globe className="size-3.5 shrink-0 opacity-70" />
-                    <span className="truncate">
-                      {formatBaseUrlHost(model.base_url)}
-                    </span>
-                  </div>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
+                      <Tag className="size-3.5 shrink-0 opacity-70" />
+                      <span className="truncate">
+                        {model.upstream_model_id}
+                      </span>
+                    </div>
+                    <div
+                      className="flex items-center gap-1.5 leading-relaxed"
+                      title={model.base_url}
+                    >
+                      <Globe className="size-3.5 shrink-0 opacity-70" />
+                      <span className="truncate">
+                        {formatBaseUrlHost(model.base_url)}
+                      </span>
+                    </div>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+            <Pagination
+              page={modelsPage}
+              pageSize={SHORT_LIST_PAGE_SIZE}
+              total={filteredModels.length}
+              onPageChange={setModelsPage}
+              rangeLabel={(range) =>
+                t('settings.customModels.pageRange', pageRangeParams(range))
+              }
+            />
+          </>
         )}
       </div>
       <CustomModelModal

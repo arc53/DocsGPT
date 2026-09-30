@@ -206,6 +206,58 @@ describe('Teams page', () => {
     await flush();
   };
 
+  // A safety net: 48 per page, so a usual list never splits.
+  it('pages past 48 shared resources; a filter starts on page 1', async () => {
+    listGrants.mockResolvedValue({
+      team_role: 'team_admin',
+      grants: Array.from({ length: 50 }, (_, i) =>
+        grant({ resource_id: `s${i}`, resource_name: `Source ${i}` }),
+      ),
+    });
+    await render();
+    expect(rowButtons()).toHaveLength(48);
+    const pager = () =>
+      body().querySelector<HTMLElement>('[data-slot="pagination-full"]')!;
+    expect(pager().textContent).toContain(
+      'settings.teams.sharedList.pageRange',
+    );
+    act(() =>
+      pager()
+        .querySelector<HTMLButtonElement>(
+          '[aria-label="pagination.goToPage(page=2)"]',
+        )!
+        .click(),
+    );
+    expect(rowButtons()).toHaveLength(2);
+    const sourcePill = Array.from(
+      body().querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+    ).find((p) => p.textContent?.includes('filter.source'))!;
+    act(() => sourcePill.click());
+    expect(rowButtons()).toHaveLength(48);
+  });
+
+  it('pages the teams list past 48 teams', async () => {
+    mockState.teams.teams = Array.from({ length: 50 }, (_, i) => ({
+      id: `t${i}`,
+      name: `Team ${i}`,
+      slug: `team-${i}`,
+      owner_id: 'me',
+      member_role: 'member',
+    }));
+    act(() => {
+      root.render(
+        <MemoryRouter initialEntries={['/teams']}>
+          <Teams />
+        </MemoryRouter>,
+      );
+    });
+    await flush();
+    const pager = body().querySelector('[data-slot="pagination-full"]');
+    expect(pager?.textContent).toContain('settings.teams.pageRange');
+    expect(body().textContent).toContain('Team 47');
+    expect(body().textContent).not.toContain('Team 48');
+  });
+
   it('groups duplicate grants into one row per resource', async () => {
     listGrants.mockResolvedValue({
       team_role: 'team_admin',

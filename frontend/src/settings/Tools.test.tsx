@@ -206,6 +206,44 @@ describe('Tools', () => {
   const switchOf = (id: string) =>
     card(id).querySelector<HTMLButtonElement>('[role="switch"]')!;
 
+  // A safety net: 48 per page, so a usual list never splits.
+  it('pages past 48 tools, and a search starts on page 1', async () => {
+    const many = Array.from({ length: 50 }, (_, i) => ({
+      ...ownTool,
+      id: `t${i}`,
+      displayName: `tool ${i}`,
+    }));
+    await render(many);
+    const cards = () =>
+      container.querySelectorAll('[data-slot="card"] [data-testid="menu"]');
+    expect(cards()).toHaveLength(48);
+    const pager = container.querySelector('[data-slot="pagination-full"]')!;
+    expect(pager.textContent).toContain('settings.tools.pageRange');
+    await act(async () =>
+      pager
+        .querySelector<HTMLButtonElement>(
+          '[aria-label=\'pagination.goToPage:{"page":2}\']',
+        )!
+        .click(),
+    );
+    expect(cards()).toHaveLength(2);
+    const input =
+      container.querySelector<HTMLInputElement>('#tool-search-input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, 'tool');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(cards()).toHaveLength(48);
+  });
+
+  it('draws no pager for 48 tools or fewer', async () => {
+    await render([ownTool, editorTool, viewerTool]);
+    expect(container.querySelector('[data-slot="pagination"]')).toBeNull();
+  });
+
   it('shows Edit, Reconnect, Share and Delete to the owner', async () => {
     await render([ownTool]);
     expect(menuLabels('own')).toEqual([

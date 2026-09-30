@@ -270,6 +270,8 @@
           "relationshipsCapped_one": "{{total}}件の関係のうち、強い順に{{shown}}件を表示しています。",
           "chunkCount_one": "{{formatted}}件のチャンク",
           "entityCount_one": "{{formatted}}件のエンティティ",
+          "entityRange_one": "エンティティ {{formatted}}件中 {{from}}–{{to}}件",
+          "entityRange_other": "エンティティ {{formatted}}件中 {{from}}–{{to}}件",
           "relationshipCount_one": "{{formatted}}件の関係"
         }
       },
@@ -450,6 +452,10 @@
       "connectService": "サービスを接続",
       "filesByline_one": "{{files}} ファイル · {{tokens}} トークン",
       "chunkCount_one": "{{formatted}} 件のチャンク",
+      "chunkRange_one": "チャンク {{formatted}}件中 {{from}}–{{to}}件",
+      "chunkRange_other": "チャンク {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_one": "ソース {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_other": "ソース {{formatted}}件中 {{from}}–{{to}}件",
       "viewConfig": "ソース設定を表示",
       "errors": {
         "forbidden": "このソースでその操作を行う権限がありません。",
@@ -940,7 +946,9 @@
           "prompt": "プロンプト"
         },
         "search": "共有を検索…",
-        "noMatches": "一致するものはありません。"
+        "noMatches": "一致するものはありません。",
+        "pageRange_one": "リソース {{formatted}}件中 {{from}}–{{to}}件",
+        "pageRange_other": "リソース {{formatted}}件中 {{from}}–{{to}}件"
       },
       "drawer": {
         "subtitle": "{{type}} · 所有者: {{owner}}",
@@ -964,7 +972,9 @@
         "otherTeamsHint": "ほかのチームとも共有していますか？それらは「共有を管理」で管理します。",
         "whatPeopleCanDo": "ここでできること",
         "capabilitiesHint": "所有者のアクセス設定に基づきます。ここでは読み取り専用です。"
-      }
+      },
+      "pageRange_one": "チーム {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_other": "チーム {{formatted}}件中 {{from}}–{{to}}件"
     },
     "tools": {
       "label": "ツール",
@@ -1112,7 +1122,9 @@
       "statusUpdateFailed": "このツールをチャットで使うかどうかを変更できませんでした。",
       "deleteFailed": "このツールを削除できませんでした。",
       "sharedBy": "{{team}} が共有",
-      "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力"
+      "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力",
+      "pageRange_one": "ツール {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_other": "ツール {{formatted}}件中 {{from}}–{{to}}件"
     },
     "devices": {
       "label": "デバイス",
@@ -1239,7 +1251,9 @@
         "contextWindowRange": "コンテキストウィンドウは 1,000 から 10,000,000 の範囲で指定してください",
         "saveFailed": "カスタムモデルの保存に失敗しました",
         "testFailed": "接続テストに失敗しました"
-      }
+      },
+      "pageRange_one": "モデル {{formatted}}件中 {{from}}–{{to}}件",
+      "pageRange_other": "モデル {{formatted}}件中 {{from}}–{{to}}件"
     },
     "accessTokens": {
       "label": "アクセストークン",
@@ -1975,13 +1989,13 @@
     "deleteWarning": "この会話を削除してもよろしいですか？"
   },
   "pagination": {
-    "rowsPerPage": "1ページあたりの行数",
+    "label": "ページ送り",
+    "perPage": "表示件数",
+    "range": "{{total}}件中 {{from}}–{{to}}件",
     "pageOf": "ページ {{currentPage}} / {{totalPages}}",
-    "firstPage": "最初のページ",
+    "goToPage": "{{page}}ページ目",
     "previousPage": "前のページ",
-    "nextPage": "次のページ",
-    "lastPage": "最後のページ",
-    "chunksPerPage": "1ページあたりのチャンク数"
+    "nextPage": "次のページ"
   },
   "conversation": {
     "copy": "コピー",
