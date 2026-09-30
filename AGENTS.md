@@ -77,16 +77,28 @@ for a long time; on Flask each would pin a WSGI threadpool slot. Under
 `flask run` those paths 404: chat still works (`POST /stream` is a Flask
 route), but live notifications, stream auto-resume, paired devices and
 artifact downloads don't. Use `flask run` only when you don't need them.
+`docsgpt api` and `docsgpt dev` serve the ASGI app. The user-facing copy of
+this list is the "ASGI-only features" section of
+`docs/content/Deploying/Development-Environment.mdx`; keep the two in step.
 
 Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same
 `docsgpt.asgi:asgi_app` target; see `docsgpt/Dockerfile` for the
 full flag set.
 
-Run the Celery worker in a separate terminal:
+Run the Celery worker, with the embedded beat scheduler (`-B`), in a separate
+terminal:
 
 ```bash
-celery -A docsgpt.app.celery worker -l INFO
+celery -A docsgpt.app.celery worker -l INFO -B
 ```
+
+`docsgpt worker` (or `python -m docsgpt worker`) runs the same thing: it adds
+`-B` itself (`--no-beat` drops it) and picks the solo pool on macOS and Windows.
+
+**Beat must run somewhere.** It fires scheduled agent runs, source syncs,
+reconciliation, retention cleanups and the version check; without it they
+silently never happen. Extra beat instances are safe (RedBeat holds a lock in
+Redis). Windows can't embed beat, so run `docsgpt beat` next to the worker there.
 
 **The worker is required for retrieval, not optional.** `EMBEDDINGS_DELEGATE_TO_WORKER`
 defaults on, so the API embeds each query by dispatching to the worker rather than
@@ -99,7 +111,7 @@ about 660 MB. Without a worker consuming `EMBEDDINGS_QUEUE`, every search fails 
 On macOS, prefer the solo pool for Celery:
 
 ```bash
-python -m celery -A docsgpt.app.celery worker -l INFO --pool=solo
+python -m celery -A docsgpt.app.celery worker -l INFO -B --pool=solo
 ```
 
 Note that `--pool=solo` costs roughly 350 ms per query embed against ~55 ms on the
@@ -112,7 +124,8 @@ tool / workflow native-file parse) alike. Use `-Q` only to split load: run the m
 worker with `-Q docsgpt`, a dedicated (e.g. GPU-enabled) parser worker with
 `-Q parsing` for heavy OCR, and `-Q embeddings` to keep query latency off the ingest
 pool. Note the main `ingest` task parses in-process on `docsgpt`; only
-`read_document` is routed to `parsing`.
+`read_document` is routed to `parsing`. When you split workers, keep `-B` on
+at least one of them.
 
 ### Frontend
 

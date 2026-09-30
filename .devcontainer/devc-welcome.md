@@ -4,7 +4,7 @@ Welcome to the DocsGPT development environment! This guide will help you get sta
 
 ## Starting Services
 
-To run DocsGPT, you need to start three main services: Flask (backend), Celery (task queue), and Vite (frontend). Here are the commands to start each service within the devcontainer:
+To run DocsGPT, you need to start three main services: the backend API, Celery (task queue and scheduler), and Vite (frontend). Here are the commands to start each service within the devcontainer:
 
 ### Vite (Frontend)
 
@@ -23,14 +23,21 @@ uvicorn docsgpt.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
 ```
 
 `flask --app docsgpt/app.py run --host=0.0.0.0 --port=7091` is faster but
-serves only the WSGI Flask app — it omits `/mcp` and the reconnect reader
-`GET /api/messages/<id>/events`, so a dropped stream won't auto-resume.
+serves only the WSGI Flask app. The ASGI-only routes return 404 under it:
+`/mcp`, notifications (`GET /api/events`), chat reconnect
+(`GET /api/messages/<id>/events`), the remote-device command stream and
+artifact downloads. See "ASGI-only features" in
+`docs/content/Deploying/Development-Environment.mdx`.
 
 ### Celery (Task Queue)
 
 ```bash
-celery -A docsgpt.app.celery worker -l INFO -Q docsgpt,parsing,embeddings
+celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
 ```
+
+`-B` embeds the beat scheduler, which fires scheduled agent runs, source syncs,
+reconciliation and cleanups; `docsgpt worker` adds `-B` itself.
+The `embeddings` queue serves every search query, so retrieval needs this worker.
 
 The `parsing` queue serves document parsing (the `read_document` tool / workflow
 native-file parse); without it those calls hang `DOCUMENT_PARSE_TIMEOUT` then

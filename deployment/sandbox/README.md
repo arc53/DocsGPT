@@ -214,7 +214,7 @@ and leaves this worker light.
 worker must also consume `parsing`, or the tool's await never resolves:
 
 ```bash
-celery -A docsgpt.app.celery worker -Q docsgpt,parsing,embeddings -l INFO
+celery -A docsgpt.app.celery worker -B -Q docsgpt,parsing,embeddings -l INFO
 ```
 
 Tuning settings: `DOCUMENT_PARSE_TIMEOUT` (seconds the tool awaits before
