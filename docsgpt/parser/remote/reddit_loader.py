@@ -47,8 +47,8 @@ class RedditPostsLoaderRemote(BaseRemote):
             search_queries = [q.strip() for q in search_queries.split(",") if q.strip()]
         try:
             number_posts = int(data.get("number_posts") or 10)
-        except (TypeError, ValueError):
-            raise ValueError("number_posts must be a whole number")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("number_posts must be a whole number") from exc
         if number_posts < 1:
             # Zero or a negative count means "not set", as an empty field does.
             number_posts = 10

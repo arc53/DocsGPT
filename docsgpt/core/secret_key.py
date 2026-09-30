@@ -66,6 +66,13 @@ def _legacy_secret(key_path: Path) -> str | None:
     Older versions wrote the fallback key relative to the working directory. Keeping
     it means tokens and avatar URLs signed with it stay valid after an upgrade. The
     old file is left where it is; an empty one is ignored.
+
+    Args:
+        key_path: Where the key file belongs now, under the data home.
+
+    Returns:
+        The legacy secret (copied into ``key_path`` when that is writable), or ``None``
+        when there is no legacy file, it is empty, or it is ``key_path`` itself.
     """
     legacy_path = Path.cwd() / KEY_FILE_NAME
     if legacy_path.resolve() == key_path.resolve() or not legacy_path.is_file():

@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import IO, Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from docsgpt.deploy import backup as backup_format
@@ -1268,7 +1268,9 @@ STACK_DATABASE_OWNER = "docsgpt"
 _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
-def _stack_psql(context: Context, directory: Path, database: str, statements: list, stdin=None) -> None:
+def _stack_psql(
+    context: Context, directory: Path, database: str, statements: list, stdin: Optional[IO[str]] = None
+) -> None:
     """Run ``statements`` (each its own ``-c``, so each its own transaction), or ``stdin``, in the stack's Postgres."""
     command = ["psql", "--quiet", "--set", "ON_ERROR_STOP=on", "-U", STACK_DATABASE_OWNER, "-d", database]
     for statement in statements:

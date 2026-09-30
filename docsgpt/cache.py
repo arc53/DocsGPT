@@ -223,11 +223,18 @@ def gen_cache_key(messages, model="docgpt", tools=None, extra=None):
     return cache_key
 
 
-def _skips_cache(tools, extra: dict | None) -> bool:
+def _skips_cache(tools: list | None, extra: dict | None) -> bool:
     """Whether a generation call goes straight to the provider.
 
     The cache is off (``LLM_CACHE_ENABLED``), the call passes tools, or it is
     tied to provider-side conversation state.
+
+    Args:
+        tools: The tool definitions passed to the call, or ``None`` when it has none.
+        extra: The call's other keyword arguments, checked for provider-side state.
+
+    Returns:
+        True when the call must skip the cache.
     """
     return not settings.LLM_CACHE_ENABLED or tools is not None or _bypasses_cache(extra)
 

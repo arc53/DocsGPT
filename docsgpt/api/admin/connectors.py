@@ -72,7 +72,17 @@ def _policy_state(conn, keys) -> dict:
 
 
 def _policy_changes(before: dict, after: dict) -> dict:
-    """What a PUT changed, as ``[old, new]`` pairs; empty when it changed nothing."""
+    """What a PUT changed, as ``[old, new]`` pairs; empty when it changed nothing.
+
+    Args:
+        before: The connector policy state before the change, keyed by connector (plus
+            top-level switches such as ``allow_custom_mcp``).
+        after: The same state after the change, with the same keys.
+
+    Returns:
+        For a top-level value that changed, ``[old, new]``; for a connector, a dict of
+        its changed fields to ``[old, new]``. Unchanged keys are left out.
+    """
     changes: dict = {}
     for key, old in before.items():
         new = after[key]
