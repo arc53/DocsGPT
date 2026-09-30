@@ -28,7 +28,7 @@ Members connect this service from **Settings > Connectors**, and one sign-in ser
 1. Go to **APIs & Services** > **Credentials** > **Create Credentials** > **OAuth client ID**
 2. If prompted, configure the OAuth consent screen: **Internal** for a Google Workspace organization, otherwise **External** (see the note on verification below), and fill in the required fields
 3. Select **Web application** as the application type
-4. Add the origin you open DocsGPT from to **Authorized JavaScript origins**, for example `http://localhost:5173` for the frontend dev server or the Docker Compose frontend, or the API origin (`http://localhost:7091`) when the API serves the UI. Google's file picker needs it.
+4. Only if you will use Google's own file picker (`VITE_GOOGLE_CLIENT_ID`, Step 3): add the origin you open DocsGPT from to **Authorized JavaScript origins**, for example `http://localhost:5173` for the frontend dev server or the Docker Compose frontend, or the API origin (`http://localhost:7091`) when the API serves the UI. DocsGPT's own picker and the sign-in don't need it.
 5. Add your callback URL to **Authorized redirect URIs**:
    - Local: `http://127.0.0.1:7091/api/connectors/callback` (the default `CONNECTOR_REDIRECT_BASE_URI`; Admin > Connectors shows the exact value to copy)
    - Production: `https://yourdomain.com/api/connectors/callback` (the value of `CONNECTOR_REDIRECT_BASE_URI`, registered as-is)
