@@ -15,9 +15,9 @@ Docker is the recommended method for deploying DocsGPT, providing a consistent a
     * **macOS:** [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
     * **Linux:** [Docker Engine Installation Guide](https://docs.docker.com/engine/install/) (follow instructions for your specific distribution)
     * **Windows:** [Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/) (requires WSL 2 backend, see notes below)
-* **Docker Compose:** Docker Compose is usually included with Docker Desktop. If you are using Docker Engine separately, ensure you have Docker Compose V2 installed.
+* **Docker Compose 2.24 or newer:** Docker Desktop includes it. With Docker Engine, install the Compose plugin (`docker compose version` shows the version). The standalone Compose file uses `env_file` entries with `required: false`, which older versions reject, and `docsgpt up` refuses to run on them.
 
-**Important Note for Windows Users:** Docker Desktop on Windows generally requires the WSL 2 backend to function correctly, especially when using features like host networking which are utilized in DocsGPT's Docker Compose setup. Ensure WSL 2 is enabled and configured in Docker Desktop settings.
+**Important Note for Windows Users:** Docker Desktop on Windows needs the WSL 2 backend. Ensure WSL 2 is enabled and configured in Docker Desktop settings.
 
 ## Run it with `docsgpt up`
 
@@ -74,12 +74,12 @@ the questions again.
 | --- | --- |
 | `docsgpt status` | Version, address, containers, and whether the API answers |
 | `docsgpt logs [-f] [service]` | Container logs |
-| `docsgpt token` | The access token, for installs reachable beyond this computer |
-| `docsgpt open` | Open DocsGPT in the browser |
 | `docsgpt env set KEY=VALUE` | Change a setting; `docsgpt up` applies it |
 | `docsgpt upgrade` | Upgrade the package (for `uv tool` installs) and restart on the new version |
 | `docsgpt down` | Stop the stack; data and settings stay |
-| `docsgpt uninstall [--purge]` | Remove the containers; `--purge` also deletes the settings and all data |
+
+The [docsgpt CLI reference](/Deploying/cli) lists every command, including
+`token`, `restart`, `doctor`, `env get`, `backup`, `restore` and `uninstall`.
 
 ### Backups
 
@@ -172,14 +172,15 @@ run them:
     keeps it and `down -v` removes it.
 
 **Tags and variants.** `DOCSGPT_IMAGE_TAG` picks the version: a release such
-as `0.20.0`, `latest` (the newest release, the default) or `develop` (follows
-the `main` branch). `DOCSGPT_IMAGE_VARIANT` picks the flavour: empty for the
+as `0.21.0`, `latest` (the newest release, the default here) or `develop`
+(follows the `main` branch). `DOCSGPT_IMAGE_VARIANT` picks the flavour: empty for the
 slim default image, or `-docling` for the image with the docling parser
 engine, its models and tesseract baked in (needed for OCR of scanned
 documents, see the [OCR guide](/Guides/ocr)). Both are read from `.env` or
-the shell, e.g. `DOCSGPT_IMAGE_TAG=0.20.0 DOCSGPT_IMAGE_VARIANT=-docling`.
+the shell, e.g. `DOCSGPT_IMAGE_TAG=0.21.0 DOCSGPT_IMAGE_VARIANT=-docling`.
 The same two variables drive `deployment/docker-compose-hub.yaml` in a
-checkout.
+checkout, but there the default tag is `develop`; see
+[Using the Source Checkout](#using-the-source-checkout).
 
 ### Opening it from other machines
 
@@ -270,6 +271,24 @@ same pre-built images while keeping your data in `application/indexes`,
 builds the images from your working tree (for local changes, or a build with
 extra packages: `EXTRAS=docling` in `.env`).
 
+**Run every Compose command from the repository root with
+`--env-file .env`.** Compose fills the `${...}` values in these files (the image
+tag, `EXTRAS`, `DOCSGPT_BIND`, the `VITE_*` build arguments) from a `.env` in
+the directory of the Compose file, which is `deployment/`, not the root. The
+`env_file: ../.env` entries only pass settings into the containers. Without
+`--env-file .env`, a pinned `DOCSGPT_IMAGE_TAG` or `EXTRAS=docling` is ignored.
+
+**Image tag.** `docker-compose-hub.yaml`, which `setup.sh` and `setup.ps1` run,
+defaults to the `develop` images, built from the `main` branch, not to the
+latest release. For anything beyond trying DocsGPT out, pin a release in `.env`:
+
+```bash
+DOCSGPT_IMAGE_TAG=0.21.0
+```
+
+Pin it through the variable, not by editing `image:` in the file: the variable
+sets the backend, worker and frontend images together.
+
 <Callout type="warning" emoji="⚠️">
 The checkout Compose files (and `setup.sh`/`setup.ps1`, which run them) are
 meant for local use and development. They publish the API (7091) and the UI
@@ -317,8 +336,11 @@ the [security checklist](/Deploying/Security).
     ```
 
     The `-d` flag runs Docker Compose in detached mode (in the background).
-    To build the images from your working tree instead of pulling them, use
-    `deployment/docker-compose.yaml` with `up --build -d`.
+    To build the images from your working tree instead of pulling them:
+
+    ```bash
+    docker compose --env-file .env -f deployment/docker-compose.yaml up --build -d
+    ```
 
 5.  **Access DocsGPT in your browser:**
 
@@ -329,11 +351,15 @@ the [security checklist](/Deploying/Security).
 
 6.  **Stopping DocsGPT:**
 
-    To stop the application, navigate to the same directory in your terminal and run:
+    To stop the application, run from the repository root:
 
     ```bash
-    docker compose -f deployment/docker-compose-hub.yaml down
+    docker compose --env-file .env -f deployment/docker-compose-hub.yaml down
     ```
+
+    Use the same `-f` files you started it with (`docker-compose.yaml` for a
+    build, plus any Ollama overlay). Other commands take the same form, for
+    example `docker compose --env-file .env -f deployment/docker-compose-hub.yaml logs -f backend`.
 
 ## Optional Ollama Setup (Local Models)
 
@@ -414,7 +440,7 @@ There are two Ollama optional files:
 
 ## Restarting After Configuration Changes
 
-Whenever you modify the `.env` file or any Docker Compose files, you need to restart the Docker containers for the changes to be applied.  Use the same `docker compose down` and `docker compose up -d` commands you used to launch DocsGPT, ensuring you include all relevant `-f` flags for optional files if you are using them.
+Whenever you modify the `.env` file or any Docker Compose files, recreate the containers for the changes to be applied: run the same `docker compose ... up -d` command you used to launch DocsGPT, with `--env-file .env` and every `-f` file (including optional overlays) for a checkout. Compose recreates the containers whose settings changed. With `docsgpt up`, run `docsgpt up` again.
 
 ## Further Configuration
 

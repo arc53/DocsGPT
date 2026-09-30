@@ -430,7 +430,7 @@ function Configure-Auth {
             Write-JwtSecretKey
             Write-ColorText "Authentication set to Simple JWT." -ForegroundColor "Green"
             Write-ColorText "The page asks for the access token. The backend prints it when it starts:" -ForegroundColor "White"
-            Write-ColorText "  docker compose -f `"$COMPOSE_FILE`" logs backend | Select-String `"Simple JWT`"" -ForegroundColor "White"
+            Write-ColorText "  docker compose --env-file `"$ENV_FILE`" -f `"$COMPOSE_FILE`" logs backend | Select-String `"Simple JWT`"" -ForegroundColor "White"
         }
         "3" {
             Remove-EnvKeys (@("AUTH_TYPE") + $script:OIDC_ENV_KEYS)
@@ -792,7 +792,7 @@ function Use-DocsPublicAPIEndpoint {
         
         Write-Host ""
         Write-ColorText "DocsGPT is now running on http://localhost:5173" -ForegroundColor "Green"
-        Write-ColorText "You can stop the application by running: docker compose -f `"$COMPOSE_FILE`" down" -ForegroundColor "Yellow"
+        Write-ColorText "You can stop the application by running: docker compose --env-file `"$ENV_FILE`" -f `"$COMPOSE_FILE`" down" -ForegroundColor "Yellow"
     }
     catch {
         Write-Host ""
@@ -936,7 +936,7 @@ function Serve-LocalOllama {
         
         Write-Host ""
         Write-ColorText "DocsGPT is now running with Ollama ($docker_compose_file_suffix) on http://localhost:5173" -ForegroundColor "Green"
-        Write-ColorText "You can stop the application by running: docker compose -f `"$COMPOSE_FILE`" -f `"$optional_compose`" down" -ForegroundColor "Yellow"
+        Write-ColorText "You can stop the application by running: docker compose --env-file `"$ENV_FILE`" -f `"$COMPOSE_FILE`" -f `"$optional_compose`" down" -ForegroundColor "Yellow"
     }
     catch {
         Write-Host ""
@@ -1076,7 +1076,7 @@ function Connect-LocalInferenceEngine {
         Write-ColorText "Ensure your $engine_name inference server is running at that address" -ForegroundColor "Yellow"
         Write-Host ""
         Write-ColorText "DocsGPT is running at http://localhost:5173" -ForegroundColor "Green"
-        Write-ColorText "You can stop the application by running: docker compose -f `"$COMPOSE_FILE`" down" -ForegroundColor "Yellow"
+        Write-ColorText "You can stop the application by running: docker compose --env-file `"$ENV_FILE`" -f `"$COMPOSE_FILE`" down" -ForegroundColor "Yellow"
     }
     catch {
         Write-Host ""
@@ -1187,7 +1187,7 @@ function Connect-CloudAPIProvider {
 
         Write-Host ""
         Write-ColorText "DocsGPT is now configured to use $provider_name on http://localhost:5173" -ForegroundColor "Green"
-        Write-ColorText "You can stop the application by running: docker compose -f `"$COMPOSE_FILE`" down" -ForegroundColor "Yellow"
+        Write-ColorText "You can stop the application by running: docker compose --env-file `"$ENV_FILE`" -f `"$COMPOSE_FILE`" down" -ForegroundColor "Yellow"
     }
     catch {
         Write-Host ""

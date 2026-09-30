@@ -300,7 +300,7 @@ configure_auth() {
             write_jwt_secret_key
             echo -e "${GREEN}Authentication set to Simple JWT.${NC}"
             echo -e "${DEFAULT_FG}The page asks for the access token. The backend prints it when it starts:${NC}"
-            echo -e "${DEFAULT_FG}  docker compose -f \"${COMPOSE_FILE}\" logs backend | grep \"Simple JWT\"${NC}"
+            echo -e "${DEFAULT_FG}  docker compose --env-file \"${ENV_FILE}\" -f \"${COMPOSE_FILE}\" logs backend | grep \"Simple JWT\"${NC}"
             ;;
         3)
             remove_env_keys AUTH_TYPE $OIDC_ENV_KEYS
@@ -626,7 +626,7 @@ use_docs_public_api_endpoint() {
     fi
 
     echo -e "\n${GREEN}DocsGPT is now running on http://localhost:5173${NC}"
-    echo -e "${YELLOW}You can stop the application by running: docker compose -f \"${COMPOSE_FILE}\" down${NC}"
+    echo -e "${YELLOW}You can stop the application by running: docker compose --env-file \"${ENV_FILE}\" -f \"${COMPOSE_FILE}\" down${NC}"
 }
 
 # 2) Serve Local (with Ollama)
@@ -722,7 +722,7 @@ serve_local_ollama() {
 
     echo -e "\n${GREEN}DocsGPT is now running with Ollama (${docker_compose_file_suffix}) on http://localhost:5173${NC}"
     printf -v compose_files_escaped "%q " "${compose_files[@]}"
-    echo -e "${YELLOW}You can stop the application by running: docker compose ${compose_files_escaped}down${NC}"
+    echo -e "${YELLOW}You can stop the application by running: docker compose --env-file \"${ENV_FILE}\" ${compose_files_escaped}down${NC}"
 }
 
 # 3) Connect Local Inference Engine
@@ -821,7 +821,7 @@ connect_local_inference_engine() {
     echo -e "\n${GREEN}DocsGPT is now configured to connect to ${BOLD}${engine_name}${NC}${GREEN} at ${BOLD}$openai_base_url${NC}"
     echo -e "${YELLOW}Ensure your ${BOLD}${engine_name} inference server is running at that address${NC}"
     echo -e "\n${GREEN}DocsGPT is running at http://localhost:5173${NC}"
-    echo -e "${YELLOW}You can stop the application by running: docker compose -f \"${COMPOSE_FILE}\" down${NC}"
+    echo -e "${YELLOW}You can stop the application by running: docker compose --env-file \"${ENV_FILE}\" -f \"${COMPOSE_FILE}\" down${NC}"
 }
 
 
@@ -899,7 +899,7 @@ connect_cloud_api_provider() {
     fi
 
     echo -e "\n${GREEN}DocsGPT is now configured to use ${BOLD}${provider_name}${NC}${GREEN} on http://localhost:5173${NC}"
-    echo -e "${YELLOW}You can stop the application by running: docker compose -f \"${COMPOSE_FILE}\" down${NC}"
+    echo -e "${YELLOW}You can stop the application by running: docker compose --env-file \"${ENV_FILE}\" -f \"${COMPOSE_FILE}\" down${NC}"
 }
 
 

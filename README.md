@@ -135,13 +135,15 @@ Either script will guide you through setting up DocsGPT. Five options are availa
 
 **Navigate to http://localhost:5173/**
 
-To stop DocsGPT, open a terminal in the `DocsGPT` directory and run:
+To stop DocsGPT, open a terminal in the `DocsGPT` directory and run the `docker compose ... down` command the setup script printed at the end, for example:
 
 ```bash
-docker compose -f deployment/docker-compose.yaml down
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml down
 ```
 
-(or use the specific `docker compose down` command shown after running the setup script).
+If you chose the Ollama option, the printed command also names the Ollama overlay file; use it, or the Ollama container keeps running.
+
+The setup scripts run the `develop` images, built from the `main` branch. To run a release instead, set `DOCSGPT_IMAGE_TAG=<version>` in `.env`.
 
 > [!Warning]
 > The setup scripts and the checkout Compose files are meant for local use: DocsGPT, Postgres and Redis are reachable from this computer only. If you tell the script to expose DocsGPT on your network, set up authentication when it asks. Without it every visitor shares one account, with its documents and connected services. For a server, use the installer above and read the [security checklist](https://docs.docsgpt.cloud/Deploying/Security).

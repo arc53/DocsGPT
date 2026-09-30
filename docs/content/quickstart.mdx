@@ -115,8 +115,12 @@ To work from the source tree, for example to build the images yourself, use `set
 5. **Stopping DocsGPT:** in the `DocsGPT` directory, run the `docker compose down` command the script printed at the end, for example:
 
    ```bash
-   docker compose -f deployment/docker-compose-hub.yaml down
+   docker compose --env-file .env -f deployment/docker-compose-hub.yaml down
    ```
+
+   With the Ollama option, the printed command also names the Ollama overlay file; without it, the Ollama container keeps running.
+
+**Image version:** the setup script runs the `develop` images, built from the `main` branch, not the latest release. To run a release, add `DOCSGPT_IMAGE_TAG=<version>` (for example `0.21.0`) to `.env`, then run `docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d` (plus the Ollama overlay if you use it). See [Using the Source Checkout](/Deploying/Docker-Deploying#using-the-source-checkout).
 
 **Important for Windows:** Ensure Docker Desktop is installed and running before you start. The script tries to start Docker if it is not running, but you may need to start it manually.
 

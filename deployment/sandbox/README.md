@@ -15,26 +15,30 @@ setting a shared gateway token:
 
 ```bash
 export SANDBOX_GATEWAY_AUTH_TOKEN=$(openssl rand -hex 32)
-docker compose \
+docker compose --env-file .env \
   -f deployment/docker-compose.yaml \
-  -f deployment/optional/docker-compose.optional.sandbox.yaml up
+  -f deployment/optional/docker-compose.optional.sandbox.yaml up -d
 ```
+
+Run it from the repository root. `--env-file .env` lets Compose read the root
+`.env` for the `${...}` values, so the token can live there instead of in the
+shell.
 
 The token is **required** — the gateway fails closed if it is unset (see
 *Gateway authentication* below). Add the egress-firewall overlay for SSRF
 containment (see *Network egress / SSRF*):
 
 ```bash
-docker compose \
+docker compose --env-file .env \
   -f deployment/docker-compose.yaml \
   -f deployment/optional/docker-compose.optional.sandbox.yaml \
-  -f deployment/optional/docker-compose.optional.sandbox-egress.yaml up
+  -f deployment/optional/docker-compose.optional.sandbox-egress.yaml up -d
 ```
 
 Then enable `code_executor` / `artifact_generator` **per-agent** in the agent
 tool picker. Agents without them never call the runner, and the backend/worker
-degrade gracefully when the runner is absent. The `-hub` and `-azure` compose
-variants take the same sandbox overlay.
+degrade gracefully when the runner is absent. The `-hub` compose variant takes
+the same sandbox overlay.
 
 ## Isolation model
 
