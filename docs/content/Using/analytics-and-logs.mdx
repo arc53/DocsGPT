@@ -1,0 +1,85 @@
+---
+title: Analytics and Logs
+description: Read the Analytics charts, filter the Logs list and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
+---
+
+import { Callout } from 'nextra/components'
+
+# Analytics and Logs
+
+DocsGPT records every chat, API call, scheduled run and webhook run. You can review them in two places:
+
+- **Settings → Analytics** and **Settings → Logs** (under **Insights**) cover your account.
+- An agent's **Logs** tab covers that one agent: the same charts, its guardrail activity and its logs.
+
+For metrics and traces sent to an external backend such as Grafana or Honeycomb, see [Observability](/Deploying/Observability). Admins can see usage for the whole instance under **Admin → Usage** (see [Admin dashboard](/Deploying/Access-Control#admin-dashboard)).
+
+## Who sees what
+
+| Page | Shows |
+| --- | --- |
+| **Settings → Analytics / Logs** | Traffic recorded under your account: your own chats, plus calls through your agents' API keys, webhooks and schedules. When a teammate chats with an agent you shared, that traffic is recorded under their account, not yours. |
+| An agent's **Logs** tab | All traffic on that agent, whoever sent it: your chats, teammates' chats, public links, the API key, webhooks and schedules. |
+
+The agent's **Logs** tab is open to the owner and editors. Viewers see it only when the owner turns on **Viewers can see logs** in the agent's share dialog (see [Teams and sharing](/Using/teams-and-sharing)).
+
+## Analytics
+
+Pick a period in the top-right corner: **Hour**, **24 Hours**, **7 Days**, **15 Days** or **30 Days** (the default). The last hour is charted per minute, the last 24 hours per hour, and longer periods per day. Times are in UTC.
+
+If an admin has set a [usage quota](/Deploying/Usage-Quotas) for you, **Your usage quota** at the top shows your tokens and cost against the limit, split into **Chat without an agent** and **Through agents** when both apply, with the time it resets. It doesn't appear when you have no quota, or on an agent's tab.
+
+The summary cards total the period:
+
+| Card | What it counts |
+| --- | --- |
+| **Messages** | Questions asked. |
+| **Tokens** | Every token billed by a model. Agents send the conversation again on every tool step, so chats that use many tools spend far more tokens than their messages suggest. |
+| **Tool Calls** | Tool actions run. |
+| **Run Success** | Completed scheduled runs as a share of completed plus failed runs. Skipped runs don't count. |
+| **Feedback** | Thumbs up and thumbs down on answers. |
+
+The charts below them:
+
+- **Messages**: questions per interval.
+- **Token Usage**: **Prompt Tokens** and **Generated Tokens** per interval. **Group by** splits the bars **By model**, **By agent** (not on an agent's tab) or **By source**, which is what the tokens were spent on, such as chat, a scheduled run or a graph build. More than five groups fold into **Other**. **Background tokens** adds tokens spent outside a user's request, such as title generation, history compression and query rephrasing; it's off by default.
+- **Scheduled Runs**: **Completed**, **Failed** and **Skipped** runs of [agent schedules](/Agents/schedules) per interval.
+- **Tool Usage**: **Successful** and **Failed** calls for each tool.
+- **User Feedback**: **Positive Feedback** and **Negative Feedback** per interval.
+
+## Logs
+
+The Logs list shows the newest entries first and loads more as you scroll. Narrow it with:
+
+- the level: **All levels**, **Info**, **Warning** or **Error**;
+- the event type: **Chat**, **Scheduled**, **Webhook**, **Workflow**, **System** (request errors), **Search** (the Search API and MCP `search_docs`) or **Graph build**;
+- **Search logs...**, which matches the entry's summary, usually the question.
+
+Each row shows the time, the event type, the action, how long it took and the summary, colored by level. Click a row to expand it. What it holds depends on the type:
+
+- **Chat**: the agent, the answer, the tool calls and the sources used.
+- **Scheduled**: the status, what triggered it, the error type, tokens, duration, the conversation the run wrote to, the instruction and the output.
+- **Workflow**: the workflow, its status, duration, steps and result.
+- **Webhook** and **System**: the endpoint and the error or activity details.
+
+**Copy** copies the whole entry as JSON.
+
+## Execution traces
+
+An entry with a recorded trace shows **View trace** when expanded, with a short summary: the number of LLM calls, tokens in and out, tool calls, retrieval time and errors. A chat turn that paused for a tool approval has one trace per round, and the button says how many (**View trace (2 rounds)**).
+
+**View trace** opens **Execution trace**, a waterfall of every step: agent runs, LLM calls, tool calls, retrieval, vector searches, embeddings, reranking, guardrails and workflow steps, each with its duration and status. Click a step to see its details, such as the provider and model, input, output and cached tokens, time to first token and cost for an LLM call; the arguments and result for a tool call; or the query, top score and retrieved chunks for a search.
+
+Traces keep short previews, not full prompts, and are deleted after 30 days by default. Operators set what is recorded and for how long; see [Execution traces](/Deploying/Observability#execution-traces).
+
+## Guardrail activity
+
+An agent's **Logs** tab also has **Guardrail activity**: every [guardrail](/Agents/guardrails) check that blocked, redacted or flagged content on that agent, and every check that couldn't run. Filter it by check and outcome, and choose how many days to show.
+
+<Callout type="info">
+**Not evaluated** means the check timed out or failed, so the content was never inspected. It doesn't mean the content was clean.
+</Callout>
+
+## API
+
+The same data is available over the API, scoped the same way, with an agent's id as `api_key_id` to limit it to that agent: `POST /api/get_message_analytics`, `/api/get_token_analytics`, `/api/get_feedback_analytics`, `/api/get_tool_analytics`, `/api/get_schedule_analytics` and `/api/get_user_logs`, and `GET /api/traces`. A [personal access token](/Extensions/personal-access-tokens) needs the `analytics:read` scope. See the [REST API reference](/API/reference).
