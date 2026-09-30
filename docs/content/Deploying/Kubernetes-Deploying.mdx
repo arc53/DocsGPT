@@ -1,111 +1,248 @@
 ---
 title: Deploying DocsGPT on Kubernetes
-description: Learn how to self-host DocsGPT on a Kubernetes cluster for scalable and robust deployments.
+description: Run DocsGPT on a Kubernetes cluster with the manifests in deployment/k8s - secrets, S3 and pgvector storage, migrations, publishing through an Ingress, and upgrades.
 ---
 
-# Self-hosting DocsGPT
- on Kubernetes
+import { Callout } from 'nextra/components'
 
-This guide will walk you through deploying DocsGPT on Kubernetes.
+# Deploying DocsGPT on Kubernetes
+
+The manifests in `deployment/k8s` run DocsGPT with Kustomize. They start:
+
+| Resource | What it does |
+| --- | --- |
+| `docsgpt-api` Deployment and `docsgpt-api-service` | The API, which also serves the web UI. The Service is `ClusterIP`, so nothing is reachable from outside the cluster until you publish it. |
+| `docsgpt-worker` Deployment | The Celery worker with the beat scheduler: ingestion, document parsing, query embeddings and scheduled tasks. |
+| `postgres` Deployment, Service and a 5 GiB volume | Postgres 16 with pgvector. It holds user data and the vector index. |
+| `redis` Deployment and `redis-service` | Task queue, results, the LLM cache and live event streams. |
+| `postgres-init` Job | Migrates the database schema. |
+| `docsgpt-secrets` Secret | The settings every DocsGPT pod reads. |
+
+Uploaded files go to an S3-compatible bucket that you provide.
 
 ## Prerequisites
 
-Ensure you have the following installed before proceeding:
+- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/) and access to a cluster with a default StorageClass.
+- An S3-compatible bucket and credentials for it: AWS S3, MinIO, Cloudflare R2, Backblaze B2, DigitalOcean Spaces or similar. To use a shared volume instead, see [Storage](#storage).
+- `openssl`, to generate keys.
 
-- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
-- Access to a Kubernetes cluster.
-- [Neon](https://get.neon.com/docsgpt) (optional) for a quick and easy vector store setup with pgvector.
+## Folder structure
 
-## Folder Structure
+`deployment/k8s/` contains:
 
-The `deployment/k8s` folder contains the necessary deployment and service configuration files:
+| Path | Applied by default | Contents |
+| --- | --- | --- |
+| `kustomization.yaml` | Yes | The list of resources `kubectl apply -k` creates. |
+| `docsgpt-secrets.yaml` | Yes | Settings and keys. You fill it in before applying. |
+| `deployments/`, `services/` | Yes, except Qdrant and the sandbox | The API, worker, Postgres and Redis. |
+| `jobs/postgres-init-job.yaml` | Yes | The migration Job. |
+| `ingress-example.yaml` | No | An Ingress with TLS for publishing DocsGPT. |
+| `deployments/qdrant-deploy.yaml`, `services/qdrant-service.yaml` | No | An in-cluster Qdrant, if you prefer it to pgvector. |
+| `deployments/sandbox-deploy.yaml`, `network-policies/` | No | The [code-execution sandbox](#optional-code-execution-sandbox). |
+| `optional-mongo/` | No | MongoDB, for `VECTOR_STORE=mongodb`. |
 
-- `deployments/`
-- `services/`
-- `docsgpt-secrets.yaml`
+The manifests pin `arc53/docsgpt` to the release they were written for, currently `0.21.0`.
 
-## Deployment Instructions
+## Deploy
 
-1. **Clone the Repository**
+1. **Clone the repository.**
 
    ```sh
    git clone https://github.com/arc53/DocsGPT.git
-   cd docsgpt/deployment/k8s
+   cd DocsGPT
    ```
 
-2. **Configure Secrets**
+2. **Fill in the secrets.** Open `deployment/k8s/docsgpt-secrets.yaml`. The values are plain text (`stringData`); Kubernetes encodes them. Replace every `REPLACE_ME`:
 
-   Add a strong, base64-encoded `JWT_SECRET_KEY` to `docsgpt-secrets.yaml` before applying it. The API and worker deployments share this value so authentication tokens and agent-avatar capability URLs remain valid across pod restarts and replicas. You can generate a value with `openssl rand -hex 32 | base64`.
+   | Key | Value |
+   | --- | --- |
+   | `INTERNAL_KEY` | Output of `openssl rand -hex 32`. The worker uses it to hand indexes to the API. Anyone holding it can read and write every user's files through the internal endpoints. |
+   | `JWT_SECRET_KEY` | Another `openssl rand -hex 32`. It signs session tokens. |
+   | `ENCRYPTION_SECRET_KEY` | Another `openssl rand -hex 32`. It encrypts stored tool and connector credentials. Keep it: changing it later makes those credentials unreadable. |
+   | `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Your bucket and its credentials. See [Storage](#storage) for `S3_REGION`, `S3_ENDPOINT_URL` and `S3_PATH_STYLE`. |
 
-   Configure any additional provider secrets you need. By default, the manifests use Qdrant as the vector store and the public DocsGPT LLM for inference.
-   
-   Alternatively, you can use [Neon](https://get.neon.com/docsgpt) as an easy way to set up your vector store with pgvector, which is highly recommended for quick deployments.
-
-3. **Apply Kubernetes Deployments**
-
-   Deploy your DocsGPT resources using the following commands:
+   Generate each key separately:
 
    ```sh
-   kubectl apply -f deployments/
+   openssl rand -hex 32
    ```
 
-4. **Apply Kubernetes Services**
+   Then choose the model provider. `LLM_PROVIDER: docsgpt` sends every chat to DocsGPT's hosted API. To use your own, set `LLM_PROVIDER`, its key in `API_KEY` and the model in `LLM_NAME`; see [Cloud LLM providers](/Models/cloud-providers) and [Local inference](/Models/local-inference). Any other setting from the [settings reference](/Deploying/Settings-Reference) can go in the same file.
 
-   Set up your services using the following commands:
+   Leave `AUTH_TYPE` commented out only while DocsGPT is reachable through `kubectl port-forward` alone. See [Publish DocsGPT](#publish-docsgpt).
+
+   <Callout type="warning" emoji="⚠️">
+   The file now holds real credentials. Keep your copy out of version control.
+   </Callout>
+
+3. **Apply the manifests** from the repository root:
 
    ```sh
-   kubectl apply -f services/
+   kubectl apply -k deployment/k8s/
    ```
 
-5. **Apply Secrets**
+   To use a namespace, create it and add `-n <namespace>` to this and every later `kubectl` command.
 
-   Apply the secret configurations:
+4. **Wait for the migration and the pods.**
 
    ```sh
-   kubectl apply -f docsgpt-secrets.yaml
+   kubectl wait --for=condition=complete job/postgres-init --timeout=300s
+   kubectl rollout status deployment/docsgpt-api
+   kubectl rollout status deployment/docsgpt-worker
    ```
 
-6. **Substitute API URL**
+   The API and worker pods don't migrate the database themselves. Their `wait-for-migrations` init container holds them until the Job has brought the schema up to what their image needs.
 
-   After deploying the services, you need to update the environment variable `VITE_API_HOST` in your deployment file `deployments/docsgpt-deploy.yaml` with the actual endpoint URL created by your `docsgpt-api-service`.
-
-    ```sh
-    kubectl get services/docsgpt-api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' | xargs -I {} sed -i "s|<your-api-endpoint>|{}|g" deployments/docsgpt-deploy.yaml
-    ```
-
-7. **Rerun Deployment**
-
-   After making the changes, reapply the deployment configuration to update the environment variables:
+5. **Open DocsGPT.**
 
    ```sh
-   kubectl apply -f deployments/
+   kubectl port-forward service/docsgpt-api-service 7091:80
    ```
 
-## Verifying the Deployment
+   Then open [http://localhost:7091](http://localhost:7091).
 
-To verify if everything is set up correctly, you can run the following:
+<Callout type="info">
+Every DocsGPT pod starts with a `check-secrets` init container. While `docsgpt-secrets` still holds a `REPLACE_ME` value, the pods stop in `Init:Error` or `Init:CrashLoopBackOff`, and the log names the keys to fix:
 
 ```sh
-kubectl get pods
-kubectl get services
+kubectl logs job/postgres-init -c check-secrets
 ```
+</Callout>
 
-Ensure that the pods are running and the services are available.
+## Storage
 
-## Accessing DocsGPT
+The API saves an upload, and the worker, in another pod, parses and indexes it. Both need the same files, and the index must survive pod restarts and be shared by every replica. Local disk inside a pod gives neither, so the manifests set `STORAGE_TYPE: s3` and `VECTOR_STORE: pgvector`.
 
-To access DocsGPT, you need to find the external IP address of the frontend service. You can do this by running:
+### Files: an S3-compatible bucket
 
-```sh
-kubectl get services/docsgpt-frontend-service | awk 'NR>1 {print "http://" $4}'
-```
+| Key | Value |
+| --- | --- |
+| `S3_BUCKET_NAME` | The bucket. Create it before deploying. |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Credentials for the bucket. To use the pod's cloud identity (EKS IRSA, GKE Workload Identity) instead, delete both lines. |
+| `S3_REGION` | The bucket's AWS region. Use `auto` for Cloudflare R2. |
+| `S3_ENDPOINT_URL` | For services other than AWS, for example `https://<account>.r2.cloudflarestorage.com` or your MinIO URL. |
+| `S3_PATH_STYLE` | `"true"` for most services other than AWS, including MinIO. |
+
+File and artifact downloads are streamed through the API (`URL_STRATEGY: backend`, the default). Agent images are the exception: the API redirects the browser to a short-lived presigned bucket URL, so browsers must be able to reach the bucket's endpoint to show them. The [S3 storage settings](/Deploying/DocsGPT-Settings#s3-storage-backend) list the bucket permissions DocsGPT needs.
+
+### Vectors: pgvector
+
+The bundled Postgres runs the `pgvector/pgvector` image, and pgvector uses the same database as `POSTGRES_URI`. To keep vectors in a managed Postgres with pgvector, set `PGVECTOR_CONNECTION_STRING` to it. To use Qdrant, apply `deployments/qdrant-deploy.yaml` and `services/qdrant-service.yaml`, and set `VECTOR_STORE: qdrant` and `QDRANT_URL: http://qdrant:6333`. The other stores and their settings are in the [settings reference](/Deploying/Settings-Reference#vector-stores).
+
+### Alternative: a shared volume
+
+If your cluster has a `ReadWriteMany` StorageClass (NFS, Amazon EFS, Azure Files, CephFS), you can keep files on it instead of in a bucket:
+
+1. In `docsgpt-secrets.yaml`, set `STORAGE_TYPE: local` and delete the `S3_*` lines.
+2. Create a `ReadWriteMany` PersistentVolumeClaim, and in `deployments/docsgpt-deploy.yaml` mount it on both the `docsgpt-api` and `docsgpt-worker` containers:
+
+   ```yaml
+   # in each container
+   volumeMounts:
+     - name: docsgpt-data
+       mountPath: /app/inputs
+       subPath: inputs
+     - name: docsgpt-data
+       mountPath: /app/indexes
+       subPath: indexes
+   # in each pod spec
+   securityContext:
+     fsGroup: 999   # the image's appuser; the volume must be writable by it
+   volumes:
+     - name: docsgpt-data
+       persistentVolumeClaim:
+         claimName: docsgpt-data
+   ```
+
+Keep `VECTOR_STORE: pgvector` with a shared volume.
+
+## Publish DocsGPT
+
+With no `AUTH_TYPE`, anyone who can reach DocsGPT uses it as the same user, with access to every conversation, source and connected service. Before you publish it:
+
+1. Set `AUTH_TYPE` in `docsgpt-secrets.yaml`. Use `oidc` for separate accounts, with `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_FRONTEND_URL` set to your public `https://` address; see [SSO with OIDC](/Deploying/OIDC-SSO) and the [Security checklist](/Deploying/Security).
+2. Apply the secret and restart the pods, which read it only when they start:
+
+   ```sh
+   kubectl apply -k deployment/k8s/
+   kubectl rollout restart deployment/docsgpt-api deployment/docsgpt-worker
+   ```
+
+3. Copy `deployment/k8s/ingress-example.yaml`, replace `docsgpt.example.com` with your host, set `ingressClassName` to your ingress controller, and provide the `docsgpt-tls` certificate (the file's comments cover cert-manager). Then apply it:
+
+   ```sh
+   kubectl apply -f ingress-example.yaml
+   ```
+
+The example's annotations are for ingress-nginx. They raise the request body limit for uploads and keep streamed answers open and unbuffered. Other controllers need the same two adjustments. The web UI calls the API on the host it was loaded from, so one host serves both.
+
+## Scaling and scheduled tasks
+
+You can raise `replicas` on `docsgpt-api` and `docsgpt-worker`. At least one worker must always run: it ingests documents, embeds every search query for the API, and runs the beat scheduler (`-B`). The scheduler fires scheduled agent runs, source syncs, reconciliation, cleanups and the version check. Running it on every worker replica is safe, because a lock in Redis lets only one of them schedule at a time.
+
+For heavy OCR parsing, run another worker Deployment with `-Q parsing` and the resources it needs.
+
+## Upgrading
+
+1. Change every `arc53/docsgpt:<version>` image in `deployments/docsgpt-deploy.yaml` and `jobs/postgres-init-job.yaml` to the new release, and read its notes in [Upgrading](/upgrading).
+2. Run the migration and roll the pods:
+
+   ```sh
+   kubectl delete job postgres-init --ignore-not-found
+   kubectl apply -k deployment/k8s/
+   kubectl wait --for=condition=complete job/postgres-init --timeout=300s
+   kubectl rollout status deployment/docsgpt-api
+   kubectl rollout status deployment/docsgpt-worker
+   ```
+
+A finished Job can't be changed, so `kubectl apply` alone leaves the old one in place and reports `field is immutable` for it. Deleting it first lets the new image run the migrations. The new API and worker pods wait for them, and the old pods keep serving until the new ones are ready.
+
+## Optional: code-execution sandbox
+
+The Artifact and Code Executor tools run code in a separate runner, `deployments/sandbox-deploy.yaml`. It is not part of the default stack. To enable it:
+
+1. Create the gateway token:
+
+   ```sh
+   kubectl create secret generic docsgpt-sandbox-gateway --from-literal=token="$(openssl rand -hex 32)"
+   ```
+
+2. Add the runner settings to both the `docsgpt-api` and `docsgpt-worker` containers in `deployments/docsgpt-deploy.yaml`, under `env:`:
+
+   ```yaml
+   - name: SANDBOX_GATEWAY_URL
+     value: "http://docsgpt-sandbox:8888"
+   - name: SANDBOX_KERNEL_NAME
+     value: "docsgpt-python"
+   - name: SANDBOX_GATEWAY_AUTH_TOKEN
+     valueFrom:
+       secretKeyRef:
+         name: docsgpt-sandbox-gateway
+         key: token
+   ```
+
+3. Apply the runner, its NetworkPolicy and the updated Deployments:
+
+   ```sh
+   kubectl apply -f deployment/k8s/deployments/sandbox-deploy.yaml
+   kubectl apply -f deployment/k8s/network-policies/sandbox-egress-policy.yaml
+   kubectl apply -k deployment/k8s/
+   ```
+
+The NetworkPolicy blocks the runner from private addresses and cloud metadata. It takes effect only with a network plugin that enforces NetworkPolicy, such as Calico or Cilium. All sessions share one runner pod and are separated only by working directory, so read the trust notes at the top of `sandbox-deploy.yaml` before offering the tools to users you don't trust. See [Artifacts and code execution](/Tools/artifacts-and-code-execution) for the tools themselves.
 
 ## Troubleshooting
 
-If you encounter any issues, you can check the logs of the pods for more details:
-
 ```sh
-kubectl logs <pod-name>
+kubectl get pods
+kubectl logs deployment/docsgpt-api
+kubectl logs deployment/docsgpt-worker
+kubectl logs job/postgres-init
 ```
 
-Replace `<pod-name>` with the actual name of your DocsGPT pod.
+| Symptom | Cause |
+| --- | --- |
+| Pods in `Init:Error` or `Init:CrashLoopBackOff` | A `REPLACE_ME` value is left. `kubectl logs <pod> -c check-secrets` names it. |
+| Pods stay in `Init` with `Waiting for job/postgres-init` in `kubectl logs <pod> -c wait-for-migrations` | The migration Job has not run for this image. Check `kubectl logs job/postgres-init`, or delete and re-apply the Job as in [Upgrading](#upgrading). |
+| Uploads fail to ingest | Check the worker log for S3 errors: bucket name, credentials, `S3_ENDPOINT_URL` and `S3_PATH_STYLE`. |
+| Answers ignore your documents after a long wait | No worker is consuming the `embeddings` queue. Check that the worker pod is running. |
