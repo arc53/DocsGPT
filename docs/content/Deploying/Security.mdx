@@ -57,7 +57,7 @@ Do not generate a new `ENCRYPTION_SECRET_KEY` over an existing one, or add one t
 
 ## Use HTTPS beyond a trusted network
 
-Tokens travel in the `Authorization` header, readable over plain HTTP. `docsgpt up --domain` and the standalone file's `https` profile run Caddy, which obtains and renews a certificate. Otherwise put your own TLS reverse proxy in front of port 7091, and point `API_URL`, `OIDC_FRONTEND_URL`, `OIDC_REDIRECT_URI` and `CONNECTOR_REDIRECT_BASE_URI` at the public HTTPS address. `API_URL` is where the links the backend hands out (agent images, webhooks, device pairing, MCP OAuth callbacks) point; `docsgpt up` sets it for `--domain` and `--expose network` unless you already set your own.
+Tokens travel in the `Authorization` header, readable over plain HTTP. `docsgpt up --domain` and the standalone file's `https` profile run Caddy, which obtains and renews a certificate. Otherwise put your own TLS reverse proxy in front of port 7091, and point `API_URL`, `OIDC_FRONTEND_URL`, `OIDC_REDIRECT_URI` and `CONNECTOR_REDIRECT_BASE_URI` at the public HTTPS address. `API_URL` is where the links the backend hands out (agent images, webhooks, device pairing, MCP OAuth callbacks) point; `docsgpt up` sets it for `--domain` and `--expose network` unless you already set your own. Where the API and the worker share one `.env` (a pip install, `docsgpt up --native`), also set `WORKER_API_URL=http://127.0.0.1:7091`, or the worker sends its calls, with `INTERNAL_KEY`, out through the public address and back.
 
 ## Outbound network access
 

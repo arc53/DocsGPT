@@ -72,7 +72,8 @@ the questions again.
 
 `docsgpt up` also sets `API_URL` in `.env` to the address it prints
 (`https://<domain>`, or `http://<this machine's address>:<port>` on the
-network), since the backend builds agent image, webhook, device pairing and MCP
+network; `http://localhost:<port>` for a local install on a port other than
+7091), since the backend builds agent image, webhook, device pairing and MCP
 OAuth callback links from it. It keeps a value you set yourself, such as the
 public address of your own reverse proxy.
 
@@ -315,8 +316,9 @@ services. Other machines open the API port, `http://<server-address>:7091`, whic
 serves the UI too; also set `API_URL` to that address (or your proxy's public
 `https://` address) in `.env` so the links the backend builds work from there.
 The worker keeps `http://backend:7091` from the Compose file. When the setup
-scripts expose DocsGPT, they ask for this address and write it. For a server, prefer `docsgpt up` or the standalone file, and follow
-the [security checklist](/Deploying/Security).
+scripts expose DocsGPT, they ask for this address and write it. For a server,
+prefer `docsgpt up` or the standalone file, and follow the
+[security checklist](/Deploying/Security).
 </Callout>
 
 1.  **Clone the DocsGPT Repository (if you haven't already):**

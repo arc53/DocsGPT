@@ -86,6 +86,8 @@ docsgpt worker     # in a second terminal: the Celery worker, with the scheduler
 
 `docsgpt api` listens on localhost only. Pass `--host 0.0.0.0` to accept connections from other machines or containers, and put a reverse proxy with TLS in front of it for anything public.
 
+When other machines open DocsGPT, set `API_URL` in `.env` to the address they use (for example `https://docs.example.com`): the API builds agent image, webhook, device pairing and MCP OAuth callback links from it. The worker reads the same `.env` and would then send its own calls to the API through that public address, so also set `WORKER_API_URL=http://127.0.0.1:7091` to keep them on this machine.
+
 The API applies pending migrations when it starts (`AUTO_MIGRATE`), so `docsgpt migrate` is the explicit step for deployments that want the schema in place before the first request or that run the API with a restricted database role.
 
 Both commands print the data home they resolved on start-up. They share it as long as `DOCSGPT_HOME` is the same for both (or unset), so the worker finds the files the API stores and the API finds the indexes the worker builds.
@@ -116,6 +118,8 @@ The same commands manage it:
 | `docsgpt logs [api\|worker]` | The service log files under `<stack>/logs` |
 | `docsgpt down` | Stops both services; settings stay |
 | `docsgpt uninstall [--purge]` | Removes the services; `--purge` also deletes the stack directory |
+
+`docsgpt up --native` sets `API_URL` and `WORKER_API_URL` to `http://127.0.0.1:<port>`. Behind a reverse proxy, change `API_URL` to the public address with `docsgpt env set API_URL=https://docs.example.com`; later runs keep it, and `WORKER_API_URL` keeps the worker on loopback.
 
 `uninstall` never touches the database or Redis: they were yours to begin with. `docsgpt restart`, `docsgpt env set` and `docsgpt doctor` work in native mode too; see the [CLI reference](/Deploying/cli).
 

@@ -85,9 +85,11 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`TTS_PROVIDER`**: Selects the text-to-speech provider behind the Speak button on answers: `google_tts` (default) or `elevenlabs`. Both are hosted services. Set it to `none` to switch text-to-speech off and hide the button.
 
-- **`SERVE_UI`**: Whether the API process serves the web UI shipped in the Python package (`pip install docsgpt`). Defaults to `true`; set `false` when a separate frontend, such as the Docker frontend image, serves the UI. Has no effect in the backend Docker image, which carries no UI build.
+- **`SERVE_UI`**: Whether the API process serves the web UI shipped in the Python package (`pip install docsgpt`). Defaults to `true`; the backend Docker image ships the same build, so it serves the UI on port 7091 too. Set `false` when a separate frontend, such as the `arc53/docsgpt-fe` image of the checkout Compose files, serves the UI.
 
 - **`API_URL`**: The address of the API, default `http://localhost:7091`. The worker calls the API at it to hand over finished indexes, and the API builds the agent image, agent webhook, device pairing and MCP OAuth callback links it gives to browsers and other clients from it. With Docker Compose the two need different values: the Compose files set the worker's to `http://backend:7091`, which takes precedence over `.env`, so `.env` sets the backend's. When other machines open DocsGPT, set it to the address they use (`http://<server-address>:7091`, or the public `https://` address behind a proxy). `docsgpt up` and the setup scripts write it when DocsGPT is exposed; see [Docker](/Deploying/Docker-Deploying#opening-it-from-other-machines) and [Kubernetes](/Deploying/Kubernetes-Deploying#publish-docsgpt).
+
+- **`WORKER_API_URL`**: The address the worker uses for its own calls into the API; unset, it falls back to `API_URL`. Set it when the API and the worker read one `.env` (a pip install, `docsgpt up --native`) and `API_URL` is a public address, so the worker's calls stay on the machine: `WORKER_API_URL=http://127.0.0.1:7091`. `docsgpt up --native` sets it. Docker Compose and the Kubernetes manifests give the worker its own `API_URL` instead, so leave it unset there.
 
 ## Configuration Examples
 
