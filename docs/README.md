@@ -1,51 +1,63 @@
-# nextra-docsgpt
+# DocsGPT documentation site
 
-## Setting Up Docs Folder of DocsGPT Locally
+The source of [docs.docsgpt.cloud](https://docs.docsgpt.cloud). It is a
+[Nextra 4](https://nextra.site) site on the Next.js App Router, installed with npm.
 
-### 1. Clone the DocsGPT repository:
+## Run it locally
+
+You need Node.js 20.9 or newer (Next.js 16's minimum); Node 22, the version the frontend
+uses, works.
 
 ```bash
 git clone https://github.com/arc53/DocsGPT.git
-```
-### 2. Navigate to the docs folder:
-
-```bash
 cd DocsGPT/docs
+npm install
+npm run dev      # http://localhost:3000, reloads as you edit
 ```
 
-The docs folder contains the markdown files that make up the documentation. The majority of the files are in the pages directory. Some notable files in this folder include:
-
-`index.mdx`: The main documentation file.
-`_app.js`: This file is used to customize the default Next.js application shell.
-`theme.config.jsx`: This file is for configuring the Nextra theme for the documentation.
-
-### 3. Verify that you have Node.js and npm installed in your system. You can check by running:
+Search is turned off in the dev server. To check a change the way it ships, build the
+site:
 
 ```bash
-node --version
-npm --version
+npm run build    # next build, then pagefind indexes the output for search
+npm run start    # serve the production build
 ```
 
-### 4. If not installed, download Node.js and npm from the respective official websites.
+Run `npm run build` before opening a PR that touches the docs: it fails on broken MDX.
 
-### 5. Once you have Node.js and npm running, proceed to install yarn - another package manager that helps to manage project dependencies:
+## Where things live
+
+- `content/`: the pages, as `.mdx` (or `.md`) files. A file's path is its URL:
+  `content/Deploying/Docker-Deploying.mdx` is served at `/Deploying/Docker-Deploying`.
+- `content/**/_meta.js`: the sidebar order and titles of each folder. Add an entry when you
+  add a page so it lands where you want it.
+- `app/layout.jsx`: the navbar, the banner, the footer and the page head.
+  `app/[[...mdxPath]]/page.jsx` renders every page.
+- `theme.config.jsx`: the Nextra theme options that `app/layout.jsx` passes on (edit links,
+  sidebar, table of contents).
+- `mdx-components.jsx` and `components/`: React components available to the pages.
+- `public/`: images and other static files, served from the site root. `public/llms.txt`
+  lists the pages for LLM readers; update it when you add, move or remove a page.
+- `next.config.js`: the Next.js config, including `redirects()`. When you move or delete a
+  page, add a permanent redirect from the old URL there.
+- `runbooks/`: operator notes that are not part of the site.
+
+## Generated pages
+
+`content/Deploying/Settings-Reference.mdx` is generated from the settings definitions in
+`docsgpt/core/settings/`. Don't edit it by hand. From the repository root, with the backend
+environment active:
 
 ```bash
-npm install --global yarn
+python -m docsgpt.core.settings.reference --write
 ```
 
-### 6. Install the project dependencies using yarn:
+## Style
+
+Prose is checked by [Vale](https://vale.sh) with the rules in `.github/styles`. CI runs it on
+pull requests that change Markdown and fails on errors. If you have Vale installed, run the same
+check from the repository root:
 
 ```bash
-yarn install
+vale --minAlertLevel=error docs
 ```
-
-### 7. After the successful installation of the project dependencies, start the local server:
-
-```bash
-yarn dev
-```
-
-- Now, you should be able to view the docs on your local environment by visiting `http://localhost:3000`. You can explore the different markdown files and make changes as you see fit.
-
-- **Footnotes:** This guide assumes you have Node.js and npm installed. The guide involves running a local server using yarn, and viewing the documentation offline. If you encounter any issues, it may be worth verifying your Node.js and npm installations and whether you have installed yarn correctly.
