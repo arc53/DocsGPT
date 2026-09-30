@@ -49,7 +49,6 @@ current.
 - `scripts/generate-llms.mjs`: the generator for `public/llms.txt`.
 - `next.config.js`: the Next.js config, including `redirects()`. When you move or delete a
   page, add a permanent redirect from the old URL there.
-- `runbooks/`: operator notes that are not part of the site.
 
 ## Generated pages
 
