@@ -451,12 +451,17 @@ function Configure-Auth {
 # The OIDC settings Configure-Oidc writes; choosing another mode removes them
 $script:OIDC_ENV_KEYS = @("OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_FRONTEND_URL", "OIDC_ADMIN_GROUPS")
 
-# Ask until the answer is not empty
+# Ask until the answer is not empty; stop the setup when input ends first
 function Read-Required {
     param([string]$Prompt)
     $answer = ""
     while ([string]::IsNullOrWhiteSpace($answer)) {
-        $answer = Read-Host $Prompt
+        # Read-Host returns $null when input ends, and throws in a non-interactive session.
+        try { $answer = Read-Host $Prompt } catch { $answer = $null }
+        if ($null -eq $answer) {
+            Write-ColorText "No answer for `"$Prompt`": input ended. Setup stopped." -ForegroundColor "Red"
+            exit 1
+        }
     }
     return $answer.Trim()
 }

@@ -317,11 +317,14 @@ configure_auth() {
 # The OIDC settings configure_oidc writes; choosing another mode removes them
 OIDC_ENV_KEYS="OIDC_ISSUER OIDC_CLIENT_ID OIDC_CLIENT_SECRET OIDC_FRONTEND_URL OIDC_ADMIN_GROUPS"
 
-# Ask until the answer is not empty
+# Ask until the answer is not empty; fails when input ends first (callers exit on that)
 read_required() {
     local prompt="$1" answer=""
     while [ -z "$answer" ]; do
-        read -p "$(echo -e "${DEFAULT_FG}${prompt}: ${NC}")" answer
+        if ! read -p "$(echo -e "${DEFAULT_FG}${prompt}: ${NC}")" answer; then
+            echo -e "\n${RED}No answer for \"${prompt}\": input ended. Setup stopped.${NC}" >&2
+            return 1
+        fi
     done
     echo "$answer"
 }
@@ -331,11 +334,11 @@ configure_oidc() {
     local issuer client_id client_secret frontend_url default_frontend admin_groups api_origin
     echo -e "\n${DEFAULT_FG}Register DocsGPT as an OAuth2/OpenID client (authorization code flow) at your identity provider${NC}"
     echo -e "${DEFAULT_FG}first. Guide: https://docs.docsgpt.cloud/Deploying/OIDC-SSO${NC}"
-    issuer=$(read_required "Issuer URL (e.g. https://auth.example.com/application/o/docsgpt/)")
-    client_id=$(read_required "Client ID")
+    issuer=$(read_required "Issuer URL (e.g. https://auth.example.com/application/o/docsgpt/)") || exit 1
+    client_id=$(read_required "Client ID") || exit 1
     read -p "$(echo -e "${DEFAULT_FG}Client secret (leave empty for a public client; PKCE is always used): ${NC}")" client_secret
     if grep -q "^DOCSGPT_BIND=0.0.0.0" "$ENV_FILE" 2>/dev/null; then
-        frontend_url=$(read_required "Address people open DocsGPT at (e.g. https://docs.example.com or http://192.168.1.10:7091)")
+        frontend_url=$(read_required "Address people open DocsGPT at (e.g. https://docs.example.com or http://192.168.1.10:7091)") || exit 1
     else
         default_frontend="http://localhost:5173"
         read -p "$(echo -e "${DEFAULT_FG}Address people open DocsGPT at (leave empty for ${default_frontend}): ${NC}")" frontend_url
