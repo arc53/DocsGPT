@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -271,6 +272,28 @@ def test_app_pods_wait_for_the_schema_their_image_needs(name: str) -> None:
     assert waiter["image"] == _main_container(name)["image"]
     script = " ".join(waiter["command"])
     assert "get_current_head" in script and "get_current_revision" in script
+
+
+@pytest.mark.parametrize("name", ["docsgpt-api", "docsgpt-worker"])
+def test_schema_wait_retries_a_database_url_it_cannot_parse(name: str, tmp_path: Path) -> None:
+    init = {c["name"]: c for c in _pod_spec(_named("Deployment", name))["initContainers"]}
+    script = init["wait-for-migrations"]["command"][-1]
+    env_file = tmp_path / ".env"
+    env_file.write_text("")
+    env = {"PATH": "/usr/bin:/bin", "POSTGRES_URI": "not a uri", "DOCSGPT_ENV_FILE": str(env_file)}
+    with pytest.raises(subprocess.TimeoutExpired) as waited:
+        subprocess.run(
+            [sys.executable, "-u", "-c", script],
+            env=env,
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    output = waited.value.stdout or ""
+    if isinstance(output, bytes):
+        output = output.decode()
+    assert "unreachable (ArgumentError)" in output
 
 
 def test_worker_runs_the_beat_scheduler() -> None:

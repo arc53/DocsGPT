@@ -98,9 +98,11 @@ spec:
             from docsgpt.core.settings import settings
 
             head = ScriptDirectory(str(Path(docsgpt.__file__).parent / "alembic")).get_current_head()
-            engine = create_engine(settings.POSTGRES_URI, pool_pre_ping=True)
+            engine = None
             while True:
                 try:
+                    if engine is None:
+                        engine = create_engine(settings.POSTGRES_URI, pool_pre_ping=True)
                     with engine.connect() as conn:
                         current = MigrationContext.configure(conn).get_current_revision()
                 except Exception as exc:
@@ -227,9 +229,11 @@ spec:
             from docsgpt.core.settings import settings
 
             head = ScriptDirectory(str(Path(docsgpt.__file__).parent / "alembic")).get_current_head()
-            engine = create_engine(settings.POSTGRES_URI, pool_pre_ping=True)
+            engine = None
             while True:
                 try:
+                    if engine is None:
+                        engine = create_engine(settings.POSTGRES_URI, pool_pre_ping=True)
                     with engine.connect() as conn:
                         current = MigrationContext.configure(conn).get_current_revision()
                 except Exception as exc:
