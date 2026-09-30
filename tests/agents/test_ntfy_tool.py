@@ -45,6 +45,28 @@ class TestNtfyExecuteAction:
         assert kwargs["data"] == b"Hello"
 
     @patch("docsgpt.agents.tools.ntfy.pinned_request")
+    def test_failed_send_reports_the_servers_reason(self, mock_pinned_request, tool):
+        from docsgpt.agents.tool_executor import result_status
+
+        mock_pinned_request.return_value = MagicMock(
+            status_code=403,
+            json=MagicMock(return_value={"code": 40301, "http": 403, "error": "forbidden"}),
+        )
+        result = tool.execute_action(
+            "ntfy_send_message", server_url="https://ntfy.sh", message="Hi", topic="t",
+        )
+
+        assert result["status"] == "error"
+        assert "forbidden" in result["error"]
+        assert result_status(result) == "error"
+
+    def test_unsafe_url_is_an_error(self, tool):
+        result = tool.execute_action(
+            "ntfy_send_message", server_url="http://127.0.0.1", message="Hi", topic="t",
+        )
+        assert result["status"] == "error"
+
+    @patch("docsgpt.agents.tools.ntfy.pinned_request")
     def test_send_with_title_and_priority(self, mock_pinned_request, tool):
         mock_resp = MagicMock()
         mock_resp.status_code = 200

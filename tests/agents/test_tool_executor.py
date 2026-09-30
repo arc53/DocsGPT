@@ -110,11 +110,64 @@ class TestToolExecutorGetTools:
         assert "tool1" in names
         assert "memory" in names
 
-    def test_agent_bound_chat_via_user_path_excludes_defaults(
+    def test_draft_agent_without_tools_gets_none_of_the_owners(
         self, pg_conn, monkeypatch
     ):
-        """``agent_id`` forces ``agents.tools``-only; no defaults synthesized."""
-        from docsgpt.agents.default_tools import loaded_default_tools
+        """A draft agent (no key) runs with its own empty toolset, not the owner's chat tools."""
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        UserToolsRepository(pg_conn).create(
+            user_id="alice", name="telegram", status=True
+        )
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="draft", status="draft", tools=[],
+        )
+        assert agent.get("key") is None
+        self._patch_conn(monkeypatch, pg_conn)
+
+        executor = ToolExecutor(user="alice", agent_id=str(agent["id"]))
+        assert executor.get_tools() == {}
+        assert executor.get_enabled_tool_names() == set()
+
+    def test_draft_agent_resolves_exactly_its_tools(self, pg_conn, monkeypatch):
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        repo = UserToolsRepository(pg_conn)
+        own = repo.create(user_id="alice", name="ntfy", status=True)
+        repo.create(user_id="alice", name="telegram", status=True)
+        scheduler_id = default_tool_id("scheduler")
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="draft", status="draft",
+            tools=[str(own["id"]), scheduler_id],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        chat = ToolExecutor(user="alice", agent_id=str(agent["id"])).get_tools()
+        assert {t["name"] for t in chat.values()} == {"ntfy", "scheduler"}
+        # Headless runs drop chat-only tools, same as a keyed agent.
+        headless = ToolExecutor(user="alice", agent_id=str(agent["id"]), headless=True).get_tools()
+        assert {t["name"] for t in headless.values()} == {"ntfy"}
+
+    def test_draft_agent_resolves_tools_as_its_owner(self, pg_conn, monkeypatch):
+        """A teammate running someone's draft gets the agent's tools, never their own."""
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        repo = UserToolsRepository(pg_conn)
+        owner_tool = repo.create(user_id="alice", name="ntfy", status=True)
+        repo.create(user_id="bob", name="telegram", status=True)
+        agent = AgentsRepository(pg_conn).create(
+            user_id="alice", name="draft", status="draft", tools=[str(owner_tool["id"])],
+        )
+        self._patch_conn(monkeypatch, pg_conn)
+
+        tools = ToolExecutor(user="bob", agent_id=str(agent["id"])).get_tools()
+        assert set(tools) == {str(owner_tool["id"])}
+
+    def test_unknown_agent_gets_no_tools(self, pg_conn, monkeypatch):
         from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 
         UserToolsRepository(pg_conn).create(
@@ -123,10 +176,7 @@ class TestToolExecutorGetTools:
         self._patch_conn(monkeypatch, pg_conn)
 
         executor = ToolExecutor(user="alice", agent_id="agent-x")
-        tools = executor.get_tools()
-        names = {t["name"] for t in tools.values()}
-        assert "tool1" in names
-        assert not (set(loaded_default_tools()) & names)
+        assert executor.get_tools() == {}
 
     def test_get_tools_defaults_to_local(self, pg_conn, monkeypatch):
         from docsgpt.agents.default_tools import loaded_default_tools
@@ -1313,6 +1363,23 @@ class TestToolExecutorExecute:
         tool_config = call_kwargs[1].get("tool_config", call_kwargs[0][1] if len(call_kwargs[0]) > 1 else {})
         assert tool_config.get("query_mode") is True
         assert tool_config.get("conversation_id") == "conv-123"
+
+    def test_mcp_tool_gets_its_stored_action_schemas(self, monkeypatch):
+        """The stored schemas carry the ``x-mcp-header`` annotations the tool sends headers for."""
+        executor = ToolExecutor(user="test_user")
+        mock_tm = Mock()
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm)
+        repo = {"type": "string", "x-mcp-header": "repo", "filled_by_llm": True, "value": ""}
+        tool_data = {
+            "id": "00000000-0000-0000-0000-000000000003",
+            "name": "mcp_tool",
+            "config": {},
+            "actions": [{"name": "issue_read", "parameters": {"properties": {"repo": repo}}}],
+        }
+
+        executor._get_or_load_tool(tool_data, "t1", "issue_read")
+        tool_config = mock_tm.load_tool.call_args.kwargs["tool_config"]
+        assert tool_config["action_schemas"] == {"issue_read": {"properties": {"repo": repo}}}
 
 
 # ---------------------------------------------------------------------------

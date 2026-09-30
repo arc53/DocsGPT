@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, TypeVar
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set, Tuple, TypeVar
 
 from flask import after_this_request
 
@@ -229,12 +229,177 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
     return primary, rows
 
 
+#: Agent types whose model searches sources on demand instead of reading a
+#: pre-fetched document block.
+SEARCHING_AGENT_TYPES = ("agentic", "research")
+
+
+def agent_prompt_id(prompt_id: Any, agent_type: Optional[str]) -> Any:
+    """The prompt a run of ``agent_type`` renders for ``prompt_id``.
+
+    Agentic and research agents get the agentic variant of a preset (search
+    tool guidance instead of a pre-fetched document block); custom prompt
+    ids pass through. A missing id is the default preset.
+    """
+    prompt_id = prompt_id or "default"
+    if agent_type in SEARCHING_AGENT_TYPES and prompt_id in ("default", "creative", "strict"):
+        return f"agentic_{prompt_id}"
+    return prompt_id
+
+
+def source_exposure(retrieval: Any) -> str:
+    """A source's exposure, defaulting to ``prefetch`` (D11)."""
+    value = getattr(retrieval, "exposure", None)
+    if value is None and isinstance(retrieval, dict):
+        value = retrieval.get("exposure")
+    return value or "prefetch"
+
+
+def per_source_list(all_sources: Optional[List[Dict[str, Any]]], exposure: Optional[str] = None) -> list:
+    """Each usable source as ``{"id", "retrieval"}``, optionally one exposure only.
+
+    Args:
+        all_sources: Source entries carrying ``id`` and ``retrieval``.
+        exposure: ``prefetch`` or ``agentic_tool`` to keep only matching
+            sources; None keeps them all.
+    """
+    entries = []
+    for entry in all_sources or []:
+        sid = entry.get("id")
+        if not sid or sid == "default":
+            continue
+        retrieval = entry.get("retrieval")
+        if exposure is not None and source_exposure(retrieval) != exposure:
+            continue
+        entries.append({"id": str(sid), "retrieval": retrieval})
+    return entries
+
+
+def source_for_docs(doc_ids: list) -> Dict[str, Any]:
+    """A retriever ``source`` dict scoped to ``doc_ids``."""
+    return {"active_docs": doc_ids} if doc_ids else {}
+
+
+class SourceUse(NamedTuple):
+    """How one run uses its agent's sources.
+
+    Attributes:
+        prefetch: Whether documents are pre-fetched into the prompt.
+        exposure: The exposure pre-fetch is scoped to; None means every source.
+        agentic_sources: The sources the ``internal_search`` tool is scoped
+            to; None gives an agentic or research agent every source and a
+            classic agent no search tool.
+    """
+
+    prefetch: bool
+    exposure: Optional[str]
+    agentic_sources: Optional[list]
+
+
+def plan_source_use(agent_type: Optional[str], agentic_sources: list) -> SourceUse:
+    """Decide pre-fetch and the search tool's scope from the ``agentic_tool`` sources (D11).
+
+    With no source opted into ``agentic_tool``, agentic and research agents
+    pre-fetch nothing and search every source on demand, while classic
+    agents pre-fetch every source and get no search tool. Otherwise both
+    pre-fetch the ``prefetch`` subset and search the ``agentic_tool`` subset.
+    """
+    if agentic_sources:
+        return SourceUse(True, "prefetch", agentic_sources)
+    if agent_type in SEARCHING_AGENT_TYPES:
+        return SourceUse(False, None, None)
+    return SourceUse(True, None, None)
+
+
+def internal_search_config(
+    agent_type: Optional[str],
+    agentic_sources: Optional[list],
+    all_sources: Optional[List[Dict[str, Any]]],
+    source: Dict[str, Any],
+    **settings_: Any,
+) -> Optional[Dict[str, Any]]:
+    """The ``retriever_config`` that gives a run its ``internal_search`` tool, or None.
+
+    Args:
+        agent_type: The agent's type.
+        agentic_sources: ``SourceUse.agentic_sources``.
+        all_sources: Every source entry of the run.
+        source: The run's retriever ``source`` dict, used when the tool
+            covers every source.
+        **settings_: Retriever, model and identity fields passed through to
+            the tool (``retriever_name``, ``chunks``, ``agent_id``, ...).
+    """
+    if agent_type not in SEARCHING_AGENT_TYPES and not agentic_sources:
+        return None
+    if agentic_sources is not None:
+        tool_sources = agentic_sources
+        tool_source = source_for_docs([entry["id"] for entry in tool_sources])
+    else:
+        tool_sources = per_source_list(all_sources)
+        tool_source = source
+    return {"source": tool_source, "sources": tool_sources, **settings_}
+
+
 def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
     """The owner id to write a wiki source as, when ``caller`` may edit it."""
     from docsgpt.api.user.resource_access import resolve
 
     ra = resolve(conn, "source", source_id, caller)
     return ra.owner_id if ra is not None and ra.can("edit") else None
+
+
+#: Agent types that build a tools_dict and so can carry the Wiki tool.
+WIKI_AGENT_TYPES = ("classic", "agentic", "research")
+
+
+def wiki_tool_config(
+    conn: Any,
+    source_ids: List[Any],
+    decoded_token: Optional[Dict[str, Any]],
+    *,
+    outside_caller: bool = False,
+    approval_required: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """The WikiTool config for the first wiki source the caller may edit, or None.
+
+    A source qualifies when its ``kind`` is ``wiki`` and the token's user may
+    ``edit`` it (owner or team editor; viewers get no tool), resolved live
+    through ``resource_access``. One writable wiki per run: the scan stops at
+    the first match.
+
+    Args:
+        conn: An open database connection.
+        source_ids: The run's source ids, in run order.
+        decoded_token: The principal the run acts as.
+        outside_caller: The run is for someone other than that principal
+            (API key, widget, webhook); it edits only when the wiki's owner
+            allows outside edits, otherwise it gets only ``wiki_view``.
+        approval_required: Every write waits for the caller's approval.
+    """
+    caller = (decoded_token or {}).get("sub")
+    if not caller:
+        return None
+    repo = SourcesRepository(conn)
+    for sid in source_ids:
+        if not sid or sid == "default":
+            continue
+        sid = str(sid)
+        owner = _wiki_write_owner(conn, sid, caller)
+        if not owner:
+            continue
+        source_doc = repo.get_any(sid, owner)
+        if not source_doc or SourceConfig.parse(source_doc.get("config")).kind != "wiki":
+            continue
+        return {
+            "source_id": str(source_doc["id"]),
+            "source_owner_id": owner,
+            "decoded_token": decoded_token,
+            "user": caller,
+            "outside_caller": outside_caller,
+            "writes_allowed": not outside_caller or outside_edits_allowed(source_doc),
+            "approval_required": approval_required,
+        }
+    return None
 
 
 T = TypeVar("T")
@@ -418,54 +583,19 @@ class StreamProcessor:
 
         agent_type = self.agent_config.get("agent_type", "classic")
 
-        # Agentic/research agents (D11): partition sources by exposure. With no
-        # source opting into ``agentic_tool`` the agent behaves exactly as today
-        # (no pre-fetch; the LLM searches all sources on demand). When at least
-        # one source is ``agentic_tool``, pre-fetch the ``prefetch`` subset into
-        # the prompt and expose only the ``agentic_tool`` subset via the search
-        # tool — one agent mixing both modes.
-        if agent_type in ("agentic", "research"):
-            _, agentic_sources = self._exposure_partition()
-            if agentic_sources:
-                docs_together, docs_list = self.pre_fetch_docs(
-                    question, exposure="prefetch"
-                )
-                tools_data = self.pre_fetch_tools()
-                return self.create_agent(
-                    docs_together=docs_together,
-                    docs=docs_list,
-                    tools_data=tools_data,
-                    agentic_sources=agentic_sources,
-                )
-            tools_data = self.pre_fetch_tools()
-            return self.create_agent(tools_data=tools_data)
-
-        # Classic agents (D11): partition sources by exposure. Pre-fetch the
-        # ``prefetch`` subset into the prompt and expose the ``agentic_tool``
-        # subset via the internal_search tool. ``agentic_sources`` is empty when
-        # no source opts into ``agentic_tool`` (the default) or when no
-        # per-source detail is known (single-source / no-config requests). In
-        # that case fall back to the unscoped pre-fetch and add no search tool —
-        # behavior is byte-identical to today's classic.
+        # Sources by exposure (D11), decided the same way for a headless run:
+        # see ``plan_source_use``.
         _, agentic_sources = self._exposure_partition()
-        if agentic_sources:
-            docs_together, docs_list = self.pre_fetch_docs(
-                question, exposure="prefetch"
-            )
-            tools_data = self.pre_fetch_tools()
-            return self.create_agent(
-                docs_together=docs_together,
-                docs=docs_list,
-                tools_data=tools_data,
-                agentic_sources=agentic_sources,
-            )
-
-        docs_together, docs_list = self.pre_fetch_docs(question)
+        use = plan_source_use(agent_type, agentic_sources)
+        docs_together, docs_list = None, None
+        if use.prefetch:
+            docs_together, docs_list = self.pre_fetch_docs(question, exposure=use.exposure)
         tools_data = self.pre_fetch_tools()
         return self.create_agent(
             docs_together=docs_together,
             docs=docs_list,
             tools_data=tools_data,
+            agentic_sources=use.agentic_sources,
         )
 
     @_traced_setup
@@ -785,9 +915,8 @@ class StreamProcessor:
             if not (is_owner or is_shared_with_user or is_team_shared):
                 raise Exception("Unauthorized access to the agent")
             self.public_link_usage = not (is_owner or is_team_shared)
-            # Authorized. Keep the row so _configure_agent can read fields that
-            # do not depend on an API key — a draft agent has key = NULL, and
-            # the builder preview runs exactly that path.
+            # Authorized. Keep the row so _configure_agent can run a draft
+            # agent, which has key = NULL, from it.
             self._authorized_agent_row = agent
             if is_owner:
                 now = datetime.datetime.now(datetime.timezone.utc)
@@ -817,16 +946,25 @@ class StreamProcessor:
             agent = AgentsRepository(conn).find_by_key(api_key)
             if not agent:
                 raise Exception("Invalid API Key, please generate a new key", 401)
-            # The repo dict uses "user_id" — the streaming path expects
-            # a "user" key (legacy Mongo shape) for identity propagation.
-            data: Dict[str, Any] = dict(agent)
-            data["user"] = agent.get("user_id")
+            return self._agent_run_data(conn, agent)
 
-            # Active sources = primary ∪ extras, primary first, deduplicated.
-            # ``_configure_source`` ignores an empty ``data["sources"]``,
-            # so the primary must appear in the union too — not only in
-            # the legacy ``data["source"]`` slot.
-            primary, source_docs = authorized_agent_sources(conn, agent)
+    def _agent_run_data(self, conn: Any, agent: Dict[str, Any]) -> Dict[str, Any]:
+        """An agent row as the run reads it: owner identity plus the unioned source set.
+
+        Args:
+            conn: An open database connection.
+            agent: The authorized ``agents`` row, keyed or a keyless draft.
+        """
+        # The repo dict uses "user_id" — the streaming path expects
+        # a "user" key (legacy Mongo shape) for identity propagation.
+        data: Dict[str, Any] = dict(agent)
+        data["user"] = agent.get("user_id")
+
+        # Active sources = primary ∪ extras, primary first, deduplicated.
+        # ``_configure_source`` ignores an empty ``data["sources"]``,
+        # so the primary must appear in the union too — not only in
+        # the legacy ``data["source"]`` slot.
+        primary, source_docs = authorized_agent_sources(conn, agent)
         # ``sources`` row may have NULL ``retriever``/``chunks`` — fall back to
         # the agent's value (``dict.get`` returns None even when the key
         # exists with value None). The primary's own values win for the agent.
@@ -1041,9 +1179,17 @@ class StreamProcessor:
 
         # Determine the effective API key (explicit > agent-derived)
         effective_key = self.data.get("api_key") or self.agent_key
+        # A draft agent has no key yet but is still that agent: its prompt,
+        # model, type, sources and tools, read from the row _get_agent_key
+        # already authorized.
+        draft_row = None if effective_key else getattr(self, "_authorized_agent_row", None)
 
-        if effective_key:
-            self._agent_data = self._get_data_from_api_key(effective_key)
+        if effective_key or draft_row:
+            if effective_key:
+                self._agent_data = self._get_data_from_api_key(effective_key)
+            else:
+                with db_readonly() as conn:
+                    self._agent_data = self._agent_run_data(conn, draft_row)
             if self._agent_data.get("_id"):
                 self.agent_id = str(self._agent_data.get("_id"))
 
@@ -1103,13 +1249,7 @@ class StreamProcessor:
                 self.agent_config["workflow"] = str(wf_ref)
                 self.agent_config["workflow_owner"] = self._agent_data.get("user")
         else:
-            # No API key — default/workflow configuration. A draft agent still
-            # has a behavior contract, and the builder preview is the one place
-            # an operator would try a guardrail before publishing, so load it
-            # from the row _get_agent_key already authorized.
-            row = getattr(self, "_authorized_agent_row", None)
-            if row:
-                self.agent_config["config"] = row.get("config") or {}
+            # No agent — default/workflow configuration.
             agent_type = settings.AGENT_NAME
             if self.data.get("workflow") and isinstance(
                 self.data.get("workflow"), dict
@@ -1223,9 +1363,10 @@ class StreamProcessor:
             "doc_token_limit": doc_token_limit,
         }
 
-        # isNoneDoc without an API key forces no retrieval (agentless only)
-        api_key = self.data.get("api_key") or self.agent_key
-        if not api_key and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
+        # isNoneDoc forces no retrieval on an agentless chat only; an agent,
+        # keyed or draft, searches its own sources.
+        agent_bound = bool(self.data.get("api_key") or self.agent_key or self._agent_data is not None)
+        if not agent_bound and "isNoneDoc" in self.data and self.data["isNoneDoc"]:
             self.retriever_config["chunks"] = 0
 
     def _build_per_source_list(self, exposure: Optional[str] = None) -> list:
@@ -1240,34 +1381,18 @@ class StreamProcessor:
                 sources whose resolved ``retrieval.exposure`` matches; a missing
                 config defaults to ``prefetch``. When None, include all sources.
         """
-        per_source = []
-        for entry in self.all_sources or []:
-            sid = entry.get("id")
-            if not sid or sid == "default":
-                continue
-            retrieval = entry.get("retrieval")
-            if exposure is not None and self._exposure_of(retrieval) != exposure:
-                continue
-            per_source.append({"id": str(sid), "retrieval": retrieval})
-        return per_source
+        return per_source_list(self.all_sources, exposure)
 
     @staticmethod
     def _exposure_of(retrieval) -> str:
         """Resolve a source's exposure, defaulting to ``prefetch`` (D11)."""
-        value = getattr(retrieval, "exposure", None)
-        if value is None and isinstance(retrieval, dict):
-            value = retrieval.get("exposure")
-        return value or "prefetch"
+        return source_exposure(retrieval)
 
     def _build_wiki_config(self) -> Optional[Dict[str, Any]]:
         """Resolve the WikiTool config for the first writable wiki source.
 
-        A source qualifies when ``SourceConfig.parse(config).kind == "wiki"`` and
-        the principal may ``edit`` it (owner or team editor; viewers get no
-        tool) — resolved live through ``resource_access``. v1 supports one
-        writable wiki source; the first match wins and the scan stops there so
-        this runs at most one owner+source lookup per chat on the hot path.
-        Returns None when no writable wiki source is present.
+        See :func:`wiki_tool_config`. Returns None when no writable wiki
+        source is present.
 
         An API-key or widget run (``outside_caller``) acts as the agent's
         owner, so it gets the edit actions only when the wiki's owner turned
@@ -1278,53 +1403,29 @@ class StreamProcessor:
         approval (``approval_required``), so the agent's prompt or sources
         can't steer the model into changing their wiki unasked.
         """
-        caller = self.decoded_token.get("sub") if self.decoded_token else None
-        if not caller:
+        if not (self.decoded_token or {}).get("sub"):
             return None
         # Processors built without __init__ (tests, resume helpers) lack these.
         run_config = getattr(self, "agent_config", None) or {}
         outside_caller = bool(
             run_config.get("external_api_caller") or getattr(self, "external_caller", False)
         )
-        approval_required = bool(run_config.get("public_link_caller"))
-
-        wiki_config: Optional[Dict[str, Any]] = None
         try:
             with db_readonly() as conn:
-                repo = SourcesRepository(conn)
-                for entry in self.all_sources or []:
-                    sid = entry.get("id")
-                    if not sid or sid == "default":
-                        continue
-                    sid = str(sid)
-                    owner = _wiki_write_owner(conn, sid, caller)
-                    if not owner:
-                        continue
-                    source_doc = repo.get_any(sid, owner)
-                    if not source_doc:
-                        continue
-                    if SourceConfig.parse(source_doc.get("config")).kind != "wiki":
-                        continue
-                    wiki_config = {
-                        "source_id": str(source_doc["id"]),
-                        "source_owner_id": owner,
-                        "decoded_token": self.decoded_token,
-                        "user": caller,
-                        "outside_caller": outside_caller,
-                        "writes_allowed": not outside_caller or outside_edits_allowed(source_doc),
-                        "approval_required": approval_required,
-                    }
-                    break
+                return wiki_tool_config(
+                    conn,
+                    [entry.get("id") for entry in self.all_sources or []],
+                    self.decoded_token,
+                    outside_caller=outside_caller,
+                    approval_required=bool(run_config.get("public_link_caller")),
+                )
         except Exception:
             logger.exception("Failed to resolve wiki tool config")
             return None
-        return wiki_config
 
     def _source_for_docs(self, doc_ids: list) -> Dict[str, Any]:
         """Build a ClassicRAG-style source dict scoped to ``doc_ids``."""
-        if not doc_ids:
-            return {}
-        return {"active_docs": doc_ids}
+        return source_for_docs(doc_ids)
 
     def _exposure_partition(self) -> tuple[list, list]:
         """Split the per-source list into (prefetch, agentic_tool) subsets.
@@ -1673,16 +1774,9 @@ class StreamProcessor:
         if not isinstance(self.agent_config, dict):
             return None
         # PG ``agents.prompt_id`` is NULL for agents that never chose a
-        # prompt — treat missing/empty as the default preset so the
-        # agentic swap below still applies.
-        prompt_id = self.agent_config.get("prompt_id") or "default"
-        # Agentic/research agents use the agentic preset variants (search
-        # tool guidance instead of a pre-fetched document block); custom
-        # prompt ids pass through unchanged.
-        if self.agent_config.get("agent_type") in ("agentic", "research") and (
-            prompt_id in ("default", "creative", "strict")
-        ):
-            prompt_id = f"agentic_{prompt_id}"
+        # prompt; ``agent_prompt_id`` reads that as the default preset, with
+        # the agentic swap applied.
+        prompt_id = agent_prompt_id(self.agent_config.get("prompt_id"), self.agent_config.get("agent_type"))
         try:
             content = get_prompt(prompt_id, self.prompts_collection)
             self._prompt_content, self._persona = resolve_prompt_skeleton(
@@ -2089,57 +2183,38 @@ class StreamProcessor:
         # Wiki tool injection + authz: only for agent types that build a
         # tools_dict (classic/agentic/research), and only when a writable wiki
         # source is present for the principal (viewers get nothing).
-        if agent_type in ("classic", "agentic", "research"):
+        if agent_type in WIKI_AGENT_TYPES:
             wiki_config = self._build_wiki_config()
             if wiki_config:
                 agent_kwargs["wiki_config"] = wiki_config
 
         # Type-specific kwargs
         # D11: agentic/research always carry a retriever_config; classic carries
-        # one only when an ``agentic_tool`` subset is supplied. A default classic
-        # agent (``agentic_sources is None``) gets NO retriever_config, so
-        # ClassicAgent adds no internal_search tool and stays today's behavior.
-        if agent_type in ("agentic", "research") or agentic_sources:
-            # When an ``agentic_tool`` subset is supplied, scope the search tool
-            # to it; otherwise (agentic/research only) the tool exposes every
-            # source (today's behavior). ``tool_sources`` drives both the source
-            # dict and the per-source dispatch list the InternalSearchTool uses.
-            tool_sources = (
-                agentic_sources
-                if agentic_sources is not None
-                else self._build_per_source_list()
-            )
-            if agentic_sources is not None:
-                agentic_source = self._source_for_docs(
-                    [e["id"] for e in tool_sources]
-                )
-            else:
-                agentic_source = self.source
-            agent_kwargs["retriever_config"] = {
-                "source": agentic_source,
-                "retriever_name": self.retriever_config.get(
-                    "retriever_name", "classic"
-                ),
-                "chunks": self.retriever_config.get("chunks", 6),
-                "doc_token_limit": self.retriever_config.get(
-                    "doc_token_limit", 50000
-                ),
-                # Per-source list so on-demand agentic search dispatches each
-                # source to its configured retriever, matching pre-fetch.
-                "sources": tool_sources,
-                "model_id": self.model_id,
-                "model_user_id": self.model_user_id,
-                # Agent owner — internal_search resolves the agent's sources as
-                # their owner so a team member running a shared agent can read
-                # nested-source structure (the sources aren't theirs).
-                "source_owner_id": self.agent_config.get("user_id"),
-                "user_api_key": self.agent_config["user_api_key"],
-                "agent_id": self.agent_id,
-                "llm_name": provider or settings.LLM_PROVIDER,
-                "api_key": system_api_key,
-                "decoded_token": self.decoded_token,
-                "request_id": self.request_id or self.data.get("request_id"),
-            }
+        # one only when an ``agentic_tool`` subset is supplied, so a default
+        # classic agent adds no internal_search tool.
+        retriever_config = internal_search_config(
+            agent_type,
+            agentic_sources,
+            self.all_sources,
+            self.source,
+            retriever_name=self.retriever_config.get("retriever_name", "classic"),
+            chunks=self.retriever_config.get("chunks", 6),
+            doc_token_limit=self.retriever_config.get("doc_token_limit", 50000),
+            model_id=self.model_id,
+            model_user_id=self.model_user_id,
+            # Agent owner — internal_search resolves the agent's sources as
+            # their owner so a team member running a shared agent can read
+            # nested-source structure (the sources aren't theirs).
+            source_owner_id=self.agent_config.get("user_id"),
+            user_api_key=self.agent_config["user_api_key"],
+            agent_id=self.agent_id,
+            llm_name=provider or settings.LLM_PROVIDER,
+            api_key=system_api_key,
+            decoded_token=self.decoded_token,
+            request_id=self.request_id or self.data.get("request_id"),
+        )
+        if retriever_config is not None:
+            agent_kwargs["retriever_config"] = retriever_config
 
         elif agent_type == "workflow":
             workflow_config = self.agent_config.get("workflow")
