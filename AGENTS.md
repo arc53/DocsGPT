@@ -81,9 +81,9 @@ artifact downloads don't. Use `flask run` only when you don't need them.
 this list is the "ASGI-only features" section of
 `docs/content/Deploying/Development-Environment.mdx`; keep the two in step.
 
-Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same
-`docsgpt.asgi:asgi_app` target; see `docsgpt/Dockerfile` for the
-full flag set.
+Production uses `gunicorn -k docsgpt.gunicorn_worker.BoundedDrainUvicornWorker`
+against the same `docsgpt.asgi:asgi_app` target; see `docsgpt/Dockerfile` for
+the full flag set.
 
 Run the Celery worker, with the embedded beat scheduler (`-B`), in a separate
 terminal:

@@ -19,14 +19,13 @@ You can find the `docker-compose-dev.yaml` file [here](https://github.com/arc53/
 
 1.  Navigate to the root directory of your DocsGPT repository in your terminal.
 
-2.  Run the following commands to build and start the containers defined in `docker-compose-dev.yaml`:
+2.  Run the following command to start the containers defined in `docker-compose-dev.yaml`:
 
     ```bash
-    docker compose -f deployment/docker-compose-dev.yaml build
     docker compose -f deployment/docker-compose-dev.yaml up -d
     ```
 
-    These commands will start Postgres and Redis in detached mode, running in the background. When the Flask backend boots against the fresh Postgres instance, it will automatically create the database (if missing) and apply the current Alembic schema.
+    This starts Postgres and Redis in detached mode, running in the background. When the API boots against the fresh Postgres instance, it will automatically create the database (if missing) and apply the current Alembic schema.
 
 <Callout type="info" emoji="ℹ️">
   MongoDB is no longer required for a default DocsGPT install. If you
@@ -152,7 +151,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     uvicorn docsgpt.asgi:asgi_app --host 0.0.0.0 --port 7091 --reload
     ```
 
-    This makes the backend accessible on `http://localhost:7091`. Production uses `gunicorn -k uvicorn_worker.UvicornWorker` against the same `docsgpt.asgi:asgi_app` target.
+    This makes the backend accessible on `http://localhost:7091`. Production uses `gunicorn -k docsgpt.gunicorn_worker.BoundedDrainUvicornWorker` against the same `docsgpt.asgi:asgi_app` target; `docsgpt/Dockerfile` has the full command.
 
     A plain Flask run is a faster inner loop (quick startup, the Werkzeug interactive debugger):
 
