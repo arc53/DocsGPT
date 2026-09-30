@@ -281,7 +281,7 @@ Open an agent's **Logs** page. Below the usage logs, the **Guardrail activity** 
 | `GET /api/guardrails/events?agent_id=<id>&limit=100&offset=0` | Decisions for one agent, newest first. `limit` is capped at 500. |
 | `GET /api/guardrails/summary?days=30&agent_id=<id>` | Totals and a `breakdown` grouped by check, stage, action, outcome and category. `agent_id` is optional; `days` is capped at 365. |
 
-All three require a user token. Event rows are scoped to the **requesting user**: on a shared agent you see the decisions made on your own conversations, not other members'. Responses never include the agent's API key or the matched text.
+All three require a user token. `events`, and `summary` with an `agent_id`, need log access to the agent and read rows as the **agent owner's**: team members with log access (editors, or viewers when **Viewers can see logs** is on) see what the owner sees, not the decisions from other members' own chats. Callers without log access get `403`. `summary` without `agent_id` covers only your own activity. Responses never include the agent's API key or the matched text.
 
 ### What is stored, and for how long
 
