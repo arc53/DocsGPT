@@ -47,6 +47,10 @@ export default {
     "title": "☸️ Deploying on Kubernetes",
     "href": "/Deploying/Kubernetes-Deploying"
   },
+  "Sandbox": {
+    "title": "🧪 Code Execution Sandbox",
+    "href": "/Deploying/Sandbox"
+  },
   "Air-Gapped": {
     "title": "🔒 Air-Gapped Deployment",
     "href": "/Deploying/Air-Gapped"
