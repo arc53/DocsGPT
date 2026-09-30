@@ -475,7 +475,11 @@ function Configure-Oidc {
     $client_id = Read-Required "Client ID"
     $client_secret = Read-Host "Client secret (leave empty for a public client; PKCE is always used)"
     $content = if (Test-Path $ENV_FILE) { Get-Content $ENV_FILE -Raw } else { "" }
-    if ($content -match "(?m)^DOCSGPT_BIND=0\.0\.0\.0") {
+    $api_url = Get-PreviousEnvValue "API_URL"
+    if (-not [string]::IsNullOrEmpty($api_url)) {
+        $frontend_url = Read-Host "Address people open DocsGPT at (leave empty for $api_url)"
+        if ([string]::IsNullOrWhiteSpace($frontend_url)) { $frontend_url = $api_url }
+    } elseif ($content -match "(?m)^DOCSGPT_BIND=0\.0\.0\.0") {
         $frontend_url = Read-Required "Address people open DocsGPT at (e.g. https://docs.example.com or http://192.168.1.10:7091)"
     } else {
         $frontend_url = Read-Host "Address people open DocsGPT at (leave empty for http://localhost:5173)"
@@ -678,6 +682,21 @@ function Ensure-EncryptionKey {
     }
 }
 
+# This machine's address on its network (the one a default route leaves from), or "localhost"
+function Get-LanIp {
+    try {
+        $probe = New-Object System.Net.Sockets.Socket([System.Net.Sockets.AddressFamily]::InterNetwork, [System.Net.Sockets.SocketType]::Dgram, [System.Net.Sockets.ProtocolType]::Udp)
+        try {
+            $probe.Connect("192.0.2.1", 80)
+            return $probe.LocalEndPoint.Address.ToString()
+        } finally {
+            $probe.Dispose()
+        }
+    } catch {
+        return "localhost"
+    }
+}
+
 # Ask whether other machines may reach DocsGPT; by default its ports are bound to 127.0.0.1
 function Configure-NetworkAccess {
     Write-Host ""
@@ -687,12 +706,19 @@ function Configure-NetworkAccess {
         return
     }
     "DOCSGPT_BIND=0.0.0.0" | Add-Content -Path $ENV_FILE -Encoding utf8
+    # The backend builds agent image, webhook, device pairing and MCP OAuth callback URLs from API_URL,
+    # which otherwise points at localhost. The worker keeps http://backend:7091 from the compose file.
+    $default_api_url = if ([string]::IsNullOrEmpty($script:PREVIOUS_API_URL)) { "http://$(Get-LanIp):7091" } else { $script:PREVIOUS_API_URL }
+    $api_url = Read-Host "Address other machines open DocsGPT at (leave empty for $default_api_url)"
+    if ([string]::IsNullOrWhiteSpace($api_url)) { $api_url = $default_api_url }
+    $api_url = $api_url.Trim().TrimEnd("/")
+    "API_URL=$api_url" | Add-Content -Path $ENV_FILE -Encoding utf8
     Write-Host ""
     Write-ColorText "Warning: anyone who can reach this machine can use DocsGPT and your model API key." -ForegroundColor "Yellow" -Bold
     Write-ColorText "Without authentication there is no sign-in: every visitor shares one account, with its documents," -ForegroundColor "Yellow"
     Write-ColorText "agents and connected services. Traffic is plain HTTP, so put a TLS proxy in front of it outside a" -ForegroundColor "Yellow"
     Write-ColorText "trusted network. Checklist: https://docs.docsgpt.cloud/Deploying/Security" -ForegroundColor "Yellow"
-    Write-ColorText "From other machines, open http://<this machine's address>:7091 (the UI on 5173 calls the API on localhost)." -ForegroundColor "White"
+    Write-ColorText "From other machines, open $api_url (the UI on 5173 calls the API on localhost)." -ForegroundColor "White"
     Write-Host ""
     $auth_now = Read-Host "Set up authentication now? (Y/n)"
     if ($auth_now -eq "n" -or $auth_now -eq "N") {
@@ -1213,6 +1239,7 @@ function Get-PreviousEnvValue {
 $script:PREVIOUS_ENCRYPTION_KEY = ""
 $script:PREVIOUS_JWT_SECRET_KEY = ""
 $script:PREVIOUS_INTERNAL_KEY = ""
+$script:PREVIOUS_API_URL = ""
 $script:HAD_ENV_FILE = $false
 if ((Test-Path $ENV_FILE) -and ((Get-Item $ENV_FILE).Length -gt 0)) {
     $script:HAD_ENV_FILE = $true
@@ -1221,6 +1248,8 @@ if ((Test-Path $ENV_FILE) -and ((Get-Item $ENV_FILE).Length -gt 0)) {
     $script:PREVIOUS_ENCRYPTION_KEY = Get-PreviousEnvValue "ENCRYPTION_SECRET_KEY"
     $script:PREVIOUS_JWT_SECRET_KEY = Get-PreviousEnvValue "JWT_SECRET_KEY"
     $script:PREVIOUS_INTERNAL_KEY = Get-PreviousEnvValue "INTERNAL_KEY"
+    # Offered again as the public address if DocsGPT is exposed on this run too.
+    $script:PREVIOUS_API_URL = Get-PreviousEnvValue "API_URL"
     Write-Host ""
     Write-ColorText "Warning: An existing .env file was found with the following settings:" -ForegroundColor "Yellow" -Bold
     $envLines = Get-Content $ENV_FILE

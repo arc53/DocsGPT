@@ -337,7 +337,11 @@ configure_oidc() {
     issuer=$(read_required "Issuer URL (e.g. https://auth.example.com/application/o/docsgpt/)") || exit 1
     client_id=$(read_required "Client ID") || exit 1
     read -p "$(echo -e "${DEFAULT_FG}Client secret (leave empty for a public client; PKCE is always used): ${NC}")" client_secret
-    if grep -q "^DOCSGPT_BIND=0.0.0.0" "$ENV_FILE" 2>/dev/null; then
+    if grep -q "^API_URL=" "$ENV_FILE" 2>/dev/null; then
+        default_frontend=$(grep "^API_URL=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)
+        read -p "$(echo -e "${DEFAULT_FG}Address people open DocsGPT at (leave empty for ${default_frontend}): ${NC}")" frontend_url
+        frontend_url="${frontend_url:-$default_frontend}"
+    elif grep -q "^DOCSGPT_BIND=0.0.0.0" "$ENV_FILE" 2>/dev/null; then
         frontend_url=$(read_required "Address people open DocsGPT at (e.g. https://docs.example.com or http://192.168.1.10:7091)") || exit 1
     else
         default_frontend="http://localhost:5173"
@@ -531,9 +535,24 @@ ensure_encryption_key() {
     fi
 }
 
+# This machine's address on its network (the one a default route leaves from), or "localhost"
+detect_lan_ip() {
+    local ip=""
+    if command -v ip >/dev/null 2>&1; then
+        ip=$(ip route get 192.0.2.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "src") { print $(i + 1); exit }}')
+    fi
+    if [ -z "$ip" ] && command -v ipconfig >/dev/null 2>&1; then
+        ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null)
+    fi
+    if [ -z "$ip" ] && command -v hostname >/dev/null 2>&1; then
+        ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    echo "${ip:-localhost}"
+}
+
 # Ask whether other machines may reach DocsGPT; by default its ports are bound to 127.0.0.1
 configure_network_access() {
-    local expose_network auth_now
+    local expose_network auth_now default_api_url api_url
     echo
     echo -e "${DEFAULT_FG}DocsGPT is reachable from this computer only (its ports are bound to 127.0.0.1).${NC}"
     read -p "$(echo -e "${DEFAULT_FG}Make it reachable from other machines on your network? (y/N): ${NC}")" expose_network
@@ -541,11 +560,18 @@ configure_network_access() {
         return
     fi
     echo "DOCSGPT_BIND=0.0.0.0" >> "$ENV_FILE"
+    # The backend builds agent image, webhook, device pairing and MCP OAuth callback URLs from API_URL,
+    # which otherwise points at localhost. The worker keeps http://backend:7091 from the compose file.
+    default_api_url="${PREVIOUS_API_URL:-http://$(detect_lan_ip):7091}"
+    read -p "$(echo -e "${DEFAULT_FG}Address other machines open DocsGPT at (leave empty for ${default_api_url}): ${NC}")" api_url
+    api_url="${api_url:-$default_api_url}"
+    api_url="${api_url%/}"
+    echo "API_URL=$api_url" >> "$ENV_FILE"
     echo -e "\n${YELLOW}${BOLD}Warning:${NC}${YELLOW} anyone who can reach this machine can use DocsGPT and your model API key.${NC}"
     echo -e "${YELLOW}Without authentication there is no sign-in: every visitor shares one account, with its documents,${NC}"
     echo -e "${YELLOW}agents and connected services. Traffic is plain HTTP, so put a TLS proxy in front of it outside a${NC}"
     echo -e "${YELLOW}trusted network. Checklist: https://docs.docsgpt.cloud/Deploying/Security${NC}"
-    echo -e "${DEFAULT_FG}From other machines, open http://<this machine's address>:7091 (the UI on 5173 calls the API on localhost).${NC}"
+    echo -e "${DEFAULT_FG}From other machines, open ${api_url} (the UI on 5173 calls the API on localhost).${NC}"
     echo
     read -p "$(echo -e "${DEFAULT_FG}Set up authentication now? (Y/n): ${NC}")" auth_now
     if [[ "$auth_now" =~ ^[nN]$ ]]; then
@@ -910,6 +936,7 @@ animate_dino
 PREVIOUS_ENCRYPTION_KEY=""
 PREVIOUS_JWT_SECRET_KEY=""
 PREVIOUS_INTERNAL_KEY=""
+PREVIOUS_API_URL=""
 HAD_ENV_FILE=0
 if [ -f "$ENV_FILE" ] && [ -s "$ENV_FILE" ]; then
     HAD_ENV_FILE=1
@@ -918,6 +945,8 @@ if [ -f "$ENV_FILE" ] && [ -s "$ENV_FILE" ]; then
     PREVIOUS_ENCRYPTION_KEY=$(grep "^ENCRYPTION_SECRET_KEY=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)
     PREVIOUS_JWT_SECRET_KEY=$(grep "^JWT_SECRET_KEY=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)
     PREVIOUS_INTERNAL_KEY=$(grep "^INTERNAL_KEY=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)
+    # Offered again as the public address if DocsGPT is exposed on this run too.
+    PREVIOUS_API_URL=$(grep "^API_URL=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-)
     echo -e "\n${YELLOW}${BOLD}Warning:${NC}${YELLOW} An existing .env file was found with the following settings:${NC}"
     head -3 "$ENV_FILE" | while IFS= read -r line; do echo -e "${DEFAULT_FG}  $line${NC}"; done
     total_lines=$(wc -l < "$ENV_FILE")
