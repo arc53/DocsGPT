@@ -76,8 +76,18 @@ class NtfyTool(Tool):
                 "POST", url, data=data, headers=headers, timeout=100,
             )
         except UnsafeUserUrlError as e:
-            return {"status_code": None, "message": f"URL validation error: {e}"}
-        return {"status_code": response.status_code, "message": "Message sent"}
+            return {"status": "error", "status_code": None, "error": f"URL validation error: {e}"}
+        if 200 <= response.status_code < 300:
+            return {"status_code": response.status_code, "message": "Message sent"}
+        try:
+            reason = response.json().get("error")
+        except (ValueError, AttributeError):
+            reason = None
+        return {
+            "status": "error",
+            "status_code": response.status_code,
+            "error": f"ntfy refused the message (HTTP {response.status_code}): {reason or 'no reason given'}",
+        }
 
     def get_actions_metadata(self):
         """

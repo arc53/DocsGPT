@@ -28,6 +28,22 @@ class TelegramTool(Tool):
             ),
         }
 
+    @staticmethod
+    def _result(response, sent_message):
+        """``sent_message`` on success; on failure an error carrying Telegram's reason."""
+        if 200 <= response.status_code < 300:
+            return {"status_code": response.status_code, "message": sent_message}
+        try:
+            description = response.json().get("description")
+        except (ValueError, AttributeError):
+            description = None
+        return {
+            "status": "error",
+            "status_code": response.status_code,
+            "error": f"Telegram refused the request (HTTP {response.status_code}): "
+            f"{description or 'no reason given'}",
+        }
+
     def execute_action(self, action_name, **kwargs):
         actions = {
             "telegram_send_message": self._send_message,
@@ -45,7 +61,7 @@ class TelegramTool(Tool):
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {"chat_id": chat_id, "text": text}
         response = requests.post(url, data=payload, timeout=100)
-        return {"status_code": response.status_code, "message": "Message sent"}
+        return self._result(response, "Message sent")
 
     def _send_image(self, image_url, chat_id=None):
         chat_id = chat_id or self.default_chat_id
@@ -55,7 +71,7 @@ class TelegramTool(Tool):
         url = f"https://api.telegram.org/bot{self.token}/sendPhoto"
         payload = {"chat_id": chat_id, "photo": image_url}
         response = requests.post(url, data=payload, timeout=100)
-        return {"status_code": response.status_code, "message": "Image sent"}
+        return self._result(response, "Image sent")
 
     def get_actions_metadata(self):
         return [
