@@ -62,5 +62,9 @@ export default {
   "Observability": {
     "title": "🔭 Observability",
     "href": "/Deploying/Observability"
+  },
+  "Background-Jobs": {
+    "title": "🧹 Background Jobs & Retention",
+    "href": "/Deploying/Background-Jobs"
   }
 }
