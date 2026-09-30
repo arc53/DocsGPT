@@ -92,7 +92,7 @@ When you configure a new API action, you'll fill in the following fields:
 
 While the API Tool configuration UI doesn't have explicit fields for defining response parsing rules (like JSONPath extractors), you significantly influence how the LLM handles the response through:
     * **Tool Action `Description`:** Clearly state what kind of information the API returns (e.g., "This API returns a JSON object with 'status' and 'location' fields for the phone number."). This helps the LLM know what to look for in the API's output.
-    * **Prompt Engineering:** For more complex scenarios, you might need to adjust your global or agent-specific prompts to guide DocsGPT on how to interpret and present information from API tool responses. See [Customising Prompts](/Guides/Customising-prompts).
+    * **Prompt Engineering:** For more complex scenarios, you might need to adjust your global or agent-specific prompts to guide DocsGPT on how to interpret and present information from API tool responses. See [Prompts](/Agents/prompts).
 
 ## Using the Configured API Tool in Chat
 
@@ -137,9 +137,9 @@ Once an API action is configured and enabled, DocsGPT's LLM can decide to use it
 
 DocsGPT treats an action by its HTTP method: `GET`, `HEAD` and `OPTIONS` are reads, and every other method is a write.
 
-- **Approval.** Each action has an **Approval** switch in the tool's settings, off by default. When it is on, the agent pauses and asks before running the action (in chat, the approval card; through the API, a [pause you resume](/Agents/api#tools-that-need-approval)). Turn it on for actions that change data, such as `POST`, `PUT`, `PATCH` and `DELETE`.
-- **API keys, widgets and public links.** Someone who uses the agent through its API key, the chat widget or its public link can't approve on your behalf. So a write action that sends a header or query value you saved (a key or token) is refused for them unless you allow it in the agent's **Access Details > Changes others can make as you**. An allowed action then runs without asking. Reads, and actions that send no saved value, are not limited. See [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes) and [Agents used through an API key](/Guides/Connectors#agents-used-through-an-api-key).
-- **Webhooks and schedules.** Nobody can approve during a [webhook](/Agents/webhooks#how-a-webhook-run-behaves) or scheduled run, so an action with **Approval** on is skipped there, unless the schedule lists the tool in its `tool_allowlist`.
+- **Approval.** Each action has an **Approval** switch in the tool's settings, off by default. When it is on, the agent pauses and asks before running the action (in chat, the approval card; through the API, a [pause you resume](/API/agent-api#tools-that-need-approval)). Turn it on for actions that change data, such as `POST`, `PUT`, `PATCH` and `DELETE`.
+- **API keys, widgets and public links.** Someone who uses the agent through its API key, the chat widget or its public link can't approve on your behalf. So a write action that sends a header or query value you saved (a key or token) is refused for them unless you allow it in the agent's **Access Details > Changes others can make as you**. An allowed action then runs without asking. Reads, and actions that send no saved value, are not limited. See [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes) and [Agents used through an API key](/Sources/Connectors#agents-used-through-an-api-key).
+- **Webhooks and schedules.** Nobody can approve during a [webhook](/API/webhooks#how-a-webhook-run-behaves) or scheduled run, so an action with **Approval** on is skipped there, unless the schedule lists the tool in its `tool_allowlist`.
 
 ## Advanced Tips and Best Practices
 

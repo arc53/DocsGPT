@@ -43,7 +43,7 @@ Go to **Settings > Knowledge** and click **Add knowledge**. From a chat, you can
 | **Crawler** | A website: starts at a URL and follows links on the same host, up to 10 pages. |
 | **GitHub** | A public repository, by its URL. Private repositories go through your GitHub connection. |
 | **New wiki** | An editable Markdown wiki that agents can read and rewrite. See [Wiki sources](/Sources/Wiki-sources). |
-| **Connect your data** | Content synced from a connected service, such as Google Drive, SharePoint, Confluence or Amazon S3. See [Connectors](/Guides/Connectors). This tile shows only when the instance has a connector that syncs. |
+| **Connect your data** | Content synced from a connected service, such as Google Drive, SharePoint, Confluence or Amazon S3. See [Connectors](/Sources/Connectors). This tile shows only when the instance has a connector that syncs. |
 
 ### Name the source and add it
 
@@ -63,7 +63,7 @@ The upload dialog accepts these types:
 - **Documents:** `.pdf`, `.docx`, `.doc`, `.docm`, `.odt`, `.rtf`, `.txt`, `.md`, `.rst`, `.html`, `.xhtml`, `.epub`, `.json`
 - **Spreadsheets:** `.xlsx`, `.xls`, `.xlsm`, `.xlsb`, `.ods`, `.csv`
 - **Presentations:** `.pptx`, `.ppt`, `.pptm`, `.pps`, `.ppsx`, `.ppsm`, `.pot`, `.odp`
-- **Images:** `.png`, `.jpg`, `.jpeg`. Their text is read with OCR when OCR is enabled (`OCR_ENABLED`, off by default). `PARSE_IMAGE_REMOTE` instead uploads each image to the hosted `https://llm.arc53.com/doc2md` service, so if images must stay on your servers, use `OCR_ENABLED`. With both off, an image adds no text. See [Document parsing and OCR](/Guides/ocr).
+- **Images:** `.png`, `.jpg`, `.jpeg`. Their text is read with OCR when OCR is enabled (`OCR_ENABLED`, off by default). `PARSE_IMAGE_REMOTE` instead uploads each image to the hosted `https://llm.arc53.com/doc2md` service, so if images must stay on your servers, use `OCR_ENABLED`. With both off, an image adds no text. See [Document parsing and OCR](/Sources/ocr).
 - **Audio:** `.wav`, `.mp3`, `.m4a`, `.ogg`, `.webm`. Audio is transcribed with speech-to-text, and the transcript is indexed.
 - **Archives:** `.zip`
 
@@ -73,7 +73,7 @@ The upload dialog takes files **up to 25 MB each**. It lists larger files, and f
 
 **Zip archives** are extracted on the server, and every supported file inside is indexed, including archives nested up to three levels deep. Files of other types are skipped. This is also how to upload `.mdx` files, which the dialog doesn't list. The server rejects an upload whose archives expand past `UPLOAD_MAX_ARCHIVE_BYTES` (250 MB), hold more than `UPLOAD_MAX_ARCHIVE_FILES` (10,000) files, or nest deeper than `UPLOAD_MAX_ARCHIVE_DEPTH` (3). The size and file-count limits apply to all the archives in one upload combined. Office and e-book files (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.epub` and similar) are zip containers internally, but DocsGPT parses them as documents and does not unpack them.
 
-Scanned PDFs and images need OCR, which is off by default (`OCR_ENABLED`). See [Document parsing and OCR](/Guides/ocr) for the parser engines and OCR settings. All size and parsing settings are listed in the [settings reference](/Deploying/Settings-Reference).
+Scanned PDFs and images need OCR, which is off by default (`OCR_ENABLED`). See [Document parsing and OCR](/Sources/ocr) for the parser engines and OCR settings. All size and parsing settings are listed in the [settings reference](/Deploying/Settings-Reference).
 
 ## Add a web page or a website
 
@@ -86,11 +86,11 @@ Both fetch pages from the DocsGPT server, not from your browser. Pages behind a 
 
 Paste a public repository URL, such as `https://github.com/arc53/DocsGPT`. An operator can set `GITHUB_ACCESS_TOKEN` to raise GitHub's rate limit for these public reads. That token is never used for private repositories.
 
-For a private repository, use **Connect GitHub** in the form, or **Pick a repository** if you are already connected. These buttons appear when the GitHub connector is set up on the instance. They hand over to the GitHub connection, which lists your account's repositories. See [GitHub](/Guides/Integrations/github-connector).
+For a private repository, use **Connect GitHub** in the form, or **Pick a repository** if you are already connected. These buttons appear when the GitHub connector is set up on the instance. They hand over to the GitHub connection, which lists your account's repositories. See [GitHub](/Sources/Connectors/github).
 
 ## Sync content from connected services
 
-**Connect your data** lists the services on this instance that can sync into Knowledge. Pick one, sign in, then choose which files or folders to sync and how often. You can also start from **Connect a service** on an empty Knowledge page, or from **Settings > Connectors**. Operators must configure each connector first; see [Connectors](/Guides/Connectors).
+**Connect your data** lists the services on this instance that can sync into Knowledge. Pick one, sign in, then choose which files or folders to sync and how often. You can also start from **Connect a service** on an empty Knowledge page, or from **Settings > Connectors**. Operators must configure each connector first; see [Connectors](/Sources/Connectors).
 
 ## Manage your knowledge
 

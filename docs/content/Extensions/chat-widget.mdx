@@ -147,7 +147,7 @@ The DocsGPT Widget offers a range of customizable properties that allow you to t
 | **Prop**          | **Type**         | **Default Value**                                           | **Description**                                                                                     |
 |--------------------|------------------|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | **`apiHost`**      | `string`         | `"https://gptcloud.arc53.com"`                              | The URL of your DocsGPT API backend (DocsGPT Cloud by default). Self-hosted: your API URL, e.g. `http://localhost:7091`. |
-| **`apiKey`**       | `string`         | a DocsGPT demo agent's key                                  | The API key of your published agent (see [Getting API key](/Extensions/api-key-guide)). If you omit it, the widget answers from a public DocsGPT demo agent, not your documents. Always set it. |
+| **`apiKey`**       | `string`         | a DocsGPT demo agent's key                                  | The API key of your published agent (see [Agent API keys](/API/agent-keys)). If you omit it, the widget answers from a public DocsGPT demo agent, not your documents. Always set it. |
 | **`avatar`**       | `string`         | built-in placeholder                                        | URL for the avatar image shown in the chatbot header. Defaults to a neutral silhouette drawn inline, so no image is fetched unless you supply one. |
 | **`title`**        | `string`         | `"Get AI assistance"`                                       | Title text shown in the chatbot header.                                                              |
 | **`description`**  | `string`         | `"DocsGPT's AI Chatbot is here to help"`                     | Sub-title or descriptive text displayed below the title in the chatbot header.                       |
@@ -193,7 +193,7 @@ Browser support is uneven, and the microphone hides itself where it cannot work.
 ## Notes on Widget Properties
 
 *   **Full Customization:**  Every property listed in the table can be customized.  Override the defaults to create a widget that perfectly matches your branding and application context.  From avatars and titles to color schemes, you have fine-grained control over the widget's presentation.
-*   **API Key Handling:** Set `apiKey` to the API key of a published agent; the widget answers with that agent's knowledge, prompt and tools. See [Getting API key](/Extensions/api-key-guide). If you leave `apiKey` out, the widget falls back to a built-in key for a public DocsGPT demo agent: on DocsGPT Cloud it silently answers from that demo agent instead of your documents, and on a self-hosted instance the key is invalid and requests fail. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com`.
+*   **API Key Handling:** Set `apiKey` to the API key of a published agent; the widget answers with that agent's knowledge, prompt and tools. See [Agent API keys](/API/agent-keys). If you leave `apiKey` out, the widget falls back to a built-in key for a public DocsGPT demo agent: on DocsGPT Cloud it silently answers from that demo agent instead of your documents, and on a self-hosted instance the key is invalid and requests fail. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com`.
 
 ## Explore and Customize Further
 

@@ -19,7 +19,7 @@ DocsGPT Agents can be accessed programmatically through API endpoints. This page
 When you use an agent `api_key`, DocsGPT loads that agent's configuration automatically (prompt, tools, sources, default model). You usually only need to send `question` and `api_key`.
 
 <Callout type="info">
-Looking to connect an existing OpenAI-compatible client (opencode, aider, the OpenAI SDKs, etc.) to a DocsGPT Agent? Use the [OpenAI-Compatible Chat Completions API](/Agents/openai-compatible) — it speaks the standard chat completions protocol so no adapter code is required.
+Looking to connect an existing OpenAI-compatible client (opencode, aider, the OpenAI SDKs, etc.) to a DocsGPT Agent? Use the [OpenAI-Compatible Chat Completions API](/API/openai-compatible) — it speaks the standard chat completions protocol so no adapter code is required.
 </Callout>
 
 ## Base URL
@@ -42,7 +42,7 @@ DocsGPT resolves your request in this order:
 Authentication:
 
 - Agent API-key flow: include `api_key` in the JSON or form body.
-- Signed-in flow: send `Authorization: Bearer <token>`, where the token is a session token or a [personal access token](/Extensions/personal-access-tokens) with the `chat:run` scope, and pick the agent with `agent_id`.
+- Signed-in flow: send `Authorization: Bearer <token>`, where the token is a session token or a [personal access token](/API/personal-access-tokens) with the `chat:run` scope, and pick the agent with `agent_id`.
 
 See the [API overview](/API#choose-a-credential) for how each credential works.
 
@@ -207,7 +207,7 @@ Framing:
 
 ### Reconnecting to an interrupted stream
 
-If the connection drops, the answer keeps generating on the server. Reopen it with `GET /api/messages/<message_id>/events`, sending the last sequence number you processed as `Last-Event-ID` (or `?last_event_id=`). You get the events you missed, then the rest live. See [Chat answer reconnect](/Agents/notifications#chat-answer-reconnect); this route needs the API served through the ASGI app.
+If the connection drops, the answer keeps generating on the server. Reopen it with `GET /api/messages/<message_id>/events`, sending the last sequence number you processed as `Last-Event-ID` (or `?last_event_id=`). You get the events you missed, then the rest live. See [Chat answer reconnect](/API/realtime-events#chat-answer-reconnect); this route needs the API served through the ASGI app.
 
 ### Examples
 
@@ -382,7 +382,7 @@ requests.put(
 ).raise_for_status()
 ```
 
-Webhook runs are the owner's own automation and are not limited by this list; see [Agent webhooks](/Agents/webhooks#how-a-webhook-run-behaves).
+Webhook runs are the owner's own automation and are not limited by this list; see [Agent webhooks](/API/webhooks#how-a-webhook-run-behaves).
 
 ## Search API
 
@@ -584,7 +584,7 @@ Notes:
 
 - **Secrets are stripped on export**: API keys and tool credentials are never written into the YAML, so you supply them in the resolution or re-enter them after import.
 - Imported tool URLs are validated against SSRF protections, the same as when creating tools normally.
-- With a [personal access token](/Extensions/personal-access-tokens), import needs `agents:write`; a token restricted to specific agents can only update those, and one restricted on sources, prompts, tools or workflows can't import.
+- With a [personal access token](/API/personal-access-tokens), import needs `agents:write`; a token restricted to specific agents can only update those, and one restricted on sources, prompts, tools or workflows can't import.
 
 ## Searching Conversations
 

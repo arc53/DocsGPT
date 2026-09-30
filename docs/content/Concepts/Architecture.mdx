@@ -67,13 +67,13 @@ The storage boxes describe responsibilities, not a required number of servers. F
 
 | Interface | Purpose |
 | --- | --- |
-| [Native agent API](/Agents/api) | Answer, streaming, and search endpoints used by the UI and integrations. |
-| [OpenAI-compatible API](/Agents/openai-compatible) | `/v1/chat/completions` and `/v1/models` for compatible clients, authenticated with an agent API key. |
+| [Native agent API](/API/agent-api) | Answer, streaming, and search endpoints used by the UI and integrations. |
+| [OpenAI-compatible API](/API/openai-compatible) | `/v1/chat/completions` and `/v1/models` for compatible clients, authenticated with an agent API key. |
 | [MCP server](/API/mcp-server) | `/mcp` exposes the `search_docs` retrieval tool to MCP clients using an agent API key. |
-| [Agent webhooks](/Agents/webhooks) | Trigger background agent runs from external applications. |
-| [Real-time events](/Agents/notifications) | User notifications at `/api/events` and chat replay/live tail at `/api/messages/<message_id>/events`. |
+| [Agent webhooks](/API/webhooks) | Trigger background agent runs from external applications. |
+| [Real-time events](/API/realtime-events) | User notifications at `/api/events` and chat replay/live tail at `/api/messages/<message_id>/events`. |
 
-DocsGPT also acts as an **MCP client**: agents can call external MCP servers through the [MCP tool integration](/Guides/Integrations/mcp-tool-integration). This is a separate direction from exposing DocsGPT search at `/mcp`.
+DocsGPT also acts as an **MCP client**: agents can call external MCP servers through the [MCP tool integration](/Tools/mcp-tools). This is a separate direction from exposing DocsGPT search at `/mcp`.
 
 <Callout type="info">
 Use the ASGI entry point for the complete application. A plain `flask run` server omits `/mcp` and the native asynchronous routes: notifications, chat reconnect, the remote-device command stream, and artifact downloads. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
@@ -92,7 +92,7 @@ The [agent types](/Agents/basics#understanding-agent-types) control how a reques
 
 The retrieval paths are classic vector similarity, hybrid vector/keyword search, and [GraphRAG](/Sources/GraphRAG). GraphRAG requires `GRAPHRAG_ENABLED=true` and `VECTOR_STORE=pgvector`; its graph tables live alongside the vectors. Sources without a ready graph can fall back to classic retrieval.
 
-Model adapters keep agent logic independent of the provider. See [Cloud Providers](/Models/cloud-providers), [Local Inference](/Models/local-inference), and [Embeddings](/Models/embeddings) for supported options. [Prompt assembly](/Guides/Customising-prompts) and [context compression](/Guides/compression) determine what context reaches the model.
+Model adapters keep agent logic independent of the provider. See [Cloud Providers](/Models/cloud-providers), [Local Inference](/Models/local-inference), and [Embeddings](/Models/embeddings) for supported options. [Prompt assembly](/Agents/prompts) and [context compression](/Agents/context-compression) determine what context reaches the model.
 
 ## Answer lifecycle
 
@@ -143,9 +143,9 @@ sequenceDiagram
 
 Interactive generation runs in the API process. A client disconnect can be followed by replay and a live tail while generation continues; this does not restart generation after an API process crash. Reconnect can happen during generation, not only after the final message shown above.
 
-For persisted chat, Postgres holds the `message_events` journal and Redis pub/sub carries live events. User notifications use a separate Redis Stream backlog. See [Real-time Events](/Agents/notifications) for replay cursors, retention, and connection limits.
+For persisted chat, Postgres holds the `message_events` journal and Redis pub/sub carries live events. User notifications use a separate Redis Stream backlog. See [Real-time Events](/API/realtime-events) for replay cursors, retention, and connection limits.
 
-When a tool requires approval, interactive execution pauses and stores continuation state; the client can submit the decision to resume. Background [webhook](/Agents/webhooks) and scheduled runs execute through Celery using the shared agent runtime. Their tool policies differ where no interactive approval is available.
+When a tool requires approval, interactive execution pauses and stores continuation state; the client can submit the decision to resume. Background [webhook](/API/webhooks) and scheduled runs execute through Celery using the shared agent runtime. Their tool policies differ where no interactive approval is available.
 
 ## Document lifecycle
 
@@ -171,7 +171,7 @@ flowchart TB
 
 Connectors enqueue source identifiers and configuration; workers fetch the remote content before parsing. Progress events are also emitted during parsing and indexing, before the completion event shown above.
 
-The default parser engine is `anydoc`. Docling is an optional parser engine, and OCR is configured separately. Parsing, chunking, and retrieval settings belong to the source; see [Per-Source Configuration](/Sources/Per-source-configuration) and [OCR](/Guides/ocr). Ingestion tracks chunk progress so retries can resume interrupted embedding/indexing work.
+The default parser engine is `anydoc`. Docling is an optional parser engine, and OCR is configured separately. Parsing, chunking, and retrieval settings belong to the source; see [Per-Source Configuration](/Sources/Per-source-configuration) and [OCR](/Sources/ocr). Ingestion tracks chunk progress so retries can resume interrupted embedding/indexing work.
 
 For GraphRAG sources, graph extraction is a separate queued step after indexing. Retrieval can use the vector index while the graph is being built.
 
@@ -232,7 +232,7 @@ These open-source projects connect through the API, provide optional tool execut
 | Project | Relationship to the architecture |
 | --- | --- |
 | [React/HTML widgets](https://github.com/arc53/DocsGPT/tree/main/extensions/react-widget) | Browser clients in this repository: [chat](/Extensions/chat-widget) uses streaming, while [search](/Extensions/search-widget) calls the search API. |
-| [DocsGPT-cli](https://github.com/arc53/DocsGPT-cli) | Separate Go client for terminal chat and [agent benchmarking](/Guides/Benchmarking-Agents). Chat uses the OpenAI-compatible API. Its `host` mode supplies the paired execution target for [Remote Device](/Tools/remote-device). |
+| [DocsGPT-cli](https://github.com/arc53/DocsGPT-cli) | Separate Go client for terminal chat and [agent benchmarking](/Agents/benchmarking). Chat uses the OpenAI-compatible API. Its `host` mode supplies the paired execution target for [Remote Device](/Tools/remote-device). |
 | [Telegram extension](https://github.com/arc53/tg-bot-docsgpt-extenstion) | Separate bot service calling the native answer/streaming API, with attachment, speech, and artifact support. |
 | [Slack extension](https://github.com/arc53/slack-bot-docsgpt-extenstion) and [Chatwoot bridge](https://github.com/arc53/DocsGPT/tree/main/extensions/chatwoot) | Optional messaging integrations calling the answer API. Chatwoot's bridge lives in this repository; see [Chatwoot Extension](/Extensions/Chatwoot-extension). |
 | [fast-ebook](https://github.com/arc53/fast-ebook) | EPUB parsing library used by the backend EPUB parser. It runs inside the parsing process, not as another service. |

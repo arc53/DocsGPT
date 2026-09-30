@@ -96,7 +96,7 @@ The DocsGPT Search Bar Widget offers a range of customizable properties that all
 
 | **Prop**       | **Type**  | **Default Value**                   | **Description**                                                                                  |
 |-----------------|-----------|-------------------------------------|--------------------------------------------------------------------------------------------------|
-| **`apiKey`**    | `string`  | a DocsGPT demo agent's key        | **Required.** The API key of your published agent (see [Getting API key](/Extensions/api-key-guide)). Search runs over that agent's knowledge. An empty key gets `400 api_key is required`, and an omitted key searches a public DocsGPT demo agent. |
+| **`apiKey`**    | `string`  | a DocsGPT demo agent's key        | **Required.** The API key of your published agent (see [Agent API keys](/API/agent-keys)). Search runs over that agent's knowledge. An empty key gets `400 api_key is required`, and an omitted key searches a public DocsGPT demo agent. |
 | **`apiHost`**   | `string`  | `"https://gptcloud.arc53.com"`       | The URL of your DocsGPT API backend (DocsGPT Cloud by default). Self-hosted: your API URL, e.g. `http://localhost:7091`. |
 | **`theme`**     | `"dark" \| "light"` | `"dark"`                            | Color theme of the search bar and of the chat it opens. Options: `"dark"` or `"light"`. Defaults to `"dark"`.            |
 | **`placeholder`** | `string` | `"Search or Ask AI..."`             | Placeholder text displayed in the search input field.                                           |
@@ -110,7 +110,7 @@ The DocsGPT Search Bar Widget offers a range of customizable properties that all
 ## Notes on Widget Properties
 
 *   **Full Customization:** Every property listed in the table can be customized. Override the defaults to create a Search Bar Widget that perfectly matches your branding and application context.
-*   **API Key Handling:** The search bar needs the API key of a published agent; `/api/search` rejects requests without one. See [Getting API key](/Extensions/api-key-guide). If you leave `apiKey` out, the search bar falls back to a built-in key for a public DocsGPT demo agent: on DocsGPT Cloud it searches that demo agent's knowledge instead of yours, and on a self-hosted instance the key is invalid and searches fail. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com`.
+*   **API Key Handling:** The search bar needs the API key of a published agent; `/api/search` rejects requests without one. See [Agent API keys](/API/agent-keys). If you leave `apiKey` out, the search bar falls back to a built-in key for a public DocsGPT demo agent: on DocsGPT Cloud it searches that demo agent's knowledge instead of yours, and on a self-hosted instance the key is invalid and searches fail. `apiHost` for DocsGPT Cloud is `https://gptcloud.arc53.com`.
 
 ## Explore and Customize Further
 

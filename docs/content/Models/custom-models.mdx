@@ -47,7 +47,7 @@ Enabled custom models are listed next to the operator's models in:
 - the model selector in the agent builder and in workflow **AI Agent** nodes, where they are grouped under **My Models**,
 - the model lists in a source's settings (the GraphRAG extraction model, for example).
 
-An agent that uses your custom model keeps using it for everyone who can run the agent: team members you share it with and [agent API key](/Extensions/api-key-guide) callers. Their requests go to your endpoint with your key. If you delete the model, or its key can no longer be decrypted, the agent falls back to the instance's default model.
+An agent that uses your custom model keeps using it for everyone who can run the agent: team members you share it with and [agent API key](/API/agent-keys) callers. Their requests go to your endpoint with your key. If you delete the model, or its key can no longer be decrypted, the agent falls back to the instance's default model.
 
 To edit or delete a model, open the menu on its card in **Settings → Custom Models**. A model disabled through the API (`"enabled": false`) shows a **Disabled** badge and is hidden from the pickers.
 
@@ -65,7 +65,7 @@ When the operator rotates the key, `docsgpt connectors reencrypt` rewrites custo
 
 ## API
 
-The same operations are available over the API. With a [personal access token](/Extensions/personal-access-tokens), reading needs the `models:read` scope and every other call needs `models:write`.
+The same operations are available over the API. With a [personal access token](/API/personal-access-tokens), reading needs the `models:read` scope and every other call needs `models:write`.
 
 | Method and path | Does |
 | --- | --- |

@@ -69,7 +69,7 @@ URLs that users supply are checked before DocsGPT fetches them, so that nobody c
   - URL, crawler and sitemap sources,
   - custom models that users add in **Settings → Custom Models** (their base URL).
 - **Checked, not pinned.** The host's address is checked once, and the client then connects on its own:
-  - [MCP servers](/Guides/Integrations/mcp-tool-integration) and custom MCP connectors (`Invalid server URL: <reason>` when you test or save one, `Invalid MCP server URL: <reason>` when a saved tool connects),
+  - [MCP servers](/Tools/mcp-tools) and custom MCP connectors (`Invalid server URL: <reason>` when you test or save one, `Invalid MCP server URL: <reason>` when a saved tool connects),
   - S3 sources with a custom endpoint,
   - API Tool URLs in an imported agent (unsafe ones are dropped with a warning; the imported tool is pinned when it runs).
 
@@ -86,7 +86,7 @@ Tool-less LLM answers are kept in Redis for `LLM_CACHE_TTL` seconds (default 30 
 
 ## Prompt templates and passthrough
 
-Prompt templates render in a Jinja2 sandbox with autoescaping off, and `passthrough` values from API and widget callers are inserted verbatim. Treat them as untrusted input that can carry instructions for the model. See [Customising Prompts](/Guides/Customising-prompts#security-considerations).
+Prompt templates render in a Jinja2 sandbox with autoescaping off, and `passthrough` values from API and widget callers are inserted verbatim. Treat them as untrusted input that can carry instructions for the model. See [Prompts](/Agents/prompts#security-considerations).
 
 ## Version check and telemetry
 

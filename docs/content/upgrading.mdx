@@ -180,7 +180,7 @@ Service credentials (OAuth tokens for Google Drive, SharePoint, Confluence and M
   **Multi-user installs** (any `AUTH_TYPE`): set `ENCRYPTION_SECRET_KEY` to your own value **before** you upgrade, in the environment of the API, the worker and anything that runs migrations. The migration encrypts with the key it sees; changing it afterwards makes every connection ask its owner to reconnect. While the key is still the public default, DocsGPT refuses to store new credentials and Admin > Connectors shows a warning.
 </Callout>
 
-If you already used a key and want to change it, see [rotating the key](/Guides/Connectors#encryption-key). Single-user local installs keep working with the default and log a warning at startup.
+If you already used a key and want to change it, see [rotating the key](/Sources/Connectors#encryption-key). Single-user local installs keep working with the default and log a warning at startup.
 
 Other changes:
 

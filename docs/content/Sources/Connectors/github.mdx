@@ -10,10 +10,10 @@ import { Callout } from 'nextra/components'
 One GitHub connection syncs repositories into Knowledge and gives agents GitHub's own [MCP server](https://github.com/github/github-mcp-server) as a tool. When connecting, members choose **Let agents use GitHub** (on by default) and **Sync into Knowledge** with a repository to sync.
 
 - **Knowledge.** Each synced repository is one source, read with the connection's token and synced on the chosen schedule.
-- **Tools.** By default agents use the read-only endpoint `https://api.githubcopilot.com/mcp/readonly`. **Also let agents make changes (issues, comments, pull requests)** is off by default; see [Letting agents make changes](/Guides/Connectors#letting-agents-make-changes).
+- **Tools.** By default agents use the read-only endpoint `https://api.githubcopilot.com/mcp/readonly`. **Also let agents make changes (issues, comments, pull requests)** is off by default; see [Letting agents make changes](/Sources/Connectors#letting-agents-make-changes).
 
 <Callout type="info">
-Members connect this service from **Settings > Connectors**. See [Connectors](/Guides/Connectors#github) for the full GitHub setup.
+Members connect this service from **Settings > Connectors**. See [Connectors](/Sources/Connectors#github) for the full GitHub setup.
 </Callout>
 
 ## Connect with a personal access token
@@ -30,7 +30,7 @@ GITHUB_CLIENT_SECRET=your-client-secret
 GITHUB_APP_SLUG=docsgpt-acme      # from the app's public link, github.com/apps/<slug>
 ```
 
-Restart the API and the worker. The app's permissions and installation options are listed in [Sign in with GitHub](/Guides/Connectors#sign-in-with-github-a-github-app).
+Restart the API and the worker. The app's permissions and installation options are listed in [Sign in with GitHub](/Sources/Connectors#sign-in-with-github-a-github-app).
 
 ## Public repositories
 

@@ -108,7 +108,7 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `POST` | `/api/admin/users/<id>/role` | Grant the admin role (a manual grant; idempotent). |
 | `DELETE` | `/api/admin/users/<id>/role` | Revoke the manual admin grant. Refuses with `409` to remove the last admin. It removes only a manual grant: for an admin who holds the role through `OIDC_ADMIN_GROUPS` it returns `200 {"revoked": false}` and they stay admin. Remove them from the group at the IdP instead; it takes effect at their next sign-in or renewal. |
 | `POST` | `/api/admin/users/<id>/revoke-sessions` | Force-logout a user and revoke all of their personal access tokens. |
-| `GET` | `/api/admin/users/<id>/tokens` | List a user's [personal access tokens](/Extensions/personal-access-tokens), revoked ones included. |
+| `GET` | `/api/admin/users/<id>/tokens` | List a user's [personal access tokens](/API/personal-access-tokens), revoked ones included. |
 | `DELETE` | `/api/admin/tokens/<id>` | Revoke any user's personal access token. |
 | `GET` | `/api/admin/admins` | List current admins. |
 | `GET` | `/api/admin/usage` | Usage series with tokens and spend, per-model split, latency percentiles, top users. Takes `days`, `bucket` and `group_by=model\|agent\|source`. |
@@ -120,7 +120,7 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `GET` | `/api/admin/devices/audit` | Remote-device audit feed. |
 | `GET` | `/api/admin/teams` | Instance-wide oversight of all teams. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/...` | [Usage quotas](/Deploying/Usage-Quotas) for the instance, teams and users. |
-| `GET` `PUT` | `/api/admin/connectors` | Turn [connectors](/Guides/Connectors#admin-setup) on or off and set their sharing mode, write access and the custom MCP server switch. |
+| `GET` `PUT` | `/api/admin/connectors` | Turn [connectors](/Sources/Connectors#admin-setup) on or off and set their sharing mode, write access and the custom MCP server switch. |
 
 <Callout type="info" emoji="ℹ️">
 Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning)) blocks their sign-in, revokes their live sessions and disables their personal access tokens. It takes effect under `AUTH_TYPE=oidc`, the only mode with separate accounts to deactivate.
@@ -197,7 +197,7 @@ An editor becomes a sponsor only after confirming who will reach the resource th
 
 Some runs are limited, because nobody can approve an action for you there:
 
-- **API key, website widget and public link.** A write action on your connected accounts or saved credentials runs only if you allow it under **Access Details > Changes others can make as you**. Only the owner can change that list. It offers every such write on the agent, including tools an editor sponsored and the tools on a workflow's nodes. The share dialog marks a tool **Not via API** when none of its writes are allowed, **Not all via API** when only some are, and **Changes off by an admin** when an admin turned off changes through its service. On a tool shared as **Each person's own**, public-link users act with their own account, so the list doesn't limit them there; a write that needs approval still asks them first. See [Agents used through an API key](/Guides/Connectors#agents-used-through-an-api-key). To set the list through the API, see [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes).
+- **API key, website widget and public link.** A write action on your connected accounts or saved credentials runs only if you allow it under **Access Details > Changes others can make as you**. Only the owner can change that list. It offers every such write on the agent, including tools an editor sponsored and the tools on a workflow's nodes. The share dialog marks a tool **Not via API** when none of its writes are allowed, **Not all via API** when only some are, and **Changes off by an admin** when an admin turned off changes through its service. On a tool shared as **Each person's own**, public-link users act with their own account, so the list doesn't limit them there; a write that needs approval still asks them first. See [Agents used through an API key](/Sources/Connectors#agents-used-through-an-api-key). To set the list through the API, see [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes).
 - **Wikis.** API and widget users edit a wiki only when its owner turns on **Let API and widget users edit this wiki** in its **Wiki settings**. Public-link users edit only wikis they can edit themselves, and approve each edit (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
 - **Research agents.** A research step can't stop to ask, so it skips any action that would need approval or a connection, and any write the caller may not make on your accounts. The step is told why and carries on (see [Research Agent](/Agents/basics#3-research-agent)).
 

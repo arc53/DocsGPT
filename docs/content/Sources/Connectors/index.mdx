@@ -144,11 +144,11 @@ MICROSOFT_CLIENT_SECRET=your-client-secret
 MICROSOFT_TENANT_ID=common   # or your tenant id for a single-tenant app
 ```
 
-See [SharePoint / OneDrive](/Guides/Integrations/sharepoint-connector) for tenant options.
+See [SharePoint / OneDrive](/Sources/Connectors/sharepoint) for tenant options.
 
 ### Confluence
 
-Create an **OAuth 2.0 (3LO)** app in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/), add the redirect URI from Admin > Connectors as its callback URL, and add the scopes `read:page:confluence`, `read:space:confluence`, `read:attachment:confluence` and `read:me`. See [Confluence](/Guides/Integrations/confluence-connector) for details.
+Create an **OAuth 2.0 (3LO)** app in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/), add the redirect URI from Admin > Connectors as its callback URL, and add the scopes `read:page:confluence`, `read:space:confluence`, `read:attachment:confluence` and `read:me`. See [Confluence](/Sources/Connectors/confluence) for details.
 
 ```env
 CONFLUENCE_CLIENT_ID=your-client-id

@@ -186,7 +186,7 @@ as `0.21.0`, `latest` (the newest release, the default here) or `develop`
 (follows the `main` branch). `DOCSGPT_IMAGE_VARIANT` picks the flavour: empty for the
 slim default image, or `-docling` for the image with the docling parser
 engine, its models and tesseract baked in (needed for OCR of scanned
-documents, see the [OCR guide](/Guides/ocr)). Both are read from `.env` or
+documents, see the [OCR guide](/Sources/ocr)). Both are read from `.env` or
 the shell, e.g. `DOCSGPT_IMAGE_TAG=0.21.0 DOCSGPT_IMAGE_VARIANT=-docling`.
 The same two variables drive `deployment/docker-compose-hub.yaml` in a
 checkout, but there the default tag is `develop`; see

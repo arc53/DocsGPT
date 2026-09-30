@@ -96,11 +96,11 @@ A task set from chat pre-approves only the tools whose actions never need approv
 - Its tokens and trace are recorded under the schedule's user: the agent's owner for a schedule from the Schedules tab, and the person who set it for a task set from chat. So a teammate's chat task on your agent is checked against your quota but shows up in their [Analytics and Logs](/Using/analytics-and-logs).
 - A schedule created in the Schedules tab belongs to the agent's owner, whoever creates it. Owners and team editors of the agent can manage it.
 - A task someone sets from chat on a shared agent stays theirs. It stops running when they lose access to the agent.
-- A task set through the agent's API key, or by someone who reaches the agent only through its public link, keeps that caller's limits: it writes to the owner's connected accounts and saved credentials only for actions allowed under [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes).
+- A task set through the agent's API key, or by someone who reaches the agent only through its public link, keeps that caller's limits: it writes to the owner's connected accounts and saved credentials only for actions allowed under [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes).
 
 ## REST API
 
-Schedules have their own endpoints. Call them with a session token or a [personal access token](/Extensions/personal-access-tokens) with the `schedules:read` or `schedules:write` scope. The [REST API reference](/API/reference) lists them all.
+Schedules have their own endpoints. Call them with a session token or a [personal access token](/API/personal-access-tokens) with the `schedules:read` or `schedules:write` scope. The [REST API reference](/API/reference) lists them all.
 
 | Method and path | Purpose |
 | --- | --- |
@@ -143,7 +143,7 @@ curl -X POST "$API/api/agents/$AGENT_ID/schedules" \
 
 To resume a one-time task whose time has passed, send a new future `run_at` with the resume action.
 
-Schedule changes are also published on the [realtime events](/Agents/notifications) stream: `schedule.run.completed`, `schedule.run.failed`, `schedule.autopaused`, `schedule.completed` (a one-time task closed after its stuck run was marked failed), `schedule.resumed`, `schedule.cancelled`, and `schedule.message.appended` when a one-time task adds its answer to a conversation.
+Schedule changes are also published on the [realtime events](/API/realtime-events) stream: `schedule.run.completed`, `schedule.run.failed`, `schedule.autopaused`, `schedule.completed` (a one-time task closed after its stuck run was marked failed), `schedule.resumed`, `schedule.cancelled`, and `schedule.message.appended` when a one-time task adds its answer to a conversation.
 
 ## Limits
 

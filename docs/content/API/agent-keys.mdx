@@ -11,8 +11,8 @@ DocsGPT API keys are essential for developers and users who wish to integrate th
 
 Every **published** agent has its own API key. A draft has none until you publish it.
 
-- **In the web app:** open **Agents** in the sidebar and choose **New Agent**, or open an existing agent. Configure it and press **Publish**. Then open **More actions > Access Details** to copy the **API Key**, or **Reset key** to replace it (the old key stops working at once). The same dialog holds the agent's public link and [webhook URL](/Agents/webhooks).
-- **With the API:** `POST /api/create_agent` returns a `key` only when the agent is created with `"status": "published"`; updating a draft to published creates one too. A [personal access token](/Extensions/personal-access-tokens) without the `agents:keys` scope gets the key back masked. See the [REST API reference](/API/reference#post-api-create-agent) and the [API overview](/API) for the other credentials.
+- **In the web app:** open **Agents** in the sidebar and choose **New Agent**, or open an existing agent. Configure it and press **Publish**. Then open **More actions > Access Details** to copy the **API Key**, or **Reset key** to replace it (the old key stops working at once). The same dialog holds the agent's public link and [webhook URL](/API/webhooks).
+- **With the API:** `POST /api/create_agent` returns a `key` only when the agent is created with `"status": "published"`; updating a draft to published creates one too. A [personal access token](/API/personal-access-tokens) without the `agents:keys` scope gets the key back masked. See the [REST API reference](/API/reference#post-api-create-agent) and the [API overview](/API) for the other credentials.
 
 ## Understanding Key Variables
 
@@ -27,6 +27,6 @@ With your API key ready, you can now integrate DocsGPT into your application, su
 
 ## What an API-key caller can do
 
-A key lets anyone who holds it chat with the agent and search its sources; the widget key in a web page is public. A key holder can't approve anything on the owner's behalf, so write actions on the owner's connected accounts or saved credentials are refused unless the owner allows them under **Access Details > Changes others can make as you**. See [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes) and [Agents used through an API key](/Guides/Connectors#agents-used-through-an-api-key).
+A key lets anyone who holds it chat with the agent and search its sources; the widget key in a web page is public. A key holder can't approve anything on the owner's behalf, so write actions on the owner's connected accounts or saved credentials are refused unless the owner allows them under **Access Details > Changes others can make as you**. See [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes) and [Agents used through an API key](/Sources/Connectors#agents-used-through-an-api-key).
 
 Congratulations on taking the first step towards enhancing your applications with DocsGPT!

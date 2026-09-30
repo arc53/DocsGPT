@@ -18,12 +18,12 @@ Everything the DocsGPT web app does goes through its HTTP API, so the same API l
 
 | Credential | Looks like | How to send it | What it can call | Where to get it |
 | --- | --- | --- | --- | --- |
-| **Agent API key** | a UUID | `api_key` in the request body of `/api/answer`, `/stream`, `/api/search` and `/api/store_attachment`; `Authorization: Bearer <key>` for `/v1/*` and `/mcp` | One published agent: ask it questions, search its sources, attach files | Publish the agent, then open **Access Details**. See [Agent API keys](/Extensions/api-key-guide) |
-| **Personal access token** | `dgpt_pat_...` | `Authorization: Bearer <token>` | The management API, limited by the token's scopes, plus chat for benchmarking | **Settings → Access Tokens**. See [Personal access tokens](/Extensions/personal-access-tokens) |
+| **Agent API key** | a UUID | `api_key` in the request body of `/api/answer`, `/stream`, `/api/search` and `/api/store_attachment`; `Authorization: Bearer <key>` for `/v1/*` and `/mcp` | One published agent: ask it questions, search its sources, attach files | Publish the agent, then open **Access Details**. See [Agent API keys](/API/agent-keys) |
+| **Personal access token** | `dgpt_pat_...` | `Authorization: Bearer <token>` | The management API, limited by the token's scopes, plus chat for benchmarking | **Settings → Access Tokens**. See [Personal access tokens](/API/personal-access-tokens) |
 | **Session token** | a JWT | `Authorization: Bearer <token>` | Everything the signed-in user can do in the web app | Depends on `AUTH_TYPE`; see below |
-| **Webhook URL** | a URL with a secret token in its path | Call the URL | Start one run of one agent | **Access Details → Webhook URL**. See [Agent webhooks](/Agents/webhooks) |
+| **Webhook URL** | a URL with a secret token in its path | Call the URL | Start one run of one agent | **Access Details → Webhook URL**. See [Agent webhooks](/API/webhooks) |
 
-An **agent API key** acts as the agent: its prompt, sources, tools and model come from the agent, and the conversation and its usage are recorded under the agent's owner. A key holder can't approve anything on the owner's behalf, so write actions on the owner's connected accounts and saved credentials are refused unless the owner allows them (see [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes)).
+An **agent API key** acts as the agent: its prompt, sources, tools and model come from the agent, and the conversation and its usage are recorded under the agent's owner. A key holder can't approve anything on the owner's behalf, so write actions on the owner's connected accounts and saved credentials are refused unless the owner allows them (see [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes)).
 
 A **personal access token** is for automation: create and update agents, upload sources, edit prompts and tools. Each token has scopes, and an endpoint that isn't mapped to a scope can't be called with a token at all. The [REST API reference](/API/reference) lists the scope every endpoint needs. Tokens work only when `AUTH_TYPE` is unset or `oidc`.
 
@@ -38,13 +38,13 @@ A **session token** is what the web app sends. How you get one depends on `AUTH_
 
 | To... | Use | Page |
 | --- | --- | --- |
-| Ask an agent a question, with or without streaming | `POST /api/answer`, `POST /stream` | [Agent API](/Agents/api) |
-| Search an agent's sources without calling a model | `POST /api/search` | [Agent API](/Agents/api#search-api) |
-| Connect an OpenAI SDK or an OpenAI-compatible tool | `/v1/chat/completions`, `/v1/models` | [OpenAI-compatible API](/Agents/openai-compatible) |
+| Ask an agent a question, with or without streaming | `POST /api/answer`, `POST /stream` | [Agent API](/API/agent-api) |
+| Search an agent's sources without calling a model | `POST /api/search` | [Agent API](/API/agent-api#search-api) |
+| Connect an OpenAI SDK or an OpenAI-compatible tool | `/v1/chat/completions`, `/v1/models` | [OpenAI-compatible API](/API/openai-compatible) |
 | Search an agent's sources from an MCP client (Claude, Cursor, ...) | `/mcp` | [MCP server](/API/mcp-server) |
-| Start an agent run from another system | `/api/webhooks/agents/<token>` | [Agent webhooks](/Agents/webhooks) |
-| Follow ingestion, approvals and other live events | `GET /api/events` | [Realtime events](/Agents/notifications) |
-| Move agents between instances | `/api/export_agent`, `/api/import_agent` | [Agent API](/Agents/api#agent-portability-export--import) |
+| Start an agent run from another system | `/api/webhooks/agents/<token>` | [Agent webhooks](/API/webhooks) |
+| Follow ingestion, approvals and other live events | `GET /api/events` | [Realtime events](/API/realtime-events) |
+| Move agents between instances | `/api/export_agent`, `/api/import_agent` | [Agent API](/API/agent-api#agent-portability-export--import) |
 | Manage agents, sources, prompts, tools, schedules and more | the management endpoints | [REST API reference](/API/reference) |
 
 ## Swagger UI and the OpenAPI document
@@ -66,8 +66,8 @@ The DocsGPT Cloud Swagger UI is at [gptcloud.arc53.com](https://gptcloud.arc53.c
 
 These routes are not in `/swagger.json`. Each has its own page:
 
-- `/v1/chat/completions` and `/v1/models`: [OpenAI-compatible API](/Agents/openai-compatible).
-- `GET /api/events` and `GET /api/messages/<message_id>/events`: [Realtime events](/Agents/notifications).
+- `/v1/chat/completions` and `/v1/models`: [OpenAI-compatible API](/API/openai-compatible).
+- `GET /api/events` and `GET /api/messages/<message_id>/events`: [Realtime events](/API/realtime-events).
 - `/mcp`: DocsGPT's own [MCP server](/API/mcp-server). Its `search_docs` tool searches an agent's sources; send the agent's API key as `Authorization: Bearer <key>`.
 - `/api/devices/*`, including the device command stream: [Remote device](/Tools/remote-device).
 - `GET /api/artifacts/<id>/download`: [Artifacts](/Tools/artifacts-and-code-execution#artifacts).

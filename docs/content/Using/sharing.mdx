@@ -33,7 +33,7 @@ If you already own an agent with an API key, exactly the same prompt, source and
 Questions asked on the page go through that agent's key. They are not saved as conversations, but their tokens are recorded against the agent, count toward your [usage quota](/Deploying/Usage-Quotas), and are subject to the agent's own **Token limiting** and **Request limiting**. The `(shared)` agent appears in your agent list, where you can edit it like any other agent.
 
 <Callout type="warning">
-  A promptable link hands the agent's API key to every browser that opens the page. Anyone who has the link can read the key and call the agent directly through the [Agent API](/Agents/api), the [OpenAI-compatible API](/Agents/openai-compatible) or the [MCP server](/API/mcp-server), including `POST /api/search`, which returns raw chunks from the source. Share promptable links only for sources you're willing to make public, and set token or request limits on the `(shared)` agent.
+  A promptable link hands the agent's API key to every browser that opens the page. Anyone who has the link can read the key and call the agent directly through the [Agent API](/API/agent-api), the [OpenAI-compatible API](/API/openai-compatible) or the [MCP server](/API/mcp-server), including `POST /api/search`, which returns raw chunks from the source. Share promptable links only for sources you're willing to make public, and set token or request limits on the `(shared)` agent.
 </Callout>
 
 ## Stop a link
@@ -62,4 +62,4 @@ The page for an identifier is `/share/<id>` on the web app.
 ## Related
 
 - [Teams and sharing](/Using/teams-and-sharing): share agents, sources, prompts and tools with other signed-in users instead of the public.
-- [Agent API keys](/Extensions/api-key-guide): what a key can do.
+- [Agent API keys](/API/agent-keys): what a key can do.

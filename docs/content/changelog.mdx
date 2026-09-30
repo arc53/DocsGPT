@@ -40,7 +40,7 @@ Entries start at 0.17.0; see GitHub for earlier releases.
 Service credentials (OAuth tokens for Google Drive, SharePoint, Confluence and MCP servers, and
 API keys for tools) now live on encrypted **connections** that an admin governs in
 Admin > Connectors, and synced sources run as their connection without a browser session. See
-[Connectors](/Guides/Connectors).
+[Connectors](/Sources/Connectors).
 
 ### Roles, quotas and tokens
 
@@ -49,7 +49,7 @@ Admin > Connectors, and synced sources run as their connection without a browser
   [Access Control, Roles & Teams](/Deploying/Access-Control).
 - [Usage quotas](/Deploying/Usage-Quotas) let an instance admin cap the tokens each user spends,
   or what they cost.
-- [Personal access tokens](/Extensions/personal-access-tokens) let scripts call the API as a user.
+- [Personal access tokens](/API/personal-access-tokens) let scripts call the API as a user.
 - `docsgpt grant-admin` creates the first admin from the Docker image or a pip install, where
   `scripts/grant_admin.py` was not available. See
   [Bootstrapping the first admin](/Deploying/Access-Control#bootstrapping-the-first-admin).
@@ -332,7 +332,7 @@ at 0.7.1.
 - The code-execution sandbox runner is published as `arc53/docsgpt-sandbox`, so the Kubernetes
   manifest no longer needs an image you build yourself.
 - Releases publish the Docker images and the PyPI package from the release workflow.
-- The [architecture guide](/Guides/Architecture) was rewritten.
+- The [architecture guide](/Concepts/Architecture) was rewritten.
 - Markdown code spans are no longer corrupted by citation rendering.
 - `setup.ps1` runs on Windows PowerShell 5.1 again.
 

@@ -17,7 +17,7 @@ Both channels require Redis (already a DocsGPT dependency). The publisher can be
 </Callout>
 
 <Callout type="warning" emoji="⚠️">
-Adding an [MCP server that signs in with OAuth](/Guides/Integrations/mcp-tool-integration) needs `ENABLE_SSE_PUSH=true` (the default): the sign-in link and its result reach the web app only as `mcp.oauth.*` events. With the publisher off, the sign-in never starts in the browser.
+Adding an [MCP server that signs in with OAuth](/Tools/mcp-tools) needs `ENABLE_SSE_PUSH=true` (the default): the sign-in link and its result reach the web app only as `mcp.oauth.*` events. With the publisher off, the sign-in never starts in the browser.
 </Callout>
 
 ## User events channel
@@ -30,7 +30,7 @@ Accept: text/event-stream
 Authorization: Bearer <token>
 ```
 
-Authenticate with the session token the web app uses; with `AUTH_TYPE` unset no token is needed. [Personal access tokens](/Extensions/personal-access-tokens) are refused on this route. Each record is one `id:` line and one `data:` line holding a JSON envelope:
+Authenticate with the session token the web app uses; with `AUTH_TYPE` unset no token is needed. [Personal access tokens](/API/personal-access-tokens) are refused on this route. Each record is one `id:` line and one `data:` line holding a JSON envelope:
 
 ```text
 id: 1718900000000-0
@@ -97,7 +97,7 @@ When an answer is streaming and the connection drops, resume it without losing t
 GET /api/messages/<message_id>/events
 ```
 
-Send the sequence number of the last event you processed (the `id:` line of each [`/stream` record](/Agents/api#sse-event-types)) as the `Last-Event-ID` header or the `last_event_id` query parameter; without one, the replay starts at the beginning of the message. The route replays the message's events past that number and tails the rest live, with keepalive comments in between. It is backed by the Postgres `message_events` journal (retained for `MESSAGE_EVENTS_RETENTION_DAYS`, default 14).
+Send the sequence number of the last event you processed (the `id:` line of each [`/stream` record](/API/agent-api#sse-event-types)) as the `Last-Event-ID` header or the `last_event_id` query parameter; without one, the replay starts at the beginning of the message. The route replays the message's events past that number and tails the rest live, with keepalive comments in between. It is backed by the Postgres `message_events` journal (retained for `MESSAGE_EVENTS_RETENTION_DAYS`, default 14).
 
 It takes a session token, or a personal access token with `conversations:read` or `chat:run` and no resource restrictions. Only the owner of the message can read it (others get `404`), and the connection counts toward the same per-user cap: over `SSE_MAX_CONCURRENT_PER_USER` it returns **HTTP 429**.
 
@@ -121,5 +121,5 @@ Both channels need the API served through the ASGI app (`docsgpt.asgi:asgi_app`)
 | `MESSAGE_EVENTS_RETENTION_DAYS` | `14` | Retention for the chat-stream `message_events` journal. |
 
 <Callout type="info" emoji="ℹ️">
-Operators debugging delivery issues ("the toast never appeared", "the answer didn't reconnect") can follow the SSE notifications runbook in the repository at `docs/runbooks/sse-notifications.md`.
+Operators debugging delivery issues ("the toast never appeared", "the answer didn't reconnect") can follow the [SSE notifications runbook](/Deploying/Troubleshooting/sse-notifications).
 </Callout>

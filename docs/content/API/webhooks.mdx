@@ -227,11 +227,11 @@ Two more cases to handle:
 
 A webhook run happens in the background, with nobody watching it:
 
-- **It acts as the agent's owner.** Tools use the owner's connected accounts and saved credentials. A webhook is the owner's own automation, so the [API write allowlist](/Agents/api#letting-api-callers-make-changes) that limits API-key and widget callers does not apply to it.
+- **It acts as the agent's owner.** Tools use the owner's connected accounts and saved credentials. A webhook is the owner's own automation, so the [API write allowlist](/API/agent-api#letting-api-callers-make-changes) that limits API-key and widget callers does not apply to it.
 - **Nobody can approve.** A tool action that needs approval is refused, and the agent is told so and carries on. So are client-side tools and tools whose connection needs signing in again.
 - **Chat-only tools are unavailable.** The `scheduler` tool is not offered to the agent during a webhook run.
 - **Usage counts against the owner's quota.** When it is exhausted, the run is skipped (see the `quota_exceeded` result above).
 
 ### Keep the URL secret
 
-The token in the URL is the only credential: anyone who has the URL can run the agent as its owner, with the owner's accounts and quota. The token never changes and there is no way to rotate it yet, so treat the URL like a password: keep it out of client-side code and logs, and call it only from systems you control. If it leaks, the only way to stop it is to delete the agent. You can [export](/Agents/api#agent-portability-export--import) the agent first, delete it and import the file again; the new agent gets a new webhook URL.
+The token in the URL is the only credential: anyone who has the URL can run the agent as its owner, with the owner's accounts and quota. The token never changes and there is no way to rotate it yet, so treat the URL like a password: keep it out of client-side code and logs, and call it only from systems you control. If it leaks, the only way to stop it is to delete the agent. You can [export](/API/agent-api#agent-portability-export--import) the agent first, delete it and import the file again; the new agent gets a new webhook URL.

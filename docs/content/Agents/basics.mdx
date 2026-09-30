@@ -33,10 +33,10 @@ When you create or configure an agent, you'll work with these key components:
 
 **Source:**
     * **Select source:** The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know."
-    * **Chunks:** How many relevant text chunks are sent to the LLM with each query, in total across the agent's sources (default 6). The agent form doesn't show it; set `chunks` when creating or updating the agent through the API, or in an imported agent YAML file (see [Agents API](/Agents/api)).
+    * **Chunks:** How many relevant text chunks are sent to the LLM with each query, in total across the agent's sources (default 6). The agent form doesn't show it; set `chunks` when creating or updating the agent through the API, or in an imported agent YAML file (see [Agents API](/API/agent-api)).
 
 **Prompt:**
-The main set of instructions or system [prompt](/Guides/Customising-prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond.
+The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond.
 
 **Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information.
 
@@ -60,7 +60,7 @@ Unlike Classic which pre-fetches documents into the prompt, the Agentic Agent gi
 
 **Best for:** Tasks where the agent needs to dynamically decide how to gather information, use multiple tools in sequence, or combine retrieval with external tool calls.
 
-The agent form doesn't offer the Agentic type. Set `agent_type: agentic` when creating or updating the agent through the [Agents API](/Agents/api) or in an imported agent YAML file.
+The agent form doesn't offer the Agentic type. Set `agent_type: agentic` when creating or updating the agent through the [Agents API](/API/agent-api) or in an imported agent YAML file.
 
 ### 3. Research Agent
 
@@ -119,10 +119,10 @@ Once an agent is created, you can:
     * Modify any of its configuration settings (name, description, source, prompt, tools, type).
     * **Open Access Details:** On a published agent, open the **⋯** menu beside the agent's name on the edit screen and choose **Access Details**. It holds the agent's **Public Link**, its API key (with **Reset key**) and its **Webhook URL**. A draft has none of these: publish the agent to create its API key. The public link and webhook URL don't exist until you click **Generate** next to each in that dialog.
     * **Public Link:** Anyone with the link can open the agent and chat with it; it then appears under **Discovered** on their Agents page. They use your agent as it is; they don't get a copy.
-    * **Webhook URL:** Lets external applications or services trigger the agent and receive responses programmatically. See [Webhooks](/Agents/webhooks).
+    * **Webhook URL:** Lets external applications or services trigger the agent and receive responses programmatically. See [Webhooks](/API/webhooks).
     * On a team-shared agent, editors can manage Access Details too, unless the owner turns off **Editors can manage access details**.
 * **Share it with a team:** Viewers chat with it; editors can also change it. The share dialog lists what the agent uses and whose access each item runs with. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
-* **Use it via API:** Every published agent has an API key (in **Access Details**) that can be used with the native [Agent API](/Agents/api) or the [OpenAI-Compatible API](/Agents/openai-compatible) so you can drop DocsGPT Agents into any tool that already speaks the chat completions protocol.
+* **Use it via API:** Every published agent has an API key (in **Access Details**) that can be used with the native [Agent API](/API/agent-api) or the [OpenAI-Compatible API](/API/openai-compatible) so you can drop DocsGPT Agents into any tool that already speaks the chat completions protocol.
 
 ## Seeding Premade Agents from YAML
 

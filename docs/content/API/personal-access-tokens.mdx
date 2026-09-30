@@ -5,7 +5,7 @@ description: Scoped, revocable API tokens for managing agents, sources and other
 
 # Personal Access Tokens
 
-A personal access token (PAT) lets a script, the [DocsGPT CLI](https://github.com/arc53/DocsGPT-cli) or a CI/CD pipeline act on your account without a browser session. Unlike an [agent API key](/Extensions/api-key-guide), which can only talk to one agent, a PAT manages resources: it can create and update agents, upload sources, edit prompts and tools, and run agents for benchmarking.
+A personal access token (PAT) lets a script, the [DocsGPT CLI](https://github.com/arc53/DocsGPT-cli) or a CI/CD pipeline act on your account without a browser session. Unlike an [agent API key](/API/agent-keys), which can only talk to one agent, a PAT manages resources: it can create and update agents, upload sources, edit prompts and tools, and run agents for benchmarking.
 
 Every token is limited in three ways:
 
@@ -121,7 +121,7 @@ Some parts of the API are never available to a token, whatever its scopes:
 - all remote device routes, not only pairing;
 - artifacts, speech-to-text and text-to-speech;
 - conversation sharing and shared links, and file download;
-- the OpenAI-compatible `/v1` API (use an [agent API key](/Extensions/api-key-guide)) and the live event stream `/api/events`;
+- the OpenAI-compatible `/v1` API (use an [agent API key](/API/agent-keys)) and the live event stream `/api/events`;
 - the agent webhook trigger, whose URL is its own credential.
 
 The [REST API reference](/API/reference) shows, for each endpoint, the scope a token needs or that tokens can't call it. A token also never carries the `admin` role, even when its owner is an admin.

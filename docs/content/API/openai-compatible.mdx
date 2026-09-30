@@ -50,9 +50,9 @@ The `model` field is accepted but ignored — the agent bound to your API key de
 Authenticate with `Authorization: Bearer <agent_api_key>`. Every `/v1` request is an agent-key request, even from the agent's owner.
 
 <Callout type="warning">
-Nobody can approve a tool action through `/v1`. A tool that needs approval comes back to you as an ordinary entry in `tool_calls`, as if it were one of your own client-side tools: whatever you post back as its `role: "tool"` message is used as its result, and the server-side tool never runs. To approve server-side tools, use the native [`/api/answer` or `/stream` with `tool_actions`](/Agents/api#tools-that-need-approval).
+Nobody can approve a tool action through `/v1`. A tool that needs approval comes back to you as an ordinary entry in `tool_calls`, as if it were one of your own client-side tools: whatever you post back as its `role: "tool"` message is used as its result, and the server-side tool never runs. To approve server-side tools, use the native [`/api/answer` or `/stream` with `tool_actions`](/API/agent-api#tools-that-need-approval).
 
-Write actions that use the agent owner's connected accounts or saved credentials are refused unless the owner allows them in the agent's **Access Details > Changes others can make as you**. See [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes).
+Write actions that use the agent owner's connected accounts or saved credentials are refused unless the owner allows them in the agent's **Access Details > Changes others can make as you**. See [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes).
 </Callout>
 
 ## Endpoints
@@ -251,7 +251,7 @@ DocsGPT adds an optional `docsgpt` object to both requests and responses for fea
 
 | Field | Description |
 | --- | --- |
-| `attachments` | List of attachment IDs to include as context for this turn. Upload them with the native [`/api/store_attachment`](/Agents/api#attachments-api-including-images). |
+| `attachments` | List of attachment IDs to include as context for this turn. Upload them with the native [`/api/store_attachment`](/API/agent-api#attachments-api-including-images). |
 | `conversation_id` | Continue a stored conversation (see [Continuing a conversation](#continuing-a-conversation)). A top-level `conversation_id` works too. |
 | `session_id` | Link requests into one conversation (see [Session headers](#session-headers)). |
 
@@ -267,4 +267,4 @@ When streaming, these arrive on otherwise-empty chunks that carry a top-level `d
 
 ## When to Use Native Endpoints Instead
 
-Use [`/api/answer` or `/stream`](/Agents/api) if you need `passthrough` template variables or sidebar visibility control via `visibility`. Uploading an attachment also uses the native `/api/store_attachment`; the resulting id then works in `docsgpt.attachments`.
+Use [`/api/answer` or `/stream`](/API/agent-api) if you need `passthrough` template variables or sidebar visibility control via `visibility`. Uploading an attachment also uses the native `/api/store_attachment`; the resulting id then works in `docsgpt.attachments`.
