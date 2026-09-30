@@ -1,0 +1,83 @@
+# Keeps the DocsGPT triage agent on DocsGPT Cloud in sync with the repository:
+# its definition (.github/triage/agent.yaml) and the documents it searches.
+# Off until the TRIAGE_MODE repository variable is set; see .github/triage/README.md.
+name: Triage agent
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/triage/agent.yaml
+      - .github/workflows/triage-agent.yml
+      - AGENTS.md
+      - CONTRIBUTING.md
+      - frontend/DESIGN.md
+      - docs/content/**
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: triage-agent
+  cancel-in-progress: false
+
+env:
+  CLI_VERSION: v1.6.0
+
+jobs:
+  deploy:
+    if: github.repository == 'arc53/DocsGPT' && vars.TRIAGE_MODE != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      DOCSGPT_URL: https://gptcloud.arc53.com
+      DOCSGPT_TOKEN: ${{ secrets.DOCSGPT_TRIAGE_PAT }}
+      DOCSGPT_NO_UPDATE_CHECK: "1"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install docsgpt-cli
+        run: |
+          base="https://github.com/arc53/DocsGPT-cli/releases/download/${CLI_VERSION}"
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$base/docsgpt-cli_linux_amd64.tar.gz"
+          curl -fsSLO "$base/checksums.txt"
+          grep ' docsgpt-cli_linux_amd64.tar.gz$' checksums.txt | sha256sum -c -
+          tar -xzf docsgpt-cli_linux_amd64.tar.gz docsgpt-cli
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Work out what changed
+        id: changed
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != push ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "guides=true" >> "$GITHUB_OUTPUT"
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
+          echo "$files" | grep -qxE 'AGENTS.md|CONTRIBUTING.md|frontend/DESIGN.md' && echo "guides=true" >> "$GITHUB_OUTPUT"
+          echo "$files" | grep -q '^docs/content/' && echo "docs=true" >> "$GITHUB_OUTPUT"
+          true
+
+      - name: Upload the contributor guides
+        if: steps.changed.outputs.guides == 'true'
+        run: |
+          docsgpt-cli sources upload AGENTS.md CONTRIBUTING.md frontend/DESIGN.md \
+            --name docsgpt-contributor-guides --wait --replace --timeout 15m
+
+      - name: Upload the product docs
+        if: steps.changed.outputs.docs == 'true'
+        run: |
+          (cd docs && zip -qr "$RUNNER_TEMP/product-docs.zip" content -i '*.md' '*.mdx')
+          docsgpt-cli sources upload "$RUNNER_TEMP/product-docs.zip" \
+            --name docsgpt-product-docs --wait --replace --timeout 30m
+
+      - name: Apply the agent
+        run: docsgpt-cli agents apply -f .github/triage/agent.yaml
