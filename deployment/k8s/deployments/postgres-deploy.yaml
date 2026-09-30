@@ -17,6 +17,10 @@ metadata:
   name: postgres
 spec:
   replicas: 1
+  # Stop the old pod before starting the new one: two Postgres servers must
+  # never open the same data volume, which a rolling update would allow.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: postgres
@@ -27,14 +31,18 @@ spec:
     spec:
       containers:
       - name: postgres
-        image: postgres:16-alpine
+        # Postgres 16 with the pgvector extension, which VECTOR_STORE=pgvector needs.
+        image: pgvector/pgvector:0.8.6-pg16
         ports:
         - containerPort: 5432
         env:
         - name: POSTGRES_USER
           value: "docsgpt"
         - name: POSTGRES_PASSWORD
-          value: "docsgpt"
+          valueFrom:
+            secretKeyRef:
+              name: docsgpt-secrets
+              key: postgres-password
         - name: POSTGRES_DB
           value: "docsgpt"
         - name: PGDATA

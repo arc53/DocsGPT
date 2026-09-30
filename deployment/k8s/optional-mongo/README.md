@@ -18,6 +18,14 @@ kubectl apply -f deployment/k8s/optional-mongo/deployments/mongo-deploy.yaml
 kubectl apply -f deployment/k8s/optional-mongo/services/mongo-service.yaml
 ```
 
-Then extend `docsgpt-secrets.yaml` with a base64-encoded `MONGO_URI`
-pointing at `mongodb://mongodb-service:27017/docsgpt?retryWrites=true&w=majority`
-(or your Atlas/external URI) before re-applying the secret.
+Then set these under `stringData` in `docsgpt-secrets.yaml` (or point
+`MONGO_URI` at your Atlas/external URI) and re-apply with
+`kubectl apply -k deployment/k8s/`:
+
+```yaml
+  VECTOR_STORE: mongodb
+  MONGO_URI: mongodb://mongodb-service:27017/docsgpt?retryWrites=true&w=majority
+```
+
+The API and worker read the secret only at start, so restart them afterwards:
+`kubectl rollout restart deployment/docsgpt-api deployment/docsgpt-worker`.

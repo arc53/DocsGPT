@@ -1,9 +1,16 @@
-# One-shot migrator: runs `python scripts/db/init_postgres.py` (alembic
-# upgrade head), then exits. The backend and worker Deployments rely on
-# an init container that blocks until Postgres is reachable, but this Job
-# ensures the schema is migrated before application pods start serving.
+# One-shot migrator: runs `python -m docsgpt.cli migrate --no-create` (Alembic
+# upgrade to head on the database named by POSTGRES_URI), then exits. The
+# postgres Deployment creates the database itself, hence --no-create. The API
+# and worker pods do not migrate on start (AUTO_MIGRATE=false), so this Job
+# must complete before they can serve.
 #
-# Re-apply after upgrades to run new migrations. Safe to re-run: idempotent.
+# A finished Job is not re-run by `kubectl apply`. After changing the image tag
+# on an upgrade, delete it and apply again, then wait for it before rolling the
+# Deployments:
+#   kubectl delete job postgres-init --ignore-not-found
+#   kubectl apply -k deployment/k8s/
+#   kubectl wait --for=condition=complete job/postgres-init --timeout=300s
+# Migrating is idempotent: an up-to-date database is left as it is.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -17,8 +24,33 @@ spec:
     spec:
       restartPolicy: OnFailure
       initContainers:
+      # Refuse to start while docsgpt-secrets still holds a REPLACE_ME value.
+      - name: check-secrets
+        image: arc53/docsgpt:0.21.0
+        envFrom:
+        - secretRef:
+            name: docsgpt-secrets
+        command:
+          - sh
+          - -c
+          - |
+            missing=""
+            for key in INTERNAL_KEY JWT_SECRET_KEY ENCRYPTION_SECRET_KEY; do
+              eval "value=\${$key:-}"
+              case "$value" in ""|REPLACE_ME*) missing="$missing $key" ;; esac
+            done
+            if [ "${STORAGE_TYPE:-}" = "s3" ]; then
+              for key in S3_BUCKET_NAME S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
+                eval "value=\${$key-unset}"
+                case "$value" in ""|REPLACE_ME*) missing="$missing $key" ;; esac
+              done
+            fi
+            if [ -n "$missing" ]; then
+              echo "docsgpt-secrets: replace the placeholder values of:$missing (see the Kubernetes guide)" >&2
+              exit 1
+            fi
       - name: wait-for-postgres
-        image: postgres:16-alpine
+        image: pgvector/pgvector:0.8.6-pg16
         command:
           - sh
           - -c
@@ -28,14 +60,13 @@ spec:
             done
       containers:
       - name: postgres-init
-        image: arc53/docsgpt
-        command: ["python", "scripts/db/init_postgres.py"]
+        image: arc53/docsgpt:0.21.0
+        # The `docsgpt migrate` command. The image has no `docsgpt` console script,
+        # and images up to 0.21.0 have no `python -m docsgpt`, so run the module.
+        command: ["python", "-m", "docsgpt.cli", "migrate", "--no-create"]
         envFrom:
         - secretRef:
             name: docsgpt-secrets
-        env:
-        - name: FLASK_APP
-          value: "docsgpt/app.py"
         resources:
           limits:
             memory: "1Gi"
