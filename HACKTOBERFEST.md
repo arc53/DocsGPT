@@ -6,8 +6,9 @@ to October 31, 2026**.
 We're giving away **T-shirts for meaningful contributions** 👕: merged pull requests that fix a real bug, add a
 feature or noticeably improve the docs. Typo fixes and other trivial changes don't qualify.
 
-Our maintainer team (dartpain, siiddhantt, pabik, ManishMadan2882) sets the `hacktoberfest` label on issues that are
-good to pick up and reviews the pull requests.
+Any meaningful pull request merged during Hacktoberfest qualifies, whether or not it closes a labelled issue. Our
+maintainer team (dartpain, siiddhantt, pabik, ManishMadan2882) sets the `hacktoberfest` label on issues that are good to
+pick up; those are suggestions, not a requirement. The team also reviews the pull requests.
 
 **The T-shirt design and the claim form will be announced later**, on our [Discord](https://discord.gg/vN7YFfdMpj)
 and in the [README](README.md). Keep a link to your merged PR so you can claim once the form is out.
@@ -16,8 +17,9 @@ If you're in doubt, don't hesitate to ask on Discord or ping me, Alex (dartpain)
 
 ## 📜 How to contribute
 
-- 🛠️ **Code**: the golden ticket. Fix a bug or build a feature through a pull request. Start with the
-  [`hacktoberfest` issues](https://github.com/arc53/DocsGPT/issues?q=is%3Aissue+is%3Aopen+label%3Ahacktoberfest).
+- 🛠️ **Code**: the golden ticket. Fix a bug or build a feature through a pull request. The
+  [`hacktoberfest` issues](https://github.com/arc53/DocsGPT/issues?q=is%3Aissue+is%3Aopen+label%3Ahacktoberfest) are a
+  good place to start, but any other issue counts too.
 - 🧩 **API extension**: build an app on top of the DocsGPT API. We prefer submissions that show an original idea and
   turn the API into an AI agent. It can live in its own repository, like the
   [Telegram bot](https://github.com/arc53/tg-bot-docsgpt-extenstion) or the
