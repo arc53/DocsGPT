@@ -39,6 +39,7 @@
         "worker",
         "-l",
         "INFO",
+        "-B",
         "--pool=solo"
       ],
       "cwd": "${workspaceFolder}"

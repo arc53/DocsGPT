@@ -132,7 +132,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     | --- | --- |
     | `--ui` | also start the Vite dev server, so the whole app runs from one command |
     | `--mock-llm` | run `scripts/mock_llm.py` and point DocsGPT at it, so no API key is needed |
-    | `--no-worker` | leave the worker to you, for instance when debugging it in your editor |
+    | `--no-worker` | leave the worker to you, for instance when debugging it in your editor; start one as in step 6, or searches and scheduled tasks stop working |
     | `--no-reload` | do not restart anything on save |
     | `--port` | serve the API somewhere other than 7091 |
 
@@ -160,23 +160,52 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     flask --app docsgpt/app.py run --host=0.0.0.0 --port=7091
     ```
 
-    But it serves **only** the WSGI Flask app and omits the native-async routes mounted on the ASGI shell in `docsgpt/asgi.py`: the `/mcp` FastMCP endpoint, the chat reconnect reader `GET /api/messages/<id>/events`, the notification stream `GET /api/events`, the remote-device command stream `GET /api/devices/sessions/<id>/events`, and artifact downloads `GET /api/artifacts/<id>/download`. Under `flask run` those paths return 404 — chat still works (`POST /stream` is a Flask route), but live notifications, stream auto-resume, paired devices and artifact downloads don't. Use `flask run` only when you don't need them.
+    But it serves **only** the WSGI Flask app, so the [ASGI-only features](#asgi-only-features) return 404 under
+    it. Chat still works (`POST /stream` is a Flask route). Use `flask run` only when you don't need those features.
 
 6.  **Start the Celery Worker** (not needed if you used `docsgpt dev`)**:**
 
-    Open a new terminal window (and activate your virtual environment if you used one). Start the Celery worker to handle background tasks:
+    Open a new terminal window (and activate your virtual environment if you used one), then start the worker
+    from the repository root:
 
     ```bash
-    celery -A docsgpt.app.celery worker -l INFO
+    docsgpt worker
     ```
 
-    This command will start the Celery worker, which processes tasks such as document parsing and vector embedding.
+    Use `python -m docsgpt worker` if the `docsgpt` command is not on your `PATH`. The worker parses and embeds
+    uploaded documents, embeds every search query for the API, and runs background agent tasks. It also embeds
+    the Celery beat scheduler (`-B`).
 
-    **macOS note:** Due to a threading issue, start Celery with the solo pool:
+    <Callout type="warning">
+      Chat retrieval needs a running worker. The API sends each query embedding to it
+      (`EMBEDDINGS_DELEGATE_TO_WORKER`, on by default). Without a worker, every search waits
+      `EMBEDDINGS_DELEGATE_TIMEOUT` (60 seconds) and then answers with no retrieved context, without an
+      error. To run the API alone, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` to load the model in the API
+      process, or point `EMBEDDINGS_BASE_URL` at an embeddings service.
+    </Callout>
+
+    The beat scheduler fires scheduled agent runs, source syncs, the reconciliation of stuck tasks, retention
+    cleanups and the version check. If no scheduler runs, none of these happen and nothing reports it. At least
+    one scheduler must run. Running more than one is safe, because a lock in Redis lets only one of them schedule
+    at a time. `docsgpt worker --no-beat` leaves the scheduler out, and `docsgpt beat` runs it on its own.
+    On Windows the scheduler cannot run inside the worker, so run `docsgpt beat` in a third terminal.
+
+    To run Celery directly, add `-B` yourself:
 
     ```bash
-    python -m celery -A docsgpt.app.celery worker -l INFO --pool=solo
+    celery -A docsgpt.app.celery worker -l INFO -B
     ```
+
+    **macOS note:** due to a threading issue with the default prefork pool, use the solo pool on macOS.
+    `docsgpt worker` picks it automatically on macOS and Windows. With raw Celery, pass it yourself:
+
+    ```bash
+    python -m celery -A docsgpt.app.celery worker -l INFO -B --pool=solo
+    ```
+
+    The solo pool makes each query embedding take roughly 350 ms instead of about 55 ms on prefork, almost all
+    of it spent waiting for the worker to pick up the message. That only affects local development; production
+    runs prefork.
 
 **Running in Debugger (VSCode):**
 
@@ -185,9 +214,10 @@ For easier debugging, you can launch the API and the Celery worker directly from
 *   Press <kbd>Shift</kbd> + <kbd>Cmd</kbd> + <kbd>D</kbd> (macOS) or <kbd>Shift</kbd> + <kbd>Windows</kbd> + <kbd>D</kbd> (Windows) to open the Run and Debug view.
 *   You should see configurations named "API (uvicorn)" and "Celery worker", and a compound "DocsGPT: Full Stack" that starts them with the frontend. Select one and click the "Start Debugging" button (green play icon).
 
-The API configuration runs the same ASGI app as production, so the routes mounted on the ASGI shell
-work under the debugger. It deliberately runs without `--reload`: the reloader restarts the server in
-a child process, which your breakpoints would not be attached to.
+The API configuration runs the same ASGI app as production, so the [ASGI-only features](#asgi-only-features)
+work under the debugger. It deliberately runs without `--reload`: the reloader restarts the server in a child
+process, which your breakpoints would not be attached to. The worker configuration embeds the beat scheduler
+(`-B`) and uses the solo pool.
 
 ## 3. Start the Frontend
 
@@ -239,6 +269,23 @@ To run the DocsGPT frontend locally, you'll need Node.js and npm (Node Package M
 
 With both the backend and frontend running, you should now have a fully functional DocsGPT development environment. You can access the application in your browser at [http://localhost:5173/](http://localhost:5173/) and start developing!
 
+## ASGI-only features
+
+A few routes hold a response open for a long time, so they are native-async routes mounted only on the ASGI app,
+`docsgpt.asgi:asgi_app`, and not on the Flask app:
+
+| Route | Feature |
+| --- | --- |
+| `/mcp` | DocsGPT's own MCP server |
+| `GET /api/events` | Live notifications |
+| `GET /api/messages/<id>/events` | Resuming a chat answer after the connection drops |
+| `GET /api/devices/sessions/<id>/events` | The command stream of a paired [remote device](/Tools/remote-device) |
+| `GET /api/artifacts/<id>/download` | [Artifact](/Tools/artifacts-and-code-execution#artifacts) downloads |
+
+`docsgpt api`, `docsgpt dev`, `uvicorn docsgpt.asgi:asgi_app`, gunicorn with a uvicorn worker and the Docker
+images all serve the ASGI app. `flask --app docsgpt/app.py run` serves only the Flask app, so these routes
+return 404 under it.
+
 ## Working on two branches at once
 
 Each install keeps its own directory and its own services, so a second branch can run beside the
@@ -251,3 +298,15 @@ docsgpt up --native --dir ~/.docsgpt/review --port 7092   # or a second installe
 
 A native install in another directory gets its own service names, so the two never write over each
 other's units. `docsgpt status --dir ~/.docsgpt/review` reports on that one alone.
+
+## Troubleshooting
+
+Run `docsgpt doctor` first. It checks PostgreSQL, Redis, the model provider and the API port.
+
+- **Searches take about a minute and answers ignore your documents.** No worker is consuming the `embeddings`
+  queue. Start one as in step 6. A worker started with an explicit `-Q` must list `embeddings`.
+- **Scheduled agent runs and source syncs never fire.** No beat scheduler is running. Start the worker with
+  `docsgpt worker` or add `-B` to the `celery` command. On Windows, also run `docsgpt beat`.
+- **Notifications never appear, a dropped answer doesn't resume, a paired device never receives commands, or
+  artifact downloads return 404.** The API is running under `flask run`. Serve it through the ASGI app instead; see
+  [ASGI-only features](#asgi-only-features).
