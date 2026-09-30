@@ -212,7 +212,7 @@ vale .
 - `frontend/`: Vite + React + TypeScript application.
 - `frontend/src/`: main UI code, including `components`, `conversation`, `hooks`, `locale`, `settings`, `upload`, and Redux store wiring in `store.ts`.
 - `docs/`: separate documentation site built with Next.js/Nextra.
-- `extensions/`: integrations and widgets — currently the Chatwoot webhook bridge and the React widget (published to npm as `docsgpt`). The Discord bot, Slack bot, and Chrome extension have been moved to their own repos under `arc53/`.
+- `extensions/`: integrations and widgets — currently the Chatwoot webhook bridge and the React widget (published to npm as `docsgpt`). The Discord, Slack and Telegram bots live in their own repos (`arc53/discord-docsgpt-extension`, `arc53/slack-bot-docsgpt-extenstion`, `arc53/tg-bot-docsgpt-extenstion`); the old Chrome extension was removed and has no public successor.
 - `deployment/`: Docker Compose variants and Kubernetes manifests.
 
 ## Coding rules
