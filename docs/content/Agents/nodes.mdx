@@ -1,6 +1,18 @@
+import { Callout } from 'nextra/components';
+
 # Workflow Nodes
 
 DocsGPT workflows are composed of **Nodes** that are connected to form a processing graph. These nodes interact with a **Shared State**—a global dictionary of variables that persists throughout the execution of the workflow.
+
+| Node | Palette group | What it does |
+| --- | --- | --- |
+| [Start](#start-and-end-nodes) | Added automatically | Entry point of the run |
+| [AI Agent](#ai-agent-node) | Core Nodes | Calls a model, with optional knowledge, tools and documents |
+| [End](#start-and-end-nodes) | Core Nodes | Finishes the run |
+| [Note](#note-node) | Core Nodes | A comment on the canvas |
+| [Set State](#set-state-node) | Logic & Data | Writes variables with CEL expressions |
+| [If / Else](#condition-node) | Logic & Data | Branches on conditions |
+| [Code](#code-node) | Logic & Data | Runs Python in the sandbox |
 
 ## The Shared State
 
@@ -31,39 +43,74 @@ workflow that contains one is rejected with the correction.
 
 ---
 
+## Start and End Nodes
+
+Every workflow has exactly one **Start** node, added for you. It has no
+settings and can't be deleted; the run begins there with `query` and
+`chat_history` in the state.
+
+An **End** node finishes the run. Add one from the palette for each branch that
+should stop; a workflow needs at least one, and each needs an incoming
+connection. End nodes have no settings in the builder. A workflow saved or
+imported through the API can give an End node an `output_template` (template
+syntax, like a Prompt Template); its rendered text is sent to the user as the
+last part of the answer.
+
+---
+
 ## AI Agent Node
 
 The **AI Agent Node** is the core processing unit. It uses a Large Language Model (LLM) to generate text, answer questions, or perform tasks using tools.
 
-### Inputs (Template Variables)
+### Settings
 
-The primary input is the **Prompt Template**. This field supports variable substitution.
+**Model**
 
-- **Prompt Template**: The text sent to the model.
-  - *Example*: `"Summarize the following text: {{user_input_text}}"`
-  - If left empty, it defaults to the initial user query (`{{query}}`).
-- **System Prompt**: Instructions that define the agent's persona and constraints.
-- **Tools**: A list of tools the agent can use (e.g., search, calculator).
-- **LLM Settings**: Specific provider, model name, and parameters.
+- **Agent Type**: **Classic** (retrieves from the node's knowledge before
+  answering) or **Research** (plans and searches in several steps).
+- **Model**: the model this node calls. Every agent node needs one.
 
-### Outputs (Emissions)
+**Prompt**
 
-When the agent completes its task, it stores the result in the shared state.
+- **System Prompt**: instructions that define the node's persona and
+  constraints. Defaults to `You are a helpful assistant.`
+- **Prompt Template**: the text sent to the model as the user turn. It supports
+  template variables, for example `Summarize the following text: {{user_input_text}}`.
+  If left empty, it defaults to the initial user query (`{{query}}`).
 
-- **Output Variable**: The name of the variable where the result will be saved.
-  - *Default*: If not specified, it is saved as `node_{node_id}_output`.
-  - *Custom*: You can set this to something meaningful, like `summary` or `translated_text`.
-- **Streaming**: If "Stream to user" is enabled, the output is sent to the user in real-time as it is generated, in addition to being saved to the state.
+**Knowledge**
 
-### Documents
+- **Knowledge**: sources this node searches.
+- **Tools**: tools the node's model can call.
 
-An agent node can receive documents as inputs. Choose which documents the node sees:
+<Callout type="warning">
+  A tool that requires approval fails the node, and with it the run: a
+  workflow can't pause for someone to approve a call. Turn approval off for
+  tools you use in workflow nodes. Nodes also run only the instance
+  guardrail floor, not the parent agent's guardrails; see
+  [Guardrails scope](/Agents/guardrails#scope-and-limitations).
+</Callout>
 
-- **All**: every document attached to the run.
-- **None**: no documents.
-- **Choose**: a specific set that you select.
+**Output**
 
-For how a chosen document reaches the model, the node can pass it natively (send the file to a model that accepts files) or extract it to text first. The default picks automatically based on the model and the file type.
+- **Output Variable**: the name of the variable where the result will be saved.
+  The result is always saved as `node_<node_id>_output` too; set this to
+  something meaningful, like `summary` or `translated_text`.
+- **Stream output to user**: shows this node's answer in the chat as it's
+  written, in addition to saving it to the state. On by default.
+
+**Advanced settings**
+
+- **Documents**: which documents the node sees — **All input docs**, **None**,
+  or **Choose…** a specific set (upstream artifact references or refs such as
+  `A1`).
+- **File passing**: how a chosen document reaches the model. **Auto** sends the
+  file natively when the model accepts that file type and extracts it to text
+  otherwise; **Native** always sends the file (and fails on an unsupported
+  type); **Extract** always sends extracted text.
+- **Structured Output (JSON Schema)**: makes the model return JSON matching the
+  schema. The parsed, validated object is saved as the node's output instead
+  of text. The model must support structured output.
 
 ---
 
@@ -73,18 +120,18 @@ The **Set State Node** allows you to manipulate variables within the shared stat
 
 ### Operations
 
-You can define multiple operations in a single node. Each operation has two
+You can define multiple assignments in a single node. Each assignment has two
 parts:
 
-- **Target Variable**: the state key to write to.
-- **Expression**: a [CEL](https://cel.dev/) expression evaluated against the
+- **Variable**: the state key to write to.
+- **Value (CEL)**: a [CEL](https://cel.dev/) expression evaluated against the
   current state. Its result becomes the variable's value.
 
 Reference state variables by bare name. `{{ }}` is template syntax and does
 **not** work here — an operation must supply both parts, or it is rejected
 when you save.
 
-| Goal | Target Variable | Expression |
+| Goal | Variable | Value (CEL) |
 | --- | --- | --- |
 | Initialize a counter | `retry_count` | `0` |
 | Increment a counter | `retry_count` | `retry_count + 1` |
@@ -111,9 +158,21 @@ CEL supports arithmetic, string concatenation with `+`, comparisons,
 
 ## Condition Node
 
-The **Condition Node** branches the workflow. Each case pairs a
-[CEL](https://cel.dev/) **Expression** with an outgoing branch; the first case
-whose expression is true wins, and execution follows that branch.
+The **Condition Node** (**If / Else** in the palette) branches the workflow.
+Each case pairs a condition with an outgoing branch; the first case whose
+condition is true wins, and execution follows that branch.
+
+The node has two modes:
+
+- **Simple**: pick a **Variable**, an **Operator** (`=`, `!=`, `>`, `<`, `>=`,
+  `<=`, **contains** or **starts**) and a **Value**. The builder turns each row
+  into a CEL expression, for example `category == "refund"` or
+  `query.contains("invoice")`. The variable can be a dotted path such as
+  `audit.high_risk_accounts`, and every case must name one.
+- **Advanced**: write each case as a [CEL](https://cel.dev/) expression
+  yourself.
+
+Both modes run the same way:
 
 - Expressions use the same syntax as the Set State node: reference state by
   bare name, not `{{ }}`.
@@ -137,10 +196,74 @@ expression is referencing a variable that no earlier node writes.
 
 ## Code Node
 
-The **Code Node** runs a script in a sandboxed session bound to the workflow run. Use it to transform data, parse files, cross-check documents, or build a report that later nodes consume.
+The **Code Node** runs a Python script in a sandboxed session bound to the workflow run. Use it to transform data, parse files, cross-check documents, or build a report that later nodes consume. Every Code node and tool call in one run shares the same session.
 
-- **Code**: the script to run. The workflow state is available to the script as data, so it can read variables, compute, and write results back.
-- **Inputs**: documents or artifacts to place in the workspace before the script runs. Each input accepts a produced artifact reference, a full artifact id, or an attached file.
-- **Outputs**: any files the script writes are captured as artifacts and surfaced in the run view. Write a small JSON value back to the state to pass a decision or summary to later nodes.
+- **Code**: the script to run. It is never templated: `{{ }}` in the code is
+  literal text. The script reads the workflow state from `state.json` in its
+  working directory (`chat_history` is left out):
 
-Runs are sandboxed and have a fixed time limit, so keep each step focused. See [Artifacts and Code Execution](/Tools/artifacts-and-code-execution) for the sandbox backends and configuration.
+  ```python
+  import json
+
+  state = json.load(open("state.json"))
+  total = len(state["query"])
+  ```
+
+  The script can't change the shared state. Editing `state.json` has no effect
+  on later nodes; pass results through the node's output instead.
+- **Input files**: artifacts to stage in the workspace before the script runs,
+  under `inputs/<filename>`. Each entry is a state variable holding an artifact
+  reference, a full artifact id or a short ref such as `A1` from this run.
+- **Output Variable**: an extra name for the node's output, which is always
+  saved as `node_<node_id>_output`.
+- **Timeout (seconds)**: optional. It can't exceed `SANDBOX_EXEC_TIMEOUT`, which
+  is also the default.
+- **Structured Output (JSON Schema)**: optional; see the output rules below.
+
+What the node outputs:
+
+| Setup | Node output |
+| --- | --- |
+| No schema, the script created or changed files | A reference to the first captured artifact (`artifact_id`, `version`, `mime_type`, `filename`, ...) |
+| No schema, no files | `{"artifacts": [], "status": "ok"}` |
+| JSON schema set | The JSON the script prints to stdout, validated against the schema. When files were captured too, they are added under an `artifacts` key. |
+
+Use a schema when later nodes need to branch on a decision: print one JSON
+object, for example `print(json.dumps({"approved": total > 10}))`, then test
+`node_code_1_output.approved` in an If / Else node. Stdout that isn't valid JSON,
+or doesn't match the schema, fails the node.
+
+Files the script creates or changes are saved as artifacts and shown in the run
+view; files under `tmp/` and temporary files (`.tmp`, `.lock`, `.pyc`) are
+skipped. A script that raises an error fails the node and the run. See
+[Artifacts and Code Execution](/Tools/artifacts-and-code-execution) for the
+sandbox backends and configuration.
+
+---
+
+## Note Node
+
+A **Note** holds free text for whoever edits the workflow: what a branch is for,
+or what still needs doing. It has no effect on a run.
+
+---
+
+## Graph rules
+
+The builder checks these before a preview, save or publish, and lists every rule
+a workflow breaks:
+
+- The workflow has a name, exactly one Start node, at least one End node and
+  at least one AI Agent node.
+- The Start node connects to another node, and every End node has an incoming
+  connection.
+- Every AI Agent node has a model selected. A node with a JSON schema needs a
+  valid schema and a model that supports structured output.
+- Every If / Else node has at least one case with an expression, an **Else**
+  branch and at least two outgoing connections. Each case with an expression
+  has exactly one connection, each connection comes from a known case, and in
+  Simple mode each case names a variable.
+- Every If / Else branch eventually reaches an End node.
+- Every Code node has code, and any JSON schema it has is valid.
+
+A run stops after 50 node steps, so a loop needs an exit condition.
