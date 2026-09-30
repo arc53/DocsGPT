@@ -11,7 +11,7 @@ This guide will walk you through setting up a development environment for DocsGP
 
 ## 1. Spin Up Postgres and Redis
 
-For development purposes, you can quickly start Postgres and Redis containers. Postgres is the user-data store for DocsGPT (conversations, agents, prompts, sources, attachments, workflows, logs, and token usage), and Redis is used as the cache and Celery broker. We provide a dedicated Docker Compose file, `docker-compose-dev.yaml`, located in the `deployment` directory, that includes only these essential services. The backend applies the Alembic schema automatically on first boot (`AUTO_MIGRATE=true` / `AUTO_CREATE_DB=true` ship enabled), so no separate migration step is required. You can still run `python scripts/db/init_postgres.py` explicitly if you prefer.
+For development purposes, you can quickly start Postgres and Redis containers. Postgres is the user-data store for DocsGPT (conversations, agents, prompts, sources, attachments, workflows, logs, and token usage), and Redis is used as the cache and Celery broker. We provide a dedicated Docker Compose file, `docker-compose-dev.yaml`, located in the `deployment` directory, that includes only these essential services. The backend applies the Alembic schema automatically on first boot (`AUTO_MIGRATE=true` / `AUTO_CREATE_DB=true` ship enabled), so no separate migration step is required. You can still run `python scripts/db/init_postgres.py` or `docsgpt migrate` (`python -m docsgpt migrate` without installing) explicitly if you prefer.
 
 You can find the `docker-compose-dev.yaml` file [here](https://github.com/arc53/DocsGPT/blob/main/deployment/docker-compose-dev.yaml).
 
