@@ -34,7 +34,7 @@ The process involves two main steps: triggering the task and polling for the res
 
 Send an HTTP `POST` request to the agent's unique webhook URL with the required payload. The structure of this payload should match what the agent's prompt and tools are designed to handle.
 
--   **Method:** `POST`, with a JSON body (any other body returns `400`)
+-   **Method:** `POST`, with a JSON body and `Content-Type: application/json`. Another content type returns `415`; a body that isn't valid JSON, or is `null`, returns `400`.
 -   **Response:** `{"success": true, "task_id": "a1b2c3d4-e5f6-..."}`
 
 The whole JSON body becomes the agent's input, serialized as JSON text; no field has a special meaning. The request `{"question": "Summarize order 4567"}` reaches the agent as the message `{"question": "Summarize order 4567"}`, so write the agent's prompt to expect the payload your system sends.
@@ -102,7 +102,7 @@ As with `POST`, the response is a JSON object containing the `task_id`, and the 
 
 ### Preventing duplicate triggers (Idempotency-Key)
 
-To make a trigger safe to retry, send an optional `Idempotency-Key` header. If the same key is seen again within 24 hours, DocsGPT does not enqueue a second task — it returns the **original** `task_id` instead. This prevents a retried or double-fired webhook from running the agent twice. In the rare case that two requests with the same key arrive at the same moment, the second can get `"task_id": "deduplicated"` instead of the first request's id; it still does not start a second run.
+To make a trigger safe to retry, send an optional `Idempotency-Key` header. If the same key is seen again within 24 hours, DocsGPT does not enqueue a second task — it returns the **original** `task_id` instead. This prevents a retried or double-fired webhook from running the agent twice. If the response is `"task_id": "deduplicated"` instead, a request with the same key was being enqueued at the same moment and its record is already gone, most likely because that enqueue failed, so the agent may not have run at all. There is no task to poll (`/api/task_status` reports `PENDING` for it forever): send the request again.
 
 ```bash
 curl -X POST \
@@ -145,7 +145,12 @@ When the agent owner's [usage quota](/Deploying/Usage-Quotas) is exhausted, the 
 }
 ```
 
-`/api/task_status` returns `503` when no worker is reachable.
+While a task is `PENDING`, `/api/task_status` returns `503` if no worker answers; a `PENDING` task and no reachable worker usually means the worker isn't running.
+
+Two more cases to handle:
+
+- **A run that fails inside the agent still ends `SUCCESS`.** When the model or a workflow node reports an error during the run, the task finishes with `"status": "success"` and an empty or partial `answer`; the error itself is not in the result. An empty `answer` usually means the run failed; the agent's logs in DocsGPT (**Settings > Logs**) show why.
+- **A crashed run is retried.** If the run raises an error (for example the model provider is unreachable), the worker retries the task up to 3 times, with a growing delay, before it ends `FAILURE`. Each retry runs the agent again from the start, including any tool actions that already took effect, so prefer tools whose writes are safe to repeat.
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
   <Tabs.Tab>
