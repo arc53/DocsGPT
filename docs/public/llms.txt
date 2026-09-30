@@ -15,9 +15,9 @@ Prioritize Core, Deploying, and Agents for implementation tasks.
 
 ## Deploying
 
+- [Choose a Deployment](https://docs.docsgpt.cloud/Deploying): Compare the install methods and pick one.
 - [Docker Deployment](https://docs.docsgpt.cloud/Deploying/Docker-Deploying): Run DocsGPT with Docker and Docker Compose.
 - [Kubernetes Deployment](https://docs.docsgpt.cloud/Deploying/Kubernetes-Deploying): Deploy DocsGPT on Kubernetes clusters.
-- [Hosting DocsGPT](https://docs.docsgpt.cloud/Deploying/Hosting-the-app): Hosting overview with cloud options.
 
 ## Agents
 
@@ -58,6 +58,4 @@ Prioritize Core, Deploying, and Agents for implementation tasks.
 - [OCR for Sources and Attachments](https://docs.docsgpt.cloud/Guides/ocr): OCR behavior for ingestion and chat uploads.
 - [How to Use Different LLMs](https://docs.docsgpt.cloud/Guides/How-to-use-different-LLM): Additional model-selection guidance.
 - [Avoiding Hallucinations](https://docs.docsgpt.cloud/Guides/My-AI-answers-questions-using-external-knowledge): Improve answer grounding with external knowledge.
-- [Amazon Lightsail Deployment](https://docs.docsgpt.cloud/Deploying/Amazon-Lightsail): Deploy DocsGPT on AWS Lightsail.
-- [Railway Deployment](https://docs.docsgpt.cloud/Deploying/Railway): Deploy DocsGPT on Railway.
 - [Changelog](https://docs.docsgpt.cloud/changelog): Project release history.

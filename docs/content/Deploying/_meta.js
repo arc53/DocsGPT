@@ -1,4 +1,8 @@
 export default {
+  "index": {
+    "title": "🧭 Choose a Deployment",
+    "href": "/Deploying"
+  },
   "DocsGPT-Settings": {
     "title": "⚙️ App Configuration",
     "href": "/Deploying/DocsGPT-Settings"
@@ -43,10 +47,6 @@ export default {
     "title": "🔒 Air-Gapped Deployment",
     "href": "/Deploying/Air-Gapped"
   },
-  "Hosting-the-app": {
-    "title": "☁️ Hosting DocsGPT",
-    "href": "/Deploying/Hosting-the-app"
-  },
   "Postgres-Migration": {
     "title": "🐘 PostgreSQL for User Data",
     "href": "/Deploying/Postgres-Migration"
@@ -54,15 +54,5 @@ export default {
   "Observability": {
     "title": "🔭 Observability",
     "href": "/Deploying/Observability"
-  },
-  "Amazon-Lightsail": {
-    "title": "Hosting DocsGPT on Amazon Lightsail",
-    "href": "/Deploying/Amazon-Lightsail",
-    "display": "hidden"
-  },
-  "Railway": {
-    "title": "Hosting DocsGPT on Railway",
-    "href": "/Deploying/Railway",
-    "display": "hidden"
   }
 }
