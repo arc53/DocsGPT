@@ -63,7 +63,7 @@ For OAuth in production, `MCP_OAUTH_REDIRECT_URI` must be a publicly accessible 
 ## Troubleshooting
 
 - **Connection refused** — Verify the URL and that the server is reachable from your backend.
-- **`Invalid MCP server URL: ...`** — DocsGPT only connects to MCP servers on the public internet. `localhost`, loopback, private (RFC 1918), link-local and other reserved addresses are refused, including a server on the same host or in the same Docker Compose project, and there is no allowlist. See [Outbound network access](/Deploying/Security#outbound-network-access).
+- **`Invalid server URL`** (when saving) or **`Invalid MCP server URL: ...`** (when a tool connects) — DocsGPT only connects to MCP servers on the public internet. `localhost`, loopback, private (RFC 1918), link-local and other reserved addresses are refused, including a server on the same host or in the same Docker Compose project, and there is no allowlist. See [Outbound network access](/Deploying/Security#outbound-network-access).
 - **403 Forbidden** — Check credentials and permissions.
 - **Timed out** — Default is 30s; increase timeout in tool config (max 300s).
 - **OAuth "needs_auth" persists** — Verify `MCP_OAUTH_REDIRECT_URI` is correct and Redis is running.

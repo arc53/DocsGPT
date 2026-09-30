@@ -54,7 +54,7 @@ Anything outside the stack that connected to Postgres on port 5432 or Redis on p
 
 ## JWT key file: moved to the data home
 
-Without `JWT_SECRET_KEY`, the API generated `.jwt_secret_key` in the directory it was started from. It now keeps it in the data home (`DOCSGPT_HOME`, the checkout, or `~/.docsgpt/server`). On its first start the API moves a key it finds in its working directory there, so existing tokens stay valid; start it from the same directory as before once. Docker and multi-process installs should set `JWT_SECRET_KEY` instead (see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live)).
+Without `JWT_SECRET_KEY`, the API generated `.jwt_secret_key` in the directory it was started from. It now keeps it in the data home (`DOCSGPT_HOME`, the checkout, or `~/.docsgpt/server`). On its first start the API copies a key it finds in its working directory there, so existing tokens stay valid; start it from the same directory as before once. The worker resolves the key the same way, so start whichever process holds the old file first: one started from another directory would generate a new key before the old one is copied. Docker and multi-process installs should set `JWT_SECRET_KEY` instead (see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live)).
 
 ## Embedding models
 

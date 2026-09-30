@@ -285,13 +285,15 @@ rejected. These limits apply before the image is written to local or S3 storage.
 
 ## Secrets to set before going live
 
-Three secrets protect a DocsGPT install. `setup.sh`, `setup.ps1` and `docsgpt up` generate them on a fresh install; set them yourself when you write `.env` by hand, and keep them out of version control. Generate each with `openssl rand -hex 32`.
+Three secrets protect a DocsGPT install. `setup.sh`, `setup.ps1` and `docsgpt up` generate them on a fresh install and keep them when run again; set them yourself when you write `.env` by hand, and keep them out of version control. Generate each with `openssl rand -hex 32`.
+
+The database password is separate: `docsgpt up` generates `POSTGRES_PASSWORD`, and the standalone Compose file reads it from `.env`, but the checkout Compose files (and so the setup scripts) use the fixed password `docsgpt`, which is why they publish Postgres on `127.0.0.1` only.
 
 | Setting | What it protects | If it is missing |
 | --- | --- | --- |
 | `INTERNAL_KEY` | The worker hands finished indexes and files to the API with it. **Required**, with the same value on the API and the worker. | The API rejects the worker's uploads, so every ingest fails after parsing. |
 | `JWT_SECRET_KEY` | Signs login tokens in every `AUTH_TYPE`, and agent-avatar URLs in every mode. Same value on every API and worker process. | With `DEPLOYMENT_TYPE=production` (or `cloud`), startup fails. Otherwise the API generates `.jwt_secret_key` in the data home, which suits one local process only: separate containers each generate their own key, and a recreated container gets a new one, which signs everyone out and, under `session_jwt`, loses sight of their data. |
-| `ENCRYPTION_SECRET_KEY` | Seals stored credentials: connector tokens, MCP credentials, tool secrets and custom-model API keys. | It falls back to a public default. With any `AUTH_TYPE` set, DocsGPT then refuses to store credentials; without one it stores them under the public key and logs a warning. |
+| `ENCRYPTION_SECRET_KEY` | Seals stored credentials: connector tokens, MCP credentials, tool secrets and custom-model API keys. | It falls back to a public default, and DocsGPT logs a warning at startup. With any `AUTH_TYPE` set, it refuses to create connections on the Connectors page (OAuth sign-ins and connector keys); tool secrets, MCP server credentials and custom-model keys are still stored, sealed with the public key. |
 
 ```env
 INTERNAL_KEY=<openssl rand -hex 32>
@@ -302,16 +304,19 @@ DEPLOYMENT_TYPE=production
 ```
 
 <Callout type="warning" emoji="⚠️">
-Set `ENCRYPTION_SECRET_KEY` before anyone connects a service, and never just replace it: stored credentials are sealed with the key they were saved under. The installers never overwrite an existing value, and do not add one to an existing install.
+Set `ENCRYPTION_SECRET_KEY` before anyone connects a service, and never just replace it: stored credentials are sealed with the key they were saved under. The installers never overwrite an existing value. `docsgpt up` on Docker and the setup scripts add one only to a fresh install; `docsgpt up --native` adds one on its first run and sets `ENCRYPTION_SECRET_KEY_PREVIOUS` to the public default, since the database it points at may already hold credentials sealed with it.
 </Callout>
 
 To change `ENCRYPTION_SECRET_KEY` on an install that already stores credentials (including one that ran on the public default, `default-docsgpt-encryption-key`):
 
 1. Move the current value to `ENCRYPTION_SECRET_KEY_PREVIOUS` and put the new one in `ENCRYPTION_SECRET_KEY`, on the API and the worker.
-2. Restart them, then run `docsgpt connectors reencrypt` with the same settings (in Docker: `docker compose exec backend python -m docsgpt connectors reencrypt`). It rewrites every connection and marks the ones neither key opens **Reconnect needed**.
-3. Remove `ENCRYPTION_SECRET_KEY_PREVIOUS`.
+2. Restart them, then run `docsgpt connectors reencrypt` with the same settings. It rewrites every connection and marks the ones neither key opens **Reconnect needed**. In Docker, run it in the backend container of your Compose file:
+   - `docsgpt up`: `docker compose -f ~/.docsgpt/server/docker-compose.yaml exec backend python -m docsgpt connectors reencrypt` (or the stack directory you chose)
+   - standalone file: `docker compose -f docker-compose-standalone.yaml exec backend python -m docsgpt connectors reencrypt`
+   - checkout: `docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec backend python -m docsgpt connectors reencrypt` (or `deployment/docker-compose.yaml`)
+3. Remove `ENCRYPTION_SECRET_KEY_PREVIOUS` once nothing needs it.
 
-The previous key only covers connections. Secrets saved on a tool itself and custom-model API keys are read with the current key only, so their owners have to enter them again. See [Connectors: Encryption key](/Guides/Connectors#encryption-key).
+`reencrypt` rewrites connections only. Secrets saved on a tool itself (API Tool secrets, MCP credentials kept on the tool) and custom-model API keys are read with either key, and are sealed with the new one when their owner saves them again. Until then they need `ENCRYPTION_SECRET_KEY_PREVIOUS`: removing it makes them unreadable. See [Connectors: Encryption key](/Guides/Connectors#encryption-key).
 
 ## Authentication Settings
 
@@ -319,14 +324,14 @@ The previous key only covers connections. Secrets saved on a tool itself and cus
 
 ### `AUTH_TYPE` Overview
 
-| Value | Who gets in | Users told apart | Admin, teams, quotas, personal access tokens |
+| Value | Who gets in | Users told apart | Admin, quotas and personal access tokens |
 | --- | --- | --- | --- |
-| unset (default) | Anyone who can reach the instance. | No: every visitor is the one user `local` and shares its conversations, sources, agents and connected services. | Admin only with `LOCAL_MODE_ADMIN=true`, for a single-user local install. |
-| `simple_jwt` | Anyone holding the one shared access token. | No: the token always means the user `local`. It is a shared password, not user accounts. | No. |
-| `session_jwt` | Anyone who can reach the instance: the page asks `/api/generate_token` for a token, and the endpoint gives one to every caller. | Per browser: each token gets its own random user id, so browsers do not see each other's data. This separates sessions; it does not control access. | No. |
-| `oidc` | People your identity provider (Authentik, Keycloak, Okta, ...) signs in, optionally limited to groups. | Yes, one account per person. | Yes. See [SSO with OIDC](/Deploying/OIDC-SSO). |
+| unset (default) | Anyone who can reach the instance. | No: every visitor is the one user `local` and shares its conversations, sources, agents and connected services. | Personal access tokens, for the one user. Admin and quotas only with `LOCAL_MODE_ADMIN=true`, for a single-user local install. |
+| `simple_jwt` | Anyone holding the one shared access token. | No: the token always means the user `local`. It is a shared password, not user accounts. | None. |
+| `session_jwt` | Anyone who can reach the instance: the page asks `/api/generate_token` for a token, and the endpoint gives one to every caller. | Per browser: each token gets its own random user id, so browsers do not see each other's data. This separates sessions; it does not control access. | None. |
+| `oidc` | People your identity provider (Authentik, Keycloak, Okta, ...) signs in, optionally limited to groups. | Yes, one account per person. | All of them. See [SSO with OIDC](/Deploying/OIDC-SSO). |
 
-`simple_jwt` and `session_jwt` tokens never expire and cannot be revoked one by one; changing `JWT_SECRET_KEY` invalidates all of them (and, under `session_jwt`, orphans every browser's data).
+`simple_jwt` and `session_jwt` tokens never expire and cannot be revoked one by one; changing `JWT_SECRET_KEY` invalidates all of them (and, under `session_jwt`, orphans every browser's data). [Teams](/Deploying/Access-Control#teams) work in every mode, but only mean something when users are told apart.
 
 #### How to Configure
 
@@ -353,7 +358,7 @@ OIDC_FRONTEND_URL=https://docsgpt.example.com
 
 - `JWT_SECRET_KEY` signs authentication tokens where applicable and opaque agent-avatar capabilities in every authentication mode, including no-auth mode.
 - Deployments with more than one API or worker process, container or replica must set a strong `JWT_SECRET_KEY`, the same on each. With `DEPLOYMENT_TYPE=production` (or `cloud`), startup fails rather than creating a key of its own when it is missing.
-- A single local process may omit it. DocsGPT then atomically generates an owner-readable `.jwt_secret_key` in the data home (`DOCSGPT_HOME`, the checkout, or `~/.docsgpt/server`) and reuses it on later starts. A key an older version wrote to the working directory is moved there.
+- A single local process may omit it. DocsGPT then atomically generates an owner-readable `.jwt_secret_key` in the data home (`DOCSGPT_HOME`, the checkout, or `~/.docsgpt/server`) and reuses it on later starts. A key an older version wrote to the working directory is copied there (an empty one is ignored), so tokens it signed stay valid. The API and the worker each resolve the key when they start; start the process that holds the old file first, or one started elsewhere generates a new key before the old one is copied.
 
 #### How Each Method Works
 

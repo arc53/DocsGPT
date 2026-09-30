@@ -55,15 +55,26 @@ use has to set `DOCSGPT_BIND=0.0.0.0`** to keep working: see
 ### Secrets and security defaults
 
 - `docsgpt up`, `setup.sh` and `setup.ps1` generate `ENCRYPTION_SECRET_KEY` on a fresh install, so a
-  networked install can store connector, MCP and tool credentials. An existing value is never
-  replaced, and an existing install gets no new key; `docsgpt up` says how to rotate onto one.
+  networked install can create connections and no longer seals tool, MCP and custom-model secrets
+  with the public default key. An existing value is never replaced, and an existing Docker install
+  gets no new key; `docsgpt up` says how to rotate onto one. `docsgpt up --native` adds one on its
+  first run and keeps the default readable through `ENCRYPTION_SECRET_KEY_PREVIOUS`.
+- `ENCRYPTION_SECRET_KEY_PREVIOUS` now also opens secrets saved on tools and custom models, not only
+  connections, so a key rotation no longer makes them unreadable.
+- Rerunning `setup.sh` or `setup.ps1` keeps the existing `INTERNAL_KEY`, `JWT_SECRET_KEY` and
+  `ENCRYPTION_SECRET_KEY`, and a fresh install always gets a `JWT_SECRET_KEY`. Their authentication
+  menu now offers OIDC.
+- The optional Ollama overlays publish port 11434 on `127.0.0.1` only.
 - Without `JWT_SECRET_KEY`, the generated `.jwt_secret_key` now lives in the data home instead of
-  the directory the API was started from. A key left in that directory is moved there, so tokens
+  the directory the API was started from. A key left in that directory is copied there, so tokens
   stay valid.
 - `LLM_CACHE_ENABLED` and `LLM_CACHE_TTL` control the Redis cache of LLM answers, which was always
   on for 30 minutes. The defaults keep that behaviour; see
   [LLM Response Cache](/Deploying/DocsGPT-Settings#llm-response-cache).
-- Changes in Admin > Connectors are recorded in the audit log as `connector_policy_set`.
+- Changes in Admin > Connectors are recorded in the audit log as `connector_policy_set`, with each
+  setting's old and new value.
+- The URL check for MCP servers, S3 endpoints and imported agents also refuses carrier-grade NAT
+  addresses (`100.64.0.0/10`).
 - A new [security checklist](/Deploying/Security) covers bind addresses, the choice of `AUTH_TYPE`,
   the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
 

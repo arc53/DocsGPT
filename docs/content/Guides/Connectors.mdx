@@ -85,7 +85,7 @@ Credentials are encrypted with a key derived from `ENCRYPTION_SECRET_KEY` and bo
 ENCRYPTION_SECRET_KEY=a-long-random-value
 ```
 
-When authentication is on (`AUTH_TYPE` set), DocsGPT refuses to store new credentials while the key is the public default, and Admin > Connectors shows a warning. A single-user local install keeps working and logs a warning at startup.
+When authentication is on (`AUTH_TYPE` set), DocsGPT refuses to create connections while the key is the public default, and Admin > Connectors shows a warning. Secrets saved on tools, MCP servers and custom models are still stored, sealed with the public key. A single-user local install keeps working and logs a warning at startup.
 
 To rotate the key, move the old value to `ENCRYPTION_SECRET_KEY_PREVIOUS`, set the new one, restart the API and worker, then run:
 
@@ -93,9 +93,9 @@ To rotate the key, move the old value to `ENCRYPTION_SECRET_KEY_PREVIOUS`, set t
 docsgpt connectors reencrypt
 ```
 
-The command prints how many connections it rewrote. Connections it cannot decrypt with either key are marked **Reconnect needed** for their owners. Once it has run, you can remove `ENCRYPTION_SECRET_KEY_PREVIOUS`.
+The command prints how many connections it rewrote. Connections it cannot decrypt with either key are marked **Reconnect needed** for their owners.
 
-The previous key and `reencrypt` cover connections only. Secrets saved on a tool itself, and API keys of custom models, are read with the current key alone, so their owners have to enter them again after a rotation. A Docker install runs the command inside the backend container: `docker compose exec backend python -m docsgpt connectors reencrypt`.
+`reencrypt` rewrites connections only. Secrets saved on a tool itself, and API keys of custom models, are read with either key and are sealed with the new one when their owner saves them again; keep `ENCRYPTION_SECRET_KEY_PREVIOUS` until then. A Docker install runs the command inside the backend container, naming its Compose file, for example `docker compose -f docker-compose-standalone.yaml exec backend python -m docsgpt connectors reencrypt`; see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live) for the other install types.
 
 ### Outbound network access
 
