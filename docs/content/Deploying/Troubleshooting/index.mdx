@@ -1,0 +1,37 @@
+---
+title: Troubleshooting
+description: First checks for a DocsGPT install that misbehaves - docsgpt doctor, the logs to read, and the common symptoms with their causes, from searches that ignore your documents to notifications that never arrive.
+---
+
+# Troubleshooting
+
+## First checks
+
+1. Run `docsgpt doctor` (or `python -m docsgpt doctor` in a source checkout). It checks the settings file, PostgreSQL, Redis, the model provider and the default model. See the [CLI reference](/Deploying/cli).
+2. Read the API and worker logs. With `docsgpt up`, run `docsgpt logs -f`. With Docker Compose, run `docker compose logs -f backend worker` with the same `-f` file and `--env-file` you started it with. On Kubernetes, see [Kubernetes troubleshooting](/Deploying/Kubernetes-Deploying#troubleshooting).
+3. Check that a worker is running. The API hands query embeddings, ingestion and every background job to the Celery worker, so most "nothing happens" problems start there.
+
+## Common symptoms
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| Searches wait about a minute or fail at once, and answers ignore your documents, with no error | No worker is consuming the `embeddings` queue | Start a worker. A worker started with `-Q` must list `embeddings`. To run without one, set `EMBEDDINGS_DELEGATE_TO_WORKER=false` or `EMBEDDINGS_BASE_URL`. See [Where the model runs](/Models/embeddings#where-the-model-runs). |
+| Uploads never finish, or fail after parsing | No worker, or `INTERNAL_KEY` differs between the API and the worker, or the worker can't reach the API | Set the same `INTERNAL_KEY` on both, and check that the worker can reach the API at `WORKER_API_URL` (or `API_URL` when that is unset). See [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live). |
+| Scheduled agent runs and source syncs never fire | No Celery beat scheduler is running | Run the worker with `-B`, or run `docsgpt beat`. See [Background jobs](/Deploying/Background-Jobs). |
+| Notifications never appear, a dropped answer doesn't resume, a paired device never receives commands, or artifact downloads return 404 | The API runs under `flask run`, which leaves out the ASGI routes | Serve `docsgpt.asgi:asgi_app`, as `docsgpt api` and the Docker images do. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features). |
+| Notifications still don't arrive under ASGI | Redis, the event stream or the client | Follow the [SSE notifications runbook](/Deploying/Troubleshooting/sse-notifications). |
+| Other machines can't open DocsGPT | The ports are published on `127.0.0.1` only | See [Decide who can reach it](/Deploying/Security#decide-who-can-reach-it) for the setting each install uses. |
+| Everyone is signed out after a container is recreated | `JWT_SECRET_KEY` isn't set, so each container generates its own | Set `JWT_SECRET_KEY` on every API and worker process. See [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live). |
+| Answers come from the wrong provider, or the model list is empty | `LLM_PROVIDER`, `LLM_NAME` or the provider's key doesn't match | `docsgpt doctor` reports the resolved default model. See [Cloud providers](/Models/cloud-providers) or [Local inference](/Models/local-inference). |
+
+## Guides with their own troubleshooting
+
+- [Development environment](/Deploying/Development-Environment#troubleshooting)
+- [Kubernetes](/Deploying/Kubernetes-Deploying#troubleshooting)
+- [SSO with OIDC](/Deploying/OIDC-SSO#troubleshooting)
+- [PostgreSQL for user data](/Deploying/Postgres-Migration#troubleshooting)
+- [MCP tools](/Tools/mcp-tools#troubleshooting)
+- Connectors: [Google Drive](/Sources/Connectors/google-drive#troubleshooting), [SharePoint / OneDrive](/Sources/Connectors/sharepoint#troubleshooting), [Confluence](/Sources/Connectors/confluence#troubleshooting)
+- [Prompts](/Agents/prompts#troubleshooting)
+
+If none of these fit, ask on [Discord](https://discord.gg/vN7YFfdMpj) or open an [issue on GitHub](https://github.com/arc53/DocsGPT/issues) with the `docsgpt doctor` output and the relevant log lines.

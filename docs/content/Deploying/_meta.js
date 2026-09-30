@@ -1,70 +1,40 @@
 export default {
-  "index": {
-    "title": "🧭 Choose a Deployment",
-    "href": "/Deploying"
+  "-- install": {
+    "type": "separator",
+    "title": "Install"
   },
-  "DocsGPT-Settings": {
-    "title": "⚙️ App Configuration",
-    "href": "/Deploying/DocsGPT-Settings"
+  "index": "🧭 Choose a Deployment",
+  "Docker-Deploying": "🛳️ Docker Setup",
+  "Pip-Install": "🐍 Install with pip",
+  "Kubernetes-Deploying": "☸️ Deploying on Kubernetes",
+  "Air-Gapped": "🔒 Air-Gapped Deployment",
+  "Sandbox": "🧪 Code Execution Sandbox",
+  "cli": "⌨️ docsgpt CLI Reference",
+  "-- configure": {
+    "type": "separator",
+    "title": "Configure"
   },
-  "Settings-Reference": {
-    "title": "📖 Settings Reference",
-    "href": "/Deploying/Settings-Reference"
+  "DocsGPT-Settings": "⚙️ App Configuration",
+  "Settings-Reference": "📖 Settings Reference",
+  "-- secure": {
+    "type": "separator",
+    "title": "Secure & administer"
   },
-  "Security": {
-    "title": "🛡️ Security Checklist",
-    "href": "/Deploying/Security"
+  "Security": "🛡️ Security Checklist",
+  "OIDC-SSO": "🔐 SSO with OIDC",
+  "Access-Control": "👥 Access Control & Teams",
+  "Usage-Quotas": "📊 Usage Quotas",
+  "-- operate": {
+    "type": "separator",
+    "title": "Operate"
   },
-  "OIDC-SSO": {
-    "title": "🔐 SSO with OIDC",
-    "href": "/Deploying/OIDC-SSO"
+  "Observability": "🔭 Observability",
+  "Background-Jobs": "🧹 Background Jobs & Retention",
+  "Postgres-Migration": "🐘 PostgreSQL for User Data",
+  "Troubleshooting": "🩺 Troubleshooting",
+  "-- develop": {
+    "type": "separator",
+    "title": "Develop"
   },
-  "Access-Control": {
-    "title": "👥 Access Control & Teams",
-    "href": "/Deploying/Access-Control"
-  },
-  "Usage-Quotas": {
-    "title": "📊 Usage Quotas",
-    "href": "/Deploying/Usage-Quotas"
-  },
-  "Docker-Deploying": {
-    "title": "🛳️ Docker Setup",
-    "href": "/Deploying/Docker-Deploying"
-  },
-  "Pip-Install": {
-    "title": "🐍 Install with pip",
-    "href": "/Deploying/Pip-Install"
-  },
-  "cli": {
-    "title": "⌨️ docsgpt CLI Reference",
-    "href": "/Deploying/cli"
-  },
-  "Development-Environment": {
-    "title": "🛠️Development Environment",
-    "href": "/Deploying/Development-Environment"
-  },
-  "Kubernetes-Deploying": {
-    "title": "☸️ Deploying on Kubernetes",
-    "href": "/Deploying/Kubernetes-Deploying"
-  },
-  "Sandbox": {
-    "title": "🧪 Code Execution Sandbox",
-    "href": "/Deploying/Sandbox"
-  },
-  "Air-Gapped": {
-    "title": "🔒 Air-Gapped Deployment",
-    "href": "/Deploying/Air-Gapped"
-  },
-  "Postgres-Migration": {
-    "title": "🐘 PostgreSQL for User Data",
-    "href": "/Deploying/Postgres-Migration"
-  },
-  "Observability": {
-    "title": "🔭 Observability",
-    "href": "/Deploying/Observability"
-  },
-  "Background-Jobs": {
-    "title": "🧹 Background Jobs & Retention",
-    "href": "/Deploying/Background-Jobs"
-  }
+  "Development-Environment": "🛠️ Development Environment"
 }
