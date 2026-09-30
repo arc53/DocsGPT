@@ -18,7 +18,7 @@ GraphRAG is **flag-gated** and currently **pgvector-only**. It is available only
 
 - A PostgreSQL database with the `pgvector` extension (`VECTOR_STORE=pgvector`). See [PostgreSQL for User Data](/Deploying/Postgres-Migration).
 - `GRAPHRAG_ENABLED=true` in your environment.
-- An LLM configured for extraction (GraphRAG reuses your instance default model unless you override it).
+- An LLM configured for extraction. Without an override, extraction uses `LLM_NAME`, so set `GRAPHRAG_EXTRACTION_MODEL` explicitly (see [Configuration](#configuration)).
 
 ```env
 GRAPHRAG_ENABLED=true
@@ -81,8 +81,15 @@ Instance-wide settings (see [App Configuration](/Deploying/DocsGPT-Settings)):
 | Setting | Default | Description |
 | --- | --- | --- |
 | `GRAPHRAG_ENABLED` | `false` | Master switch for the feature. |
-| `GRAPHRAG_EXTRACTION_MODEL` | `null` | Model used for extraction. `null` reuses the instance default model. |
-| `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on how many chunks are extracted per source (cost control). |
+| `GRAPHRAG_EXTRACTION_MODEL` | `null` | Model used for extraction. `null` falls back to `LLM_NAME`. |
+| `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on how many chunks are extracted per source (cost control). `0` extracts nothing. |
+| `GRAPHRAG_EXTRACTION_WORKERS` | `8` | Concurrent extraction calls during ingest (1–32). Model calls run in parallel while graph writes stay serial; `1` is fully serial. |
+
+The extraction model is resolved in this order: the source's `graph.extraction_model`, then
+`GRAPHRAG_EXTRACTION_MODEL`, then `LLM_NAME`. The call goes to the provider that serves that model in the model
+registry, or to `LLM_PROVIDER` when the registry doesn't know it. This is not necessarily the model chat uses:
+chat can default to another model or provider, and with `LLM_NAME` unset extraction runs on `LLM_PROVIDER` with no
+model id. Set `GRAPHRAG_EXTRACTION_MODEL` explicitly so you know which model builds, and pays for, the graph.
 
 Per-source extraction knobs live under the source config's `graph` object and override the instance defaults:
 
