@@ -19,7 +19,7 @@ Each install path publishes DocsGPT on this machine only until you say otherwise
 | Standalone Compose file | `127.0.0.1:7091` (`DOCSGPT_BIND`) | `DOCSGPT_BIND=0.0.0.0`, or the `https` profile with `DOCSGPT_DOMAIN`. See [Docker](/Deploying/Docker-Deploying#opening-it-from-other-machines). |
 | Checkout Compose files and `setup.sh`/`setup.ps1` | API `127.0.0.1:7091` and UI `127.0.0.1:5173` (`DOCSGPT_BIND`); Postgres and Redis on `127.0.0.1` only | `DOCSGPT_BIND=0.0.0.0` in `.env`, with `docker compose --env-file .env ...`. The setup scripts ask. These files are meant for local use and development. |
 | `docsgpt api` and `docsgpt up --native` | `127.0.0.1` | `docsgpt api --host 0.0.0.0`; the native services always bind `127.0.0.1`, so put a reverse proxy in front. |
-| Kubernetes | See [Kubernetes](/Deploying/Kubernetes-Deploying) | Replace the example secrets and set `AUTH_TYPE` before you apply the manifests. |
+| Kubernetes | Inside the cluster only (`ClusterIP`); `kubectl port-forward` for a first look | Set `AUTH_TYPE` in `docsgpt-secrets.yaml`, then publish through an Ingress with TLS (`deployment/k8s/ingress-example.yaml`). See [Kubernetes](/Deploying/Kubernetes-Deploying#publish-docsgpt). |
 
 Keep Postgres and Redis off the network in every case. Postgres holds all user data and the sealed credentials; Redis holds the task queue, event streams and [cached LLM answers](#llm-response-cache). Docker's published ports bypass host firewalls such as `ufw`, so a port you publish is open even when the firewall says otherwise (see [Air-Gapped](/Deploying/Air-Gapped)).
 

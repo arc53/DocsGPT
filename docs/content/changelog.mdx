@@ -52,6 +52,19 @@ other machines should reach DocsGPT, write `DOCSGPT_BIND=0.0.0.0` if so, and off
 use has to set `DOCSGPT_BIND=0.0.0.0`** to keep working: see
 [Upgrading](/upgrading#checkout-compose-files-bound-to-this-machine).
 
+### Kubernetes manifests that work
+
+The manifests in `deployment/k8s` are rebuilt. The migration Job runs the packaged `migrate` command,
+and the API and worker wait for it. Uploads go to an S3-compatible bucket and vectors to pgvector in
+the bundled Postgres, so every pod sees the same files. The worker runs the beat scheduler, and
+`CACHE_REDIS_URL` points at the in-cluster Redis. The Services are `ClusterIP`, with an Ingress
+example for publishing over TLS, and the API serves the web UI, so the frontend Deployment is gone.
+`docsgpt-secrets.yaml` holds plain-text placeholders, including `ENCRYPTION_SECRET_KEY`, and the pods
+refuse to start until they are replaced. Images are pinned to the release. An existing cluster has to
+carry its keys over, re-encrypt stored secrets and upload its documents again: see
+[Upgrading](/upgrading#kubernetes-manifests-reworked) and the
+[Kubernetes guide](/Deploying/Kubernetes-Deploying).
+
 ### Secrets and security defaults
 
 - `docsgpt up`, `setup.sh` and `setup.ps1` generate `ENCRYPTION_SECRET_KEY` on a fresh install, so a

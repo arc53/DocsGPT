@@ -34,7 +34,7 @@ An installed package (`pip install docsgpt`, pipx, `uv tool`) used to keep its d
 
 ## Standalone Compose file: one port
 
-The standalone Compose file (`docker-compose-standalone.yaml`) no longer runs a frontend container. The backend image serves the web UI on port 7091, and the port is published on `127.0.0.1` unless you set `DOCSGPT_BIND`. After downloading the new file, start it with `--remove-orphans` to remove the old frontend container, then open port 7091 instead of 5173. If you opened DocsGPT from other machines, see [Upgrading from an earlier standalone file](/Deploying/Docker-Deploying#upgrading-from-an-earlier-standalone-file). The checkout Compose files and the Kubernetes manifests are unchanged.
+The standalone Compose file (`docker-compose-standalone.yaml`) no longer runs a frontend container. The backend image serves the web UI on port 7091, and the port is published on `127.0.0.1` unless you set `DOCSGPT_BIND`. After downloading the new file, start it with `--remove-orphans` to remove the old frontend container, then open port 7091 instead of 5173. If you opened DocsGPT from other machines, see [Upgrading from an earlier standalone file](/Deploying/Docker-Deploying#upgrading-from-an-earlier-standalone-file). The checkout Compose files are unchanged. The Kubernetes manifests dropped their frontend too; see [Kubernetes manifests reworked](#kubernetes-manifests-reworked).
 
 ## Checkout Compose files: bound to this machine
 
@@ -55,6 +55,54 @@ Anything outside the stack that connected to Postgres on port 5432 or Redis on p
 ## JWT key file: moved to the data home
 
 Without `JWT_SECRET_KEY`, the API generated `.jwt_secret_key` in the directory it was started from. It now keeps it in the data home (`DOCSGPT_HOME`, the checkout, or `~/.docsgpt/server`). On its first start the API copies a key it finds in its working directory there, so existing tokens stay valid; start it from the same directory as before once. The worker resolves the key the same way, so start whichever process holds the old file first: one started from another directory would generate a new key before the old one is copied. Docker and multi-process installs should set `JWT_SECRET_KEY` instead (see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live)).
+
+## Kubernetes manifests reworked
+
+The manifests in `deployment/k8s` did not work as shipped: the migration Job ran a script missing from the image, uploads never reached the worker, and both Services were public LoadBalancers. They are rebuilt; see the [Kubernetes guide](/Deploying/Kubernetes-Deploying) for the full setup. To move an existing cluster onto them:
+
+1. **Back up Postgres.** The `postgres` Deployment switches to the `pgvector/pgvector` image, which reuses the existing volume:
+
+   ```bash
+   kubectl exec deploy/postgres -- pg_dump -U docsgpt docsgpt > docsgpt-backup.sql
+   ```
+
+2. **Carry your keys into the new `docsgpt-secrets.yaml`.** Its values are plain text now (`stringData`), and every `REPLACE_ME` must be replaced or the pods refuse to start. Read the old values with:
+
+   ```bash
+   kubectl get secret docsgpt-secrets -o jsonpath='{.data.JWT_SECRET_KEY}' | base64 -d
+   ```
+
+   - Keep your `JWT_SECRET_KEY`. Replace `INTERNAL_KEY` if it is still the shipped `internal`.
+   - The old secret had no `ENCRYPTION_SECRET_KEY`, so any stored credentials are sealed with the public default. Set a new key from `openssl rand -hex 32`, and add `ENCRYPTION_SECRET_KEY_PREVIOUS: default-docsgpt-encryption-key` so they stay readable.
+   - `CACHE_REDIS_URL` is new; `QDRANT_URL` and `QDRANT_PORT` are gone.
+   - Fill in the S3 bucket and credentials: uploads now go to a bucket (`STORAGE_TYPE: s3`), and vectors to pgvector (`VECTOR_STORE: pgvector`).
+
+3. **Apply the new manifests and wait for the migration.** Delete the old Job first, because a finished Job can't be changed:
+
+   ```bash
+   kubectl delete job postgres-init --ignore-not-found
+   kubectl apply -k deployment/k8s/
+   kubectl wait --for=condition=complete job/postgres-init --timeout=300s
+   ```
+
+4. **Remove what the stack no longer uses.** The API serves the web UI, and Qdrant was never used by the old stack:
+
+   ```bash
+   kubectl delete deployment/docsgpt-frontend service/docsgpt-frontend-service --ignore-not-found
+   kubectl delete deployment/qdrant service/qdrant pvc/qdrant-pvc --ignore-not-found
+   ```
+
+5. **Re-encrypt stored secrets** if you set `ENCRYPTION_SECRET_KEY_PREVIOUS` in step 2. `docsgpt connectors reencrypt` rewrites every connection, tool secret and custom-model key with the new key. Once it reports nothing unreadable, remove `ENCRYPTION_SECRET_KEY_PREVIOUS` from the secret, apply again, and restart the pods:
+
+   ```bash
+   kubectl exec deploy/docsgpt-worker -- python -m docsgpt connectors reencrypt
+   kubectl apply -k deployment/k8s/
+   kubectl rollout restart deployment/docsgpt-api deployment/docsgpt-worker
+   ```
+
+6. **Upload your documents again.** The old stack kept uploads and FAISS indexes on the API pod's disk, which the new stack does not read.
+
+`docsgpt-api-service` is now `ClusterIP`, so the old external address stops answering. Use `kubectl port-forward service/docsgpt-api-service 7091:80`, or set `AUTH_TYPE` and publish DocsGPT through an Ingress as described in [Publish DocsGPT](/Deploying/Kubernetes-Deploying#publish-docsgpt).
 
 ## Embedding models
 
@@ -200,18 +248,21 @@ Swap `git pull` for `git checkout <tag>` if you want to pin a specific release.
 
 ## Kubernetes
 
+The Kubernetes pods don't migrate the database when they start; the `postgres-init` Job does. Change every `arc53/docsgpt:<version>` image in `deployment/k8s/deployments/docsgpt-deploy.yaml` and `deployment/k8s/jobs/postgres-init-job.yaml` to the new release, then:
+
 ```bash
-kubectl set image deployment/docsgpt-backend backend=arc53/docsgpt:<tag>
-kubectl set image deployment/docsgpt-worker worker=arc53/docsgpt:<tag>
-kubectl rollout status deployment/docsgpt-backend
+kubectl delete job postgres-init --ignore-not-found
+kubectl apply -k deployment/k8s/
+kubectl wait --for=condition=complete job/postgres-init --timeout=300s
+kubectl rollout status deployment/docsgpt-api
 kubectl rollout status deployment/docsgpt-worker
 ```
 
-Full manifests: [Kubernetes deployment guide](/Deploying/Kubernetes-Deploying).
+A finished Job can't be changed, so delete it before `apply` to let the new image run its migrations. The new API and worker pods wait for them, and the old pods keep serving until then. See [Kubernetes: Upgrading](/Deploying/Kubernetes-Deploying#upgrading).
 
 ## Migrations
 
-Alembic migrations run on worker startup. To apply manually:
+With Docker Compose and `docsgpt up`, the API and the worker apply Alembic migrations when they start. On Kubernetes the `postgres-init` Job applies them (see above). To apply them by hand in Compose:
 
 ```bash
 docker compose exec backend alembic -c docsgpt/alembic.ini upgrade head

@@ -314,6 +314,7 @@ To change `ENCRYPTION_SECRET_KEY` on an install that already stores credentials 
    - `docsgpt up`: `docker compose -f ~/.docsgpt/server/docker-compose.yaml exec backend python -m docsgpt connectors reencrypt` (or the stack directory you chose)
    - standalone file: `docker compose -f docker-compose-standalone.yaml exec backend python -m docsgpt connectors reencrypt`
    - checkout: `docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec backend python -m docsgpt connectors reencrypt` (or `deployment/docker-compose.yaml`)
+   - Kubernetes: `kubectl exec deploy/docsgpt-worker -- python -m docsgpt connectors reencrypt`
 3. Remove `ENCRYPTION_SECRET_KEY_PREVIOUS` once the command reports nothing unreadable (it says so on its last line).
 
 While the previous key is set, DocsGPT reads every stored credential with either key, so the install keeps working between steps 1 and 2. See [Connectors: Encryption key](/Guides/Connectors#encryption-key).
@@ -470,8 +471,11 @@ With the defaults, the app applies the schema automatically on first
 boot. To run it explicitly instead (e.g., in CI/CD or a k8s `Job`):
 
 ```bash
-python scripts/db/init_postgres.py
+python -m docsgpt migrate --no-create
 ```
+
+`--no-create` fails instead of creating a missing database. Images up to 0.21.0 have no
+`python -m docsgpt`; run `python -m docsgpt.cli migrate --no-create` there.
 
 The default Docker Compose file bundles a `postgres` service, and the
 app auto-bootstraps the database on boot, so containerized deployments
