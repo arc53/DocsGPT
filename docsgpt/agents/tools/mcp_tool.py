@@ -16,6 +16,14 @@ from fastmcp.client.transports import (
     StreamableHttpTransport,
 )
 from mcp.client.auth import OAuthClientProvider, TokenStorage
+from mcp.shared._httpx_utils import create_mcp_http_client
+from mcp.shared.inbound import (
+    MCP_PARAM_HEADER_PREFIX,
+    decode_header_value,
+    find_invalid_x_mcp_header,
+    mcp_param_headers,
+    x_mcp_header_map,
+)
 from mcp.shared.auth import (
     AuthorizationCodeResult,
     OAuthClientInformationFull,
@@ -65,6 +73,67 @@ def _secret_fingerprint(secret: str) -> str:
     reuse) one cached client carrying the first user's token.
     """
     return hashlib.sha256(secret.encode("utf-8")).hexdigest()[:16]
+
+
+def param_header_maps(schemas: Dict[str, Any]) -> Dict[str, Dict[tuple, str]]:
+    """Each MCP tool's ``x-mcp-header`` annotations, as tool name -> {property path: header token}.
+
+    A schema whose annotations break the rules (SEP-2243) contributes none,
+    so its calls go out without ``Mcp-Param-*`` headers rather than with
+    wrong ones.
+
+    Args:
+        schemas: Tool name -> input schema, from ``tools/list`` or the
+            actions stored on the tool row.
+    """
+    maps: Dict[str, Dict[tuple, str]] = {}
+    for name, schema in (schemas or {}).items():
+        if not isinstance(schema, dict):
+            continue
+        header_map = x_mcp_header_map(schema)
+        if not header_map:
+            continue
+        reason = find_invalid_x_mcp_header(schema)
+        if reason:
+            logger.warning("MCP tool %s: ignoring its x-mcp-header annotations: %s", name, reason)
+            continue
+        maps[name] = header_map
+    return maps
+
+
+def _param_header_hook(header_maps: Dict[str, Dict[tuple, str]]) -> Callable:
+    """An httpx request hook that mirrors a ``tools/call``'s annotated arguments into ``Mcp-Param-*`` headers.
+
+    The values are read from the request body itself, so each header matches
+    the argument it mirrors. They replace any static header of the same name;
+    a call whose argument disagrees with one is refused before it is sent
+    (see ``MCPTool._pinned_param_conflict``).
+    """
+
+    async def add_param_headers(request: Any) -> None:
+        if request.method != "POST":
+            return
+        try:
+            body = json.loads(request.content or b"null")
+        except (ValueError, TypeError, RuntimeError):
+            return
+        if not isinstance(body, dict) or body.get("method") != "tools/call":
+            return
+        params = body.get("params") or {}
+        header_map = header_maps.get(params.get("name"))
+        if not header_map:
+            return
+        for token in header_map.values():
+            request.headers.pop(f"{MCP_PARAM_HEADER_PREFIX}{token}", None)
+        request.headers.update(mcp_param_headers(header_map, params.get("arguments") or {}))
+
+    return add_param_headers
+
+
+def _is_header_mismatch(error_msg: str) -> bool:
+    """Whether a server refused a call over its ``Mcp-Param-*`` headers."""
+    lower = error_msg.lower()
+    return "header mismatch" in lower or "mcp-param-" in lower
 
 
 def _annotation_hints(annotations: Any) -> Dict[str, bool]:
@@ -137,6 +206,9 @@ class MCPTool(Tool):
         self.oauth_redirect_publish = config.pop("oauth_redirect_publish", None)
 
         self.available_tools = []
+        # Tool name -> ``x-mcp-header`` map; seeded from the stored actions,
+        # refreshed by ``tools/list``. Shared with the cached client's hook.
+        self._param_headers = param_header_maps(config.get("action_schemas") or {})
         self._cache_key = self._generate_cache_key()
         self._client = None
         self.query_mode = config.get("query_mode", False)
@@ -203,10 +275,16 @@ class MCPTool(Tool):
 
     def _setup_client(self):
         global _mcp_clients_cache
+        if not hasattr(self, "_param_headers"):
+            self._param_headers = {}
         if self._cache_key in _mcp_clients_cache:
             cached_data = _mcp_clients_cache[self._cache_key]
             if time.time() - cached_data["created_at"] < 300:
                 self._client = cached_data["client"]
+                # One map per cached client: its hook reads the latest schemas.
+                shared = cached_data.setdefault("param_headers", {})
+                shared.update(self._param_headers)
+                self._param_headers = shared
                 return
             else:
                 del _mcp_clients_cache[self._cache_key]
@@ -245,6 +323,7 @@ class MCPTool(Tool):
         _mcp_clients_cache[self._cache_key] = {
             "client": self._client,
             "created_at": time.time(),
+            "param_headers": self._param_headers,
         }
 
     def _create_transport(self):
@@ -276,16 +355,38 @@ class MCPTool(Tool):
             raise ValueError("STDIO transport is disabled")
         if transport_type == "sse":
             headers.update({"Accept": "text/event-stream", "Cache-Control": "no-cache"})
-            return SSETransport(url=self.server_url, headers=headers)
+            return SSETransport(
+                url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
+            )
         elif transport_type == "http":
-            return StreamableHttpTransport(url=self.server_url, headers=headers)
+            return StreamableHttpTransport(
+                url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
+            )
         elif transport_type == "stdio":
             command = self.config.get("command", "python")
             args = self.config.get("args", [])
             env = self.auth_credentials if self.auth_credentials else None
             return StdioTransport(command=command, args=args, env=env)
         else:
-            return StreamableHttpTransport(url=self.server_url, headers=headers)
+            return StreamableHttpTransport(
+                url=self.server_url, headers=headers, httpx_client_factory=self._http_client_factory(),
+            )
+
+    def _http_client_factory(self) -> Callable:
+        """The MCP SDK's HTTP client, plus the hook that sends each call's ``Mcp-Param-*`` headers."""
+        header_maps = self._param_headers
+
+        def factory(
+            headers: Optional[Dict[str, str]] = None,
+            timeout: Any = None,
+            auth: Any = None,
+            **_kwargs: Any,
+        ):
+            client = create_mcp_http_client(headers=headers, timeout=timeout, auth=auth)
+            client.event_hooks.setdefault("request", []).append(_param_header_hook(header_maps))
+            return client
+
+        return factory
 
     def _format_tools(self, tools_response) -> List[Dict]:
         """Format tools response to match expected format."""
@@ -327,6 +428,9 @@ class MCPTool(Tool):
             elif operation == "list_tools":
                 tools_response = await self._client.list_tools()
                 self.available_tools = self._format_tools(tools_response)
+                self.__dict__.setdefault("_param_headers", {}).update(
+                    param_header_maps({t.get("name"): t.get("inputSchema") for t in self.available_tools})
+                )
                 return self.available_tools
             elif operation == "call_tool":
                 tool_name = args[0]
@@ -415,6 +519,9 @@ class MCPTool(Tool):
             if value == "" or value is None:
                 continue
             cleaned_kwargs[key] = value
+        conflict = self._pinned_param_conflict(action_name, cleaned_kwargs)
+        if conflict:
+            return {"status": "error", "error": conflict}
         try:
             result = self._run_async_operation(
                 "call_tool", action_name, **cleaned_kwargs
@@ -422,6 +529,8 @@ class MCPTool(Tool):
             return self._format_result(result)
         except Exception as e:
             error_msg = str(e)
+            if _is_header_mismatch(error_msg):
+                return self._retry_with_listed_schemas(action_name, cleaned_kwargs, e)
             lower_msg = error_msg.lower()
             is_auth_error = (
                 "401" in error_msg
@@ -452,6 +561,50 @@ class MCPTool(Tool):
             raise Exception(
                 f"Failed to execute action '{action_name}': {error_msg}"
             ) from e
+
+    def _retry_with_listed_schemas(self, action_name: str, arguments: Dict, error: Exception) -> Any:
+        """Retry a call the server refused over its ``Mcp-Param-*`` headers, with the tool's current schema.
+
+        The stored schema may predate the server's ``x-mcp-header``
+        annotations; ``tools/list`` refreshes them, as SEP-2243 asks.
+        """
+        try:
+            self._run_async_operation("list_tools")
+            conflict = self._pinned_param_conflict(action_name, arguments)
+            if conflict:
+                return {"status": "error", "error": conflict}
+            result = self._run_async_operation("call_tool", action_name, **arguments)
+        except Exception as retry_e:
+            raise Exception(f"Failed to execute action '{action_name}': {retry_e}") from error
+        return self._format_result(result)
+
+    def _pinned_param_conflict(self, action_name: str, arguments: Dict) -> Optional[str]:
+        """Why a call can't be sent: an argument disagrees with a ``Mcp-Param-*`` header set on the tool.
+
+        A static ``Mcp-Param-repo`` header pins the tool to one repository.
+        The call's own value would replace it, so a call for another value is
+        refused here instead of quietly going out.
+        """
+        header_map = (getattr(self, "_param_headers", None) or {}).get(action_name)
+        pinned = {
+            str(name).lower(): value
+            for name, value in (self.custom_headers or {}).items()
+            if str(name).lower().startswith(MCP_PARAM_HEADER_PREFIX.lower())
+        }
+        if not header_map or not pinned:
+            return None
+        for path, token in header_map.items():
+            header = f"{MCP_PARAM_HEADER_PREFIX}{token}"
+            fixed = pinned.get(header.lower())
+            sent = mcp_param_headers({path: token}, arguments).get(header)
+            if fixed is None or sent is None:
+                continue
+            if decode_header_value(str(fixed)) != decode_header_value(sent):
+                return (
+                    f"This tool is limited to {'.'.join(path)} = {fixed!r} by its {header} header; "
+                    f"the call asked for {decode_header_value(sent)!r}."
+                )
+        return None
 
     def _format_result(self, result) -> Dict:
         """Format FastMCP result to match expected format."""

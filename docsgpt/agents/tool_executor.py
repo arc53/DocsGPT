@@ -1982,6 +1982,14 @@ class ToolExecutor:
                     tool_config["created_via"] = "api"
             if tool_data["name"] == "mcp_tool":
                 tool_config["query_mode"] = True
+                # The stored schemas carry the server's ``x-mcp-header``
+                # annotations, which say which arguments each call also
+                # sends as ``Mcp-Param-*`` headers.
+                tool_config["action_schemas"] = {
+                    action["name"]: action.get("parameters") or {}
+                    for action in tool_data.get("actions") or []
+                    if isinstance(action, dict) and action.get("name")
+                }
 
         tool = tm.load_tool(
             tool_data["name"],

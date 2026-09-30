@@ -1364,6 +1364,23 @@ class TestToolExecutorExecute:
         assert tool_config.get("query_mode") is True
         assert tool_config.get("conversation_id") == "conv-123"
 
+    def test_mcp_tool_gets_its_stored_action_schemas(self, monkeypatch):
+        """The stored schemas carry the ``x-mcp-header`` annotations the tool sends headers for."""
+        executor = ToolExecutor(user="test_user")
+        mock_tm = Mock()
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolManager", lambda config: mock_tm)
+        repo = {"type": "string", "x-mcp-header": "repo", "filled_by_llm": True, "value": ""}
+        tool_data = {
+            "id": "00000000-0000-0000-0000-000000000003",
+            "name": "mcp_tool",
+            "config": {},
+            "actions": [{"name": "issue_read", "parameters": {"properties": {"repo": repo}}}],
+        }
+
+        executor._get_or_load_tool(tool_data, "t1", "issue_read")
+        tool_config = mock_tm.load_tool.call_args.kwargs["tool_config"]
+        assert tool_config["action_schemas"] == {"issue_read": {"properties": {"repo": repo}}}
+
 
 # ---------------------------------------------------------------------------
 # Coverage — additional uncovered lines: 217-218, 256-267
