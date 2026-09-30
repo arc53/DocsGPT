@@ -23,7 +23,10 @@ npm run build    # next build, then pagefind indexes the output for search
 npm run start    # serve the production build
 ```
 
-Run `npm run build` before opening a PR that touches the docs: it fails on broken MDX.
+Run `npm run build` before opening a PR that touches the docs: it fails on broken MDX. The
+[docs workflow](../.github/workflows/docs.yml) runs the same build on pull requests that change
+`docs/`, checks the internal links in the built pages, and checks that `public/llms.txt` is
+current.
 
 ## Where things live
 
@@ -41,7 +44,8 @@ Run `npm run build` before opening a PR that touches the docs: it fails on broke
   `components/ApiReference.jsx`. Don't edit it by hand; see [Generated pages](#generated-pages).
 - `mdx-components.jsx` and `components/`: React components available to the pages.
 - `public/`: images and other static files, served from the site root. `public/llms.txt`
-  lists the pages for LLM readers; update it when you add, move or remove a page.
+  lists the pages for LLM readers and is generated; see [Generated pages](#generated-pages).
+- `scripts/generate-llms.mjs`: the generator for `public/llms.txt`.
 - `next.config.js`: the Next.js config, including `redirects()`. When you move or delete a
   page, add a permanent redirect from the old URL there.
 - `runbooks/`: operator notes that are not part of the site.
@@ -61,6 +65,16 @@ regenerate it from the repository root (CI fails while it is stale):
 
 ```bash
 python -m docsgpt.api.reference --write
+```
+
+`public/llms.txt` is generated from the sidebar: the `content/**/_meta.js` files give the
+sections, the order and the link titles, and each page's frontmatter `description` gives its
+note. Hidden entries are left out. After adding, moving or removing a page, or changing its
+`description`, regenerate it from `docs/` (CI fails while it is stale):
+
+```bash
+npm run llms          # rewrite public/llms.txt
+npm run llms:check    # what CI runs: fails if the committed file is out of date
 ```
 
 ## Style
