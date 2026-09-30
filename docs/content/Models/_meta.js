@@ -11,6 +11,10 @@ export default {
     "title": "📝 Embeddings",
     "href": "/Models/embeddings"
   },
+  "custom-models": {
+    "title": "🧩 Custom Models",
+    "href": "/Models/custom-models"
+  },
   "fallback": {
     "title": "🔁 Fallback Models",
     "href": "/Models/fallback"
