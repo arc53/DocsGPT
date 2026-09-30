@@ -11,6 +11,5 @@ export default {
   "Agents": "Agents",
   "Extensions": "Extensions",
   "API": "API",
-  "Guides": "Guides",
   "changelog": "Changelog"
 }
