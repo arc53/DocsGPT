@@ -50,6 +50,10 @@ Presets need no URL or form: they sign in with OAuth in one step. Admins can tur
 For OAuth in production, `MCP_OAUTH_REDIRECT_URI` must be a publicly accessible URL pointing to your DocsGPT backend.
 </Callout>
 
+<Callout type="warning">
+OAuth servers, including the presets, also need `ENABLE_SSE_PUSH=true` (the default) and the API served through the ASGI app. The sign-in link and its result reach the web app only as `mcp.oauth.*` events on the [realtime events](/Agents/notifications) stream; with the publisher off, adding an OAuth server never gets past **Test Connection**.
+</Callout>
+
 ## API Endpoints
 
 | Endpoint | Method | Description |

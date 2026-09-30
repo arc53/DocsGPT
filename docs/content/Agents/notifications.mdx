@@ -16,6 +16,10 @@ DocsGPT pushes realtime updates to the browser over **Server-Sent Events (SSE)**
 Both channels require Redis (already a DocsGPT dependency). The publisher can be turned off instance-wide with `ENABLE_SSE_PUSH=false`.
 </Callout>
 
+<Callout type="warning" emoji="⚠️">
+Adding an [MCP server that signs in with OAuth](/Guides/Integrations/mcp-tool-integration) needs `ENABLE_SSE_PUSH=true` (the default): the sign-in link and its result reach the web app only as `mcp.oauth.*` events. With the publisher off, the sign-in never starts in the browser.
+</Callout>
+
 ## User events channel
 
 Open an SSE connection to receive notifications for the authenticated user:
@@ -50,21 +54,21 @@ Event types:
 | --- | --- | --- | --- |
 | `source.ingest.queued` | source | An upload, remote ingest or re-ingest was queued. | `source_id`, `filename` or `job_name`, `operation` |
 | `source.ingest.progress` | source | Parsing or embedding progressed. | `current`, `total`, `stage` (`parsing` or `embedding`) |
-| `source.ingest.completed` | source | The source is ready. | `source_id`, `filename`, `tokens`, `operation` |
+| `source.ingest.completed` | source | The source is ready. | `source_id`, `tokens`, `operation`, and `filename` (uploads and re-ingests) or `job_name` and `loader` (remote and connector sources) |
 | `source.ingest.failed` | source | Ingestion failed. | `source_id`, `operation`, `error` |
-| `graph.extract.progress`, `graph.extract.completed`, `graph.extract.failed` | source | [GraphRAG](/Sources/GraphRAG) extraction progressed, finished or failed. | `source_id` |
+| `graph.extract.progress`, `graph.extract.completed`, `graph.extract.failed` | source | [GraphRAG](/Sources/GraphRAG) extraction progressed, finished or failed. | `source_id`; `progress`: `current`, `total`, `nodes`, `edges`; `completed`: `nodes`, `edges`, `chunks_processed`, `skipped_over_cap`, `failed_chunks`; `failed`: `error` |
 | `attachment.queued`, `attachment.progress`, `attachment.completed`, `attachment.failed` | attachment | A chat attachment is being processed. | `attachment_id`, `filename` |
 | `tool.approval.required` | conversation | A turn paused on tools that need approval. | `conversation_id`, `message_id`, `pending_tool_calls` |
 | `tool.approval.cleared` | conversation | A pending approval is gone: it expired, or the paused turn failed. | `conversation_id`, `reason` (`expired` or `failed`) |
 | `connection.reconnect_needed` | connection | A connected account needs signing in again. | `connection_id`, `connector_key`, `name`, `source_count`, `tool_count` |
-| `mcp.oauth.in_progress`, `mcp.oauth.awaiting_redirect`, `mcp.oauth.completed`, `mcp.oauth.failed` | mcp_oauth (`id` is the OAuth task id) | An MCP server's OAuth sign-in progressed. `awaiting_redirect` carries the `authorization_url` to open; `completed` carries `tools` and `tools_count`; `failed` carries `error`. | see the previous column |
+| `mcp.oauth.in_progress`, `mcp.oauth.awaiting_redirect`, `mcp.oauth.completed`, `mcp.oauth.failed` | mcp_oauth (`id` is the OAuth task id) | An MCP server's OAuth sign-in progressed. | `task_id` on every event; `message` on `in_progress` and `awaiting_redirect`; the `authorization_url` to open on `awaiting_redirect`; `tools` and `tools_count` on `completed`; `error` on `failed` |
 | `schedule.run.completed`, `schedule.run.failed` | schedule | A scheduled run finished. | `run_id`, `schedule_id`, `agent_id`, `status`, and `error_type`/`error` on failure |
 | `schedule.autopaused` | schedule | A schedule paused itself after repeated failures. | `run_id`, `schedule_id`, `consecutive_failure_count` |
 | `schedule.completed`, `schedule.resumed`, `schedule.cancelled` | schedule | A schedule's status changed. | `schedule_id`, `status` |
 | `schedule.message.appended` | conversation | A scheduled run added a message to a conversation. | `conversation_id`, `message_id`, `schedule_id`, `run_id` |
 | `team.member_added` | team | You were added to a team. | `team_id`, `team_name`, `role`, `added_by` |
-| `resource.shared` | resource | Something was shared with you through a team. | depends on the resource |
-| `backlog.truncated` | | Your cursor slid off the retained backlog window. Clear your cursor and refetch state. | `oldest_retained_id` |
+| `resource.shared` | resource | Something was shared with you through a team. | `resource_type`, `resource_id`, `resource_name`, `access_level`, `team_id`, `team_name`, `shared_by` |
+| `backlog.truncated` | | Your `Last-Event-ID` is older than what a replay can return (past `EVENTS_STREAM_MAXLEN` or `EVENTS_REPLAY_MAX_AGE_HOURS`) or is malformed. Clear your cursor and refetch state. | `oldest_retained_id` (empty for a malformed cursor) |
 
 New event types can be added, so ignore types you don't handle.
 
@@ -81,8 +85,7 @@ Last-Event-ID: 1718900000000-0
 
 A few bounded behaviors to be aware of:
 
-- The backlog is capped at `EVENTS_STREAM_MAXLEN` entries (default 1000). If your `Last-Event-ID` is older than the oldest retained entry, you receive a `backlog.truncated` event — reset your cursor and refetch current state.
-- A replay returns only events from the last `EVENTS_REPLAY_MAX_AGE_HOURS` (default 48), however many the backlog holds.
+- The backlog is capped at `EVENTS_STREAM_MAXLEN` entries (default 1000), and a replay returns only events from the last `EVENTS_REPLAY_MAX_AGE_HOURS` (default 48). If your `Last-Event-ID` is older than either limit, or isn't a valid event id, you receive a `backlog.truncated` event — reset your cursor and refetch current state.
 - Each snapshot is capped at `EVENTS_REPLAY_MAX_PER_REQUEST` entries per request (default 200); reconnect to continue.
 - There is a per-user cap on simultaneous connections (`SSE_MAX_CONCURRENT_PER_USER`, default 8) and a windowed replay budget. Exceeding either returns **HTTP 429** — back off and retry.
 
