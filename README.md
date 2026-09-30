@@ -74,7 +74,7 @@ how to take part.
   [MCP server](https://docs.docsgpt.cloud/API/mcp-server) that exposes your agents to MCP clients.
 - HTML and React [chat](https://docs.docsgpt.cloud/Extensions/chat-widget) and [search](https://docs.docsgpt.cloud/Extensions/search-widget) widgets, and a
   [Chatwoot](https://docs.docsgpt.cloud/Extensions/Chatwoot-extension) bridge.
-- Community integrations in separate repos: [DocsGPT CLI](https://github.com/arc53/DocsGPT-cli),
+- [Community integrations](https://docs.docsgpt.cloud/Extensions/community) in separate repos: [DocsGPT CLI](https://github.com/arc53/DocsGPT-cli),
   [Backstage plugin](https://github.com/arc53/docsgpt-backstage-plugin), and bots for
   [Discord](https://github.com/arc53/discord-docsgpt-extension),
   [Slack](https://github.com/arc53/slack-bot-docsgpt-extenstion) and
