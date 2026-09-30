@@ -81,6 +81,11 @@ and print the data home and env file they use.
 
 ## Database and maintenance commands
 
+These act on the database in `POSTGRES_URI`. On a Docker install, including the installer's default,
+the host has neither that setting nor a route to the stack's Postgres, so run them inside the backend
+container from the stack directory, for example
+`docker compose exec backend python -m docsgpt grant-admin <user_id>`.
+
 | Command | What it does |
 | --- | --- |
 | `docsgpt migrate [--no-create]` | Create the Postgres database if it is missing and apply the migrations. `--no-create` fails instead of creating it. See [PostgreSQL for User Data](/Deploying/Postgres-Migration#production-hardening). |

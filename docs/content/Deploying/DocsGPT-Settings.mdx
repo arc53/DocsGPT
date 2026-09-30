@@ -498,8 +498,8 @@ The default Docker Compose file bundles a `postgres` service, and the
 app auto-bootstraps the database on boot, so containerized deployments
 need no manual migration step. See
 [PostgreSQL for User Data](/Deploying/Postgres-Migration#production-hardening)
-for the recommended production flow (both flags `false`, migrations
-gated by CI/CD).
+for the recommended production flow (`AUTO_CREATE_DB`, `AUTO_MIGRATE`
+and `AUTO_VECTOR_SCHEMA` set to `false`, migrations gated by CI/CD).
 
 <Callout type="info" emoji="ℹ️">
   `MONGO_URI` is **opt-in**. It is only consulted when you select the
