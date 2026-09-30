@@ -156,13 +156,12 @@ OCR_MIN_CHARS_PER_PAGE=20
   72–600 are clamped to that range. 200 suits tesseract; raise it for small
   print, at the cost of slower OCR.
 - `OCR_MIN_CHARS_PER_PAGE` (default `20`; alias
-  `DOCLING_OCR_MIN_CHARS_PER_PAGE`): the dropout guard. An OCR'd PDF or image
-  that yields fewer characters per page than this is treated as an OCR
-  failure, not as content. The `docling` backend retries once with a fresh
-  full-page OCR converter; if the result is still below the floor, both
-  backends fail the parse with an error instead of indexing an empty document.
-  Set `0` to turn the guard off, for example for scans that really are almost
-  blank.
+  `DOCLING_OCR_MIN_CHARS_PER_PAGE`): characters per page. Output below this
+  floor trips the dropout guard: docling retries once on a fresh
+  full-page-OCR converter. The parse fails only when a multi-page document
+  OCR'd to no text at all (for docling, also when the PDF had a text layer it
+  should have read); output that is merely sparse is indexed with a warning.
+  `0` disables the guard.
 
 Under the default anydoc engine, a scanned PDF reaches OCR through anydoc's
 own detection: anydoc refuses it ("OCR is required") and the OCR backend

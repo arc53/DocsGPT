@@ -149,7 +149,7 @@ The team **owner** is a distinct concept from `team_admin`: ownership can be tra
 | `PUT` / `DELETE` | `/api/teams/<id>/members/<member_id>` | Change a member's role / remove (or leave). |
 | `POST` | `/api/teams/<id>/transfer_owner` | Transfer ownership to an existing member, who becomes a `team_admin` (owner only; a global admin overrides). |
 
-The team owner can't be demoted or removed: another admin gets `403`, and the owner gets `400` asking them to transfer ownership first. To step down or leave, transfer ownership (`POST /api/teams/<id>/transfer_owner`), then change your role or leave.
+A team always keeps at least one `team_admin`: demoting or removing the last one returns `409`. The team owner can't be demoted or removed either: another admin gets `403`, and the owner gets `400` asking them to transfer ownership first. To step down or leave, transfer ownership (`POST /api/teams/<id>/transfer_owner`), then change your role or leave.
 
 <Callout type="info" emoji="ℹ️">
 Members are added by email (or subject id). The invitee **must have signed in at least once** so DocsGPT can resolve them to a user account.

@@ -370,8 +370,8 @@ and puts their results in the `tools` namespace. How it decides what to run:
 - **Parameters come from saved values.** Each parameter is filled from the
   value saved on the tool's action, then the tool's configuration, then the
   parameter's default. `memory_view` with no saved path lists the root
-  directory (`/`). An action that fails is skipped and its variable renders
-  empty.
+  directory (`/`). An action that raises is skipped and its variable renders
+  empty; one that returns an error message renders that message.
 - **Someone else's tools stay read-only.** When the tools belong to another
   user (a shared agent, or an API key or widget caller), only actions that
   would run without asking anyone are pre-fetched.
@@ -519,7 +519,8 @@ Provide detailed answers appropriate for {{ passthrough.access_level }} access l
 ### Problem: Empty Output for Tool Data
 **Solution:** Check that tool pre-fetching is enabled (`ENABLE_TOOL_PREFETCH`), that the tool is enabled for
 the agent, and that you reference an action by its name (`tools.memory.memory_view`, not `tools.memory.root`).
-An action that needs a parameter with no saved value or default can't run and renders empty.
+An action that raises (for example, because a parameter has no saved value or default) is skipped and renders
+empty; one that returns an error message renders that message.
 
 ### Problem: Syntax Errors
 **Solution:** Validate template syntax. Common issues:

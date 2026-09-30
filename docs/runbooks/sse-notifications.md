@@ -248,9 +248,12 @@ the snapshot would re-serve from the start, the cap would re-trip).
 
 Symptoms: `/api/events` returns 200 but emits only `: connected`
 then the body closes. `XLEN` and `PUBLISH` both fail. The publisher,
-`publish_user_event`, swallows the failure and returns `None` (it logs
-`Redis unavailable; skipping publish_user_event` at DEBUG only); the live
-tail publish also drops on the floor. Frontend retries forever with
+`publish_user_event`, swallows the failure and returns `None`. When the
+XADD fails it logs `xadd failed for user=<id> event_type=<type>` at ERROR
+with a traceback — grep the worker and API logs for it. Only when no Redis
+client can be created at all does it log `Redis unavailable; skipping
+publish_user_event`, at DEBUG. Either way the live tail publish is skipped
+too, since an event with no journal id is never published. Frontend retries forever with
 exponential backoff.
 
 Resolution: bring Redis back. The journal is gone (was in-memory

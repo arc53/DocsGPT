@@ -49,9 +49,9 @@ Every workflow has exactly one **Start** node, added for you. It has no
 settings and can't be deleted; the run begins there with `query` and
 `chat_history` in the state.
 
-An **End** node finishes the run. Add one from the palette for each branch that
-should stop; a workflow needs at least one, and each needs an incoming
-connection. End nodes have no settings in the builder. A workflow saved or
+An **End** node finishes the run. Add End nodes from the palette where branches
+should stop (several branches can share one); a workflow needs at least one,
+and each needs an incoming connection. End nodes have no settings in the builder. A workflow saved or
 imported through the API can give an End node an `output_template` (template
 syntax, like a Prompt Template); its rendered text is sent to the user as the
 last part of the answer.

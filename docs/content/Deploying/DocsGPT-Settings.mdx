@@ -521,8 +521,9 @@ These control how sources are retrieved and whether the advanced RAG features ar
 | --- | --- | --- |
 | `PER_SOURCE_RETRIEVAL_ENABLED` | `true` | Master switch for per-source retrieval config. When `false`, all sources fall back to the classic retriever regardless of their stored config. |
 | `GRAPHRAG_ENABLED` | `false` | Enable [GraphRAG](/Sources/GraphRAG). Requires `VECTOR_STORE=pgvector`. |
-| `GRAPHRAG_EXTRACTION_MODEL` | unset | Model used for ingest-time graph extraction. Unset reuses the instance default model. |
-| `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on chunks extracted per source (cost control). |
+| `GRAPHRAG_EXTRACTION_MODEL` | unset | Model used for ingest-time graph extraction. Unset falls back to `LLM_NAME` (on its registry provider, else `LLM_PROVIDER`). |
+| `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on chunks extracted per source (cost control). `0` extracts nothing. |
+| `GRAPHRAG_EXTRACTION_WORKERS` | `8` | Concurrent extraction calls during ingest (1–32). Model calls run in parallel while graph writes stay serial; `1` is fully serial. |
 
 ## Embeddings Settings
 

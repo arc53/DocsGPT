@@ -35,7 +35,7 @@ A team allowance is **per member**, not a pool the team shares: if the allowance
 A user in several teams gets the **most generous** allowance among them, and allowances are never added together. Usage is always counted per user, whichever teams they belong to. To hold one person below their team's allowance, give them a user override.
 
 <Callout type="info" emoji="ℹ️">
-Team membership can change without an instance admin — team admins add members — so joining a team can only raise a user's allowance to what you granted that team, never lower it. OIDC group sync and SCIM don't add team members. Only instance admins set allowances; team admins cannot.
+Team membership can change without an instance admin — team admins add members; OIDC group sync and SCIM don't. The most generous team allowance applies, so joining another team can't lower a limit a user already gets from a team; but a team allowance overrides the instance default, so a team below the default lowers its members' limit. Only instance admins set allowances; team admins cannot.
 </Callout>
 
 ## Windows and enforcement
@@ -123,6 +123,7 @@ A `PUT` body sets, per budget, a limit or the unlimited flag; leave both out to 
 
 A `PUT` replaces the whole policy for that layer and bucket, so send every field you want to keep. It returns
 `400` when a budget has both a limit and its unlimited flag set, when neither budget has a limit or an unlimited
-flag (delete the policy instead), or when a value has the wrong type or is negative.
+flag (delete the policy instead), when a value has the wrong type or is out of range (negative or too large), or when
+`bucket` isn't one of `all`, `direct` or `agent`.
 
 `bucket` (default `all`) narrows a policy to `direct` traffic (chat without an agent) or `agent` traffic (anything that runs through an agent, whether or not the agent has an API key). A request must fit both its own bucket and `all`. The dashboard edits `all`.
