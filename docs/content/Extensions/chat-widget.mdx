@@ -61,6 +61,23 @@ Now, you can embed the widget within your React component's JSX:
   </Tabs.Tab>
   <Tabs.Tab>
 
+<video
+  autoPlay
+  muted
+  loop
+  playsInline
+  controls
+  width={1440}
+  height={900}
+  poster="/chat-widget-poster.png"
+  aria-label="Screen recording: the DocsGPT chat widget embedded in a plain HTML page answering a question with a source"
+  style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
+>
+  <source src="/chat-widget.mp4" type="video/mp4" />
+</video>
+
+*The recording shows the snippet from this page in a plain HTML file, with `apiHost` set to a local DocsGPT API and `apiKey` set to a published agent's key. It then opens the page in a browser, clicks **Ask a question**, and asks what to change when a double shot runs in 15 seconds. The answer streams in with the product handbook listed as its source.*
+
 ### Installation
 
 To use the DocsGPT Widget directly in HTML, include the widget script from a CDN in your HTML file:
@@ -94,7 +111,7 @@ Then, in a `<script>` block after the widget script, use the `renderDocsGPTWidge
       title: 'Get AI assistance',
       description: "DocsGPT's AI Chatbot is here to help",
       heroTitle: 'Welcome to DocsGPT!',
-      heroDescription: 'This chatbot is utilises GenAI, please review important information.',
+      heroDescription: 'This chatbot utilises GenAI, please review important information.',
       theme:"dark",
       buttonIcon:"https://your-icon",
       buttonBg:"#222327"
