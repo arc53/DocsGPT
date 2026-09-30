@@ -115,6 +115,15 @@ class OCRSettings(SettingsGroup):
             "needs minutes; a vLLM GPU deployment or a hosted API, seconds."
         ),
     )
+    OCR_DEEPSEEK_PROMPT: str = Field(
+        default="Free OCR.",
+        description=(
+            "Instruction sent with every page image. 'Free OCR.' kept 94-100% of the words on real pages in "
+            "testing and returns tables as Markdown; 'Convert the document to markdown.' lost most of a table "
+            "page on Ollama, whose server strips the HTML cell tags that prompt produces. '<|grounding|>...' "
+            "prompts add bounding boxes, which the output cleanup removes."
+        ),
+    )
     OCR_RENDER_DPI: int = Field(
         default=200,
         description=(

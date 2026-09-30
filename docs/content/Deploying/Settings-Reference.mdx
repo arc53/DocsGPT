@@ -1000,6 +1000,12 @@ Type `float`, default `300.0`.
 
 Seconds allowed per page request to the DeepSeek endpoint. A 3B model on a laptop needs minutes; a vLLM GPU deployment or a hosted API, seconds.
 
+### `OCR_DEEPSEEK_PROMPT`
+
+Type `str`, default `Free OCR.`.
+
+Instruction sent with every page image. 'Free OCR.' kept 94-100% of the words on real pages in testing and returns tables as Markdown; 'Convert the document to markdown.' lost most of a table page on Ollama, whose server strips the HTML cell tags that prompt produces. '&lt;|grounding|>...' prompts add bounding boxes, which the output cleanup removes.
+
 ### `OCR_RENDER_DPI`
 
 Type `int`, default `200`.

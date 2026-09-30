@@ -77,11 +77,12 @@ _TESSERACT_TIMEOUT_SECONDS = 300
 # so the exit code alone cannot catch OCR_LANGS=eng+chi_sim without chi_sim.
 _TESSERACT_LANG_ERROR_RE = re.compile(r"Error opening data file|Failed loading language")
 _TESSERACT_LANG_RE = re.compile(r"^[A-Za-z0-9_/\-]+$")
-# docling's DeepSeek-OCR prompt minus its ``<|grounding|>`` prefix: grounding
-# makes the model wrap every element in ref/det tags with bounding boxes,
-# which docling parses back into a layout tree. Plain Markdown is what the
-# ingestion pipeline stores, so ask for that directly.
-DEEPSEEK_PROMPT = "Convert the document to markdown."
+# Default instruction (``OCR_DEEPSEEK_PROMPT``). Measured 2026-09 on real
+# pages against their text layers, Ollama deepseek-ocr:3b: "Free OCR." kept
+# 94-100% of the words and wrote tables as Markdown; "Convert the document to
+# markdown." kept 17% of a table page, because it emits HTML tables whose
+# cell tags the server strips as special tokens, gluing every cell together.
+DEEPSEEK_PROMPT = "Free OCR."
 _DEEPSEEK_MAX_TOKENS = 4096
 # Where DeepSeek-OCR runs: provider -> (chat-completions URL, model, hosted).
 # Hosted presets need an API key and default to concurrent page requests; a
@@ -101,9 +102,19 @@ _DEFAULT_HOSTED_CONCURRENCY = 4
 _RETRY_STATUSES = (408, 409, 425, 429, 500, 502, 503, 504)
 _MAX_RETRY_WAIT_SECONDS = 60.0
 _BASE_RETRY_WAIT_SECONDS = 1.0
-# Defensive cleanup should a served model still emit grounding markup.
+# Output cleanup. Grounding markup (<|ref|>/<|det|>, or the bare
+# ``label[[x1, y1, x2, y2]]`` lines a server that strips special tokens
+# leaves), chat-template tokens the model sometimes leaks, and the <p>/<br>
+# tags it uses for plain paragraphs. HTML tables are kept: their structure
+# is content.
 _DEEPSEEK_DET_BLOCK_RE = re.compile(r"<\|det\|>.*?<\|/det\|>", re.DOTALL)
-_DEEPSEEK_TAG_RE = re.compile(r"<\|/?ref\|>|<\|grounding\|>|<\|end▁of▁sentence\|>")
+_DEEPSEEK_TAG_RE = re.compile(
+    r"<\|/?ref\|>|<\|grounding\|>|<\|end▁of▁sentence\|>|<\|im_(?:start|end|begin)\|>"
+)
+_DEEPSEEK_BOX_LINE_RE = re.compile(r"^[a-z_]+\[\[\d+(?:,\s*\d+){3}\]\]\s*$\n?", re.MULTILINE)
+_HTML_BREAK_RE = re.compile(r"<br\s*/?>")
+_HTML_PARAGRAPH_END_RE = re.compile(r"</p>[ \t]*")
+_BLANK_LINES_RE = re.compile(r"\n{3,}")
 # tesseract's CJK models emit one space between every character ("互相 保密 协议")
 # because they segment by glyph. Chinese and Japanese are written without
 # word spaces, so collapse whitespace between two CJK characters (or CJK
@@ -384,9 +395,13 @@ def collapse_cjk_spaces(text: str) -> str:
 
 
 def clean_deepseek_output(text: str) -> str:
-    """Strip DeepSeek-OCR grounding markup, keeping the referenced text."""
+    """Strip DeepSeek-OCR grounding markup and leaked tokens; turn <p>/<br> into line breaks."""
     text = _DEEPSEEK_DET_BLOCK_RE.sub("", text)
-    return _DEEPSEEK_TAG_RE.sub("", text).strip()
+    text = _DEEPSEEK_TAG_RE.sub("", text)
+    text = _DEEPSEEK_BOX_LINE_RE.sub("", text)
+    text = _HTML_BREAK_RE.sub("\n", text)
+    text = _HTML_PARAGRAPH_END_RE.sub("\n\n", text).replace("<p>", "")
+    return _BLANK_LINES_RE.sub("\n\n", text).strip()
 
 
 def _sleep(seconds: float) -> None:
@@ -407,6 +422,7 @@ class DeepseekEndpoint:
         concurrency: Page requests in flight per file.
         max_retries: Retries per page after a 429, a 5xx or a refused connection.
         hosted: Whether the preset is a third-party API.
+        prompt: Instruction sent with every page (``OCR_DEEPSEEK_PROMPT``).
         problem: Why the endpoint cannot be used as configured, or None.
     """
 
@@ -418,6 +434,7 @@ class DeepseekEndpoint:
     concurrency: int
     max_retries: int
     hosted: bool
+    prompt: str = DEEPSEEK_PROMPT
     problem: Optional[str] = None
 
     def headers(self) -> Dict[str, str]:
@@ -473,6 +490,7 @@ def resolve_deepseek_endpoint() -> DeepseekEndpoint:
         concurrency=max(1, int(concurrency)),
         max_retries=max(0, int(settings.OCR_DEEPSEEK_MAX_RETRIES)),
         hosted=hosted,
+        prompt=str(settings.OCR_DEEPSEEK_PROMPT or "").strip() or DEEPSEEK_PROMPT,
         problem=problem,
     )
 
@@ -524,7 +542,7 @@ class DeepseekOcrEngine:
         url: Optional[str] = None,
         model: Optional[str] = None,
         timeout: Optional[float] = None,
-        prompt: str = DEEPSEEK_PROMPT,
+        prompt: Optional[str] = None,
         max_tokens: int = _DEEPSEEK_MAX_TOKENS,
         endpoint: Optional[DeepseekEndpoint] = None,
     ) -> None:
@@ -535,7 +553,7 @@ class DeepseekOcrEngine:
         self.timeout = float(timeout if timeout is not None else resolved.timeout)
         self.concurrency = resolved.concurrency
         self.max_retries = resolved.max_retries
-        self.prompt = prompt
+        self.prompt = prompt or resolved.prompt
         self.max_tokens = max_tokens
         # An explicit URL and model mean the caller configured the endpoint itself.
         self._problem = None if (url and model) else resolved.problem

@@ -29,6 +29,7 @@ def settings(monkeypatch):
         ("OCR_DEEPSEEK_CONCURRENCY", None),
         ("OCR_DEEPSEEK_MAX_RETRIES", 3),
         ("OCR_DEEPSEEK_TIMEOUT", 300.0),
+        ("OCR_DEEPSEEK_PROMPT", "Free OCR."),
         ("NOVITA_API_KEY", None),
     ):
         monkeypatch.setattr(settings, name, value)
@@ -552,3 +553,43 @@ class TestAnydocMixedDocuments:
         assert metadata["ocr_pages"] == 2
         assert metadata["ocr_requests"] == 2
         assert metadata["ocr_prompt_tokens"] == 20
+
+
+# ---------------------------------------------------------------------------
+# Prompt and output cleanup
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestPromptAndCleanup:
+    def test_default_prompt_is_free_ocr(self, settings):
+        from docsgpt.core.settings import Settings
+
+        assert Settings.model_construct().OCR_DEEPSEEK_PROMPT == "Free OCR."
+        settings.OCR_DEEPSEEK_PROMPT = "Free OCR."
+        payload = op.DeepseekOcrEngine().payload(_image())
+        assert payload["messages"][0]["content"][1]["text"] == "Free OCR."
+
+    def test_prompt_setting_is_sent(self, settings, monkeypatch):
+        settings.OCR_DEEPSEEK_PROMPT = "<|grounding|>Convert the document to markdown."
+        post = FakePost(FakeResponse())
+        monkeypatch.setattr("requests.post", post)
+        op.DeepseekOcrEngine().ocr_image(_image())
+        assert post.calls[0]["json"]["messages"][0]["content"][1]["text"].startswith("<|grounding|>")
+
+    def test_leaked_chat_tokens_are_removed(self):
+        raw = " <|im_end|>\nTable 3\n<|im_begin|>Unit price: 14.50 EUR<|im_end|><|im_start|>"
+        assert op.clean_deepseek_output(raw) == "Table 3\nUnit price: 14.50 EUR"
+
+    def test_grounding_labels_without_special_tokens_are_removed(self):
+        # Ollama strips <|ref|>/<|det|> and leaves the label and the box.
+        raw = "text[[77, 145, 616, 248]]\nPump station 7\ntitle[[1,2,3,4]]\n# Report"
+        assert op.clean_deepseek_output(raw) == "Pump station 7\n# Report"
+
+    def test_paragraph_and_break_tags_become_line_breaks(self):
+        raw = "<p>Item: filter</p><p>Total due: 174.00 EUR</p>\nline one<br>line two<br/>"
+        assert op.clean_deepseek_output(raw) == "Item: filter\n\nTotal due: 174.00 EUR\n\nline one\nline two"
+
+    def test_tables_are_kept(self):
+        raw = "| a | b |\n|---|---|\n| 1 | 2 |\n\n<table><tr><td>x</td></tr></table>"
+        assert op.clean_deepseek_output(raw) == raw

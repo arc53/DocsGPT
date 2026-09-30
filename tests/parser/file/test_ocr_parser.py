@@ -297,8 +297,7 @@ class TestDeepseekEngine:
         assert payload["temperature"] == 0
         parts = payload["messages"][0]["content"]
         assert parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
-        assert parts[1]["text"] == op.DEEPSEEK_PROMPT
-        assert "<|grounding|>" not in parts[1]["text"]
+        assert parts[1]["text"] == op.DEEPSEEK_PROMPT == "Free OCR."
 
     def test_success_strips_grounding_markup(self):
         engine = op.DeepseekOcrEngine(url="http://x", model="m", timeout=1)
