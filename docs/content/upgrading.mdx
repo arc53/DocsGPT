@@ -258,6 +258,10 @@ The manifests in `deployment/k8s` did not work as shipped: the migration Job ran
 
 `docsgpt-api-service` is now `ClusterIP`, so the old external address stops answering. Use `kubectl port-forward service/docsgpt-api-service 7091:80`, or set `AUTH_TYPE` and `API_URL` (the public `https://` address) and publish DocsGPT through an Ingress as described in [Publish DocsGPT](/Deploying/Kubernetes-Deploying#publish-docsgpt).
 
+#### Schedules: review the tools they pre-approve
+
+Schedules created before this release still pre-approve every tool the agent had, including actions that need approval. Open each schedule in the Schedules tab: those tools show ticked under **Tools that need approval**. Untick any a scheduled run should not use without asking, then save. Saving without unticking keeps them approved.
+
 #### Swagger UI moved to /api/docs
 
 Bookmarks or scripts that opened the Swagger UI at `/` should use `/api/docs`; `/swagger.json` is unchanged.

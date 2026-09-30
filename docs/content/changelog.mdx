@@ -81,6 +81,23 @@ Answers render math, and the chat widget is published at 0.8.0.
   to read an empty body and return 400).
 - Docs: new API section with an overview and a REST API reference generated from the Swagger
   document, including the token scope for each endpoint.
+- DocsGPT's MCP server now answers at `/mcp` as well as `/mcp/`. Before, `/mcp` without the slash
+  returned 404 to a POST.
+
+### Schedules
+
+- The Schedules tab no longer pre-approves every tool. Tools with actions that need approval are
+  listed unticked under **Tools that need approval**, and a scheduled run performs those actions
+  without asking only for the tools you tick. Existing schedules keep their approvals; see
+  [Upgrading](/upgrading#schedules-review-the-tools-they-pre-approve).
+- Editing a one-time task's date or time in the Schedules tab now moves the task; the change used
+  to be ignored. `PUT /api/schedules/<id>` accepts `run_at` for one-time tasks, and the schedule
+  dialog shows why a save was refused.
+
+### Documentation
+
+New docs pages: Agent Schedules, MCP Server, Background Jobs and Data Retention, Custom Models, and a
+Using DocsGPT section (web app, sharing conversations, teams and sharing, analytics and logs).
 
 ### Integrations
 
