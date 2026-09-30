@@ -81,7 +81,7 @@ and print the data home and env file they use.
 
 ## Database and maintenance commands
 
-These act on the database in `POSTGRES_URI`. On a Docker install, including the installer's default,
+`migrate`, `grant-admin`, `connectors reencrypt` and `reembed` act on the database in `POSTGRES_URI`. On a Docker install, including the installer's default,
 the host has neither that setting nor a route to the stack's Postgres, so run them inside the backend
 container from the stack directory, for example
 `docker compose exec backend python -m docsgpt grant-admin <user_id>`.
