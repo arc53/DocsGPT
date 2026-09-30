@@ -25,8 +25,9 @@ kubectl apply -f deployment/k8s/optional-mongo/deployments/mongo-deploy.yaml
 kubectl apply -f deployment/k8s/optional-mongo/services/mongo-service.yaml
 ```
 
-For a backfill, run `scripts/db/backfill.py` with
-`MONGO_URI=mongodb://mongodb-service:27017/docsgpt` from a pod in the cluster.
+For a backfill, run `scripts/db/backfill.py` from a checkout that can reach
+the service (for example through `kubectl port-forward svc/mongodb-service 27017`),
+with `MONGO_URI` pointing at it.
 
 For the vector store, set these under `stringData` in `docsgpt-secrets.yaml`
 and re-apply with `kubectl apply -k deployment/k8s/`. `MONGO_URI` must reach a
