@@ -10,8 +10,65 @@ import { Callout } from 'nextra/components'
 The notable changes in each release. Every release on GitHub also carries
 [auto-generated notes](https://github.com/arc53/DocsGPT/releases) listing every merged pull
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
+Entries start at 0.17.0; see GitHub for earlier releases.
 
 ## Unreleased
+
+<Callout type="warning">
+  **Upgrade actions.** Some of these changes stop an install from starting, or change answers,
+  unless you act first:
+
+  - Set `ENCRYPTION_SECRET_KEY` to your own value **before** upgrading a multi-user install.
+    Migration `0040_connections` encrypts stored service credentials with the key it sees. See
+    [Connectors: set ENCRYPTION_SECRET_KEY first](/upgrading#connectors-set-encryption_secret_key-first).
+  - `SCIM_ENABLED=true` now needs `SCIM_TOKEN`; without it the API and the worker fail at start
+    instead of answering SCIM calls with 503.
+  - Agentless chats and agents that don't set a chunk count now retrieve 6 chunks per search
+    instead of 2. Answers draw on more context and use more tokens.
+  - `LLM_PROVIDER=llama.cpp` and `LLM_PROVIDER=huggingface` are gone; neither ever answered.
+    Reach llama.cpp through its OpenAI-compatible server with `OPENAI_BASE_URL` and `LLM_NAME`.
+    `VECTOR_STORE=lancedb` could never start and is gone from the setup scripts.
+  - The checkout Compose files publish on `127.0.0.1` only. A server others reach needs
+    `DOCSGPT_BIND=0.0.0.0` (see below).
+  - `LLM_PATH`, `HUGGINGFACE_API_KEY`, `LANCEDB_*`, `RETRIEVERS_ENABLED` and `DEFAULT_MAX_HISTORY`
+    are no longer read; delete them from `.env`. `SAGEMAKER_*` still works as the S3 credentials
+    fallback but is deprecated in favour of `S3_*`.
+</Callout>
+
+### Connectors
+
+Service credentials (OAuth tokens for Google Drive, SharePoint, Confluence and MCP servers, and
+API keys for tools) now live on encrypted **connections** that an admin governs in
+Admin > Connectors, and synced sources run as their connection without a browser session. See
+[Connectors](/Guides/Connectors).
+
+### Roles, quotas and tokens
+
+- Resource sharing was reworked: agents and the sources, prompts and tools they use can be shared
+  with a team, with sponsors keeping shared agents working. See
+  [Access Control, Roles & Teams](/Deploying/Access-Control).
+- [Usage quotas](/Deploying/Usage-Quotas) let an instance admin cap the tokens each user spends,
+  or what they cost.
+- [Personal access tokens](/Extensions/personal-access-tokens) let scripts call the API as a user.
+- `docsgpt grant-admin` creates the first admin from the Docker image or a pip install, where
+  `scripts/grant_admin.py` was not available. See
+  [Bootstrapping the first admin](/Deploying/Access-Control#bootstrapping-the-first-admin).
+- The admin dashboard gained an activity feed and a usage export, and
+  [execution traces](/Deploying/Observability#execution-traces) record GenAI spans.
+
+### Chat
+
+Answers render math, and the chat widget is published at 0.8.0.
+
+### Deployment files
+
+- `deployment/docker-compose-azure.yaml` and `deployment/docker-compose-local.yaml` are removed.
+  Neither was documented, and both had drifted: the Azure file's worker had no data volumes, no
+  scheduler and no `CACHE_REDIS_URL`. Use `docker-compose-hub.yaml` for pre-built images or
+  `docker-compose.yaml` to build from the checkout.
+- The Mongo to Postgres backfill (`scripts/db/backfill.py`) applies the migrations before it
+  copies, so it works against an empty database, and takes `--mongo-db` for a database not named
+  `docsgpt`.
 
 ### A development loop in one command
 
@@ -43,7 +100,7 @@ and the backend and the worker pause while it is made so the dump and the volume
 
 ### The checkout stack answers on this machine only
 
-The checkout Compose files (`deployment/docker-compose.yaml`, `-hub`, `-azure`, `-local` and `-dev`),
+The checkout Compose files (`deployment/docker-compose.yaml`, `-hub` and `-dev`),
 which `setup.sh` and `setup.ps1` run, published Postgres (password `docsgpt`), Redis (no password)
 and the API on every interface. Postgres and Redis are now published on `127.0.0.1` only, and the
 API (7091) and UI (5173) on `DOCSGPT_BIND`, `127.0.0.1` by default. The setup scripts ask whether
@@ -211,3 +268,68 @@ at 0.7.1.
 - The [architecture guide](/Guides/Architecture) was rewritten.
 - Markdown code spans are no longer corrupted by citation rendering.
 - `setup.ps1` runs on Windows PowerShell 5.1 again.
+
+## 0.19.0
+
+### Artifacts and sandboxed code execution
+
+Agents can generate files and run code in a sandbox, from chat and from workflows, and read and
+write documents along the way. The runner is opt-in. See
+[Artifacts and Code Execution](/Tools/artifacts-and-code-execution).
+
+### Guardrails
+
+A first version of [guardrails](/Agents/guardrails): per-agent checks on the question, the
+retrieved documents, tool results and the answer, with an audit journal.
+
+### Also in this release
+
+- Agent API keys can be rotated.
+- Workflows gained undo and redo, and chat shows reasoning and tool calls inline while an answer
+  streams.
+- Sources can be previewed chunk by chunk.
+- Token usage is counted per call, and oversized contexts are guarded against before they reach
+  the model.
+- The frontend targets Node 22.
+
+## 0.18.0
+
+This section also covers the 0.17.1 to 0.17.3 releases.
+
+### Single sign-on, roles and teams
+
+[OIDC single sign-on](/Deploying/OIDC-SSO), an admin role with an
+[admin dashboard](/Deploying/Access-Control#admin-dashboard), and
+[teams](/Deploying/Access-Control#teams) for sharing agents and sources.
+
+### Retrieval
+
+- [Per-source configuration](/Sources/Per-source-configuration) of retrieval strategy, chunking
+  and exposure.
+- Semantic chunking, and a hybrid BM25 plus vector retriever on pgvector.
+- [GraphRAG](/Sources/GraphRAG): a knowledge graph per source, used at retrieval time.
+- [Wiki sources](/Sources/Wiki-sources) that an agent can edit.
+
+### Also in this release
+
+- Agents can be exported and imported.
+- OpenAI models can run through the Responses API (a per-model setting), and model reasoning is
+  passed through to the answer stream.
+- Prompt presets, conversation visibility, and the logs and analytics pages were reworked.
+
+## 0.17.0
+
+### User data moves to PostgreSQL
+
+Conversations, agents, prompts, sources, attachments, workflows, logs and token usage are stored
+in PostgreSQL instead of MongoDB. MongoDB is no longer required, except as an optional vector
+store. **A 0.16.x deployment has to migrate its data before it upgrades**; do not pull the new
+images first. See [PostgreSQL for User Data](/Deploying/Postgres-Migration#migrating-from-mongodb).
+
+### Also in this release
+
+- The worker checks for new versions and prints security advisories; `VERSION_CHECK=0` turns it
+  off. See
+  [Observability](/Deploying/Observability).
+- The repository gained a threat model, an incident response plan and a CI security scan of its
+  GitHub Actions workflows.
