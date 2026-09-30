@@ -31,6 +31,7 @@
   <br>
 <img src="https://d3dg1063dc54p9.cloudfront.net/videos/demo-26.gif" alt="video-example-of-docs-gpt" width="800" height="480">
 </div>
+
 ## 🎃 Hacktoberfest 2026
 
 DocsGPT takes part in [Hacktoberfest](https://hacktoberfest.com/) from October 1 to 31, 2026. We give away T-shirts
@@ -50,7 +51,8 @@ how to take part.
 - Documents: PDF, DOCX, XLSX, PPTX, legacy Office and OpenDocument files, RTF, CSV, EPUB, Markdown, MDX, RST, HTML,
   JSON, TXT, images, and audio (MP3, WAV, M4A, OGG, WebM), which is transcribed. Voice input works in the chat too.
 - Remote sources: URLs, sitemaps, a web crawler, GitHub, Reddit, S3 and Linear.
-- [Connectors](https://docs.docsgpt.cloud/Sources/Connectors) for Google Drive, SharePoint and Confluence that keep a source in sync.
+- [Connectors](https://docs.docsgpt.cloud/Sources/Connectors) for Google Drive, SharePoint, Confluence, GitHub, Amazon S3,
+  Reddit and Linear that keep a source in sync.
 - [GraphRAG](https://docs.docsgpt.cloud/Sources/GraphRAG) knowledge-graph retrieval and [wiki sources](https://docs.docsgpt.cloud/Sources/Wiki-sources) that an agent
   reads and keeps up to date.
 - Grounded answers with source citations.
@@ -71,7 +73,7 @@ how to take part.
 **APIs and integrations**
 - An [Agent API](https://docs.docsgpt.cloud/API/agent-api) with agent keys, an [OpenAI-compatible `/v1` API](https://docs.docsgpt.cloud/API/openai-compatible),
   [webhooks](https://docs.docsgpt.cloud/API/webhooks), [personal access tokens](https://docs.docsgpt.cloud/API/personal-access-tokens), and an
-  [MCP server](https://docs.docsgpt.cloud/API/mcp-server) that exposes your agents to MCP clients.
+  [MCP server](https://docs.docsgpt.cloud/API/mcp-server) whose `search_docs` tool lets MCP clients search an agent's sources.
 - HTML and React [chat](https://docs.docsgpt.cloud/Extensions/chat-widget) and [search](https://docs.docsgpt.cloud/Extensions/search-widget) widgets, and a
   [Chatwoot](https://docs.docsgpt.cloud/Extensions/Chatwoot-extension) bridge.
 - [Community integrations](https://docs.docsgpt.cloud/Extensions/community) in separate repos: [DocsGPT CLI](https://github.com/arc53/DocsGPT-cli)
