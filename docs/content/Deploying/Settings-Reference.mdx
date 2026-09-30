@@ -718,7 +718,7 @@ Recycle a worker child after N tasks; 0 disables.
 
 Type `str`, default `http://localhost:7091`.
 
-Backend URL the Celery worker calls back into.
+Address of the API. The worker hands finished indexes to it here, and the API builds the agent image, agent webhook, device pairing and MCP OAuth callback links it hands out from it, so on the API set it to the address browsers use. Docker Compose sets the worker's to http://backend:7091.
 
 
 ## Ingestion and parsing

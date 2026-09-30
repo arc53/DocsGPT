@@ -35,5 +35,10 @@ class WorkerSettings(SettingsGroup):
         default=0, ge=0, description="Recycle a worker child after N tasks; 0 disables."
     )
     API_URL: str = Field(
-        default="http://localhost:7091", description="Backend URL the Celery worker calls back into."
+        default="http://localhost:7091",
+        description=(
+            "Address of the API. The worker hands finished indexes to it here, and the API builds the agent image, "
+            "agent webhook, device pairing and MCP OAuth callback links it hands out from it, so on the API set it "
+            "to the address browsers use. Docker Compose sets the worker's to http://backend:7091."
+        ),
     )

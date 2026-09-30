@@ -150,6 +150,11 @@ carry its keys over, re-encrypt stored secrets and upload its documents again: s
   `ENCRYPTION_SECRET_KEY`, and a fresh install always gets a `JWT_SECRET_KEY`. Their authentication
   menu now offers OIDC.
 - The optional Ollama overlays publish port 11434 on `127.0.0.1` only.
+- `docsgpt up --domain` and `--expose network` set `API_URL` to the address they print, and the setup
+  scripts ask for it when they expose DocsGPT, so agent images, webhook URLs, device pairing and MCP
+  OAuth callbacks no longer point at `http://localhost:7091` for everyone else. A value you set is
+  kept. With a hand-written `.env`, set `API_URL` yourself: see
+  [Opening it from other machines](/Deploying/Docker-Deploying#opening-it-from-other-machines).
 - Without `JWT_SECRET_KEY`, the generated `.jwt_secret_key` now lives in the data home instead of
   the directory the API was started from. A key left in that directory is copied there, so tokens
   stay valid.

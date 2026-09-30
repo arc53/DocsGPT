@@ -19,7 +19,7 @@ Each install path publishes DocsGPT on this machine only until you say otherwise
 | Standalone Compose file | `127.0.0.1:7091` (`DOCSGPT_BIND`) | `DOCSGPT_BIND=0.0.0.0`, or the `https` profile with `DOCSGPT_DOMAIN`. See [Docker](/Deploying/Docker-Deploying#opening-it-from-other-machines). |
 | Checkout Compose files and `setup.sh`/`setup.ps1` | API `127.0.0.1:7091` and UI `127.0.0.1:5173` (`DOCSGPT_BIND`); Postgres and Redis on `127.0.0.1` only | `DOCSGPT_BIND=0.0.0.0` in `.env`, with `docker compose --env-file .env ...`. The setup scripts ask. These files are meant for local use and development. |
 | `docsgpt api` and `docsgpt up --native` | `127.0.0.1` | `docsgpt api --host 0.0.0.0`; the native services always bind `127.0.0.1`, so put a reverse proxy in front. |
-| Kubernetes | Inside the cluster only (`ClusterIP`); `kubectl port-forward` for a first look | Set `AUTH_TYPE` in `docsgpt-secrets.yaml`, then publish through an Ingress with TLS (`deployment/k8s/ingress-example.yaml`). See [Kubernetes](/Deploying/Kubernetes-Deploying#publish-docsgpt). |
+| Kubernetes | Inside the cluster only (`ClusterIP`); `kubectl port-forward` for a first look | Set `AUTH_TYPE` and `API_URL` in `docsgpt-secrets.yaml`, then publish through an Ingress with TLS (`deployment/k8s/ingress-example.yaml`). See [Kubernetes](/Deploying/Kubernetes-Deploying#publish-docsgpt). |
 
 Keep Postgres and Redis off the network in every case. Postgres holds all user data and the sealed credentials; Redis holds the task queue, event streams and [cached LLM answers](#llm-response-cache). Docker's published ports bypass host firewalls such as `ufw`, so a port you publish is open even when the firewall says otherwise (see [Air-Gapped](/Deploying/Air-Gapped)).
 
@@ -57,7 +57,7 @@ Do not generate a new `ENCRYPTION_SECRET_KEY` over an existing one, or add one t
 
 ## Use HTTPS beyond a trusted network
 
-Tokens travel in the `Authorization` header, readable over plain HTTP. `docsgpt up --domain` and the standalone file's `https` profile run Caddy, which obtains and renews a certificate. Otherwise put your own TLS reverse proxy in front of port 7091, and point `OIDC_FRONTEND_URL`, `OIDC_REDIRECT_URI` and `CONNECTOR_REDIRECT_BASE_URI` at the public HTTPS address.
+Tokens travel in the `Authorization` header, readable over plain HTTP. `docsgpt up --domain` and the standalone file's `https` profile run Caddy, which obtains and renews a certificate. Otherwise put your own TLS reverse proxy in front of port 7091, and point `API_URL`, `OIDC_FRONTEND_URL`, `OIDC_REDIRECT_URI` and `CONNECTOR_REDIRECT_BASE_URI` at the public HTTPS address. `API_URL` is where the links the backend hands out (agent images, webhooks, device pairing, MCP OAuth callbacks) point; `docsgpt up` sets it for `--domain` and `--expose network` unless you already set your own.
 
 ## Outbound network access
 

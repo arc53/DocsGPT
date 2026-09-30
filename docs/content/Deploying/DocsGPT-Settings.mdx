@@ -87,6 +87,8 @@ Here are some of the most fundamental settings you'll likely want to configure:
 
 - **`SERVE_UI`**: Whether the API process serves the web UI shipped in the Python package (`pip install docsgpt`). Defaults to `true`; set `false` when a separate frontend, such as the Docker frontend image, serves the UI. Has no effect in the backend Docker image, which carries no UI build.
 
+- **`API_URL`**: The address of the API, default `http://localhost:7091`. The worker calls the API at it to hand over finished indexes, and the API builds the agent image, agent webhook, device pairing and MCP OAuth callback links it gives to browsers and other clients from it. With Docker Compose the two need different values: the Compose files set the worker's to `http://backend:7091`, which takes precedence over `.env`, so `.env` sets the backend's. When other machines open DocsGPT, set it to the address they use (`http://<server-address>:7091`, or the public `https://` address behind a proxy). `docsgpt up` and the setup scripts write it when DocsGPT is exposed; see [Docker](/Deploying/Docker-Deploying#opening-it-from-other-machines) and [Kubernetes](/Deploying/Kubernetes-Deploying#publish-docsgpt).
+
 ## Configuration Examples
 
 Let's look at some concrete examples of how to configure these settings in your `.env` file.

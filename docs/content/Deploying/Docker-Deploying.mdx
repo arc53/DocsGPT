@@ -70,6 +70,12 @@ Running `docsgpt up` again is safe: it keeps `.env` and the secrets and runs
 the images of the installed package version. `docsgpt up --reconfigure` asks
 the questions again.
 
+`docsgpt up` also sets `API_URL` in `.env` to the address it prints
+(`https://<domain>`, or `http://<this machine's address>:<port>` on the
+network), since the backend builds agent image, webhook, device pairing and MCP
+OAuth callback links from it. It keeps a value you set yourself, such as the
+public address of your own reverse proxy.
+
 | Command | What it does |
 | --- | --- |
 | `docsgpt status` | Version, address, containers, and whether the API answers |
@@ -188,12 +194,20 @@ Publish the port on every interface and turn on authentication in `.env`:
 
 ```bash
 DOCSGPT_BIND=0.0.0.0
+# The address other machines open, for the links the backend builds
+API_URL=http://<server-address>:7091
 AUTH_TYPE=simple_jwt
 JWT_SECRET_KEY=<a long random value, e.g. openssl rand -hex 32>
 # With AUTH_TYPE set, connecting services needs it. Fresh install only: an
 # existing one rotates onto it (App Configuration, Secrets to set before going live)
 ENCRYPTION_SECRET_KEY=<a long random value, e.g. openssl rand -hex 32>
 ```
+
+The backend builds agent image, agent webhook, device pairing and MCP OAuth
+callback links from `API_URL`. Unset, they point at `http://localhost:7091`,
+which other machines can't open. The worker keeps `API_URL=http://backend:7091`
+from the Compose file, which takes precedence over `.env`, so it still reaches
+the backend directly.
 
 `simple_jwt` is one shared token for one shared user: everyone who has it
 sees the same conversations and sources. For separate accounts use
@@ -225,6 +239,7 @@ Let's Encrypt certificate and proxies to the backend.
     ```bash
     COMPOSE_PROFILES=https
     DOCSGPT_DOMAIN=docs.example.com
+    API_URL=https://docs.example.com
     AUTH_TYPE=simple_jwt
     JWT_SECRET_KEY=<a long random value, e.g. openssl rand -hex 32>
     # Fresh install only; an existing one rotates onto it
@@ -296,7 +311,11 @@ meant for local use and development. They publish the API (7091) and the UI
 `docsgpt`) and Redis (no password) on `127.0.0.1` only. Setting
 `DOCSGPT_BIND=0.0.0.0` makes the API and UI reachable from the network; without
 `AUTH_TYPE` every visitor then shares one account, with its data and connected
-services. For a server, prefer `docsgpt up` or the standalone file, and follow
+services. Other machines open the API port, `http://<server-address>:7091`, which
+serves the UI too; also set `API_URL` to that address (or your proxy's public
+`https://` address) in `.env` so the links the backend builds work from there.
+The worker keeps `http://backend:7091` from the Compose file. When the setup
+scripts expose DocsGPT, they ask for this address and write it. For a server, prefer `docsgpt up` or the standalone file, and follow
 the [security checklist](/Deploying/Security).
 </Callout>
 
