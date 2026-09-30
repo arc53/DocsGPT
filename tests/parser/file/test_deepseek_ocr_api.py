@@ -2,6 +2,7 @@
 
 The HTTP layer is faked throughout; nothing here needs a model server.
 """
+import json
 import threading
 import time
 from pathlib import Path
@@ -347,11 +348,18 @@ class TestEngineRequests:
         engine.reset_usage()
         assert engine.usage() == {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
 
-    def test_garbled_usage_counts_as_zero(self, settings, monkeypatch):
-        body = {"choices": [{"message": {"content": "a"}}], "usage": {"prompt_tokens": "n/a", "completion_tokens": -5}}
+    @pytest.mark.parametrize(
+        "usage",
+        [
+            {"prompt_tokens": "n/a", "completion_tokens": -5},
+            json.loads('{"prompt_tokens": 1e309, "completion_tokens": NaN}'),
+        ],
+    )
+    def test_garbled_usage_counts_as_zero_and_keeps_the_text(self, settings, monkeypatch, usage):
+        body = {"choices": [{"message": {"content": "kept text"}}], "usage": usage}
         monkeypatch.setattr("requests.post", FakePost(FakeResponse(body=body)))
         engine = op.DeepseekOcrEngine()
-        engine.ocr_image(_image())
+        assert engine.ocr_image(_image()) == "kept text"
         assert engine.usage() == {"requests": 1, "prompt_tokens": 0, "completion_tokens": 0}
 
 

@@ -512,7 +512,7 @@ def _token_count(value) -> int:
     """A usage count from a response; a server that omits or garbles it counts as 0."""
     try:
         return max(0, int(value or 0))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: 1e309 decodes to inf
         return 0
 
 
