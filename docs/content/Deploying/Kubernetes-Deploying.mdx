@@ -41,7 +41,7 @@ Uploaded files go to an S3-compatible bucket that you provide.
 | `deployments/sandbox-deploy.yaml`, `network-policies/` | No | The [code-execution sandbox](#optional-code-execution-sandbox). |
 | `optional-mongo/` | No | MongoDB, for `VECTOR_STORE=mongodb`. |
 
-The manifests pin `arc53/docsgpt` to the release they were written for, currently `0.21.0`.
+The manifests pin every image. `arc53/docsgpt` is pinned to the release the manifests were written for; the `image:` lines in `deployments/docsgpt-deploy.yaml` show which, and [Upgrading](#upgrading) covers moving to another.
 
 ## Deploy
 
@@ -60,6 +60,8 @@ The manifests pin `arc53/docsgpt` to the release they were written for, currentl
    | `JWT_SECRET_KEY` | Another `openssl rand -hex 32`. It signs session tokens. |
    | `ENCRYPTION_SECRET_KEY` | Another `openssl rand -hex 32`. It encrypts stored tool and connector credentials. Keep it: changing it later makes those credentials unreadable. |
    | `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Your bucket and its credentials. See [Storage](#storage) for `S3_REGION`, `S3_ENDPOINT_URL` and `S3_PATH_STYLE`. |
+   | `POSTGRES_PASSWORD` | Output of `openssl rand -hex 24`. The bundled Postgres sets it when its volume is first created. |
+   | `POSTGRES_URI` | Put the same password in place of `REPLACE_ME`. For an external database, point it there instead. |
 
    Generate each key separately:
 
@@ -102,10 +104,18 @@ The manifests pin `arc53/docsgpt` to the release they were written for, currentl
    Then open [http://localhost:7091](http://localhost:7091).
 
 <Callout type="info">
-Every DocsGPT pod starts with a `check-secrets` init container. While `docsgpt-secrets` still holds a `REPLACE_ME` value, the pods stop in `Init:Error` or `Init:CrashLoopBackOff`, and the log names the keys to fix:
+Every DocsGPT pod starts with a `check-secrets` init container. While any value in `docsgpt-secrets` still contains `REPLACE_ME`, a required key is empty, the bucket is missing with `STORAGE_TYPE: s3`, or the password in `POSTGRES_URI` differs from `POSTGRES_PASSWORD`, the pods stop in `Init:Error` or `Init:CrashLoopBackOff`, and the log names what to fix:
 
 ```sh
 kubectl logs job/postgres-init -c check-secrets
+```
+
+The Job gives up after its `backoffLimit` of retries, a few minutes, and then stays failed. After fixing the secret, delete the Job, apply again and restart the pods:
+
+```sh
+kubectl delete job postgres-init --ignore-not-found
+kubectl apply -k deployment/k8s/
+kubectl rollout restart deployment/docsgpt-api deployment/docsgpt-worker
 ```
 </Callout>
 
@@ -161,20 +171,21 @@ Keep `VECTOR_STORE: pgvector` with a shared volume.
 With no `AUTH_TYPE`, anyone who can reach DocsGPT uses it as the same user, with access to every conversation, source and connected service. Before you publish it:
 
 1. Set `AUTH_TYPE` in `docsgpt-secrets.yaml`. Use `oidc` for separate accounts, with `OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_FRONTEND_URL` set to your public `https://` address; see [SSO with OIDC](/Deploying/OIDC-SSO) and the [Security checklist](/Deploying/Security).
-2. Apply the secret and restart the pods, which read it only when they start:
+2. Set `API_URL` in `docsgpt-secrets.yaml` to the same public address, for example `https://docsgpt.example.com`. The API builds agent image URLs, agent webhook URLs, the device pairing address and the MCP OAuth callback from it. Unset, they point at `http://localhost:7091`, which works only through `port-forward`. The worker keeps its own in-cluster `API_URL` from `docsgpt-deploy.yaml`.
+3. Apply the secret and restart the pods, which read it only when they start:
 
    ```sh
    kubectl apply -k deployment/k8s/
    kubectl rollout restart deployment/docsgpt-api deployment/docsgpt-worker
    ```
 
-3. Copy `deployment/k8s/ingress-example.yaml`, replace `docsgpt.example.com` with your host, set `ingressClassName` to your ingress controller, and provide the `docsgpt-tls` certificate (the file's comments cover cert-manager). Then apply it:
+4. Copy `deployment/k8s/ingress-example.yaml`, replace `docsgpt.example.com` with your host, set `ingressClassName` to your ingress controller, and provide the `docsgpt-tls` certificate (the file's comments cover cert-manager). Then apply it:
 
    ```sh
    kubectl apply -f ingress-example.yaml
    ```
 
-The example's annotations are for ingress-nginx. They raise the request body limit for uploads and keep streamed answers open and unbuffered. Other controllers need the same two adjustments. The web UI calls the API on the host it was loaded from, so one host serves both.
+The example's annotations are for ingress-nginx, which is retired. They raise the request body limit for uploads and keep streamed answers open and unbuffered. Other ingress controllers, and the Gateway API with an HTTPRoute to `docsgpt-api-service` port 80, work too with their own equivalent settings. The web UI calls the API on the host it was loaded from, so one host serves both.
 
 ## Scaling and scheduled tasks
 
@@ -184,8 +195,14 @@ For heavy OCR parsing, run another worker Deployment with `-Q parsing` and the r
 
 ## Upgrading
 
-1. Change every `arc53/docsgpt:<version>` image in `deployments/docsgpt-deploy.yaml` and `jobs/postgres-init-job.yaml` to the new release, and read its notes in [Upgrading](/upgrading).
-2. Run the migration and roll the pods:
+1. Back up the database. Migrations can't be undone without a backup:
+
+   ```sh
+   kubectl exec deploy/postgres -- pg_dump -U docsgpt docsgpt > docsgpt-backup.sql
+   ```
+
+2. Change every `arc53/docsgpt:<version>` image in `deployments/docsgpt-deploy.yaml` and `jobs/postgres-init-job.yaml` to the new release, and read its notes in [Upgrading](/upgrading).
+3. Run the migration and roll the pods:
 
    ```sh
    kubectl delete job postgres-init --ignore-not-found
@@ -196,6 +213,26 @@ For heavy OCR parsing, run another worker Deployment with `-Q parsing` and the r
    ```
 
 A finished Job can't be changed, so `kubectl apply` alone leaves the old one in place and reports `field is immutable` for it. Deleting it first lets the new image run the migrations. The new API and worker pods wait for them, and the old pods keep serving until the new ones are ready.
+
+### Rolling back
+
+`wait-for-migrations` waits until the schema is at exactly the revision its image ships. Pods of an older release therefore wait forever on a database the newer release has migrated, logging `Waiting for job/postgres-init: schema at <newer>, this image needs <older>`. To roll back, first bring the database back to the older revision, then set the older image tags and apply:
+
+- Restore the backup taken before the upgrade. Anything written since the upgrade is lost:
+
+  ```sh
+  kubectl scale deployment/docsgpt-api deployment/docsgpt-worker --replicas=0
+  kubectl exec deploy/postgres -- dropdb -U docsgpt docsgpt
+  kubectl exec deploy/postgres -- createdb -U docsgpt docsgpt
+  kubectl exec -i deploy/postgres -- psql -q -U docsgpt -d docsgpt < docsgpt-backup.sql
+  ```
+
+  Then set the older image tags, delete the Job and apply as in step 3; `apply` scales the Deployments back up.
+- Or, while the newer pods still run, downgrade the schema to the revision the older image needs (from the log line above). Downgrades can drop data that only the newer release stores:
+
+  ```sh
+  kubectl exec deploy/docsgpt-api -- alembic -c docsgpt/alembic.ini downgrade <older-revision>
+  ```
 
 ## Optional: code-execution sandbox
 
@@ -242,7 +279,7 @@ kubectl logs job/postgres-init
 
 | Symptom | Cause |
 | --- | --- |
-| Pods in `Init:Error` or `Init:CrashLoopBackOff` | A `REPLACE_ME` value is left. `kubectl logs <pod> -c check-secrets` names it. |
-| Pods stay in `Init` with `Waiting for job/postgres-init` in `kubectl logs <pod> -c wait-for-migrations` | The migration Job has not run for this image. Check `kubectl logs job/postgres-init`, or delete and re-apply the Job as in [Upgrading](#upgrading). |
+| Pods in `Init:Error` or `Init:CrashLoopBackOff` | The secret is not filled in. `kubectl logs <pod> -c check-secrets` says what to fix. |
+| Pods stay in `Init` with `Waiting for job/postgres-init` in `kubectl logs <pod> -c wait-for-migrations` | The migration Job has not run for this image: check `kubectl logs job/postgres-init`, or delete and re-apply the Job as in [Upgrading](#upgrading). If the schema is newer than the image needs, see [Rolling back](#rolling-back). |
 | Uploads fail to ingest | Check the worker log for S3 errors: bucket name, credentials, `S3_ENDPOINT_URL` and `S3_PATH_STYLE`. |
 | Answers ignore your documents after a long wait | No worker is consuming the `embeddings` queue. Check that the worker pod is running. |
