@@ -322,7 +322,7 @@ DEPLOYMENT_TYPE=production
 ```
 
 <Callout type="warning" emoji="⚠️">
-Set `ENCRYPTION_SECRET_KEY` before anyone connects a service, and never just replace it: stored credentials are sealed with the key they were saved under. The installers never overwrite an existing value. `docsgpt up` on Docker and the setup scripts add one only to a fresh install; `docsgpt up --native` adds one on its first run and sets `ENCRYPTION_SECRET_KEY_PREVIOUS` to the public default, since the database it points at may already hold credentials sealed with it.
+Set `ENCRYPTION_SECRET_KEY` before anyone connects a service, and never just replace it: stored credentials are sealed with the key they were saved under. The installers never overwrite an existing value. `docsgpt up` on Docker adds one only to a fresh install. The setup scripts add one when there is no `.env` yet, and `docsgpt up --native` adds one on its first run; both also set `ENCRYPTION_SECRET_KEY_PREVIOUS` to the public default, since a kept Docker volume or the database it points at may already hold credentials sealed with it. Reseal them with `docsgpt connectors reencrypt`, then remove `ENCRYPTION_SECRET_KEY_PREVIOUS`.
 </Callout>
 
 To change `ENCRYPTION_SECRET_KEY` on an install that already stores credentials (including one that ran on the public default, `default-docsgpt-encryption-key`):
