@@ -177,3 +177,35 @@ def test_decrypt_credentials_truncated_payload(monkeypatch):
 
     short = base64.b64encode(b"0123456789").decode()
     assert encryption.decrypt_credentials(short, "user-1") == {}
+
+
+@pytest.mark.unit
+def test_decrypt_falls_back_to_the_previous_key(monkeypatch):
+    """Tool, MCP and custom-model secrets stay readable while a key rotation is under way."""
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "old-secret")
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+    encrypted = encryption.encrypt_credentials({"api_key": "k"}, "user-1")
+
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "new-secret")
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
+    assert encryption.decrypt_credentials(encrypted, "user-1") == {"api_key": "k"}
+
+
+@pytest.mark.unit
+def test_new_secrets_are_sealed_with_the_current_key_during_a_rotation(monkeypatch):
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "new-secret")
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
+    encrypted = encryption.encrypt_credentials({"api_key": "k"}, "user-1")
+
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+    assert encryption.decrypt_credentials(encrypted, "user-1") == {"api_key": "k"}
+
+
+@pytest.mark.unit
+def test_the_previous_key_does_not_open_another_users_secret(monkeypatch):
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "old-secret")
+    encrypted = encryption.encrypt_credentials({"api_key": "k"}, "user-1")
+
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY", "new-secret")
+    monkeypatch.setattr(encryption.settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-secret")
+    assert encryption.decrypt_credentials(encrypted, "user-2") == {}
