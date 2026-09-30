@@ -33,9 +33,10 @@ import shutil
 import subprocess
 import threading
 import time
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Protocol, Tuple, Union
+from typing import Dict, Hashable, Iterable, List, Optional, Protocol, Tuple, TypeVar, Union
 
 from docsgpt.parser.file.base_parser import (
     BaseParser,
@@ -672,6 +673,114 @@ def build_native_ocr_engine(engine: Optional[str] = None, languages: Optional[Li
     return TesseractEngine(languages=languages)
 
 
+K = TypeVar("K", bound=Hashable)
+
+
+def ocr_images(engine: OcrEngine, items: Iterable[Tuple[K, object]], skip_failed: bool = False) -> Dict[K, str]:
+    """OCR ``(key, image)`` pairs, up to ``engine.concurrency`` requests at a time.
+
+    ``items`` is consumed on the calling thread — PDF pages are rendered
+    there, since pypdfium2 is not thread-safe — and no more than twice the
+    concurrency of rendered pages wait for a free slot, so a 500-page scan
+    never sits in memory at once. Engines without a ``concurrency``
+    attribute (tesseract) run sequentially.
+
+    Args:
+        engine: The OCR engine.
+        items: Page keys and PIL images, in page order.
+        skip_failed: Log and leave out a page whose OCR failed instead of
+            raising (mixed documents, where the text pages are already safe).
+
+    Returns:
+        Key -> stripped text, in the order ``items`` produced them.
+
+    Raises:
+        Exception: The first page failure, unless ``skip_failed``.
+    """
+    workers = max(1, int(getattr(engine, "concurrency", 1) or 1))
+    order: List[K] = []
+    results: Dict[K, str] = {}
+
+    def _failed(key: K, exc: Exception) -> None:
+        if not skip_failed:
+            raise exc
+        label = key + 1 if isinstance(key, int) else key
+        logger.warning(f"OCR of page {label} failed ({exc}); skipping that page")
+
+    if workers == 1:
+        for key, image in items:
+            order.append(key)
+            try:
+                results[key] = (engine.ocr_image(image) or "").strip()
+            except Exception as exc:  # noqa: BLE001 - re-raised unless skip_failed
+                _failed(key, exc)
+        return {key: results[key] for key in order if key in results}
+
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ocr")
+    pending: Dict[Future, K] = {}
+
+    def _collect(done) -> None:
+        for future in done:
+            key = pending.pop(future)
+            try:
+                results[key] = (future.result() or "").strip()
+            except Exception as exc:  # noqa: BLE001 - re-raised unless skip_failed
+                _failed(key, exc)
+
+    try:
+        for key, image in items:
+            order.append(key)
+            pending[pool.submit(engine.ocr_image, image)] = key
+            while len(pending) >= workers * 2:
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                _collect(done)
+        while pending:
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            _collect(done)
+    except BaseException:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown(wait=True)
+    return {key: results[key] for key in order if key in results}
+
+
+def _reset_usage(engine: OcrEngine) -> None:
+    reset = getattr(engine, "reset_usage", None)
+    if callable(reset):
+        reset()
+
+
+def usage_metadata(engine: OcrEngine) -> Dict[str, int]:
+    """Flat ``ocr_*`` usage fields for an engine that reports usage and made requests, else {}.
+
+    Flat integers rather than a nested dict because parser metadata is
+    copied onto every chunk, and not every vector store takes nested values.
+    """
+    usage_fn = getattr(engine, "usage", None)
+    if not callable(usage_fn):
+        return {}
+    usage = usage_fn() or {}
+    if not usage.get("requests"):
+        return {}
+    return {
+        "ocr_requests": int(usage.get("requests", 0)),
+        "ocr_prompt_tokens": int(usage.get("prompt_tokens", 0)),
+        "ocr_completion_tokens": int(usage.get("completion_tokens", 0)),
+    }
+
+
+def _log_usage(name: str, engine: OcrEngine, usage: Dict[str, int]) -> None:
+    if usage:
+        logger.info(
+            "OCR usage for %s (%s): %d request(s), %d prompt token(s), %d completion token(s)",
+            name,
+            engine.name,
+            usage["ocr_requests"],
+            usage["ocr_prompt_tokens"],
+            usage["ocr_completion_tokens"],
+        )
+
+
 # ---------------------------------------------------------------------------
 # Parsers
 # ---------------------------------------------------------------------------
@@ -830,10 +939,14 @@ class NativeOcrPdfParser(BaseParser):
         min_text_chars: Text-layer characters per page below which the page is OCR'd.
         ocr_enabled: Always True; lets callers that inspect their fallback
             parser (``AnydocParser``) phrase their errors correctly.
+        batch_ocr_pages: ``ocr_pages`` takes several pages and ``skip_failed``,
+            so ``AnydocParser`` hands it every scanned page at once.
         last_engine: Engine name behind the most recent parse.
+        last_ocr_usage: ``ocr_*`` usage fields of the most recent ``ocr_pages`` call.
     """
 
     ocr_enabled = True
+    batch_ocr_pages = True
 
     def __init__(
         self,
@@ -847,6 +960,7 @@ class NativeOcrPdfParser(BaseParser):
         self.text_parser = text_parser
         self.min_text_chars = max(1, int(min_text_chars))
         self.last_engine: Optional[str] = None
+        self.last_ocr_usage: Dict[str, int] = {}
         self._last_metadata: Dict = {}
 
     def _init_parser(self) -> Dict:
@@ -882,11 +996,16 @@ class NativeOcrPdfParser(BaseParser):
                 page.close()
         return counts
 
-    def ocr_pages(self, file: Path, indices: List[int]) -> Dict[int, str]:
+    def ocr_pages(self, file: Path, indices: List[int], skip_failed: bool = False) -> Dict[int, str]:
         """OCR only the given 0-based pages of ``file``, ignoring their text layers.
 
         Used by ``AnydocParser`` for mixed documents: anydoc has already read
         the text pages, so only the scanned ones come here.
+
+        Args:
+            file: The PDF.
+            indices: 0-based pages to OCR; out-of-range ones are ignored.
+            skip_failed: Leave out a page whose OCR failed instead of raising.
 
         Returns:
             Page index -> recognised text, in the order requested.
@@ -902,17 +1021,22 @@ class NativeOcrPdfParser(BaseParser):
             pdf = pdfium.PdfDocument(str(path))
         except Exception as exc:
             raise DocumentParseError(f"Failed to open {path.name} with pypdfium2: {exc}") from exc
-        texts: Dict[int, str] = {}
+        _reset_usage(engine)
         try:
             dpi = render_dpi()
-            for index in indices:
-                if index < 0 or index >= len(pdf):
-                    continue
-                page = pdf[index]
-                try:
-                    texts[index] = (engine.ocr_image(_render_page(page, dpi)) or "").strip()
-                finally:
-                    page.close()
+
+            def _pages():
+                for index in indices:
+                    if index < 0 or index >= len(pdf):
+                        continue
+                    page = pdf[index]
+                    try:
+                        image = _render_page(page, dpi)
+                    finally:
+                        page.close()
+                    yield index, image
+
+            texts = ocr_images(engine, _pages(), skip_failed=skip_failed)
         except DocumentParseError:
             raise
         except Exception as exc:
@@ -920,6 +1044,8 @@ class NativeOcrPdfParser(BaseParser):
         finally:
             pdf.close()
         self.last_engine = engine.name
+        self.last_ocr_usage = usage_metadata(engine)
+        _log_usage(path.name, engine, self.last_ocr_usage)
         return texts
 
     def text_layer_delegate(self, file: Path) -> Optional[BaseParser]:
@@ -989,21 +1115,31 @@ class NativeOcrPdfParser(BaseParser):
                 pdf = None
                 return self._delegate_text(path, errors)
             dpi = render_dpi()
-            for index in range(page_count):
-                page = pdf[index]
-                try:
-                    if counts[index] >= self.min_text_chars:
-                        textpage = page.get_textpage()
-                        try:
-                            text = textpage.get_text_bounded()
-                        finally:
-                            textpage.close()
-                    else:
-                        text = engine.ocr_image(_render_page(page, dpi))
-                        ocr_pages += 1
-                finally:
-                    page.close()
-                pages_text.append((text or "").strip())
+            pages_text = [""] * page_count
+
+            def _scanned_pages():
+                # Reads text pages in place and yields renders of the rest, all
+                # on this thread; only the OCR requests run concurrently.
+                for index in range(page_count):
+                    page = pdf[index]
+                    try:
+                        if counts[index] >= self.min_text_chars:
+                            textpage = page.get_textpage()
+                            try:
+                                pages_text[index] = (textpage.get_text_bounded() or "").strip()
+                            finally:
+                                textpage.close()
+                            continue
+                        image = _render_page(page, dpi)
+                    finally:
+                        page.close()
+                    yield index, image
+
+            _reset_usage(engine)
+            ocr_texts = ocr_images(engine, _scanned_pages())
+            for index, text in ocr_texts.items():
+                pages_text[index] = text
+            ocr_pages = len(ocr_texts)
         except DocumentParseError:
             raise
         except Exception as exc:
@@ -1015,7 +1151,14 @@ class NativeOcrPdfParser(BaseParser):
         content = "\n\n".join(pages_text)
         _check_near_empty(path.name, engine.name, content, page_count, ocr_pages)
         self.last_engine = engine.name
-        self._last_metadata = {"parse_engine": engine.name, "pdf_pages": page_count, "ocr_pages": ocr_pages}
+        self.last_ocr_usage = usage_metadata(engine)
+        self._last_metadata = {
+            "parse_engine": engine.name,
+            "pdf_pages": page_count,
+            "ocr_pages": ocr_pages,
+            **self.last_ocr_usage,
+        }
+        _log_usage(path.name, engine, self.last_ocr_usage)
         logger.info(
             "Parsed %s with native OCR (%s): %d/%d page(s) OCR'd, %d chars",
             path.name,
@@ -1072,21 +1215,26 @@ class NativeOcrImageParser(BaseParser):
         if self.engine is None:
             self.engine = build_native_ocr_engine()
         engine = self.engine
-        texts: List[str] = []
+        _reset_usage(engine)
         try:
             with Image.open(path) as image:
                 frames = ImageSequence.Iterator(image) if path.suffix.lower() in (".tif", ".tiff") else [image]
-                for frame in frames:
-                    texts.append((engine.ocr_image(fit_to_pixel_budget(frame)) or "").strip())
+                # A TIFF frame is the same object seeked to the next page, so a
+                # frame handed to a concurrent request must be a copy.
+                texts = ocr_images(
+                    engine, ((index, fit_to_pixel_budget(frame).copy()) for index, frame in enumerate(frames))
+                )
         except DocumentParseError:
             raise
         except Exception as exc:
             raise DocumentParseError(f"Failed to OCR {path.name} ({engine.name}): {exc}") from exc
 
-        content = "\n\n".join(texts)
+        content = "\n\n".join(texts.values())
         _check_near_empty(path.name, engine.name, content, max(1, len(texts)), len(texts))
         self.last_engine = engine.name
-        self._last_metadata = {"parse_engine": engine.name, "ocr_pages": len(texts)}
+        usage = usage_metadata(engine)
+        self._last_metadata = {"parse_engine": engine.name, "ocr_pages": len(texts), **usage}
+        _log_usage(path.name, engine, usage)
         return content
 
     def get_file_metadata(self, file: Path) -> Dict:

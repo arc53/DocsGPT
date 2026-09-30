@@ -1,12 +1,16 @@
-"""DeepSeek-OCR over an API: provider presets, auth, retries and usage.
+"""DeepSeek-OCR over an API: provider presets, auth, retries, usage and concurrent pages.
 
 The HTTP layer is faked throughout; nothing here needs a model server.
 """
+import threading
+import time
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("pypdfium2")
 pytest.importorskip("PIL")
-from PIL import Image  # noqa: E402
+from PIL import Image, ImageDraw  # noqa: E402
 
 from docsgpt.parser.file.base_parser import DocumentParseError  # noqa: E402
 from docsgpt.parser.file import ocr_parser as op  # noqa: E402
@@ -80,6 +84,16 @@ class FakePost:
 
 def _image():
     return Image.new("RGB", (8, 8), "white")
+
+
+def _image_pdf(path: Path, pages: int) -> Path:
+    frames = []
+    for index in range(pages):
+        img = Image.new("RGB", (300, 400), "white")
+        ImageDraw.Draw(img).rectangle((50, 50, 250, 350), outline="black", width=3 + index)
+        frames.append(img)
+    frames[0].save(str(path), "PDF", save_all=True, append_images=frames[1:])
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -331,3 +345,210 @@ class TestEngineRequests:
         assert engine.usage() == {"requests": 3, "prompt_tokens": 210, "completion_tokens": 50}
         engine.reset_usage()
         assert engine.usage() == {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+
+
+# ---------------------------------------------------------------------------
+# Concurrent page OCR
+# ---------------------------------------------------------------------------
+
+
+class SlowEngine:
+    """Answers each image after a delay that shrinks with its index, so completion order is reversed."""
+
+    name = "slow"
+
+    def __init__(self, concurrency, fail_on=None):
+        self.concurrency = concurrency
+        self.fail_on = fail_on
+        self.in_flight = 0
+        self.peak = 0
+        self.lock = threading.Lock()
+
+    def ocr_image(self, image):
+        index = image.info["index"]
+        with self.lock:
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+        try:
+            time.sleep(0.02 * (6 - index % 6))
+            if index == self.fail_on:
+                raise DocumentParseError(f"page {index} failed")
+            return f"text {index}"
+        finally:
+            with self.lock:
+                self.in_flight -= 1
+
+
+def _tagged(count):
+    for index in range(count):
+        image = _image()
+        image.info["index"] = index
+        yield index, image
+
+
+@pytest.mark.unit
+class TestOcrImages:
+    def test_results_keep_page_order_and_respect_the_limit(self):
+        engine = SlowEngine(concurrency=3)
+        results = op.ocr_images(engine, _tagged(8))
+        assert list(results) == list(range(8))
+        assert [results[i] for i in range(8)] == [f"text {i}" for i in range(8)]
+        assert 1 < engine.peak <= 3
+
+    def test_sequential_without_a_concurrency_attribute(self):
+        class Plain:
+            name = "plain"
+
+            def ocr_image(self, image):
+                return str(image.info["index"])
+
+        assert op.ocr_images(Plain(), _tagged(3)) == {0: "0", 1: "1", 2: "2"}
+
+    def test_a_failure_propagates(self):
+        with pytest.raises(DocumentParseError, match="page 2 failed"):
+            op.ocr_images(SlowEngine(concurrency=3, fail_on=2), _tagged(6))
+
+    def test_skip_failed_drops_only_the_failed_page(self):
+        results = op.ocr_images(SlowEngine(concurrency=3, fail_on=2), _tagged(5), skip_failed=True)
+        assert sorted(results) == [0, 1, 3, 4]
+
+    def test_images_are_produced_lazily(self):
+        produced = []
+
+        def items():
+            for index, image in _tagged(10):
+                produced.append(index)
+                yield index, image
+
+        class Counting:
+            name = "counting"
+            concurrency = 2
+
+            def ocr_image(self, image):
+                # At most concurrency * 2 rendered pages exist ahead of the one being OCR'd.
+                assert len(produced) - image.info["index"] <= 2 * 2 + 1
+                return "x"
+
+        op.ocr_images(Counting(), items())
+        assert produced == list(range(10))
+
+
+class TaggingEngine:
+    """Returns the page image's size-derived label; concurrent like a hosted endpoint."""
+
+    name = "deepseek"
+    concurrency = 4
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.count = 0
+        self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+
+    def ocr_image(self, image):
+        with self.lock:
+            self.count += 1
+            self._usage["requests"] += 1
+            self._usage["prompt_tokens"] += 10
+            self._usage["completion_tokens"] += 5
+        time.sleep(0.01)
+        return f"page of {image.size[0]}px"
+
+    def usage(self):
+        with self.lock:
+            return dict(self._usage)
+
+    def reset_usage(self):
+        with self.lock:
+            self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+
+
+@pytest.mark.unit
+class TestParsersUseConcurrency:
+    def test_pdf_pages_come_back_in_order_with_usage_metadata(self, tmp_path):
+        pdf = _image_pdf(tmp_path / "scan.pdf", pages=6)
+        engine = TaggingEngine()
+        parser = op.NativeOcrPdfParser(engine=engine)
+        content = parser.parse_file(pdf)
+        assert content.count("page of") == 6
+        assert engine.count == 6
+        metadata = parser.get_file_metadata(pdf)
+        assert metadata["ocr_pages"] == 6
+        assert metadata["ocr_requests"] == 6
+        assert metadata["ocr_prompt_tokens"] == 60
+        assert metadata["ocr_completion_tokens"] == 30
+
+    def test_usage_is_per_file(self, tmp_path):
+        engine = TaggingEngine()
+        parser = op.NativeOcrPdfParser(engine=engine)
+        first = _image_pdf(tmp_path / "a.pdf", pages=3)
+        second = _image_pdf(tmp_path / "b.pdf", pages=2)
+        parser.parse_file(first)
+        parser.parse_file(second)
+        assert parser.get_file_metadata(second)["ocr_requests"] == 2
+
+    def test_engines_without_usage_add_no_usage_keys(self, tmp_path):
+        class Plain:
+            name = "tesseract"
+
+            def ocr_image(self, image):
+                return "plain text from a scan"
+
+        pdf = _image_pdf(tmp_path / "scan.pdf", pages=2)
+        parser = op.NativeOcrPdfParser(engine=Plain())
+        parser.parse_file(pdf)
+        assert "ocr_requests" not in parser.get_file_metadata(pdf)
+
+    def test_ocr_pages_can_skip_failed_pages(self, tmp_path):
+        pdf = _image_pdf(tmp_path / "scan.pdf", pages=4)
+
+        class FailsSecond(TaggingEngine):
+            def ocr_image(self, image):
+                with self.lock:
+                    self.count += 1
+                    call = self.count
+                if call == 2:
+                    raise DocumentParseError("boom")
+                return "ok"
+
+        parser = op.NativeOcrPdfParser(engine=FailsSecond())
+        texts = parser.ocr_pages(pdf, [0, 1, 2, 3], skip_failed=True)
+        assert len(texts) == 3
+        with pytest.raises(DocumentParseError):
+            op.NativeOcrPdfParser(engine=FailsSecond()).ocr_pages(pdf, [0, 1, 2, 3])
+
+    def test_multi_page_tiff_frames_stay_in_order(self, tmp_path):
+        frames = [Image.new("L", (20 + i, 20), 255) for i in range(5)]
+        tiff = tmp_path / "fax.tiff"
+        frames[0].save(tiff, save_all=True, append_images=frames[1:])
+        engine = TaggingEngine()
+        parser = op.NativeOcrImageParser(engine=engine)
+        content = parser.parse_file(tiff)
+        assert content.split("\n\n") == [f"page of {20 + i}px" for i in range(5)]
+        assert parser.get_file_metadata(tiff)["ocr_requests"] == 5
+
+
+@pytest.mark.unit
+class TestAnydocMixedDocuments:
+    def test_scanned_pages_are_ocrd_in_one_batch_and_usage_surfaces(self, tmp_path, monkeypatch):
+        from docsgpt.parser.file import anydoc_parser as ap
+
+        pdf = _image_pdf(tmp_path / "mixed.pdf", pages=3)
+        engine = TaggingEngine()
+        fallback = op.NativeOcrPdfParser(engine=engine)
+        batches = []
+        original = fallback.ocr_pages
+
+        def spy(file, indices, **kwargs):
+            batches.append((list(indices), kwargs))
+            return original(file, indices, **kwargs)
+
+        monkeypatch.setattr(fallback, "ocr_pages", spy)
+        monkeypatch.setattr(op, "scanned_page_indices", lambda path, min_chars=32: [0, 2])
+        parser = ap.AnydocParser(fallback_parser=fallback)
+        content = parser._ocr_scanned_pages(pdf, "text layer pages")
+        assert batches == [([0, 2], {"skip_failed": True})]
+        assert content.count("page of") == 2
+        metadata = parser.get_file_metadata(pdf)
+        assert metadata["ocr_pages"] == 2
+        assert metadata["ocr_requests"] == 2
+        assert metadata["ocr_prompt_tokens"] == 20
