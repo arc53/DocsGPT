@@ -185,7 +185,7 @@ Each `data:` frame is JSON with `type`:
 | `answer` | `answer` | Incremental answer chunk. |
 | `thought` | `thought` | Reasoning chunk (model and agent dependent). |
 | `source` | `source` | The retrieved sources and chunks. |
-| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `awaiting_approval` or `requires_client_execution`) and `result` or `error`. |
+| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval` or `requires_client_execution`) and `result` or `error`. |
 | `tool_calls` | `tool_calls` | The completed tool calls of the turn. |
 | `tool_calls_pending` | `data.pending_tool_calls` | The turn paused on tools that need approval or client-side execution. See [Tools that need approval](#tools-that-need-approval). |
 | `structured_answer` | `answer`, `structured`, `schema` | Final structured payload (when schema mode is active). |
@@ -392,7 +392,7 @@ Webhook runs are the owner's own automation and are not limited by this list; se
 | --- | --- | --- | --- |
 | `question` | `string` | Yes | The search query. |
 | `api_key` | `string` | Yes | The agent's API key; the agent's sources are searched. |
-| `chunks` | `number` | No | Maximum number of results, default `5`. `0` returns an empty list. |
+| `chunks` | `number` | No | Maximum number of results, default `5`. `0` or less returns an empty list without checking the key. |
 
 ```bash
 curl -X POST http://localhost:7091/api/search \
