@@ -18,9 +18,8 @@ All three are opt-in: enable Artifact and Code Executor per agent in the tool pi
 If your deployment runs a sandbox and you want these available in every chat
 rather than per agent, add them to `DEFAULT_CHAT_TOOLS`:
 
-```python
-DEFAULT_CHAT_TOOLS = ["memory", "read_webpage", "scheduler",
-                      "code_executor", "artifact_generator"]
+```env
+DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler","code_executor","artifact_generator"]
 ```
 
 They are left out of the shipped default deliberately: both execute through the

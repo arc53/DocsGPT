@@ -132,6 +132,53 @@ class TestValidators:
 
 
 @pytest.mark.unit
+class TestDefaultChatTools:
+    """DEFAULT_CHAT_TOOLS accepts a JSON list or comma-separated names, from the environment or a .env file."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ('["memory","code_executor"]', ["memory", "code_executor"]),
+            ('[ "memory" , "scheduler" ]', ["memory", "scheduler"]),
+            ("memory,read_webpage,scheduler", ["memory", "read_webpage", "scheduler"]),
+            (" memory , read_webpage ,", ["memory", "read_webpage"]),
+            ("memory", ["memory"]),
+            ("[]", []),
+            ("", []),
+        ],
+    )
+    def test_environment_value(self, monkeypatch, raw, expected):
+        monkeypatch.setenv("DEFAULT_CHAT_TOOLS", raw)
+        assert Settings(_env_file=None).DEFAULT_CHAT_TOOLS == expected
+
+    @pytest.mark.parametrize(
+        ("line", "expected"),
+        [
+            ('DEFAULT_CHAT_TOOLS=["memory","scheduler"]', ["memory", "scheduler"]),
+            ("DEFAULT_CHAT_TOOLS=memory,read_webpage,scheduler", ["memory", "read_webpage", "scheduler"]),
+            ("DEFAULT_CHAT_TOOLS=memory", ["memory"]),
+        ],
+    )
+    def test_env_file_value(self, monkeypatch, tmp_path, line, expected):
+        monkeypatch.delenv("DEFAULT_CHAT_TOOLS", raising=False)
+        env = tmp_path / ".env"
+        env.write_text(line + "\n")
+        assert Settings(_env_file=env).DEFAULT_CHAT_TOOLS == expected
+
+    def test_python_list_is_kept(self):
+        assert Settings.model_validate({"DEFAULT_CHAT_TOOLS": ["memory"]}).DEFAULT_CHAT_TOOLS == ["memory"]
+
+    def test_unset_keeps_the_default(self, monkeypatch):
+        monkeypatch.delenv("DEFAULT_CHAT_TOOLS", raising=False)
+        assert Settings(_env_file=None).DEFAULT_CHAT_TOOLS == ["memory", "read_webpage", "scheduler"]
+
+    def test_malformed_json_list_is_rejected(self, monkeypatch):
+        monkeypatch.setenv("DEFAULT_CHAT_TOOLS", '["memory",')
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None)
+
+
+@pytest.mark.unit
 class TestReference:
     def test_reference_lists_every_setting_once(self):
         page = render_reference()

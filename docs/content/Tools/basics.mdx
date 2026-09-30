@@ -104,14 +104,14 @@ DocsGPT includes a suite of pre-built tools designed to expand its capabilities 
 In a regular chat (no custom agent), DocsGPT can enable a small set of tools automatically so the assistant is useful out of the box. These are the **default chat tools**, controlled by the `DEFAULT_CHAT_TOOLS` setting:
 
 ```env
-DEFAULT_CHAT_TOOLS=memory,read_webpage,scheduler
+DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler"]
 ```
 
 - Default tools are config-free and run with synthetic, deterministic tool IDs (no manual setup needed).
 - Each user can opt out of individual default tools from their settings; the disabled list is stored per user.
 - Some default tools are excluded from **headless runs** (scheduled tasks and webhook triggers). For example, `scheduler` is skipped in those runs to prevent a scheduled task from chaining new schedules on every fire.
 
-To change the defaults for the whole instance, set `DEFAULT_CHAT_TOOLS` to a comma-separated list of tool names. See [App Configuration](/Deploying/DocsGPT-Settings) for the full settings reference.
+To change the defaults for the whole instance, set `DEFAULT_CHAT_TOOLS` to a JSON list of tool names, as above. Comma-separated names (`memory,read_webpage`) are accepted too, and an empty value (or `[]`) turns the default tools off. See the [Settings Reference](/Deploying/Settings-Reference#default_chat_tools) for the full entry.
 
 ## Using Tools in DocsGPT (User Perspective)
 

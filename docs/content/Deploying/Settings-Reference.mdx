@@ -1329,7 +1329,7 @@ Per-agent default quotas: tokens and requests.
 
 Type `list[str]`, default `["memory", "read_webpage", "scheduler"]`.
 
-Config-free tools on by default in agentless chats. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
+Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]); comma-separated names are accepted too, and an empty value turns them all off. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
 
 ### `ENABLE_TOOL_PREFETCH`
 
