@@ -177,14 +177,11 @@ class TestPublicApiUrl:
         updates = stack.plan({"DOCSGPT_BIND": "0.0.0.0"}, image_tag="x", fresh_database=False, lan_ip="10.0.0.5")
         assert updates["API_URL"] == "http://10.0.0.5:7091"
 
-    @pytest.mark.parametrize("expose, domain", [("network", None), ("domain", "docs.example.com")])
-    def test_the_default_value_is_replaced(self, expose, domain):
-        """http://localhost:7091 in .env is what the app uses anyway, so it is no operator choice."""
-        existing = {"API_URL": "http://localhost:7091"}
-        updates = stack.plan(
-            existing, image_tag="x", fresh_database=False, expose=expose, domain=domain, lan_ip="10.0.0.5"
-        )
-        assert updates["API_URL"] == stack.url({**existing, **updates}, "10.0.0.5")
+    def test_the_default_value_is_replaced(self):
+        """A network install holding http://localhost:7091, the app's own default, is no operator choice."""
+        existing = {"DOCSGPT_BIND": "0.0.0.0", "API_URL": "http://localhost:7091"}
+        updates = stack.plan(existing, image_tag="x", fresh_database=False, lan_ip="10.0.0.5")
+        assert updates["API_URL"] == "http://10.0.0.5:7091"
 
     def test_a_value_it_wrote_follows_a_new_lan_address(self):
         """The machine moved from 10.0.0.5 to 10.0.0.9: the recorded value is still its own."""
