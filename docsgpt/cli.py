@@ -182,6 +182,7 @@ SCRIPTS = {
     "prefetch-models": ("prefetch_models", "download the embedding, tokenizer and parser models"),
     "verify-offline": ("verify_offline", "check that the install runs with networking off"),
     "reembed": ("reembed", "re-embed every index with the configured embedding model"),
+    "grant-admin": ("grant_admin", "grant, revoke or list the admin role (AUTH_TYPE=oidc)"),
 }
 
 

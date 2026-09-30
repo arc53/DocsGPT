@@ -1,4 +1,4 @@
-"""Tests for scripts/grant_admin.py orchestration (grant/revoke/list/exit codes).
+"""Tests for ``docsgpt grant-admin`` (docsgpt/scripts/grant_admin.py) orchestration (grant/revoke/list/exit codes).
 
 Drives ``grant_admin.main(argv)`` against the ephemeral ``pg_conn`` by
 redirecting the script's ``db_session`` / ``db_readonly`` to yield that
@@ -10,23 +10,14 @@ script's own decision logic (audit-gating, manual-only revoke, exit codes).
 
 from __future__ import annotations
 
-import sys
 from contextlib import contextmanager
-from pathlib import Path
 
 import pytest
 
-# Project root on sys.path so ``scripts`` is importable.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-
-from scripts import grant_admin  # noqa: E402
-from docsgpt.storage.db.repositories.auth_events import (  # noqa: E402
-    AuthEventsRepository,
-)
-from docsgpt.storage.db.repositories.user_roles import (  # noqa: E402
-    UserRolesRepository,
-)
-from docsgpt.storage.db.repositories.users import UsersRepository  # noqa: E402
+from docsgpt.scripts import grant_admin
+from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
+from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 
 
 @pytest.fixture

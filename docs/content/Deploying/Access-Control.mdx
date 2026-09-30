@@ -37,7 +37,7 @@ This is the canonical way to check a caller's effective roles (distinct from `/a
 
 There are four ways an account becomes an admin:
 
-1. **The `grant_admin` script** — run `python scripts/grant_admin.py <user_id>` on the server to grant (or `--revoke` / `--list`) the admin role directly. This is the canonical bootstrap for the first admin.
+1. **The `docsgpt grant-admin` command** — grants (or `--revoke` / `--list`) the admin role directly. This is the canonical bootstrap for the first admin; see [Bootstrapping the first admin](#bootstrapping-the-first-admin) for how to run it on each install.
 2. **OIDC group mapping** — `OIDC_ADMIN_GROUPS` auto-grants admin to members of the listed IdP groups. See [below](#admin-via-oidc-groups).
 3. **Local no-auth mode** — `LOCAL_MODE_ADMIN=true` grants admin when `AUTH_TYPE=None` (self-host, no authentication).
 4. **Grant by an existing admin** — through the admin API/dashboard.
@@ -55,9 +55,20 @@ There are four ways an account becomes an admin:
 
 Granting admin through the dashboard itself requires *already being* an admin, which creates a chicken-and-egg problem on a fresh deployment. Break it one of these ways:
 
-- **Run the script** on the server: `python scripts/grant_admin.py <user_id>` (the `user_id` is the OIDC `sub`). The grant is written to `user_roles` with `source='manual'` and takes effect on the user's next request. Use `--list` to see current admins and `--revoke` to remove a manual grant.
+- **Run `docsgpt grant-admin <user_id>`**, where `user_id` is the user's OIDC `sub`. The grant is written to `user_roles` with `source='manual'` and takes effect on the user's next request. It only matters under `AUTH_TYPE=oidc`, and the user must have signed in once first (or pass `--force`). Use `--list` to see current admins and `--revoke` to remove a manual grant.
 - Set `OIDC_ADMIN_GROUPS` to a group you belong to, and sign in — you become an admin automatically.
 - For a no-auth local install, use `LOCAL_MODE_ADMIN=true`.
+
+Where to run the command depends on how DocsGPT is installed. The Docker image has no `docsgpt` console script, so inside a container call it as `python -m docsgpt`:
+
+| Install | Command |
+| --- | --- |
+| Installer, `docsgpt up` or pip | `docsgpt grant-admin <user_id>` |
+| `docsgpt up` Docker stack or standalone Compose (from the stack directory) | `docker compose exec backend python -m docsgpt grant-admin <user_id>` |
+| Checkout Compose (from the repository root) | `docker compose --env-file .env -f deployment/docker-compose-hub.yaml exec backend python -m docsgpt grant-admin <user_id>` |
+| Kubernetes | `kubectl exec deploy/docsgpt-api -- python -m docsgpt grant-admin <user_id>` |
+
+`grant-admin` is new after 0.21.0. On 0.21.0 and earlier, run `python scripts/grant_admin.py <user_id>` from a source checkout whose `.env` points at the same database, or use `OIDC_ADMIN_GROUPS`.
 
 ### Admin via OIDC groups
 

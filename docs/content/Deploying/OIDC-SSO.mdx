@@ -117,7 +117,7 @@ Separately from *who may sign in*, you can map an IdP group to the global **admi
 OIDC_ADMIN_GROUPS=platform-admins
 ```
 
-Members of the listed groups are granted admin; the mapping is re-evaluated at every login **and** every [silent renewal](#silent-session-renewal), so removing a user from the admin group revokes their admin at the next renewal (exactly like the sign-in allowlist). It is independent of `OIDC_ALLOWED_GROUPS`, and leaving it unset never mass-revokes admin. On a fresh deployment this is the only way to create the first admin. For the full roles, teams, and admin-dashboard model see [Access Control, Roles & Teams](/Deploying/Access-Control).
+Members of the listed groups are granted admin; the mapping is re-evaluated at every login **and** every [silent renewal](#silent-session-renewal), so removing a user from the admin group revokes their admin at the next renewal (exactly like the sign-in allowlist). It is independent of `OIDC_ALLOWED_GROUPS`, and leaving it unset never mass-revokes admin. On a fresh deployment, bootstrap the first admin with this mapping or with the `docsgpt grant-admin` command (see [Bootstrapping the first admin](/Deploying/Access-Control#bootstrapping-the-first-admin)). For the full roles, teams, and admin-dashboard model see [Access Control, Roles & Teams](/Deploying/Access-Control).
 
 ## Silent session renewal
 

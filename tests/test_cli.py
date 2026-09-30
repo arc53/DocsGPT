@@ -277,3 +277,32 @@ class TestScripts:
             cli.main([script, "--help"])
         assert exc.value.code == 0
         assert "models" in capsys.readouterr().out
+
+
+class TestGrantAdmin:
+    def test_grant_admin_is_a_command(self, monkeypatch):
+        """The first-admin bootstrap must work from the image and a pip install, not only a checkout."""
+        main = MagicMock(return_value=0)
+        monkeypatch.setattr("docsgpt.scripts.grant_admin.main", main)
+        assert cli.main(["grant-admin", "alice", "--force"]) == 0
+        main.assert_called_once_with(["alice", "--force"])
+
+    def test_listed_in_the_help(self, capsys):
+        cli.build_parser().print_help()
+        assert "grant-admin" in capsys.readouterr().out
+
+    def test_help_names_the_command(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(["grant-admin", "--help"])
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "docsgpt grant-admin" in out
+        assert "--revoke" in out
+
+    def test_checkout_script_still_runs_the_packaged_command(self):
+        """``python scripts/grant_admin.py`` keeps working for anyone following an older guide."""
+        result = subprocess.run(
+            [sys.executable, "scripts/grant_admin.py", "--help"],
+            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True,
+        )
+        assert "docsgpt grant-admin" in result.stdout
