@@ -101,3 +101,19 @@ class TestRedditPostsLoaderRemote:
             RedditPostsLoaderRemote().load_data(json.dumps(payload))
         listing.hot.assert_called_once_with(limit=3)
         listing.new.assert_not_called()
+
+    def test_connector_form_strings_are_parsed(self):
+        """The connector wizard sends every setup field as a string."""
+        payload = {**BASE_PAYLOAD, "search_queries": "python, django ,", "number_posts": "5", "categories": ["new"]}
+        praw, reddit, listing = _fake_praw([])
+        with patch.dict(sys.modules, {"praw": praw}):
+            RedditPostsLoaderRemote().load_data(json.dumps(payload))
+        assert [c.args[0] for c in reddit.subreddit.call_args_list] == ["python", "django"]
+        listing.new.assert_called_with(limit=5)
+
+    def test_non_numeric_number_posts_raises(self):
+        payload = {**BASE_PAYLOAD, "number_posts": "ten"}
+        praw, _, _ = _fake_praw([])
+        with patch.dict(sys.modules, {"praw": praw}):
+            with pytest.raises(ValueError, match="number_posts"):
+                RedditPostsLoaderRemote().load_data(json.dumps(payload))

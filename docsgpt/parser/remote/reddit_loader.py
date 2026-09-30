@@ -19,9 +19,9 @@ class RedditPostsLoaderRemote(BaseRemote):
 
         Args:
             inputs: JSON string holding the praw credentials plus
-                ``search_queries``, and optionally ``mode``
-                (``subreddit``/``username``), ``categories`` and
-                ``number_posts``.
+                ``search_queries`` (a list, or a comma-separated string),
+                and optionally ``mode`` (``subreddit``/``username``),
+                ``categories`` and ``number_posts``.
 
         Returns:
             One document per post, carrying the post body as text.
@@ -42,7 +42,13 @@ class RedditPostsLoaderRemote(BaseRemote):
             )
         categories = data.get("categories", ["new", "hot"])
         search_queries = data.get("search_queries")
-        number_posts = data.get("number_posts", 10)
+        if isinstance(search_queries, str):
+            # The connector form sends one comma-separated string.
+            search_queries = [q.strip() for q in search_queries.split(",") if q.strip()]
+        try:
+            number_posts = int(data.get("number_posts") or 10)
+        except (TypeError, ValueError):
+            raise ValueError("number_posts must be a whole number")
 
         import praw
 

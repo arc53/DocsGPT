@@ -295,6 +295,7 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
             CredentialField("number_posts", "Number of posts", secret=False),
         ),
         setup={"tools": "off", "sync": "ask"},
+        docs_url=f"{_DOCS}#reddit",
     ),
     ConnectorDefinition(
         key="brave",

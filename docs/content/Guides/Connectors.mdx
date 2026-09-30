@@ -247,6 +247,38 @@ Earlier versions read any repository `GITHUB_ACCESS_TOKEN` could see, private on
 
 S3 needs no server settings. Each member connects with an access key that can list and read the bucket (`s3:ListBucket`, `s3:GetObject`), then picks a bucket and optional path prefix. A custom endpoint URL connects S3-compatible storage such as MinIO or Cloudflare R2.
 
+### Reddit
+
+Reddit needs no server settings. Each member connects with the credentials of their own Reddit app, then chooses which subreddits to sync. Reddit is available only as a connector, not as an **Add knowledge** upload.
+
+<Steps>
+
+### Create a Reddit app
+
+Signed in to Reddit, open [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps/) and click **create another app**. Pick the **script** type, give it a name, and enter any redirect URI (for example `http://localhost:8080`); DocsGPT does not use it.
+
+### Copy its credentials
+
+The **Client ID** is the string under the app's name ("personal use script"), and the **Client secret** is the value labelled **secret**.
+
+### Connect in DocsGPT
+
+In **Settings > Connectors**, pick **Reddit** and fill in:
+
+- **Client ID** and **Client secret** from the app.
+- **User agent**: a descriptive string Reddit uses to identify your requests, such as `docsgpt:my-sync:1.0 (by /u/your-username)`.
+
+### Choose what to sync
+
+Turn on **Sync into Knowledge** and fill in:
+
+- **Search queries**: subreddit names without `r/`, separated by commas, for example `python, django`.
+- **Number of posts**: how many posts to read from each subreddit's **new** and **hot** listings, so each subreddit adds up to twice this number.
+
+</Steps>
+
+Each post becomes one document with its title, subreddit, score, author and link. Only the post's own text is indexed, so link and image posts add little. Comments are not synced.
+
 ### MCP presets
 
 Notion, Linear, Atlassian, Sentry, Asana and Stripe are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
