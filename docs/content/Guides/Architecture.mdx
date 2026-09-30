@@ -59,7 +59,7 @@ The storage boxes describe responsibilities, not a required number of servers. F
 | **Retrieval** | In the process running the search or agent | Dispatches per-source retrieval, combines results under a token budget, and applies configured post-retrieval stages. |
 | **Model adapters** | Shared Python modules | Translate generation, streaming, tool calls, and usage for cloud or local providers. Embedding configuration is separate from the chat model. |
 | **Celery workers** | One or more worker processes | Ingestion, attachment processing, document parsing, query embedding, webhooks, and scheduled agent execution. |
-| **Scheduler** | Celery beat, embedded or separate | Triggers maintenance, source syncs, and dispatch of scheduled runs. |
+| **Scheduler** | Celery beat, embedded or separate | Triggers maintenance, source syncs, and dispatch of scheduled runs. See [Background jobs](/Deploying/Background-Jobs). |
 
 ### API entry points
 
@@ -69,11 +69,11 @@ The storage boxes describe responsibilities, not a required number of servers. F
 | --- | --- |
 | [Native agent API](/Agents/api) | Answer, streaming, and search endpoints used by the UI and integrations. |
 | [OpenAI-compatible API](/Agents/openai-compatible) | `/v1/chat/completions` and `/v1/models` for compatible clients, authenticated with an agent API key. |
-| [MCP server](https://github.com/arc53/DocsGPT/blob/main/docsgpt/mcp_server.py) | `/mcp` exposes the `search_docs` retrieval tool to MCP clients using an agent API key. |
+| [MCP server](/API/mcp-server) | `/mcp/` exposes the `search_docs` retrieval tool to MCP clients using an agent API key. |
 | [Agent webhooks](/Agents/webhooks) | Trigger background agent runs from external applications. |
 | [Real-time events](/Agents/notifications) | User notifications at `/api/events` and chat replay/live tail at `/api/messages/<message_id>/events`. |
 
-DocsGPT also acts as an **MCP client**: agents can call external MCP servers through the [MCP tool integration](/Guides/Integrations/mcp-tool-integration). This is a separate direction from exposing DocsGPT search at `/mcp`.
+DocsGPT also acts as an **MCP client**: agents can call external MCP servers through the [MCP tool integration](/Guides/Integrations/mcp-tool-integration). This is a separate direction from exposing DocsGPT search at `/mcp/`.
 
 <Callout type="info">
 Use the ASGI entry point for the complete application. A plain `flask run` server omits `/mcp` and the native asynchronous routes: notifications, chat reconnect, the remote-device command stream, and artifact downloads. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).

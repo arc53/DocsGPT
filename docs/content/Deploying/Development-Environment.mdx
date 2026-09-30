@@ -216,6 +216,7 @@ To run the DocsGPT backend locally, you'll need to set up a Python environment a
     one scheduler must run. Running more than one is safe, because a lock in Redis lets only one of them schedule
     at a time. `docsgpt worker --no-beat` leaves the scheduler out, and `docsgpt beat` runs it on its own.
     On Windows the scheduler cannot run inside the worker, so run `docsgpt beat` in a third terminal.
+    [Background jobs](/Deploying/Background-Jobs) lists every periodic task and what it trims.
 
     To run Celery directly, add `-B` yourself:
 
@@ -300,7 +301,7 @@ A few routes hold a response open for a long time, so they are native-async rout
 
 | Route | Feature |
 | --- | --- |
-| `/mcp` | DocsGPT's own MCP server |
+| `/mcp/` | DocsGPT's own [MCP server](/API/mcp-server) |
 | `GET /api/events` | Live notifications |
 | `GET /api/messages/<id>/events` | Resuming a chat answer after the connection drops |
 | `GET /api/devices/sessions/<id>/events` | The command stream of a paired [remote device](/Tools/remote-device) |
