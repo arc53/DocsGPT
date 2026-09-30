@@ -35,7 +35,7 @@ A team allowance is **per member**, not a pool the team shares: if the allowance
 A user in several teams gets the **most generous** allowance among them, and allowances are never added together. Usage is always counted per user, whichever teams they belong to. To hold one person below their team's allowance, give them a user override.
 
 <Callout type="info" emoji="ℹ️">
-Team membership can change without an instance admin — team admins, OIDC group sync and SCIM all add members — so joining a team can only raise a user's allowance to what you granted that team, never lower it. Only instance admins set allowances; team admins cannot.
+Team membership can change without an instance admin — team admins add members — so joining a team can only raise a user's allowance to what you granted that team, never lower it. OIDC group sync and SCIM don't add team members. Only instance admins set allowances; team admins cannot.
 </Callout>
 
 ## Windows and enforcement
@@ -49,6 +49,7 @@ The quota is checked **before** a request starts. The request that crosses a lim
   "success": false,
   "error_code": "quota-exceeded",
   "message": "Usage quota reached (1,000,000 of 1,000,000 tokens). It resets at 2026-10-01T00:00:00+00:00.",
+  "limit_scope": "user_quota",
   "dimension": "tokens",
   "unit": "tokens",
   "usage": 1000000,
@@ -59,7 +60,7 @@ The quota is checked **before** a request starts. The request that crosses a lim
 }
 ```
 
-The response carries a `Retry-After` header. The check covers chat, the agent and OpenAI-compatible APIs, scheduled runs (recorded as `budget_exceeded`) and webhook runs. If the quota check itself fails, the request is allowed.
+The response carries a `Retry-After` header with the seconds until the reset, and `x-should-retry: false` so the OpenAI SDKs don't retry with backoff. `dimension` is `tokens` or `cost`; for `cost`, `usage` and `limit` are in USD. The check covers chat, the agent and OpenAI-compatible APIs, scheduled runs (recorded as `budget_exceeded`) and webhook runs. If the quota check itself fails, the request is allowed.
 
 Who is charged:
 
@@ -109,5 +110,19 @@ A `PUT` body sets, per budget, a limit or the unlimited flag; leave both out to 
 ```json
 { "token_limit": 2000000, "cost_unlimited": true, "note": "Research team" }
 ```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `token_limit` | integer or `null` | `null` | Token budget per window. `0` blocks the user. |
+| `token_unlimited` | boolean | `false` | No token limit at this layer. |
+| `cost_limit_usd` | number or `null` | `null` | Cost budget per window, in USD (stored to 4 decimal places). `0` blocks the user. |
+| `cost_unlimited` | boolean | `false` | No cost limit at this layer. |
+| `enabled` | boolean | `true` | `false` keeps the policy but ignores it, so the next layer applies. |
+| `bucket` | string | `all` | `all`, `direct` or `agent` (see below). |
+| `note` | string | `null` | Free text, up to 500 characters. |
+
+A `PUT` replaces the whole policy for that layer and bucket, so send every field you want to keep. It returns
+`400` when a budget has both a limit and its unlimited flag set, when neither budget has a limit or an unlimited
+flag (delete the policy instead), or when a value has the wrong type or is negative.
 
 `bucket` (default `all`) narrows a policy to `direct` traffic (chat without an agent) or `agent` traffic (anything that runs through an agent, whether or not the agent has an API key). A request must fit both its own bucket and `all`. The dashboard edits `all`.
