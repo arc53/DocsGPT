@@ -103,6 +103,35 @@ Per-source extraction knobs live under the source config's `graph` object and ov
 Graph extraction makes an LLM call per chunk (more if `gleanings > 0`), so it has a real token cost. The cost is attributed to token usage under a `graph_extraction` tag, and the `max_chunks` cap bounds it.
 </Callout>
 
+## Graph retrieval settings
+
+How the graph retriever walks a source's graph is set under `retrieval.graph` in the source config. Like the other retrieval settings these apply on the next question, with no re-ingest. In the UI they are the **Graph retrieval** group in the source's settings, shown for GraphRAG sources, and you can try them in [Test retrieval](/Sources/Per-source-configuration#testing-retrieval) before saving.
+
+| Field | UI label | Default | Description |
+| --- | --- | --- | --- |
+| `seed_strategy` | **Start the walk from** | `entities` | Where the walk starts. `entities` matches the question against each entity's name, type and description, and suits most documents. `relationships` matches it against relationship sentences ("A streams_to B: ...") and starts from both ends of the best matches, so it can reach an entity the question never names; it suits content that describes how things connect. A graph built before relationship embeddings were recorded falls back to `entities`. |
+| `passage_nodes` | **Include passages in the walk** | `true` | Adds the chunks to the graph as nodes, so a passage can be found both by matching the question and by being connected to what does. With `false` the walk covers entities only, and chunks are ranked by the scores of the entities they mention. Works best on graphs built with the current version. |
+| `blend_vector` | **Blend with vector search** | `true` | Merges the graph ranking with the source's plain vector search by reciprocal rank fusion, so a passage the graph misses is not lost. With `false` the answer gets only what the graph surfaced. |
+
+The defaults are the combination that measured best across the corpora tested. The graph retriever's results carry no per-chunk score, so `score_threshold` doesn't filter them.
+
+The config `PATCH` replaces the whole config, so send the source's current config with your change; fields you leave out go back to their defaults, and a `retrieval` object without `"retriever": "graphrag"` stops the source using the graph:
+
+```bash
+curl -X PATCH https://your-docsgpt/api/sources/<source_id>/config \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "chunking": { "strategy": "classic_chunk", "max_tokens": 1250, "min_tokens": 150, "duplicate_headers": false },
+    "retrieval": {
+      "retriever": "graphrag",
+      "chunks": 6,
+      "graph": { "seed_strategy": "relationships", "passage_nodes": true, "blend_vector": true }
+    },
+    "graph": { "extraction_model": null, "max_chunks": null, "gleanings": 0 }
+  }'
+```
+
 ## Visualizing the graph
 
 GraphRAG sources expose a **graph view** in the UI — an interactive network of the extracted entities and relationships. It is backed by two read endpoints:

@@ -82,7 +82,12 @@ Retrieval decides which chunks are pulled in to answer a question. These setting
     "chunks": 6,
     "score_threshold": null,
     "rephrase_query": true,
-    "prescreen": null
+    "prescreen": null,
+    "graph": {
+      "seed_strategy": "entities",
+      "passage_nodes": true,
+      "blend_vector": true
+    }
   }
 }
 ```
@@ -95,6 +100,8 @@ Retrieval decides which chunks are pulled in to answer a question. These setting
 | `score_threshold` | `null` | Minimum cosine similarity score. Honored by pgvector, MongoDB Atlas, Qdrant and Milvus; FAISS, Elasticsearch and the `hybrid` retriever ignore it — the config API returns a `warnings` entry when you set it on one of those. |
 | `rephrase_query` | `true` | Whether to run a query-rephrasing side-call before retrieval. |
 | `prescreen` | `null` | Optional LLM relevance filter (see below). `null` = off. |
+| `graph` | see [GraphRAG](/Sources/GraphRAG#graph-retrieval-settings) | How the `graphrag` retriever walks the graph: `seed_strategy`, `passage_nodes`, `blend_vector`. Ignored by the other retrievers. |
+| `reranker` | `null` | Reserved for a future reranking step. Accepted and stored, but it has no effect. |
 
 ### Who wins: source config or the request?
 
@@ -181,6 +188,7 @@ The response echoes the stored config and a `requires_reingest` flag:
 
 Notes:
 
+- The body replaces the whole config rather than merging into it: any group or field you leave out is reset to its default. To change one setting, send the source's current `config` (from `GET /api/sources`) with that setting changed. On a GraphRAG source, keep `"retriever": "graphrag"` and the top-level `graph` object.
 - Invalid values are rejected with `400` (strict validation on write).
 - The `kind` field (classic / wiki / graphrag) cannot be changed through this endpoint — converting a source to a [Wiki](/Sources/Wiki-sources) or enabling [GraphRAG](/Sources/GraphRAG) uses dedicated endpoints.
 - Editing requires ownership of the source or a team `editor` grant; viewers receive `403`.
