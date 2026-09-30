@@ -95,7 +95,6 @@ function Upload({
   onBrowseConnectors?: () => void;
 }) {
   const token = useSelector(selectToken);
-  const selectedDocs = useSelector(selectSelectedDocs);
   const connectorCatalog = useSelector(selectConnectorCatalog);
   const connections = useSelector(selectConnections);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
@@ -308,7 +307,11 @@ function Upload({
    * subscribe so the side effects can fire after the modal has closed.
    */
   const trackTraining = useCallback(
-    (clientTaskId: string, knownSourceId?: string) => {
+    (
+      clientTaskId: string,
+      knownSourceId?: string,
+      batch?: ReadonlySet<string>,
+    ) => {
       let handled = false;
 
       const handleTerminal = (
@@ -326,13 +329,23 @@ function Upload({
               // meanwhile — another upload finishing, or a new team share.
               const newDoc = docs.find((doc: Doc) => doc.id === sourceId);
               if (newDoc) {
-                // If only one doc is selected, replace it completely
-                // If multiple docs are selected, append the new doc
-                if (selectedDocs.length === 1) {
-                  dispatch(setSelectedDocs([newDoc]));
-                } else {
-                  dispatch(setSelectedDocs([...selectedDocs, newDoc]));
-                }
+                // Read the selection as it is now: several sources of one
+                // sync finish one after another, each after the last one's
+                // change. A single earlier selection is replaced; otherwise,
+                // or when it came from the same sync, the new doc is added.
+                const current = selectSelectedDocs(store.getState()) ?? [];
+                const replace =
+                  current.length === 1 && !batch?.has(current[0].id ?? '');
+                dispatch(
+                  setSelectedDocs(
+                    replace
+                      ? [newDoc]
+                      : [
+                          ...current.filter((doc) => doc.id !== newDoc.id),
+                          newDoc,
+                        ],
+                  ),
+                );
               }
             }
             onSuccessfulUpload?.(sourceId);
@@ -405,14 +418,7 @@ function Upload({
         }
       });
     },
-    [
-      dispatch,
-      onSuccessfulUpload,
-      refreshSourceDocs,
-      selectedDocs,
-      selectUploadedDoc,
-      store,
-    ],
+    [dispatch, onSuccessfulUpload, refreshSourceDocs, selectUploadedDoc, store],
   );
 
   // A service connected from Connect your data syncs like an upload ingests:
@@ -420,8 +426,10 @@ function Upload({
   // is ingested. Their ingest tasks are keyed by source id.
   const { launch, modals: connectModals } = useConnectorLauncher({
     onConnected: () => close(),
-    onSynced: (sourceIds) =>
-      sourceIds.forEach((sourceId) => trackTraining(sourceId, sourceId)),
+    onSynced: (sourceIds) => {
+      const batch = new Set(sourceIds);
+      sourceIds.forEach((sourceId) => trackTraining(sourceId, sourceId, batch));
+    },
   });
 
   const onDrop = useCallback(

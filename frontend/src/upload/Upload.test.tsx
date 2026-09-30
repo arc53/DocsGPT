@@ -38,7 +38,7 @@ vi.mock('react-redux', () => ({
       return null;
     }
   },
-  useDispatch: () => vi.fn(),
+  useDispatch: () => fakeStore.dispatch,
   useStore: () => fakeStore,
 }));
 
@@ -49,10 +49,17 @@ const fakeStore = vi.hoisted(() => {
   const state = {
     upload: { tasks: [] as Record<string, unknown>[] },
     notifications: { recentEvents: [] as Record<string, unknown>[] },
+    preference: { selectedDocs: [] as { id: string }[] },
   };
   return {
     state,
     getState: () => state,
+    // Applies the chat selection; every other action is ignored.
+    dispatch: (action: { type?: string; payload?: unknown }) => {
+      if (action?.type === 'preference/setSelectedDocs')
+        state.preference.selectedDocs = action.payload as { id: string }[];
+      return action;
+    },
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -62,6 +69,7 @@ const fakeStore = vi.hoisted(() => {
       listeners.clear();
       state.upload.tasks = [];
       state.notifications.recentEvents = [];
+      state.preference.selectedDocs = [];
     },
   };
 });
@@ -565,6 +573,41 @@ describe('Upload connected-service sync', () => {
     await act(async () => launcher.options!.onSynced!(['src-1']));
     expect(getDocs).toHaveBeenCalledTimes(1);
     expect(onSuccessfulUpload).toHaveBeenCalledWith('src-1');
+  });
+
+  const complete = async (ids: string[]) => {
+    fakeStore.state.upload.tasks = ids.map((id) => ({
+      id,
+      sourceId: id,
+      status: 'completed',
+      progress: 100,
+    }));
+    await act(async () => fakeStore.notify());
+  };
+
+  it('selects every source one sync started, as each finishes', async () => {
+    getDocs.mockResolvedValue([
+      { id: 'src-1', name: 'Handbook' },
+      { id: 'src-2', name: 'FAQ' },
+    ]);
+    await render(vi.fn());
+    await act(async () => launcher.options!.onSynced!(['src-1', 'src-2']));
+    await complete(['src-1']);
+    await complete(['src-1', 'src-2']);
+    expect(fakeStore.state.preference.selectedDocs.map((d) => d.id)).toEqual([
+      'src-1',
+      'src-2',
+    ]);
+  });
+
+  it('still replaces a single earlier selection with the new source', async () => {
+    fakeStore.state.preference.selectedDocs = [{ id: 'old' }];
+    await render(vi.fn());
+    await act(async () => launcher.options!.onSynced!(['src-1']));
+    await complete(['src-1']);
+    expect(fakeStore.state.preference.selectedDocs.map((d) => d.id)).toEqual([
+      'src-1',
+    ]);
   });
 
   it('does not refresh for a sync that failed', async () => {
