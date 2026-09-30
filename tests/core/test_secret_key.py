@@ -82,3 +82,20 @@ def test_the_data_home_key_wins_over_a_stray_working_directory_key(tmp_path, mon
     monkeypatch.chdir(workdir)
 
     assert resolve_jwt_secret_key("", None) == "home-secret"
+
+
+def test_an_empty_key_left_in_the_working_directory_is_ignored(tmp_path, monkeypatch):
+    """A truncated legacy file must not stop the API from starting; a fresh key is generated instead."""
+    from docsgpt.core.secret_key import resolve_jwt_secret_key
+
+    home = tmp_path / "home"
+    workdir = tmp_path / "somewhere"
+    workdir.mkdir()
+    (workdir / ".jwt_secret_key").write_text("  \n", encoding="utf-8")
+    monkeypatch.setenv("DOCSGPT_HOME", str(home))
+    monkeypatch.chdir(workdir)
+
+    secret = resolve_jwt_secret_key("", None)
+
+    assert len(secret) == 64
+    assert (home / ".jwt_secret_key").read_text(encoding="utf-8") == secret

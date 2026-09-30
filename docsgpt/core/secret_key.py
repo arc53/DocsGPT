@@ -61,15 +61,18 @@ def _create_secret_file_atomically(key_path: Path, new_secret: str | None = None
 
 
 def _legacy_secret(key_path: Path) -> str | None:
-    """A key an older version left in the working directory, moved into ``key_path``.
+    """A key an older version left in the working directory, copied into ``key_path``.
 
     Older versions wrote the fallback key relative to the working directory. Keeping
-    it means tokens and avatar URLs signed with it stay valid after an upgrade.
+    it means tokens and avatar URLs signed with it stay valid after an upgrade. The
+    old file is left where it is; an empty one is ignored.
     """
     legacy_path = Path.cwd() / KEY_FILE_NAME
     if legacy_path.resolve() == key_path.resolve() or not legacy_path.is_file():
         return None
-    secret = _read_secret_file(legacy_path)
+    secret = legacy_path.read_text(encoding="utf-8").strip()
+    if not secret:
+        return None
     try:
         return _create_secret_file_atomically(key_path, secret)
     except OSError:
@@ -90,7 +93,7 @@ def resolve_jwt_secret_key(
         key_file: Local fallback file used outside production deployments. Defaults to
             ``.jwt_secret_key`` in the data home (``DOCSGPT_HOME``, the checkout, or
             ``~/.docsgpt/server``); a key an older version wrote to the working
-            directory is moved there.
+            directory is copied there.
 
     Returns:
         The configured or locally persisted signing secret.
