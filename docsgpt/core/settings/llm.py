@@ -74,7 +74,13 @@ class LLMSettings(SettingsGroup):
         default={"system_prompt": 500, "current_query": 500, "safety_buffer": 1000},
         description="Tokens held back from the context window for the system prompt, the query and a safety buffer.",
     )
-    CACHE_REDIS_URL: str = Field(default="redis://localhost:6379/2", description="Redis URL for the LLM cache.")
+    CACHE_REDIS_URL: str = Field(
+        default="redis://localhost:6379/2",
+        description=(
+            "Redis URL for the LLM cache, the live event and notification streams, SSO state and token denylist, "
+            "device pairing, MCP OAuth, the API session store, live speech-to-text and the version check."
+        ),
+    )
     LLM_CACHE_ENABLED: bool = Field(
         default=True,
         description=(
