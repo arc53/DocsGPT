@@ -25,6 +25,12 @@ Entries start at 0.17.0; see GitHub for earlier releases.
     instead of answering SCIM calls with 503.
   - Agentless chats and agents that don't set a chunk count now retrieve 6 chunks per search
     instead of 2. Answers draw on more context and use more tokens.
+  - `LLM_PROVIDER` alone now picks the default model; it no longer also needs `API_KEY`. An install
+    that set only a provider key (say `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`) used to fall
+    back to the hosted DocsGPT model and now calls, and is billed by, that provider. `LLM_PROVIDER=openai`
+    with the key in `API_KEY` now really uses OpenAI instead of the hosted API. Set
+    `LLM_NAME=docsgpt-local` to keep the hosted model. See
+    [Default model](/upgrading#default-model-llm_provider-alone-picks-it).
   - `LLM_PROVIDER=llama.cpp` and `LLM_PROVIDER=huggingface` are gone; neither ever answered.
     Reach llama.cpp through its OpenAI-compatible server with `OPENAI_BASE_URL` and `LLM_NAME`.
     `VECTOR_STORE=lancedb` could never start and is gone from the setup scripts.
@@ -104,6 +110,9 @@ Using DocsGPT section (web app, sharing conversations, teams and sharing, analyt
 - Chatwoot extension: verifies Chatwoot's timestamped webhook signature, sends a valid `history`,
   returns 502 when DocsGPT or Chatwoot fails, and reads optional `account_id`/`assignee_id` filters
   from `.env`.
+- Chatwoot extension: `python app.py` listens on port 5000 (or `PORT`) instead of 80, and `.env` is
+  read from the extension's folder instead of the working directory. See
+  [Upgrading](/upgrading#chatwoot-bridge-port-5000-and-its-own-env).
 - Chatwoot extension: optional, insecure `chatwoot_allow_unsigned=true` for Chatwoot versions that
   don't sign webhooks.
 - Reddit connector: comma-separated search queries and the post count from the connector form are
@@ -180,7 +189,8 @@ the bundled Postgres, so every pod sees the same files. The worker runs the beat
 example for publishing over TLS, and the API serves the web UI, so the frontend Deployment is gone.
 `docsgpt-secrets.yaml` holds plain-text placeholders, including `ENCRYPTION_SECRET_KEY` and
 `POSTGRES_PASSWORD` (which was a shared `docsgpt`), and the pods refuse to start until they are replaced. Images are pinned to the release. An existing cluster has to
-carry its keys over, re-encrypt stored secrets and upload its documents again: see
+carry its keys over, reindex its database (the new Postgres image sorts text differently), re-encrypt
+stored secrets and upload its documents again: see
 [Upgrading](/upgrading#kubernetes-manifests-reworked) and the
 [Kubernetes guide](/Deploying/Kubernetes-Deploying).
 

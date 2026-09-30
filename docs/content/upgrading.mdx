@@ -209,6 +209,19 @@ Anything outside the stack that connected to Postgres on port 5432 or Redis on p
 
 Without `JWT_SECRET_KEY`, the API generated `.jwt_secret_key` in the directory it was started from. It now keeps it in the data home (`DOCSGPT_HOME`, the checkout, or `~/.docsgpt/server`). On its first start the API copies a key it finds in its working directory there, so existing tokens stay valid; start it from the same directory as before once. The worker resolves the key the same way, so start whichever process holds the old file first: one started from another directory would generate a new key before the old one is copied. Docker and multi-process installs should set `JWT_SECRET_KEY` instead (see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live)).
 
+#### Default model: LLM_PROVIDER alone picks it
+
+The default model, the one that answers when a request names none, is now the first model of the provider in `LLM_PROVIDER` whenever that provider registered a model. Before, this step also required the generic `API_KEY`, so an install that set only a provider-specific key fell through to the hosted DocsGPT model:
+
+- **Only a provider key set**, for example `LLM_PROVIDER=anthropic` with `ANTHROPIC_API_KEY`: chats used to go to the public DocsGPT API. They now go to that provider, billed to your key.
+- **`LLM_PROVIDER=openai` with the key in `API_KEY`**: the key used to register no OpenAI model, so chats silently used the hosted DocsGPT API. They now go to OpenAI.
+
+To keep using the hosted model, set `LLM_NAME=docsgpt-local`. To pick a specific model of your provider, set `LLM_NAME` to its id. The API and the worker log an `ERROR` at startup when `LLM_PROVIDER` names a provider but the default is still the hosted model. See [Default model selection](/Models/local-inference#default-model-selection).
+
+#### Chatwoot bridge: port 5000 and its own .env
+
+The Chatwoot bridge (`extensions/chatwoot/app.py`) run with `python app.py` now listens on port 5000, or on `PORT`, instead of 80. Change the webhook URL in Chatwoot, or set `PORT=80`. It also reads `.env` from its own folder, `extensions/chatwoot/`, instead of the directory it was started from, so move the file there if you kept it elsewhere. See the [Chatwoot guide](/Extensions/Chatwoot-extension).
+
 #### Kubernetes manifests reworked
 
 The manifests in `deployment/k8s` did not work as shipped: the migration Job ran a script missing from the image, uploads never reached the worker, and both Services were public LoadBalancers. They are rebuilt; see the [Kubernetes guide](/Deploying/Kubernetes-Deploying) for the full setup. To move an existing cluster onto them:
@@ -237,6 +250,22 @@ The manifests in `deployment/k8s` did not work as shipped: the migration Job ran
    kubectl delete job postgres-init --ignore-not-found
    kubectl apply -k deployment/k8s/
    kubectl wait --for=condition=complete job/postgres-init --timeout=300s
+   ```
+
+   Then rebuild the database's indexes. The old `postgres:16-alpine` image sorts text with musl, and `pgvector/pgvector` is built on Debian and sorts with glibc's `en_US.utf8`, so the same data files now compare strings in a different order. Postgres records no collation version for the old volume, so it does not warn you: indexes on text columns built under the old order can miss rows in lookups or let a duplicate past a unique constraint until they are rebuilt.
+
+   ```bash
+   kubectl exec deploy/postgres -- psql -U docsgpt -d docsgpt -c 'REINDEX DATABASE docsgpt'
+   ```
+
+   Instead of reindexing, you can put the database on a new volume, where the restore builds every index under the new order. Before the commands above, and only once you have checked that `docsgpt-backup.sql` from step 1 is complete, delete the old volume, start Postgres alone and load the dump; the migration Job then upgrades it:
+
+   ```bash
+   kubectl delete deployment/postgres pvc/postgres-pvc
+   kubectl apply -f deployment/k8s/docsgpt-secrets.yaml -f deployment/k8s/deployments/postgres-deploy.yaml \
+     -f deployment/k8s/services/postgres-service.yaml
+   kubectl rollout status deployment/postgres
+   kubectl exec -i deploy/postgres -- psql -U docsgpt -d docsgpt < docsgpt-backup.sql
    ```
 
 4. **Remove what the stack no longer uses.** The API serves the web UI, and Qdrant was never used by the old stack:

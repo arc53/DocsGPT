@@ -22,6 +22,15 @@ Full guide: <https://docs.docsgpt.cloud/Extensions/Chatwoot-extension>
    flask --app app run --host 0.0.0.0 --port 5000
    ```
 
+   `python app.py` works too; it listens on port 5000, or on `PORT` if you set it.
+
+## Upgrading from 0.21.0 or earlier
+
+- `python app.py` used to listen on port 80. It now listens on 5000 (or `PORT`), so update the webhook URL in
+  Chatwoot or set `PORT=80`.
+- `.env` is now read from this folder, next to `app.py`, instead of the directory the bridge was started from.
+  Move the file here if you kept it elsewhere.
+
 ## Configuration (`.env`)
 
 | Variable | Description |
