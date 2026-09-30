@@ -185,7 +185,7 @@ def base_url(url: Optional[str]) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-_DOCS = "https://docs.docsgpt.cloud/Guides/Connectors"
+_DOCS = "https://docs.docsgpt.cloud/Sources/Connectors"
 GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/readonly"
 GITHUB_MCP_WRITE_URL = "https://api.githubcopilot.com/mcp/"
 
@@ -295,6 +295,7 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
             CredentialField("number_posts", "Number of posts", secret=False),
         ),
         setup={"tools": "off", "sync": "ask"},
+        docs_url=f"{_DOCS}#reddit",
     ),
     ConnectorDefinition(
         key="brave",

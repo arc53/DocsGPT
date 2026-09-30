@@ -16,7 +16,7 @@ With a self-hosted LLM, chat, document ingestion and retrieval work offline. The
 | Feature | What it contacts | Air-gapped setting |
 | --- | --- | --- |
 | Default LLM (`LLM_PROVIDER=docsgpt`) | DocsGPT's hosted model API | Point DocsGPT at your own model server |
-| Version check | `gptcloud.arc53.com`, when the worker starts and periodically after | `VERSION_CHECK=0` |
+| Version check | `gptcloud.arc53.com`, when the worker starts and every 7 hours; sends the version, a random instance id, the Python version and the platform ([details](/Deploying/Observability)) | `VERSION_CHECK=0` |
 | Text-to-speech (Speak button) | Google (`google_tts`) or ElevenLabs | `TTS_PROVIDER=none` |
 | Speech-to-text (microphone, audio files) | OpenAI (`openai`) | `STT_PROVIDER=none` |
 | `read_webpage` chat tool | Any URL the model chooses | Leave it out of `DEFAULT_CHAT_TOOLS` |
@@ -37,7 +37,7 @@ The backend image already contains everything the default configuration loads at
 On a machine with internet access, pull the images and save them to one file:
 
 ```bash
-TAG=latest   # or a release, e.g. 0.19.0
+TAG=<version>   # the release you deploy, e.g. 0.21.0; avoid latest in a mirror
 docker pull arc53/docsgpt:$TAG
 docker pull redis:6-alpine
 docker pull postgres:16-alpine
@@ -45,7 +45,7 @@ docker save -o docsgpt-images.tar \
   arc53/docsgpt:$TAG redis:6-alpine postgres:16-alpine
 ```
 
-The backend image serves the web UI too, so the standalone stack needs no frontend image. Add `arc53/docsgpt-fe:$TAG` only if you run the checkout Compose files or Kubernetes, which use it.
+The backend image serves the web UI too, so the standalone stack needs no frontend image. Add `arc53/docsgpt-fe:$TAG` only if you run the checkout Compose files, which use it.
 
 Copy `docsgpt-images.tar` and the [standalone Compose file](/Deploying/Docker-Deploying#quickest-setup-pre-built-images-no-checkout) into the air-gapped network, then load the images (or push them to your internal registry):
 
@@ -56,6 +56,26 @@ docker load -i docsgpt-images.tar
 Set `DOCSGPT_IMAGE_TAG` to the same tag when you start the stack. Bring your model server's image and weights in the same way, following its own documentation.
 
 To use an embedding model other than the two defaults, build your own backend image with it baked in: `docker build -f docsgpt/Dockerfile --build-arg EMBEDDINGS_PREFETCH=<model> .`
+
+### Kubernetes
+
+The [Kubernetes manifests](/Deploying/Kubernetes-Deploying) pin every image. The default stack uses:
+
+```text
+arc53/docsgpt:0.21.0
+pgvector/pgvector:0.8.6-pg16
+redis:7.4-alpine
+```
+
+The opt-in manifests add `arc53/docsgpt-sandbox:0.21.0` (code-execution sandbox), `qdrant/qdrant:v1.19.1` and `mongo:8.0`. Check the `image:` lines in `deployment/k8s` for the release you deploy, since they change with it. Push the images to your internal registry and point the manifests at it, either by editing the `image:` lines or with an `images:` entry in `kustomization.yaml`:
+
+```yaml
+images:
+  - name: arc53/docsgpt
+    newName: registry.internal/arc53/docsgpt
+```
+
+The default stack stores uploads in an S3-compatible bucket, so run one inside the network (MinIO, Ceph RGW, or similar) or use the [shared-volume option](/Deploying/Kubernetes-Deploying#alternative-a-shared-volume).
 
 ### pip
 
@@ -101,7 +121,7 @@ DEFAULT_CHAT_TOOLS=["memory","scheduler"]
 HF_HUB_OFFLINE=1
 ```
 
-- `VERSION_CHECK=0` stops the worker's anonymous version check.
+- `VERSION_CHECK=0` stops the worker's outbound version check.
 - `TTS_PROVIDER=none` hides the Speak button on answers.
 - `STT_PROVIDER=none` hides the microphone button, and audio files fail to ingest with a message naming the setting. If your model server offers an OpenAI-compatible `/v1/audio/transcriptions` endpoint, keep `STT_PROVIDER=openai` instead: speech-to-text uses `OPENAI_BASE_URL` too.
 - `DEFAULT_CHAT_TOOLS` defaults to `memory`, `read_webpage` and `scheduler`; this list drops `read_webpage`.
@@ -115,7 +135,7 @@ DocsGPT doesn't block outbound connections itself. Enforce that in the network, 
 
 **Hosts with no route out.** The simplest setup: servers whose firewall allows only internal address ranges and your internal DNS.
 
-**Docker.** Attach the services to a network created with `internal: true`, which has no route out of the Docker host. A container on an internal network can't publish ports, so give only a reverse proxy (nginx, Caddy, Traefik) a second, regular network and serve the UI and API through it:
+**Docker.** Attach the services to a network created with `internal: true`, which has no route out of the Docker host. A container on an internal network can't publish ports, so give only a reverse proxy (nginx, Traefik, or Caddy with your own certificate) a second, regular network and serve DocsGPT through it. For the standalone Compose file, save this next to it as `docker-compose.airgap.yaml`:
 
 ```yaml
 networks:
@@ -126,9 +146,8 @@ networks:
 services:
   backend:
     networks: [airgap]
+    ports: !reset []        # published through the proxy instead
   worker:
-    networks: [airgap]
-  frontend:
     networks: [airgap]
   postgres:
     networks: [airgap]
@@ -138,7 +157,12 @@ services:
     image: nginx:stable
     networks: [airgap, edge]
     ports: ["443:443"]
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro   # proxies to http://backend:7091
+      - ./certs:/etc/nginx/certs:ro
 ```
+
+Start both files together: `docker compose -f docker-compose-standalone.yaml -f docker-compose.airgap.yaml up -d`. Leave the `https` profile off; its Caddy service needs the internet to get a certificate. Add the proxy image to the `docker save` list above. The checkout Compose files also have a `frontend` service; put it on `airgap` too and drop its `ports` the same way.
 
 Docker's published ports bypass host firewalls such as `ufw`. If you rely on host rules instead of internal networks, filter container traffic in the `DOCKER-USER` iptables chain.
 

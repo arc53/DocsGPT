@@ -47,6 +47,12 @@ class TestDefinitions:
                 field_keys = {f.key for f in definition.credential_fields}
                 assert secret_keys <= field_keys, definition.key
 
+    def test_sync_connectors_link_their_setup_docs(self):
+        for definition in catalog.all_definitions():
+            if definition.publisher == "built_in" and "sync" in definition.capabilities:
+                assert definition.docs_url, definition.key
+        assert catalog.get_definition("reddit").docs_url.endswith("#reddit")
+
     def test_to_dict_has_no_server_secrets(self):
         payload = catalog.get_definition("google_drive").to_dict()
         assert "required_settings" not in payload

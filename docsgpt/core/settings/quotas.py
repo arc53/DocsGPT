@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import Field, field_validator
+from pydantic_settings import NoDecode
 
-from docsgpt.core.settings._shared import SettingsGroup
+from docsgpt.core.settings._shared import EnvList, SettingsGroup
 
 
 class QuotaSettings(SettingsGroup):
@@ -19,11 +20,12 @@ class QuotaSettings(SettingsGroup):
             "a day starts at 00:00, a week on Monday, a month on the 1st."
         ),
     )
-    QUOTA_UNPRICED_RATE_PER_MILLION: Optional[list[float]] = Field(
+    QUOTA_UNPRICED_RATE_PER_MILLION: Annotated[Optional[list[float]], NoDecode, EnvList()] = Field(
         default=None,
         description=(
             "Fallback `[input, output]` USD rates per 1M tokens for models that declare no price, "
-            "e.g. `[0.5, 1.5]`. Unset, such calls are recorded at $0 and only count toward token quotas."
+            "e.g. `[0.5, 1.5]` or `0.5,1.5`. Unset, such calls are recorded at $0 and only count toward token "
+            "quotas."
         ),
     )
     @field_validator("QUOTA_UNPRICED_RATE_PER_MILLION")

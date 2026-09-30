@@ -119,7 +119,7 @@ class RetrievalConfig(BaseModel):
     retriever: str = "classic"  # RetrieverCreator key
     exposure: str = "prefetch"  # prefetch | agentic_tool (D11)
     chunks: int = 6  # final top-k
-    score_threshold: Optional[float] = None  # pgvector/mongo honor it; others ignore
+    score_threshold: Optional[float] = None  # pgvector/mongo/qdrant/milvus honor it; others ignore
     rephrase_query: bool = True  # toggle ClassicRAG._rephrase_query side-call
     reranker: Optional[dict] = None  # reserved: future cross-encoder/LLM reorder
     prescreen: Optional[dict] = None  # None = off; else PreScreenConfig dict (D12)

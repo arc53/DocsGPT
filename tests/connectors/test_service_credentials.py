@@ -448,6 +448,96 @@ class TestReencrypt:
         assert _row(pg_conn, cid)["status"] == "reconnect_needed"
 
 
+class TestReencryptSavedSecrets:
+    """Secrets saved on tools and custom models, outside connections (v1 blobs)."""
+
+    def _tool(self, conn, config, user="alice") -> str:
+        return str(conn.execute(
+            text(
+                "INSERT INTO user_tools (user_id, name, config) VALUES (:u, 'api_tool', CAST(:c AS jsonb)) "
+                "RETURNING id"
+            ),
+            {"u": user, "c": json.dumps(config)},
+        ).scalar())
+
+    def _model(self, conn, blob, user="alice") -> str:
+        return str(conn.execute(
+            text(
+                "INSERT INTO user_custom_models (user_id, upstream_model_id, display_name, base_url, "
+                "api_key_encrypted) VALUES (:u, 'm', 'M', 'https://api.example.com/v1', :b) RETURNING id"
+            ),
+            {"u": user, "b": blob},
+        ).scalar())
+
+    def _config(self, conn, tool_id) -> dict:
+        return conn.execute(
+            text("SELECT config FROM user_tools WHERE id = CAST(:i AS uuid)"), {"i": tool_id}
+        ).scalar()
+
+    def test_rewrites_tool_and_custom_model_secrets_so_the_previous_key_can_go(self, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "old-key")
+        tool = self._tool(pg_conn, {
+            "server_url": "https://mcp.example.com",
+            "encrypted_credentials": encrypt_credentials({"api_key": "t"}, "alice"),
+            "encrypted_action_secrets": encrypt_credentials({"get": {"headers": {"X": "s"}}}, "alice"),
+        })
+        model = self._model(pg_conn, encrypt_credentials({"api_key": "m"}, "alice"))
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "new-key")
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-key")
+
+        with _patch_service_db(pg_conn):
+            counts = service.reencrypt_saved_secrets()
+
+        assert counts == {"rewritten": 3, "current": 0, "failed": 0}
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
+        config = self._config(pg_conn, tool)
+        assert config["server_url"] == "https://mcp.example.com"
+        assert decrypt_credentials(config["encrypted_credentials"], "alice") == {"api_key": "t"}
+        assert decrypt_credentials(config["encrypted_action_secrets"], "alice") == {"get": {"headers": {"X": "s"}}}
+        blob = pg_conn.execute(
+            text("SELECT api_key_encrypted FROM user_custom_models WHERE id = CAST(:i AS uuid)"), {"i": model}
+        ).scalar()
+        assert decrypt_credentials(blob, "alice") == {"api_key": "m"}
+
+    def test_a_second_run_changes_nothing(self, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.security.encryption import encrypt_credentials
+
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "old-key")
+        tool = self._tool(pg_conn, {"encrypted_credentials": encrypt_credentials({"api_key": "t"}, "alice")})
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "new-key")
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-key")
+        with _patch_service_db(pg_conn):
+            service.reencrypt_saved_secrets()
+            after_first = self._config(pg_conn, tool)
+            counts = service.reencrypt_saved_secrets()
+        assert counts == {"rewritten": 0, "current": 1, "failed": 0}
+        assert self._config(pg_conn, tool) == after_first
+
+    def test_unreadable_secrets_are_counted_and_left_untouched(self, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.security.encryption import encrypt_credentials
+
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "lost-key")
+        blob = encrypt_credentials({"api_key": "t"}, "alice")
+        tool = self._tool(pg_conn, {"encrypted_credentials": blob})
+        model = self._model(pg_conn, blob)
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY", "new-key")
+        monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-key")
+
+        with _patch_service_db(pg_conn):
+            counts = service.reencrypt_saved_secrets()
+
+        assert counts == {"rewritten": 0, "current": 0, "failed": 2}
+        assert self._config(pg_conn, tool)["encrypted_credentials"] == blob
+        assert pg_conn.execute(
+            text("SELECT api_key_encrypted FROM user_custom_models WHERE id = CAST(:i AS uuid)"), {"i": model}
+        ).scalar() == blob
+
+
 class TestRemove:
     def test_keep_sources_delete_tools(self, pg_conn):
         cid = _connection(pg_conn, provider="telegram", auth_kind="api_key", secrets={"credentials": {"token": "t"}})

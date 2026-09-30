@@ -1,0 +1,237 @@
+---
+title: Triggering Agents with Webhooks
+description: Learn how to automate and integrate DocsGPT Agents using webhooks for asynchronous task execution.
+---
+
+import { Callout, Tabs } from 'nextra/components';
+
+# Triggering Agents with Webhooks
+
+Agent Webhooks provide a powerful mechanism to trigger an agent's execution from external systems. Unlike the direct API which provides an immediate response, webhooks are designed for **asynchronous** operations. When you call a webhook, DocsGPT enqueues the agent's task for background processing and immediately returns a `task_id`. You then use this ID to poll for the result.
+
+This workflow is ideal for integrating with services that expect a quick initial response (e.g., form submissions) or for triggering long-running tasks without tying up a client connection.
+
+Each agent has its own unique webhook URL. Generate it in the agent's **Access Details** (the builder's **More actions** menu), or with `GET /api/agent_webhook?id=<agent_id>`. The URL contains a secret token, and anyone who has the URL can run the agent; see [Keep the URL secret](#keep-the-url-secret).
+
+### API Endpoints
+
+- **Webhook URL:** `http://localhost:7091/api/webhooks/agents/{AGENT_WEBHOOK_TOKEN}`
+- **Task Status URL:** `http://localhost:7091/api/task_status`
+
+<Callout type="info">
+For DocsGPT Cloud, use `https://gptcloud.arc53.com/` as the base URL.
+</Callout>
+
+Both endpoints are also in the [REST API reference](/API/reference) and in your instance's own Swagger UI (see the [API overview](/API#swagger-ui-and-the-openapi-document)).
+
+---
+
+## The Webhook Workflow
+
+The process involves two main steps: triggering the task and polling for the result.
+
+### Step 1: Trigger the Webhook
+
+Send an HTTP `POST` request to the agent's unique webhook URL with the required payload. The structure of this payload should match what the agent's prompt and tools are designed to handle.
+
+-   **Method:** `POST`, with a JSON body and `Content-Type: application/json`. Another content type returns `415`; a body that isn't valid JSON, or is `null`, returns `400`.
+-   **Response:** `{"success": true, "task_id": "a1b2c3d4-e5f6-..."}`
+
+The whole JSON body becomes the agent's input, serialized as JSON text; no field has a special meaning. The request `{"question": "Summarize order 4567"}` reaches the agent as the message `{"question": "Summarize order 4567"}`, so write the agent's prompt to expect the payload your system sends.
+
+<Tabs items={['cURL', 'Python', 'JavaScript']}>
+  <Tabs.Tab>
+    ```bash
+    curl -X POST \
+      http://localhost:7091/api/webhooks/agents/your_webhook_token \
+      -H "Content-Type: application/json" \
+      -d '{"question": "Your message to agent"}'
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```python
+    import requests
+
+    WEBHOOK_URL = "http://localhost:7091/api/webhooks/agents/your_webhook_token"
+    payload = {"question": "Your message to agent"}
+
+    try:
+        response = requests.post(WEBHOOK_URL, json=payload)
+        response.raise_for_status()
+        task_id = response.json().get("task_id")
+        print(f"Task successfully created with ID: {task_id}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error triggering webhook: {e}")
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```javascript
+    const webhookUrl = 'http://localhost:7091/api/webhooks/agents/your_webhook_token';
+    const payload = { question: 'Your message to agent' };
+
+    async function triggerWebhook() {
+      try {
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(`HTTP error! ${response.status}`);
+        const data = await response.json();
+        console.log(`Task successfully created with ID: ${data.task_id}`);
+        return data.task_id;
+      } catch (error) {
+        console.error('Error triggering webhook:', error);
+      }
+    }
+    
+    triggerWebhook();
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+### Triggering with GET (query parameters)
+
+The webhook listener also accepts `GET` requests, mapping the query string to the payload. This is handy for systems that can only issue a simple `GET` (for example a "ping this URL" integration):
+
+```bash
+curl "http://localhost:7091/api/webhooks/agents/your_webhook_token?question=Your+message+to+agent"
+```
+
+As with `POST`, the response is a JSON object containing the `task_id`, and the query parameters, as a JSON object, become the agent's input.
+
+### Preventing duplicate triggers (Idempotency-Key)
+
+To make a trigger safe to retry, send an optional `Idempotency-Key` header. If the same key is seen again within 24 hours, DocsGPT does not enqueue a second task — it returns the **original** `task_id` instead. This prevents a retried or double-fired webhook from running the agent twice. If the response is `"task_id": "deduplicated"` instead, a request with the same key was being enqueued at the same moment and its record is already gone, most likely because that enqueue failed, so the agent may not have run at all. There is no task to poll (`/api/task_status` reports `PENDING` for it forever): send the request again.
+
+```bash
+curl -X POST \
+  http://localhost:7091/api/webhooks/agents/your_webhook_token \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: order-4567-created" \
+  -d '{"question": "Your message to agent"}'
+```
+
+### Step 2: Poll for the Result
+
+Once you have the `task_id`, periodically send a `GET` request to the `/api/task_status` endpoint until the task `status` is `SUCCESS` or `FAILURE`.
+
+- **`status`**: The current state of the task: `PENDING`, `PROGRESS`, `SUCCESS` or `FAILURE` (Celery can also report `STARTED` or `RETRY`).
+- **`result`**: `{"current": <percent>}` while the status is `PROGRESS`, the outcome when it is `SUCCESS`, and the error text when it is `FAILURE`.
+
+A successful run nests the agent's output under `result.result`:
+
+```json
+{
+  "status": "SUCCESS",
+  "result": {
+    "status": "success",
+    "result": {
+      "answer": "Order 4567 shipped on May 2...",
+      "sources": [],
+      "tool_calls": [],
+      "thought": ""
+    }
+  }
+}
+```
+
+When the agent owner's [usage quota](/Deploying/Usage-Quotas) is exhausted, the agent does not run, but the task still ends with `SUCCESS`: check `result.status`.
+
+```json
+{
+  "status": "SUCCESS",
+  "result": {"status": "quota_exceeded", "error": "..."}
+}
+```
+
+While a task is `PENDING`, `/api/task_status` returns `503` if no worker answers; a `PENDING` task and no reachable worker usually means the worker isn't running.
+
+Two more cases to handle:
+
+- **A run that fails inside the agent still ends `SUCCESS`.** When the model or a workflow node reports an error during the run, the task finishes with `"status": "success"` and an empty or partial `answer`; the error itself is not in the result. An empty `answer` usually means the run failed; the agent's logs in DocsGPT (**Settings > Logs**) show why.
+- **A crashed run is retried.** If the run raises an error (for example the model provider is unreachable), the worker retries the task up to 3 times, with a growing delay, before it ends `FAILURE`. Each retry runs the agent again from the start, including any tool actions that already took effect, so prefer tools whose writes are safe to repeat.
+
+<Tabs items={['cURL', 'Python', 'JavaScript']}>
+  <Tabs.Tab>
+    ```bash
+    # Replace the task_id with the one you received
+    curl http://localhost:7091/api/task_status?task_id=YOUR_TASK_ID
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```python
+    import requests
+    import time
+
+    STATUS_URL = "http://localhost:7091/api/task_status"
+    task_id = "YOUR_TASK_ID"
+
+    while True:
+        response = requests.get(STATUS_URL, params={"task_id": task_id})
+        data = response.json()
+        status = data.get("status")
+        print(f"Current task status: {status}")
+
+        if status == "SUCCESS":
+            outcome = data["result"]
+            if outcome.get("status") == "success":
+                print(outcome["result"]["answer"])
+            else:
+                print(f"Agent did not run: {outcome}")
+            break
+        if status == "FAILURE":
+            print(f"Run failed: {data.get('result')}")
+            break
+        
+        time.sleep(2)
+    ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+    ```javascript
+    const statusUrl = 'http://localhost:7091/api/task_status';
+    const taskId = 'YOUR_TASK_ID';
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    async function pollForResult() {
+      while (true) {
+        const response = await fetch(`${statusUrl}?task_id=${taskId}`);
+        const data = await response.json();
+        const status = data.status;
+        console.log(`Current task status: ${status}`);
+
+        if (status === 'SUCCESS') {
+          const outcome = data.result;
+          if (outcome.status === 'success') {
+            console.log(outcome.result.answer);
+          } else {
+            console.log('Agent did not run:', outcome);
+          }
+          break;
+        }
+        if (status === 'FAILURE') {
+          console.log('Run failed:', data.result);
+          break;
+        }
+        await sleep(2000);
+      }
+    }
+
+    pollForResult();
+    ```
+  </Tabs.Tab>
+</Tabs>
+
+## How a webhook run behaves
+
+A webhook run happens in the background, with nobody watching it:
+
+- **It acts as the agent's owner.** Tools use the owner's connected accounts and saved credentials. A webhook is the owner's own automation, so the [API write allowlist](/API/agent-api#letting-api-callers-make-changes) that limits API-key and widget callers does not apply to it.
+- **Nobody can approve.** A tool action that needs approval is refused, and the agent is told so and carries on. So are client-side tools and tools whose connection needs signing in again.
+- **Chat-only tools are unavailable.** The `scheduler` tool is not offered to the agent during a webhook run.
+- **Usage counts against the owner's quota.** When it is exhausted, the run is skipped (see the `quota_exceeded` result above).
+
+### Keep the URL secret
+
+The token in the URL is the only credential: anyone who has the URL can run the agent as its owner, with the owner's accounts and quota. The token never changes and there is no way to rotate it yet, so treat the URL like a password: keep it out of client-side code and logs, and call it only from systems you control. If it leaks, the only way to stop it is to delete the agent. You can [export](/API/agent-api#agent-portability-export--import) the agent first, delete it and import the file again; the new agent gets a new webhook URL.

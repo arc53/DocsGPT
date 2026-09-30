@@ -98,6 +98,21 @@ from docsgpt.agents.default_tools import (  # noqa: E402
 
 validate_default_chat_tools()
 
+from docsgpt.guardrails.guardrail_creator import warn_unknown_checks_enabled  # noqa: E402
+
+# An allowlist entry that names no check (a typo, or "none" meant as "off") is
+# ignored, which can leave every check disabled; say so rather than stay silent.
+warn_unknown_checks_enabled()
+
+from docsgpt.core.model_registry import check_model_setup  # noqa: E402
+
+# The API and the Celery worker both import this module, so this runs at the
+# start of each. It logs an ERROR when LLM_PROVIDER names a provider but chats
+# would still go to the hosted DocsGPT API (a missing key, an unknown provider),
+# and a WARNING when LLM_NAME is ignored or no model is registered. It never
+# stops the app from booting; ``docsgpt doctor`` reports the same findings.
+check_model_setup()
+
 app = Flask(__name__)
 app.register_blueprint(user)
 app.register_blueprint(answer)
@@ -190,15 +205,19 @@ def _warn_default_encryption_key() -> None:
 
     if not is_default_encryption_key():
         return
+    rotate = (
+        "Set your own value, put `default-docsgpt-encryption-key` in ENCRYPTION_SECRET_KEY_PREVIOUS, restart, "
+        "then run `docsgpt connectors reencrypt`."
+    )
     if settings.AUTH_TYPE:
         logging.getLogger(__name__).warning(
-            "ENCRYPTION_SECRET_KEY is the public default: connecting services is refused until you set your "
-            "own value (then run `docsgpt connectors reencrypt`)."
+            "ENCRYPTION_SECRET_KEY is the public default: new connections are refused, and tool, MCP and "
+            "custom-model secrets are sealed with the public key. " + rotate
         )
     else:
         logging.getLogger(__name__).warning(
-            "ENCRYPTION_SECRET_KEY is the public default. Stored connector credentials are only as safe as "
-            "that key; set your own value before exposing this install."
+            "ENCRYPTION_SECRET_KEY is the public default. Stored credentials are only as safe as that key; "
+            "change it before exposing this install. " + rotate
         )
 
 

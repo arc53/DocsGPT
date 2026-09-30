@@ -23,7 +23,6 @@ SECRET_FIELDS = (
     "ANTHROPIC_API_KEY",
     "GOOGLE_API_KEY",
     "GROQ_API_KEY",
-    "HUGGINGFACE_API_KEY",
     "NOVITA_API_KEY",
     "OPEN_ROUTER_API_KEY",
     "EMBEDDINGS_KEY",
@@ -132,6 +131,114 @@ class TestValidators:
         assert loaded.OCR_MIN_CHARS_PER_PAGE == 7
 
 
+DEFAULT_TOOLS = ["memory", "read_webpage", "scheduler"]
+
+
+def _list_fields() -> list[str]:
+    """Every settings field whose type is a list (optional or not)."""
+
+    def is_list(annotation) -> bool:
+        if typing.get_origin(annotation) is list:
+            return True
+        return any(is_list(arg) for arg in typing.get_args(annotation))
+
+    return [name for name, field in Settings.model_fields.items() if is_list(field.annotation)]
+
+
+@pytest.mark.unit
+class TestListSettings:
+    """List settings accept a JSON list or comma-separated values, from the environment or a .env file."""
+
+    def test_every_list_setting_takes_the_shared_parsing(self):
+        from pydantic_settings import NoDecode
+
+        from docsgpt.core.settings._shared import EnvList
+
+        names = _list_fields()
+        assert {"DEFAULT_CHAT_TOOLS", "GUARDRAILS_CHECKS_ENABLED", "QUOTA_UNPRICED_RATE_PER_MILLION"} <= set(names)
+        for name in names:
+            metadata = Settings.model_fields[name].metadata
+            assert NoDecode in metadata, name
+            assert any(isinstance(item, EnvList) for item in metadata), name
+
+    @pytest.mark.parametrize(
+        ("name", "raw", "expected"),
+        [
+            ("DEFAULT_CHAT_TOOLS", '["memory","code_executor"]', ["memory", "code_executor"]),
+            ("DEFAULT_CHAT_TOOLS", '[ "memory" , "scheduler" ]', ["memory", "scheduler"]),
+            ("DEFAULT_CHAT_TOOLS", "memory,read_webpage,scheduler", ["memory", "read_webpage", "scheduler"]),
+            ("DEFAULT_CHAT_TOOLS", " memory , read_webpage ,", ["memory", "read_webpage"]),
+            ("DEFAULT_CHAT_TOOLS", "memory", ["memory"]),
+            ("GUARDRAILS_CHECKS_ENABLED", '["secrets","pii"]', ["secrets", "pii"]),
+            ("GUARDRAILS_CHECKS_ENABLED", "secrets, pii", ["secrets", "pii"]),
+            ("GUARDRAILS_CHECKS_ENABLED", "secrets", ["secrets"]),
+            ("QUOTA_UNPRICED_RATE_PER_MILLION", "[0.5, 1.5]", [0.5, 1.5]),
+            ("QUOTA_UNPRICED_RATE_PER_MILLION", "0.5,1.5", [0.5, 1.5]),
+        ],
+    )
+    def test_environment_value(self, monkeypatch, name, raw, expected):
+        monkeypatch.setenv(name, raw)
+        assert getattr(Settings(_env_file=None), name) == expected
+
+    @pytest.mark.parametrize(
+        ("line", "name", "expected"),
+        [
+            ('DEFAULT_CHAT_TOOLS=["memory","scheduler"]', "DEFAULT_CHAT_TOOLS", ["memory", "scheduler"]),
+            ("DEFAULT_CHAT_TOOLS=memory,read_webpage", "DEFAULT_CHAT_TOOLS", ["memory", "read_webpage"]),
+            ("DEFAULT_CHAT_TOOLS=memory", "DEFAULT_CHAT_TOOLS", ["memory"]),
+            ("DEFAULT_CHAT_TOOLS=", "DEFAULT_CHAT_TOOLS", DEFAULT_TOOLS),
+            ("DEFAULT_CHAT_TOOLS=none", "DEFAULT_CHAT_TOOLS", []),
+            ("GUARDRAILS_CHECKS_ENABLED=secrets,pii", "GUARDRAILS_CHECKS_ENABLED", ["secrets", "pii"]),
+            ("QUOTA_UNPRICED_RATE_PER_MILLION=0.5,1.5", "QUOTA_UNPRICED_RATE_PER_MILLION", [0.5, 1.5]),
+        ],
+    )
+    def test_env_file_value(self, monkeypatch, tmp_path, line, name, expected):
+        monkeypatch.delenv(name, raising=False)
+        env = tmp_path / ".env"
+        env.write_text(line + "\n")
+        assert getattr(Settings(_env_file=env), name) == expected
+
+    @pytest.mark.parametrize(
+        ("name", "default"),
+        [
+            ("DEFAULT_CHAT_TOOLS", DEFAULT_TOOLS),
+            ("GUARDRAILS_CHECKS_ENABLED", []),
+            ("QUOTA_UNPRICED_RATE_PER_MILLION", None),
+        ],
+    )
+    @pytest.mark.parametrize("raw", ["", "   "])
+    def test_empty_value_keeps_the_default(self, monkeypatch, name, default, raw):
+        monkeypatch.setenv(name, raw)
+        assert getattr(Settings(_env_file=None), name) == default
+
+    @pytest.mark.parametrize("raw", ["none", "NONE", " None ", "[]"])
+    def test_none_turns_the_default_chat_tools_off(self, monkeypatch, raw):
+        monkeypatch.setenv("DEFAULT_CHAT_TOOLS", raw)
+        assert Settings(_env_file=None).DEFAULT_CHAT_TOOLS == []
+
+    def test_none_is_unset_for_an_optional_list(self, monkeypatch):
+        monkeypatch.setenv("QUOTA_UNPRICED_RATE_PER_MILLION", "None")
+        assert Settings(_env_file=None).QUOTA_UNPRICED_RATE_PER_MILLION is None
+
+    def test_python_list_is_kept(self):
+        assert Settings.model_validate({"DEFAULT_CHAT_TOOLS": ["memory"]}).DEFAULT_CHAT_TOOLS == ["memory"]
+
+    def test_unset_keeps_the_default(self, monkeypatch):
+        monkeypatch.delenv("DEFAULT_CHAT_TOOLS", raising=False)
+        assert Settings(_env_file=None).DEFAULT_CHAT_TOOLS == DEFAULT_TOOLS
+
+    @pytest.mark.parametrize("name", ["DEFAULT_CHAT_TOOLS", "GUARDRAILS_CHECKS_ENABLED"])
+    def test_malformed_json_list_is_rejected(self, monkeypatch, name):
+        monkeypatch.setenv(name, '["memory",')
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None)
+
+    def test_quota_rates_are_still_checked(self, monkeypatch):
+        monkeypatch.setenv("QUOTA_UNPRICED_RATE_PER_MILLION", "0.5")
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None)
+
+
 @pytest.mark.unit
 class TestReference:
     def test_reference_lists_every_setting_once(self):
@@ -231,6 +338,13 @@ class TestClosedChoices:
     def test_unknown_choice_is_rejected(self, name, raw):
         with pytest.raises(ValidationError):
             Settings.model_validate({name: raw})
+
+    def test_lancedb_is_not_a_vector_store(self):
+        """VECTOR_STORE=lancedb was never accepted; its orphaned module and settings are gone too."""
+        import importlib.util
+
+        assert not [name for name in Settings.model_fields if name.startswith("LANCEDB_")]
+        assert importlib.util.find_spec("docsgpt.vectorstore.lancedb") is None
 
     @pytest.mark.parametrize(
         ("name", "raw"),

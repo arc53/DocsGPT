@@ -10,7 +10,7 @@ Thank you for choosing to contribute to DocsGPT! We are all very grateful!
 
 🛠️ **Pull requests** - Suggest changes to our repository, either by working on existing issues or adding new features.
 
-📚 **Wiki** - This is where our documentation resides.
+📚 **Documentation** - The docs site lives in [`docs/`](https://github.com/arc53/DocsGPT/tree/main/docs) and is published at [docs.docsgpt.cloud](https://docs.docsgpt.cloud). See [`docs/README.md`](docs/README.md) to run it locally.
 
 
 ## 🐞 Issues and Pull requests
@@ -34,6 +34,14 @@ Before creating issues, please check out how the latest version of our app looks
 
 For instructions on setting up a development environment, please refer to our [Development Deployment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
 
+**Prerequisites:**
+
+- **Python 3.12** (`pyproject.toml` requires 3.12 or newer; CI runs 3.12).
+- **[uv](https://docs.astral.sh/uv/)** (recommended): `uv sync` installs the locked dependencies, the test tools and the `docsgpt` command. pip works too; see the guide.
+- **Node.js 22** for the frontend (`frontend/.nvmrc`).
+- **Docker**, or your own PostgreSQL and Redis, to run the app: `docker compose -f deployment/docker-compose-dev.yaml up -d` starts both.
+- **PostgreSQL server binaries** (`pg_ctl`, `initdb`) to run the backend tests; see [Running the tests](#running-the-tests).
+
 Tech Stack Overview:
 
 - 🌐 Frontend: Built with React (Vite) ⚛️,
@@ -42,17 +50,19 @@ Tech Stack Overview:
 
 ### 🌐 Frontend Contributions (⚛️ React, Vite)
 
-*   The updated Figma design can be found [here](https://www.figma.com/file/OXLtrl1EAy885to6S69554/DocsGPT?node-id=0%3A1&t=hjWVuxRg9yi5YkJ9-1).  Please try to follow the guidelines.
+*   **Design:** Follow [`frontend/DESIGN.md`](frontend/DESIGN.md): compose the parts in `frontend/src/components/ui/`, pick their look with props, and use the theme tokens. `npm run lint` enforces its rules, and `npm run lint:design` summarises the design-rule findings by rule and by file.
 *   **Coding Style:** We follow a strict coding style enforced by ESLint and Prettier. Please ensure your code adheres to the configuration provided in our repository's `frontend/eslint.config.js` and `frontend/prettier.config.cjs` files.  We recommend configuring your editor with ESLint and Prettier to help with this.
 * **Component Structure:** Strive for small, reusable components.  Favor functional components and hooks over class components where possible.
 * **State Management** If you need to add stores, please use Redux.
+* **Translations:** Every user-visible string, attributes such as `aria-label`, `placeholder`, `title` and `alt` included, goes through `t()` with a key in all seven locale files under `frontend/src/locale/` (`de`, `en`, `es`, `jp`, `ru`, `zh`, `zh-TW`). Admin pages stay English.
+* **Checks:** From `frontend/`, run `npm run lint`, `npm test` and `npm run build` before opening a PR.
 
 ### 🖥 Backend Contributions (🐍 Python)
 
 - Review our issues and contribute to [`/docsgpt`](https://github.com/arc53/DocsGPT/tree/main/docsgpt) 
 - All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
 - Before submitting your Pull Request, ensure it can be queried after ingesting some test data.
-- **Coding Style:** We adhere to the [PEP 8](https://www.python.org/dev/peps/pep-0008/) style guide for Python code. We use `ruff` as our linter and code formatter.  Please ensure your code is formatted correctly and passes `ruff` checks before submitting.
+- **Coding Style:** We adhere to the [PEP 8](https://www.python.org/dev/peps/pep-0008/) style guide for Python code, with lines up to 120 characters. Run `ruff check .` before submitting; CI runs the same lint. Most of the tree is not `ruff format` clean, so don't run `ruff format` over whole files: format only the lines you change.
 - **Type Hinting:**  Please use type hints for all function arguments and return values. This improves code readability and helps catch errors early.  Example:
 
     ```python
@@ -101,12 +111,50 @@ Editor-specific configuration that is tracked:
 
 Personal preferences belong in your user settings; `.vscode/settings.json` and any other file under `.zed/` are ignored by git.
 
-### Testing
+### Running the tests
 
-To run unit tests from the root of the repository, execute:
+Install the test dependencies first. `uv sync` installs them with the `dev` group; with pip, run `pip install -r tests/requirements.txt` next to `docsgpt/requirements.txt`. `pytest-cov` is required, because `pytest.ini` always passes `--cov`. `tests/requirements.txt` also installs the docling extra so its parser tests run; with uv, use `uv sync --extra docling` for the same coverage.
+
+The database tests do not use your running Postgres. `pytest-postgresql` starts a throwaway cluster with `pg_ctl`, so the PostgreSQL server binaries must be on your `PATH` (or reachable through `pg_config --bindir`):
+
+- **macOS:** `brew install postgresql@16`, then `export PATH="$(brew --prefix postgresql@16)/bin:$PATH"` (the formula is keg-only). [Postgres.app](https://postgresapp.com) works too; add its `bin` directory to `PATH`.
+- **Debian/Ubuntu:** `sudo apt install postgresql`, then `export PATH="/usr/lib/postgresql/16/bin:$PATH"` (use the installed version number). The package also starts a server on port 5432, which clashes with the dev compose Postgres; the tests only need the binaries, so you can stop it with `sudo systemctl disable --now postgresql`.
+- Anywhere else, point the plugin at `pg_ctl` with `--postgresql-exec=/path/to/pg_ctl`.
+
+Then run the suite from the repository root:
+
+```shell
+python -m pytest            # or: uv run pytest
+python -m pytest -n auto    # in parallel, as CI does
+python -m pytest tests/api  # one area while you work
 ```
-python -m pytest
+
+On **macOS**, set `KMP_DUPLICATE_LIB_OK=TRUE` (for example `KMP_DUPLICATE_LIB_OK=TRUE python -m pytest`). `faiss-cpu` and `torch` each ship their own OpenMP runtime, and loading both into one process aborts the interpreter with `OMP: Error #15`; Linux and CI are not affected.
+
+### Backend and UI contribution workflows
+
+**Changing the database schema.** The schema is managed by Alembic, in `docsgpt/alembic/versions/`, with one numbered file per revision (`0043_wiki_outside_edits.py`, and so on).
+
+1. Copy the latest revision to `00NN_<slug>.py` with the next number. Set `revision` to the file name without `.py`, and `down_revision` to the previous revision's ID.
+2. Write both `upgrade()` and `downgrade()`, and make them safe to re-run (`IF NOT EXISTS` / `IF EXISTS`), as the existing revisions do.
+3. Mirror the change in the table definitions in `docsgpt/storage/db/models.py`, and read or write the new columns through a repository in `docsgpt/storage/db/repositories/`.
+4. Add a round-trip test, `tests/storage/db/test_migration_00NN.py`, next to the existing ones.
+
+The app applies pending revisions on start (`AUTO_MIGRATE`, on by default); `docsgpt migrate` applies them by hand.
+
+**Adding a setting.** Settings are Pydantic fields in `docsgpt/core/settings/`, one module per domain. Add the field to the group it belongs to, with a `description` (a test fails without one), then regenerate the docs reference:
+
+```shell
+python -m docsgpt.core.settings.reference --write
 ```
+
+That rewrites `docs/content/Deploying/Settings-Reference.mdx`; commit it with your change. `tests/core/test_settings.py` fails while the checked-in page is stale. If operators will commonly set the new value, also add a commented example to `.env-template`.
+
+**Adding or changing a REST route.** REST routes are documented in the docs site from the flask-restx Swagger document; after adding or changing a route, regenerate the docs snapshot with `python -m docsgpt.api.reference --write` (CI fails if `docs/data/swagger.json` is stale). The [REST API Reference](https://docs.docsgpt.cloud/API/reference) page renders that snapshot.
+
+**Adding UI text.** Add the key to all seven files in `frontend/src/locale/`, not only `en.json`; see Frontend Contributions above.
+
+**End-to-end tests.** The Playwright suite in [`tests/e2e/`](tests/e2e/README.md) drives the whole app, with a mock LLM, against a disposable `docsgpt_e2e` database. `scripts/e2e/up.sh` starts the stack natively (mock LLM, API, worker and Vite on their own ports), `scripts/e2e/down.sh` stops it, and `scripts/e2e/bake_template.sh` builds the template database that `reset_db.sh` clones before each run. The scripts expect PostgreSQL on `127.0.0.1:5432` with a `postgres` superuser and a `docsgpt` role (password `docsgpt`), Redis on `127.0.0.1:6379` with `redis-cli` on `PATH`, and `PG_BIN` pointing at the PostgreSQL `bin` directory (the default is a macOS DBngin path). Set `INTERNAL_KEY` (exported, or in `.env`) as well, or uploads fail. `up.sh` serves the API with `flask run`, so the [ASGI-only routes](https://docs.docsgpt.cloud/Deploying/Development-Environment#asgi-only-features) return 404 in that stack. `scripts/qa/durability_e2e.py` is a separate check of the chat write-ahead log, the reconciler and task redelivery; it uses the Postgres and Redis in your `.env`.
 
 ## Workflow 📈
 
@@ -164,13 +212,7 @@ Here's a step-by-step guide on how to contribute to DocsGPT:
    - Once your PR is approved, it will be merged into the main repository.
 
 11. **Testing:**
-   - Before submitting a Pull Request, ensure your code passes all unit tests.
-   - To run unit tests from the root of the repository, execute:
-     ```shell
-     python -m pytest
-     ```
-
-*Note: You should run the unit test only after making the changes to the backend code.*
+   - Before submitting a Pull Request, run the checks for what you changed: `ruff check .` and `python -m pytest` for the backend (see [Running the tests](#running-the-tests)), `npm run lint`, `npm test` and `npm run build` in `frontend/`, and `npm run build` in `docs/` for documentation.
 
 12. **Questions and Collaboration:**
     - Feel free to join our Discord. We're very friendly and welcoming to new contributors, so don't hesitate to reach out.

@@ -1,8 +1,16 @@
-# Pre-built images from Docker Hub (mirrored at ghcr.io/arc53).
-#   DOCSGPT_IMAGE_TAG      develop (default, follows main) or a release, e.g. 0.20.0
+# Pre-built images from Docker Hub (mirrored at ghcr.io/arc53). setup.sh and
+# setup.ps1 run this file. Run it from the repository root:
+#   docker compose --env-file .env -f deployment/docker-compose-hub.yaml up -d
+#   DOCSGPT_IMAGE_TAG      develop (default, follows main) or a release, e.g. 0.21.0;
+#                          pin a release for anything beyond trying it out
 #   DOCSGPT_IMAGE_VARIANT  empty (default, slim) or -docling: docling parser engine,
 #                          its models, and tesseract baked in (OCR-ready)
-# Set them in ../.env or the shell. deployment/docker-compose-standalone.yaml runs
+#   DOCSGPT_BIND           interface the API (7091) and UI (5173) are published on:
+#                          127.0.0.1 (default, this machine only) or 0.0.0.0 (every
+#                          interface; set AUTH_TYPE first, see Deploying/Security)
+# Set them in ../.env and pass it with --env-file .env (Compose otherwise looks
+# for deployment/.env), or in the shell. Postgres and Redis are
+# published on 127.0.0.1 only, for a backend run on the host. deployment/docker-compose-standalone.yaml runs
 # the same images without a git checkout, with the backend serving the UI on one port.
 name: docsgpt-oss
 services:
@@ -18,15 +26,13 @@ services:
       - VITE_BASE_URL
       - VITE_GOOGLE_CLIENT_ID
       - VITE_GOOGLE_PICKER_API_KEY
-      - VITE_SHARE_POINT_CLIENT_ID
-      - VITE_CONFLUENCE_CLIENT_ID
       - VITE_NOTIFICATION_TEXT
       - VITE_NOTIFICATION_LINK
       - VITE_ENABLE_VOICE_INPUT
       - VITE_DISABLE_SOURCE_FE
       - VITE_USE_V
     ports:
-      - "5173:5173"
+      - "${DOCSGPT_BIND:-127.0.0.1}:5173:5173"
     depends_on:
       - backend
 
@@ -42,7 +48,7 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     ports:
-      - "7091:7091"
+      - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
     volumes:
       # Host data stays under application/ (the old package directory) for this
       # release so an upgraded checkout keeps its indexes; it moves with the
@@ -86,14 +92,14 @@ services:
   # NOTE: sandboxed code execution (the `code_executor` / `artifact_generator`
   # tools) is an OPT-IN feature and is intentionally NOT part of this default
   # stack. To run it, layer the sandbox overlay on top of this file:
-  #   docker compose -f docker-compose-hub.yaml \
-  #     -f optional/docker-compose.optional.sandbox.yaml up
+  #   docker compose --env-file .env -f deployment/docker-compose-hub.yaml \
+  #     -f deployment/optional/docker-compose.optional.sandbox.yaml up -d
   # See deployment/sandbox/README.md.
 
   redis:
     image: redis:6-alpine
     ports:
-      - 6379:6379
+      - "127.0.0.1:6379:6379"
 
   postgres:
     image: postgres:16-alpine
@@ -102,7 +108,7 @@ services:
       - POSTGRES_PASSWORD=docsgpt
       - POSTGRES_DB=docsgpt
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

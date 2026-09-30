@@ -37,6 +37,11 @@ import RunDetailDrawer from './RunDetailDrawer';
 import ScheduleFormModal from './ScheduleFormModal';
 import ScheduleRow from './ScheduleRow';
 import {
+  approvalGatedTools,
+  type AgentToolSummary,
+  type ApprovalToolInfo,
+} from './toolApproval';
+import {
   createSchedule,
   deleteSchedule,
   loadSchedulesForAgent,
@@ -122,12 +127,32 @@ export default function SchedulesView() {
     dispatch(loadSchedulesForAgent({ agentId, token }));
   }, [dispatch, agentId, token]);
 
-  const agentToolIds = useMemo<string[]>(() => {
+  // The caller's tools with their actions, to tell which of the agent's
+  // tools need approval. A failed read lists every tool as needing it.
+  const [userTools, setUserTools] = useState<ApprovalToolInfo[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    userService
+      .getUserTools(token)
+      .then((response: Response) => (response.ok ? response.json() : null))
+      .then((data: { tools?: ApprovalToolInfo[] } | null) => {
+        if (!cancelled) setUserTools(data?.tools ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setUserTools([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const approvalTools = useMemo(() => {
     if (!agent) return [];
-    const fromDetails = (agent.tool_details ?? []).map((d) => d.id);
-    if (fromDetails.length > 0) return fromDetails;
-    return agent.tools ?? [];
-  }, [agent]);
+    const details: AgentToolSummary[] = agent.tool_details?.length
+      ? agent.tool_details
+      : (agent.tools ?? []).map((id) => ({ id, name: id }));
+    return approvalGatedTools(details, userTools);
+  }, [agent, userTools]);
 
   const recurring = useMemo(
     () => schedules.filter((s) => s.trigger_type === 'recurring'),
@@ -177,11 +202,10 @@ export default function SchedulesView() {
       }
       setModalOpen(false);
       setEditing(null);
-    } catch (err) {
-      console.error(err);
     } finally {
       setSubmitting(false);
     }
+    // A refused save rejects to the modal, which keeps it open and shows why.
   };
 
   const activeCount = schedules.filter((s) => s.status === 'active').length;
@@ -352,7 +376,7 @@ export default function SchedulesView() {
                 key={editing?.id ?? 'create'}
                 open={modalOpen}
                 initial={editing}
-                agentToolIds={agentToolIds}
+                approvalTools={approvalTools}
                 onClose={closeModal}
                 onSubmit={handleSubmit}
                 submitting={submitting}

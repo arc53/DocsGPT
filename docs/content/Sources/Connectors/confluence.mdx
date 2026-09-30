@@ -1,0 +1,71 @@
+---
+title: Confluence Connector
+description: Connect your Confluence Cloud workspace as an external knowledge base to upload and process pages directly.
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# Confluence Connector
+
+Connect your Confluence Cloud workspace to upload and process pages directly as an external knowledge base. Supports page content and attachments (PDFs, Office files, text files, images, and more). Authentication is handled via Atlassian OAuth 2.0 with automatic token refresh.
+
+<Callout type="info">
+Members connect this service from **Settings > Connectors**, and one sign-in serves every source that uses it. Admins can check what is still missing in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+</Callout>
+
+## Setup
+
+<Steps>
+
+### Step 1: Create an OAuth 2.0 App in Atlassian
+
+1. Go to [developer.atlassian.com/console/myapps](https://developer.atlassian.com/console/myapps/) and click **Create** > **OAuth 2.0 integration**
+2. Under **Authorization**, add a callback URL:
+   - Local: `http://127.0.0.1:7091/api/connectors/callback` (the default `CONNECTOR_REDIRECT_BASE_URI`; Admin > Connectors shows the exact value to copy)
+   - Production: `https://yourdomain.com/api/connectors/callback` (the value of `CONNECTOR_REDIRECT_BASE_URI`, registered as-is)
+
+### Step 2: Configure Permissions
+
+In your app settings, go to **Permissions**:
+
+1. Add the **Confluence API** and enable these scopes:
+   - `read:page:confluence`
+   - `read:space:confluence`
+   - `read:attachment:confluence`
+2. Add the **User identity API** and enable `read:me`. DocsGPT reads the signed-in account's name and email with it, and Atlassian rejects the sign-in if the app lacks a scope DocsGPT requests.
+
+DocsGPT also requests `offline_access` to get a refresh token; you don't add it in the console.
+
+### Step 3: Get Your Credentials
+
+Go to **Settings** in your app to find the **Client ID** and **Secret**. Copy both.
+
+### Step 4: Configure Environment Variables
+
+Add to your backend `.env` file:
+
+```env
+CONFLUENCE_CLIENT_ID=your-atlassian-client-id
+CONFLUENCE_CLIENT_SECRET=your-atlassian-client-secret
+```
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `CONFLUENCE_CLIENT_ID` | Client ID from your Atlassian OAuth app | Yes |
+| `CONFLUENCE_CLIENT_SECRET` | Client secret from your Atlassian OAuth app | Yes |
+| `CONNECTOR_ALLOWED_ORIGINS` | Comma-separated frontend origins allowed to receive the sign-in result, e.g. `https://docsgpt.example.com`. Not needed when the frontend shares the API origin, or in local dev when the callback is on `localhost`/`127.0.0.1` and the frontend runs on port 5173 | When the frontend is on its own origin |
+
+### Step 5: Restart and Use
+
+Restart your application, then go to **Settings > Connectors** and pick **Confluence**. You'll be redirected to Atlassian to sign in, then can browse spaces and select pages to process.
+
+</Steps>
+
+## Troubleshooting
+
+- **Option not appearing** — Check that `CONFLUENCE_CLIENT_ID` and `CONFLUENCE_CLIENT_SECRET` are set in the backend `.env` and the API was restarted, then check in **Admin > Connectors** that Confluence is enabled and its setup guide lists no missing settings.
+- **Sign-in popup closes but the account never connects** — The frontend origin is not allowed to receive the result. Add it to `CONNECTOR_ALLOWED_ORIGINS` in the backend `.env`.
+- **Authentication failed** — Check that the callback URL matches exactly and equals `CONNECTOR_REDIRECT_BASE_URI`, with no query parameters.
+- **No accessible sites** — Ensure the authenticating user has access to at least one Confluence Cloud site.
+- **Permission denied, or Atlassian refuses the sign-in** — Verify that the three Confluence API scopes and the User identity API `read:me` scope are enabled in your Atlassian app settings.

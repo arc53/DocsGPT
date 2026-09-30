@@ -215,6 +215,15 @@ def _load_defaults(directory: Path) -> Dict[str, List[str]]:
     return parsed.attachment_aliases
 
 
+# Providers DocsGPT used to ship. A model YAML still naming one (an operator's
+# MODELS_CONFIG_DIR file written for an older release) is skipped with a
+# warning instead of stopping the app from booting.
+REMOVED_PROVIDERS: Dict[str, str] = {
+    "huggingface": "it never had an LLM class; serve the model over an OpenAI-compatible API (TGI, vLLM) instead",
+    "llama.cpp": "run llama.cpp's OpenAI-compatible server and use an openai_compatible YAML or OPENAI_BASE_URL",
+}
+
+
 def _resolve_provider_enum(name: str, source: Path) -> ModelProvider:
     try:
         return ModelProvider(name)
@@ -282,7 +291,17 @@ def _build_model(
 
 def _load_one_yaml(
     path: Path, aliases: Dict[str, List[str]]
-) -> ProviderCatalog:
+) -> Optional[ProviderCatalog]:
+    """Parse one model YAML into a catalog.
+
+    Returns:
+        The catalog, or ``None`` when the file names a provider in
+        :data:`REMOVED_PROVIDERS` (logged as a warning and skipped).
+
+    Raises:
+        ModelYAMLError: The file is not valid YAML, does not match the
+            schema, or names a provider that never existed.
+    """
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as e:
@@ -291,6 +310,15 @@ def _load_one_yaml(
         parsed = _ProviderFile.model_validate(raw)
     except Exception as e:
         raise ModelYAMLError(f"{path}: schema error: {e}") from e
+
+    if parsed.provider in REMOVED_PROVIDERS:
+        logger.warning(
+            "%s: skipped; provider %r was removed from DocsGPT (%s).",
+            path,
+            parsed.provider,
+            REMOVED_PROVIDERS[parsed.provider],
+        )
+        return None
 
     provider_enum = _resolve_provider_enum(parsed.provider, path)
     models = [
@@ -404,6 +432,8 @@ def load_model_yamls(directories: Sequence[Path]) -> List[ProviderCatalog]:
             if path.name == DEFAULTS_FILENAME:
                 continue
             catalog = _load_one_yaml(path, aliases)
+            if catalog is None:
+                continue
             catalogs.append(catalog)
             for m in catalog.models:
                 prior = seen_ids.get(m.id)

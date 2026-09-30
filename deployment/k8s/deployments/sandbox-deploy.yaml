@@ -23,9 +23,8 @@
 #
 # The image is built from deployment/sandbox and published as
 # arc53/docsgpt-sandbox (also ghcr.io/arc53/docsgpt-sandbox) by the release
-# workflow, with `develop` tracking main. It is pulled here by the floating
-# `latest` tag: pin it to a release tag if you would rather not pick up a new
-# runner runtime on a pod restart.
+# workflow, with `develop` tracking main. It is pinned here to the same release
+# as arc53/docsgpt in docsgpt-deploy.yaml; change both tags together.
 #
 # On Linux prod, schedule this onto a gVisor `runsc` RuntimeClass for kernel
 # isolation (uncomment `runtimeClassName` once the node has it installed).
@@ -34,7 +33,7 @@
 # isolated by working directory only (per-session cwd) — not by a kernel/OS
 # boundary. This image ships an env-scrubbing kernelspec under the distinct name
 # "docsgpt-python"; the app (docsgpt-api / docsgpt-worker) MUST select it via
-# SANDBOX_KERNEL_NAME=docsgpt-python (already set in docsgpt-deploy.yaml) so the
+# SANDBOX_KERNEL_NAME=docsgpt-python (add it as shown above) so the
 # scrubber runs. The stock "python3" spec stays untouched, so it can never
 # shadow the scrubbing kernel. Sibling workspaces are still readable under the
 # shared uid and kernels share one address space. Do NOT inject app secrets
@@ -66,7 +65,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: docsgpt-sandbox
-          image: arc53/docsgpt-sandbox
+          image: arc53/docsgpt-sandbox:0.21.0
           ports:
             - containerPort: 8888
           securityContext:

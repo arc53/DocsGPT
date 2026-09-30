@@ -125,6 +125,7 @@ class TestUpFirstInstall:
         assert env["DOCSGPT_BIND"] == "0.0.0.0"
         assert env["AUTH_TYPE"] == "simple_jwt"
         assert env["LLM_PROVIDER"] == "anthropic"
+        assert env["API_URL"] == "http://192.168.1.10:7091", "the address the installer prints"
         assert env["API_KEY"] == "sk-ant"
         out = capsys.readouterr().out
         assert "http://192.168.1.10:7091" in out
@@ -137,6 +138,7 @@ class TestUpFirstInstall:
         assert env["COMPOSE_PROFILES"] == "https"
         assert env["DOCSGPT_DOMAIN"] == "docs.example.com"
         assert env["LLM_PROVIDER"] == "openai"
+        assert env["API_URL"] == "https://docs.example.com"
 
     def test_a_missing_api_key_is_an_error_without_a_terminal(self, tmp_path, monkeypatch):
         monkeypatch.delenv("DOCSGPT_API_KEY", raising=False)
@@ -182,7 +184,24 @@ class TestUpFirstInstall:
 
     def test_a_local_install_does_not_warn(self, tmp_path, capsys):
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context()) == 0
-        assert "plain HTTP" not in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "plain HTTP" not in err
+        assert "ENCRYPTION_SECRET_KEY" not in err
+
+    def test_an_existing_database_with_auth_and_no_encryption_key_is_pointed_at_the_rotation(self, tmp_path, capsys):
+        """Its key is not generated (stored credentials would be lost), but connecting services is refused."""
+        envfile.update(tmp_path / ".env", {"AUTH_TYPE": "simple_jwt", "DOCSGPT_BIND": "0.0.0.0"})
+        docker = FakeDocker(volumes={"docsgpt_postgres_data"})
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(docker)) == 0
+        assert "ENCRYPTION_SECRET_KEY" not in envfile.read(tmp_path / ".env")
+        err = " ".join(capsys.readouterr().err.split())
+        assert "ENCRYPTION_SECRET_KEY" in err
+        assert "docsgpt connectors reencrypt" in err
+        # Run from anywhere: the command names the stack's Compose file.
+        assert f"docker compose -f {tmp_path / 'docker-compose.yaml'} exec backend" in err
+        # Only connections are refused; tool secrets are still stored, under the public key.
+        assert "public default" in err
+        assert "then remove ENCRYPTION_SECRET_KEY_PREVIOUS" in err
 
     def test_an_unhealthy_start_points_at_the_logs(self, tmp_path, capsys):
         assert _run(["up", "--yes", "--dir", str(tmp_path)], _context(healthy=False)) == 1
@@ -205,6 +224,25 @@ class TestUpAgain:
         for key in ("INTERNAL_KEY", "JWT_SECRET_KEY", "POSTGRES_PASSWORD"):
             assert after[key] == before[key]
         assert context.prompter.questions == [], "a configured install is not asked again"
+
+    def test_the_api_url_it_wrote_is_recorded_and_follows_the_lan_address(self, tmp_path):
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "network"], _context()) == 0
+        record = json.loads((tmp_path / "install.json").read_text())
+        assert record["api_url"] == "http://192.168.1.10:7091"
+
+        context = _context(docker=FakeDocker(volumes={"docsgpt_postgres_data"}))
+        context.lan_ip = lambda: "192.168.1.77"
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], context) == 0
+        assert envfile.read(tmp_path / ".env")["API_URL"] == "http://192.168.1.77:7091"
+        assert json.loads((tmp_path / "install.json").read_text())["api_url"] == "http://192.168.1.77:7091"
+
+    def test_an_operator_api_url_is_not_recorded_as_its_own(self, tmp_path):
+        assert _run(["up", "--yes", "--dir", str(tmp_path), "--expose", "network"], _context()) == 0
+        envfile.update(tmp_path / ".env", {"API_URL": "https://proxy.example.com"})
+        context = _context(docker=FakeDocker(volumes={"docsgpt_postgres_data"}))
+        assert _run(["up", "--yes", "--dir", str(tmp_path)], context) == 0
+        assert envfile.read(tmp_path / ".env")["API_URL"] == "https://proxy.example.com"
+        assert json.loads((tmp_path / "install.json").read_text())["api_url"] == "http://192.168.1.10:7091"
 
     def test_leaving_the_domain_removes_caddy_before_starting(self, tmp_path):
         """With the https profile off, `up --remove-orphans` alone would leave Caddy on ports 80 and 443."""

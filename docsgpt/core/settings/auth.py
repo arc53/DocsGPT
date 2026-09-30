@@ -37,12 +37,17 @@ class AuthSettings(SettingsGroup):
     ENCRYPTION_SECRET_KEY_PREVIOUS: Optional[str] = Field(
         default=None,
         description=(
-            "Previous ENCRYPTION_SECRET_KEY, tried when a stored credential was encrypted with it. Set it while "
-            "rotating the key, run `docsgpt connectors reencrypt`, then remove it."
+            "Previous ENCRYPTION_SECRET_KEY, tried when a stored credential (a connection, a tool or custom-model "
+            "secret) was encrypted with it. Set it while rotating the key, run `docsgpt connectors reencrypt`, and "
+            "remove it once the command reports nothing unreadable."
         ),
     )
     INTERNAL_KEY: Optional[str] = Field(
-        default=None, description="Internal API key for worker-to-backend authentication."
+        default=None,
+        description=(
+            "Required: shared secret the worker uses to hand finished indexes and files to the API. Set the same "
+            "value on the API and the worker; without it the API rejects the worker's uploads and every ingest fails."
+        ),
     )
 
     # OIDC SSO (AUTH_TYPE=oidc): any OpenID Connect IdP with discovery (Authentik, Keycloak, ...).

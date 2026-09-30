@@ -1,0 +1,28 @@
+---
+title: Linear Connector
+description: Sign in to Linear once to give agents Linear's tools and sync issues and project documents into Knowledge.
+---
+
+import { Callout } from 'nextra/components'
+
+# Linear Connector
+
+One Linear sign-in gives agents Linear's tools and can sync Linear into Knowledge. Linear is an MCP preset: DocsGPT signs in to Linear's own MCP server, so it needs no server settings and nobody registers a Linear OAuth app.
+
+<Callout type="info">
+Members connect this service from **Settings > Connectors**. See [Connectors](/Sources/Connectors#linear) for details.
+</Callout>
+
+## Connect
+
+In **Settings > Connectors**, pick **Linear** and sign in with your Linear account. Tokens are renewed automatically. If renewing fails, the connection is marked **Reconnect needed** and its sources pause until you sign in again.
+
+## Sync into Knowledge
+
+After signing in, turn on **Sync into Knowledge** and choose what to sync, or leave it off to keep only the tools. A connection's page adds more with **Sync more content**.
+
+- **Teams and projects.** Each picked team or project brings its issues. An issue in both is synced once.
+- **Include comments** (on by default) adds each issue's comments to it.
+- **Include project documents** syncs the Linear documents of the picked projects.
+
+Each issue becomes one document with its identifier, title, state, assignee, priority, labels, description and comments, filed under its team's key (`ENG/ENG-123.md`). Archived issues are left out. Each sync reads up to 500 issues and 100 documents, most recently updated first, so for a large workspace pick teams or projects rather than everything.

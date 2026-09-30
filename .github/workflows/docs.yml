@@ -1,0 +1,86 @@
+name: Docs site
+
+# Builds the documentation site on every change to docs/, checks that
+# public/llms.txt matches the sidebar, and checks every internal link and
+# #anchor in the built pages, offline. A weekly job checks the external links
+# in the docs and the top-level Markdown files; it reports and never fails.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and check internal links
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check that llms.txt is up to date
+        run: npm run llms:check
+
+      - name: Build the site
+        run: npm run build
+
+      - name: Check internal links and anchors
+        run: node scripts/check-links.mjs
+
+  external-links:
+    name: Check external links
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Only http(s) links are checked: --root-dir turns the docs' root-relative
+      # links into local paths, which --scheme then leaves out (the build job
+      # covers those). Code blocks are skipped, so example URLs are not fetched.
+      - name: Check external links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          fail: false
+          args: >-
+            --no-progress
+            --scheme https --scheme http
+            --root-dir ${{ github.workspace }}/docs/content
+            --exclude-loopback
+            --exclude '^https?://([a-z0-9-]+\.)*example\.(com|org)'
+            --exclude 'your-'
+            --accept '100..=103,200..=299,403,429'
+            --max-retries 3
+            'README.md' 'HACKTOBERFEST.md' 'CONTRIBUTING.md' 'docs/README.md'
+            'docs/content/**/*.mdx'

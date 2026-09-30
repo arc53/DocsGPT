@@ -2,21 +2,31 @@
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 from pydantic import Field
 
-from docsgpt.core.paths import home_dir
 from docsgpt.core.settings._shared import SettingsGroup
 
 
 class LLMSettings(SettingsGroup):
     """Which model answers, how it is reached, and provider-specific behaviour."""
 
-    LLM_PROVIDER: str = Field(default="docsgpt", description="LLM provider key, e.g. openai, anthropic, docsgpt.")
+    LLM_PROVIDER: str = Field(
+        default="docsgpt",
+        description=(
+            "Provider whose first model is the default when LLM_NAME names none: docsgpt, openai, anthropic, "
+            "google, groq, openrouter, novita or openai_compatible. For your own OpenAI-compatible server use "
+            "openai with OPENAI_BASE_URL."
+        ),
+    )
     LLM_NAME: Optional[str] = Field(
-        default=None, description="Model name for the provider; with openai, e.g. gpt-4 or gpt-3.5-turbo."
+        default=None,
+        description=(
+            "Default model id. For a cloud provider it must be an id from docsgpt/core/models/*.yaml or a "
+            "MODELS_CONFIG_DIR YAML, e.g. gpt-5.5; any other name is ignored with a warning. With "
+            "OPENAI_BASE_URL it is required and names the model(s) the server serves, comma-separated."
+        ),
     )
     API_KEY: Optional[str] = Field(default=None, description="LLM API key used by LLM_PROVIDER.")
 
@@ -25,7 +35,6 @@ class LLMSettings(SettingsGroup):
     ANTHROPIC_API_KEY: Optional[str] = Field(default=None, description="Anthropic API key.")
     GOOGLE_API_KEY: Optional[str] = Field(default=None, description="Google AI API key.")
     GROQ_API_KEY: Optional[str] = Field(default=None, description="Groq API key.")
-    HUGGINGFACE_API_KEY: Optional[str] = Field(default=None, description="Hugging Face API key.")
     OPEN_ROUTER_API_KEY: Optional[str] = Field(default=None, description="OpenRouter API key.")
     NOVITA_API_KEY: Optional[str] = Field(default=None, description="Novita API key.")
 
@@ -38,14 +47,16 @@ class LLMSettings(SettingsGroup):
     OPENAI_BASE_URL: Optional[str] = Field(
         default=None, description="Base URL for OpenAI-compatible model servers."
     )
-    LLM_PATH: str = Field(
-        default=os.path.join(str(home_dir()), "models/docsgpt-7b-f16.gguf"),
-        description="Path to the local GGUF model used by the llama.cpp provider.",
-    )
 
     FALLBACK_LLM_PROVIDER: Optional[str] = Field(default=None, description="Provider for the fallback LLM.")
     FALLBACK_LLM_NAME: Optional[str] = Field(default=None, description="Model name for the fallback LLM.")
-    FALLBACK_LLM_API_KEY: Optional[str] = Field(default=None, description="API key for the fallback LLM.")
+    FALLBACK_LLM_API_KEY: Optional[str] = Field(
+        default=None,
+        description=(
+            "API key for the fallback LLM; unset sends API_KEY. Set it whenever FALLBACK_LLM_PROVIDER differs "
+            "from LLM_PROVIDER, or the primary provider's key goes to the fallback provider."
+        ),
+    )
     TITLE_MODEL_ID: Optional[str] = Field(
         default=None, description="Optional cheaper model for conversation titles; unset reuses the answer model."
     )
@@ -63,7 +74,23 @@ class LLMSettings(SettingsGroup):
         default={"system_prompt": 500, "current_query": 500, "safety_buffer": 1000},
         description="Tokens held back from the context window for the system prompt, the query and a safety buffer.",
     )
-    CACHE_REDIS_URL: str = Field(default="redis://localhost:6379/2", description="Redis URL for the LLM cache.")
+    CACHE_REDIS_URL: str = Field(
+        default="redis://localhost:6379/2",
+        description=(
+            "Redis URL for the LLM cache, the live event and notification streams, SSO state and token denylist, "
+            "device pairing, MCP OAuth, the API session store, live speech-to-text and the version check."
+        ),
+    )
+    LLM_CACHE_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Cache LLM answers in Redis (CACHE_REDIS_URL) and replay them for an identical request: same model, "
+            "messages and generation parameters. Calls that pass tools are never cached. False turns it off."
+        ),
+    )
+    LLM_CACHE_TTL: int = Field(
+        default=1800, gt=0, description="Seconds a cached LLM answer is kept in Redis before it expires."
+    )
 
     # OpenAI Responses API.
     OPENAI_RESPONSES_STORE: bool = Field(

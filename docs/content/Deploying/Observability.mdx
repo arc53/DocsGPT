@@ -8,10 +8,21 @@ import { Callout } from 'nextra/components'
 # Observability
 
 DocsGPT bundles the OpenTelemetry SDK and auto-instrumentation packages
-in `docsgpt/requirements.txt` — they install with the rest of the
-backend deps. Telemetry is **off by default**; opt in by prefixing the
-launch command with `opentelemetry-instrument` and setting OTLP env
-vars.
+as core dependencies (`pyproject.toml`), so they install with the rest of
+the backend and ship in the image. OpenTelemetry export is **off by default**; opt in by
+prefixing the launch command with `opentelemetry-instrument` and setting
+OTLP env vars.
+
+Two other things are on by default. [Execution traces](#execution-traces)
+are stored locally in Postgres and leave the instance only through an
+exporter you configure. The **version check** is outbound: when the
+worker starts and every 7 hours it sends its version, a random
+`instance_id` kept in the database, the Python version, the platform
+(`sys.platform`) and a client name to `https://gptcloud.arc53.com/api/check`,
+reusing a recent answer cached in Redis instead where it has one. Security
+advisories in the answer appear in the worker log, and high or critical
+ones also print a banner to the worker's console. Turn it off with
+`VERSION_CHECK=0`.
 
 Auto-instrumentation covers Flask, Starlette, Celery, SQLAlchemy,
 psycopg, Redis, requests, and Python logging. Agent runs, LLM calls,
@@ -35,31 +46,76 @@ OTEL_RESOURCE_ATTRIBUTES=service.name=docsgpt-backend,deployment.environment=pro
 ```
 
 Then prefix the process command with `opentelemetry-instrument`. The
-simplest way is a compose override (no image rebuild):
+simplest way is a Compose override file, with no image rebuild. Save this
+as `docker-compose.otel.yaml` next to your Compose file:
 
 ```yaml
-# deployment/docker-compose.override.yaml
+# docker-compose.otel.yaml
 services:
   backend:
-    command: >
-      opentelemetry-instrument gunicorn -w 1 -k uvicorn_worker.UvicornWorker
-      --bind 0.0.0.0:7091 --config docsgpt/gunicorn_conf.py
-      docsgpt.asgi:asgi_app
+    # The image's CMD from docsgpt/Dockerfile behind opentelemetry-instrument.
+    # Keep the rest in sync with the Dockerfile when you upgrade.
+    command:
+      - opentelemetry-instrument
+      - gunicorn
+      - -w
+      - "1"
+      - -k
+      - docsgpt.gunicorn_worker.BoundedDrainUvicornWorker
+      - --bind
+      - 0.0.0.0:7091
+      - --timeout
+      - "180"
+      - --graceful-timeout
+      - "120"
+      - --keep-alive
+      - "5"
+      - --worker-tmp-dir
+      - /dev/shm
+      - --max-requests
+      - "5000"
+      - --max-requests-jitter
+      - "500"
+      - --config
+      - docsgpt/gunicorn_conf.py
+      - docsgpt.asgi:asgi_app
     environment:
       - OTEL_SERVICE_NAME=docsgpt-backend
   worker:
-    command: opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B
+    # The bundled worker command behind opentelemetry-instrument.
+    command: opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
     environment:
       - OTEL_SERVICE_NAME=docsgpt-celery-worker
 ```
+
+Compose loads an override file by itself only when no `-f` is given, and
+the commands in these docs all pass `-f`, so name it after the main file
+on every command, `up` included. For the checkout Compose files, with the override saved in
+`deployment/`:
+
+```bash
+docker compose --env-file .env -f deployment/docker-compose-hub.yaml -f deployment/docker-compose.otel.yaml up -d
+```
+
+For the standalone file, run
+`docker compose -f docker-compose-standalone.yaml -f docker-compose.otel.yaml up -d`
+in its folder. A `docsgpt up` stack doesn't know about the override:
+`docsgpt up`, `docsgpt restart` and `docsgpt upgrade` start it without
+tracing, so start it with
+`docker compose -f ~/.docsgpt/server/docker-compose.yaml -f ~/.docsgpt/server/docker-compose.otel.yaml up -d`
+afterwards.
 
 For local dev, prepend `dotenv run --` so the `OTEL_*` vars from `.env`
 reach `opentelemetry-instrument` before it boots the SDK:
 
 ```bash
-dotenv run -- opentelemetry-instrument flask --app docsgpt/app.py run --port=7091
-dotenv run -- opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO --pool=solo
+dotenv run -- opentelemetry-instrument uvicorn docsgpt.asgi:asgi_app --port 7091
+dotenv run -- opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B --pool=solo
 ```
+
+Trace the ASGI app rather than `flask run`, which serves only the Flask app: the
+[ASGI-only routes](/Deploying/Development-Environment#asgi-only-features) return 404 there and
+their spans never appear. `-B` keeps the beat scheduler running, as in production.
 
 
 <Callout type="info" emoji="ℹ️">
@@ -91,7 +147,8 @@ the MCP `search_docs` tool, and graph builds.
 Traces are stored in the `request_traces` table and shown in the app: open
 **Settings → Logs** (or an agent's **Logs** tab), expand an entry and choose
 **View trace** to see a waterfall of every step with its timing, tokens,
-cost and details.
+cost and details. See [Analytics and Logs](/Using/analytics-and-logs) for a
+user's guide to those pages.
 
 Stored traces keep short previews — tool arguments and results, retrieved
 chunk titles and snippets, rephrased queries, answer excerpts — truncated
@@ -181,14 +238,13 @@ service-name override.
 - The Dockerfile uses `gunicorn -w 1`. If you raise worker count, move
   SDK init into a `post_worker_init` hook to avoid one-thread-per-process
   exporter contention.
-- `asgi.py` wraps Flask in Starlette's `WSGIMiddleware`. Both
-  instrumentors are installed, so each request produces a Starlette
-  span enclosing a Flask span. Drop
-  `opentelemetry-instrumentation-flask` from `requirements.txt` if the
-  duplication is noisy.
+- `asgi.py` mounts the Flask app inside a Starlette app through
+  a2wsgi's `WSGIMiddleware`. Both instrumentors are installed, so each
+  request produces a Starlette span enclosing a Flask span. If the
+  duplication is noisy, uninstall `opentelemetry-instrumentation-flask`
+  in your image, or set
+  `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=flask`. Don't edit
+  `docsgpt/requirements.txt`: it is generated from `uv.lock`.
 - OTEL packages add ~50 MB to the image. They install on every build —
   the runtime cost is zero unless you set `opentelemetry-instrument` on
   the command and set the OTLP env vars.
-- The OTEL exporter ecosystem currently caps `protobuf` at `<7`, so the
-  backend runs on protobuf 6.x. This will catch up in a future OTEL
-  release.

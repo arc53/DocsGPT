@@ -361,6 +361,7 @@ DENIED: dict[str, tuple[str, ...]] = {
     # Who may edit a wiki from outside the app is the owner's call in a session.
     "/api/sources/<string:source_id>/wiki/settings": ("PUT",),
     "/swagger.json": ("*",),
+    "/api/docs": ("*",),
 }
 DENIED_PREFIXES = (
     "/api/admin/",

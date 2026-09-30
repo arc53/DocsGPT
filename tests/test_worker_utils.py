@@ -281,6 +281,26 @@ class TestUploadIndex:
         assert kwargs["headers"]["X-Internal-Key"] == "k"
         assert kwargs["data"] == {"source_id": "1"}
 
+    @pytest.mark.parametrize(
+        "worker_url, expected",
+        [("http://127.0.0.1:7091", "http://127.0.0.1:7091/api/upload_index"), (None, "http://api/api/upload_index")],
+    )
+    def test_posts_to_the_worker_api_url_falling_back_to_api_url(self, tmp_path, worker_url, expected):
+        from docsgpt.worker import upload_index
+
+        with patch(
+            "docsgpt.worker.settings.VECTOR_STORE", "milvus"
+        ), patch(
+            "docsgpt.worker.settings.API_URL", "http://api/"
+        ), patch(
+            "docsgpt.worker.settings.WORKER_API_URL", worker_url
+        ), patch(
+            "docsgpt.worker.requests.post", return_value=MagicMock(),
+        ) as mock_post:
+            upload_index(str(tmp_path), {"source_id": "1"})
+
+        assert mock_post.call_args.args[0] == expected
+
     def test_faiss_missing_file_raises(self, tmp_path):
         from docsgpt.worker import upload_index
 

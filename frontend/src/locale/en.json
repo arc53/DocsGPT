@@ -2503,11 +2503,17 @@
         "timezoneEmpty": "No timezone found.",
         "instructionsLabel": "Instructions",
         "instructionsPlaceholder": "Enter prompt here.",
+        "approvalTools": {
+          "label": "Tools that need approval",
+          "hint": "Nobody is there to approve during a scheduled run, so actions that need approval are refused unless you tick their tool here. Other actions run either way.",
+          "warning": "A ticked tool's actions that need approval run without asking each time this schedule runs."
+        },
         "create": "Create task",
         "save": "Save changes",
         "errors": {
           "instructionRequired": "Instructions are required.",
-          "runAtInPast": "Pick a date/time in the future."
+          "runAtInPast": "Pick a date/time in the future.",
+          "saveFailed": "Couldn't save the schedule."
         },
         "days": {
           "mon": "Mon",

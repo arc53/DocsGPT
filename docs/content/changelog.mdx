@@ -10,8 +10,128 @@ import { Callout } from 'nextra/components'
 The notable changes in each release. Every release on GitHub also carries
 [auto-generated notes](https://github.com/arc53/DocsGPT/releases) listing every merged pull
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
+Entries start at 0.17.0; see GitHub for earlier releases.
 
 ## Unreleased
+
+<Callout type="warning">
+  **Upgrade actions.** Some of these changes stop an install from starting, or change answers,
+  unless you act first:
+
+  - Set `ENCRYPTION_SECRET_KEY` to your own value **before** upgrading a multi-user install.
+    Migration `0040_connections` encrypts stored service credentials with the key it sees. See
+    [Connectors: set ENCRYPTION_SECRET_KEY first](/upgrading#connectors-set-encryption_secret_key-first).
+  - `SCIM_ENABLED=true` now needs `SCIM_TOKEN`; without it the API and the worker fail at start
+    instead of answering SCIM calls with 503.
+  - Agentless chats and agents that don't set a chunk count now retrieve 6 chunks per search
+    instead of 2. Answers draw on more context and use more tokens.
+  - `LLM_PROVIDER` alone now picks the default model; it no longer also needs `API_KEY`. An install
+    that set only a provider key (say `LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`) used to fall
+    back to the hosted DocsGPT model and now calls, and is billed by, that provider. `LLM_PROVIDER=openai`
+    with the key in `API_KEY` now really uses OpenAI instead of the hosted API. Set
+    `LLM_NAME=docsgpt-local` to keep the hosted model. See
+    [Default model](/upgrading#default-model-llm_provider-alone-picks-it).
+  - `LLM_PROVIDER=llama.cpp` and `LLM_PROVIDER=huggingface` are gone; neither ever answered.
+    Reach llama.cpp through its OpenAI-compatible server with `OPENAI_BASE_URL` and `LLM_NAME`.
+    `VECTOR_STORE=lancedb` could never start and is gone from the setup scripts.
+  - The checkout Compose files publish on `127.0.0.1` only. A server others reach needs
+    `DOCSGPT_BIND=0.0.0.0` (see below).
+  - `LLM_PATH`, `HUGGINGFACE_API_KEY`, `LANCEDB_*`, `RETRIEVERS_ENABLED` and `DEFAULT_MAX_HISTORY`
+    are no longer read; delete them from `.env`. `SAGEMAKER_*` still works as the S3 credentials
+    fallback but is deprecated in favour of `S3_*`.
+</Callout>
+
+### Connectors
+
+Service credentials (OAuth tokens for Google Drive, SharePoint, Confluence and MCP servers, and
+API keys for tools) now live on encrypted **connections** that an admin governs in
+Admin > Connectors, and synced sources run as their connection without a browser session. See
+[Connectors](/Sources/Connectors).
+
+### Roles, quotas and tokens
+
+- Resource sharing was reworked: agents and the sources, prompts and tools they use can be shared
+  with a team, with sponsors keeping shared agents working. See
+  [Access Control, Roles & Teams](/Deploying/Access-Control).
+- [Usage quotas](/Deploying/Usage-Quotas) let an instance admin cap the tokens each user spends,
+  or what they cost.
+- [Personal access tokens](/API/personal-access-tokens) let scripts call the API as a user.
+- `docsgpt grant-admin` creates the first admin from the Docker image or a pip install, where
+  `scripts/grant_admin.py` was not available. See
+  [Bootstrapping the first admin](/Deploying/Access-Control#bootstrapping-the-first-admin).
+- The admin dashboard gained an activity feed and a usage export, and
+  [execution traces](/Deploying/Observability#execution-traces) record GenAI spans.
+
+### Chat
+
+Answers render math, and the chat widget is published at 0.8.0.
+
+### Tools and list settings
+
+- `DEFAULT_CHAT_TOOLS`, `GUARDRAILS_CHECKS_ENABLED` and `QUOTA_UNPRICED_RATE_PER_MILLION` accept a JSON
+  list or comma-separated values; a comma-separated value used to stop the API and the worker from
+  starting. An empty value keeps the default, and `DEFAULT_CHAT_TOOLS=none` turns the default chat
+  tools off. `none` is not special for `GUARDRAILS_CHECKS_ENABLED`; use `GUARDRAILS_ENABLED=false`
+  to turn guardrails off.
+- One custom tool without a class docstring no longer empties the Add Tool list for every user; a
+  tool that can't describe itself is skipped and logged.
+- A new [Code Execution Sandbox](/Deploying/Sandbox) page covers running the sandbox the Artifact and
+  Code Executor tools need, and `scripts/build_daytona_snapshot.py` pins the runner image's render
+  library versions.
+
+### API
+
+- The Swagger UI moved from `/` to `/api/docs`, so the bundled web UI no longer hides it;
+  `/swagger.json` is unchanged, and `/` on an API without the web UI redirects to `/api/docs`.
+- Agent import accepts `curl --data-binary @file.agent.yaml` without a Content-Type header (it used
+  to read an empty body and return 400).
+- Docs: new API section with an overview and a REST API reference generated from the Swagger
+  document, including the token scope for each endpoint.
+- DocsGPT's MCP server now answers at `/mcp` as well as `/mcp/`. Before, `/mcp` without the slash
+  returned 404 to a POST.
+
+### Schedules
+
+- The Schedules tab no longer pre-approves every tool. Tools with actions that need approval are
+  listed unticked under **Tools that need approval**, and a scheduled run performs those actions
+  without asking only for the tools you tick. Existing schedules keep their approvals; see
+  [Upgrading](/upgrading#schedules-review-the-tools-they-pre-approve).
+- Editing a one-time task's date or time in the Schedules tab now moves the task; the change used
+  to be ignored. `PUT /api/schedules/<id>` accepts `run_at` for one-time tasks, and the schedule
+  dialog shows why a save was refused.
+
+### Documentation
+
+New docs pages: Agent Schedules, MCP Server, Background Jobs and Data Retention, Custom Models, and a
+Using DocsGPT section (web app, sharing conversations, teams and sharing, analytics and logs).
+
+### Integrations
+
+- Chatwoot extension: verifies Chatwoot's timestamped webhook signature, sends a valid `history`,
+  returns 502 when DocsGPT or Chatwoot fails, and reads optional `account_id`/`assignee_id` filters
+  from `.env`.
+- Chatwoot extension: `python app.py` listens on port 5000 (or `PORT`) instead of 80, and `.env` is
+  read from the extension's folder instead of the working directory. See
+  [Upgrading](/upgrading#chatwoot-bridge-port-5000-and-its-own-env).
+- Chatwoot extension: optional, insecure `chatwoot_allow_unsigned=true` for Chatwoot versions that
+  don't sign webhooks.
+- Reddit connector: comma-separated search queries and the post count from the connector form are
+  now parsed correctly.
+- Widget docs: the CDN bundle is `dist/legacy/browser.js`.
+- `.env-template` no longer enables SharePoint with placeholder values.
+- Compose files drop the unused `VITE_CONFLUENCE_CLIENT_ID` and `VITE_SHARE_POINT_CLIENT_ID`.
+
+### Deployment files
+
+- `deployment/docker-compose-azure.yaml` and `deployment/docker-compose-local.yaml` are removed.
+  Neither was documented, and both had drifted: the Azure file's worker had no data volumes, no
+  scheduler and no `CACHE_REDIS_URL`. Use `docker-compose-hub.yaml` for pre-built images,
+  `docker-compose.yaml` to build from the checkout, or `docker-compose-dev.yaml` in place of
+  `-local`. The database moves to a new volume; see
+  [Upgrading](/upgrading#azure-and-local-compose-files-removed).
+- The Mongo to Postgres backfill (`scripts/db/backfill.py`) applies the migrations before it
+  copies, so it works against an empty database, and takes `--mongo-db` for a database not named
+  `docsgpt`.
 
 ### A development loop in one command
 
@@ -32,14 +152,81 @@ macOS and systemd user units on Linux, against a PostgreSQL and Redis you alread
 the same way they do on a Docker one, and never touch the database or Redis. See
 [Run it as services, without Docker](/Deploying/Pip-Install#run-it-as-services-without-docker).
 
+New `WORKER_API_URL` sets where the worker sends its own calls into the API, and falls back to
+`API_URL`. `docsgpt up --native` sets it to `http://127.0.0.1:<port>`, so an `API_URL` pointed at a
+public reverse proxy no longer routes the worker's calls out and back. `docsgpt up` also records the
+`API_URL` it wrote and updates it when the machine's network address changes, still keeping any
+value you set yourself.
+
 ### Back up and restore an install
 
 `docsgpt backup` writes a dump of the database and a tar of each data volume into one archive, and
 `docsgpt restore <archive>` puts them back. The settings file is left out unless
 `--with-settings` asks for it, since it holds the install's secrets, and a backup from a newer
 DocsGPT is refused unless you pass `--force`. The archive is written readable only by its owner,
-and the backend and the worker pause while it is made so the dump and the volume tars match. See
+and the backend and the worker pause while it is made so the dump and the volume tars match. A
+restore loads the dump into an empty database, keeping the current one aside until it succeeds, so an
+older backup also restores over a database a newer release migrated. See
 [Backups](/Deploying/Docker-Deploying#backups).
+
+### The checkout stack answers on this machine only
+
+The checkout Compose files (`deployment/docker-compose.yaml`, `-hub` and `-dev`),
+which `setup.sh` and `setup.ps1` run, published Postgres (password `docsgpt`), Redis (no password)
+and the API on every interface. Postgres and Redis are now published on `127.0.0.1` only, and the
+API (7091) and UI (5173) on `DOCSGPT_BIND`, `127.0.0.1` by default. The setup scripts ask whether
+other machines should reach DocsGPT, write `DOCSGPT_BIND=0.0.0.0` if so, and offer to set
+`AUTH_TYPE`, whose options they now describe as what they are. **An install that other machines
+use has to set `DOCSGPT_BIND=0.0.0.0`** to keep working: see
+[Upgrading](/upgrading#checkout-compose-files-bound-to-this-machine).
+
+### Kubernetes manifests that work
+
+The manifests in `deployment/k8s` are rebuilt. The migration Job runs the packaged `migrate` command,
+and the API and worker wait for it. Uploads go to an S3-compatible bucket and vectors to pgvector in
+the bundled Postgres, so every pod sees the same files. The worker runs the beat scheduler, and
+`CACHE_REDIS_URL` points at the in-cluster Redis. The Services are `ClusterIP`, with an Ingress
+example for publishing over TLS, and the API serves the web UI, so the frontend Deployment is gone.
+`docsgpt-secrets.yaml` holds plain-text placeholders, including `ENCRYPTION_SECRET_KEY` and
+`POSTGRES_PASSWORD` (which was a shared `docsgpt`), and the pods refuse to start until they are replaced. Images are pinned to the release. An existing cluster has to
+carry its keys over, reindex its database (the new Postgres image sorts text differently), re-encrypt
+stored secrets and upload its documents again: see
+[Upgrading](/upgrading#kubernetes-manifests-reworked) and the
+[Kubernetes guide](/Deploying/Kubernetes-Deploying).
+
+### Secrets and security defaults
+
+- `docsgpt up`, `setup.sh` and `setup.ps1` generate `ENCRYPTION_SECRET_KEY` on a fresh install, so a
+  networked install can create connections and no longer seals tool, MCP and custom-model secrets
+  with the public default key. An existing value is never replaced, and an existing Docker install
+  gets no new key; `docsgpt up` says how to rotate onto one. `docsgpt up --native` adds one on its
+  first run and keeps the default readable through `ENCRYPTION_SECRET_KEY_PREVIOUS`.
+- `ENCRYPTION_SECRET_KEY_PREVIOUS` now also opens secrets saved on tools and custom models, not only
+  connections, and `docsgpt connectors reencrypt` rewrites those secrets too, so the previous key can
+  be removed after one run. Secrets neither key opens are left unchanged and counted.
+- Testing or saving an MCP server on a blocked address now says why (`Invalid server URL: <reason>`)
+  instead of a generic configuration error.
+- Rerunning `setup.sh` or `setup.ps1` keeps the existing `INTERNAL_KEY`, `JWT_SECRET_KEY` and
+  `ENCRYPTION_SECRET_KEY`, and a fresh install always gets a `JWT_SECRET_KEY`. Their authentication
+  menu now offers OIDC.
+- The optional Ollama overlays publish port 11434 on `127.0.0.1` only.
+- `docsgpt up --domain` and `--expose network` set `API_URL` to the address they print, and the setup
+  scripts ask for it when they expose DocsGPT, so agent images, webhook URLs, device pairing and MCP
+  OAuth callbacks no longer point at `http://localhost:7091` for everyone else. A value you set is
+  kept. With a hand-written `.env`, set `API_URL` yourself: see
+  [Opening it from other machines](/Deploying/Docker-Deploying#opening-it-from-other-machines).
+- Without `JWT_SECRET_KEY`, the generated `.jwt_secret_key` now lives in the data home instead of
+  the directory the API was started from. A key left in that directory is copied there, so tokens
+  stay valid.
+- `LLM_CACHE_ENABLED` and `LLM_CACHE_TTL` control the Redis cache of LLM answers, which was always
+  on for 30 minutes. The defaults keep that behaviour; see
+  [LLM Response Cache](/Deploying/DocsGPT-Settings#llm-response-cache).
+- Changes in Admin > Connectors are recorded in the audit log as `connector_policy_set`, with each
+  setting's old and new value.
+- The URL check for MCP servers, S3 endpoints and imported agents also refuses carrier-grade NAT
+  addresses (`100.64.0.0/10`).
+- A new [security checklist](/Deploying/Security) covers bind addresses, the choice of `AUTH_TYPE`,
+  the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
 
 ## 0.21.0
 
@@ -155,6 +342,71 @@ at 0.7.1.
 - The code-execution sandbox runner is published as `arc53/docsgpt-sandbox`, so the Kubernetes
   manifest no longer needs an image you build yourself.
 - Releases publish the Docker images and the PyPI package from the release workflow.
-- The [architecture guide](/Guides/Architecture) was rewritten.
+- The [architecture guide](/Concepts/Architecture) was rewritten.
 - Markdown code spans are no longer corrupted by citation rendering.
 - `setup.ps1` runs on Windows PowerShell 5.1 again.
+
+## 0.19.0
+
+### Artifacts and sandboxed code execution
+
+Agents can generate files and run code in a sandbox, from chat and from workflows, and read and
+write documents along the way. The runner is opt-in. See
+[Artifacts and Code Execution](/Tools/artifacts-and-code-execution).
+
+### Guardrails
+
+A first version of [guardrails](/Agents/guardrails): per-agent checks on the question, the
+retrieved documents, tool results and the answer, with an audit journal.
+
+### Also in this release
+
+- Agent API keys can be rotated.
+- Workflows gained undo and redo, and chat shows reasoning and tool calls inline while an answer
+  streams.
+- Sources can be previewed chunk by chunk.
+- Token usage is counted per call, and oversized contexts are guarded against before they reach
+  the model.
+- The frontend targets Node 22.
+
+## 0.18.0
+
+This section also covers the 0.17.1 to 0.17.3 releases.
+
+### Single sign-on, roles and teams
+
+[OIDC single sign-on](/Deploying/OIDC-SSO), an admin role with an
+[admin dashboard](/Deploying/Access-Control#admin-dashboard), and
+[teams](/Deploying/Access-Control#teams) for sharing agents and sources.
+
+### Retrieval
+
+- [Per-source configuration](/Sources/Per-source-configuration) of retrieval strategy, chunking
+  and exposure.
+- Semantic chunking, and a hybrid BM25 plus vector retriever on pgvector.
+- [GraphRAG](/Sources/GraphRAG): a knowledge graph per source, used at retrieval time.
+- [Wiki sources](/Sources/Wiki-sources) that an agent can edit.
+
+### Also in this release
+
+- Agents can be exported and imported.
+- OpenAI models can run through the Responses API (a per-model setting), and model reasoning is
+  passed through to the answer stream.
+- Prompt presets, conversation visibility, and the logs and analytics pages were reworked.
+
+## 0.17.0
+
+### User data moves to PostgreSQL
+
+Conversations, agents, prompts, sources, attachments, workflows, logs and token usage are stored
+in PostgreSQL instead of MongoDB. MongoDB is no longer required, except as an optional vector
+store. **A 0.16.x deployment has to migrate its data before it upgrades**; do not pull the new
+images first. See [PostgreSQL for User Data](/Deploying/Postgres-Migration#migrating-from-mongodb).
+
+### Also in this release
+
+- The worker checks for new versions and prints security advisories; `VERSION_CHECK=0` turns it
+  off. See
+  [Observability](/Deploying/Observability).
+- The repository gained a threat model, an incident response plan and a CI security scan of its
+  GitHub Actions workflows.

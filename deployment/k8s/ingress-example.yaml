@@ -1,0 +1,52 @@
+# Example: publish DocsGPT over HTTPS through an Ingress. OPT-IN: this file is
+# not in kustomization.yaml. Copy it, adjust it for your cluster, then apply:
+#   kubectl apply -f deployment/k8s/ingress-example.yaml
+#
+# Before you publish:
+# - Set AUTH_TYPE in docsgpt-secrets.yaml (oidc for separate accounts).
+#   Without it, anyone who can reach this host uses DocsGPT as the same user.
+# - Replace docsgpt.example.com with your hostname, and point its DNS at your
+#   ingress controller.
+# - ingressClassName must name an installed controller (`kubectl get
+#   ingressclass`). The annotations below are for ingress-nginx, which is
+#   retired; other controllers (Traefik, HAProxy, cloud load balancers) and
+#   the Gateway API (an HTTPRoute to docsgpt-api-service port 80) work the
+#   same way with their own settings for body size, timeouts and buffering.
+# - Set API_URL in docsgpt-secrets.yaml to https://<your host>.
+# - TLS: the certificate lives in the `docsgpt-tls` Secret. With cert-manager,
+#   uncomment the cluster-issuer annotation and it creates that Secret for you;
+#   otherwise create it yourself:
+#     kubectl create secret tls docsgpt-tls --cert=fullchain.pem --key=privkey.pem
+#
+# The API serves the web UI on the same host, and the UI calls the API on the
+# origin it was loaded from, so one host covers both.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: docsgpt
+  annotations:
+    # cert-manager.io/cluster-issuer: letsencrypt
+    # Uploads: the default 1 MB body limit would reject them. DocsGPT accepts
+    # request bodies up to UPLOAD_MAX_REQUEST_BYTES (256 MB by default).
+    nginx.ingress.kubernetes.io/proxy-body-size: "256m"
+    # Answers stream over server-sent events: keep long responses open and unbuffered.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - docsgpt.example.com
+      secretName: docsgpt-tls
+  rules:
+    - host: docsgpt.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: docsgpt-api-service
+                port:
+                  number: 80

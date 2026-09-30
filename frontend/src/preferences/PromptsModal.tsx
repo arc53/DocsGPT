@@ -110,8 +110,6 @@ type VariableMenuProps = {
   textareaId: string;
   content: string;
   setContent: (content: string) => void;
-  /** Which variables the menu inserts; sets the trigger's width. */
-  kind: 'system' | 'tool';
 };
 
 function VariableMenu({
@@ -120,7 +118,6 @@ function VariableMenu({
   textareaId,
   content,
   setContent,
-  kind,
 }: VariableMenuProps) {
   const handleSelect = (value: string) => {
     const textarea = document.getElementById(textareaId) as HTMLTextAreaElement;
@@ -154,11 +151,8 @@ function VariableMenu({
       <SelectTrigger
         size="field"
         shape="pill"
-        className={
-          kind === 'system'
-            ? 'w-[140px] sm:w-[185px]'
-            : 'w-[140px] sm:w-[171px]'
-        }
+        // Sized to the label; a phone stacks the two menus full width.
+        className="w-full sm:w-fit"
       >
         <SelectValue placeholder={label} />
       </SelectTrigger>
@@ -221,11 +215,13 @@ function PromptTextarea({
           {highlightedValue}
         </div>
       </div>
+      {/* Capped to the window height so the variable menus below it stay in
+          view on a short laptop screen; the modal body scrolls past that. */}
       <Textarea
         id={id}
         size="lg"
         resize="none"
-        className="relative z-10 h-48 md:h-64 lg:h-80"
+        className="relative z-10 h-48 max-h-[35dvh] md:h-64 lg:h-80"
         value={value}
         onChange={onChange}
         onScroll={handleScroll}
@@ -348,14 +344,13 @@ function AddPrompt({
           </span>
         </p>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
           <VariableMenu
             options={systemVariableOptions}
             label={t('modals.prompts.systemVariablesDropdownLabel')}
             textareaId="new-prompt-content"
             content={newPromptContent}
             setContent={setNewPromptContent}
-            kind="system"
           />
 
           <VariableMenu
@@ -364,7 +359,6 @@ function AddPrompt({
             textareaId="new-prompt-content"
             content={newPromptContent}
             setContent={setNewPromptContent}
-            kind="tool"
           />
         </div>
       </div>
@@ -429,14 +423,13 @@ function EditPrompt({
             </span>
           </p>
 
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
             <VariableMenu
               options={systemVariableOptions}
               label={t('modals.prompts.systemVariablesDropdownLabel')}
               textareaId="edit-prompt-content"
               content={editPromptContent}
               setContent={setEditPromptContent}
-              kind="system"
             />
 
             <VariableMenu
@@ -445,7 +438,6 @@ function EditPrompt({
               textareaId="edit-prompt-content"
               content={editPromptContent}
               setContent={setEditPromptContent}
-              kind="tool"
             />
           </div>
         </div>
@@ -574,7 +566,7 @@ export default function PromptsModal({
   const learnLink = (
     <Button variant="link" size="inline" asChild>
       <Link
-        to="https://docs.docsgpt.cloud/Guides/Customising-prompts"
+        to="https://docs.docsgpt.cloud/Agents/prompts"
         target="_blank"
         rel="noopener noreferrer"
       >
@@ -654,7 +646,6 @@ export default function PromptsModal({
       footer={footer}
       size="xl"
       mobileVariant="sheet"
-      contentClassName="!overflow-visible"
     >
       {view}
     </Modal>

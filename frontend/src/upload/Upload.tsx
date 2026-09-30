@@ -95,7 +95,6 @@ function Upload({
   onBrowseConnectors?: () => void;
 }) {
   const token = useSelector(selectToken);
-  const selectedDocs = useSelector(selectSelectedDocs);
   const connectorCatalog = useSelector(selectConnectorCatalog);
   const connections = useSelector(selectConnections);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
@@ -106,9 +105,6 @@ function Upload({
   const [handedOver, setHandedOver] = useState(false);
   // Connect your data: the services that sync, in place of the tiles.
   const [connecting, setConnecting] = useState(false);
-  const { launch, modals: connectModals } = useConnectorLauncher({
-    onConnected: () => close(),
-  });
 
   const [files, setfiles] = useState<File[]>(receivedFile);
   // Names of the files the last drop turned away (over the size limit or of
@@ -311,7 +307,11 @@ function Upload({
    * subscribe so the side effects can fire after the modal has closed.
    */
   const trackTraining = useCallback(
-    (clientTaskId: string) => {
+    (
+      clientTaskId: string,
+      knownSourceId?: string,
+      batch?: ReadonlySet<string>,
+    ) => {
       let handled = false;
 
       const handleTerminal = (
@@ -329,13 +329,23 @@ function Upload({
               // meanwhile — another upload finishing, or a new team share.
               const newDoc = docs.find((doc: Doc) => doc.id === sourceId);
               if (newDoc) {
-                // If only one doc is selected, replace it completely
-                // If multiple docs are selected, append the new doc
-                if (selectedDocs.length === 1) {
-                  dispatch(setSelectedDocs([newDoc]));
-                } else {
-                  dispatch(setSelectedDocs([...selectedDocs, newDoc]));
-                }
+                // Read the selection as it is now: several sources of one
+                // sync finish one after another, each after the last one's
+                // change. A single earlier selection is replaced; otherwise,
+                // or when it came from the same sync, the new doc is added.
+                const current = selectSelectedDocs(store.getState()) ?? [];
+                const replace =
+                  current.length === 1 && !batch?.has(current[0].id ?? '');
+                dispatch(
+                  setSelectedDocs(
+                    replace
+                      ? [newDoc]
+                      : [
+                          ...current.filter((doc) => doc.id !== newDoc.id),
+                          newDoc,
+                        ],
+                  ),
+                );
               }
             }
             onSuccessfulUpload?.(sourceId);
@@ -351,20 +361,22 @@ function Upload({
       const check = () => {
         const state = store.getState();
         const task = state.upload.tasks.find((t) => t.id === clientTaskId);
-        if (!task) return false;
-        if (task.status === 'completed' || task.status === 'failed') {
+        if (task?.status === 'completed' || task?.status === 'failed') {
           handleTerminal(task.status, task.sourceId);
           return true;
         }
         // Recover from the race where the terminal SSE landed before
         // ``xhr.onload`` populated ``task.sourceId`` — the slice
         // silently drops such events (no task to match by sourceId).
-        // Mirrors ConnectorTree/FileTree's ``recentEvents`` walk.
-        if (task.sourceId) {
+        // A synced source's task only exists once its ingest reports, so
+        // its id is known up front. Mirrors ConnectorTree/FileTree's
+        // ``recentEvents`` walk.
+        const sourceId = task?.sourceId ?? knownSourceId;
+        if (sourceId) {
           for (const event of state.notifications.recentEvents) {
-            if (event.scope?.id !== task.sourceId) continue;
+            if (event.scope?.id !== sourceId) continue;
             if (event.type === 'source.ingest.completed') {
-              handleTerminal('completed', task.sourceId);
+              handleTerminal('completed', sourceId);
               return true;
             }
             if (event.type === 'source.ingest.failed') {
@@ -406,15 +418,19 @@ function Upload({
         }
       });
     },
-    [
-      dispatch,
-      onSuccessfulUpload,
-      refreshSourceDocs,
-      selectedDocs,
-      selectUploadedDoc,
-      store,
-    ],
+    [dispatch, onSuccessfulUpload, refreshSourceDocs, selectUploadedDoc, store],
   );
+
+  // A service connected from Connect your data syncs like an upload ingests:
+  // its sources are tracked the same way, so the list refreshes once each
+  // is ingested. Their ingest tasks are keyed by source id.
+  const { launch, modals: connectModals } = useConnectorLauncher({
+    onConnected: () => close(),
+    onSynced: (sourceIds) => {
+      const batch = new Set(sourceIds);
+      sourceIds.forEach((sourceId) => trackTraining(sourceId, sourceId, batch));
+    },
+  });
 
   const onDrop = useCallback(
     (acceptedFiles: File[], rejections: FileRejection[] = []) => {

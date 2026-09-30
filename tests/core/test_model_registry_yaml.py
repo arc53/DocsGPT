@@ -64,7 +64,6 @@ EXPECTED_IDS = {
         "glm-5.3",
     },
     "docsgpt": {"docsgpt-local"},
-    "huggingface": {"huggingface-local"},
 }
 
 # Providers whose catalog is an open extension point. ``openai_compatible``
@@ -89,7 +88,6 @@ def _make_settings(**overrides):
     s.GROQ_API_KEY = None
     s.OPEN_ROUTER_API_KEY = None
     s.NOVITA_API_KEY = None
-    s.HUGGINGFACE_API_KEY = None
     s.LLM_PROVIDER = ""
     s.LLM_NAME = None
     s.API_KEY = None
@@ -215,9 +213,8 @@ class TestRegistryPermutations:
         assert ids == EXPECTED_IDS["anthropic"] | EXPECTED_IDS["docsgpt"]
 
     def test_anthropic_via_llm_provider_with_llm_name(self):
-        # Mirrors the historical _add_anthropic_models filter: when only
-        # API_KEY (not ANTHROPIC_API_KEY) is set and LLM_NAME matches a
-        # known model, only that model is loaded.
+        # LLM_NAME picks the default model only: with just API_KEY set,
+        # the picker still lists the whole Anthropic catalog.
         s = _make_settings(
             LLM_PROVIDER="anthropic", API_KEY="key", LLM_NAME="claude-haiku-4-5"
         )
@@ -226,7 +223,8 @@ class TestRegistryPermutations:
         anthropic_ids = {
             m.id for m in reg.get_all_models() if m.provider.value == "anthropic"
         }
-        assert anthropic_ids == {"claude-haiku-4-5"}
+        assert anthropic_ids == EXPECTED_IDS["anthropic"]
+        assert reg.default_model_id == "claude-haiku-4-5"
 
     def test_google_only(self):
         s = _make_settings(GOOGLE_API_KEY="g-test")
@@ -256,13 +254,6 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["novita"] | EXPECTED_IDS["docsgpt"]
 
-    def test_huggingface_only(self):
-        s = _make_settings(HUGGINGFACE_API_KEY="hf-test")
-        with patch("docsgpt.core.settings.settings", s):
-            reg = ModelRegistry()
-        ids = {m.id for m in reg.get_all_models()}
-        assert ids == EXPECTED_IDS["huggingface"] | EXPECTED_IDS["docsgpt"]
-
     def test_no_credentials_only_docsgpt(self):
         s = _make_settings()
         with patch("docsgpt.core.settings.settings", s):
@@ -283,7 +274,6 @@ class TestRegistryPermutations:
             GROQ_API_KEY="x",
             OPEN_ROUTER_API_KEY="x",
             NOVITA_API_KEY="x",
-            HUGGINGFACE_API_KEY="x",
             OPENAI_API_BASE="x",
         )
         with patch("docsgpt.core.settings.settings", s):

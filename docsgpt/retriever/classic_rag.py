@@ -184,8 +184,9 @@ class ClassicRAG(BaseRetriever):
                 retrieval. Forwarded so the store skips embedding the query
                 again; stores that don't support it ignore the kwarg.
         """
-        # ``score_threshold`` is honoured by pgvector/mongodb and safely ignored
-        # by stores whose ``search`` swallows kwargs. The candidate count is
+        # ``score_threshold`` is honoured by the cosine-similarity stores
+        # (pgvector, mongodb, qdrant, milvus) and safely ignored by stores
+        # whose ``search`` swallows kwargs (faiss, elasticsearch). The candidate count is
         # clamped to a ceiling to bound memory/latency.
         k = min(max(src_k * 2, 20), 500)
         search_kwargs = {"k": k}

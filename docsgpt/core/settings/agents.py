@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import Field
+from pydantic_settings import NoDecode
 
-from docsgpt.core.settings._shared import SettingsGroup
+from docsgpt.core.settings._shared import EnvList, SettingsGroup
 
 
 class AgentSettings(SettingsGroup):
@@ -17,11 +18,12 @@ class AgentSettings(SettingsGroup):
         default={"token_limit": 50000, "request_limit": 500},
         description="Per-agent default quotas: tokens and requests.",
     )
-    DEFAULT_CHAT_TOOLS: list[str] = Field(
+    DEFAULT_CHAT_TOOLS: Annotated[list[str], NoDecode, EnvList(none_is_empty=True)] = Field(
         default=["memory", "read_webpage", "scheduler"],
         description=(
-            "Config-free tools on by default in agentless chats. scheduler is dual-registered in "
-            "BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add "
+            'Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) '
+            "or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is "
+            "dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add "
             "code_executor and artifact_generator once a sandbox runner is configured; both execute through "
             "it and would fail on every call without one."
         ),

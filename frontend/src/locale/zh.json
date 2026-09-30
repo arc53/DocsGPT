@@ -2468,11 +2468,17 @@
         "timezoneEmpty": "未找到时区。",
         "instructionsLabel": "指令",
         "instructionsPlaceholder": "在此输入提示词。",
+        "approvalTools": {
+          "label": "需要批准的工具",
+          "hint": "计划运行时无人可以批准，因此除非你在此勾选相应工具，否则需要批准的操作会被拒绝。其他操作照常运行。",
+          "warning": "每次运行此计划时，已勾选工具中需要批准的操作都会直接运行，不再询问。"
+        },
         "create": "创建任务",
         "save": "保存更改",
         "errors": {
           "instructionRequired": "指令为必填项。",
-          "runAtInPast": "请选择未来的日期/时间。"
+          "runAtInPast": "请选择未来的日期/时间。",
+          "saveFailed": "无法保存计划。"
         },
         "days": {
           "mon": "周一",

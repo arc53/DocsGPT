@@ -72,7 +72,11 @@ class TestNativeUp:
         assert env["CELERY_RESULT_BACKEND"] == "redis://localhost:6379/1"
         assert env["CACHE_REDIS_URL"] == "redis://localhost:6379/2"
         assert env["INTERNAL_KEY"], "the worker needs it to hand indexes to the API"
+        assert env["ENCRYPTION_SECRET_KEY"], "a first install seals credentials with its own key"
+        # The database may already hold credentials sealed with the public default.
+        assert env["ENCRYPTION_SECRET_KEY_PREVIOUS"] == "default-docsgpt-encryption-key"
         assert env["API_URL"] == "http://127.0.0.1:7091"
+        assert env["WORKER_API_URL"] == "http://127.0.0.1:7091", "the worker's internal calls stay on loopback"
         assert "DOCSGPT_IMAGE_TAG" not in env, "nothing here runs an image"
 
     def test_records_the_mode_so_the_other_commands_can_tell(self, tmp_path):
@@ -139,6 +143,55 @@ class TestNativeUp:
         assert env["DOCSGPT_PORT"] == "7099"
         assert env["API_URL"] == "http://127.0.0.1:7099"
         assert services.units[_names(tmp_path)[0]].arguments[-1] == "7099"
+
+    def test_an_api_url_the_operator_set_is_kept(self, tmp_path):
+        """Behind a reverse proxy the operator points API_URL at the public address; `up` must not undo it."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        envfile.update(tmp_path / ".env", {"API_URL": "https://docs.example.com"})
+        assert _run(["up", "--dir", str(tmp_path), "--yes", "--port", "7099"], _native_context()) == 0
+        env = envfile.read(tmp_path / ".env")
+        assert env["API_URL"] == "https://docs.example.com"
+        assert env["WORKER_API_URL"] == "http://127.0.0.1:7099", "the worker must not go out through the proxy"
+
+    def test_a_worker_api_url_the_operator_set_is_kept(self, tmp_path):
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        envfile.update(tmp_path / ".env", {"WORKER_API_URL": "http://10.0.0.2:7091"})
+        assert _run(["up", "--dir", str(tmp_path), "--yes"], _native_context()) == 0
+        assert envfile.read(tmp_path / ".env")["WORKER_API_URL"] == "http://10.0.0.2:7091"
+
+    def test_a_configured_install_gets_no_new_encryption_key(self, tmp_path):
+        """Credentials it already stored are sealed with the key it ran with, so a new one would lock them out."""
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        envfile.update(tmp_path / ".env", {"ENCRYPTION_SECRET_KEY": None})
+
+        assert _run(["up", "--dir", str(tmp_path), "--yes"], _native_context()) == 0
+        assert "ENCRYPTION_SECRET_KEY" not in envfile.read(tmp_path / ".env")
+
+    def test_an_existing_encryption_key_is_kept(self, tmp_path):
+        envfile.update(tmp_path / ".env", {"ENCRYPTION_SECRET_KEY": "mine"})
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        env = envfile.read(tmp_path / ".env")
+        assert env["ENCRYPTION_SECRET_KEY"] == "mine"
+        assert "ENCRYPTION_SECRET_KEY_PREVIOUS" not in env
+
+    def test_a_generated_key_says_how_to_reseal_existing_credentials(self, tmp_path, capsys):
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        out = capsys.readouterr()
+        text = " ".join((out.out + out.err).split())
+        assert "docsgpt connectors reencrypt" in text
+        # reencrypt covers every stored secret, so the previous key does not have to stay.
+        assert "then remove ENCRYPTION_SECRET_KEY_PREVIOUS" in text
+
+    def test_a_previous_key_already_set_is_not_overwritten(self, tmp_path):
+        envfile.update(tmp_path / ".env", {"ENCRYPTION_SECRET_KEY_PREVIOUS": "older"})
+        argv = ["up", "--native", "--dir", str(tmp_path), "--yes", "--postgres-uri", "postgresql://localhost/docsgpt"]
+        assert _run(argv, _native_context()) == 0
+        assert envfile.read(tmp_path / ".env")["ENCRYPTION_SECRET_KEY_PREVIOUS"] == "older"
 
     def test_it_refuses_to_run_beside_a_docker_install(self, tmp_path):
         """Native services on the same port would orphan the containers from down/status/uninstall."""

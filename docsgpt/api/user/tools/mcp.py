@@ -77,11 +77,16 @@ def _extract_auth_credentials(config):
     return auth_credentials
 
 
+class InvalidServerUrl(ValueError):
+    """The MCP server URL is refused by the outbound URL check; the message is safe to show the user."""
+
+
 def _validate_mcp_server_url(config: dict) -> None:
     """Validate the server_url in an MCP config to prevent SSRF.
 
     Raises:
-        ValueError: If the URL is missing or points to a blocked address.
+        ValueError: If the URL is missing.
+        InvalidServerUrl: If it points to a blocked address.
     """
     server_url = (config.get("server_url") or "").strip()
     if not server_url:
@@ -89,7 +94,12 @@ def _validate_mcp_server_url(config: dict) -> None:
     try:
         validate_url(server_url)
     except SSRFError as exc:
-        raise ValueError(f"Invalid server URL: {exc}") from exc
+        raise InvalidServerUrl(f"Invalid server URL: {exc}") from exc
+
+
+def _invalid_server_url_response(exc: InvalidServerUrl):
+    """400 naming why the URL was refused, as ``error`` and as ``message`` (what the dialog shows)."""
+    return make_response(jsonify({"success": False, "error": str(exc), "message": str(exc)}), 400)
 
 
 def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
@@ -348,6 +358,9 @@ class TestMCPServerConfig(Resource):
             return make_response(jsonify(safe_result), 200)
         except AccessDenied as e:
             return denied_response(e)
+        except InvalidServerUrl as e:
+            current_app.logger.warning(f"Invalid MCP server test request: {e}")
+            return _invalid_server_url_response(e)
         except ValueError as e:
             current_app.logger.warning(f"Invalid MCP server test request: {e}")
             return make_response(
@@ -579,6 +592,9 @@ class MCPServerSave(Resource):
             return make_response(jsonify(response_data), 200)
         except AccessDenied as e:
             return denied_response(e)
+        except InvalidServerUrl as e:
+            current_app.logger.warning(f"Invalid MCP server save request: {e}")
+            return _invalid_server_url_response(e)
         except ValueError as e:
             current_app.logger.warning(f"Invalid MCP server save request: {e}")
             return make_response(

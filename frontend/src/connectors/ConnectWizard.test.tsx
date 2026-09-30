@@ -408,10 +408,13 @@ describe('ConnectWizard', () => {
       tools: [],
       sources: [{ id: 'src-1', name: 'Handbook' }],
     });
-    await render(drive, vi.fn(), { purpose: 'knowledge' });
+    const onSynced = vi.fn();
+    await render(drive, vi.fn(), { purpose: 'knowledge', onSynced });
     await click('settings.connectors.wizard.signIn');
     await click('pick-folder');
     await click('modals.uploadDoc.train');
+    // The opener tracks the new source's ingest, like an upload's.
+    expect(onSynced).toHaveBeenCalledWith(['src-1']);
     const [id, body, , key] = service.setup.mock.calls[0];
     expect(id).toBe('conn-drive');
     expect(body.sync).toEqual({

@@ -1,5 +1,5 @@
 ---
-title: Per-Source Configuration (Chunking & Retrieval)
+title: Per-Source Configuration
 description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, pre-screening and more.
 ---
 
@@ -82,7 +82,12 @@ Retrieval decides which chunks are pulled in to answer a question. These setting
     "chunks": 6,
     "score_threshold": null,
     "rephrase_query": true,
-    "prescreen": null
+    "prescreen": null,
+    "graph": {
+      "seed_strategy": "entities",
+      "passage_nodes": true,
+      "blend_vector": true
+    }
   }
 }
 ```
@@ -92,9 +97,11 @@ Retrieval decides which chunks are pulled in to answer a question. These setting
 | `retriever` | `classic` | Retrieval strategy: `classic`, `hybrid`, or `graphrag`. |
 | `exposure` | `prefetch` | How retrieved context reaches the model: `prefetch` or `agentic_tool` (see below). |
 | `chunks` | `6` | Final number of chunks (top-k) returned to the answer. Range 1–500. Set here, it **overrides** whatever a request asks for. |
-| `score_threshold` | `null` | Minimum similarity score. Honored by pgvector and MongoDB Atlas; FAISS, Qdrant, Milvus and the `hybrid` retriever ignore it — the config API returns a `warnings` entry when you set it on one of those. |
+| `score_threshold` | `null` | Minimum similarity score. Honored by pgvector, MongoDB Atlas, Qdrant and Milvus (MongoDB Atlas scores cosine as `(1 + cos) / 2`, so `0.8` there is cosine `0.6`; Qdrant's score follows `QDRANT_DISTANCE_FUNC`, cosine by default); FAISS, Elasticsearch and the `hybrid` retriever ignore it — the config API returns a `warnings` entry when you set it on one of those. |
 | `rephrase_query` | `true` | Whether to run a query-rephrasing side-call before retrieval. |
 | `prescreen` | `null` | Optional LLM relevance filter (see below). `null` = off. |
+| `graph` | see [GraphRAG](/Sources/GraphRAG#graph-retrieval-settings) | How the `graphrag` retriever walks the graph: `seed_strategy`, `passage_nodes`, `blend_vector`. Ignored by the other retrievers. |
+| `reranker` | `null` | Reserved for a future reranking step. Accepted and stored, but it has no effect. |
 
 ### Who wins: source config or the request?
 
@@ -155,6 +162,74 @@ Pre-screening adds an optional map-reduce step between retrieval and answering: 
 | `max_keep` | `8` | Survivors kept after screening. Must be `<= candidate_k`. |
 | `model` | `null` | Model used for screening. `null` reuses the request's resolved model. |
 
+## Testing retrieval
+
+**Test retrieval** shows the chunks a query actually retrieves from one source, so you can tune the retrieval settings without asking questions in a chat. Open it from **Settings → Knowledge**, either with **Test retrieval** in a source's menu or with the **Test retrieval** button at the top of an open source. Anyone who can use the source can run it, including team viewers.
+
+1. Type a query the source should answer.
+2. Adjust the retrieval settings under the query if you want to try something else. They start from the source's saved settings.
+3. Click **Run**.
+
+The result lists the chunks in rank order with their file name, token count, score and text, plus the retriever used, the number of chunks and the latency. The settings you try are used for that test only and are **not saved**; change them in the source's settings to keep them.
+
+The test runs the same retrieval pipeline as an answer: the same retriever, `chunks`, `score_threshold`, pre-screening and token budget. It differs in three ways:
+
+- It never rephrases the query, as with the first message of a chat.
+- It applies the source's settings even when `PER_SOURCE_RETRIEVAL_ENABLED=false`, where answers use the classic retriever.
+- Pre-screening without its own `model` uses the instance's default model, since a test has no chat model behind it. Settings that differ from the saved ones may use at most 20 pre-screening LLM calls (`candidate_k` / `batch_size`).
+
+### Reading the scores
+
+The meaning of a score depends on the retriever and the vector store, and the modal labels each one:
+
+| Label | Comes from | How to read it |
+| --- | --- | --- |
+| **similarity** | `classic` on pgvector, MongoDB Atlas, Qdrant or Milvus | Cosine similarity: higher is better, at most 1. This is the value `score_threshold` is compared with. |
+| **distance** | `classic` on FAISS | L2 distance: lower is better, with no fixed upper bound. |
+| **RRF** | `hybrid` | A reciprocal-rank-fusion score. It only orders the results of this query; don't compare it across queries or with a threshold. |
+| **no score** | `graphrag`, and `classic` on Elasticsearch | The retriever ranks chunks without a comparable per-chunk score. A `graphrag` source that has no graph yet falls back to classic retrieval, so its results carry the vector store's scores instead. |
+
+When nothing comes back and a `score_threshold` is set, the modal says so: lower the threshold to see the near misses.
+
+### From the API
+
+```bash
+curl -X POST https://your-docsgpt/api/sources/<source_id>/search \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "How do I rotate the encryption key?",
+    "retrieval": { "retriever": "hybrid", "chunks": 4 }
+  }'
+```
+
+`query` is required (at most 2,000 characters). `retrieval` is optional: leave it out to use the source's saved retrieval settings, or send a complete retrieval object (fields you leave out take their defaults, as in the table above). Nothing is saved. The response:
+
+```json
+{
+  "success": true,
+  "query": "How do I rotate the encryption key?",
+  "retriever": "hybrid",
+  "retrieval": { "retriever": "hybrid", "chunks": 4, "...": "..." },
+  "total": 4,
+  "latency_ms": 182,
+  "chunks": [
+    {
+      "rank": 1,
+      "text": "...",
+      "title": "...",
+      "filename": "security.md",
+      "source": "...",
+      "tokens": 212,
+      "score": 0.0328,
+      "score_kind": "rrf"
+    }
+  ]
+}
+```
+
+`score_kind` is `cosine_similarity`, `l2_distance`, `rrf` or `null`, matching the labels above; `score` is `null` when `score_kind` is.
+
 ## Editing the config via API
 
 The config is edited with a `PATCH` to the source's config endpoint:
@@ -181,6 +256,7 @@ The response echoes the stored config and a `requires_reingest` flag:
 
 Notes:
 
+- The body replaces the whole config rather than merging into it: any group or field you leave out is reset to its default. To change one setting, send the source's current `config` (from `GET /api/sources`) with that setting changed. On a GraphRAG source, keep `"retriever": "graphrag"` and the top-level `graph` object.
 - Invalid values are rejected with `400` (strict validation on write).
 - The `kind` field (classic / wiki / graphrag) cannot be changed through this endpoint — converting a source to a [Wiki](/Sources/Wiki-sources) or enabling [GraphRAG](/Sources/GraphRAG) uses dedicated endpoints.
 - Editing requires ownership of the source or a team `editor` grant; viewers receive `403`.

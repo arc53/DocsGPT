@@ -71,13 +71,6 @@ class VectorStoreSettings(SettingsGroup):
     )
     MILVUS_TOKEN: str = Field(default="", description="Milvus auth token.")
 
-    # LanceDB.
-    LANCEDB_PATH: str = Field(
-        default_factory=lambda: str(home_dir() / "data" / "lancedb"),
-        description="LanceDB local data directory.",
-    )
-    LANCEDB_TABLE_NAME: str = Field(default="docsgpts", description="LanceDB table for stored vectors.")
-
     @field_validator("PGVECTOR_CONNECTION_STRING", mode="before")
     @classmethod
     def _normalize_pgvector_connection_string(cls, v):

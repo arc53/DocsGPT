@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import getpass
 import json
+import logging
 import os
 import re
 import secrets
@@ -14,11 +15,12 @@ import sys
 import tempfile
 import time
 import webbrowser
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import IO, Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from docsgpt.deploy import backup as backup_format
@@ -408,14 +410,29 @@ def _native_up(args, context: Context, directory: Path) -> int:
 
     updates: dict[str, Optional[str]] = {
         "POSTGRES_URI": postgres,
-        "API_URL": f"http://127.0.0.1:{port}",
         "DOCSGPT_PORT": str(port),
     }
+    # The units bind 127.0.0.1. An API_URL the operator pointed elsewhere (a reverse proxy's public
+    # address) stays; one this command wrote follows the port.
+    # WORKER_API_URL keeps the worker's own calls on loopback when API_URL is a public address.
+    written = f"http://127.0.0.1:{existing.get('DOCSGPT_PORT') or stack.DEFAULT_PORT}"
+    for key in ("API_URL", "WORKER_API_URL"):
+        if existing.get(key) in (None, "", written):
+            updates[key] = f"http://127.0.0.1:{port}"
     if redis or "CELERY_BROKER_URL" not in existing:
         updates.update(_redis_urls(redis or "redis://localhost:6379"))
     for key in ("INTERNAL_KEY", "JWT_SECRET_KEY"):
         if not existing.get(key):
             updates[key] = secrets.token_hex(32)
+    # Only a first install gets its own encryption key: credentials a configured one already
+    # stored are sealed with the key it ran with, and a new key would make them unreadable.
+    # The database is not ours, though, and may hold credentials sealed with the public
+    # default, so that stays readable as the previous key.
+    generated_encryption_key = not configured and not existing.get("ENCRYPTION_SECRET_KEY")
+    if generated_encryption_key:
+        updates["ENCRYPTION_SECRET_KEY"] = secrets.token_hex(32)
+        if not existing.get("ENCRYPTION_SECRET_KEY_PREVIOUS"):
+            updates["ENCRYPTION_SECRET_KEY_PREVIOUS"] = stack.DEFAULT_ENCRYPTION_KEY
     if "VITE_API_STREAMING" not in existing:
         updates["VITE_API_STREAMING"] = "true"
     provider = _choose_provider(args, context, existing, ask)
@@ -459,6 +476,13 @@ def _native_up(args, context: Context, directory: Path) -> int:
         return 1
 
     print(f"\nDocsGPT is running at http://localhost:{port}")
+    if generated_encryption_key:
+        print(
+            "Generated ENCRYPTION_SECRET_KEY. ENCRYPTION_SECRET_KEY_PREVIOUS keeps credentials this database "
+            "already stored under the public default readable; reseal them with "
+            f"`DOCSGPT_HOME={directory} docsgpt connectors reencrypt`, then remove ENCRYPTION_SECRET_KEY_PREVIOUS "
+            "once it reports nothing unreadable."
+        )
     print(f"Services: {', '.join(names)} under {services.name}")
     print(f"Settings: {env_path}")
     print("Manage it with: docsgpt status | logs | down | uninstall")
@@ -499,6 +523,8 @@ def up(args, context: Optional[Context] = None) -> int:
     provider = _choose_provider(args, context, existing, ask)
 
     image_tag = args.image_tag or context.version
+    lan_address = context.lan_ip()
+    owned_api_url = stack.owns_api_url(existing, _record(directory).get("api_url"), lan_address)
     try:
         updates = stack.plan(
             existing,
@@ -509,6 +535,8 @@ def up(args, context: Optional[Context] = None) -> int:
             port=args.port,
             provider=provider,
             docling=args.docling,
+            lan_ip=lan_address,
+            written_api_url=_record(directory).get("api_url"),
         )
     except ValueError as exc:
         raise DeployError(str(exc)) from exc
@@ -525,6 +553,20 @@ def up(args, context: Optional[Context] = None) -> int:
         print(
             "DocsGPT will listen on every interface over plain HTTP: its access token travels as "
             "readable text. Use `docsgpt up --domain <name>` for HTTPS outside a trusted network.",
+            file=sys.stderr,
+        )
+    if env.get("AUTH_TYPE") and not env.get("ENCRYPTION_SECRET_KEY"):
+        # Only a fresh database gets a generated key (stack.plan); this one may hold credentials
+        # sealed with the public default, so the operator has to rotate onto a key of their own.
+        compose_file = directory / stack.COMPOSE_FILE
+        print(
+            "ENCRYPTION_SECRET_KEY is not set: DocsGPT refuses to create connections on the Connectors page, "
+            "and tools, MCP servers and custom models store their secrets under the public default key. "
+            "To set it on this existing database, put a new key in ENCRYPTION_SECRET_KEY and "
+            "`default-docsgpt-encryption-key` in ENCRYPTION_SECRET_KEY_PREVIOUS, run `docsgpt up`, then "
+            f"`docker compose -f {compose_file} exec backend python -m docsgpt connectors reencrypt`, "
+            "then remove ENCRYPTION_SECRET_KEY_PREVIOUS once it reports nothing unreadable: "
+            "https://docs.docsgpt.cloud/Deploying/Security#secrets",
             file=sys.stderr,
         )
     up_args = ["up", "-d", "--remove-orphans", *recreate]
@@ -546,6 +588,9 @@ def up(args, context: Optional[Context] = None) -> int:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     record = json.loads(record_path.read_text(encoding="utf-8")) if configured else {"installed_at": now}
     record.update(version=context.version, image_tag=image_tag, updated_at=now)
+    if owned_api_url:
+        # What this `up` left in API_URL, so the next one knows the value is its own to change.
+        record["api_url"] = env.get("API_URL")
     record_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
     address = stack.url(env, context.lan_ip())
@@ -890,15 +935,134 @@ def _check_redis(urls: Mapping[str, str]) -> Check:
     return Check("redis", "ok", f"answering on {len(urls)} database(s)")
 
 
+@contextmanager
+def _service_environment(env: Mapping[str, str]) -> Iterator[None]:
+    """Make the process look like the service for the duration: its settings file alone, and quiet.
+
+    ``DOCSGPT_ENV_FILE`` points at an empty file, so importing the app's settings reads neither the checkout's
+    ``.env`` (which may be broken, or not the file being checked) nor a ``DOCSGPT_ENV_FILE`` that does not
+    exist. The file's values go into the environment, as the app's ``load_dotenv`` puts them, because the
+    ``openai_compatible`` catalogs read their ``api_key_env`` from there. INFO logging from the model catalog is
+    held back so it does not interleave with the report. Everything is restored on exit.
+    """
+    from docsgpt.core.paths import ENV_FILE_ENV
+
+    saved = dict(os.environ)
+    logging_disabled = logging.root.manager.disable
+    handle, empty_env_file = tempfile.mkstemp(prefix="docsgpt-doctor-", suffix=".env")
+    os.close(handle)
+    try:
+        os.environ[ENV_FILE_ENV] = empty_env_file
+        os.environ.update({key: value for key, value in env.items() if value is not None})
+        logging.disable(max(logging.INFO, logging_disabled))
+        yield
+    finally:
+        logging.disable(logging_disabled)
+        os.environ.clear()
+        os.environ.update(saved)
+        Path(empty_env_file).unlink(missing_ok=True)
+
+
+def _forget_shell_settings(env: Mapping[str, str]) -> None:
+    """Drop settings the shell running doctor exports but the settings file does not set.
+
+    A key exported in that shell is not a key the service has. Call inside :func:`_service_environment`,
+    which puts the environment back afterwards.
+    """
+    from docsgpt.core.settings import Settings
+
+    for name in Settings.model_fields:
+        if name not in env:
+            os.environ.pop(name, None)
+
+
+def _catalog_key_names(env: Mapping[str, str]) -> list[str]:
+    """The ``api_key_env`` variables the ``openai_compatible`` model YAMLs name, built-in and operator ones."""
+    from docsgpt.core.model_yaml import BUILTIN_MODELS_DIR, load_model_yamls
+
+    directories = [BUILTIN_MODELS_DIR]
+    if env.get("MODELS_CONFIG_DIR") and Path(env["MODELS_CONFIG_DIR"]).is_dir():
+        directories.append(Path(env["MODELS_CONFIG_DIR"]))
+    try:
+        catalogs = load_model_yamls(directories)
+    except Exception:  # noqa: BLE001 - the model check reports a catalog that does not load
+        return []
+    return sorted({c.api_key_env for c in catalogs if c.provider == "openai_compatible" and c.api_key_env})
+
+
 def _check_provider(env: Mapping[str, str]) -> Check:
     """Whether a model provider is set up well enough to answer a question."""
     provider = env.get("LLM_PROVIDER") or "docsgpt"
     if provider == "docsgpt":
         return Check("provider", "ok", "the DocsGPT public API (no key needed)")
-    if not (env.get("API_KEY") or env.get("OPENAI_API_KEY")):
+    if provider == "openai_compatible":
+        # OPENAI_BASE_URL plus LLM_NAME registers the server's own models (Ollama, vLLM, ...), no YAML needed.
+        if env.get("OPENAI_BASE_URL") and env.get("LLM_NAME"):
+            return Check("provider", "ok", f"{provider} at {_endpoint(env['OPENAI_BASE_URL'])}")
+        # Otherwise its models carry their own keys, named by each model YAML's api_key_env.
+        keys = _catalog_key_names(env)
+        if not any(env.get(key) for key in keys):
+            example = f" such as {keys[0]}" if keys else ""
+            return Check("provider", "fail", f"openai_compatible is configured but no model YAML's key{example} is set")
+        return Check("provider", "ok", provider)
+    keys = ["API_KEY", "OPENAI_API_KEY"]
+    try:
+        with _service_environment(env):
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+            plugin = PROVIDERS_BY_NAME.get(provider)
+    except Exception:  # noqa: BLE001 - settings that do not load are the model check's finding
+        plugin = None
+    if plugin is not None and plugin.api_key_setting:
+        keys.append(plugin.api_key_setting)
+    if not any(env.get(key) for key in keys):
         return Check("provider", "fail", f"{provider} is configured but no API_KEY is set")
     endpoint = _endpoint(env["OPENAI_BASE_URL"]) if env.get("OPENAI_BASE_URL") else ""
     return Check("provider", "ok", f"{provider}{' at ' + endpoint if endpoint else ''}")
+
+
+def _first_error(exc: Exception) -> str:
+    """One line for a settings or catalog error; a validation error is named by its field."""
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            first = errors()[0]
+            field = ".".join(str(part) for part in first.get("loc", ())) or "settings"
+            return f"{field}: {first.get('msg', '').strip()}"
+        except Exception:  # noqa: BLE001 - fall back to the message
+            pass
+    lines = str(exc).strip().splitlines()
+    return lines[0] if lines else type(exc).__name__
+
+
+def _check_model(env: Mapping[str, str]) -> Check:
+    """Which model answers by default, and whether that is the provider the settings name.
+
+    Fails when the settings do not load, when ``LLM_PROVIDER`` names a provider but the default model is served
+    by the hosted DocsGPT API (a missing key, an unknown provider), or when no model is registered at all.
+    """
+    try:
+        with _service_environment(env):
+            from docsgpt.core.model_registry import (
+                diagnose_model_setup,
+                load_catalog_models,
+                resolve_default_model_id,
+            )
+            from docsgpt.core.settings import Settings
+
+            _forget_shell_settings(env)
+            settings = Settings(_env_file=None)
+            models = load_catalog_models(settings)
+            default = resolve_default_model_id(settings, models)
+            problems = diagnose_model_setup(settings, models, default)
+    except Exception as exc:  # noqa: BLE001 - doctor reports a broken setup rather than tracing back on it
+        return Check("model", "fail", f"the settings do not load: {_first_error(exc)}")
+    failing = [p for p in problems if p.hosted_fallback or not models]
+    if failing:
+        return Check("model", "fail", failing[0].message)
+    if problems:
+        return Check("model", "warn", problems[0].message)
+    return Check("model", "ok", f"default {default} ({models[default].provider.value})")
 
 
 def _redis_to_check(args, env: Mapping[str, str]) -> dict:
@@ -936,6 +1100,7 @@ def doctor(args, context: Optional[Context] = None) -> int:
         _check_postgres(args.postgres_uri or env.get("POSTGRES_URI")),
         _check_redis(_redis_to_check(args, env)),
         _check_provider(env),
+        _check_model(env),
     ]
 
     # The one command that exists to explain a broken setup must not fall over on one.
@@ -1087,13 +1252,93 @@ def _restore_data(context: Context, directory: Path, archive: Path, volumes: lis
             raise DeployError(f"{archive} is missing its database dump")
         print("Starting the database ...")
         context.docker.compose(directory, "up", "-d", "--wait", "postgres")
+
+        def run(database: str, statements: list) -> None:
+            _stack_psql(context, directory, database, statements)
+
+        def load() -> None:
+            with dump.open("r", encoding="utf-8") as handle:
+                _stack_psql(context, directory, STACK_DATABASE, [], stdin=handle)
+
+        replace_database(run, load, STACK_DATABASE, STACK_DATABASE_OWNER)
+
+
+STACK_DATABASE = "docsgpt"
+STACK_DATABASE_OWNER = "docsgpt"
+_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
+
+
+def _stack_psql(
+    context: Context, directory: Path, database: str, statements: list, stdin: Optional[IO[str]] = None
+) -> None:
+    """Run ``statements`` (each its own ``-c``, so each its own transaction), or ``stdin``, in the stack's Postgres."""
+    command = ["psql", "--quiet", "--set", "ON_ERROR_STOP=on", "-U", STACK_DATABASE_OWNER, "-d", database]
+    for statement in statements:
+        command += ["-c", statement]
+    context.docker.compose(directory, "exec", "-T", "postgres", *command, stdin=stdin)
+
+
+def replace_database(
+    run: Callable[[str, list], None], load: Callable[[], None], database: str, owner: str
+) -> None:
+    """Load a dump into an empty ``database``, keeping the current one until the load succeeds.
+
+    The dump comes from ``pg_dump --clean --if-exists``, which drops only the objects it knows. Loaded
+    over a database a newer DocsGPT migrated, the newer tables stay, and their foreign keys stop the
+    older tables from being dropped. So the current database is renamed aside, an empty one takes its
+    name, and the dump goes into that. On success the old copy is dropped; on failure it is put back.
+
+    Args:
+        run: Runs SQL statements, each on its own, connected to the named database.
+        load: Loads the dump into ``database``.
+        database: The database to replace.
+        owner: The role that owns the new, empty database.
+
+    Raises:
+        DeployError: When a copy from an unfinished restore is in the way, or the load fails (after the
+            previous database has been put back).
+    """
+    for name in (database, owner):
+        if not _IDENTIFIER.match(name):
+            raise ValueError(f"not a plain SQL identifier: {name!r}")
+    previous = f"{database}_before_restore"
+    # On its own, so refusing here never reaches the undo below, which would drop the live database.
+    run("postgres", [
+        f"DO $$ BEGIN IF EXISTS (SELECT FROM pg_database WHERE datname = '{previous}') THEN "
+        f"RAISE EXCEPTION 'database {previous} is left from a restore that did not finish; "
+        f"check it, then drop it or rename it back to {database}'; END IF; END $$"
+    ])
+    print(
+        f"Replacing the {database} database with the backup's, including any tables a newer DocsGPT added "
+        f"(the current one is kept as {previous} until the backup has loaded) ..."
+    )
+    run("postgres", [f"ALTER DATABASE {database} RENAME TO {previous}"])
+    try:
+        run("postgres", [f"CREATE DATABASE {database} OWNER {owner}"])
         print("Restoring the database ...")
-        with dump.open("r", encoding="utf-8") as handle:
-            context.docker.compose(
-                directory, "exec", "-T", "postgres",
-                "psql", "--quiet", "--set", "ON_ERROR_STOP=on", "-U", "docsgpt", "-d", "docsgpt",
-                stdin=handle,
+        load()
+    except BaseException:
+        print("The database did not restore. Putting the previous database back ...", file=sys.stderr)
+        try:
+            run("postgres", [
+                f"DROP DATABASE IF EXISTS {database} WITH (FORCE)",
+                f"ALTER DATABASE {previous} RENAME TO {database}",
+            ])
+        except DeployError:
+            print(
+                f"Could not put it back: the data is in the database {previous}. Rename it to {database} "
+                f"(ALTER DATABASE {previous} RENAME TO {database}) before starting DocsGPT.",
+                file=sys.stderr,
             )
+        raise
+    try:
+        run("postgres", [f"DROP DATABASE {previous}"])
+    except DeployError:
+        print(
+            f"The backup is restored, but the previous database is still there as {previous}. "
+            f"Drop it once you no longer need it (DROP DATABASE {previous}).",
+            file=sys.stderr,
+        )
 
 
 def restore(args, context: Optional[Context] = None) -> int:

@@ -80,8 +80,6 @@ jobs:
               "docsgpt/Dockerfile",
               "docsgpt/requirements.txt",
               "docsgpt/requirements-docling.txt",
-              "docsgpt/index.faiss",
-              "docsgpt/index.pkl",
               "application/__init__.py",
           ):
               assert banned not in names, f"must not ship: {banned}"

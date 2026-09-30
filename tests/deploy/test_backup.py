@@ -14,6 +14,24 @@ from docsgpt.deploy.docker import DeployError
 from .test_commands import FakeDocker, FakePrompter, _context, _run
 
 
+class RecordingPsql(FakeDocker):
+    """A fake Docker that records each psql call and can fail one of them."""
+
+    def __init__(self, *args, fail_on=None, fail_on_stdin=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.psql = []
+        self.fail_on = fail_on
+        self.fail_on_stdin = fail_on_stdin
+
+    def compose(self, directory, *args, **kwargs):
+        if "psql" in args:
+            self.psql.append((list(args), kwargs.get("stdin") is not None))
+            if (self.fail_on and self.fail_on in " ".join(args)) or (self.fail_on_stdin and kwargs.get("stdin")):
+                self.calls.append((Path(directory), list(args)))
+                raise DeployError("psql failed")
+        return super().compose(directory, *args, **kwargs)
+
+
 def _installed(tmp_path, *extra):
     assert _run(["up", "--yes", "--dir", str(tmp_path), *extra], _context()) == 0
 
@@ -209,6 +227,52 @@ class TestRestore:
         with pytest.raises(DeployError, match="nothing to restore"):
             _run(["restore", str(without_dump), "--dir", str(tmp_path), "--yes"], _context(docker))
         assert docker.calls == [], "DocsGPT is still running"
+
+    @staticmethod
+    def _psql_calls(docker):
+        return [(" ".join(args), stdin) for args, stdin in getattr(docker, "psql", [])]
+
+    def test_the_database_is_replaced_not_merged(self, tmp_path, capsys):
+        """Tables a newer release added keep FKs that block the dump's DROPs, so load into an empty database."""
+        archive = self._backup(tmp_path)
+        docker = RecordingPsql(volumes={"docsgpt_postgres_data"})
+        assert _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker)) == 0
+        calls = self._psql_calls(docker)
+        rename = next(i for i, (c, _) in enumerate(calls) if "RENAME TO docsgpt_before_restore" in c)
+        create = next(i for i, (c, _) in enumerate(calls) if "CREATE DATABASE docsgpt OWNER docsgpt" in c)
+        load = next(i for i, (_, stdin) in enumerate(calls) if stdin)
+        drop = next(i for i, (c, _) in enumerate(calls) if "DROP DATABASE docsgpt_before_restore" in c)
+        assert rename < create < load < drop, calls
+        assert "-d docsgpt" in calls[load][0]
+        assert all("-d postgres" in c for i, (c, _) in enumerate(calls) if i != load)
+        assert "Replacing the docsgpt database" in capsys.readouterr().out
+
+    def test_a_leftover_from_an_unfinished_restore_is_not_touched(self, tmp_path):
+        """The check runs on its own, so a refusal never triggers the undo that drops the live database."""
+        archive = self._backup(tmp_path)
+        docker = RecordingPsql(volumes={"docsgpt_postgres_data"}, fail_on="IF EXISTS (SELECT")
+        with pytest.raises(DeployError):
+            _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker))
+        calls = [c for c, _ in self._psql_calls(docker)]
+        assert not any("RENAME" in c or "DROP DATABASE" in c for c in calls), calls
+
+    def test_a_failed_load_puts_the_previous_database_back(self, tmp_path, capsys):
+        archive = self._backup(tmp_path)
+        docker = RecordingPsql(volumes={"docsgpt_postgres_data"}, fail_on_stdin=True)
+        with pytest.raises(DeployError, match="psql failed"):
+            _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker))
+        calls = [c for c, _ in self._psql_calls(docker)]
+        undo = [c for c in calls if "RENAME TO docsgpt " in c + " "]
+        assert undo and "DROP DATABASE IF EXISTS docsgpt WITH (FORCE)" in undo[-1], calls
+        assert not any("DROP DATABASE docsgpt_before_restore" in c for c in calls), calls
+        assert "previous database" in capsys.readouterr().err
+
+    def test_a_failed_cleanup_still_restores(self, tmp_path, capsys):
+        """The backup is in place by then; the leftover copy is only reported."""
+        archive = self._backup(tmp_path)
+        docker = RecordingPsql(volumes={"docsgpt_postgres_data"}, fail_on="DROP DATABASE docsgpt_before_restore")
+        assert _run(["restore", str(archive), "--dir", str(tmp_path), "--yes"], _context(docker)) == 0
+        assert "docsgpt_before_restore" in capsys.readouterr().err
 
     def test_psql_stops_at_the_first_failing_statement(self, tmp_path):
         """Without it psql runs on after an error and a half-restored database looks like success."""

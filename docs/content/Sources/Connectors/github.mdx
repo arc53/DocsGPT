@@ -1,0 +1,37 @@
+---
+title: GitHub Connector
+description: Sync GitHub repositories into Knowledge and give agents GitHub's read-only MCP tools, with a personal access token or a GitHub App sign-in.
+---
+
+import { Callout } from 'nextra/components'
+
+# GitHub Connector
+
+One GitHub connection syncs repositories into Knowledge and gives agents GitHub's own [MCP server](https://github.com/github/github-mcp-server) as a tool. When connecting, members choose **Let agents use GitHub** (on by default) and **Sync into Knowledge** with a repository to sync.
+
+- **Knowledge.** Each synced repository is one source, read with the connection's token and synced on the chosen schedule.
+- **Tools.** By default agents use the read-only endpoint `https://api.githubcopilot.com/mcp/readonly`. **Also let agents make changes (issues, comments, pull requests)** is off by default; see [Letting agents make changes](/Sources/Connectors#letting-agents-make-changes).
+
+<Callout type="info">
+Members connect this service from **Settings > Connectors**. See [Connectors](/Sources/Connectors#github) for the full GitHub setup.
+</Callout>
+
+## Connect with a personal access token
+
+Always available, with no admin setup. Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) for the repositories DocsGPT should read, with **Contents** set to **Read-only**. Add read-only **Issues** and **Pull requests** if agents should read those through the tools. Paste the token when you pick **GitHub** in **Settings > Connectors**.
+
+## Sign in with GitHub (optional, a GitHub App)
+
+An admin can register a GitHub App so members can **Sign in with GitHub** and choose repositories when they install the app. Register the app with the redirect URI from **Admin > Connectors** as its callback URL, create a client secret, then set:
+
+```env
+GITHUB_CLIENT_ID=Iv23li...        # the app's Client ID
+GITHUB_CLIENT_SECRET=your-client-secret
+GITHUB_APP_SLUG=docsgpt-acme      # from the app's public link, github.com/apps/<slug>
+```
+
+Restart the API and the worker. The app's permissions and installation options are listed in [Sign in with GitHub](/Sources/Connectors#sign-in-with-github-a-github-app).
+
+## Public repositories
+
+The **GitHub** tile in **Add knowledge** ingests a public repository from its URL without a connection. `GITHUB_ACCESS_TOKEN`, if set, only raises GitHub's rate limit there. For a private repository, use a GitHub connection.

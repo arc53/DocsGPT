@@ -9,7 +9,7 @@ Endpoints tested:
 
 OAuth status (previously polled via /api/mcp_server/oauth_status/<task_id>)
 is now delivered exclusively through the per-user SSE pipe at
-/api/events; see docs/runbooks/sse-notifications.md.
+/api/events; see docs/content/Deploying/Troubleshooting/sse-notifications.mdx.
 
 Usage:
     python tests/integration/test_mcp.py

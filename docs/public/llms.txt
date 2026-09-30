@@ -1,63 +1,109 @@
 # DocsGPT
 
-> DocsGPT is an open-source platform for building AI agents and assistants with document retrieval, tools, and multi-model support.
+> DocsGPT is an open-source platform for building AI agents and assistants with document retrieval, tools, and
+> multi-model support. Run it with Docker, pip or Kubernetes, with hosted or local models.
 
-This file is a curated map of DocsGPT documentation for LLM and agent use.
-Prioritize Core, Deploying, and Agents for implementation tasks.
+This file maps the DocsGPT documentation for LLMs and coding agents. It is generated from the docs sidebar by
+`docs/scripts/generate-llms.mjs`; don't edit it by hand.
 
-## Core
+## Overview
 
-- [Docs Home](https://docs.docsgpt.cloud/): Main documentation landing page.
-- [Quickstart](https://docs.docsgpt.cloud/quickstart): Fastest path to run DocsGPT locally.
-- [Architecture](https://docs.docsgpt.cloud/Guides/Architecture): High-level system architecture.
-- [Development Environment](https://docs.docsgpt.cloud/Deploying/Development-Environment): Backend and frontend local setup.
-- [DocsGPT Settings](https://docs.docsgpt.cloud/Deploying/DocsGPT-Settings): Environment variables and core app configuration.
+- [Home](https://docs.docsgpt.cloud/): Documentation for DocsGPT, the open-source platform for building AI agents and assistants with document retrieval, tools and multi-model support.
+- [Quickstart](https://docs.docsgpt.cloud/quickstart): Install and start DocsGPT with one command, or from a clone with the setup script.
+- [Upgrading](https://docs.docsgpt.cloud/upgrading): Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes, and what changes in each release.
+- [Changelog](https://docs.docsgpt.cloud/changelog): What changed in each DocsGPT release, with links to the upgrade steps an existing deployment needs.
 
-## Deploying
+## Concepts
 
-- [Docker Deployment](https://docs.docsgpt.cloud/Deploying/Docker-Deploying): Run DocsGPT with Docker and Docker Compose.
-- [Kubernetes Deployment](https://docs.docsgpt.cloud/Deploying/Kubernetes-Deploying): Deploy DocsGPT on Kubernetes clusters.
-- [Hosting DocsGPT](https://docs.docsgpt.cloud/Deploying/Hosting-the-app): Hosting overview with cloud options.
+- [Concepts](https://docs.docsgpt.cloud/Concepts): The words the DocsGPT docs and web app use - agents, knowledge and sources, chunks, connectors and connections, tools, workflows, prompts, teams, and the credentials that call the API.
+- [Architecture](https://docs.docsgpt.cloud/Concepts/Architecture): How DocsGPT connects clients, agents, retrieval, background workers, models, and storage.
+
+## Using DocsGPT
+
+- [Using the Web App](https://docs.docsgpt.cloud/Using/web-app): Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme, language and the active prompt.
+- [Sharing Conversations](https://docs.docsgpt.cloud/Using/sharing): Share a conversation as a public, read-only page or as a page where anyone with the link can keep asking questions on your account, and how to stop a link.
+- [Teams and Sharing](https://docs.docsgpt.cloud/Using/teams-and-sharing): Create a team, add members, give them roles, and share agents, sources, prompts and tools with a team or one teammate as a viewer or an editor.
+- [Analytics and Logs](https://docs.docsgpt.cloud/Using/analytics-and-logs): Read the Analytics charts, filter the Logs list and open an execution trace in the DocsGPT web app, for your whole account or for one agent.
 
 ## Agents
 
-- [Agent Basics](https://docs.docsgpt.cloud/Agents/basics): Core concepts for building and managing agents.
-- [Workflow Nodes](https://docs.docsgpt.cloud/Agents/nodes): Node types and behavior in agent workflows.
-- [Agent API](https://docs.docsgpt.cloud/Agents/api): Programmatic agent interaction (streaming and non-streaming).
-- [Agent Webhooks](https://docs.docsgpt.cloud/Agents/webhooks): Trigger and automate agents with webhooks.
+- [Agent Basics](https://docs.docsgpt.cloud/Agents/basics): Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
+- [Workflow Nodes](https://docs.docsgpt.cloud/Agents/nodes): The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else and Code - and the shared state they read and write.
+- [Schedules](https://docs.docsgpt.cloud/Agents/schedules): Run an agent on a timer - recurring schedules and one-time tasks from the Schedules tab, tasks set from chat with the Scheduling tool, the run log, auto-pause, the REST API, the operator limits, and the beat scheduler every schedule needs.
+- [Guardrails](https://docs.docsgpt.cloud/Agents/guardrails): Scan user input, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection, groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, instance floor and API reference.
+- [Customizing Prompts](https://docs.docsgpt.cloud/Agents/prompts): Write the prompts your chats and agents use - adding and editing them in Settings, the Jinja2 template variables (system, source, passthrough, tools, artifacts, attachments), how a prompt is assembled, and the built-in presets.
+- [Context Compression](https://docs.docsgpt.cloud/Agents/context-compression): How DocsGPT summarizes long conversations to stay within the model's context window, and the settings that control it.
+- [Benchmarking Agents](https://docs.docsgpt.cloud/Agents/benchmarking): Run repeatable benchmarks and evals against your DocsGPT agents from the terminal with docsgpt-cli bench.
+
+## Knowledge
+
+- [Add Knowledge](https://docs.docsgpt.cloud/Sources/adding-knowledge): Add files, web pages, GitHub repositories, wikis and synced services to Knowledge, then use them in chats and agents.
+- [Document Parsing and OCR](https://docs.docsgpt.cloud/Sources/ocr): Which engine parses uploaded documents, how OCR works in DocsGPT, how to configure it, and what changes for source ingestion vs chat attachments.
+- [Per-Source Configuration](https://docs.docsgpt.cloud/Sources/Per-source-configuration): Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, pre-screening and more.
+- [GraphRAG](https://docs.docsgpt.cloud/Sources/GraphRAG): Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
+- [Wiki Sources](https://docs.docsgpt.cloud/Sources/Wiki-sources): Create a knowledge source that the agent can read and write — a living wiki it keeps up to date, with human edits, provenance stamps, and version safety.
+- [Connectors Overview](https://docs.docsgpt.cloud/Sources/Connectors): Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
+- [Google Drive](https://docs.docsgpt.cloud/Sources/Connectors/google-drive): Connect your Google Drive as an external knowledge base to upload and process files directly from your Google Drive account.
+- [SharePoint / OneDrive](https://docs.docsgpt.cloud/Sources/Connectors/sharepoint): Connect your Microsoft SharePoint or OneDrive as an external knowledge base to upload and process files directly.
+- [Confluence](https://docs.docsgpt.cloud/Sources/Connectors/confluence): Connect your Confluence Cloud workspace as an external knowledge base to upload and process pages directly.
+- [GitHub](https://docs.docsgpt.cloud/Sources/Connectors/github): Sync GitHub repositories into Knowledge and give agents GitHub's read-only MCP tools, with a personal access token or a GitHub App sign-in.
+- [Linear](https://docs.docsgpt.cloud/Sources/Connectors/linear): Sign in to Linear once to give agents Linear's tools and sync issues and project documents into Knowledge.
+- [Amazon S3](https://docs.docsgpt.cloud/Sources/Connectors/s3): Sync documents from an Amazon S3 bucket, or S3-compatible storage such as MinIO or Cloudflare R2, into Knowledge.
 
 ## Tools
 
-- [Tools Basics](https://docs.docsgpt.cloud/Tools/basics): How tools extend agent capabilities.
-- [Generic API Tool](https://docs.docsgpt.cloud/Tools/api-tool): Configure API calls without custom code.
-- [Creating a Custom Tool](https://docs.docsgpt.cloud/Tools/creating-a-tool): Build custom Python tools for DocsGPT.
+- [Tools Basics](https://docs.docsgpt.cloud/Tools/basics): Understand what DocsGPT Tools are, how they work, and explore the built-in tools available to extend DocsGPT's functionality.
+- [API Tool](https://docs.docsgpt.cloud/Tools/api-tool): Learn how to configure and use the API Tool in DocsGPT to connect with any RESTful API without writing custom code.
+- [MCP Tools](https://docs.docsgpt.cloud/Tools/mcp-tools): Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
+- [Artifacts and Code Execution](https://docs.docsgpt.cloud/Tools/artifacts-and-code-execution): Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
+- [Remote Device](https://docs.docsgpt.cloud/Tools/remote-device): Run shell commands on a paired remote machine from a DocsGPT agent using docsgpt-cli host.
+- [Creating a Custom Tool](https://docs.docsgpt.cloud/Tools/creating-a-tool): Learn how to create custom Python tools to extend DocsGPT's functionality and integrate with various services or perform specific actions.
 
 ## Models
 
-- [Cloud LLM Providers](https://docs.docsgpt.cloud/Models/cloud-providers): Configure hosted model providers.
-- [Local Inference](https://docs.docsgpt.cloud/Models/local-inference): Connect DocsGPT to local inference backends.
-- [Embeddings](https://docs.docsgpt.cloud/Models/embeddings): Select and configure embedding models.
+- [Cloud Providers](https://docs.docsgpt.cloud/Models/cloud-providers): Connect DocsGPT to various Cloud Large Language Model (LLM) providers to power your document Q&A.
+- [Local Inference](https://docs.docsgpt.cloud/Models/local-inference): Connect DocsGPT to local inference engines for running LLMs directly on your hardware.
+- [Embeddings](https://docs.docsgpt.cloud/Models/embeddings): Learn about embedding models, their importance in DocsGPT, and how to configure them for optimal performance.
+- [Custom Models](https://docs.docsgpt.cloud/Models/custom-models): Add your own OpenAI-compatible model in Settings → Custom Models - the fields, Test connection, where the model appears, how its API key is stored, why only public endpoints are allowed, and the /api/user/models endpoints.
+- [Fallback Models](https://docs.docsgpt.cloud/Models/fallback): Switch to another model automatically when the primary model fails, and keep each provider's API key with that provider.
 
-## Extensions
+## API
 
-- [API Keys for Integrations](https://docs.docsgpt.cloud/Extensions/api-key-guide): Generate and use DocsGPT API keys.
-- [Chat Widget](https://docs.docsgpt.cloud/Extensions/chat-widget): Embed the DocsGPT chat widget.
-- [Search Widget](https://docs.docsgpt.cloud/Extensions/search-widget): Embed the DocsGPT search widget.
-- [Chrome Extension](https://docs.docsgpt.cloud/Extensions/Chrome-extension): Install and use the browser extension.
-- [Chatwoot Extension](https://docs.docsgpt.cloud/Extensions/Chatwoot-extension): Integrate DocsGPT with Chatwoot.
+- [API Overview](https://docs.docsgpt.cloud/API): How to call the DocsGPT API — agent API keys, personal access tokens and session tokens, which page covers which endpoints, and where your instance serves its Swagger UI and OpenAPI document.
+- [Agent API Keys](https://docs.docsgpt.cloud/API/agent-keys): Learn how to obtain, understand, and use DocsGPT API keys to integrate DocsGPT into your external applications and widgets.
+- [Personal Access Tokens](https://docs.docsgpt.cloud/API/personal-access-tokens): Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
+- [Agent API](https://docs.docsgpt.cloud/API/agent-api): Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
+- [OpenAI-Compatible API](https://docs.docsgpt.cloud/API/openai-compatible): Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, multimodal, tool calling, reasoning, and idempotent retries.
+- [Agent Webhooks](https://docs.docsgpt.cloud/API/webhooks): Learn how to automate and integrate DocsGPT Agents using webhooks for asynchronous task execution.
+- [Realtime Events](https://docs.docsgpt.cloud/API/realtime-events): Subscribe to DocsGPT's server-sent events channel for live notifications — ingestion progress, tool approvals, MCP OAuth completion — and reconnect to an in-flight chat answer.
+- [MCP Server](https://docs.docsgpt.cloud/API/mcp-server): Connect Claude Code, Claude Desktop, Cursor or any MCP client to DocsGPT's own MCP server at /mcp and search an agent's sources with the search_docs tool, authenticated with the agent's API key.
+- [REST API Reference](https://docs.docsgpt.cloud/API/reference): Every endpoint in DocsGPT's Swagger document, with its parameters, request body fields and the personal access token scope it needs.
 
-## Integrations
+## Widgets & Integrations
 
-- [Google Drive Connector](https://docs.docsgpt.cloud/Guides/Integrations/google-drive-connector): Ingest and sync files from Google Drive.
+- [Chat Widget](https://docs.docsgpt.cloud/Extensions/chat-widget): Embed the DocsGPT Widget in your React, HTML, or Nextra projects to provide AI-powered chat functionality to your users.
+- [Search Widget](https://docs.docsgpt.cloud/Extensions/search-widget): Embed the DocsGPT Search Bar Widget in your React or HTML projects to provide AI-powered document search functionality to your users.
+- [Chatwoot Extension](https://docs.docsgpt.cloud/Extensions/Chatwoot-extension): Answer incoming Chatwoot messages with a DocsGPT agent. Set up the agent key, the Chatwoot access token and webhook, then configure and run the bridge in extensions/chatwoot.
+- [Community Integrations](https://docs.docsgpt.cloud/Extensions/community): Discord, Slack and Telegram bots and the docsgpt-cli terminal client - integrations that live in their own arc53 repositories and connect to DocsGPT with an agent API key.
 
-## Optional
+## Deploy & Operate
 
-- [Customizing Prompts](https://docs.docsgpt.cloud/Guides/Customising-prompts): Template-based prompt customization.
-- [How to Train on Other Documentation](https://docs.docsgpt.cloud/Guides/How-to-train-on-other-documentation): Add additional documentation sources.
-- [Context Compression](https://docs.docsgpt.cloud/Guides/compression): Reduce context while preserving key information.
-- [OCR for Sources and Attachments](https://docs.docsgpt.cloud/Guides/ocr): OCR behavior for ingestion and chat uploads.
-- [How to Use Different LLMs](https://docs.docsgpt.cloud/Guides/How-to-use-different-LLM): Additional model-selection guidance.
-- [Avoiding Hallucinations](https://docs.docsgpt.cloud/Guides/My-AI-answers-questions-using-external-knowledge): Improve answer grounding with external knowledge.
-- [Amazon Lightsail Deployment](https://docs.docsgpt.cloud/Deploying/Amazon-Lightsail): Deploy DocsGPT on AWS Lightsail.
-- [Railway Deployment](https://docs.docsgpt.cloud/Deploying/Railway): Deploy DocsGPT on Railway.
-- [Changelog](https://docs.docsgpt.cloud/changelog): Project release history.
+- [Choose a Deployment](https://docs.docsgpt.cloud/Deploying): Compare the ways to install DocsGPT (installer, Docker Compose, pip, Kubernetes, air-gapped) and pick the one that fits.
+- [Docker Setup](https://docs.docsgpt.cloud/Deploying/Docker-Deploying): Deploy DocsGPT using Docker and Docker Compose for easy setup and management.
+- [Install with pip](https://docs.docsgpt.cloud/Deploying/Pip-Install): Run the DocsGPT backend from the PyPI package, inside your own Python environment.
+- [Deploying on Kubernetes](https://docs.docsgpt.cloud/Deploying/Kubernetes-Deploying): Run DocsGPT on a Kubernetes cluster with the manifests in deployment/k8s - secrets, S3 and pgvector storage, migrations, publishing through an Ingress, and upgrades.
+- [Air-Gapped Deployment](https://docs.docsgpt.cloud/Deploying/Air-Gapped): Run DocsGPT on a network with no internet access.
+- [Code Execution Sandbox](https://docs.docsgpt.cloud/Deploying/Sandbox): Run the sandbox that the Artifact and Code Executor tools need - the self-hosted Jupyter runner with Docker Compose, Kubernetes or pip, or Daytona Cloud - with the gateway token, kernel settings and network isolation.
+- [docsgpt CLI Reference](https://docs.docsgpt.cloud/Deploying/cli): Every docsgpt subcommand and its main options, for the installer, pip installs, the Docker image and a source checkout.
+- [App Configuration](https://docs.docsgpt.cloud/Deploying/DocsGPT-Settings): Configure your DocsGPT application by understanding the basic settings.
+- [Settings Reference](https://docs.docsgpt.cloud/Deploying/Settings-Reference): Every DocsGPT setting, grouped by domain, with its type, default and purpose.
+- [Security Checklist](https://docs.docsgpt.cloud/Deploying/Security): Harden a DocsGPT install before other people or the internet can reach it - bind addresses, the choice of AUTH_TYPE, the secrets to set, outbound URL checks, prompt templates, the LLM cache and the version check.
+- [SSO with OIDC](https://docs.docsgpt.cloud/Deploying/OIDC-SSO): Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
+- [Access Control & Teams](https://docs.docsgpt.cloud/Deploying/Access-Control): How DocsGPT models permissions — global admin/user roles (RBAC), the admin dashboard, teams with per-team roles, and sharing agents, sources, prompts, and tools.
+- [Usage Quotas](https://docs.docsgpt.cloud/Deploying/Usage-Quotas): Cap how many tokens or dollars each user may spend per day, week or month, with an instance default, per-team allowances and per-user overrides.
+- [Observability](https://docs.docsgpt.cloud/Deploying/Observability): Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).
+- [Background Jobs & Retention](https://docs.docsgpt.cloud/Deploying/Background-Jobs): The periodic tasks the Celery beat scheduler runs in DocsGPT - source syncs, scheduled agent runs, reconciliation and cleanups - what each one trims and when, what is kept until someone deletes it, and how to make sure beat is running.
+- [PostgreSQL for User Data](https://docs.docsgpt.cloud/Deploying/Postgres-Migration): PostgreSQL is the user-data store for DocsGPT. Covers auto-bootstrap, production hardening, and the one-shot migration from legacy MongoDB deployments.
+- [Troubleshooting](https://docs.docsgpt.cloud/Deploying/Troubleshooting): First checks for a DocsGPT install that misbehaves - docsgpt doctor, the logs to read, and the common symptoms with their causes, from searches that ignore your documents to notifications that never arrive.
+- [SSE Notifications Runbook](https://docs.docsgpt.cloud/Deploying/Troubleshooting/sse-notifications): Diagnose missing notifications, a bell badge that never lights up, upload toasts that hang and chat answers that don't reconnect - Redis checks, the symptom map, failure modes and the realtime event settings.
+- [Development Environment](https://docs.docsgpt.cloud/Deploying/Development-Environment): Guide to setting up a development environment for DocsGPT, including backend and frontend setup.

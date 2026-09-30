@@ -1,0 +1,74 @@
+---
+title: MCP Tool Integration
+description: Connect external tools to DocsGPT agents using the Model Context Protocol (MCP) standard.
+---
+
+import { Callout } from 'nextra/components'
+import { Steps } from 'nextra/components'
+
+# MCP Tool Integration
+
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) integration lets you connect external tool servers to DocsGPT. Your agents can then discover and call tools provided by those servers during conversations — for example, querying a CRM, running code, or accessing a database.
+
+## Setup
+
+<Steps>
+
+### Step 1: Configure Environment Variables (Optional)
+
+Only needed if your MCP servers use OAuth authentication:
+
+```env
+MCP_OAUTH_REDIRECT_URI=https://yourdomain.com/api/mcp_server/callback
+```
+
+If not set, it is derived from the host of `CONNECTOR_REDIRECT_BASE_URI`, then from `API_URL`.
+
+### Step 2: Add an MCP Server
+
+Go to **Settings** > **Connectors** and pick a preset (Notion, Linear, Atlassian, Sentry, Asana, Stripe): **Sign in to Notion** opens the service's sign-in, and its tools are ready when you come back. For any other server, choose **Add custom connector** > **MCP server** and enter its URL and authentication; scopes and the timeout are under **Show advanced**. Enter the server URL, select an auth type, and click **Test Connection** to verify, then **Save**.
+
+### Step 3: Enable for Your Agent
+
+In your agent configuration, enable the MCP tools you want the agent to use.
+
+</Steps>
+
+Presets need no URL or form: they sign in with OAuth in one step. Admins can turn presets off one by one, and turn off custom MCP servers, in **Admin > Connectors**. See [Connectors](/Sources/Connectors).
+
+## Authentication Types
+
+| Auth Type | Config Fields |
+|-----------|---------------|
+| **None** | — |
+| **Bearer** | `bearer_token` |
+| **API Key** | `api_key`, `api_key_header` (default: `X-API-Key`) |
+| **Basic** | `username`, `password` |
+| **OAuth** | `oauth_scopes` (optional) |
+
+<Callout type="warning">
+For OAuth in production, `MCP_OAUTH_REDIRECT_URI` must be a publicly accessible URL pointing to your DocsGPT backend.
+</Callout>
+
+<Callout type="warning">
+OAuth servers, including the presets, also need `ENABLE_SSE_PUSH=true` (the default) and the API served through the ASGI app. The sign-in link and its result reach the web app only as `mcp.oauth.*` events on the [realtime events](/API/realtime-events) stream; with the publisher off, adding an OAuth server never gets past **Test Connection**.
+</Callout>
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/mcp_server/test` | POST | Test a connection without saving |
+| `/api/mcp_server/save` | POST | Save or update a server configuration |
+| `/api/mcp_server/callback` | GET | OAuth callback handler |
+| `/api/mcp_server/auth_status` | GET | Batch check auth status for all MCP tools |
+
+For an OAuth server, `/api/mcp_server/test` answers with `requires_oauth: true` and a `task_id`, and the sign-in runs in the background. Its progress arrives on the user event stream, `GET /api/events`, as `mcp.oauth.in_progress`, `mcp.oauth.awaiting_redirect` (with the `authorization_url` to open), `mcp.oauth.completed` or `mcp.oauth.failed` events whose `scope.id` is that `task_id`. After `completed`, call `/api/mcp_server/save` with `oauth_task_id` set to the `task_id` in the config. See [Realtime events](/API/realtime-events); the event stream needs the API served through the ASGI app.
+
+## Troubleshooting
+
+- **Connection refused** — Verify the URL and that the server is reachable from your backend.
+- **`Invalid server URL: <reason>`** (when testing or saving) or **`Invalid MCP server URL: <reason>`** (when a saved tool connects) — DocsGPT only connects to MCP servers on the public internet. `localhost`, loopback, private (RFC 1918), link-local and other reserved addresses are refused, including a server on the same host or in the same Docker Compose project, and there is no allowlist. See [Outbound network access](/Deploying/Security#outbound-network-access).
+- **403 Forbidden** — Check credentials and permissions.
+- **Timed out** — Default is 30s; increase timeout in tool config (max 300s).
+- **OAuth "needs_auth" persists** — Verify `MCP_OAUTH_REDIRECT_URI` is correct and Redis is running.

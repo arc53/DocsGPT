@@ -1,20 +1,26 @@
-# Default DocsGPT Kubernetes stack.
+# Default DocsGPT Kubernetes stack: `kubectl apply -k deployment/k8s/`.
 #
-# Uses Postgres as the user-data store (mirrors
-# deployment/docker-compose.yaml). MongoDB manifests are opt-in and live
-# under deployment/k8s/optional-mongo/ — they are NOT included here and
-# will not be applied by `kubectl apply -k deployment/k8s/`.
+# Postgres (with pgvector) holds user data and vectors, Redis is the Celery
+# broker and cache, uploads go to the S3-compatible bucket set in
+# docsgpt-secrets.yaml, and the API serves the web UI. Fill in the REPLACE_ME
+# values in docsgpt-secrets.yaml first.
+#
+# Opt-in manifests that are NOT applied here:
+#   ingress-example.yaml                          publish the UI and API over TLS
+#   deployments/qdrant-deploy.yaml
+#   services/qdrant-service.yaml                  an in-cluster Qdrant (VECTOR_STORE=qdrant)
+#   deployments/sandbox-deploy.yaml
+#   network-policies/sandbox-egress-policy.yaml   the code-execution sandbox
+#   optional-mongo/                               MongoDB (VECTOR_STORE=mongodb)
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
   - docsgpt-secrets.yaml
   - deployments/postgres-deploy.yaml
-  - deployments/qdrant-deploy.yaml
   - deployments/redis-deploy.yaml
   - deployments/docsgpt-deploy.yaml
   - services/postgres-service.yaml
-  - services/qdrant-service.yaml
   - services/redis-service.yaml
   - services/docsgpt-service.yaml
   - jobs/postgres-init-job.yaml

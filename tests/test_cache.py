@@ -975,3 +975,82 @@ def test_a_json_array_answer_is_never_replayed_as_stream_chunks(mock_make_redis)
         yield "fresh"
 
     assert list(streamer(None, "m", messages, stream=True, tools=None)) == ["fresh"]
+
+
+# ── LLM_CACHE_ENABLED / LLM_CACHE_TTL ───────────────────────────────────────
+
+
+@pytest.mark.unit
+@patch("docsgpt.cache.get_redis_instance")
+def test_gen_cache_off_never_reads_or_writes_redis(mock_make_redis, monkeypatch):
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "LLM_CACHE_ENABLED", False)
+
+    @gen_cache
+    def mock_function(self, model, messages, stream, tools):
+        return "fresh"
+
+    assert mock_function(None, "m", [{"role": "user", "content": "q"}], stream=False, tools=None) == "fresh"
+    mock_make_redis.assert_not_called()
+
+
+@pytest.mark.unit
+@patch("docsgpt.cache.get_redis_instance")
+def test_stream_cache_off_never_reads_or_writes_redis(mock_make_redis, monkeypatch):
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "LLM_CACHE_ENABLED", False)
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools):
+        yield "fresh"
+
+    result = list(mock_function(None, "m", [{"role": "user", "content": "q"}], stream=True, tools=None))
+    assert result == ["fresh"]
+    mock_make_redis.assert_not_called()
+
+
+@pytest.mark.unit
+@patch("docsgpt.cache.get_redis_instance")
+def test_gen_cache_entries_expire_after_the_configured_ttl(mock_make_redis, monkeypatch):
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL", 60)
+    mock_redis_instance = MagicMock()
+    mock_make_redis.return_value = mock_redis_instance
+    mock_redis_instance.get.return_value = None
+
+    @gen_cache
+    def mock_function(self, model, messages, stream, tools):
+        return "fresh"
+
+    mock_function(None, "m", [{"role": "user", "content": "q"}], stream=False, tools=None)
+    assert mock_redis_instance.set.call_args.kwargs["ex"] == 60
+
+
+@pytest.mark.unit
+@patch("docsgpt.cache.get_redis_instance")
+def test_stream_cache_entries_expire_after_the_configured_ttl(mock_make_redis, monkeypatch):
+    from docsgpt.core.settings import settings
+
+    monkeypatch.setattr(settings, "LLM_CACHE_TTL", 60)
+    mock_redis_instance = MagicMock()
+    mock_make_redis.return_value = mock_redis_instance
+    mock_redis_instance.get.return_value = None
+
+    @stream_cache
+    def mock_function(self, model, messages, stream, tools):
+        yield "fresh"
+
+    list(mock_function(None, "m", [{"role": "user", "content": "q"}], stream=True, tools=None))
+    assert mock_redis_instance.set.call_args.kwargs["ex"] == 60
+
+
+@pytest.mark.unit
+def test_the_llm_cache_defaults_keep_the_previous_behaviour():
+    from docsgpt.core.settings.llm import LLMSettings
+
+    fields = LLMSettings.model_fields
+    assert fields["LLM_CACHE_ENABLED"].default is True
+    assert fields["LLM_CACHE_TTL"].default == 1800

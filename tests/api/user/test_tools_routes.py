@@ -412,15 +412,20 @@ class TestAvailableTools:
         assert data["data"][0]["displayName"] == "My Tool"
         assert data["data"][0]["description"] == "A great tool description"
 
-    def test_returns_400_on_error(self, app):
+    def test_a_tool_that_fails_to_describe_itself_is_skipped(self, app):
+        """One broken tool must not empty the Add Tool catalog for every user."""
         from docsgpt.api.user.tools.routes import AvailableTools
 
-        mock_tool = Mock()
-        mock_tool.__doc__ = "Bad Tool"
-        mock_tool.get_config_requirements.side_effect = Exception("fail")
+        bad_tool = Mock()
+        bad_tool.__doc__ = "Bad Tool"
+        bad_tool.get_config_requirements.side_effect = Exception("fail")
+        good_tool = Mock()
+        good_tool.__doc__ = "Good Tool"
+        good_tool.get_config_requirements.return_value = {}
+        good_tool.get_actions_metadata.return_value = []
 
         mock_manager = Mock()
-        mock_manager.tools = {"bad_tool": mock_tool}
+        mock_manager.tools = {"bad_tool": bad_tool, "good_tool": good_tool}
 
         with patch(
             "docsgpt.api.user.tools.routes.tool_manager", mock_manager
@@ -431,7 +436,50 @@ class TestAvailableTools:
                 request.decoded_token = {"sub": "user1"}
                 response = AvailableTools().get()
 
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert [tool["name"] for tool in response.json["data"]] == ["good_tool"]
+
+    def test_tool_without_a_docstring_is_listed_under_its_key(self, app):
+        """A Tool subclass with no class docstring has ``__doc__ = None``; it used to 400 the endpoint."""
+        from docsgpt.agents.tools.base import Tool
+        from docsgpt.api.user.tools.routes import AvailableTools
+
+        class NoDocTool(Tool):
+            def __init__(self, config):
+                self.config = config
+
+            def execute_action(self, action_name, **kwargs):
+                return None
+
+            def get_actions_metadata(self):
+                return [{"name": "search"}]
+
+            def get_config_requirements(self):
+                return {}
+
+        assert NoDocTool.__doc__ is None
+        documented = Mock()
+        documented.__doc__ = "Documented Tool\nDoes things"
+        documented.get_config_requirements.return_value = {}
+        documented.get_actions_metadata.return_value = []
+
+        mock_manager = Mock()
+        mock_manager.tools = {"no_doc_tool": NoDocTool({}), "documented": documented}
+
+        with patch(
+            "docsgpt.api.user.tools.routes.tool_manager", mock_manager
+        ):
+            with app.test_request_context("/api/available_tools"):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = AvailableTools().get()
+
+        assert response.status_code == 200
+        listed = {tool["name"]: tool for tool in response.json["data"]}
+        assert set(listed) == {"no_doc_tool", "documented"}
+        assert listed["no_doc_tool"]["displayName"] == "no_doc_tool"
+        assert listed["no_doc_tool"]["description"] == ""
 
     def test_single_line_docstring(self, app):
         from docsgpt.api.user.tools.routes import AvailableTools
@@ -515,6 +563,24 @@ class TestCreateTool:
             response = CreateTool().post()
 
         assert response.status_code == 401
+
+    def test_an_mcp_tool_on_a_blocked_address_says_why(self, app):
+        from docsgpt.api.user.tools.routes import CreateTool
+        from docsgpt.core.url_validation import SSRFError
+
+        body = {
+            "name": "mcp_tool", "displayName": "MCP", "description": "d", "status": True,
+            "config": {"server_url": "http://10.0.0.5"},
+        }
+        with patch("docsgpt.api.user.tools.routes.validate_url", side_effect=SSRFError("private range")):
+            with app.test_request_context("/api/create_tool", method="POST", json=body):
+                from flask import request
+
+                request.decoded_token = {"sub": "user1"}
+                response = CreateTool().post()
+
+        assert response.status_code == 400
+        assert response.json["message"] == "Invalid server URL: private range"
 
     def test_returns_400_missing_fields(self, app):
         from docsgpt.api.user.tools.routes import CreateTool

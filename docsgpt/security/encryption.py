@@ -19,8 +19,18 @@ from docsgpt.core.settings import settings
 logger = logging.getLogger(__name__)
 
 
-def _derive_key(user_id: str, salt: bytes) -> bytes:
-    app_secret = settings.ENCRYPTION_SECRET_KEY
+def _derive_key(user_id: str, salt: bytes, app_secret: Optional[str] = None) -> bytes:
+    """Derive the v1 record key for ``user_id``.
+
+    Args:
+        user_id: The owner the credentials are bound to.
+        salt: The record's random salt.
+        app_secret: The master secret; ``ENCRYPTION_SECRET_KEY`` when omitted.
+
+    Returns:
+        The 32-byte AES key.
+    """
+    app_secret = settings.ENCRYPTION_SECRET_KEY if app_secret is None else app_secret
 
     password = f"{app_secret}#{user_id}".encode()
 
@@ -58,28 +68,99 @@ def encrypt_credentials(credentials: dict, user_id: str) -> str:
         return ""
 
 
+def _v1_secrets() -> list[str]:
+    """Master secrets a v1 blob may have been written with: current first, then the previous one."""
+    secrets = [settings.ENCRYPTION_SECRET_KEY]
+    previous = settings.ENCRYPTION_SECRET_KEY_PREVIOUS
+    if previous and previous not in secrets:
+        secrets.append(previous)
+    return secrets
+
+
+def _decrypt_v1(data: bytes, user_id: str, app_secret: str) -> dict:
+    salt = data[:16]
+    iv = data[16:32]
+    encrypted_content = data[32:]
+
+    key = _derive_key(user_id, salt, app_secret)
+
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+
+    decrypted_padded = decryptor.update(encrypted_content) + decryptor.finalize()
+    decrypted_data = _unpad_data(decrypted_padded)
+
+    result = json.loads(decrypted_data.decode())
+    if not isinstance(result, dict):
+        raise ValueError("Credential payload is not an object")
+    return result
+
+
 def decrypt_credentials(encrypted_data: str, user_id: str) -> dict:
+    """Decrypt a v1 credential blob (tool, MCP and custom-model secrets).
+
+    The blob is tried with ``ENCRYPTION_SECRET_KEY`` and then with
+    ``ENCRYPTION_SECRET_KEY_PREVIOUS``, so secrets stay readable during a key
+    rotation. New blobs are always written with the current key.
+
+    Args:
+        encrypted_data: The base64 blob from :func:`encrypt_credentials`.
+        user_id: The owner the blob was written for.
+
+    Returns:
+        The credentials, or an empty dict when no key opens the blob.
+    """
     if not encrypted_data:
         return {}
     try:
         data = base64.b64decode(encrypted_data.encode())
-
-        salt = data[:16]
-        iv = data[16:32]
-        encrypted_content = data[32:]
-
-        key = _derive_key(user_id, salt)
-
-        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
-        decryptor = cipher.decryptor()
-
-        decrypted_padded = decryptor.update(encrypted_content) + decryptor.finalize()
-        decrypted_data = _unpad_data(decrypted_padded)
-
-        return json.loads(decrypted_data.decode())
     except Exception as e:
         logger.warning(f"Failed to decrypt credentials: {e}")
         return {}
+    error: Optional[Exception] = None
+    for app_secret in _v1_secrets():
+        try:
+            return _decrypt_v1(data, user_id, app_secret)
+        except Exception as e:
+            error = e
+    logger.warning(f"Failed to decrypt credentials: {error}")
+    return {}
+
+
+def reseal_credentials(encrypted_data: str, user_id: str) -> tuple[str, Optional[str]]:
+    """Re-encrypt a v1 blob with ``ENCRYPTION_SECRET_KEY`` when it was written with the previous key.
+
+    Used by ``docsgpt connectors reencrypt`` so ``ENCRYPTION_SECRET_KEY_PREVIOUS``
+    can be removed afterwards. A blob no key opens is never replaced.
+
+    Args:
+        encrypted_data: The base64 blob from :func:`encrypt_credentials`.
+        user_id: The owner the blob was written for.
+
+    Returns:
+        ``("current", None)`` when the current key already opens it,
+        ``("rewritten", new_blob)`` when only the previous key does, and
+        ``("failed", None)`` when neither does.
+    """
+    try:
+        data = base64.b64decode(encrypted_data.encode(), validate=True)
+    except Exception:
+        return "failed", None
+    current = settings.ENCRYPTION_SECRET_KEY
+    try:
+        _decrypt_v1(data, user_id, current)
+        return "current", None
+    except Exception:
+        pass
+    previous = settings.ENCRYPTION_SECRET_KEY_PREVIOUS
+    if not previous or previous == current:
+        return "failed", None
+    try:
+        credentials = _decrypt_v1(data, user_id, previous)
+    except Exception:
+        return "failed", None
+    resealed = encrypt_credentials(credentials, user_id)
+    return ("rewritten", resealed) if resealed else ("failed", None)
 
 
 def _pad_data(data: bytes) -> bytes:

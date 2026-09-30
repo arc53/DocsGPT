@@ -51,6 +51,8 @@ vi.mock('../../api/services/userService', () => ({
         json: () =>
           Promise.resolve({ id: 'a1', name: 'Carrier FAQ', tools: [] }),
       }),
+    getUserTools: () =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({ tools: [] }) }),
   },
 }));
 vi.mock('../../api/services/schedulesService', () => ({

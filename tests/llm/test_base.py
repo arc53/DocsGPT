@@ -401,7 +401,6 @@ class TestProviderNameRegistry:
         from docsgpt.llm.docsgpt_provider import DocsGPTAPILLM
         from docsgpt.llm.google_ai import GoogleLLM
         from docsgpt.llm.groq import GroqLLM
-        from docsgpt.llm.llama_cpp import LlamaCpp
         from docsgpt.llm.novita import NovitaLLM
         from docsgpt.llm.open_router import OpenRouterLLM
         from docsgpt.llm.openai import OpenAILLM
@@ -413,7 +412,6 @@ class TestProviderNameRegistry:
         assert NovitaLLM.provider_name == "novita"
         assert OpenRouterLLM.provider_name == "openrouter"
         assert DocsGPTAPILLM.provider_name == "docsgpt"
-        assert LlamaCpp.provider_name == "llama_cpp"
 
     @patch("docsgpt.llm.base.gen_cache", lambda f: f)
     @patch("docsgpt.llm.base.gen_token_usage", lambda f: f)

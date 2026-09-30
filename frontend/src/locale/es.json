@@ -2485,11 +2485,17 @@
         "timezoneEmpty": "No se encontró la zona horaria.",
         "instructionsLabel": "Instrucciones",
         "instructionsPlaceholder": "Escribe el prompt aquí.",
+        "approvalTools": {
+          "label": "Herramientas que requieren aprobación",
+          "hint": "Durante una ejecución programada nadie puede aprobar, así que las acciones que requieren aprobación se rechazan salvo que marques aquí su herramienta. Las demás acciones se ejecutan igualmente.",
+          "warning": "Las acciones que requieren aprobación de una herramienta marcada se ejecutan sin preguntar cada vez que se ejecuta esta programación."
+        },
         "create": "Crear tarea",
         "save": "Guardar cambios",
         "errors": {
           "instructionRequired": "Las instrucciones son obligatorias.",
-          "runAtInPast": "Elige una fecha y hora en el futuro."
+          "runAtInPast": "Elige una fecha y hora en el futuro.",
+          "saveFailed": "No se pudo guardar la programación."
         },
         "days": {
           "mon": "Lun",

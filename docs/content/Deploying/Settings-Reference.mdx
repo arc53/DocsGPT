@@ -40,13 +40,13 @@ Key used to encrypt stored credentials such as tool and connector secrets. Set y
 
 Type `str`, default unset.
 
-Previous ENCRYPTION_SECRET_KEY, tried when a stored credential was encrypted with it. Set it while rotating the key, run `docsgpt connectors reencrypt`, then remove it.
+Previous ENCRYPTION_SECRET_KEY, tried when a stored credential (a connection, a tool or custom-model secret) was encrypted with it. Set it while rotating the key, run `docsgpt connectors reencrypt`, and remove it once the command reports nothing unreadable.
 
 ### `INTERNAL_KEY`
 
 Type `str`, default unset.
 
-Internal API key for worker-to-backend authentication.
+Required: shared secret the worker uses to hand finished indexes and files to the API. Set the same value on the API and the worker; without it the API rejects the worker's uploads and every ingest fails.
 
 ### `OIDC_ISSUER`
 
@@ -177,13 +177,13 @@ Which model answers, how it is reached, and provider-specific behaviour.
 
 Type `str`, default `docsgpt`.
 
-LLM provider key, e.g. openai, anthropic, docsgpt.
+Provider whose first model is the default when LLM_NAME names none: docsgpt, openai, anthropic, google, groq, openrouter, novita or openai_compatible. For your own OpenAI-compatible server use openai with OPENAI_BASE_URL.
 
 ### `LLM_NAME`
 
 Type `str`, default unset.
 
-Model name for the provider; with openai, e.g. gpt-4 or gpt-3.5-turbo.
+Default model id. For a cloud provider it must be an id from docsgpt/core/models/*.yaml or a MODELS_CONFIG_DIR YAML, e.g. gpt-5.5; any other name is ignored with a warning. With OPENAI_BASE_URL it is required and names the model(s) the server serves, comma-separated.
 
 ### `API_KEY`
 
@@ -214,12 +214,6 @@ Google AI API key.
 Type `str`, default unset.
 
 Groq API key.
-
-### `HUGGINGFACE_API_KEY`
-
-Type `str`, default unset.
-
-Hugging Face API key.
 
 ### `OPEN_ROUTER_API_KEY`
 
@@ -263,12 +257,6 @@ Type `str`, default unset.
 
 Base URL for OpenAI-compatible model servers.
 
-### `LLM_PATH`
-
-Type `str`, default `<DOCSGPT_HOME>/models/docsgpt-7b-f16.gguf`.
-
-Path to the local GGUF model used by the llama.cpp provider.
-
 ### `FALLBACK_LLM_PROVIDER`
 
 Type `str`, default unset.
@@ -285,7 +273,7 @@ Model name for the fallback LLM.
 
 Type `str`, default unset.
 
-API key for the fallback LLM.
+API key for the fallback LLM; unset sends API_KEY. Set it whenever FALLBACK_LLM_PROVIDER differs from LLM_PROVIDER, or the primary provider's key goes to the fallback provider.
 
 ### `TITLE_MODEL_ID`
 
@@ -315,7 +303,19 @@ Tokens held back from the context window for the system prompt, the query and a 
 
 Type `str`, default `redis://localhost:6379/2`.
 
-Redis URL for the LLM cache.
+Redis URL for the LLM cache, the live event and notification streams, SSO state and token denylist, device pairing, MCP OAuth, the API session store, live speech-to-text and the version check.
+
+### `LLM_CACHE_ENABLED`
+
+Type `bool`, default `true`.
+
+Cache LLM answers in Redis (CACHE_REDIS_URL) and replay them for an identical request: same model, messages and generation parameters. Calls that pass tools are never cached. False turns it off.
+
+### `LLM_CACHE_TTL`
+
+Type `int`, default `1800`, must be `> 0`.
+
+Seconds a cached LLM answer is kept in Redis before it expires.
 
 ### `OPENAI_RESPONSES_STORE`
 
@@ -368,7 +368,7 @@ The embedding model, remote or local, and the batching around it.
 
 Type `str`, default `huggingface_sentence-transformers/all-mpnet-base-v2`.
 
-Embedding model. The legacy model is the default on purpose: an install that never pinned this has vectors from it, and granite is the same width so a swap would fail silently. New installs get granite from .env-template; existing ones switch by setting this and running docsgpt.scripts.reembed.
+Embedding model. Leave unset and the first boot pins one in the database: granite for a new install, this legacy default for an install that already has sources, since granite is the same width and a silent swap would degrade retrieval. Setting it overrides the pin; to switch an existing index, set it and run docsgpt.scripts.reembed.
 
 ### `EMBEDDINGS_BASE_URL`
 
@@ -380,7 +380,7 @@ Remote embeddings API URL (OpenAI-compatible).
 
 Type `str`, default unset.
 
-API key for embeddings (with OpenAI, the same value as API_KEY).
+API key for remote or OpenAI embeddings. OpenAI embeddings fall back to OPENAI_API_KEY, then to API_KEY when LLM_PROVIDER=openai.
 
 ### `EMBEDDINGS_MAX_INPUT_TOKENS`
 
@@ -398,7 +398,7 @@ Chunks per store transaction and per remote embed request.
 
 Type `int`, default `1`, must be `>= 1`.
 
-Documents per local ONNX forward pass. Each pass pads to its longest input, and that waste grows with the square of chunk length: at 1250 tokens, 32 peaked at 6.6 GB, 1 at 2.9 GB.
+Documents per local ONNX forward pass. Each pass pads to its longest input, and that waste grows with the square of chunk length: on a 30-document ingest at 1250-token chunks, 32 peaked at 7.7 GB, 1 at 1.5 GB.
 
 ### `EMBEDDINGS_THREADS`
 
@@ -428,7 +428,7 @@ L2-normalise embeddings. Read from the model's own repository; set only for a re
 
 Type `bool`, default `true`.
 
-Embed on the worker so the API holds no model (~890 MB), at one broker round trip per query. Ignored when EMBEDDINGS_BASE_URL is set, which is the better answer for production.
+Embed on the worker so the API holds no model (~660 MB down to ~285 MB on a default install), at one broker round trip per query. Ignored when EMBEDDINGS_BASE_URL is set, which is the better answer for production.
 
 ### `EMBEDDINGS_QUEUE`
 
@@ -644,18 +644,6 @@ Type `str`, default `""`.
 
 Milvus auth token.
 
-### `LANCEDB_PATH`
-
-Type `str`, default `<DOCSGPT_HOME>/data/lancedb`.
-
-LanceDB local data directory.
-
-### `LANCEDB_TABLE_NAME`
-
-Type `str`, default `docsgpts`.
-
-LanceDB table for stored vectors.
-
 
 ## User-data database
 
@@ -730,7 +718,13 @@ Recycle a worker child after N tasks; 0 disables.
 
 Type `str`, default `http://localhost:7091`.
 
-Backend URL the Celery worker calls back into.
+Address of the API. The worker hands finished indexes to it here, and the API builds the agent image, agent webhook, device pairing and MCP OAuth callback links it hands out from it, so on the API set it to the address browsers use. Docker Compose sets the worker's to http://backend:7091.
+
+### `WORKER_API_URL`
+
+Type `str`, default unset.
+
+Address the worker uses for its own calls into the API (handing over finished indexes). Unset falls back to API_URL. Set it when the API and the worker share one settings file and API_URL is a public address, e.g. http://127.0.0.1:7091; `docsgpt up --native` does.
 
 
 ## Ingestion and parsing
@@ -956,7 +950,7 @@ Which stack runs OCR when it is on. auto: docling when installed, otherwise nati
 
 Type `"tesseract" | "deepseek" | "auto" | "ocrmac" | "rapidocr"`, default `tesseract`.
 
-OCR engine used when OCR is on. Benched 2026-08 on EN/ZH/table/degraded scans (docs/Guides/ocr has the menu). tesseract (recommended): best classic-engine accuracy (perfect EN word recall, 0.000 bilingual CER, 100% table cells), ~35 MB, CPU-only; needs the system binary and language packs, an optional install like every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew install tesseract-ocr for a local run); both backends. deepseek: DeepSeek-OCR against an Ollama/vLLM endpoint (OCR_DEEPSEEK_*); best table/CJK quality, the worker stays light (no layout models) but each page costs seconds on the model server; both backends. auto: docling's pick, ocrmac on macOS (excellent), rapidocr on Linux (silently shreds some long text lines; avoid as a server default). ocrmac | rapidocr: force one of those. auto/ocrmac/rapidocr exist only inside docling; the native backend runs tesseract for them. An engine that is not installed degrades (docling: to auto) with a warning instead of failing the parse.
+OCR engine used when OCR is on. Benched 2026-08 on EN/ZH/table/degraded scans (docs page Sources/ocr has the menu). tesseract (recommended): best classic-engine accuracy (perfect EN word recall, 0.000 bilingual CER, 100% table cells), ~35 MB, CPU-only; needs the system binary and language packs, an optional install like every OCR dependency (build with INSTALL_TESSERACT=true, or apt/brew install tesseract-ocr for a local run); both backends. deepseek: DeepSeek-OCR against an Ollama/vLLM endpoint (OCR_DEEPSEEK_*); best table/CJK quality, the worker stays light (no layout models) but each page costs seconds on the model server; both backends. auto: docling's pick, ocrmac on macOS (excellent), rapidocr on Linux (silently shreds some long text lines; avoid as a server default). ocrmac | rapidocr: force one of those. auto/ocrmac/rapidocr exist only inside docling; the native backend runs tesseract for them. An engine that is not installed degrades (docling: to auto) with a warning instead of failing the parse.
 
 ### `OCR_LANGS`
 
@@ -1175,7 +1169,7 @@ Serving the UI, public URLs, and process-level knobs of the API server.
 
 Type `str`, default unset.
 
-Deployment class, e.g. cloud or production. A production class refuses to run without a configured JWT_SECRET_KEY instead of generating a local one on disk.
+Deployment class: cloud or production makes a missing JWT_SECRET_KEY fatal at startup. Otherwise the API generates .jwt_secret_key in the data home, which suits a single local process only.
 
 ### `SERVE_UI`
 
@@ -1193,7 +1187,7 @@ Run Flask in debug mode.
 
 Type `bool`, default `true`.
 
-Anonymous startup version check for security issues.
+Outbound version check for security advisories: the worker sends its version, a random instance id, the Python version and the platform to gptcloud.arc53.com when it starts and every 7 hours (reusing a recent cached answer), and logs any advisory. Set false to turn it off.
 
 ### `PUBLIC_API_BASE_URL`
 
@@ -1341,7 +1335,7 @@ Per-agent default quotas: tokens and requests.
 
 Type `list[str]`, default `["memory", "read_webpage", "scheduler"]`.
 
-Config-free tools on by default in agentless chats. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
+Config-free tools on by default in agentless chats, as a JSON list of tool names (["memory","scheduler"]) or comma-separated names. none (or []) turns them all off; an empty value keeps the default. scheduler is dual-registered in BUILTIN_AGENT_TOOLS so one synthetic id resolves via defaults or the agent picker. Add code_executor and artifact_generator once a sandbox runner is configured; both execute through it and would fail on every call without one.
 
 ### `ENABLE_TOOL_PREFETCH`
 
@@ -1448,7 +1442,7 @@ Master switch; False disables every stage.
 
 Type `list[str]`, default `[]`.
 
-Allowlist of GuardrailCreator.checks keys; empty means every registered check.
+Allowlist of GuardrailCreator.checks keys, as a JSON list or comma-separated names; unset or empty means every registered check.
 
 ### `GUARDRAILS_FLOOR`
 
@@ -1530,7 +1524,7 @@ Window every usage quota is measured over. Windows are calendar-aligned in UTC: 
 
 Type `list[float]`, default unset.
 
-Fallback `[input, output]` USD rates per 1M tokens for models that declare no price, e.g. `[0.5, 1.5]`. Unset, such calls are recorded at $0 and only count toward token quotas.
+Fallback `[input, output]` USD rates per 1M tokens for models that declare no price, e.g. `[0.5, 1.5]` or `0.5,1.5`. Unset, such calls are recorded at $0 and only count toward token quotas.
 
 
 ## Scheduler
