@@ -179,7 +179,7 @@ Guardrails also apply to a **draft** agent in the builder preview, which is the 
 
 ## Configuring guardrails via the API
 
-Guardrails live under `guardrails` in the agent's `config` field. Pass `config` as a JSON string when creating or updating an agent through `POST /api/create_agent` or `PUT /api/update_agent/<agent_id>` (the same multipart form the builder uses). `update_agent` replaces the whole `config`; send the complete object each time.
+Guardrails live under `guardrails` in the agent's `config` field. Send `config` as a JSON object in a JSON body, or as a JSON string in the multipart form the builder uses, to `POST /api/create_agent` or `PUT /api/update_agent/<agent_id>`. `config` also holds the agent's `api_write_allowlist` (see [Letting API callers make changes](/Agents/api#letting-api-callers-make-changes)), and `update_agent` replaces the whole `config`. Read the current `config` with `GET /api/get_agent?id=<agent_id>`, change `guardrails`, and send the whole object back, or you clear the allowlist.
 
 ```json
 {
@@ -214,25 +214,29 @@ Guardrails live under `guardrails` in the agent's `config` field. Pass `config` 
 <Tabs items={['cURL', 'Python']}>
   <Tabs.Tab>
     ```bash
+    config=$(curl -s "http://localhost:7091/api/get_agent?id=<agent_id>" -H "Authorization: Bearer <token>" \
+      | jq '.config + {guardrails: {enabled: true, mode: "monitor_only", controls: [{check: "secrets", stage: "output", action: "redact"}]}}')
     curl -X PUT http://localhost:7091/api/update_agent/<agent_id> \
-      -H "Authorization: Bearer <token>" \
-      -F 'config={"guardrails":{"enabled":true,"mode":"monitor_only","controls":[{"check":"secrets","stage":"output","action":"redact"}]}}'
+      -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+      -d "{\"config\": $config}"
     ```
   </Tabs.Tab>
   <Tabs.Tab>
     ```python
-    import json, requests
+    import requests
 
-    config = {"guardrails": {
+    BASE = "http://localhost:7091"
+    HEADERS = {"Authorization": "Bearer <token>"}
+    agent_id = "<agent_id>"
+
+    agent = requests.get(f"{BASE}/api/get_agent", params={"id": agent_id}, headers=HEADERS).json()
+    config = agent.get("config") or {}
+    config["guardrails"] = {
         "enabled": True,
         "mode": "monitor_only",
         "controls": [{"check": "secrets", "stage": "output", "action": "redact"}],
-    }}
-    requests.put(
-        "http://localhost:7091/api/update_agent/<agent_id>",
-        headers={"Authorization": "Bearer <token>"},
-        data={"config": json.dumps(config)},
-    ).raise_for_status()
+    }
+    requests.put(f"{BASE}/api/update_agent/{agent_id}", headers=HEADERS, json={"config": config}).raise_for_status()
     ```
   </Tabs.Tab>
 </Tabs>
