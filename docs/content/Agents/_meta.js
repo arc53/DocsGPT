@@ -26,5 +26,9 @@ export default {
   "nodes": {
     "title": "🧩 Workflow Nodes",
     "href": "/Agents/nodes"
+  },
+  "schedules": {
+    "title": "⏰ Schedules",
+    "href": "/Agents/schedules"
   }
 }
