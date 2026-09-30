@@ -24,9 +24,16 @@ Nothing fires unless a Celery **beat** scheduler is running. The Docker Compose 
 2. Select **New schedule**.
 3. Give it a name (optional) and pick a **Frequency**: **Once**, **Daily**, **Weekly**, **Monthly** or **Yearly**. Set the day or date and the time (**At**), and pick a **Timezone**.
 4. In **Instructions**, write what the agent should do on each run, as you would type it in a chat. Include any delivery step, such as "post the summary to Slack".
-5. Select **Create task**.
+5. If the agent has tools with actions that need approval, they are listed under **Tools that need approval**, all unticked. Tick a tool only if the schedule should use its approval-gated actions without asking; see [Tools in a scheduled run](#tools-in-a-scheduled-run).
+6. Select **Create task**.
 
-The tab lists **Recurring** schedules and **One-time tasks** separately, with each schedule's next run, last run and status. From a schedule's menu you can **Edit**, **Pause** or **Resume**, **Run now**, and **Delete** it. Deleting a schedule also deletes its run history, and deleting the agent deletes all its schedules.
+The tab lists **Recurring** schedules and **One-time tasks** separately, with each schedule's next run, last run and status. What you can do depends on the schedule:
+
+- An active recurring schedule has a **Run now** button and a menu with **Edit**, **Pause** and **Delete**.
+- A paused recurring schedule has a **Resume** button and a menu with **Edit**, **Run now** and **Delete**.
+- A pending one-time task has a menu with **Edit** and **Cancel task**.
+
+Deleting a schedule also deletes its run history, and deleting the agent deletes all its schedules.
 
 The builder covers daily, weekly, monthly and yearly times. For another cadence, such as every hour, set a custom cron expression through the [API](#rest-api). The tab shows it as `Custom: <expression>`.
 
@@ -34,27 +41,32 @@ The builder covers daily, weekly, monthly and yearly times. For another cadence,
 
 Nobody is present to approve a tool call during a scheduled run, so:
 
-- A schedule created in the Schedules tab pre-approves every tool the agent has at the time you save it. Actions marked as needing approval run without asking. Commands that a remote device's denylist forces to a prompt are still refused.
+- Actions that don't need approval run as they would in a chat.
+- An action that needs approval runs only if its tool is ticked under **Tools that need approval** in the schedule's form. Ticking a tool pre-approves all of its approval-gated actions for every run of that schedule, so they run without asking. Nothing is ticked by default.
+- The form lists a tool when any of its active actions is set to need approval, when it is a remote device (a device decides per command, from its approval mode), when it is a code executor set to require approval, and when it is a tool you can't inspect, such as one the agent's owner didn't share with you.
+- Commands that a remote device's denylist forces to a prompt are refused even when the device is ticked.
 - Tools that run in the browser, and connected tools whose account needs signing in, are refused.
 - The **Scheduling** tool is never available in a scheduled run, so a run can't create further schedules.
-- A refused tool call fails the run with the `tool_not_allowed` error type.
+- A refused tool call is reported back to the model, which can still answer. The run fails with the `tool_not_allowed` error type only when it ends without an answer.
+
+If you later mark one of a tool's actions as needing approval, schedules that don't have that tool ticked refuse the action. Edit the schedule and tick the tool if it should run unattended.
 
 ## Run now and the run log
 
 **Run now** starts a run immediately. It is recorded with the trigger **Manual**; timed runs show **Scheduled**. Run now is refused while another run of the same schedule is still in progress.
 
-Select **Show runs** to open the log, and select a run to see its details: status, scheduled, start and finish times, prompt and generated tokens, output and error. The output is capped at 24,000 characters and marked **(truncated)** beyond that.
+For a recurring schedule, select **Show runs** to open the log, and select a run to see its details: status, scheduled, start and finish times, prompt and generated tokens, output and error. The output is capped at 24,000 characters and marked **(truncated)** beyond that.
 
 A run ends in one of these statuses:
 
 | Status | Meaning |
 | --- | --- |
-| **Success** | The run finished and produced an answer, tool calls or workflow steps. |
-| **Failed** | The run raised an error, was refused a tool, went over the owner's [usage quota](/Deploying/Usage-Quotas) or the schedule's token budget (`budget_exceeded`), or produced nothing at all (`empty_output`). |
+| **Success** | The run finished and produced an answer, tool calls or workflow steps, even if a tool call was refused along the way. |
+| **Failed** | The run raised an error, was refused a tool and ended without an answer (`tool_not_allowed`), went over the owner's [usage quota](/Deploying/Usage-Quotas) or the schedule's token budget (`budget_exceeded`), or produced nothing at all (`empty_output`). |
 | **Timeout** | The run went past `SCHEDULE_RUN_TIMEOUT`. |
 | **Skipped** | The run didn't start: the previous run was still in progress (`overlap`), or the scheduler was down past the due time plus `SCHEDULE_MISFIRE_GRACE` (`missed`). |
 
-Scheduled runs also appear in **Settings → Logs** with the type **Scheduled**, with their execution trace, and in the agent's Logs tab.
+The Schedules tab has no run log for one-time tasks. Their runs, like every scheduled run, appear in **Settings → Logs** with the type **Scheduled**, with their execution trace, and in the agent's Logs tab; over the API, use `GET /api/schedules/<id>/runs`.
 
 ### Where the output goes
 
@@ -109,7 +121,7 @@ Fields for `POST` (and `PUT`, except `trigger_type` and `run_at`):
 | `timezone` | IANA name such as `America/New_York`. Default `UTC`. |
 | `name` | Display name. |
 | `end_at` | ISO 8601 time after which a recurring schedule stops and shows **Completed**. |
-| `tool_allowlist` | Tool ids whose approval-gated actions may run without approval. The web app sends all of the agent's tools. Default: none. |
+| `tool_allowlist` | Tool ids whose approval-gated actions may run without approval. Actions that don't need approval run whether or not their tool is listed. The web app sends the tools ticked under **Tools that need approval**. Default: none. On `PUT`, leaving it out keeps the saved list. |
 | `model_id` | Model to run with instead of the agent's default. |
 | `token_budget` | Tokens one run may use. A run that goes over is recorded as failed with `budget_exceeded`. |
 
@@ -128,7 +140,7 @@ curl -X POST "$API/api/agents/$AGENT_ID/schedules" \
 
 To resume a one-time task whose time has passed, send a new future `run_at` with the resume action.
 
-Schedule changes are also published on the [realtime events](/Agents/notifications) stream: `schedule.run.completed`, `schedule.run.failed`, `schedule.autopaused`, `schedule.resumed`, `schedule.cancelled`, and `schedule.message.appended` when a one-time task adds its answer to a conversation.
+Schedule changes are also published on the [realtime events](/Agents/notifications) stream: `schedule.run.completed`, `schedule.run.failed`, `schedule.autopaused`, `schedule.completed` (a one-time task closed after its stuck run was marked failed), `schedule.resumed`, `schedule.cancelled`, and `schedule.message.appended` when a one-time task adds its answer to a conversation.
 
 ## Limits
 
