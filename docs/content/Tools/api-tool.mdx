@@ -18,7 +18,7 @@ The API Tool only calls hosts on the public internet. It refuses `localhost`, lo
 ## Introduction to the Generic API Tool
 
 **When to Use It:**
-    * Ideal for quickly integrating existing APIs where the interaction involves standard HTTP requests (GET, POST, PUT, DELETE).
+    * Ideal for quickly integrating existing APIs where the interaction involves standard HTTP requests (GET, POST, PUT, PATCH, DELETE and so on).
     * Suitable for fetching data to enrich answers (e.g., current weather, stock prices, product details).
     * Useful for triggering simple actions in other systems (e.g., sending a notification, creating a basic task).
 
@@ -28,16 +28,15 @@ The API Tool only calls hosts on the public internet. It refuses `localhost`, lo
 
 ## Capabilities of the API Tool
 
-**Supported HTTP Methods:** You can configure actions using standard HTTP methods such as:
-    * `GET`: To retrieve data.
-    * `POST`: To submit data to create a new resource.
-    * `PUT`: To update an existing resource.
-    * `DELETE`: To remove a resource.
+**Supported HTTP Methods:** `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD` and `OPTIONS`.
 
 **Request Configuration:**
     * **Headers:** Define static or dynamic HTTP headers for authentication (e.g., API keys), content type specification, etc.
     * **Query Parameters:** Specify URL query parameters, which can be static or dynamically filled by the LLM based on user input.
-    * **Request Body:** Define the structure of the request body (e.g., JSON), with fields that can be static or dynamically populated by the LLM.
+    * **Path parameters:** Write a placeholder such as `{userId}` in the URL. A query parameter with the same name fills it (URL-encoded) instead of being appended to the query string.
+    * **Request Body:** Define the fields of the request body, static or filled by the LLM, and pick its **Body content type**: JSON (the default), form-urlencoded, multipart form data, plain text, XML or raw bytes (`application/octet-stream`).
+
+**Timeout:** Each request times out after 90 seconds.
 
 **Response Handling:**
     * The API Tool executes the request and receives the raw response from the API (typically JSON or plain text).
@@ -46,7 +45,12 @@ The API Tool only calls hosts on the public internet. It refuses `localhost`, lo
 
 ## Configuring an API as a Tool
 
-You can configure the API Tool through the DocsGPT user interface, found in **Settings -> Tools**. When you add or modify an API Tool, you'll define specific actions that DocsGPT can perform.
+The API Tool isn't in the Add Tool list of built-in tools. Start a new one from **Settings -> Connectors -> Add custom tool -> OpenAPI / REST**, or from the **Add custom tool** button at the bottom of the Add Tool dialog, which leads to the same place. Either opens a new API tool on **Settings -> Tools**, where you define the actions DocsGPT can perform. You edit it there later too.
+
+There are two ways to fill in actions:
+
+- **Import Spec:** upload an OpenAPI 3.x or Swagger 2.0 specification (JSON or YAML), then pick which of its operations to import. DocsGPT fills in each action's URL, method, parameters and body from the spec.
+- **By hand:** add each action and fill in the fields described below.
 
 <Callout type="info">
   The configuration involves defining how DocsGPT should call an API endpoint. Each configured API call essentially becomes a distinct "action" the LLM can choose to use.
@@ -70,7 +74,7 @@ When you configure a new API action, you'll fill in the following fields:
 -   **`Name`:** A user-friendly name for this specific API action (e.g., "Phone-check" as in the image, or more specific like "ValidateUSPhoneNumber"). This helps in managing your tools.
 -   **`Description`:** This is a **critical field**. Provide a clear and concise description of what the API action does, what kind of input it expects (implicitly), and what kind of output it provides. The LLM uses this description to understand when and how to use this action.
 -   **`URL`:** The full endpoint URL for the API request.
--   **`HTTP Method`:** Select the appropriate HTTP method (e.g., GET, POST) from a dropdown.
+-   **`HTTP Method`:** Select the HTTP method from the dropdown.
 -   **`Headers`:** You can add custom HTTP headers as key-value pairs (Name, Value). Indicate if the value should be `Filled by LLM` or is static. If filled by LLM, provide a `Description` for the LLM.
 
 -   **`Query Parameters`:** For `GET` requests or when parameters are sent in the URL.
@@ -82,7 +86,7 @@ When you configure a new API action, you'll fill in the following fields:
     * `Description`: Context for the LLM if the parameter is to be filled dynamically, or for your own reference if static.
     * `Value`: The static value if not filled by LLM.
 
--   **`Request Body`:** Used to send data (commonly JSON) to the API. Similar to Query Parameters, you define fields with `Name`, `Type`, whether it's `Filled by LLM`, a `Description` for dynamic fields, and a static `Value` if applicable.
+-   **`Request Body`:** Used to send data to the API, encoded as the selected **Body content type**. Similar to Query Parameters, you define fields with `Name`, `Type`, whether it's `Filled by LLM`, a `Description` for dynamic fields, and a static `Value` if applicable.
 
 **Response Handling Guidance for the LLM:**
 
