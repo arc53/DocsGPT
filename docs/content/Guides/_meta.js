@@ -22,10 +22,6 @@ export default {
     "href": "/Guides/My-AI-answers-questions-using-external-knowledge",
     "display": "hidden"
   },
-  "Architecture": {
-    "title": "🏗️ Architecture",
-    "href": "/Guides/Architecture"
-  },
   "compression": {
     "title": "🗜️ Context Compression",
     "href": "/Guides/compression"

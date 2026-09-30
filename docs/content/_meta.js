@@ -1,6 +1,7 @@
 export default {
   "index": "Home",
   "quickstart": "Quickstart",
+  "Concepts": "Concepts",
   "Using": "Using DocsGPT",
   "upgrading": "Upgrading",
   "Deploying": "Deploying",
