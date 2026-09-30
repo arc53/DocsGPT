@@ -644,10 +644,13 @@ class AvailableTools(Resource):
             # connector is on when its server settings are present).
             current_app.logger.warning("Could not read connector policies", exc_info=True)
             policies = {}
-        try:
-            tools_metadata = []
-            for tool_name, tool_instance in tool_manager.tools.items():
-                doc = tool_instance.__doc__.strip()
+        tools_metadata = []
+        for tool_name, tool_instance in tool_manager.tools.items():
+            # One broken tool (a custom one without a class docstring, or one
+            # whose metadata raises) is skipped and logged, so it can't empty
+            # the Add Tool catalog for everyone.
+            try:
+                doc = (tool_instance.__doc__ or tool_name).strip()
                 lines = doc.split("\n", 1)
                 name = lines[0].strip()
                 description = lines[1].strip() if len(lines) > 1 else ""
@@ -666,22 +669,22 @@ class AvailableTools(Resource):
                     group, connector_key = "custom", _CUSTOM_CONNECTOR_TOOLS[tool_name]
                 else:
                     group, connector_key = "built_in", None
-                tools_metadata.append(
-                    {
-                        "name": tool_name,
-                        "displayName": name,
-                        "description": description,
-                        "configRequirements": config_req,
-                        "actions": actions,
-                        "group": group,
-                        "connector_key": connector_key,
-                    }
+            except Exception as err:
+                current_app.logger.error(
+                    f"Skipping tool {tool_name!r} in available tools: {err}", exc_info=True
                 )
-        except Exception as err:
-            current_app.logger.error(
-                f"Error getting available tools: {err}", exc_info=True
+                continue
+            tools_metadata.append(
+                {
+                    "name": tool_name,
+                    "displayName": name,
+                    "description": description,
+                    "configRequirements": config_req,
+                    "actions": actions,
+                    "group": group,
+                    "connector_key": connector_key,
+                }
             )
-            return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
 
 
